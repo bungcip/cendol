@@ -148,6 +148,15 @@ impl Preprocessor {
                     i = find_next_line(i + 1, tokens);
                     continue;
                 }
+                TokenKind::Line => {
+                    if in_true_branch {
+                        let (_line, _filename, end) = parse_line_directive(i + 1, tokens)?;
+                        i = end;
+                    } else {
+                        i = find_next_line(i + 1, tokens);
+                    }
+                    continue;
+                }
                 _ => {}
             }
 
@@ -512,4 +521,42 @@ fn parse_error_message(start_idx: usize, tokens: &[Token]) -> Result<(String, us
         i += 1;
     }
     Ok((message, i))
+}
+
+fn parse_line_directive(start_idx: usize, tokens: &[Token]) -> Result<(u32, Option<String>, usize), crate::preprocessor::error::PreprocessorError> {
+    let mut i = start_idx;
+    while i < tokens.len() && tokens[i].kind.is_whitespace() {
+        i += 1;
+    }
+
+    let line = if let TokenKind::Number(s) = &tokens[i].kind {
+        s.parse().unwrap()
+    } else {
+        return Err(crate::preprocessor::error::PreprocessorError::Generic("Expected line number".to_string()));
+    };
+    i += 1;
+
+    while i < tokens.len() && tokens[i].kind.is_whitespace() {
+        i += 1;
+    }
+
+    let filename = if i < tokens.len() {
+        if let TokenKind::String(s) = &tokens[i].kind {
+            i += 1;
+            Some(s.clone())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    while i < tokens.len() {
+        if matches!(tokens[i].kind, TokenKind::Newline) {
+            return Ok((line, filename, i));
+        }
+        i += 1;
+    }
+
+    Ok((line, filename, i))
 }

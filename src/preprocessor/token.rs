@@ -41,6 +41,7 @@ pub enum TokenKind {
     Ifndef,
     Undef,
     Error,
+    Line,
     Eof,
 }
 
@@ -71,6 +72,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Ifndef => write!(f, "#ifndef"),
             TokenKind::Undef => write!(f, "#undef"),
             TokenKind::Error => write!(f, "#error"),
+            TokenKind::Line => write!(f, "#line"),
             TokenKind::Eof => write!(f, ""),
         }
     }

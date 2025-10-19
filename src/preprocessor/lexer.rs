@@ -149,6 +149,7 @@ impl<'a> Lexer<'a> {
             "ifndef" => Ok(Token::new(TokenKind::Ifndef)),
             "undef" => Ok(Token::new(TokenKind::Undef)),
             "error" => Ok(Token::new(TokenKind::Error)),
+            "line" => Ok(Token::new(TokenKind::Line)),
             _ => Ok(Token::new(TokenKind::Directive(directive))),
         }
     }

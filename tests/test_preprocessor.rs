@@ -189,3 +189,14 @@ fn test_error_directive() {
     let result = preprocessor.preprocess(input);
     assert!(result.is_err());
 }
+#[test]
+fn test_line_directive() {
+    let input = r#"
+#line 10 "foo.c"
+"#;
+    let mut preprocessor = Preprocessor::new();
+    let tokens = preprocessor.preprocess(input).unwrap();
+    let result = tokens.iter().map(|t| t.to_string()).collect::<String>();
+    let result = result.replace(" ", "").replace("\n", "");
+    assert_eq!(result, "");
+}

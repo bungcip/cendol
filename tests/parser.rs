@@ -19,7 +19,7 @@ mod tests {
             Program {
                 function: Function {
                     name: "main".to_string(),
-                    body: Box::new(Stmt::Return(Expr::Number(0)))
+                    body: vec![Stmt::Return(Expr::Number(0))]
                 }
             }
         );
@@ -61,11 +61,11 @@ fn test_control_flow() {
         Program {
             function: Function {
                 name: "main".to_string(),
-                body: Box::new(Stmt::If(
+                body: vec![Stmt::If(
                     Box::new(Expr::Number(1)),
                     Box::new(Stmt::Return(Expr::Number(1))),
                     Some(Box::new(Stmt::Return(Expr::Number(0))))
-                ))
+                )]
             }
         }
     );

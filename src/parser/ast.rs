@@ -1,3 +1,9 @@
+#[derive(Debug, PartialEq, Clone)]
+pub enum Type {
+    Int,
+    Pointer(Box<Type>),
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Stmt {
     Return(Expr),
@@ -15,22 +21,28 @@ pub enum Stmt {
     Default(Box<Stmt>),
     Label(String, Box<Stmt>),
     Goto(String),
+    Declaration(Type, String),
 }
 
 #[derive(Debug, PartialEq)]
 pub enum Expr {
     Number(i64),
+    Variable(String),
+    Assign(Box<Expr>, Box<Expr>),
     Add(Box<Expr>, Box<Expr>),
     Sub(Box<Expr>, Box<Expr>),
     Mul(Box<Expr>, Box<Expr>),
     Div(Box<Expr>, Box<Expr>),
     Cmp(Box<Expr>, Box<Expr>),
+    Deref(Box<Expr>),
+    AddressOf(Box<Expr>),
+    Neg(Box<Expr>),
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Function {
     pub name: String,
-    pub body: Box<Stmt>,
+    pub body: Vec<Stmt>,
 }
 
 #[derive(Debug, PartialEq)]

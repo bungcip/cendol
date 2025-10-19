@@ -1,17 +1,20 @@
 use crate::codegen::error::CodegenError;
 use crate::parser::ast::{Expr, Program, Stmt};
 use cranelift::prelude::*;
+use cranelift_codegen::ir::{StackSlot, StackSlotData, StackSlotKind};
 use cranelift_codegen::Context;
 use cranelift_codegen::ir::types;
 use cranelift_codegen::ir::{AbiParam, InstBuilder, Value};
 use cranelift_codegen::settings;
 use cranelift_module::{Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
+use std::collections::HashMap;
 
 pub struct CodeGen {
     builder_context: FunctionBuilderContext,
     ctx: Context,
     module: ObjectModule,
+    variables: HashMap<String, StackSlot>,
 }
 
 impl CodeGen {
@@ -35,6 +38,7 @@ impl CodeGen {
             builder_context,
             ctx,
             module,
+            variables: HashMap::new(),
         }
     }
 
@@ -51,8 +55,14 @@ impl CodeGen {
         builder.switch_to_block(entry_block);
         builder.seal_block(entry_block);
 
-        translate_stmt(&mut builder, *program.function.body);
-        builder.finalize();
+        let mut translator = FunctionTranslator {
+            builder,
+            variables: &mut self.variables,
+        };
+        for stmt in program.function.body {
+            translator.translate_stmt(stmt);
+        }
+        translator.builder.finalize();
 
         let id = self
             .module
@@ -67,40 +77,90 @@ impl CodeGen {
     }
 }
 
-fn translate_stmt(builder: &mut FunctionBuilder, stmt: Stmt) -> Value {
-    match stmt {
-        Stmt::Return(expr) => {
-            let value = translate_expr(builder, expr);
-            builder.ins().return_(&[value]);
-            value
-        }
-        _ => unimplemented!(),
-    }
+struct FunctionTranslator<'a, 'b> {
+    builder: FunctionBuilder<'a>,
+    variables: &'b mut HashMap<String, StackSlot>,
 }
 
-fn translate_expr(builder: &mut FunctionBuilder, expr: Expr) -> Value {
-    match expr {
-        Expr::Number(n) => builder.ins().iconst(types::I64, n),
-        Expr::Add(lhs, rhs) => {
-            let lhs = translate_expr(builder, *lhs);
-            let rhs = translate_expr(builder, *rhs);
-            builder.ins().iadd(lhs, rhs)
+impl<'a, 'b> FunctionTranslator<'a, 'b> {
+    fn translate_stmt(&mut self, stmt: Stmt) -> Value {
+        match stmt {
+            Stmt::Return(expr) => {
+                let value = self.translate_expr(expr);
+                self.builder.ins().return_(&[value]);
+                value
+            }
+            Stmt::Declaration(_ty, name) => {
+                let slot = self.builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 0));
+                self.variables.insert(name, slot);
+                let val = self.builder.ins().iconst(types::I64, 0);
+                self.builder.ins().stack_store(val, slot, 0);
+                val
+            }
+            Stmt::Block(stmts) => {
+                let mut last = self.builder.ins().iconst(types::I64, 0);
+                for stmt in stmts {
+                    last = self.translate_stmt(stmt);
+                }
+                last
+            }
+            _ => unimplemented!(),
         }
-        Expr::Sub(lhs, rhs) => {
-            let lhs = translate_expr(builder, *lhs);
-            let rhs = translate_expr(builder, *rhs);
-            builder.ins().isub(lhs, rhs)
+    }
+
+    fn translate_expr(&mut self, expr: Expr) -> Value {
+        match expr {
+            Expr::Number(n) => self.builder.ins().iconst(types::I64, n),
+            Expr::Variable(name) => {
+                let slot = self.variables.get(&name).unwrap();
+                self.builder.ins().stack_load(types::I64, *slot, 0)
+            }
+            Expr::Assign(lhs, rhs) => {
+                let value = self.translate_expr(*rhs);
+                if let Expr::Variable(name) = *lhs {
+                    let slot = self.variables.get(&name).unwrap();
+                    self.builder.ins().stack_store(value, *slot, 0);
+                } else if let Expr::Deref(ptr) = *lhs {
+                    let ptr = self.translate_expr(*ptr);
+                    self.builder.ins().store(MemFlags::new(), value, ptr, 0);
+                } else {
+                    unimplemented!()
+                }
+                value
+            }
+            Expr::Add(lhs, rhs) => {
+                let lhs = self.translate_expr(*lhs);
+                let rhs = self.translate_expr(*rhs);
+                self.builder.ins().iadd(lhs, rhs)
+            }
+            Expr::Sub(lhs, rhs) => {
+                let lhs = self.translate_expr(*lhs);
+                let rhs = self.translate_expr(*rhs);
+                self.builder.ins().isub(lhs, rhs)
+            }
+            Expr::Mul(lhs, rhs) => {
+                let lhs = self.translate_expr(*lhs);
+                let rhs = self.translate_expr(*rhs);
+                self.builder.ins().imul(lhs, rhs)
+            }
+            Expr::Div(lhs, rhs) => {
+                let lhs = self.translate_expr(*lhs);
+                let rhs = self.translate_expr(*rhs);
+                self.builder.ins().sdiv(lhs, rhs)
+            }
+            _ => unimplemented!(),
+            Expr::Deref(expr) => {
+                let ptr = self.translate_expr(*expr);
+                self.builder.ins().load(types::I64, MemFlags::new(), ptr, 0)
+            }
+            Expr::AddressOf(expr) => {
+                if let Expr::Variable(name) = *expr {
+                    let slot = self.variables.get(&name).unwrap();
+                    self.builder.ins().stack_addr(types::I64, *slot, 0)
+                } else {
+                    unimplemented!()
+                }
+            }
         }
-        Expr::Mul(lhs, rhs) => {
-            let lhs = translate_expr(builder, *lhs);
-            let rhs = translate_expr(builder, *rhs);
-            builder.ins().imul(lhs, rhs)
-        }
-        Expr::Div(lhs, rhs) => {
-            let lhs = translate_expr(builder, *lhs);
-            let rhs = translate_expr(builder, *rhs);
-            builder.ins().sdiv(lhs, rhs)
-        }
-        _ => unimplemented!(),
     }
 }

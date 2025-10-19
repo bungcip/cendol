@@ -1,4 +1,4 @@
-use crate::preprocessor::token::Token;
+use crate::parser::token::Token;
 use thiserror::Error;
 
 #[derive(Error, Debug)]

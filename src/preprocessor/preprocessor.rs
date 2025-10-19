@@ -199,20 +199,12 @@ impl Preprocessor {
             return Err(PreprocessorError::ExpectedIdentifierAfterDefine);
         };
 
-        let mut next_token_idx = 0;
-        while next_token_idx < tokens.len()
-            && matches!(&tokens[next_token_idx].kind, TokenKind::Whitespace(_))
-        {
-            next_token_idx += 1;
-        }
-
-        if next_token_idx < tokens.len()
+        if !tokens.is_empty()
             && matches!(
-                &tokens[next_token_idx].kind,
+                &tokens[0].kind,
                 TokenKind::Punct(PunctKind::LeftParen)
             )
         {
-            tokens.drain(0..next_token_idx);
             tokens.remove(0);
             let mut parameters = Vec::new();
             let mut is_variadic = false;

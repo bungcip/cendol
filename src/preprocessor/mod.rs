@@ -1,6 +1,6 @@
 use crate::preprocessor::error::PreprocessorError;
 use crate::preprocessor::lexer::Lexer;
-use crate::preprocessor::token::{PunctKind, Token, TokenKind};
+use crate::preprocessor::token::{DirectiveKind, Token, TokenKind};
 use chrono::Local;
 use std::collections::{HashMap, HashSet};
 
@@ -114,119 +114,111 @@ impl Preprocessor {
         while i < tokens.len() {
             let in_true_branch = self.conditional_stack.iter().all(|&x| x);
 
-            match tokens[i].kind {
-                TokenKind::If => {
-                    depth += 1;
-                    let (condition, end) = parse_conditional_expression(i + 1, tokens)?;
-                    let result = evaluate_expression(&condition)?;
-                    self.conditional_stack.push(result);
-                    i = end;
-                    continue;
-                }
-                TokenKind::Elif => {
-                    if depth == 0 {
-                        return Err(PreprocessorError::UnexpectedElif);
+            if let TokenKind::Directive(directive) = tokens[i].kind {
+                match directive {
+                    DirectiveKind::If => {
+                        depth += 1;
+                        let (condition, end) = parse_conditional_expression(i + 1, tokens)?;
+                        let result = evaluate_expression(&condition)?;
+                        self.conditional_stack.push(result);
+                        i = end;
                     }
-                    if let Some(last) = self.conditional_stack.last_mut() {
-                        if !*last {
-                            let (condition, _end) = parse_conditional_expression(i + 1, tokens)?;
-                            let result = evaluate_expression(&condition)?;
-                            *last = result;
-                        } else {
-                            *last = false;
+                    DirectiveKind::Elif => {
+                        if depth == 0 {
+                            return Err(PreprocessorError::UnexpectedElif);
                         }
-                    }
-                    i = find_next_line(i + 1, tokens);
-                    continue;
-                }
-                TokenKind::Else => {
-                    if depth == 0 {
-                        return Err(PreprocessorError::UnexpectedElse);
-                    }
-                    if let Some(last) = self.conditional_stack.last_mut() {
-                        *last = !*last;
-                    }
-                    i = find_next_line(i + 1, tokens);
-                    continue;
-                }
-                TokenKind::Endif => {
-                    if depth == 0 {
-                        return Err(PreprocessorError::UnexpectedEndif);
-                    }
-                    self.conditional_stack.pop();
-                    depth -= 1;
-                    i = find_next_line(i + 1, tokens);
-                    continue;
-                }
-                TokenKind::Directive(ref name) if name == "define" => {
-                    if in_true_branch {
-                        let mut macro_tokens = Vec::new();
-                        let mut j = i + 1;
-                        while j < tokens.len() {
-                            if matches!(tokens[j].kind, TokenKind::Newline) {
-                                break;
+                        if let Some(last) = self.conditional_stack.last_mut() {
+                            if !*last {
+                                let (condition, _end) =
+                                    parse_conditional_expression(i + 1, tokens)?;
+                                let result = evaluate_expression(&condition)?;
+                                *last = result;
+                            } else {
+                                *last = false;
                             }
-                            macro_tokens.push(tokens[j].clone());
-                            j += 1;
                         }
-                        self.handle_define(&mut macro_tokens)?;
+                        i = find_next_line(i + 1, tokens);
                     }
-                    i = find_next_line(i + 1, tokens);
-                    continue;
-                }
-                TokenKind::Ifdef => {
-                    depth += 1;
-                    let (name, end) = parse_identifier(i + 1, tokens)?;
-                    self.conditional_stack.push(self.macros.contains_key(&name));
-                    i = end;
-                    continue;
-                }
-                TokenKind::Ifndef => {
-                    depth += 1;
-                    let (name, end) = parse_identifier(i + 1, tokens)?;
-                    self.conditional_stack
-                        .push(!self.macros.contains_key(&name));
-                    i = end;
-                    continue;
-                }
-                TokenKind::Undef => {
-                    if in_true_branch {
+                    DirectiveKind::Else => {
+                        if depth == 0 {
+                            return Err(PreprocessorError::UnexpectedElse);
+                        }
+                        if let Some(last) = self.conditional_stack.last_mut() {
+                            *last = !*last;
+                        }
+                        i = find_next_line(i + 1, tokens);
+                    }
+                    DirectiveKind::Endif => {
+                        if depth == 0 {
+                            return Err(PreprocessorError::UnexpectedEndif);
+                        }
+                        self.conditional_stack.pop();
+                        depth -= 1;
+                        i = find_next_line(i + 1, tokens);
+                    }
+                    DirectiveKind::Define => {
+                        if in_true_branch {
+                            let mut macro_tokens = Vec::new();
+                            let mut j = i + 1;
+                            while j < tokens.len() {
+                                if matches!(tokens[j].kind, TokenKind::Newline) {
+                                    break;
+                                }
+                                macro_tokens.push(tokens[j].clone());
+                                j += 1;
+                            }
+                            self.handle_define(&mut macro_tokens)?;
+                        }
+                        i = find_next_line(i + 1, tokens);
+                    }
+                    DirectiveKind::Ifdef => {
+                        depth += 1;
                         let (name, end) = parse_identifier(i + 1, tokens)?;
-                        self.macros.remove(&name);
+                        self.conditional_stack.push(self.macros.contains_key(&name));
                         i = end;
-                    } else {
-                        i = find_next_line(i + 1, tokens);
                     }
-                    continue;
-                }
-                TokenKind::Error => {
-                    if in_true_branch {
-                        let (message, _end) = parse_error_message(i + 1, tokens)?;
-                        return Err(PreprocessorError::Generic(message));
-                    }
-                    i = find_next_line(i + 1, tokens);
-                    continue;
-                }
-                TokenKind::Line => {
-                    if in_true_branch {
-                        let (_line, _filename, end) = parse_line_directive(i + 1, tokens)?;
+                    DirectiveKind::Ifndef => {
+                        depth += 1;
+                        let (name, end) = parse_identifier(i + 1, tokens)?;
+                        self.conditional_stack
+                            .push(!self.macros.contains_key(&name));
                         i = end;
-                    } else {
+                    }
+                    DirectiveKind::Undef => {
+                        if in_true_branch {
+                            let (name, end) = parse_identifier(i + 1, tokens)?;
+                            self.macros.remove(&name);
+                            i = end;
+                        } else {
+                            i = find_next_line(i + 1, tokens);
+                        }
+                    }
+                    DirectiveKind::Error => {
+                        if in_true_branch {
+                            let (message, _end) = parse_error_message(i + 1, tokens)?;
+                            return Err(PreprocessorError::Generic(message));
+                        }
                         i = find_next_line(i + 1, tokens);
                     }
-                    continue;
-                }
-                TokenKind::Include => {
-                    if in_true_branch {
-                        let (filename, end) = parse_include(i + 1, tokens)?;
-                        let new_tokens = self.include_file(&filename)?;
-                        tokens.splice(i..end, new_tokens);
-                    } else {
-                        i = find_next_line(i + 1, tokens);
+                    DirectiveKind::Line => {
+                        if in_true_branch {
+                            let (_line, _filename, end) = parse_line_directive(i + 1, tokens)?;
+                            i = end;
+                        } else {
+                            i = find_next_line(i + 1, tokens);
+                        }
                     }
-                    continue;
+                    DirectiveKind::Include => {
+                        if in_true_branch {
+                            let (filename, end) = parse_include(i + 1, tokens)?;
+                            let new_tokens = self.include_file(&filename)?;
+                            tokens.splice(i..end, new_tokens);
+                        } else {
+                            i = find_next_line(i + 1, tokens);
+                        }
+                    }
                 }
-                _ => {}
+                continue;
             }
 
             if in_true_branch {
@@ -256,7 +248,7 @@ impl Preprocessor {
             return Err(PreprocessorError::ExpectedIdentifierAfterDefine);
         };
 
-        if !tokens.is_empty() && matches!(&tokens[0].kind, TokenKind::Punct(PunctKind::LeftParen)) {
+        if !tokens.is_empty() && matches!(&tokens[0].kind, TokenKind::LeftParen) {
             tokens.remove(0);
             let mut parameters = Vec::new();
             let mut is_variadic = false;
@@ -265,7 +257,7 @@ impl Preprocessor {
                 if tokens.is_empty() {
                     return Err(PreprocessorError::UnexpectedEofInMacroParams);
                 }
-                if let TokenKind::Punct(PunctKind::RightParen) = &tokens[0].kind {
+                if let TokenKind::RightParen = &tokens[0].kind {
                     tokens.remove(0);
                     break;
                 }
@@ -273,7 +265,7 @@ impl Preprocessor {
                 if let TokenKind::Identifier(param) = tokens[0].kind.clone() {
                     parameters.push(param);
                     tokens.remove(0);
-                } else if let TokenKind::Punct(PunctKind::Ellipsis) = &tokens[0].kind {
+                } else if let TokenKind::Ellipsis = &tokens[0].kind {
                     is_variadic = true;
                     parameters.push("..".to_string());
                     tokens.remove(0);
@@ -281,7 +273,7 @@ impl Preprocessor {
 
                 self.consume_whitespace(tokens);
                 if !tokens.is_empty()
-                    && let TokenKind::Punct(PunctKind::Comma) = &tokens[0].kind
+                    && let TokenKind::Comma = &tokens[0].kind
                 {
                     tokens.remove(0);
                 }
@@ -406,10 +398,7 @@ impl Preprocessor {
                 }
 
                 if next_idx >= tokens.len()
-                    || !matches!(
-                        &tokens[next_idx].kind,
-                        TokenKind::Punct(PunctKind::LeftParen)
-                    )
+                    || !matches!(&tokens[next_idx].kind, TokenKind::LeftParen)
                 {
                     return Ok((index, index + 1, vec![token.clone()]));
                 }
@@ -452,11 +441,11 @@ impl Preprocessor {
         while i < tokens.len() {
             let token = &tokens[i];
             match &token.kind {
-                TokenKind::Punct(PunctKind::LeftParen) => {
+                TokenKind::LeftParen => {
                     paren_level += 1;
                     current_arg.push(token.clone());
                 }
-                TokenKind::Punct(PunctKind::RightParen) => {
+                TokenKind::RightParen => {
                     paren_level -= 1;
                     if paren_level == 0 {
                         if !current_arg.is_empty() {
@@ -466,7 +455,7 @@ impl Preprocessor {
                     }
                     current_arg.push(token.clone());
                 }
-                TokenKind::Punct(PunctKind::Comma) if paren_level == 1 => {
+                TokenKind::Comma if paren_level == 1 => {
                     args.push(self.trim_whitespace(current_arg));
                     current_arg = Vec::new();
                 }
@@ -489,77 +478,75 @@ impl Preprocessor {
         let mut i = 0;
         while i < body.len() {
             let token = &body[i];
-            if let TokenKind::Punct(p) = &token.kind {
-                if p == &PunctKind::Hash {
+            if let TokenKind::Hash = &token.kind {
+                i += 1;
+                if i < body.len()
+                    && let TokenKind::Identifier(param_name) = &body[i].kind
+                    && let Some(idx) = parameters.iter().position(|p| p == param_name)
+                {
+                    if idx < args.len() {
+                        let arg_tokens = &args[idx];
+                        let stringified = arg_tokens
+                            .iter()
+                            .map(|t| t.kind.to_string())
+                            .collect::<String>();
+                        result.push(Token::new(
+                            TokenKind::String(stringified),
+                            token.location.clone(),
+                        ));
+                    }
                     i += 1;
-                    if i < body.len()
-                        && let TokenKind::Identifier(param_name) = &body[i].kind
-                        && let Some(idx) = parameters.iter().position(|p| p == param_name)
-                    {
-                        if idx < args.len() {
-                            let arg_tokens = &args[idx];
-                            let stringified = arg_tokens
-                                .iter()
-                                .map(|t| t.kind.to_string())
-                                .collect::<String>();
-                            result.push(Token::new(
-                                TokenKind::String(stringified),
-                                token.location.clone(),
-                            ));
-                        }
-                        i += 1;
-                        continue;
-                    }
-                } else if p == &PunctKind::HashHash {
-                    let mut lhs: Token = result.pop().unwrap();
-                    while lhs.kind.is_whitespace() {
-                        lhs = result.pop().unwrap();
-                    }
+                    continue;
+                }
+            } else if let TokenKind::HashHash = &token.kind {
+                let mut lhs: Token = result.pop().unwrap();
+                while lhs.kind.is_whitespace() {
+                    lhs = result.pop().unwrap();
+                }
 
+                i += 1;
+                while i < body.len() && body[i].kind.is_whitespace() {
                     i += 1;
-                    while i < body.len() && body[i].kind.is_whitespace() {
-                        i += 1;
-                    }
+                }
 
-                    let rhs_tokens = if i < body.len() {
-                        let next_token = &body[i];
-                        let res = if let TokenKind::Identifier(name) = &next_token.kind {
-                            if let Some(idx) = parameters.iter().position(|p| p == name) {
-                                if idx < args.len() {
-                                    args[idx].clone()
-                                } else {
-                                    vec![next_token.clone()]
-                                }
+                let rhs_tokens = if i < body.len() {
+                    let next_token = &body[i];
+                    let res = if let TokenKind::Identifier(name) = &next_token.kind {
+                        if let Some(idx) = parameters.iter().position(|p| p == name) {
+                            if idx < args.len() {
+                                args[idx].clone()
                             } else {
                                 vec![next_token.clone()]
                             }
                         } else {
                             vec![next_token.clone()]
-                        };
-                        i += 1;
-                        res
-                    } else {
-                        return Err(PreprocessorError::HashHashAtEndOfMacro);
-                    };
-
-                    let rhs_str = rhs_tokens
-                        .iter()
-                        .map(|t| t.kind.to_string())
-                        .collect::<String>();
-                    let pasted_str = format!("{}{}", lhs.kind, rhs_str);
-                    let mut lexer = Lexer::new(&pasted_str, lhs.location.file.clone());
-                    let mut new_token = lexer.next_token()?;
-                    if !matches!(new_token.kind, TokenKind::Eof) {
-                        let mut new_hideset = lhs.hideset.clone();
-                        new_token.location = lhs.location.clone();
-                        for t in &rhs_tokens {
-                            new_hideset.extend(t.hideset.clone());
                         }
-                        new_token.hideset = new_hideset;
-                        result.push(new_token);
+                    } else {
+                        vec![next_token.clone()]
+                    };
+                    i += 1;
+                    res
+                } else {
+                    return Err(PreprocessorError::HashHashAtEndOfMacro);
+                };
+
+                let rhs_str = rhs_tokens
+                    .iter()
+                    .map(|t| t.kind.to_string())
+                    .collect::<String>();
+                let pasted_str = format!("{}{}", lhs.kind, rhs_str);
+                let mut lexer = Lexer::new(&pasted_str, lhs.location.file.clone());
+                let mut new_token = lexer.next_token()?;
+                if !matches!(new_token.kind, TokenKind::Eof) {
+                    let mut new_hideset = lhs.hideset.clone();
+                    new_token.location = lhs.location.clone();
+                    for t in &rhs_tokens {
+                        new_hideset.extend(t.hideset.clone());
                     }
-                    continue;
+                    new_token.hideset = new_hideset;
+                    result.push(new_token);
                 }
+                continue;
             }
             if let TokenKind::Identifier(name) = &token.kind {
                 if let Some(idx) = parameters.iter().position(|p| p == name) {
@@ -580,10 +567,7 @@ impl Preprocessor {
                         for (i, arg) in args[vararg_start..].iter().enumerate() {
                             result.extend(arg.clone());
                             if i < args.len() - vararg_start - 1 {
-                                result.push(Token::new(
-                                    TokenKind::Punct(PunctKind::Comma),
-                                    token.location.clone(),
-                                ));
+                                result.push(Token::new(TokenKind::Comma, token.location.clone()));
                             }
                         }
                     }
@@ -688,11 +672,7 @@ fn evaluate_expression(tokens: &[Token]) -> Result<bool, PreprocessorError> {
         return Ok(lhs != 0);
     }
 
-    let op = if let TokenKind::Punct(s) = &tokens[i].kind {
-        s
-    } else {
-        return Ok(lhs != 0);
-    };
+    let _op = &tokens[i].kind;
     i += 1;
 
     while i < tokens.len() && tokens[i].kind.is_whitespace() {
@@ -703,17 +683,13 @@ fn evaluate_expression(tokens: &[Token]) -> Result<bool, PreprocessorError> {
         return Ok(lhs != 0);
     }
 
-    let rhs: i32 = if let TokenKind::Number(s) = &tokens[i].kind {
+    let _rhs: i32 = if let TokenKind::Number(s) = &tokens[i].kind {
         s.parse().unwrap()
     } else {
         return Ok(lhs != 0);
     };
 
-    match op {
-        PunctKind::Other(s) if s == "<" => Ok(lhs < rhs),
-        PunctKind::Other(s) if s == ">" => Ok(lhs > rhs),
-        _ => Ok(lhs != 0),
-    }
+    Ok(lhs != 0)
 }
 
 /// Finds the index of the next newline token.

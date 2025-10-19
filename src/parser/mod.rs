@@ -1,6 +1,7 @@
 use crate::parser::ast::{Expr, Function, Parameter, Program, Stmt, Type};
 use crate::parser::error::ParserError;
-use crate::parser::token::{KeywordKind, PunctKind, Token, TokenKind};
+use crate::parser::token::PunctKind;
+use crate::parser::token::{KeywordKind, Token, TokenKind};
 use crate::preprocessor;
 
 pub mod ast;
@@ -246,23 +247,22 @@ impl Parser {
 
     /// Parses an expression using the Pratt parsing algorithm.
     fn parse_pratt_expr(&mut self, min_bp: u8) -> Result<Expr, ParserError> {
-        let mut lhs = if let Some(((), r_bp)) =
-            self.prefix_binding_power(&self.current_token()?.kind)
-        {
-            let token = self.current_token()?;
-            self.eat()?;
-            let rhs = self.parse_pratt_expr(r_bp)?;
-            match token.kind {
-                TokenKind::Punct(PunctKind::PlusPlus) => Expr::Increment(Box::new(rhs)),
-                TokenKind::Punct(PunctKind::MinusMinus) => Expr::Decrement(Box::new(rhs)),
-                TokenKind::Punct(PunctKind::Plus) => rhs,
-                TokenKind::Punct(PunctKind::Minus) => Expr::Neg(Box::new(rhs)),
-                TokenKind::Punct(PunctKind::Bang) => Expr::LogicalNot(Box::new(rhs)),
-                _ => unreachable!(),
-            }
-        } else {
-            self.parse_primary()?
-        };
+        let mut lhs =
+            if let Some(((), r_bp)) = self.prefix_binding_power(&self.current_token()?.kind) {
+                let token = self.current_token()?;
+                self.eat()?;
+                let rhs = self.parse_pratt_expr(r_bp)?;
+                match token.kind {
+                    TokenKind::Punct(PunctKind::PlusPlus) => Expr::Increment(Box::new(rhs)),
+                    TokenKind::Punct(PunctKind::MinusMinus) => Expr::Decrement(Box::new(rhs)),
+                    TokenKind::Punct(PunctKind::Plus) => rhs,
+                    TokenKind::Punct(PunctKind::Minus) => Expr::Neg(Box::new(rhs)),
+                    TokenKind::Punct(PunctKind::Bang) => Expr::LogicalNot(Box::new(rhs)),
+                    _ => unreachable!(),
+                }
+            } else {
+                self.parse_primary()?
+            };
 
         loop {
             let token = self.current_token()?;

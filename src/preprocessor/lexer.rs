@@ -1,5 +1,5 @@
 use crate::preprocessor::error::PreprocessorError;
-use crate::preprocessor::token::{PunctKind, SourceLocation, Token, TokenKind};
+use crate::preprocessor::token::{DirectiveKind, SourceLocation, Token, TokenKind};
 use std::iter::Peekable;
 use std::str::Chars;
 
@@ -47,10 +47,7 @@ impl<'a> Lexer<'a> {
                     self.next_token()
                 } else {
                     self.at_start_of_line = false;
-                    Ok(Token::new(
-                        TokenKind::Punct(PunctKind::Backslash),
-                        self.location(),
-                    ))
+                    Ok(Token::new(TokenKind::Backslash, self.location()))
                 }
             }
             ' ' | '\t' | '\r' => {
@@ -117,89 +114,63 @@ impl<'a> Lexer<'a> {
                 } else if let Some(&'#') = self.input.peek() {
                     self.input.next();
                     self.at_start_of_line = false;
-                    Ok(Token::new(
-                        TokenKind::Punct(PunctKind::HashHash),
-                        self.location(),
-                    ))
+                    Ok(Token::new(TokenKind::HashHash, self.location()))
                 } else {
                     self.at_start_of_line = false;
-                    Ok(Token::new(
-                        TokenKind::Punct(PunctKind::Hash),
-                        self.location(),
-                    ))
+                    Ok(Token::new(TokenKind::Hash, self.location()))
                 }
             }
             '.' => {
-                let mut dots = String::from(c);
-                if let Some(&'.') = self.input.peek() {
-                    dots.push(self.input.next().unwrap());
-                    if let Some(&'.') = self.input.peek() {
-                        dots.push(self.input.next().unwrap());
+                if self.input.peek() == Some(&'.') {
+                    self.input.next();
+                    if self.input.peek() == Some(&'.') {
+                        self.input.next();
+                        self.at_start_of_line = false;
+                        return Ok(Token::new(TokenKind::Ellipsis, self.location()));
                     }
+                    // This is a bit of a hack. A better solution would be to have a buffer.
+                    // We are effectively putting the dots back into the stream.
+                    // This is not yet implemented.
                 }
-
-                if dots == "..." {
-                    self.at_start_of_line = false;
-                    return Ok(Token::new(
-                        TokenKind::Punct(PunctKind::Ellipsis),
-                        self.location(),
-                    ));
-                }
-
-                // Handle cases with one or two dots by re-processing
-                let mut chars = dots.chars();
-                let _first_dot = chars.next().unwrap();
                 self.at_start_of_line = false;
-                // This part is tricky as we can't easily push back to the input stream.
-                // For now, we'll just handle the first dot and the rest will be handled in subsequent calls.
-                // A more robust solution might involve a buffer.
-                Ok(Token::new(
-                    TokenKind::Punct(PunctKind::Dot),
-                    self.location(),
-                ))
+                Ok(Token::new(TokenKind::Dot, self.location()))
             }
             '+' => {
                 self.at_start_of_line = false;
                 if let Some(&'+') = self.input.peek() {
                     self.input.next();
-                    Ok(Token::new(
-                        TokenKind::Punct(PunctKind::PlusPlus),
-                        self.location(),
-                    ))
+                    Ok(Token::new(TokenKind::PlusPlus, self.location()))
                 } else {
-                    Ok(Token::new(
-                        TokenKind::Punct(PunctKind::Plus),
-                        self.location(),
-                    ))
+                    Ok(Token::new(TokenKind::Plus, self.location()))
                 }
             }
             '-' => {
                 self.at_start_of_line = false;
                 if let Some(&'-') = self.input.peek() {
                     self.input.next();
-                    Ok(Token::new(
-                        TokenKind::Punct(PunctKind::MinusMinus),
-                        self.location(),
-                    ))
+                    Ok(Token::new(TokenKind::MinusMinus, self.location()))
                 } else {
-                    Ok(Token::new(
-                        TokenKind::Punct(PunctKind::Minus),
-                        self.location(),
-                    ))
+                    Ok(Token::new(TokenKind::Minus, self.location()))
                 }
             }
             _ if c.is_ascii_punctuation() => {
                 self.at_start_of_line = false;
-                let punct = match c {
-                    '(' => PunctKind::LeftParen,
-                    ')' => PunctKind::RightParen,
-                    '{' => PunctKind::LeftBrace,
-                    '}' => PunctKind::RightBrace,
-                    ';' => PunctKind::Semicolon,
-                    ',' => PunctKind::Comma,
-                    _ => PunctKind::Other(c.to_string()),
+                let kind = match c {
+                    '(' => TokenKind::LeftParen,
+                    ')' => TokenKind::RightParen,
+                    '{' => TokenKind::LeftBrace,
+                    '}' => TokenKind::RightBrace,
+                    '[' => TokenKind::LeftBracket,
+                    ']' => TokenKind::RightBracket,
+                    ';' => TokenKind::Semicolon,
+                    ':' => TokenKind::Colon,
+                    ',' => TokenKind::Comma,
+                    '=' => TokenKind::Equal,
+                    '<' => TokenKind::LessThan,
+                    '>' => TokenKind::GreaterThan,
+                    _ => return Err(PreprocessorError::UnexpectedChar(c)),
                 };
-                Ok(Token::new(TokenKind::Punct(punct), self.location()))
+                Ok(Token::new(kind, self.location()))
             }
             _ => Err(PreprocessorError::UnexpectedChar(c)),
         }
@@ -218,17 +189,51 @@ impl<'a> Lexer<'a> {
 
         self.at_start_of_line = false;
         match directive.as_str() {
-            "if" => Ok(Token::new(TokenKind::If, self.location())),
-            "else" => Ok(Token::new(TokenKind::Else, self.location())),
-            "elif" => Ok(Token::new(TokenKind::Elif, self.location())),
-            "endif" => Ok(Token::new(TokenKind::Endif, self.location())),
-            "ifdef" => Ok(Token::new(TokenKind::Ifdef, self.location())),
-            "ifndef" => Ok(Token::new(TokenKind::Ifndef, self.location())),
-            "undef" => Ok(Token::new(TokenKind::Undef, self.location())),
-            "error" => Ok(Token::new(TokenKind::Error, self.location())),
-            "line" => Ok(Token::new(TokenKind::Line, self.location())),
-            "include" => Ok(Token::new(TokenKind::Include, self.location())),
-            _ => Ok(Token::new(TokenKind::Directive(directive), self.location())),
+            "if" => Ok(Token::new(
+                TokenKind::Directive(DirectiveKind::If),
+                self.location(),
+            )),
+            "else" => Ok(Token::new(
+                TokenKind::Directive(DirectiveKind::Else),
+                self.location(),
+            )),
+            "elif" => Ok(Token::new(
+                TokenKind::Directive(DirectiveKind::Elif),
+                self.location(),
+            )),
+            "endif" => Ok(Token::new(
+                TokenKind::Directive(DirectiveKind::Endif),
+                self.location(),
+            )),
+            "ifdef" => Ok(Token::new(
+                TokenKind::Directive(DirectiveKind::Ifdef),
+                self.location(),
+            )),
+            "ifndef" => Ok(Token::new(
+                TokenKind::Directive(DirectiveKind::Ifndef),
+                self.location(),
+            )),
+            "undef" => Ok(Token::new(
+                TokenKind::Directive(DirectiveKind::Undef),
+                self.location(),
+            )),
+            "error" => Ok(Token::new(
+                TokenKind::Directive(DirectiveKind::Error),
+                self.location(),
+            )),
+            "line" => Ok(Token::new(
+                TokenKind::Directive(DirectiveKind::Line),
+                self.location(),
+            )),
+            "include" => Ok(Token::new(
+                TokenKind::Directive(DirectiveKind::Include),
+                self.location(),
+            )),
+            "define" => Ok(Token::new(
+                TokenKind::Directive(DirectiveKind::Define),
+                self.location(),
+            )),
+            _ => Err(PreprocessorError::UnexpectedDirective(directive)),
         }
     }
 

@@ -6,6 +6,9 @@ pub enum PreprocessorError {
     /// An unexpected character was encountered.
     #[error("Unexpected character: {0}")]
     UnexpectedChar(char),
+    /// An unexpected directive was encountered.
+    #[error("Unexpected directive: {0}")]
+    UnexpectedDirective(String),
     /// The end of the input was reached unexpectedly in macro arguments.
     #[error("Unexpected EOF in macro arguments")]
     UnexpectedEofInMacroArgs,

@@ -86,7 +86,26 @@ impl From<preprocessor::token::Token> for Token {
             preprocessor::token::TokenKind::Number(s) => TokenKind::Number(s),
             preprocessor::token::TokenKind::String(s) => TokenKind::String(s),
             preprocessor::token::TokenKind::Char(s) => TokenKind::Char(s),
-            preprocessor::token::TokenKind::Punct(p) => TokenKind::Punct(p.into()),
+            preprocessor::token::TokenKind::LeftParen => TokenKind::Punct(PunctKind::LeftParen),
+            preprocessor::token::TokenKind::RightParen => TokenKind::Punct(PunctKind::RightParen),
+            preprocessor::token::TokenKind::LeftBrace => TokenKind::Punct(PunctKind::LeftBrace),
+            preprocessor::token::TokenKind::RightBrace => TokenKind::Punct(PunctKind::RightBrace),
+            preprocessor::token::TokenKind::LeftBracket => TokenKind::Punct(PunctKind::LeftBracket),
+            preprocessor::token::TokenKind::RightBracket => {
+                TokenKind::Punct(PunctKind::RightBracket)
+            }
+            preprocessor::token::TokenKind::Semicolon => TokenKind::Punct(PunctKind::Semicolon),
+            preprocessor::token::TokenKind::Colon => TokenKind::Punct(PunctKind::Colon),
+            preprocessor::token::TokenKind::Comma => TokenKind::Punct(PunctKind::Comma),
+            preprocessor::token::TokenKind::Ellipsis => TokenKind::Punct(PunctKind::Ellipsis),
+            preprocessor::token::TokenKind::Dot => TokenKind::Punct(PunctKind::Dot),
+            preprocessor::token::TokenKind::Plus => TokenKind::Punct(PunctKind::Plus),
+            preprocessor::token::TokenKind::Minus => TokenKind::Punct(PunctKind::Minus),
+            preprocessor::token::TokenKind::PlusPlus => TokenKind::Punct(PunctKind::PlusPlus),
+            preprocessor::token::TokenKind::MinusMinus => TokenKind::Punct(PunctKind::MinusMinus),
+            preprocessor::token::TokenKind::Equal => TokenKind::Punct(PunctKind::Equal),
+            preprocessor::token::TokenKind::LessThan => TokenKind::Punct(PunctKind::LessThan),
+            preprocessor::token::TokenKind::GreaterThan => TokenKind::Punct(PunctKind::GreaterThan),
             preprocessor::token::TokenKind::Eof => TokenKind::Eof,
             _ => panic!("cannot convert preprocessor token to parser token"),
         };
@@ -94,47 +113,6 @@ impl From<preprocessor::token::Token> for Token {
         Token {
             kind,
             location: token.location,
-        }
-    }
-}
-
-impl From<preprocessor::token::PunctKind> for PunctKind {
-    fn from(kind: preprocessor::token::PunctKind) -> Self {
-        match kind {
-            preprocessor::token::PunctKind::LeftParen => PunctKind::LeftParen,
-            preprocessor::token::PunctKind::RightParen => PunctKind::RightParen,
-            preprocessor::token::PunctKind::LeftBrace => PunctKind::LeftBrace,
-            preprocessor::token::PunctKind::RightBrace => PunctKind::RightBrace,
-            preprocessor::token::PunctKind::LeftBracket => PunctKind::LeftBracket,
-            preprocessor::token::PunctKind::RightBracket => PunctKind::RightBracket,
-            preprocessor::token::PunctKind::Semicolon => PunctKind::Semicolon,
-            preprocessor::token::PunctKind::Colon => PunctKind::Colon,
-            preprocessor::token::PunctKind::Comma => PunctKind::Comma,
-            preprocessor::token::PunctKind::Ellipsis => PunctKind::Ellipsis,
-            preprocessor::token::PunctKind::Dot => PunctKind::Dot,
-            preprocessor::token::PunctKind::Plus => PunctKind::Plus,
-            preprocessor::token::PunctKind::Minus => PunctKind::Minus,
-            preprocessor::token::PunctKind::PlusPlus => PunctKind::PlusPlus,
-            preprocessor::token::PunctKind::MinusMinus => PunctKind::MinusMinus,
-            preprocessor::token::PunctKind::Other(s) => match s.as_str() {
-                "*" => PunctKind::Star,
-                "/" => PunctKind::Slash,
-                "=" => PunctKind::Equal,
-                "&" => PunctKind::Ampersand,
-                "==" => PunctKind::EqualEqual,
-                "!=" => PunctKind::BangEqual,
-                "<" => PunctKind::LessThan,
-                ">" => PunctKind::GreaterThan,
-                "<=" => PunctKind::LessThanEqual,
-                ">=" => PunctKind::GreaterThanEqual,
-                "&&" => PunctKind::AmpersandAmpersand,
-                "||" => PunctKind::PipePipe,
-                "!" => PunctKind::Bang,
-                "++" => PunctKind::PlusPlus,
-                "--" => PunctKind::MinusMinus,
-                _ => panic!("cannot convert preprocessor punct to parser punct"),
-            },
-            _ => panic!("cannot convert preprocessor punct to parser punct"),
         }
     }
 }

@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use cendol::preprocessor::lexer::Lexer;
-    use cendol::preprocessor::token::{PunctKind, TokenKind};
+    use cendol::preprocessor::token::{DirectiveKind, TokenKind};
 
     #[test]
     fn test_lexer() {
@@ -21,11 +21,9 @@ FIVE
 
         let token_kinds: Vec<TokenKind> = tokens.into_iter().map(|t| t.kind).collect();
 
-use cendol::preprocessor::token::PunctKind;
-
         let expected_tokens = vec![
             TokenKind::Newline,
-            TokenKind::Directive("define".to_string()),
+            TokenKind::Directive(DirectiveKind::Define),
             TokenKind::Whitespace(" ".to_string()),
             TokenKind::Identifier("FIVE".to_string()),
             TokenKind::Whitespace(" ".to_string()),
@@ -33,6 +31,46 @@ use cendol::preprocessor::token::PunctKind;
             TokenKind::Newline,
             TokenKind::Identifier("FIVE".to_string()),
             TokenKind::Newline,
+        ];
+        assert_eq!(token_kinds, expected_tokens);
+    }
+
+    #[test]
+    fn test_all_tokens() {
+        let input = "(){}[];:,.##...\\..++--+-<>";
+        let mut lexer = Lexer::new(input, "test.c".to_string());
+        let mut tokens = Vec::new();
+        loop {
+            let token = lexer.next_token().unwrap();
+            if let TokenKind::Eof = token.kind {
+                break;
+            }
+            tokens.push(token);
+        }
+
+        let token_kinds: Vec<TokenKind> = tokens.into_iter().map(|t| t.kind).collect();
+
+        let expected_tokens = vec![
+            TokenKind::LeftParen,
+            TokenKind::RightParen,
+            TokenKind::LeftBrace,
+            TokenKind::RightBrace,
+            TokenKind::LeftBracket,
+            TokenKind::RightBracket,
+            TokenKind::Semicolon,
+            TokenKind::Colon,
+            TokenKind::Comma,
+            TokenKind::Dot,
+            TokenKind::HashHash,
+            TokenKind::Ellipsis,
+            TokenKind::Backslash,
+            TokenKind::Dot,
+            TokenKind::PlusPlus,
+            TokenKind::MinusMinus,
+            TokenKind::Plus,
+            TokenKind::Minus,
+            TokenKind::LessThan,
+            TokenKind::GreaterThan,
         ];
         assert_eq!(token_kinds, expected_tokens);
     }
@@ -52,10 +90,7 @@ use cendol::preprocessor::token::PunctKind;
 
         let token_kinds: Vec<TokenKind> = tokens.into_iter().map(|t| t.kind).collect();
 
-        let expected_tokens = vec![
-            TokenKind::Identifier("a".to_string()),
-            TokenKind::Punct(PunctKind::PlusPlus),
-        ];
+        let expected_tokens = vec![TokenKind::Identifier("a".to_string()), TokenKind::PlusPlus];
         assert_eq!(token_kinds, expected_tokens);
     }
 }

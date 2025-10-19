@@ -36,9 +36,20 @@ impl Token {
     }
 }
 
-/// The kind of a punctuation mark.
+/// The kind of a token.
 #[derive(Debug, PartialEq, Clone)]
-pub enum PunctKind {
+pub enum TokenKind {
+    /// An identifier.
+    Identifier(String),
+    /// A keyword.
+    Keyword(KeywordKind),
+    /// A number literal.
+    Number(String),
+    /// A string literal.
+    String(String),
+    /// A character literal.
+    Char(String),
+    /// A punctuation mark.
     LeftParen,
     RightParen,
     LeftBrace,
@@ -57,24 +68,9 @@ pub enum PunctKind {
     Minus,
     PlusPlus,
     MinusMinus,
-    Other(String),
-}
-
-/// The kind of a token.
-#[derive(Debug, PartialEq, Clone)]
-pub enum TokenKind {
-    /// An identifier.
-    Identifier(String),
-    /// A keyword.
-    Keyword(KeywordKind),
-    /// A number literal.
-    Number(String),
-    /// A string literal.
-    String(String),
-    /// A character literal.
-    Char(String),
-    /// A punctuation mark.
-    Punct(PunctKind),
+    Equal,
+    LessThan,
+    GreaterThan,
     /// Whitespace.
     Whitespace(String),
     /// A newline character.
@@ -82,7 +78,14 @@ pub enum TokenKind {
     /// A comment.
     Comment(String),
     /// A preprocessor directive.
-    Directive(String),
+    Directive(DirectiveKind),
+    /// The end of the input.
+    Eof,
+}
+
+/// The kind of a preprocessor directive.
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum DirectiveKind {
     /// The `#if` directive.
     If,
     /// The `#else` directive.
@@ -103,8 +106,26 @@ pub enum TokenKind {
     Line,
     /// The `#include` directive.
     Include,
-    /// The end of the input.
-    Eof,
+    /// The `#define` directive.
+    Define,
+}
+
+impl fmt::Display for DirectiveKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            DirectiveKind::If => write!(f, "#if"),
+            DirectiveKind::Else => write!(f, "#else"),
+            DirectiveKind::Elif => write!(f, "#elif"),
+            DirectiveKind::Endif => write!(f, "#endif"),
+            DirectiveKind::Ifdef => write!(f, "#ifdef"),
+            DirectiveKind::Ifndef => write!(f, "#ifndef"),
+            DirectiveKind::Undef => write!(f, "#undef"),
+            DirectiveKind::Error => write!(f, "#error"),
+            DirectiveKind::Line => write!(f, "#line"),
+            DirectiveKind::Include => write!(f, "#include"),
+            DirectiveKind::Define => write!(f, "#define"),
+        }
+    }
 }
 
 impl fmt::Display for Token {
@@ -121,48 +142,32 @@ impl fmt::Display for TokenKind {
             TokenKind::Number(s) => write!(f, "{}", s),
             TokenKind::String(s) => write!(f, "{}", s),
             TokenKind::Char(s) => write!(f, "{}", s),
-            TokenKind::Punct(p) => write!(f, "{}", p),
+            TokenKind::LeftParen => write!(f, "("),
+            TokenKind::RightParen => write!(f, ")"),
+            TokenKind::LeftBrace => write!(f, "{{"),
+            TokenKind::RightBrace => write!(f, "}}"),
+            TokenKind::LeftBracket => write!(f, "["),
+            TokenKind::RightBracket => write!(f, "]"),
+            TokenKind::Semicolon => write!(f, ";"),
+            TokenKind::Colon => write!(f, ":"),
+            TokenKind::Comma => write!(f, ","),
+            TokenKind::Hash => write!(f, "#"),
+            TokenKind::HashHash => write!(f, "##"),
+            TokenKind::Ellipsis => write!(f, "..."),
+            TokenKind::Backslash => write!(f, "\\"),
+            TokenKind::Dot => write!(f, "."),
+            TokenKind::Plus => write!(f, "+"),
+            TokenKind::Minus => write!(f, "-"),
+            TokenKind::PlusPlus => write!(f, "++"),
+            TokenKind::MinusMinus => write!(f, "--"),
+            TokenKind::Equal => write!(f, "="),
+            TokenKind::LessThan => write!(f, "<"),
+            TokenKind::GreaterThan => write!(f, ">"),
             TokenKind::Whitespace(s) => write!(f, "{}", s),
             TokenKind::Newline => writeln!(f),
             TokenKind::Comment(s) => write!(f, "{}", s),
-            TokenKind::Directive(s) => write!(f, "{}", s),
-            TokenKind::If => write!(f, "#if"),
-            TokenKind::Else => write!(f, "#else"),
-            TokenKind::Elif => write!(f, "#elif"),
-            TokenKind::Endif => write!(f, "#endif"),
-            TokenKind::Ifdef => write!(f, "#ifdef"),
-            TokenKind::Ifndef => write!(f, "#ifndef"),
-            TokenKind::Undef => write!(f, "#undef"),
-            TokenKind::Error => write!(f, "#error"),
-            TokenKind::Line => write!(f, "#line"),
-            TokenKind::Include => write!(f, "#include"),
+            TokenKind::Directive(d) => write!(f, "{}", d),
             TokenKind::Eof => write!(f, ""),
-        }
-    }
-}
-
-impl fmt::Display for PunctKind {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            PunctKind::LeftParen => write!(f, "("),
-            PunctKind::RightParen => write!(f, ")"),
-            PunctKind::LeftBrace => write!(f, "{{"),
-            PunctKind::RightBrace => write!(f, "}}"),
-            PunctKind::LeftBracket => write!(f, "["),
-            PunctKind::RightBracket => write!(f, "]"),
-            PunctKind::Semicolon => write!(f, ";"),
-            PunctKind::Colon => write!(f, ":"),
-            PunctKind::Comma => write!(f, ","),
-            PunctKind::Hash => write!(f, "#"),
-            PunctKind::HashHash => write!(f, "##"),
-            PunctKind::Ellipsis => write!(f, "..."),
-            PunctKind::Backslash => write!(f, "\\"),
-            PunctKind::Dot => write!(f, "."),
-            PunctKind::Plus => write!(f, "+"),
-            PunctKind::Minus => write!(f, "-"),
-            PunctKind::PlusPlus => write!(f, "++"),
-            PunctKind::MinusMinus => write!(f, "--"),
-            PunctKind::Other(s) => write!(f, "{}", s),
         }
     }
 }

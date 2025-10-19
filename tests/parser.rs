@@ -1,12 +1,12 @@
 use cendol::parser::Parser;
-use cendol::parser::ast::{Expr, Function, Program, Stmt};
-use cendol::preprocessor::token::{KeywordKind, PunctKind, Token, TokenKind};
 use cendol::parser::ast::Type;
+use cendol::parser::ast::{Expr, Function, Program, Stmt};
+use cendol::preprocessor::token::{KeywordKind, Token, TokenKind};
 
 #[cfg(test)]
 mod tests {
-    use cendol::parser::ast::{Expr, Function, Program, Stmt, Type};
     use cendol::parser::Parser;
+    use cendol::parser::ast::{Expr, Function, Program, Stmt, Type};
     use cendol::preprocessor::Preprocessor;
 
     #[test]
@@ -70,21 +70,21 @@ fn test_control_flow() {
         Token::new(TokenKind::Keyword(KeywordKind::Int), loc.clone()),
         Token::new(TokenKind::Whitespace(" ".to_string()), loc.clone()),
         Token::new(TokenKind::Identifier("main".to_string()), loc.clone()),
-        Token::new(TokenKind::Punct(PunctKind::LeftParen), loc.clone()),
-        Token::new(TokenKind::Punct(PunctKind::RightParen), loc.clone()),
-        Token::new(TokenKind::Punct(PunctKind::LeftBrace), loc.clone()),
+        Token::new(TokenKind::LeftParen, loc.clone()),
+        Token::new(TokenKind::RightParen, loc.clone()),
+        Token::new(TokenKind::LeftBrace, loc.clone()),
         Token::new(TokenKind::Keyword(KeywordKind::If), loc.clone()),
-        Token::new(TokenKind::Punct(PunctKind::LeftParen), loc.clone()),
+        Token::new(TokenKind::LeftParen, loc.clone()),
         Token::new(TokenKind::Number("1".to_string()), loc.clone()),
-        Token::new(TokenKind::Punct(PunctKind::RightParen), loc.clone()),
+        Token::new(TokenKind::RightParen, loc.clone()),
         Token::new(TokenKind::Keyword(KeywordKind::Return), loc.clone()),
         Token::new(TokenKind::Number("1".to_string()), loc.clone()),
-        Token::new(TokenKind::Punct(PunctKind::Semicolon), loc.clone()),
+        Token::new(TokenKind::Semicolon, loc.clone()),
         Token::new(TokenKind::Keyword(KeywordKind::Else), loc.clone()),
         Token::new(TokenKind::Keyword(KeywordKind::Return), loc.clone()),
         Token::new(TokenKind::Number("0".to_string()), loc.clone()),
-        Token::new(TokenKind::Punct(PunctKind::Semicolon), loc.clone()),
-        Token::new(TokenKind::Punct(PunctKind::RightBrace), loc.clone()),
+        Token::new(TokenKind::Semicolon, loc.clone()),
+        Token::new(TokenKind::RightBrace, loc.clone()),
     ];
     let mut parser = Parser::new(tokens).unwrap();
     let program = parser.parse().unwrap();

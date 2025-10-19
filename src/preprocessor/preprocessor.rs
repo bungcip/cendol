@@ -158,6 +158,16 @@ impl Preprocessor {
                     }
                     continue;
                 }
+                TokenKind::Include => {
+                    if in_true_branch {
+                        let (filename, end) = parse_include(i + 1, tokens)?;
+                        let mut new_tokens = self.include_file(&filename)?;
+                        tokens.splice(i..end, new_tokens);
+                    } else {
+                        i = find_next_line(i + 1, tokens);
+                    }
+                    continue;
+                }
                 _ => {}
             }
 
@@ -469,6 +479,27 @@ impl Preprocessor {
         }
         tokens
     }
+
+    fn include_file(&mut self, filename: &str) -> Result<Vec<Token>, PreprocessorError> {
+        let content = std::fs::read_to_string(filename)
+            .map_err(|_| PreprocessorError::FileNotFound(filename.to_string()))?;
+        self.tokenize(&content)
+    }
+}
+
+fn parse_include(start_idx: usize, tokens: &[Token]) -> Result<(String, usize), PreprocessorError> {
+    let mut i = start_idx;
+    while i < tokens.len() && tokens[i].kind.is_whitespace() {
+        i += 1;
+    }
+
+    if i < tokens.len() {
+        if let TokenKind::String(s) = &tokens[i].kind {
+            return Ok((s.clone(), i + 1));
+        }
+    }
+
+    Err(PreprocessorError::InvalidInclude)
 }
 
 fn parse_conditional_expression(start_idx: usize, tokens: &[Token]) -> Result<(Vec<Token>, usize), PreprocessorError> {

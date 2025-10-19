@@ -26,6 +26,10 @@ pub enum PreprocessorError {
     UnexpectedEndif,
     #[error("Unterminated conditional directive")]
     UnterminatedConditional,
+    #[error("File not found: {0}")]
+    FileNotFound(String),
+    #[error("Invalid #include directive")]
+    InvalidInclude,
 }
 
 impl From<&str> for PreprocessorError {

@@ -187,6 +187,23 @@ fn test_undef_directive() {
 }
 
 #[test]
+fn test_include_directive() {
+    let mut file = std::fs::File::create("test.h").unwrap();
+    std::io::Write::write_all(&mut file, b"int a = 1;").unwrap();
+
+    let input = r#"
+#include "test.h"
+"#;
+    let mut preprocessor = Preprocessor::new();
+    let tokens = preprocessor.preprocess(input).unwrap();
+    let result = tokens.iter().map(|t| t.to_string()).collect::<String>();
+    let result = result.replace(" ", "").replace("\n", "");
+    assert_eq!(result, "inta=1;");
+
+    std::fs::remove_file("test.h").unwrap();
+}
+
+#[test]
 fn test_error_directive() {
     let input = r#"
 #error "This is an error"

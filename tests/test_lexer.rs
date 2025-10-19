@@ -9,7 +9,7 @@ mod tests {
 #define FIVE 5
 FIVE
 "#;
-        let mut lexer = Lexer::new(input);
+        let mut lexer = Lexer::new(input, "test.c".to_string());
         let mut tokens = Vec::new();
         loop {
             let token = lexer.next_token().unwrap();

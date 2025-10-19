@@ -37,7 +37,7 @@ impl Preprocessor {
     }
 
     fn tokenize(&self, input: &str) -> Result<Vec<Token>, PreprocessorError> {
-        let mut lexer = Lexer::new(input);
+        let mut lexer = Lexer::new(input, "<input>".to_string());
         let mut tokens = Vec::new();
         loop {
             let token = lexer.next_token()?;
@@ -264,7 +264,15 @@ impl Preprocessor {
             while i < tokens.len() {
                 if let TokenKind::Identifier(name) = &tokens[i].kind {
                     if !tokens[i].hideset.contains(name) {
-                        if let Some(macro_def) = self.macros.get(name).cloned() {
+                        if name == "__LINE__" {
+                            let line = tokens[i].location.line;
+                            tokens[i] = Token::new(TokenKind::Number(line.to_string()), tokens[i].location.clone());
+                            expanded = true;
+                        } else if name == "__FILE__" {
+                            let file = tokens[i].location.file.clone();
+                            tokens[i] = Token::new(TokenKind::String(file), tokens[i].location.clone());
+                            expanded = true;
+                        } else if let Some(macro_def) = self.macros.get(name).cloned() {
                             let (start, end, expanded_tokens) =
                                 self.expand_single_macro(&tokens[i], &macro_def, i, tokens)?;
                             tokens.splice(start..end, expanded_tokens);
@@ -379,7 +387,7 @@ impl Preprocessor {
                                 if idx < args.len() {
                                     let arg_tokens = &args[idx];
                                     let stringified = arg_tokens.iter().map(|t| t.kind.to_string()).collect::<String>();
-                                    result.push(Token::new(TokenKind::String(stringified)));
+                                    result.push(Token::new(TokenKind::String(stringified), token.location.clone()));
                                 }
                                 i += 1;
                                 continue;
@@ -420,10 +428,11 @@ impl Preprocessor {
 
                     let rhs_str = rhs_tokens.iter().map(|t| t.kind.to_string()).collect::<String>();
                     let pasted_str = format!("{}{}", lhs.kind, rhs_str);
-                    let mut lexer = Lexer::new(&pasted_str);
+                    let mut lexer = Lexer::new(&pasted_str, lhs.location.file.clone());
                     let mut new_token = lexer.next_token()?;
                     if !matches!(new_token.kind, TokenKind::Eof) {
                         let mut new_hideset = lhs.hideset.clone();
+                        new_token.location = lhs.location.clone();
                         for t in &rhs_tokens {
                             new_hideset.extend(t.hideset.clone());
                         }
@@ -451,7 +460,7 @@ impl Preprocessor {
                             for (i, arg) in args[vararg_start..].iter().enumerate() {
                                 result.extend(arg.clone());
                                 if i < args.len() - vararg_start - 1 {
-                                    result.push(Token::new(TokenKind::Punct(",".to_string())));
+                                    result.push(Token::new(TokenKind::Punct(",".to_string()), token.location.clone()));
                                 }
                             }
                         }
@@ -483,7 +492,16 @@ impl Preprocessor {
     fn include_file(&mut self, filename: &str) -> Result<Vec<Token>, PreprocessorError> {
         let content = std::fs::read_to_string(filename)
             .map_err(|_| PreprocessorError::FileNotFound(filename.to_string()))?;
-        self.tokenize(&content)
+        let mut lexer = Lexer::new(&content, filename.to_string());
+        let mut tokens = Vec::new();
+        loop {
+            let token = lexer.next_token()?;
+            if let TokenKind::Eof = token.kind {
+                break;
+            }
+            tokens.push(token);
+        }
+        Ok(tokens)
     }
 }
 

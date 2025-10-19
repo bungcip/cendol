@@ -204,6 +204,20 @@ fn test_include_directive() {
 }
 
 #[test]
+fn test_line_and_file_macros() {
+    let input = "__LINE__ __FILE__";
+    let mut preprocessor = Preprocessor::new();
+    let tokens = preprocessor.preprocess(input).unwrap();
+    assert_eq!(tokens.len(), 2);
+    assert_eq!(tokens[0].kind.to_string(), "1");
+    if let TokenKind::String(s) = &tokens[1].kind {
+        assert_eq!(s, "<input>");
+    } else {
+        panic!("Expected a string token");
+    }
+}
+
+#[test]
 fn test_error_directive() {
     let input = r#"
 #error "This is an error"

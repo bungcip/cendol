@@ -1,21 +1,26 @@
 use std::collections::HashSet;
 use std::fmt;
 
-// TODO: Define SourceLocation
-type SourceLocation = ();
+#[derive(Debug, PartialEq, Clone)]
+pub struct SourceLocation {
+    pub file: String,
+    pub line: u32,
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Token {
     pub kind: TokenKind,
     pub hideset: HashSet<String>,
+    pub location: SourceLocation,
     pub expansion_locs: Vec<SourceLocation>,
 }
 
 impl Token {
-    pub fn new(kind: TokenKind) -> Self {
+    pub fn new(kind: TokenKind, location: SourceLocation) -> Self {
         Token {
             kind,
             hideset: HashSet::new(),
+            location,
             expansion_locs: Vec::new(),
         }
     }

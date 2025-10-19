@@ -136,7 +136,7 @@ impl<'a> Lexer<'a> {
 
                 // Handle cases with one or two dots by re-processing
                 let mut chars = dots.chars();
-                let first_dot = chars.next().unwrap();
+                let _first_dot = chars.next().unwrap();
                 self.at_start_of_line = false;
                 // This part is tricky as we can't easily push back to the input stream.
                 // For now, we'll just handle the first dot and the rest will be handled in subsequent calls.
@@ -196,4 +196,3 @@ impl<'a> Lexer<'a> {
         }
     }
 }
-

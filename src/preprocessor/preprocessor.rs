@@ -207,7 +207,10 @@ impl Preprocessor {
         }
 
         if next_token_idx < tokens.len()
-            && matches!(&tokens[next_token_idx].kind, TokenKind::Punct(PunctKind::LeftParen))
+            && matches!(
+                &tokens[next_token_idx].kind,
+                TokenKind::Punct(PunctKind::LeftParen)
+            )
         {
             tokens.drain(0..next_token_idx);
             tokens.remove(0);
@@ -358,7 +361,10 @@ impl Preprocessor {
                 }
 
                 if next_idx >= tokens.len()
-                    || !matches!(&tokens[next_idx].kind, TokenKind::Punct(PunctKind::LeftParen))
+                    || !matches!(
+                        &tokens[next_idx].kind,
+                        TokenKind::Punct(PunctKind::LeftParen)
+                    )
                 {
                     return Ok((index, index + 1, vec![token.clone()]));
                 }

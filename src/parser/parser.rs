@@ -144,6 +144,43 @@ impl Parser {
                 self.expect_punct(PunctKind::RightParen)?;
                 let body = self.parse_stmt()?;
                 return Ok(Stmt::For(init, cond, inc, Box::new(body)));
+            } else if k == KeywordKind::Switch {
+                self.eat()?;
+                self.expect_punct(PunctKind::LeftParen)?;
+                let expr = self.parse_expr()?;
+                self.expect_punct(PunctKind::RightParen)?;
+                let stmt = self.parse_stmt()?;
+                return Ok(Stmt::Switch(Box::new(expr), Box::new(stmt)));
+            } else if k == KeywordKind::Case {
+                self.eat()?;
+                let expr = self.parse_expr()?;
+                self.expect_punct(PunctKind::Colon)?;
+                let stmt = self.parse_stmt()?;
+                return Ok(Stmt::Case(Box::new(expr), Box::new(stmt)));
+            } else if k == KeywordKind::Default {
+                self.eat()?;
+                self.expect_punct(PunctKind::Colon)?;
+                let stmt = self.parse_stmt()?;
+                return Ok(Stmt::Default(Box::new(stmt)));
+            } else if k == KeywordKind::Goto {
+                self.eat()?;
+                let token = self.current_token()?;
+                if let TokenKind::Identifier(id) = token.kind.clone() {
+                    self.eat()?;
+                    self.expect_punct(PunctKind::Semicolon)?;
+                    return Ok(Stmt::Goto(id));
+                }
+            }
+        } else if let TokenKind::Identifier(id) = token.kind.clone() {
+            self.eat()?;
+            if let Ok(t) = self.current_token() {
+                if let TokenKind::Punct(p) = t.kind {
+                    if p == PunctKind::Colon {
+                        self.eat()?;
+                        let stmt = self.parse_stmt()?;
+                        return Ok(Stmt::Label(id, Box::new(stmt)));
+                    }
+                }
             }
         }
         Err(ParserError::UnexpectedToken(token))

@@ -10,6 +10,11 @@ pub enum Stmt {
         Box<Stmt>,
     ),
     Block(Vec<Stmt>),
+    Switch(Box<Expr>, Box<Stmt>),
+    Case(Box<Expr>, Box<Stmt>),
+    Default(Box<Stmt>),
+    Label(String, Box<Stmt>),
+    Goto(String),
 }
 
 #[derive(Debug, PartialEq)]

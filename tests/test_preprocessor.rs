@@ -306,3 +306,10 @@ fn test_empty_cmdline_define() {
     let result = preprocessor.define("");
     assert!(result.is_err());
 }
+
+#[test]
+fn test_empty_define_name() {
+    let mut preprocessor = Preprocessor::new();
+    let result = preprocessor.define("=1");
+    assert!(result.is_err());
+}

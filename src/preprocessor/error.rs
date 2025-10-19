@@ -18,6 +18,14 @@ pub enum PreprocessorError {
     MacroExpansionTooDeep,
     #[error("Generic error: {0}")]
     Generic(String),
+    #[error("Unexpected #elif")]
+    UnexpectedElif,
+    #[error("Unexpected #else")]
+    UnexpectedElse,
+    #[error("Unexpected #endif")]
+    UnexpectedEndif,
+    #[error("Unterminated conditional directive")]
+    UnterminatedConditional,
 }
 
 impl From<&str> for PreprocessorError {

@@ -87,7 +87,9 @@ impl<'a> Lexer<'a> {
                 Ok(Token::new(TokenKind::String(s)))
             }
             '#' => {
-                if let Some(&'#') = self.input.peek() {
+                if self.at_start_of_line {
+                    self.read_directive()
+                } else if let Some(&'#') = self.input.peek() {
                     self.input.next();
                     self.at_start_of_line = false;
                     Ok(Token::new(TokenKind::Punct("##".to_string())))
@@ -124,6 +126,26 @@ impl<'a> Lexer<'a> {
                 Ok(Token::new(TokenKind::Punct(c.to_string())))
             }
             _ => Err(crate::preprocessor::error::PreprocessorError::UnexpectedChar(c)),
+        }
+    }
+
+    fn read_directive(&mut self) -> Result<Token, crate::preprocessor::error::PreprocessorError> {
+        let mut directive = String::new();
+        while let Some(&c) = self.input.peek() {
+            if c.is_alphabetic() {
+                directive.push(self.input.next().unwrap());
+            } else {
+                break;
+            }
+        }
+
+        self.at_start_of_line = false;
+        match directive.as_str() {
+            "if" => Ok(Token::new(TokenKind::If)),
+            "else" => Ok(Token::new(TokenKind::Else)),
+            "elif" => Ok(Token::new(TokenKind::Elif)),
+            "endif" => Ok(Token::new(TokenKind::Endif)),
+            _ => Ok(Token::new(TokenKind::Directive(directive))),
         }
     }
 }

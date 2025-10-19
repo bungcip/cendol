@@ -33,6 +33,10 @@ pub enum TokenKind {
     Newline,
     Comment(String),
     Directive(String),
+    If,
+    Else,
+    Elif,
+    Endif,
     Eof,
 }
 
@@ -55,6 +59,10 @@ impl fmt::Display for TokenKind {
             TokenKind::Newline => write!(f, "\n"),
             TokenKind::Comment(s) => write!(f, "{}", s),
             TokenKind::Directive(s) => write!(f, "{}", s),
+            TokenKind::If => write!(f, "#if"),
+            TokenKind::Else => write!(f, "#else"),
+            TokenKind::Elif => write!(f, "#elif"),
+            TokenKind::Endif => write!(f, "#endif"),
             TokenKind::Eof => write!(f, ""),
         }
     }

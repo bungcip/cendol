@@ -16,12 +16,14 @@ enum Macro {
 
 pub struct Preprocessor {
     macros: HashMap<String, Macro>,
+    conditional_stack: Vec<bool>,
 }
 
 impl Preprocessor {
     pub fn new() -> Self {
         Preprocessor {
             macros: HashMap::new(),
+            conditional_stack: Vec::new(),
         }
     }
 
@@ -49,32 +51,84 @@ impl Preprocessor {
     fn process_directives(&mut self, tokens: &mut Vec<Token>) -> Result<(), crate::preprocessor::error::PreprocessorError> {
         let mut i = 0;
         let mut final_tokens = Vec::new();
+        let mut depth = 0;
+
         while i < tokens.len() {
-            if let TokenKind::Punct(ref p) = tokens[i].kind {
-                if p == "#" {
-                    if i + 1 < tokens.len() {
-                        if let TokenKind::Identifier(ref name) = tokens[i + 1].kind {
-                            if name == "define" {
-                                let mut macro_tokens = Vec::new();
-                                let mut j = i + 2;
-                                while j < tokens.len() {
-                                    if matches!(tokens[j].kind, TokenKind::Newline) {
-                                        break;
-                                    }
-                                    macro_tokens.push(tokens[j].clone());
-                                    j += 1;
-                                }
-                                self.handle_define(&mut macro_tokens)?;
-                                i = j + 1;
-                                continue;
-                            }
+            let mut in_true_branch = self.conditional_stack.iter().all(|&x| x);
+
+            match tokens[i].kind {
+                TokenKind::If => {
+                    depth += 1;
+                    let (condition, end) = parse_conditional_expression(i + 1, tokens)?;
+                    let result = evaluate_expression(&condition)?;
+                    self.conditional_stack.push(result);
+                    i = end;
+                    continue;
+                }
+                TokenKind::Elif => {
+                    if depth == 0 {
+                        return Err(crate::preprocessor::error::PreprocessorError::UnexpectedElif);
+                    }
+                    if let Some(last) = self.conditional_stack.last_mut() {
+                        if !*last {
+                            let (condition, end) = parse_conditional_expression(i + 1, tokens)?;
+                            let result = evaluate_expression(&condition)?;
+                            *last = result;
+                        } else {
+                            *last = false;
                         }
                     }
+                    i = find_next_line(i + 1, tokens);
+                    continue;
                 }
+                TokenKind::Else => {
+                    if depth == 0 {
+                        return Err(crate::preprocessor::error::PreprocessorError::UnexpectedElse);
+                    }
+                    if let Some(last) = self.conditional_stack.last_mut() {
+                        *last = !*last;
+                    }
+                    i = find_next_line(i + 1, tokens);
+                    continue;
+                }
+                TokenKind::Endif => {
+                    if depth == 0 {
+                        return Err(crate::preprocessor::error::PreprocessorError::UnexpectedEndif);
+                    }
+                    self.conditional_stack.pop();
+                    depth -= 1;
+                    i = find_next_line(i + 1, tokens);
+                    continue;
+                }
+                TokenKind::Directive(ref name) if name == "define" => {
+                    if in_true_branch {
+                        let mut macro_tokens = Vec::new();
+                        let mut j = i + 1;
+                        while j < tokens.len() {
+                            if matches!(tokens[j].kind, TokenKind::Newline) {
+                                break;
+                            }
+                            macro_tokens.push(tokens[j].clone());
+                            j += 1;
+                        }
+                        self.handle_define(&mut macro_tokens)?;
+                    }
+                    i = find_next_line(i + 1, tokens);
+                    continue;
+                }
+                _ => {}
             }
-            final_tokens.push(tokens[i].clone());
+
+            if in_true_branch {
+                final_tokens.push(tokens[i].clone());
+            }
             i += 1;
         }
+
+        if depth != 0 {
+            return Err(crate::preprocessor::error::PreprocessorError::UnterminatedConditional);
+        }
+
         *tokens = final_tokens;
         Ok(())
     }
@@ -373,4 +427,33 @@ impl Preprocessor {
         }
         tokens
     }
+}
+
+fn parse_conditional_expression(start_idx: usize, tokens: &[Token]) -> Result<(Vec<Token>, usize), crate::preprocessor::error::PreprocessorError> {
+    let mut condition = Vec::new();
+    let mut i = start_idx;
+    while i < tokens.len() {
+        if matches!(tokens[i].kind, TokenKind::Newline) {
+            return Ok((condition, i));
+        }
+        condition.push(tokens[i].clone());
+        i += 1;
+    }
+    Ok((condition, i))
+}
+
+fn evaluate_expression(tokens: &[Token]) -> Result<bool, crate::preprocessor::error::PreprocessorError> {
+    // For now, we'll just evaluate the expression to true if it's not empty
+    Ok(!tokens.is_empty())
+}
+
+fn find_next_line(start_idx: usize, tokens: &[Token]) -> usize {
+    let mut i = start_idx;
+    while i < tokens.len() {
+        if matches!(tokens[i].kind, TokenKind::Newline) {
+            return i + 1;
+        }
+        i += 1;
+    }
+    i
 }

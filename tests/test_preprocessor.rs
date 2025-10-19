@@ -287,3 +287,22 @@ fn test_object_macro_with_space_before_paren() {
     assert_eq!(tokens[1].kind.to_string(), "1");
     assert_eq!(tokens[2].kind.to_string(), ")");
 }
+
+#[test]
+fn test_cmdline_define() {
+    let input = "A B";
+    let mut preprocessor = Preprocessor::new();
+    preprocessor.define("A=1").unwrap();
+    preprocessor.define("B").unwrap();
+    let tokens = preprocessor.preprocess(input).unwrap();
+    assert_eq!(tokens.len(), 2);
+    assert_eq!(tokens[0].kind.to_string(), "1");
+    assert_eq!(tokens[1].kind.to_string(), "1");
+}
+
+#[test]
+fn test_empty_cmdline_define() {
+    let mut preprocessor = Preprocessor::new();
+    let result = preprocessor.define("");
+    assert!(result.is_err());
+}

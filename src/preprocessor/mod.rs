@@ -77,6 +77,11 @@ impl Preprocessor {
         }
         let parts: Vec<&str> = definition.splitn(2, '=').collect();
         let name = parts[0].to_string();
+        if name.is_empty() {
+            return Err(PreprocessorError::Generic(
+                "Macro name must not be empty".to_string(),
+            ));
+        }
         let value = if parts.len() > 1 { parts[1] } else { "1" };
         let mut lexer = Lexer::new(value, "<cmdline>".to_string());
         let mut tokens = Vec::new();

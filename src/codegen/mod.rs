@@ -50,7 +50,7 @@ impl CodeGen {
         }
     }
 
-    pub fn compile(mut self, program: Program) -> Result<Vec<u8>, Box<CodegenError>> {
+    pub fn compile(mut self, program: Program) -> Result<Vec<u8>, CodegenError> {
         if let Some(_global) = program.globals.into_iter().next() {
             unimplemented!()
         }

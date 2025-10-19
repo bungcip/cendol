@@ -1,11 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use cendol::codegen::CodeGen;
-    use cendol::parser::Parser;
-    use cendol::preprocessor::Preprocessor;
-    use std::fs;
-    use std::io::Write;
-    use std::process::Command;
 
     // #[test]
     // fn test_pointers() {

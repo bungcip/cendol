@@ -1,10 +1,11 @@
 use cendol::codegen::CodeGen;
+use cendol::error::{report, Error, Report};
 use cendol::parser::Parser;
 use cendol::preprocessor::Preprocessor;
 use clap::Parser as ClapParser;
 use std::fs;
 use std::io::Write;
-use std::process::Command;
+use std::process::{exit, Command};
 
 #[derive(ClapParser)]
 #[command(version, about, long_about = None)]
@@ -43,6 +44,13 @@ struct Cli {
 }
 
 fn main() {
+    if let Err(err) = run() {
+        report(&Report::new(err.to_string(), None, None));
+        exit(1);
+    }
+}
+
+fn run() -> Result<(), Error> {
     let cli = Cli::parse();
 
     if cli.verbose {
@@ -58,7 +66,7 @@ fn main() {
     let mut preprocessor = Preprocessor::new();
 
     for def in cli.define {
-        preprocessor.define(&def).unwrap();
+        preprocessor.define(&def)?;
     }
 
     for path in cli.include_path {
@@ -66,23 +74,23 @@ fn main() {
     }
 
     if cli.preprocess_only {
-        let output = preprocessor.preprocess(&input).unwrap();
+        let output = preprocessor.preprocess(&input)?;
         if let Some(output_file) = cli.output_file {
             fs::write(output_file, format!("{:?}", output))
                 .expect("Failed to write to output file");
         } else {
             println!("{:?}", output);
         }
-        return;
+        return Ok(());
     }
 
-    let tokens = preprocessor.preprocess(&input).unwrap();
+    let tokens = preprocessor.preprocess(&input)?;
 
-    let mut parser = Parser::new(tokens).unwrap();
-    let ast = parser.parse().unwrap();
+    let mut parser = Parser::new(tokens)?;
+    let ast = parser.parse()?;
 
     let codegen = CodeGen::new();
-    let object_bytes = codegen.compile(ast).expect("Failed to compile");
+    let object_bytes = codegen.compile(ast)?;
 
     let object_filename = if cli.compile_only {
         cli.output_file.as_deref().unwrap_or("a.o").to_string()
@@ -104,4 +112,6 @@ fn main() {
             .status()
             .expect("Failed to link");
     }
+
+    Ok(())
 }

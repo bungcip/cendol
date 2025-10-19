@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use cendol::codegen::codegen::CodeGen;
-    use cendol::parser::parser::Parser;
-    use cendol::preprocessor::preprocessor::Preprocessor;
+    use cendol::codegen::CodeGen;
+    use cendol::parser::Parser;
+    use cendol::preprocessor::Preprocessor;
     use std::fs;
     use std::io::Write;
     use std::process::Command;

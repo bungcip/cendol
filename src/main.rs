@@ -1,6 +1,6 @@
-use cendol::codegen::codegen::CodeGen;
-use cendol::parser::parser::Parser;
-use cendol::preprocessor::preprocessor::Preprocessor;
+use cendol::codegen::CodeGen;
+use cendol::parser::Parser;
+use cendol::preprocessor::Preprocessor;
 use clap::Parser as ClapParser;
 use std::fs;
 use std::io::Write;
@@ -68,7 +68,8 @@ fn main() {
     if cli.preprocess_only {
         let output = preprocessor.preprocess(&input).unwrap();
         if let Some(output_file) = cli.output_file {
-            fs::write(output_file, format!("{:?}", output)).expect("Failed to write to output file");
+            fs::write(output_file, format!("{:?}", output))
+                .expect("Failed to write to output file");
         } else {
             println!("{:?}", output);
         }
@@ -81,7 +82,7 @@ fn main() {
     let ast = parser.parse().unwrap();
 
     let codegen = CodeGen::new();
-    let object_bytes = codegen.compile(ast).unwrap();
+    let object_bytes = codegen.compile(ast).expect("Failed to compile");
 
     let object_filename = if cli.compile_only {
         cli.output_file.as_deref().unwrap_or("a.o").to_string()

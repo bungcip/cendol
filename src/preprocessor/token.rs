@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::fmt;
+use std::str::FromStr;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct SourceLocation {
@@ -62,42 +63,44 @@ pub enum KeywordKind {
     While,
 }
 
-impl KeywordKind {
-    pub fn from_str(s: &str) -> Option<KeywordKind> {
+impl FromStr for KeywordKind {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "auto" => Some(KeywordKind::Auto),
-            "break" => Some(KeywordKind::Break),
-            "case" => Some(KeywordKind::Case),
-            "char" => Some(KeywordKind::Char),
-            "const" => Some(KeywordKind::Const),
-            "continue" => Some(KeywordKind::Continue),
-            "default" => Some(KeywordKind::Default),
-            "do" => Some(KeywordKind::Do),
-            "double" => Some(KeywordKind::Double),
-            "else" => Some(KeywordKind::Else),
-            "enum" => Some(KeywordKind::Enum),
-            "extern" => Some(KeywordKind::Extern),
-            "float" => Some(KeywordKind::Float),
-            "for" => Some(KeywordKind::For),
-            "goto" => Some(KeywordKind::Goto),
-            "if" => Some(KeywordKind::If),
-            "int" => Some(KeywordKind::Int),
-            "long" => Some(KeywordKind::Long),
-            "register" => Some(KeywordKind::Register),
-            "return" => Some(KeywordKind::Return),
-            "short" => Some(KeywordKind::Short),
-            "signed" => Some(KeywordKind::Signed),
-            "sizeof" => Some(KeywordKind::Sizeof),
-            "static" => Some(KeywordKind::Static),
-            "struct" => Some(KeywordKind::Struct),
-            "switch" => Some(KeywordKind::Switch),
-            "typedef" => Some(KeywordKind::Typedef),
-            "union" => Some(KeywordKind::Union),
-            "unsigned" => Some(KeywordKind::Unsigned),
-            "void" => Some(KeywordKind::Void),
-            "volatile" => Some(KeywordKind::Volatile),
-            "while" => Some(KeywordKind::While),
-            _ => None,
+            "auto" => Ok(KeywordKind::Auto),
+            "break" => Ok(KeywordKind::Break),
+            "case" => Ok(KeywordKind::Case),
+            "char" => Ok(KeywordKind::Char),
+            "const" => Ok(KeywordKind::Const),
+            "continue" => Ok(KeywordKind::Continue),
+            "default" => Ok(KeywordKind::Default),
+            "do" => Ok(KeywordKind::Do),
+            "double" => Ok(KeywordKind::Double),
+            "else" => Ok(KeywordKind::Else),
+            "enum" => Ok(KeywordKind::Enum),
+            "extern" => Ok(KeywordKind::Extern),
+            "float" => Ok(KeywordKind::Float),
+            "for" => Ok(KeywordKind::For),
+            "goto" => Ok(KeywordKind::Goto),
+            "if" => Ok(KeywordKind::If),
+            "int" => Ok(KeywordKind::Int),
+            "long" => Ok(KeywordKind::Long),
+            "register" => Ok(KeywordKind::Register),
+            "return" => Ok(KeywordKind::Return),
+            "short" => Ok(KeywordKind::Short),
+            "signed" => Ok(KeywordKind::Signed),
+            "sizeof" => Ok(KeywordKind::Sizeof),
+            "static" => Ok(KeywordKind::Static),
+            "struct" => Ok(KeywordKind::Struct),
+            "switch" => Ok(KeywordKind::Switch),
+            "typedef" => Ok(KeywordKind::Typedef),
+            "union" => Ok(KeywordKind::Union),
+            "unsigned" => Ok(KeywordKind::Unsigned),
+            "void" => Ok(KeywordKind::Void),
+            "volatile" => Ok(KeywordKind::Volatile),
+            "while" => Ok(KeywordKind::While),
+            _ => Err(()),
         }
     }
 }
@@ -108,6 +111,8 @@ pub enum PunctKind {
     RightParen,
     LeftBrace,
     RightBrace,
+    LeftBracket,
+    RightBracket,
     Semicolon,
     Colon,
     Comma,
@@ -160,7 +165,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Char(s) => write!(f, "{}", s),
             TokenKind::Punct(p) => write!(f, "{}", p),
             TokenKind::Whitespace(s) => write!(f, "{}", s),
-            TokenKind::Newline => write!(f, "\n"),
+            TokenKind::Newline => writeln!(f),
             TokenKind::Comment(s) => write!(f, "{}", s),
             TokenKind::Directive(s) => write!(f, "{}", s),
             TokenKind::If => write!(f, "#if"),
@@ -224,6 +229,8 @@ impl fmt::Display for PunctKind {
             PunctKind::RightParen => write!(f, ")"),
             PunctKind::LeftBrace => write!(f, "{{"),
             PunctKind::RightBrace => write!(f, "}}"),
+            PunctKind::LeftBracket => write!(f, "["),
+            PunctKind::RightBracket => write!(f, "]"),
             PunctKind::Semicolon => write!(f, ";"),
             PunctKind::Colon => write!(f, ":"),
             PunctKind::Comma => write!(f, ","),

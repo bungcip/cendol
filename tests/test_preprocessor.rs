@@ -1,4 +1,4 @@
-use cendol::preprocessor::preprocessor::Preprocessor;
+use cendol::preprocessor::Preprocessor;
 use cendol::preprocessor::token::TokenKind;
 
 #[test]

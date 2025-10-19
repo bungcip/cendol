@@ -1,11 +1,11 @@
+use cendol::parser::Parser;
 use cendol::parser::ast::{Expr, Function, Program, Stmt};
-use cendol::parser::parser::Parser;
 use cendol::preprocessor::token::{KeywordKind, PunctKind, Token, TokenKind};
 #[cfg(test)]
 mod tests {
+    use cendol::parser::Parser;
     use cendol::parser::ast::{Expr, Function, Program, Stmt};
-    use cendol::parser::parser::Parser;
-    use cendol::preprocessor::preprocessor::Preprocessor;
+    use cendol::preprocessor::Preprocessor;
 
     #[test]
     fn test_parser() {
@@ -17,8 +17,10 @@ mod tests {
         assert_eq!(
             ast,
             Program {
+                globals: vec![],
                 function: Function {
                     name: "main".to_string(),
+                    params: vec![],
                     body: vec![Stmt::Return(Expr::Number(0))]
                 }
             }
@@ -59,8 +61,10 @@ fn test_control_flow() {
     assert_eq!(
         program,
         Program {
+            globals: vec![],
             function: Function {
                 name: "main".to_string(),
+                params: vec![],
                 body: vec![Stmt::If(
                     Box::new(Expr::Number(1)),
                     Box::new(Stmt::Return(Expr::Number(1))),

@@ -1,5 +1,5 @@
 use crate::preprocessor::error::PreprocessorError;
-use crate::preprocessor::token::{KeywordKind, PunctKind, SourceLocation, Token, TokenKind};
+use crate::preprocessor::token::{PunctKind, SourceLocation, Token, TokenKind};
 use std::iter::Peekable;
 use std::str::Chars;
 
@@ -70,16 +70,16 @@ impl<'a> Lexer<'a> {
                     }
                 }
                 self.at_start_of_line = false;
-                if let Some(keyword) = KeywordKind::from_str(&ident) {
+                if let Ok(keyword) = ident.parse() {
                     Ok(Token::new(TokenKind::Keyword(keyword), self.location()))
                 } else {
                     Ok(Token::new(TokenKind::Identifier(ident), self.location()))
                 }
             }
-            _ if c.is_digit(10) => {
+            _ if c.is_ascii_digit() => {
                 let mut num = String::from(c);
                 while let Some(&c) = self.input.peek() {
-                    if c.is_digit(10) {
+                    if c.is_ascii_digit() {
                         num.push(self.input.next().unwrap());
                     } else {
                         break;
@@ -90,7 +90,7 @@ impl<'a> Lexer<'a> {
             }
             '"' => {
                 let mut s = String::new();
-                while let Some(c) = self.input.next() {
+                for c in self.input.by_ref() {
                     if c == '"' {
                         break;
                     }

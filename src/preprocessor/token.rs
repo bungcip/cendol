@@ -2,15 +2,30 @@ pub use crate::common::{KeywordKind, SourceLocation};
 use std::collections::HashSet;
 use std::fmt;
 
+/// Represents a token in the C preprocessor.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Token {
+    /// The kind of token.
     pub kind: TokenKind,
+    /// A set of macro names that are hidden from this token.
     pub hideset: HashSet<String>,
+    /// The location of the token in the source code.
     pub location: SourceLocation,
+    /// The locations of macro expansions that produced this token.
     pub expansion_locs: Vec<SourceLocation>,
 }
 
 impl Token {
+    /// Creates a new `Token`.
+    ///
+    /// # Arguments
+    ///
+    /// * `kind` - The kind of token.
+    /// * `location` - The location of the token in the source code.
+    ///
+    /// # Returns
+    ///
+    /// A new `Token` instance.
     pub fn new(kind: TokenKind, location: SourceLocation) -> Self {
         Token {
             kind,
@@ -21,6 +36,7 @@ impl Token {
     }
 }
 
+/// The kind of a punctuation mark.
 #[derive(Debug, PartialEq, Clone)]
 pub enum PunctKind {
     LeftParen,
@@ -40,28 +56,50 @@ pub enum PunctKind {
     Other(String),
 }
 
+/// The kind of a token.
 #[derive(Debug, PartialEq, Clone)]
 pub enum TokenKind {
+    /// An identifier.
     Identifier(String),
+    /// A keyword.
     Keyword(KeywordKind),
+    /// A number literal.
     Number(String),
+    /// A string literal.
     String(String),
+    /// A character literal.
     Char(String),
+    /// A punctuation mark.
     Punct(PunctKind),
+    /// Whitespace.
     Whitespace(String),
+    /// A newline character.
     Newline,
+    /// A comment.
     Comment(String),
+    /// A preprocessor directive.
     Directive(String),
+    /// The `#if` directive.
     If,
+    /// The `#else` directive.
     Else,
+    /// The `#elif` directive.
     Elif,
+    /// The `#endif` directive.
     Endif,
+    /// The `#ifdef` directive.
     Ifdef,
+    /// The `#ifndef` directive.
     Ifndef,
+    /// The `#undef` directive.
     Undef,
+    /// The `#error` directive.
     Error,
+    /// The `#line` directive.
     Line,
+    /// The `#include` directive.
     Include,
+    /// The end of the input.
     Eof,
 }
 
@@ -122,6 +160,7 @@ impl fmt::Display for PunctKind {
 }
 
 impl TokenKind {
+    /// Returns `true` if the token is whitespace.
     pub fn is_whitespace(&self) -> bool {
         matches!(self, TokenKind::Whitespace(_))
     }

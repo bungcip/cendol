@@ -1,14 +1,28 @@
 pub use crate::common::{KeywordKind, SourceLocation};
 use std::collections::HashSet;
 
+/// Represents a token in the C language.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Token {
+    /// The kind of token.
     pub kind: TokenKind,
+    /// A set of macro names that are hidden from this token.
     pub hideset: HashSet<String>,
+    /// The location of the token in the source code.
     pub location: SourceLocation,
 }
 
 impl Token {
+    /// Creates a new `Token`.
+    ///
+    /// # Arguments
+    ///
+    /// * `kind` - The kind of token.
+    /// * `location` - The location of the token in the source code.
+    ///
+    /// # Returns
+    ///
+    /// A new `Token` instance.
     pub fn new(kind: TokenKind, location: SourceLocation) -> Self {
         Token {
             kind,
@@ -18,17 +32,26 @@ impl Token {
     }
 }
 
+/// The kind of a token.
 #[derive(Debug, PartialEq, Clone)]
 pub enum TokenKind {
+    /// An identifier.
     Identifier(String),
+    /// A keyword.
     Keyword(KeywordKind),
+    /// A number literal.
     Number(String),
+    /// A string literal.
     String(String),
+    /// A character literal.
     Char(String),
+    /// A punctuation mark.
     Punct(PunctKind),
+    /// The end of the input.
     Eof,
 }
 
+/// The kind of a punctuation mark.
 #[derive(Debug, PartialEq, Clone)]
 pub enum PunctKind {
     LeftParen,

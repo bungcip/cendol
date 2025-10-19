@@ -7,12 +7,22 @@ pub mod ast;
 pub mod error;
 pub mod token;
 
+/// A parser that converts a stream of tokens into an abstract syntax tree.
 pub struct Parser {
     tokens: Vec<Token>,
     position: usize,
 }
 
 impl Parser {
+    /// Creates a new `Parser`.
+    ///
+    /// # Arguments
+    ///
+    /// * `tokens` - A vector of preprocessor tokens.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the new `Parser` instance, or a `ParserError` if tokenization fails.
     pub fn new(tokens: Vec<preprocessor::token::Token>) -> Result<Self, ParserError> {
         let tokens = tokens
             .into_iter()
@@ -33,6 +43,7 @@ impl Parser {
         Ok(parser)
     }
 
+    /// Returns the current token without consuming it.
     fn current_token(&self) -> Result<Token, ParserError> {
         self.tokens
             .get(self.position)
@@ -40,11 +51,13 @@ impl Parser {
             .ok_or(ParserError::UnexpectedEof)
     }
 
+    /// Consumes the current token.
     fn eat(&mut self) -> Result<(), ParserError> {
         self.position += 1;
         Ok(())
     }
 
+    /// Expects a specific punctuation token.
     fn expect_punct(&mut self, value: PunctKind) -> Result<(), ParserError> {
         let token = self.current_token()?;
         if let TokenKind::Punct(p) = token.kind.clone()
@@ -56,6 +69,7 @@ impl Parser {
         Err(ParserError::UnexpectedToken(token.clone()))
     }
 
+    /// Expects a specific identifier.
     fn expect_identifier(&mut self, value: &str) -> Result<(), ParserError> {
         let token = self.current_token()?;
         if let TokenKind::Identifier(id) = token.kind.clone()
@@ -67,6 +81,7 @@ impl Parser {
         Err(ParserError::UnexpectedToken(token.clone()))
     }
 
+    /// Expects a specific keyword.
     fn expect_keyword(&mut self, value: KeywordKind) -> Result<(), ParserError> {
         let token = self.current_token()?;
         if let TokenKind::Keyword(k) = token.kind.clone()
@@ -78,6 +93,7 @@ impl Parser {
         Err(ParserError::UnexpectedToken(token.clone()))
     }
 
+    /// Parses a type.
     fn parse_type(&mut self) -> Result<Type, ParserError> {
         let token = self.current_token()?;
         if let TokenKind::Keyword(k) = token.kind.clone() {
@@ -178,10 +194,12 @@ impl Parser {
         }
     }
 
+    /// Parses an expression.
     fn parse_expr(&mut self) -> Result<Expr, ParserError> {
         self.parse_pratt_expr(0)
     }
 
+    /// Gets the infix binding power of a token.
     fn infix_binding_power(&self, kind: &TokenKind) -> Option<(u8, u8)> {
         match kind {
             TokenKind::Punct(PunctKind::Equal) => Some((2, 1)),
@@ -204,6 +222,7 @@ impl Parser {
         }
     }
 
+    /// Gets the prefix binding power of a token.
     #[allow(dead_code)]
     fn prefix_binding_power(&self, kind: &TokenKind) -> Option<((), u8)> {
         match kind {
@@ -215,6 +234,7 @@ impl Parser {
         }
     }
 
+    /// Gets the postfix binding power of a token.
     fn postfix_binding_power(&self, kind: &TokenKind) -> Option<(u8, ())> {
         match kind {
             TokenKind::Punct(PunctKind::PlusPlus) | TokenKind::Punct(PunctKind::MinusMinus) => {
@@ -224,6 +244,7 @@ impl Parser {
         }
     }
 
+    /// Parses an expression using the Pratt parsing algorithm.
     fn parse_pratt_expr(&mut self, min_bp: u8) -> Result<Expr, ParserError> {
         let mut lhs = self.parse_primary()?;
 
@@ -292,6 +313,7 @@ impl Parser {
         Ok(lhs)
     }
 
+    /// Parses a primary expression.
     fn parse_primary(&mut self) -> Result<Expr, ParserError> {
         let token = self.current_token()?;
         match token.kind.clone() {
@@ -353,6 +375,7 @@ impl Parser {
         }
     }
 
+    /// Parses a statement.
     fn parse_stmt(&mut self) -> Result<Stmt, ParserError> {
         let token = self.current_token()?;
         if let TokenKind::Punct(p) = token.kind.clone() {
@@ -483,6 +506,7 @@ impl Parser {
         Ok(Stmt::Expr(expr))
     }
 
+    /// Parses a function.
     fn parse_function(&mut self) -> Result<Function, ParserError> {
         let _ty = self.parse_type()?;
         self.expect_identifier("main")?;
@@ -523,6 +547,11 @@ impl Parser {
         })
     }
 
+    /// Parses the entire program.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the parsed `Program`, or a `ParserError` if parsing fails.
     pub fn parse(&mut self) -> Result<Program, ParserError> {
         let mut globals = Vec::new();
         while let Ok(ty) = self.parse_type() {

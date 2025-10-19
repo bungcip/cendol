@@ -3,6 +3,7 @@ use crate::preprocessor::token::{PunctKind, SourceLocation, Token, TokenKind};
 use std::iter::Peekable;
 use std::str::Chars;
 
+/// A lexer for the C preprocessor.
 pub struct Lexer<'a> {
     input: Peekable<Chars<'a>>,
     at_start_of_line: bool,
@@ -11,6 +12,12 @@ pub struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
+    /// Creates a new `Lexer`.
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - The input string to tokenize.
+    /// * `file` - The name of the file being tokenized.
     pub fn new(input: &'a str, file: String) -> Self {
         Lexer {
             input: input.chars().peekable(),
@@ -20,6 +27,11 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Returns the next token in the input stream.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the next token, or a `PreprocessorError` if tokenization fails.
     pub fn next_token(&mut self) -> Result<Token, PreprocessorError> {
         let c = match self.input.next() {
             Some(c) => c,
@@ -163,6 +175,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Reads a preprocessor directive.
     fn read_directive(&mut self) -> Result<Token, PreprocessorError> {
         let mut directive = String::new();
         while let Some(&c) = self.input.peek() {
@@ -189,6 +202,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Returns the current location in the source file.
     fn location(&self) -> SourceLocation {
         SourceLocation {
             file: self.file.clone(),

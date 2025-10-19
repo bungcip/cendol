@@ -1,12 +1,16 @@
 use std::fmt;
 use std::str::FromStr;
 
+/// Represents a location in a source file.
 #[derive(Debug, PartialEq, Clone)]
 pub struct SourceLocation {
+    /// The file name.
     pub file: String,
+    /// The line number.
     pub line: u32,
 }
 
+/// Represents C keywords.
 #[derive(Debug, PartialEq, Clone)]
 pub enum KeywordKind {
     Auto,
@@ -46,6 +50,15 @@ pub enum KeywordKind {
 impl FromStr for KeywordKind {
     type Err = ();
 
+    /// Converts a string slice to a `KeywordKind`.
+    ///
+    /// # Arguments
+    ///
+    /// * `s` - The string slice to convert.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the `KeywordKind` if the string is a valid keyword, or an empty error if not.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "auto" => Ok(KeywordKind::Auto),
@@ -86,6 +99,15 @@ impl FromStr for KeywordKind {
 }
 
 impl fmt::Display for KeywordKind {
+    /// Formats the `KeywordKind` as a string.
+    ///
+    /// # Arguments
+    ///
+    /// * `f` - The formatter.
+    ///
+    /// # Returns
+    ///
+    /// A `fmt::Result`.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             KeywordKind::Auto => write!(f, "auto"),

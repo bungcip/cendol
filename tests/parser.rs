@@ -5,6 +5,7 @@ use cendol::preprocessor::token::{KeywordKind, Token, TokenKind};
 
 #[cfg(test)]
 mod tests {
+    use cendol::file::FileManager;
     use cendol::parser::Parser;
     use cendol::parser::ast::{Expr, Function, Program, Stmt, Type};
     use cendol::preprocessor::Preprocessor;
@@ -12,8 +13,8 @@ mod tests {
     #[test]
     fn test_increment() {
         let input = "int main() { int a = 0; a++; return 0; }";
-        let mut preprocessor = Preprocessor::new();
-        let tokens = preprocessor.preprocess(input).unwrap();
+        let mut preprocessor = Preprocessor::new(FileManager::new());
+        let tokens = preprocessor.preprocess(input, "test.c").unwrap();
         let mut parser = Parser::new(tokens).unwrap();
         let ast = parser.parse().unwrap();
         assert_eq!(
@@ -40,8 +41,8 @@ mod tests {
     #[test]
     fn test_parser() {
         let input = "int main() { return 0; }";
-        let mut preprocessor = Preprocessor::new();
-        let tokens = preprocessor.preprocess(input).unwrap();
+        let mut preprocessor = Preprocessor::new(FileManager::new());
+        let tokens = preprocessor.preprocess(input, "test.c").unwrap();
         let mut parser = Parser::new(tokens).unwrap();
         let ast = parser.parse().unwrap();
         assert_eq!(

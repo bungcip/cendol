@@ -55,3 +55,9 @@ impl From<&str> for PreprocessorError {
         PreprocessorError::Generic(s.to_string())
     }
 }
+
+impl From<std::io::Error> for PreprocessorError {
+    fn from(err: std::io::Error) -> Self {
+        PreprocessorError::Generic(err.to_string())
+    }
+}

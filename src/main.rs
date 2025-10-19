@@ -1,5 +1,6 @@
 use cendol::codegen::CodeGen;
 use cendol::error::{Error, Report, report};
+use cendol::file::FileManager;
 use cendol::parser::Parser;
 use cendol::preprocessor::Preprocessor;
 use clap::Parser as ClapParser;
@@ -75,18 +76,24 @@ fn run() -> Result<(), Error> {
 
     let input = fs::read_to_string(&cli.input_file).expect("Failed to read input file");
 
-    let mut preprocessor = Preprocessor::new();
+    let mut file_manager = FileManager::new();
+    file_manager.add_include_path("/usr/include");
+    file_manager.add_include_path("/usr/include/x86_64-linux-gnu");
+    file_manager.add_include_path("/usr/lib/gcc/x86_64-linux-gnu/11/include");
+
+    for path in cli.include_path {
+        file_manager.add_include_path(&path);
+    }
+
+    let mut preprocessor = Preprocessor::new(file_manager);
 
     for def in cli.define {
         preprocessor.define(&def)?;
     }
 
-    for path in cli.include_path {
-        todo!("Add include path: {}", path);
-    }
-
+    // if cli.preprocess_only {
     if cli.preprocess_only {
-        let output = preprocessor.preprocess(&input)?;
+        let output = preprocessor.preprocess(&input, &cli.input_file)?;
         if let Some(output_file) = cli.output_file {
             fs::write(output_file, format!("{:?}", output))
                 .expect("Failed to write to output file");
@@ -96,7 +103,7 @@ fn run() -> Result<(), Error> {
         return Ok(());
     }
 
-    let tokens = preprocessor.preprocess(&input)?;
+    let tokens = preprocessor.preprocess(&input, &cli.input_file)?;
 
     let mut parser = Parser::new(tokens)?;
     let ast = parser.parse()?;

@@ -1,7 +1,7 @@
 use crate::file::FileManager;
 use crate::preprocessor::error::PreprocessorError;
 use crate::preprocessor::lexer::Lexer;
-use crate::preprocessor::token::{DirectiveKind, Token, TokenKind};
+use crate::preprocessor::token::{DirectiveKind, IncludeKind, Token, TokenKind};
 use chrono::Local;
 use std::collections::{HashMap, HashSet};
 
@@ -28,27 +28,43 @@ enum Macro {
     },
 }
 
+/// A preprocessor expression.
+#[derive(Debug, PartialEq)]
+enum Expr {
+    /// A number.
+    Number(i32),
+    /// A variable.
+    Variable(String),
+    /// A unary operation.
+    Unary(TokenKind, Box<Expr>),
+    /// A binary operation.
+    Binary(TokenKind, Box<Expr>, Box<Expr>),
+    /// A ternary operation.
+    Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
+}
+
+/// The state of a single file being preprocessed.
+struct FileState {
+    tokens: Vec<Token>,
+    index: usize,
+}
+
 /// A C preprocessor.
 pub struct Preprocessor {
     macros: HashMap<String, Macro>,
     conditional_stack: Vec<bool>,
     file_manager: FileManager,
-}
-
-impl Default for Preprocessor {
-    /// Creates a new `Preprocessor` with default settings.
-    fn default() -> Self {
-        Self::new()
-    }
+    file_stack: Vec<FileState>,
 }
 
 impl Preprocessor {
     /// Creates a new `Preprocessor`.
-    pub fn new() -> Self {
+    pub fn new(file_manager: FileManager) -> Self {
         Preprocessor {
             macros: HashMap::new(),
             conditional_stack: Vec::new(),
-            file_manager: FileManager::new(),
+            file_manager,
+            file_stack: Vec::new(),
         }
     }
 
@@ -61,12 +77,26 @@ impl Preprocessor {
     /// # Returns
     ///
     /// A `Result` containing a vector of tokens, or a `PreprocessorError` if preprocessing fails.
-    pub fn preprocess(&mut self, input: &str) -> Result<Vec<Token>, PreprocessorError> {
-        let mut tokens = self.tokenize(input)?;
-        self.process_directives(&mut tokens)?;
-        self.expand_all_macros(&mut tokens)?;
-        tokens.retain(|t| !matches!(t.kind, TokenKind::Whitespace(_) | TokenKind::Newline));
-        Ok(tokens)
+    pub fn preprocess(
+        &mut self,
+        input: &str,
+        filename: &str,
+    ) -> Result<Vec<Token>, PreprocessorError> {
+        let initial_tokens = self.tokenize(input, filename)?;
+        self.file_stack.push(FileState {
+            tokens: initial_tokens,
+            index: 0,
+        });
+
+        let mut final_tokens = Vec::new();
+        while !self.file_stack.is_empty() {
+            let mut tokens = self.process_directives()?;
+            self.expand_all_macros(&mut tokens)?;
+            final_tokens.extend(tokens);
+        }
+
+        final_tokens.retain(|t| !matches!(t.kind, TokenKind::Whitespace(_) | TokenKind::Newline));
+        Ok(final_tokens)
     }
 
     /// Defines a macro.
@@ -86,7 +116,7 @@ impl Preprocessor {
             ));
         }
         let value = if parts.len() > 1 { parts[1] } else { "1" };
-        let file_id = self.file_manager.open("<cmdline>").unwrap();
+        let file_id = self.file_manager.open("<cmdline>")?;
         let mut lexer = Lexer::new(value, file_id);
         let mut tokens = Vec::new();
         loop {
@@ -101,8 +131,11 @@ impl Preprocessor {
     }
 
     /// Tokenizes an input string.
-    fn tokenize(&mut self, input: &str) -> Result<Vec<Token>, PreprocessorError> {
-        let file_id = self.file_manager.open("<input>").unwrap();
+    fn tokenize(&mut self, input: &str, filename: &str) -> Result<Vec<Token>, PreprocessorError> {
+        let file_id = self
+            .file_manager
+            .open(filename)
+            .map_err(|_| PreprocessorError::FileNotFound(filename.to_string()))?;
         let mut lexer = Lexer::new(input, file_id);
         let mut tokens = Vec::new();
         loop {
@@ -116,115 +149,163 @@ impl Preprocessor {
     }
 
     /// Processes preprocessor directives.
-    fn process_directives(&mut self, tokens: &mut Vec<Token>) -> Result<(), PreprocessorError> {
-        let mut i = 0;
+    fn process_directives(&mut self) -> Result<Vec<Token>, PreprocessorError> {
         let mut final_tokens = Vec::new();
-        let mut depth = 0;
+        while !self.file_stack.is_empty() {
+            let file_state = self.file_stack.last_mut().unwrap();
+            if file_state.index >= file_state.tokens.len() {
+                if !self.conditional_stack.is_empty() {
+                    return Err(PreprocessorError::UnterminatedConditional);
+                }
+                self.file_stack.pop();
+                continue;
+            }
 
-        while i < tokens.len() {
+            let token = file_state.tokens[file_state.index].clone();
+            file_state.index += 1;
+
             let in_true_branch = self.conditional_stack.iter().all(|&x| x);
 
-            if let TokenKind::Directive(directive) = tokens[i].kind {
+            if let TokenKind::Directive(directive) = token.kind {
                 match directive {
                     DirectiveKind::If => {
-                        depth += 1;
-                        let (condition, end) = parse_conditional_expression(i + 1, tokens)?;
-                        let result = evaluate_expression(&condition)?;
+                        let (condition, end) = {
+                            let file_state = self.file_stack.last_mut().unwrap();
+                            parse_conditional_expression(file_state.index, &file_state.tokens)?
+                        };
+                        let result = evaluate_expression(&condition, &self.macros)?;
                         self.conditional_stack.push(result);
-                        i = end;
+                        self.file_stack.last_mut().unwrap().index = end;
                     }
                     DirectiveKind::Elif => {
-                        if depth == 0 {
+                        if self.conditional_stack.is_empty() {
                             return Err(PreprocessorError::UnexpectedElif);
                         }
+                        let (condition, _end) = {
+                            let file_state = self.file_stack.last().unwrap();
+                            parse_conditional_expression(file_state.index, &file_state.tokens)?
+                        };
                         if let Some(last) = self.conditional_stack.last_mut() {
                             if !*last {
-                                let (condition, _end) =
-                                    parse_conditional_expression(i + 1, tokens)?;
-                                let result = evaluate_expression(&condition)?;
+                                let result = evaluate_expression(&condition, &self.macros)?;
                                 *last = result;
                             } else {
                                 *last = false;
                             }
                         }
-                        i = find_next_line(i + 1, tokens);
+                        let file_state = self.file_stack.last_mut().unwrap();
+                        file_state.index = find_next_line(file_state.index, &file_state.tokens);
                     }
                     DirectiveKind::Else => {
-                        if depth == 0 {
+                        if self.conditional_stack.is_empty() {
                             return Err(PreprocessorError::UnexpectedElse);
                         }
                         if let Some(last) = self.conditional_stack.last_mut() {
                             *last = !*last;
                         }
-                        i = find_next_line(i + 1, tokens);
+                        let file_state = self.file_stack.last_mut().unwrap();
+                        file_state.index = find_next_line(file_state.index, &file_state.tokens);
                     }
                     DirectiveKind::Endif => {
-                        if depth == 0 {
+                        if self.conditional_stack.is_empty() {
                             return Err(PreprocessorError::UnexpectedEndif);
                         }
                         self.conditional_stack.pop();
-                        depth -= 1;
-                        i = find_next_line(i + 1, tokens);
+                        let file_state = self.file_stack.last_mut().unwrap();
+                        file_state.index = find_next_line(file_state.index, &file_state.tokens);
                     }
                     DirectiveKind::Define => {
                         if in_true_branch {
                             let mut macro_tokens = Vec::new();
-                            let mut j = i + 1;
-                            while j < tokens.len() {
-                                if matches!(tokens[j].kind, TokenKind::Newline) {
+                            let file_state = self.file_stack.last_mut().unwrap();
+                            while file_state.index < file_state.tokens.len() {
+                                if matches!(file_state.tokens[file_state.index].kind, TokenKind::Newline)
+                                {
                                     break;
                                 }
-                                macro_tokens.push(tokens[j].clone());
-                                j += 1;
+                                macro_tokens.push(file_state.tokens[file_state.index].clone());
+                                file_state.index += 1;
                             }
                             self.handle_define(&mut macro_tokens)?;
                         }
-                        i = find_next_line(i + 1, tokens);
+                        let file_state = self.file_stack.last_mut().unwrap();
+                        file_state.index = find_next_line(file_state.index, &file_state.tokens);
                     }
                     DirectiveKind::Ifdef => {
-                        depth += 1;
-                        let (name, end) = parse_identifier(i + 1, tokens)?;
+                        let (name, end) = {
+                            let file_state = self.file_stack.last().unwrap();
+                            parse_identifier(file_state.index, &file_state.tokens)?
+                        };
                         self.conditional_stack.push(self.macros.contains_key(&name));
-                        i = end;
+                        self.file_stack.last_mut().unwrap().index = end;
                     }
                     DirectiveKind::Ifndef => {
-                        depth += 1;
-                        let (name, end) = parse_identifier(i + 1, tokens)?;
+                        let (name, end) = {
+                            let file_state = self.file_stack.last().unwrap();
+                            parse_identifier(file_state.index, &file_state.tokens)?
+                        };
                         self.conditional_stack
                             .push(!self.macros.contains_key(&name));
-                        i = end;
+                        self.file_stack.last_mut().unwrap().index = end;
                     }
                     DirectiveKind::Undef => {
                         if in_true_branch {
-                            let (name, end) = parse_identifier(i + 1, tokens)?;
+                            let (name, end) = {
+                                let file_state = self.file_stack.last().unwrap();
+                                parse_identifier(file_state.index, &file_state.tokens)?
+                            };
                             self.macros.remove(&name);
-                            i = end;
+                            self.file_stack.last_mut().unwrap().index = end;
                         } else {
-                            i = find_next_line(i + 1, tokens);
+                            let file_state = self.file_stack.last_mut().unwrap();
+                            file_state.index =
+                                find_next_line(file_state.index, &file_state.tokens);
                         }
                     }
                     DirectiveKind::Error => {
                         if in_true_branch {
-                            let (message, _end) = parse_error_message(i + 1, tokens)?;
+                            let (message, _end) = {
+                                let file_state = self.file_stack.last().unwrap();
+                                parse_error_message(file_state.index, &file_state.tokens)?
+                            };
                             return Err(PreprocessorError::Generic(message));
                         }
-                        i = find_next_line(i + 1, tokens);
+                        let file_state = self.file_stack.last_mut().unwrap();
+                        file_state.index = find_next_line(file_state.index, &file_state.tokens);
                     }
                     DirectiveKind::Line => {
                         if in_true_branch {
-                            let (_line, _filename, end) = parse_line_directive(i + 1, tokens)?;
-                            i = end;
+                            let (_line, _filename, end) = {
+                                let file_state = self.file_stack.last().unwrap();
+                                parse_line_directive(file_state.index, &file_state.tokens)?
+                            };
+                            self.file_stack.last_mut().unwrap().index = end;
                         } else {
-                            i = find_next_line(i + 1, tokens);
+                            let file_state = self.file_stack.last_mut().unwrap();
+                            file_state.index =
+                                find_next_line(file_state.index, &file_state.tokens);
                         }
                     }
                     DirectiveKind::Include => {
                         if in_true_branch {
-                            let (filename, end) = parse_include(i + 1, tokens)?;
-                            let new_tokens = self.include_file(&filename)?;
-                            tokens.splice(i..end, new_tokens);
+                            let (filename, include_kind, end) = {
+                                let file_state = self.file_stack.last().unwrap();
+                                parse_include(file_state.index, &file_state.tokens)?
+                            };
+                            let new_tokens = self.include_file(
+                                &filename,
+                                include_kind,
+                                token.location.file,
+                            )?;
+                            self.file_stack.last_mut().unwrap().index = end;
+                            self.file_stack.push(FileState {
+                                tokens: new_tokens,
+                                index: 0,
+                            });
                         } else {
-                            i = find_next_line(i + 1, tokens);
+                            let file_state = self.file_stack.last_mut().unwrap();
+                            file_state.index =
+                                find_next_line(file_state.index, &file_state.tokens);
                         }
                     }
                 }
@@ -232,17 +313,15 @@ impl Preprocessor {
             }
 
             if in_true_branch {
-                final_tokens.push(tokens[i].clone());
+                final_tokens.push(token);
             }
-            i += 1;
         }
 
-        if depth != 0 {
+        if !self.conditional_stack.is_empty() {
             return Err(PreprocessorError::UnterminatedConditional);
         }
 
-        *tokens = final_tokens;
-        Ok(())
+        Ok(final_tokens)
     }
 
     /// Handles a `#define` directive.
@@ -613,10 +692,15 @@ impl Preprocessor {
     }
 
     /// Includes a file.
-    fn include_file(&mut self, filename: &str) -> Result<Vec<Token>, PreprocessorError> {
+    fn include_file(
+        &mut self,
+        filename: &str,
+        kind: IncludeKind,
+        includer: crate::file::FileId,
+    ) -> Result<Vec<Token>, PreprocessorError> {
         let file_id = self
             .file_manager
-            .open(filename)
+            .open_include(filename, kind, includer)
             .map_err(|_| PreprocessorError::FileNotFound(filename.to_string()))?;
         let content = self
             .file_manager
@@ -636,16 +720,31 @@ impl Preprocessor {
 }
 
 /// Parses an include directive.
-fn parse_include(start_idx: usize, tokens: &[Token]) -> Result<(String, usize), PreprocessorError> {
+fn parse_include(
+    start_idx: usize,
+    tokens: &[Token],
+) -> Result<(String, IncludeKind, usize), PreprocessorError> {
     let mut i = start_idx;
     while i < tokens.len() && tokens[i].kind.is_whitespace() {
         i += 1;
     }
 
-    if i < tokens.len()
-        && let TokenKind::String(s) = &tokens[i].kind
-    {
-        return Ok((s.clone(), i + 1));
+    if i < tokens.len() {
+        if let TokenKind::String(s) = &tokens[i].kind {
+            return Ok((s.clone(), IncludeKind::Local, i + 1));
+        }
+
+        if let TokenKind::LessThan = &tokens[i].kind {
+            i += 1;
+            let mut filename = String::new();
+            while i < tokens.len() {
+                if let TokenKind::GreaterThan = &tokens[i].kind {
+                    return Ok((filename, IncludeKind::System, i + 1));
+                }
+                filename.push_str(&tokens[i].kind.to_string());
+                i += 1;
+            }
+        }
     }
 
     Err(PreprocessorError::InvalidInclude)
@@ -659,59 +758,71 @@ fn parse_conditional_expression(
     let mut condition = Vec::new();
     let mut i = start_idx;
     while i < tokens.len() {
-        if matches!(tokens[i].kind, TokenKind::Newline) {
-            return Ok((condition, i));
+        if let TokenKind::Newline = tokens[i].kind {
+            break;
         }
-        condition.push(tokens[i].clone());
+        if !tokens[i].kind.is_whitespace() {
+            condition.push(tokens[i].clone());
+        }
         i += 1;
     }
     Ok((condition, i))
 }
 
 /// Evaluates a conditional expression.
-fn evaluate_expression(tokens: &[Token]) -> Result<bool, PreprocessorError> {
-    let mut i = 0;
-    while i < tokens.len() && tokens[i].kind.is_whitespace() {
-        i += 1;
-    }
-
-    if i >= tokens.len() {
+fn evaluate_expression(
+    tokens: &[Token],
+    macros: &HashMap<String, Macro>,
+) -> Result<bool, PreprocessorError> {
+    if tokens.is_empty() {
         return Ok(false);
     }
+    let expr = parse_expr(tokens)?;
+    let result = eval(&expr, macros)?;
+    Ok(result != 0)
+}
 
-    let lhs: i32 = if let TokenKind::Number(s) = &tokens[i].kind {
-        s.parse().unwrap()
-    } else {
-        return Ok(false);
-    };
-    i += 1;
-
-    while i < tokens.len() && tokens[i].kind.is_whitespace() {
-        i += 1;
+fn eval(expr: &Expr, macros: &HashMap<String, Macro>) -> Result<i32, PreprocessorError> {
+    match expr {
+        Expr::Number(n) => Ok(*n),
+        Expr::Variable(s) => Ok(if macros.contains_key(s) { 1 } else { 0 }),
+        Expr::Unary(op, rhs) => {
+            let rhs = eval(rhs, macros)?;
+            match op {
+                TokenKind::Minus => Ok(-rhs),
+                TokenKind::Bang => Ok(if rhs == 0 { 1 } else { 0 }),
+                _ => Err(PreprocessorError::Generic("Invalid unary operator".to_string())),
+            }
+        }
+        Expr::Binary(op, lhs, rhs) => {
+            let lhs = eval(lhs, macros)?;
+            let rhs = eval(rhs, macros)?;
+            match op {
+                TokenKind::Plus => Ok(lhs + rhs),
+                TokenKind::Minus => Ok(lhs - rhs),
+                TokenKind::Star => Ok(lhs * rhs),
+                TokenKind::Slash => Ok(lhs / rhs),
+                TokenKind::PipePipe => Ok(if lhs != 0 || rhs != 0 { 1 } else { 0 }),
+                TokenKind::AmpersandAmpersand => Ok(if lhs != 0 && rhs != 0 { 1 } else { 0 }),
+                TokenKind::Pipe => Ok(lhs | rhs),
+                TokenKind::Caret => Ok(lhs ^ rhs),
+                TokenKind::Ampersand => Ok(lhs & rhs),
+                TokenKind::Equal => Ok(if lhs == rhs { 1 } else { 0 }),
+                TokenKind::Bang => Ok(if lhs != rhs { 1 } else { 0 }),
+                TokenKind::LessThan => Ok(if lhs < rhs { 1 } else { 0 }),
+                TokenKind::GreaterThan => Ok(if lhs > rhs { 1 } else { 0 }),
+                _ => Err(PreprocessorError::Generic("Invalid binary operator".to_string())),
+            }
+        }
+        Expr::Ternary(cond, then, else_) => {
+            let cond = eval(cond, macros)?;
+            if cond != 0 {
+                eval(then, macros)
+            } else {
+                eval(else_, macros)
+            }
+        }
     }
-
-    if i >= tokens.len() {
-        return Ok(lhs != 0);
-    }
-
-    let _op = &tokens[i].kind;
-    i += 1;
-
-    while i < tokens.len() && tokens[i].kind.is_whitespace() {
-        i += 1;
-    }
-
-    if i >= tokens.len() {
-        return Ok(lhs != 0);
-    }
-
-    let _rhs: i32 = if let TokenKind::Number(s) = &tokens[i].kind {
-        s.parse().unwrap()
-    } else {
-        return Ok(lhs != 0);
-    };
-
-    Ok(lhs != 0)
 }
 
 /// Finds the index of the next newline token.
@@ -800,4 +911,103 @@ fn parse_line_directive(
     }
 
     Ok((line, filename, i))
+}
+
+fn parse_expr(tokens: &[Token]) -> Result<Expr, PreprocessorError> {
+    let mut i = 0;
+    parse_expr_bp(tokens, &mut i, 0)
+}
+
+fn parse_expr_bp(
+    tokens: &[Token],
+    i: &mut usize,
+    min_bp: u8,
+) -> Result<Expr, PreprocessorError> {
+    // dbg!(tokens);
+    while tokens[*i].kind.is_whitespace() {
+        *i += 1;
+    }
+    let op = &tokens[*i].kind;
+    let mut lhs = match op {
+        TokenKind::Number(n) => {
+            *i += 1;
+            Expr::Number(n.parse().unwrap())
+        }
+        TokenKind::Identifier(s) => {
+            *i += 1;
+            if s == "defined" {
+                let name = if let TokenKind::LeftParen = &tokens[*i].kind {
+                    *i += 1;
+                    let name = if let TokenKind::Identifier(name) = &tokens[*i].kind {
+                        name.clone()
+                    } else {
+                        return Err(PreprocessorError::Generic("Expected identifier".to_string()));
+                    };
+                    *i += 1;
+                    if !matches!(tokens[*i].kind, TokenKind::RightParen) {
+                        return Err(PreprocessorError::Generic("Expected ')'".to_string()));
+                    }
+                    *i += 1;
+                    name
+                } else if let TokenKind::Identifier(name) = &tokens[*i].kind {
+                    *i += 1;
+                    name.clone()
+                } else {
+                    return Err(PreprocessorError::Generic("Expected identifier".to_string()));
+                };
+                Expr::Variable(name)
+            } else {
+                Expr::Variable(s.clone())
+            }
+        }
+        TokenKind::Minus | TokenKind::Bang => {
+            *i += 1;
+            let rhs = parse_expr_bp(tokens, i, 5)?;
+            Expr::Unary(op.clone(), Box::new(rhs))
+        }
+        TokenKind::LeftParen => {
+            *i += 1;
+            let expr = parse_expr_bp(tokens, i, 0)?;
+            if !matches!(tokens[*i].kind, TokenKind::RightParen) {
+                return Err(PreprocessorError::Generic("Expected ')'".to_string()));
+            }
+            *i += 1;
+            expr
+        }
+        _ => return Err(PreprocessorError::Generic("Expected expression".to_string())),
+    };
+
+    loop {
+        if *i >= tokens.len() {
+            break;
+        }
+
+        while tokens[*i].kind.is_whitespace() {
+            *i += 1;
+        }
+
+        let op = &tokens[*i].kind;
+        let (l_bp, r_bp) = match op {
+            TokenKind::PipePipe => (1, 2),
+            TokenKind::AmpersandAmpersand => (3, 4),
+            TokenKind::Pipe => (5, 6),
+            TokenKind::Caret => (7, 8),
+            TokenKind::Ampersand => (9, 10),
+            TokenKind::Equal | TokenKind::Bang => (11, 12),
+            TokenKind::LessThan | TokenKind::GreaterThan => (13, 14),
+            TokenKind::Plus | TokenKind::Minus => (15, 16),
+            TokenKind::Star | TokenKind::Slash => (17, 18),
+            _ => break,
+        };
+
+        if l_bp < min_bp {
+            break;
+        }
+
+        *i += 1;
+        let rhs = parse_expr_bp(tokens, i, r_bp)?;
+        lhs = Expr::Binary(op.clone(), Box::new(lhs), Box::new(rhs));
+    }
+
+    Ok(lhs)
 }

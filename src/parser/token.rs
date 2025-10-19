@@ -68,9 +68,13 @@ pub enum PunctKind {
     LessThanEqual,
     GreaterThanEqual,
     AmpersandAmpersand,
+    Pipe,
     PipePipe,
     Bang,
     Ampersand,
+    Caret,
+    Tilde,
+    Question,
     Ellipsis,
     Dot,
     PlusPlus,
@@ -107,6 +111,16 @@ impl From<preprocessor::token::Token> for Token {
             preprocessor::token::TokenKind::Equal => TokenKind::Punct(PunctKind::Equal),
             preprocessor::token::TokenKind::LessThan => TokenKind::Punct(PunctKind::LessThan),
             preprocessor::token::TokenKind::GreaterThan => TokenKind::Punct(PunctKind::GreaterThan),
+            preprocessor::token::TokenKind::Pipe => TokenKind::Punct(PunctKind::Pipe),
+            preprocessor::token::TokenKind::PipePipe => TokenKind::Punct(PunctKind::PipePipe),
+            preprocessor::token::TokenKind::Ampersand => TokenKind::Punct(PunctKind::Ampersand),
+            preprocessor::token::TokenKind::AmpersandAmpersand => {
+                TokenKind::Punct(PunctKind::AmpersandAmpersand)
+            }
+            preprocessor::token::TokenKind::Caret => TokenKind::Punct(PunctKind::Caret),
+            preprocessor::token::TokenKind::Tilde => TokenKind::Punct(PunctKind::Tilde),
+            preprocessor::token::TokenKind::Bang => TokenKind::Punct(PunctKind::Bang),
+            preprocessor::token::TokenKind::Question => TokenKind::Punct(PunctKind::Question),
             preprocessor::token::TokenKind::Eof => TokenKind::Eof,
             _ => panic!("cannot convert preprocessor token to parser token"),
         };

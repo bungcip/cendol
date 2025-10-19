@@ -10,6 +10,7 @@ pub struct FileId(pub u32);
 pub struct FileManager {
     files: HashMap<FileId, PathBuf>,
     next_id: u32,
+    include_paths: Vec<PathBuf>,
 }
 
 impl Default for FileManager {
@@ -24,7 +25,13 @@ impl FileManager {
         FileManager {
             files: HashMap::new(),
             next_id: 0,
+            include_paths: Vec::new(),
         }
+    }
+
+    /// Adds an include path to the `FileManager`.
+    pub fn add_include_path(&mut self, path: &str) {
+        self.include_paths.push(PathBuf::from(path));
     }
 
     /// Opens a file and returns its `FileId`.
@@ -34,6 +41,40 @@ impl FileManager {
         self.files.insert(file_id, path_buf);
         self.next_id += 1;
         Ok(file_id)
+    }
+
+    pub fn open_include(
+        &mut self,
+        path: &str,
+        kind: crate::preprocessor::token::IncludeKind,
+        includer: FileId,
+    ) -> Result<FileId, std::io::Error> {
+        let mut search_paths = Vec::new();
+
+        if kind == crate::preprocessor::token::IncludeKind::Local {
+            if let Some(includer_path) = self.files.get(&includer) {
+                if let Some(parent) = includer_path.parent() {
+                    search_paths.push(parent.to_path_buf());
+                }
+            }
+        }
+
+        search_paths.extend(self.include_paths.clone());
+
+        for search_path in &search_paths {
+            let full_path = search_path.join(path);
+            if full_path.exists() {
+                let file_id = FileId(self.next_id);
+                self.files.insert(file_id, full_path);
+                self.next_id += 1;
+                return Ok(file_id);
+            }
+        }
+
+        Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("File not found: {}", path),
+        ))
     }
 
     /// Reads the content of a file given its `FileId`.

@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use cendol::codegen::CodeGen;
+    use cendol::file::FileManager;
     use cendol::parser::Parser;
     use cendol::preprocessor::Preprocessor;
     use std::fs;
@@ -10,8 +11,8 @@ mod tests {
     #[test]
     fn test_codegen() {
         let input = "int main() { return 0; }";
-        let mut preprocessor = Preprocessor::new();
-        let tokens = preprocessor.preprocess(input).unwrap();
+        let mut preprocessor = Preprocessor::new(FileManager::new());
+        let tokens = preprocessor.preprocess(input, "test.c").unwrap();
         let mut parser = Parser::new(tokens).unwrap();
         let ast = parser.parse().unwrap();
         let codegen = CodeGen::new();
@@ -33,18 +34,14 @@ mod tests {
     }
     #[test]
     fn test_external_function_call() {
-        let status = Command::new("cc")
-            .arg("-c")
-            .arg("tests/external.c")
-            .arg("-o")
-            .arg("tests/external.o")
-            .status()
-            .unwrap();
-        assert!(status.success());
-
-        let input = "int main() { return external_function(2, 3); }";
-        let mut preprocessor = Preprocessor::new();
-        let tokens = preprocessor.preprocess(input).unwrap();
+        let input = r#"
+        int main() {
+            puts("hello world");
+            return 0;
+        }
+        "#;
+        let mut preprocessor = Preprocessor::new(FileManager::new());
+        let tokens = preprocessor.preprocess(input, "test.c").unwrap();
         let mut parser = Parser::new(tokens).unwrap();
         let ast = parser.parse().unwrap();
         let codegen = CodeGen::new();
@@ -55,14 +52,13 @@ mod tests {
 
         let status = Command::new("cc")
             .arg("test.o")
-            .arg("tests/external.o")
             .arg("-o")
             .arg("test.out")
             .status()
             .unwrap();
         assert!(status.success());
 
-        let output = Command::new("./test.out").status().unwrap();
-        assert_eq!(output.code(), Some(5));
+        let output = Command::new("./test.out").output().unwrap();
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "hello world\n");
     }
 }

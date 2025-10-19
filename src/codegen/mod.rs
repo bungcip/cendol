@@ -74,6 +74,7 @@ impl CodeGen {
             }
         }
 
+
         self.ctx
             .func
             .signature
@@ -264,11 +265,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         match expr {
             Expr::Number(n) => self.builder.ins().iconst(types::I64, n),
             Expr::String(s) => {
-                let s = s.as_bytes();
                 let mut data = Vec::with_capacity(s.len() + 1);
-                data.extend_from_slice(s);
+                data.extend_from_slice(s.as_bytes());
                 data.push(0);
-                let id = self.module.declare_data(&s.escape_ascii().to_string(), Linkage::Local, true, false).unwrap();
+                let id = self.module.declare_data(&s, Linkage::Local, false, false).unwrap();
                 let mut data_desc = cranelift_module::DataDescription::new();
                 data_desc.define(data.into_boxed_slice());
                 self.module.define_data(id, &data_desc).unwrap();
@@ -384,7 +384,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                             .module
                             .declare_function(&name, Linkage::Import, &sig)
                             .unwrap();
-                        self.functions.insert(name, callee);
+                        self.functions.insert(name.clone(), callee);
                         callee
                     }
                 };

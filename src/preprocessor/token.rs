@@ -69,6 +69,15 @@ pub enum TokenKind {
     PlusPlus,
     MinusMinus,
     Star,
+    Slash,
+    Pipe,
+    PipePipe,
+    Ampersand,
+    AmpersandAmpersand,
+    Caret,
+    Tilde,
+    Bang,
+    Question,
     Equal,
     LessThan,
     GreaterThan,
@@ -110,6 +119,16 @@ pub enum DirectiveKind {
     /// The `#define` directive.
     Define,
 }
+
+/// The kind of an include directive.
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum IncludeKind {
+    /// An include directive with angle brackets.
+    System,
+    /// An include directive with double quotes.
+    Local,
+}
+
 
 impl fmt::Display for DirectiveKind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -162,6 +181,15 @@ impl fmt::Display for TokenKind {
             TokenKind::PlusPlus => write!(f, "++"),
             TokenKind::MinusMinus => write!(f, "--"),
             TokenKind::Star => write!(f, "*"),
+            TokenKind::Slash => write!(f, "/"),
+            TokenKind::Pipe => write!(f, "|"),
+            TokenKind::PipePipe => write!(f, "||"),
+            TokenKind::Ampersand => write!(f, "&"),
+            TokenKind::AmpersandAmpersand => write!(f, "&&"),
+            TokenKind::Caret => write!(f, "^"),
+            TokenKind::Tilde => write!(f, "~"),
+            TokenKind::Bang => write!(f, "!"),
+            TokenKind::Question => write!(f, "?"),
             TokenKind::Equal => write!(f, "="),
             TokenKind::LessThan => write!(f, "<"),
             TokenKind::GreaterThan => write!(f, ">"),

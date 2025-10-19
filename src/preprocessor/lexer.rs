@@ -158,6 +158,69 @@ impl<'a> Lexer<'a> {
                 self.at_start_of_line = false;
                 Ok(Token::new(TokenKind::Star, self.location()))
             }
+            '|' => {
+                self.at_start_of_line = false;
+                if let Some(&'|') = self.input.peek() {
+                    self.input.next();
+                    Ok(Token::new(TokenKind::PipePipe, self.location()))
+                } else {
+                    Ok(Token::new(TokenKind::Pipe, self.location()))
+                }
+            }
+            '&' => {
+                self.at_start_of_line = false;
+                if let Some(&'&') = self.input.peek() {
+                    self.input.next();
+                    Ok(Token::new(TokenKind::AmpersandAmpersand, self.location()))
+                } else {
+                    Ok(Token::new(TokenKind::Ampersand, self.location()))
+                }
+            }
+            '^' => {
+                self.at_start_of_line = false;
+                Ok(Token::new(TokenKind::Caret, self.location()))
+            }
+            '~' => {
+                self.at_start_of_line = false;
+                Ok(Token::new(TokenKind::Tilde, self.location()))
+            }
+            '!' => {
+                self.at_start_of_line = false;
+                Ok(Token::new(TokenKind::Bang, self.location()))
+            }
+            '?' => {
+                self.at_start_of_line = false;
+                Ok(Token::new(TokenKind::Question, self.location()))
+            }
+            '/' => {
+                self.at_start_of_line = false;
+                if let Some(&'/') = self.input.peek() {
+                    self.input.next();
+                    let mut comment = String::new();
+                    while let Some(&c) = self.input.peek() {
+                        if c == '\n' {
+                            break;
+                        }
+                        comment.push(self.input.next().unwrap());
+                    }
+                    Ok(Token::new(TokenKind::Comment(comment), self.location()))
+                } else if let Some(&'*') = self.input.peek() {
+                    self.input.next();
+                    let mut comment = String::new();
+                    while let Some(c) = self.input.next() {
+                        if c == '*' {
+                            if let Some(&'/') = self.input.peek() {
+                                self.input.next();
+                                break;
+                            }
+                        }
+                        comment.push(c);
+                    }
+                    Ok(Token::new(TokenKind::Comment(comment), self.location()))
+                } else {
+                    Ok(Token::new(TokenKind::Slash, self.location()))
+                }
+            }
             _ if c.is_ascii_punctuation() => {
                 self.at_start_of_line = false;
                 let kind = match c {
@@ -193,53 +256,22 @@ impl<'a> Lexer<'a> {
         }
 
         self.at_start_of_line = false;
-        match directive.as_str() {
-            "if" => Ok(Token::new(
-                TokenKind::Directive(DirectiveKind::If),
-                self.location(),
-            )),
-            "else" => Ok(Token::new(
-                TokenKind::Directive(DirectiveKind::Else),
-                self.location(),
-            )),
-            "elif" => Ok(Token::new(
-                TokenKind::Directive(DirectiveKind::Elif),
-                self.location(),
-            )),
-            "endif" => Ok(Token::new(
-                TokenKind::Directive(DirectiveKind::Endif),
-                self.location(),
-            )),
-            "ifdef" => Ok(Token::new(
-                TokenKind::Directive(DirectiveKind::Ifdef),
-                self.location(),
-            )),
-            "ifndef" => Ok(Token::new(
-                TokenKind::Directive(DirectiveKind::Ifndef),
-                self.location(),
-            )),
-            "undef" => Ok(Token::new(
-                TokenKind::Directive(DirectiveKind::Undef),
-                self.location(),
-            )),
-            "error" => Ok(Token::new(
-                TokenKind::Directive(DirectiveKind::Error),
-                self.location(),
-            )),
-            "line" => Ok(Token::new(
-                TokenKind::Directive(DirectiveKind::Line),
-                self.location(),
-            )),
-            "include" => Ok(Token::new(
-                TokenKind::Directive(DirectiveKind::Include),
-                self.location(),
-            )),
-            "define" => Ok(Token::new(
-                TokenKind::Directive(DirectiveKind::Define),
-                self.location(),
-            )),
-            _ => Err(PreprocessorError::UnexpectedDirective(directive)),
-        }
+        let kind = match directive.as_str() {
+            "if" => DirectiveKind::If,
+            "else" => DirectiveKind::Else,
+            "elif" => DirectiveKind::Elif,
+            "endif" => DirectiveKind::Endif,
+            "ifdef" => DirectiveKind::Ifdef,
+            "ifndef" => DirectiveKind::Ifndef,
+            "undef" => DirectiveKind::Undef,
+            "error" => DirectiveKind::Error,
+            "line" => DirectiveKind::Line,
+            "include" => DirectiveKind::Include,
+            "define" => DirectiveKind::Define,
+            "pragma" => return self.next_token(),
+            _ => return self.next_token(),
+        };
+        Ok(Token::new(TokenKind::Directive(kind), self.location()))
     }
 
     /// Returns the current location in the source file.

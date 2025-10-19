@@ -1,11 +1,11 @@
 use cendol::codegen::CodeGen;
-use cendol::error::{report, Error, Report};
+use cendol::error::{Error, Report, report};
 use cendol::parser::Parser;
 use cendol::preprocessor::Preprocessor;
 use clap::Parser as ClapParser;
 use std::fs;
 use std::io::Write;
-use std::process::{exit, Command};
+use std::process::{Command, exit};
 
 /// Command-line arguments for the C-like compiler.
 #[derive(ClapParser)]

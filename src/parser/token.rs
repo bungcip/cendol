@@ -1,13 +1,10 @@
 pub use crate::common::{KeywordKind, SourceLocation};
-use std::collections::HashSet;
 
 /// Represents a token in the C language.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Token {
     /// The kind of token.
     pub kind: TokenKind,
-    /// A set of macro names that are hidden from this token.
-    pub hideset: HashSet<String>,
     /// The location of the token in the source code.
     pub location: SourceLocation,
 }
@@ -24,11 +21,7 @@ impl Token {
     ///
     /// A new `Token` instance.
     pub fn new(kind: TokenKind, location: SourceLocation) -> Self {
-        Token {
-            kind,
-            hideset: HashSet::new(),
-            location,
-        }
+        Token { kind, location }
     }
 }
 
@@ -89,7 +82,7 @@ impl From<preprocessor::token::Token> for Token {
     fn from(token: preprocessor::token::Token) -> Self {
         let kind = match token.kind {
             preprocessor::token::TokenKind::Identifier(s) => TokenKind::Identifier(s),
-            preprocessor::token::TokenKind::Keyword(k) => TokenKind::Keyword(k.into()),
+            preprocessor::token::TokenKind::Keyword(k) => TokenKind::Keyword(k),
             preprocessor::token::TokenKind::Number(s) => TokenKind::Number(s),
             preprocessor::token::TokenKind::String(s) => TokenKind::String(s),
             preprocessor::token::TokenKind::Char(s) => TokenKind::Char(s),
@@ -100,7 +93,6 @@ impl From<preprocessor::token::Token> for Token {
 
         Token {
             kind,
-            hideset: token.hideset,
             location: token.location,
         }
     }

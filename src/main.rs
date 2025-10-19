@@ -58,7 +58,7 @@ fn main() {
     let mut preprocessor = Preprocessor::new();
 
     for def in cli.define {
-        todo!("Define macro: {}", def);
+        preprocessor.define(&def).unwrap();
     }
 
     for path in cli.include_path {

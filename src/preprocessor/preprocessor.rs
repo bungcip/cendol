@@ -37,6 +37,26 @@ impl Preprocessor {
         Ok(tokens)
     }
 
+    pub fn define(&mut self, definition: &str) -> Result<(), PreprocessorError> {
+        if definition.is_empty() {
+            return Err(PreprocessorError::Generic("Empty definition".to_string()));
+        }
+        let parts: Vec<&str> = definition.splitn(2, '=').collect();
+        let name = parts[0].to_string();
+        let value = if parts.len() > 1 { parts[1] } else { "1" };
+        let mut lexer = Lexer::new(value, "<cmdline>".to_string());
+        let mut tokens = Vec::new();
+        loop {
+            let token = lexer.next_token()?;
+            if let TokenKind::Eof = token.kind {
+                break;
+            }
+            tokens.push(token);
+        }
+        self.macros.insert(name, Macro::Object { tokens });
+        Ok(())
+    }
+
     fn tokenize(&self, input: &str) -> Result<Vec<Token>, PreprocessorError> {
         let mut lexer = Lexer::new(input, "<input>".to_string());
         let mut tokens = Vec::new();

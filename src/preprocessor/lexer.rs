@@ -145,6 +145,10 @@ impl<'a> Lexer<'a> {
             "else" => Ok(Token::new(TokenKind::Else)),
             "elif" => Ok(Token::new(TokenKind::Elif)),
             "endif" => Ok(Token::new(TokenKind::Endif)),
+            "ifdef" => Ok(Token::new(TokenKind::Ifdef)),
+            "ifndef" => Ok(Token::new(TokenKind::Ifndef)),
+            "undef" => Ok(Token::new(TokenKind::Undef)),
+            "error" => Ok(Token::new(TokenKind::Error)),
             _ => Ok(Token::new(TokenKind::Directive(directive))),
         }
     }

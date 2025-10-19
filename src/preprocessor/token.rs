@@ -37,6 +37,10 @@ pub enum TokenKind {
     Else,
     Elif,
     Endif,
+    Ifdef,
+    Ifndef,
+    Undef,
+    Error,
     Eof,
 }
 
@@ -63,6 +67,10 @@ impl fmt::Display for TokenKind {
             TokenKind::Else => write!(f, "#else"),
             TokenKind::Elif => write!(f, "#elif"),
             TokenKind::Endif => write!(f, "#endif"),
+            TokenKind::Ifdef => write!(f, "#ifdef"),
+            TokenKind::Ifndef => write!(f, "#ifndef"),
+            TokenKind::Undef => write!(f, "#undef"),
+            TokenKind::Error => write!(f, "#error"),
             TokenKind::Eof => write!(f, ""),
         }
     }

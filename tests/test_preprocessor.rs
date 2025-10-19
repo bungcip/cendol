@@ -120,3 +120,72 @@ fn test_line_splicing() {
     assert_eq!(tokens[1].kind.to_string(), "+");
     assert_eq!(tokens[2].kind.to_string(), "2");
 }
+#[test]
+fn test_conditional_directives() {
+    let input = r#"
+#if 1
+    int a = 1;
+#else
+    int a = 2;
+#endif
+"#;
+    let mut preprocessor = Preprocessor::new();
+    let tokens = preprocessor.preprocess(input).unwrap();
+    let result = tokens.iter().map(|t| t.to_string()).collect::<String>();
+    let result = result.replace(" ", "").replace("\n", "");
+    assert_eq!(result, "inta=1;");
+}
+#[test]
+fn test_ifdef_directive() {
+    let input = r#"
+#define FOO
+#ifdef FOO
+    int a = 1;
+#endif
+"#;
+    let mut preprocessor = Preprocessor::new();
+    let tokens = preprocessor.preprocess(input).unwrap();
+    let result = tokens.iter().map(|t| t.to_string()).collect::<String>();
+    let result = result.replace(" ", "").replace("\n", "");
+    assert_eq!(result, "inta=1;");
+}
+
+#[test]
+fn test_ifndef_directive() {
+    let input = r#"
+#ifndef FOO
+    int a = 1;
+#endif
+"#;
+    let mut preprocessor = Preprocessor::new();
+    let tokens = preprocessor.preprocess(input).unwrap();
+    let result = tokens.iter().map(|t| t.to_string()).collect::<String>();
+    let result = result.replace(" ", "").replace("\n", "");
+    assert_eq!(result, "inta=1;");
+}
+
+#[test]
+fn test_undef_directive() {
+    let input = r#"
+#define FOO
+#undef FOO
+#ifdef FOO
+    int a = 1;
+#endif
+"#;
+    let mut preprocessor = Preprocessor::new();
+    let tokens = preprocessor.preprocess(input).unwrap();
+    let result = tokens.iter().map(|t| t.to_string()).collect::<String>();
+    let result = result.replace(" ", "").replace("\n", "");
+    assert_eq!(result, "");
+}
+
+#[test]
+fn test_error_directive() {
+    let input = r#"
+#error "This is an error"
+"#;
+    let mut preprocessor = Preprocessor::new();
+    let result = preprocessor.preprocess(input);
+    assert!(result.is_err());
+}

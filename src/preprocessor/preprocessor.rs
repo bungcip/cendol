@@ -116,6 +116,38 @@ impl Preprocessor {
                     i = find_next_line(i + 1, tokens);
                     continue;
                 }
+                TokenKind::Ifdef => {
+                    depth += 1;
+                    let (name, end) = parse_identifier(i + 1, tokens)?;
+                    self.conditional_stack.push(self.macros.contains_key(&name));
+                    i = end;
+                    continue;
+                }
+                TokenKind::Ifndef => {
+                    depth += 1;
+                    let (name, end) = parse_identifier(i + 1, tokens)?;
+                    self.conditional_stack.push(!self.macros.contains_key(&name));
+                    i = end;
+                    continue;
+                }
+                TokenKind::Undef => {
+                    if in_true_branch {
+                        let (name, end) = parse_identifier(i + 1, tokens)?;
+                        self.macros.remove(&name);
+                        i = end;
+                    } else {
+                        i = find_next_line(i + 1, tokens);
+                    }
+                    continue;
+                }
+                TokenKind::Error => {
+                    if in_true_branch {
+                        let (message, end) = parse_error_message(i + 1, tokens)?;
+                        return Err(crate::preprocessor::error::PreprocessorError::Generic(message));
+                    }
+                    i = find_next_line(i + 1, tokens);
+                    continue;
+                }
                 _ => {}
             }
 
@@ -456,4 +488,28 @@ fn find_next_line(start_idx: usize, tokens: &[Token]) -> usize {
         i += 1;
     }
     i
+}
+
+fn parse_identifier(start_idx: usize, tokens: &[Token]) -> Result<(String, usize), crate::preprocessor::error::PreprocessorError> {
+    let mut i = start_idx;
+    while i < tokens.len() {
+        if let TokenKind::Identifier(name) = &tokens[i].kind {
+            return Ok((name.clone(), i + 1));
+        }
+        i += 1;
+    }
+    Err(crate::preprocessor::error::PreprocessorError::ExpectedIdentifierAfterDefine)
+}
+
+fn parse_error_message(start_idx: usize, tokens: &[Token]) -> Result<(String, usize), crate::preprocessor::error::PreprocessorError> {
+    let mut message = String::new();
+    let mut i = start_idx;
+    while i < tokens.len() {
+        if matches!(tokens[i].kind, TokenKind::Newline) {
+            return Ok((message, i));
+        }
+        message.push_str(&tokens[i].kind.to_string());
+        i += 1;
+    }
+    Ok((message, i))
 }

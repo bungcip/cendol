@@ -26,8 +26,7 @@ FIVE
 
         let expected_tokens = vec![
             TokenKind::Newline,
-            TokenKind::Punct("#".to_string()),
-            TokenKind::Identifier("define".to_string()),
+            TokenKind::Directive("define".to_string()),
             TokenKind::Whitespace(" ".to_string()),
             TokenKind::Identifier("FIVE".to_string()),
             TokenKind::Whitespace(" ".to_string()),

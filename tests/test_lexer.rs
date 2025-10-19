@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use cendol::file::FileManager;
     use cendol::preprocessor::lexer::Lexer;
     use cendol::preprocessor::token::{DirectiveKind, TokenKind};
 
@@ -9,7 +10,9 @@ mod tests {
 #define FIVE 5
 FIVE
 "#;
-        let mut lexer = Lexer::new(input, "test.c".to_string());
+        let mut file_manager = FileManager::new();
+        let file_id = file_manager.open("test.c").unwrap();
+        let mut lexer = Lexer::new(input, file_id);
         let mut tokens = Vec::new();
         loop {
             let token = lexer.next_token().unwrap();
@@ -38,7 +41,9 @@ FIVE
     #[test]
     fn test_all_tokens() {
         let input = "(){}[];:,.##...\\..++--+-<>";
-        let mut lexer = Lexer::new(input, "test.c".to_string());
+        let mut file_manager = FileManager::new();
+        let file_id = file_manager.open("test.c").unwrap();
+        let mut lexer = Lexer::new(input, file_id);
         let mut tokens = Vec::new();
         loop {
             let token = lexer.next_token().unwrap();
@@ -78,7 +83,9 @@ FIVE
     #[test]
     fn test_plusplus() {
         let input = "a++";
-        let mut lexer = Lexer::new(input, "test.c".to_string());
+        let mut file_manager = FileManager::new();
+        let file_id = file_manager.open("test.c").unwrap();
+        let mut lexer = Lexer::new(input, file_id);
         let mut tokens = Vec::new();
         loop {
             let token = lexer.next_token().unwrap();

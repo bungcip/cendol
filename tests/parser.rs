@@ -58,12 +58,15 @@ mod tests {
     }
 }
 
+use cendol::file::FileManager;
 use cendol::preprocessor::token::SourceLocation;
 
 #[test]
 fn test_control_flow() {
+    let mut file_manager = FileManager::new();
+    let file_id = file_manager.open("test.c").unwrap();
     let loc = SourceLocation {
-        file: "test".to_string(),
+        file: file_id,
         line: 0,
     };
     let tokens = vec![

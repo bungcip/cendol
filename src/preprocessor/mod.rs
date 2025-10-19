@@ -1,3 +1,4 @@
+use crate::file::FileManager;
 use crate::preprocessor::error::PreprocessorError;
 use crate::preprocessor::lexer::Lexer;
 use crate::preprocessor::token::{DirectiveKind, Token, TokenKind};
@@ -31,6 +32,7 @@ enum Macro {
 pub struct Preprocessor {
     macros: HashMap<String, Macro>,
     conditional_stack: Vec<bool>,
+    file_manager: FileManager,
 }
 
 impl Default for Preprocessor {
@@ -46,6 +48,7 @@ impl Preprocessor {
         Preprocessor {
             macros: HashMap::new(),
             conditional_stack: Vec::new(),
+            file_manager: FileManager::new(),
         }
     }
 
@@ -83,7 +86,8 @@ impl Preprocessor {
             ));
         }
         let value = if parts.len() > 1 { parts[1] } else { "1" };
-        let mut lexer = Lexer::new(value, "<cmdline>".to_string());
+        let file_id = self.file_manager.open("<cmdline>").unwrap();
+        let mut lexer = Lexer::new(value, file_id);
         let mut tokens = Vec::new();
         loop {
             let token = lexer.next_token()?;
@@ -97,8 +101,9 @@ impl Preprocessor {
     }
 
     /// Tokenizes an input string.
-    fn tokenize(&self, input: &str) -> Result<Vec<Token>, PreprocessorError> {
-        let mut lexer = Lexer::new(input, "<input>".to_string());
+    fn tokenize(&mut self, input: &str) -> Result<Vec<Token>, PreprocessorError> {
+        let file_id = self.file_manager.open("<input>").unwrap();
+        let mut lexer = Lexer::new(input, file_id);
         let mut tokens = Vec::new();
         loop {
             let token = lexer.next_token()?;
@@ -341,7 +346,13 @@ impl Preprocessor {
                         );
                         expanded = true;
                     } else if name == "__FILE__" {
-                        let file = tokens[i].location.file.clone();
+                        let file = self
+                            .file_manager
+                            .get_path(tokens[i].location.file)
+                            .unwrap()
+                            .to_str()
+                            .unwrap()
+                            .to_string();
                         tokens[i] = Token::new(TokenKind::String(file), tokens[i].location.clone());
                         expanded = true;
                     } else if name == "__DATE__" {
@@ -540,7 +551,7 @@ impl Preprocessor {
                     .map(|t| t.kind.to_string())
                     .collect::<String>();
                 let pasted_str = format!("{}{}", lhs.kind, rhs_str);
-                let mut lexer = Lexer::new(&pasted_str, lhs.location.file.clone());
+                let mut lexer = Lexer::new(&pasted_str, lhs.location.file);
                 let mut new_token = lexer.next_token()?;
                 if !matches!(new_token.kind, TokenKind::Eof) {
                     let mut new_hideset = lhs.hideset.clone();
@@ -603,9 +614,15 @@ impl Preprocessor {
 
     /// Includes a file.
     fn include_file(&mut self, filename: &str) -> Result<Vec<Token>, PreprocessorError> {
-        let content = std::fs::read_to_string(filename)
+        let file_id = self
+            .file_manager
+            .open(filename)
             .map_err(|_| PreprocessorError::FileNotFound(filename.to_string()))?;
-        let mut lexer = Lexer::new(&content, filename.to_string());
+        let content = self
+            .file_manager
+            .read(file_id)
+            .map_err(|_| PreprocessorError::FileNotFound(filename.to_string()))?;
+        let mut lexer = Lexer::new(&content, file_id);
         let mut tokens = Vec::new();
         loop {
             let token = lexer.next_token()?;

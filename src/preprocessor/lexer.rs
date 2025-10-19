@@ -1,3 +1,4 @@
+use crate::file::FileId;
 use crate::preprocessor::error::PreprocessorError;
 use crate::preprocessor::token::{DirectiveKind, SourceLocation, Token, TokenKind};
 use std::iter::Peekable;
@@ -8,7 +9,7 @@ pub struct Lexer<'a> {
     input: Peekable<Chars<'a>>,
     at_start_of_line: bool,
     line: u32,
-    file: String,
+    file: FileId,
 }
 
 impl<'a> Lexer<'a> {
@@ -18,7 +19,7 @@ impl<'a> Lexer<'a> {
     ///
     /// * `input` - The input string to tokenize.
     /// * `file` - The name of the file being tokenized.
-    pub fn new(input: &'a str, file: String) -> Self {
+    pub fn new(input: &'a str, file: FileId) -> Self {
         Lexer {
             input: input.chars().peekable(),
             at_start_of_line: true,
@@ -240,7 +241,7 @@ impl<'a> Lexer<'a> {
     /// Returns the current location in the source file.
     fn location(&self) -> SourceLocation {
         SourceLocation {
-            file: self.file.clone(),
+            file: self.file,
             line: self.line,
         }
     }

@@ -1,3 +1,4 @@
+use crate::file::FileId;
 use std::fmt;
 use std::str::FromStr;
 
@@ -5,7 +6,7 @@ use std::str::FromStr;
 #[derive(Debug, PartialEq, Clone)]
 pub struct SourceLocation {
     /// The file name.
-    pub file: String,
+    pub file: FileId,
     /// The line number.
     pub line: u32,
 }

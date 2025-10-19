@@ -276,3 +276,14 @@ fn test_date_and_time_macros() {
         panic!("Expected a string token for __TIME__");
     }
 }
+
+#[test]
+fn test_object_macro_with_space_before_paren() {
+    let input = "#define A (1)\nA";
+    let mut preprocessor = Preprocessor::new();
+    let tokens = preprocessor.preprocess(input).unwrap();
+    assert_eq!(tokens.len(), 3);
+    assert_eq!(tokens[0].kind.to_string(), "(");
+    assert_eq!(tokens[1].kind.to_string(), "1");
+    assert_eq!(tokens[2].kind.to_string(), ")");
+}

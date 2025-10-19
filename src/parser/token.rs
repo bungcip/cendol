@@ -57,6 +57,8 @@ pub enum PunctKind {
     Ampersand,
     Ellipsis,
     Dot,
+    PlusPlus,
+    MinusMinus,
 }
 use crate::preprocessor;
 
@@ -111,6 +113,8 @@ impl From<preprocessor::token::PunctKind> for PunctKind {
                 "&&" => PunctKind::AmpersandAmpersand,
                 "||" => PunctKind::PipePipe,
                 "!" => PunctKind::Bang,
+                "++" => PunctKind::PlusPlus,
+                "--" => PunctKind::MinusMinus,
                 _ => panic!("cannot convert preprocessor punct to parser punct"),
             },
             _ => panic!("cannot convert preprocessor punct to parser punct"),

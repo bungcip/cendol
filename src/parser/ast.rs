@@ -34,6 +34,7 @@ pub enum Stmt {
     Break,
     Continue,
     DoWhile(Box<Stmt>, Box<Expr>),
+    Expr(Expr),
 }
 
 #[derive(Debug, PartialEq)]
@@ -58,6 +59,8 @@ pub enum Expr {
     Deref(Box<Expr>),
     AddressOf(Box<Expr>),
     Neg(Box<Expr>),
+    Increment(Box<Expr>),
+    Decrement(Box<Expr>),
 }
 
 #[derive(Debug, PartialEq, Clone)]

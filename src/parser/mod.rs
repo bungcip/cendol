@@ -215,11 +215,34 @@ impl Parser {
         }
     }
 
+    fn postfix_binding_power(&self, kind: &TokenKind) -> Option<(u8, ())> {
+        match kind {
+            TokenKind::Punct(PunctKind::PlusPlus) | TokenKind::Punct(PunctKind::MinusMinus) => {
+                Some((16, ()))
+            }
+            _ => None,
+        }
+    }
+
     fn parse_pratt_expr(&mut self, min_bp: u8) -> Result<Expr, ParserError> {
         let mut lhs = self.parse_primary()?;
 
         loop {
             let token = self.current_token()?;
+            if let Some((l_bp, ())) = self.postfix_binding_power(&token.kind) {
+                if l_bp < min_bp {
+                    break;
+                }
+
+                self.eat()?;
+
+                lhs = match token.kind {
+                    TokenKind::Punct(PunctKind::PlusPlus) => Expr::Increment(Box::new(lhs)),
+                    TokenKind::Punct(PunctKind::MinusMinus) => Expr::Decrement(Box::new(lhs)),
+                    _ => unreachable!(),
+                };
+                continue;
+            }
             if let Some((l_bp, r_bp)) = self.infix_binding_power(&token.kind) {
                 if l_bp < min_bp {
                     break;
@@ -453,18 +476,11 @@ impl Parser {
                     return Ok(Stmt::Typedef(ty, id));
                 }
             }
-        } else if let TokenKind::Identifier(id) = token.kind.clone() {
-            self.eat()?;
-            if let Ok(t) = self.current_token()
-                && let TokenKind::Punct(p) = t.kind
-                && p == PunctKind::Colon
-            {
-                self.eat()?;
-                let stmt = self.parse_stmt()?;
-                return Ok(Stmt::Label(id, Box::new(stmt)));
-            }
         }
-        Err(ParserError::UnexpectedToken(token))
+
+        let expr = self.parse_expr()?;
+        self.expect_punct(PunctKind::Semicolon)?;
+        Ok(Stmt::Expr(expr))
     }
 
     fn parse_function(&mut self) -> Result<Function, ParserError> {

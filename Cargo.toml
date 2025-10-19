@@ -13,3 +13,4 @@ thiserror = "1.0.61"
 cranelift-object = "0.124"
 chrono = "0.4.38"
 target-lexicon = "0.13.3"
+clap = { version = "4.5.49", features = ["derive"] }

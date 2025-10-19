@@ -1,6 +1,7 @@
 use crate::preprocessor::error::PreprocessorError;
 use crate::preprocessor::lexer::Lexer;
 use crate::preprocessor::token::{Token, TokenKind};
+use chrono::Local;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
@@ -301,6 +302,16 @@ impl Preprocessor {
                             let file = tokens[i].location.file.clone();
                             tokens[i] =
                                 Token::new(TokenKind::String(file), tokens[i].location.clone());
+                            expanded = true;
+                        } else if name == "__DATE__" {
+                            let date = Local::now().format("%b %-d %Y").to_string();
+                            tokens[i] =
+                                Token::new(TokenKind::String(date), tokens[i].location.clone());
+                            expanded = true;
+                        } else if name == "__TIME__" {
+                            let time = Local::now().format("%H:%M:%S").to_string();
+                            tokens[i] =
+                                Token::new(TokenKind::String(time), tokens[i].location.clone());
                             expanded = true;
                         } else if let Some(macro_def) = self.macros.get(name).cloned() {
                             let (start, end, expanded_tokens) =

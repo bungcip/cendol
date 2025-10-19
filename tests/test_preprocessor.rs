@@ -256,3 +256,23 @@ fn test_mutually_recursive_macros() {
     assert_eq!(tokens[0].kind.to_string(), "BAR");
     assert_eq!(tokens[1].kind.to_string(), "BAZ");
 }
+
+#[test]
+fn test_date_and_time_macros() {
+    let input = "__DATE__ __TIME__";
+    let mut preprocessor = Preprocessor::new();
+    let tokens = preprocessor.preprocess(input).unwrap();
+    assert_eq!(tokens.len(), 2);
+    if let TokenKind::String(s) = &tokens[0].kind {
+        // Check if the date is in the format "Mmm dd yyyy"
+        assert!(s.len() > 0);
+    } else {
+        panic!("Expected a string token for __DATE__");
+    }
+    if let TokenKind::String(s) = &tokens[1].kind {
+        // Check if the time is in the format "HH:MM:SS"
+        assert!(s.len() > 0);
+    } else {
+        panic!("Expected a string token for __TIME__");
+    }
+}

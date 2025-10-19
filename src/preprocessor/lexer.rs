@@ -154,6 +154,10 @@ impl<'a> Lexer<'a> {
                     Ok(Token::new(TokenKind::Minus, self.location()))
                 }
             }
+            '*' => {
+                self.at_start_of_line = false;
+                Ok(Token::new(TokenKind::Star, self.location()))
+            }
             _ if c.is_ascii_punctuation() => {
                 self.at_start_of_line = false;
                 let kind = match c {

@@ -103,6 +103,7 @@ impl From<preprocessor::token::Token> for Token {
             preprocessor::token::TokenKind::Minus => TokenKind::Punct(PunctKind::Minus),
             preprocessor::token::TokenKind::PlusPlus => TokenKind::Punct(PunctKind::PlusPlus),
             preprocessor::token::TokenKind::MinusMinus => TokenKind::Punct(PunctKind::MinusMinus),
+            preprocessor::token::TokenKind::Star => TokenKind::Punct(PunctKind::Star),
             preprocessor::token::TokenKind::Equal => TokenKind::Punct(PunctKind::Equal),
             preprocessor::token::TokenKind::LessThan => TokenKind::Punct(PunctKind::LessThan),
             preprocessor::token::TokenKind::GreaterThan => TokenKind::Punct(PunctKind::GreaterThan),

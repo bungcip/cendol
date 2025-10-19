@@ -53,6 +53,7 @@ pub enum Stmt {
     Goto(String),
     /// A variable declaration.
     Declaration(Type, String, Option<Box<Expr>>),
+    FunctionDeclaration(Type, String, Vec<Parameter>),
     /// A `typedef` statement.
     Typedef(Type, String),
     /// A `break` statement.
@@ -70,6 +71,7 @@ pub enum Stmt {
 pub enum Expr {
     /// A number literal.
     Number(i64),
+    String(String),
     /// A variable.
     Variable(String),
     /// An assignment expression.

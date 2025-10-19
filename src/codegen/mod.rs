@@ -13,11 +13,14 @@ use std::collections::HashMap;
 pub mod error;
 
 /// A code generator that translates an AST into machine code.
+use cranelift_module::FuncId;
+
 pub struct CodeGen {
     builder_context: FunctionBuilderContext,
     ctx: Context,
     module: ObjectModule,
     variables: HashMap<String, StackSlot>,
+    functions: HashMap<String, FuncId>,
 }
 
 impl Default for CodeGen {
@@ -50,6 +53,7 @@ impl CodeGen {
             ctx,
             module,
             variables: HashMap::new(),
+            functions: HashMap::new(),
         }
     }
 
@@ -63,8 +67,11 @@ impl CodeGen {
     ///
     /// A `Result` containing the compiled byte vector, or a `CodegenError` if compilation fails.
     pub fn compile(mut self, program: Program) -> Result<Vec<u8>, CodegenError> {
-        if let Some(_global) = program.globals.into_iter().next() {
-            unimplemented!()
+        for global in program.globals {
+            match global {
+                Stmt::FunctionDeclaration(_, _, _) => {}
+                _ => unimplemented!(),
+            }
         }
 
         self.ctx
@@ -81,7 +88,9 @@ impl CodeGen {
 
         let mut translator = FunctionTranslator {
             builder,
+            functions: &mut self.functions,
             variables: &mut self.variables,
+            module: &mut self.module,
             loop_context: Vec::new(),
             current_block_state: BlockState::Empty,
         };
@@ -115,7 +124,9 @@ pub enum BlockState {
 /// A function translator that translates statements and expressions into Cranelift IR.
 struct FunctionTranslator<'a, 'b> {
     builder: FunctionBuilder<'a>,
+    functions: &'b mut HashMap<String, FuncId>,
     variables: &'b mut HashMap<String, StackSlot>,
+    module: &'b mut ObjectModule,
     loop_context: Vec<(Block, Block)>,
     current_block_state: BlockState,
 }
@@ -240,6 +251,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.jump_to_block(*header_block);
                 true
             }
+            Stmt::Expr(expr) => {
+                self.translate_expr(expr);
+                false
+            }
             _ => unimplemented!(),
         }
     }
@@ -248,6 +263,18 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     fn translate_expr(&mut self, expr: Expr) -> Value {
         match expr {
             Expr::Number(n) => self.builder.ins().iconst(types::I64, n),
+            Expr::String(s) => {
+                let s = s.as_bytes();
+                let mut data = Vec::with_capacity(s.len() + 1);
+                data.extend_from_slice(s);
+                data.push(0);
+                let id = self.module.declare_data(&s.escape_ascii().to_string(), Linkage::Local, true, false).unwrap();
+                let mut data_desc = cranelift_module::DataDescription::new();
+                data_desc.define(data.into_boxed_slice());
+                self.module.define_data(id, &data_desc).unwrap();
+                let local_id = self.module.declare_data_in_func(id, self.builder.func);
+                self.builder.ins().global_value(types::I64, local_id)
+            }
             Expr::Variable(name) => {
                 let slot = self.variables.get(&name).unwrap();
                 self.builder.ins().stack_load(types::I64, *slot, 0)
@@ -342,6 +369,34 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 } else {
                     unimplemented!()
                 }
+            }
+            Expr::Call(name, args) => {
+                let mut sig = self.module.make_signature();
+                sig.returns.push(AbiParam::new(types::I64));
+                for _ in &args {
+                    sig.params.push(AbiParam::new(types::I64));
+                }
+
+                let callee = match self.functions.get(&name) {
+                    Some(callee) => *callee,
+                    None => {
+                        let callee = self
+                            .module
+                            .declare_function(&name, Linkage::Import, &sig)
+                            .unwrap();
+                        self.functions.insert(name, callee);
+                        callee
+                    }
+                };
+                let local_callee = self.module.declare_func_in_func(callee, self.builder.func);
+
+                let mut arg_values = Vec::new();
+                for arg in args {
+                    arg_values.push(self.translate_expr(arg));
+                }
+
+                let call = self.builder.ins().call(local_callee, &arg_values);
+                self.builder.inst_results(call)[0]
             }
             _ => unimplemented!(),
         }

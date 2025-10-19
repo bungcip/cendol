@@ -98,6 +98,10 @@ impl Parser {
     fn parse_type(&mut self) -> Result<Type, ParserError> {
         let token = self.current_token()?;
         if let TokenKind::Keyword(k) = token.kind.clone() {
+            if k == KeywordKind::Const {
+                self.eat()?;
+                return self.parse_type();
+            }
             let ty = match k {
                 KeywordKind::Int => Type::Int,
                 KeywordKind::Char => Type::Char,
@@ -336,6 +340,10 @@ impl Parser {
             TokenKind::Number(n) => {
                 self.eat()?;
                 Ok(Expr::Number(n.parse().unwrap()))
+            }
+            TokenKind::String(s) => {
+                self.eat()?;
+                Ok(Expr::String(s))
             }
             TokenKind::Identifier(name) => {
                 self.eat()?;
@@ -584,26 +592,66 @@ impl Parser {
     /// # Returns
     ///
     /// A `Result` containing the parsed `Program`, or a `ParserError` if parsing fails.
+    fn parse_global(&mut self) -> Result<Stmt, ParserError> {
+        let ty = self.parse_type()?;
+        let token = self.current_token()?;
+        if let TokenKind::Identifier(id) = token.kind.clone() {
+            self.eat()?;
+            let token = self.current_token()?;
+            if let TokenKind::Punct(PunctKind::LeftParen) = token.kind {
+                self.eat()?;
+                let mut params = Vec::new();
+                while let Ok(t) = self.current_token() {
+                    if let TokenKind::Punct(PunctKind::RightParen) = t.kind {
+                        self.eat()?;
+                        break;
+                    }
+                    let ty = self.parse_type()?;
+                    let token = self.current_token()?;
+                    if let TokenKind::Identifier(id) = token.kind.clone() {
+                        self.eat()?;
+                        params.push(Parameter { ty, name: id });
+                    } else if let TokenKind::Punct(PunctKind::RightParen) = token.kind {
+                        break;
+                    }
+                    if let Ok(t) = self.current_token()
+                        && let TokenKind::Punct(PunctKind::Comma) = t.kind
+                    {
+                        self.eat()?;
+                    }
+                }
+                let token = self.current_token()?;
+                if let TokenKind::Punct(PunctKind::Semicolon) = token.kind {
+                    self.eat()?;
+                    return Ok(Stmt::FunctionDeclaration(ty, id, params));
+                } else {
+                    self.position -= 2;
+                    return Err(ParserError::UnexpectedToken(token));
+                }
+            }
+            let mut initializer = None;
+            if let Ok(t) = self.current_token()
+                && let TokenKind::Punct(PunctKind::Equal) = t.kind
+            {
+                self.eat()?;
+                initializer = Some(Box::new(self.parse_expr()?));
+            }
+            self.expect_punct(PunctKind::Semicolon)?;
+            return Ok(Stmt::Declaration(ty, id, initializer));
+        }
+        Err(ParserError::UnexpectedToken(token))
+    }
+
     pub fn parse(&mut self) -> Result<Program, ParserError> {
         let mut globals = Vec::new();
-        while let Ok(ty) = self.parse_type() {
-            let token = self.current_token()?;
-            if let TokenKind::Identifier(id) = token.kind.clone() {
-                self.eat()?;
-                let token = self.current_token()?;
-                if let TokenKind::Punct(PunctKind::LeftParen) = token.kind {
-                    self.position -= 2;
-                    break;
-                }
-                let mut initializer = None;
-                if let Ok(t) = self.current_token()
-                    && let TokenKind::Punct(PunctKind::Equal) = t.kind
-                {
-                    self.eat()?;
-                    initializer = Some(Box::new(self.parse_expr()?));
-                }
-                self.expect_punct(PunctKind::Semicolon)?;
-                globals.push(Stmt::Declaration(ty, id, initializer));
+        while self.current_token().is_ok() {
+            let pos = self.position;
+            if self.parse_global().is_ok() {
+                self.position = pos;
+                globals.push(self.parse_global()?);
+            } else {
+                self.position = pos;
+                break;
             }
         }
         let function = self.parse_function()?;

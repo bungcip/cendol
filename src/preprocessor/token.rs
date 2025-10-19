@@ -85,7 +85,6 @@ impl fmt::Display for TokenKind {
     }
 }
 
-
 impl TokenKind {
     pub fn is_whitespace(&self) -> bool {
         matches!(self, TokenKind::Whitespace(_))

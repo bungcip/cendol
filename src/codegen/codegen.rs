@@ -1,18 +1,17 @@
-use crate::parser::ast::Expr;
 use crate::codegen::error::CodegenError;
+use crate::parser::ast::{Expr, Program, Stmt};
 use cranelift::prelude::*;
 use cranelift_codegen::Context;
-use cranelift_jit::{JITBuilder, JITModule};
-use cranelift_module::{Linkage, Module, DataDescription};
-use cranelift_codegen::settings;
 use cranelift_codegen::ir::types;
 use cranelift_codegen::ir::{AbiParam, InstBuilder, Value};
+use cranelift_codegen::settings;
+use cranelift_module::{Linkage, Module};
+use cranelift_object::{ObjectBuilder, ObjectModule};
 
 pub struct CodeGen {
     builder_context: FunctionBuilderContext,
     ctx: Context,
-    data_ctx: DataDescription,
-    module: JITModule,
+    module: ObjectModule,
 }
 
 impl CodeGen {
@@ -23,23 +22,28 @@ impl CodeGen {
         let isa_builder = cranelift_native::builder().unwrap_or_else(|msg| {
             panic!("host machine is not supported: {}", msg);
         });
-        let isa = isa_builder.finish(settings::Flags::new(flag_builder)).unwrap();
-        let module = JITModule::new(JITBuilder::with_isa(isa, cranelift_module::default_libcall_names()));
+        let isa = isa_builder
+            .finish(settings::Flags::new(flag_builder))
+            .unwrap();
+        let builder =
+            ObjectBuilder::new(isa, "cendol", cranelift_module::default_libcall_names()).unwrap();
+        let module = ObjectModule::new(builder);
         let ctx = module.make_context();
         let builder_context = FunctionBuilderContext::new();
-        let data_ctx = DataDescription::new();
 
         Self {
             builder_context,
             ctx,
-            data_ctx,
             module,
         }
     }
 
-    pub fn compile(&mut self, expr: Expr) -> Result<*const u8, CodegenError> {
-        self.ctx.func.signature.params.push(AbiParam::new(types::I64));
-        self.ctx.func.signature.returns.push(AbiParam::new(types::I64));
+    pub fn compile(mut self, program: Program) -> Result<Vec<u8>, CodegenError> {
+        self.ctx
+            .func
+            .signature
+            .returns
+            .push(AbiParam::new(types::I64));
 
         let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.builder_context);
         let entry_block = builder.create_block();
@@ -47,17 +51,29 @@ impl CodeGen {
         builder.switch_to_block(entry_block);
         builder.seal_block(entry_block);
 
-        let result = translate_expr(&mut builder, expr);
-        builder.ins().return_(&[result]);
+        translate_stmt(&mut builder, program.function.body);
         builder.finalize();
 
-        let id = self.module.declare_function("main", Linkage::Local, &self.ctx.func.signature).unwrap();
+        let id = self
+            .module
+            .declare_function("main", Linkage::Export, &self.ctx.func.signature)
+            .unwrap();
         self.module.define_function(id, &mut self.ctx).unwrap();
         self.module.clear_context(&mut self.ctx);
-        self.module.finalize_definitions().unwrap();
 
-        let code = self.module.get_finalized_function(id);
-        Ok(code)
+        let product = self.module.finish();
+        let object_bytes = product.emit().unwrap();
+        Ok(object_bytes)
+    }
+}
+
+fn translate_stmt(builder: &mut FunctionBuilder, stmt: Stmt) -> Value {
+    match stmt {
+        Stmt::Return(expr) => {
+            let value = translate_expr(builder, expr);
+            builder.ins().return_(&[value]);
+            value
+        }
     }
 }
 

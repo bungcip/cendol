@@ -1,5 +1,5 @@
 use cendol::preprocessor::preprocessor::Preprocessor;
-use cendol::preprocessor::token::{Token, TokenKind};
+use cendol::preprocessor::token::TokenKind;
 
 #[test]
 fn test_simple_define() {

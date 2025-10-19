@@ -1,6 +1,6 @@
-use crate::preprocessor::token::{Token, TokenKind};
-use crate::parser::ast::Expr;
+use crate::parser::ast::{Expr, Function, Program, Stmt};
 use crate::parser::error::ParserError;
+use crate::preprocessor::token::{Token, TokenKind};
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -40,62 +40,73 @@ impl Parser {
         self.skip_whitespace()
     }
 
-    fn factor(&mut self) -> Result<Expr, ParserError> {
+    fn expect_punct(&mut self, value: &str) -> Result<(), ParserError> {
         let token = self.current_token()?;
-        match token.kind {
+        if let TokenKind::Punct(p) = token.kind.clone() {
+            if p == value {
+                self.eat()?;
+                return Ok(());
+            }
+        }
+        Err(ParserError::UnexpectedToken(token.clone()))
+    }
+
+    fn expect_identifier(&mut self, value: &str) -> Result<(), ParserError> {
+        let token = self.current_token()?;
+        if let TokenKind::Identifier(id) = token.kind.clone() {
+            if id == value {
+                self.eat()?;
+                return Ok(());
+            }
+        }
+        Err(ParserError::UnexpectedToken(token.clone()))
+    }
+
+    fn expect_keyword(&mut self, value: &str) -> Result<(), ParserError> {
+        let token = self.current_token()?;
+        if let TokenKind::Keyword(k) = token.kind.clone() {
+            if k == value {
+                self.eat()?;
+                return Ok(());
+            }
+        }
+        Err(ParserError::UnexpectedToken(token.clone()))
+    }
+
+    fn parse_expr(&mut self) -> Result<Expr, ParserError> {
+        let token = self.current_token()?;
+        match token.kind.clone() {
             TokenKind::Number(n) => {
                 self.eat()?;
                 Ok(Expr::Number(n.parse().unwrap()))
             }
-            _ => Err(ParserError::UnexpectedToken(token)),
+            _ => Err(ParserError::UnexpectedToken(token.clone())),
         }
     }
 
-    fn term(&mut self) -> Result<Expr, ParserError> {
-        let mut node = self.factor()?;
-
-        loop {
-            match self.current_token() {
-                Ok(token) => match token.kind {
-                    TokenKind::Punct(p) if p == "*" => {
-                        self.eat()?;
-                        node = Expr::Mul(Box::new(node), Box::new(self.factor()?));
-                    }
-                    TokenKind::Punct(p) if p == "/" => {
-                        self.eat()?;
-                        node = Expr::Div(Box::new(node), Box::new(self.factor()?));
-                    }
-                    _ => break,
-                },
-                Err(ParserError::UnexpectedEof) => break,
-                Err(e) => return Err(e),
-            }
-        }
-
-        Ok(node)
+    fn parse_stmt(&mut self) -> Result<Stmt, ParserError> {
+        self.expect_keyword("return")?;
+        let expr = self.parse_expr()?;
+        self.expect_punct(";")?;
+        Ok(Stmt::Return(expr))
     }
 
-    pub fn expr(&mut self) -> Result<Expr, ParserError> {
-        let mut node = self.term()?;
+    fn parse_function(&mut self) -> Result<Function, ParserError> {
+        self.expect_keyword("int")?;
+        self.expect_identifier("main")?;
+        self.expect_punct("(")?;
+        self.expect_punct(")")?;
+        self.expect_punct("{")?;
+        let body = self.parse_stmt()?;
+        self.expect_punct("}")?;
+        Ok(Function {
+            name: "main".to_string(),
+            body,
+        })
+    }
 
-        loop {
-            match self.current_token() {
-                Ok(token) => match token.kind {
-                    TokenKind::Punct(p) if p == "+" => {
-                        self.eat()?;
-                        node = Expr::Add(Box::new(node), Box::new(self.term()?));
-                    }
-                    TokenKind::Punct(p) if p == "-" => {
-                        self.eat()?;
-                        node = Expr::Sub(Box::new(node), Box::new(self.term()?));
-                    }
-                    _ => break,
-                },
-                Err(ParserError::UnexpectedEof) => break,
-                Err(e) => return Err(e),
-            }
-        }
-
-        Ok(node)
+    pub fn parse(&mut self) -> Result<Program, ParserError> {
+        let function = self.parse_function()?;
+        Ok(Program { function })
     }
 }

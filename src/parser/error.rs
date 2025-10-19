@@ -1,5 +1,5 @@
-use thiserror::Error;
 use crate::preprocessor::token::Token;
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ParserError {

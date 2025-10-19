@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use cendol::preprocessor::lexer::Lexer;
-    use cendol::preprocessor::token::{Token, TokenKind};
+    use cendol::preprocessor::token::TokenKind;
 
     #[test]
     fn test_lexer() {
@@ -19,10 +19,7 @@ FIVE
             tokens.push(token);
         }
 
-        let token_kinds: Vec<TokenKind> = tokens
-            .into_iter()
-            .map(|t| t.kind)
-            .collect();
+        let token_kinds: Vec<TokenKind> = tokens.into_iter().map(|t| t.kind).collect();
 
         let expected_tokens = vec![
             TokenKind::Newline,

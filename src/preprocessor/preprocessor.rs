@@ -10,7 +10,7 @@ enum Macro {
     },
     Function {
         parameters: Vec<String>,
-        is_variadic: bool,
+        _is_variadic: bool,
         tokens: Vec<Token>,
     },
 }
@@ -32,7 +32,7 @@ impl Preprocessor {
         let mut tokens = self.tokenize(input)?;
         self.process_directives(&mut tokens)?;
         self.expand_all_macros(&mut tokens)?;
-        tokens.retain(|t| !matches!(t.kind, TokenKind::Whitespace(_)));
+        tokens.retain(|t| !matches!(t.kind, TokenKind::Whitespace(_) | TokenKind::Newline));
         Ok(tokens)
     }
 
@@ -55,7 +55,7 @@ impl Preprocessor {
         let mut depth = 0;
 
         while i < tokens.len() {
-            let mut in_true_branch = self.conditional_stack.iter().all(|&x| x);
+            let in_true_branch = self.conditional_stack.iter().all(|&x| x);
 
             match tokens[i].kind {
                 TokenKind::If => {
@@ -72,7 +72,7 @@ impl Preprocessor {
                     }
                     if let Some(last) = self.conditional_stack.last_mut() {
                         if !*last {
-                            let (condition, end) = parse_conditional_expression(i + 1, tokens)?;
+                            let (condition, _end) = parse_conditional_expression(i + 1, tokens)?;
                             let result = evaluate_expression(&condition)?;
                             *last = result;
                         } else {
@@ -127,7 +127,8 @@ impl Preprocessor {
                 TokenKind::Ifndef => {
                     depth += 1;
                     let (name, end) = parse_identifier(i + 1, tokens)?;
-                    self.conditional_stack.push(!self.macros.contains_key(&name));
+                    self.conditional_stack
+                        .push(!self.macros.contains_key(&name));
                     i = end;
                     continue;
                 }
@@ -143,7 +144,7 @@ impl Preprocessor {
                 }
                 TokenKind::Error => {
                     if in_true_branch {
-                        let (message, end) = parse_error_message(i + 1, tokens)?;
+                        let (message, _end) = parse_error_message(i + 1, tokens)?;
                         return Err(PreprocessorError::Generic(message));
                     }
                     i = find_next_line(i + 1, tokens);
@@ -161,7 +162,7 @@ impl Preprocessor {
                 TokenKind::Include => {
                     if in_true_branch {
                         let (filename, end) = parse_include(i + 1, tokens)?;
-                        let mut new_tokens = self.include_file(&filename)?;
+                        let new_tokens = self.include_file(&filename)?;
                         tokens.splice(i..end, new_tokens);
                     } else {
                         i = find_next_line(i + 1, tokens);
@@ -191,23 +192,36 @@ impl Preprocessor {
             return Ok(());
         }
         let name_token = tokens.remove(0);
-        let name = if let TokenKind::Identifier(name) = name_token.kind { name } else { return Err(PreprocessorError::ExpectedIdentifierAfterDefine); };
-        
+        let name = if let TokenKind::Identifier(name) = name_token.kind {
+            name
+        } else {
+            return Err(PreprocessorError::ExpectedIdentifierAfterDefine);
+        };
+
         let mut next_token_idx = 0;
-        while next_token_idx < tokens.len() && matches!(&tokens[next_token_idx].kind, TokenKind::Whitespace(_)) {
+        while next_token_idx < tokens.len()
+            && matches!(&tokens[next_token_idx].kind, TokenKind::Whitespace(_))
+        {
             next_token_idx += 1;
         }
 
-        if next_token_idx < tokens.len() && matches!(&tokens[next_token_idx].kind, TokenKind::Punct(p) if p == "(") {
+        if next_token_idx < tokens.len()
+            && matches!(&tokens[next_token_idx].kind, TokenKind::Punct(p) if p == "(")
+        {
             tokens.drain(0..next_token_idx);
             tokens.remove(0);
             let mut parameters = Vec::new();
             let mut is_variadic = false;
             loop {
                 self.consume_whitespace(tokens);
-                if tokens.is_empty() { return Err(PreprocessorError::UnexpectedEofInMacroParams); }
+                if tokens.is_empty() {
+                    return Err(PreprocessorError::UnexpectedEofInMacroParams);
+                }
                 if let TokenKind::Punct(p) = &tokens[0].kind {
-                    if p == ")" { tokens.remove(0); break; }
+                    if p == ")" {
+                        tokens.remove(0);
+                        break;
+                    }
                 }
 
                 if let TokenKind::Identifier(param) = tokens[0].kind.clone() {
@@ -220,17 +234,26 @@ impl Preprocessor {
                         tokens.remove(0);
                     }
                 }
-                
+
                 self.consume_whitespace(tokens);
                 if !tokens.is_empty() {
                     if let TokenKind::Punct(p) = &tokens[0].kind {
-                        if p == "," { tokens.remove(0); }
+                        if p == "," {
+                            tokens.remove(0);
+                        }
                     }
                 }
             }
             self.consume_whitespace(tokens);
             let body = self.read_macro_body(tokens)?;
-            self.macros.insert(name, Macro::Function { parameters, is_variadic, tokens: body });
+            self.macros.insert(
+                name,
+                Macro::Function {
+                    parameters,
+                    _is_variadic: is_variadic,
+                    tokens: body,
+                },
+            );
         } else {
             self.consume_whitespace(tokens);
             let body = self.read_macro_body(tokens)?;
@@ -239,7 +262,10 @@ impl Preprocessor {
         Ok(())
     }
 
-    fn read_macro_body(&mut self, tokens: &mut Vec<Token>) -> Result<Vec<Token>, PreprocessorError> {
+    fn read_macro_body(
+        &mut self,
+        tokens: &mut Vec<Token>,
+    ) -> Result<Vec<Token>, PreprocessorError> {
         let mut body = Vec::new();
         while !tokens.is_empty() {
             if let TokenKind::Newline = tokens[0].kind {
@@ -266,11 +292,15 @@ impl Preprocessor {
                     if !tokens[i].hideset.contains(name) {
                         if name == "__LINE__" {
                             let line = tokens[i].location.line;
-                            tokens[i] = Token::new(TokenKind::Number(line.to_string()), tokens[i].location.clone());
+                            tokens[i] = Token::new(
+                                TokenKind::Number(line.to_string()),
+                                tokens[i].location.clone(),
+                            );
                             expanded = true;
                         } else if name == "__FILE__" {
                             let file = tokens[i].location.file.clone();
-                            tokens[i] = Token::new(TokenKind::String(file), tokens[i].location.clone());
+                            tokens[i] =
+                                Token::new(TokenKind::String(file), tokens[i].location.clone());
                             expanded = true;
                         } else if let Some(macro_def) = self.macros.get(name).cloned() {
                             let (start, end, expanded_tokens) =
@@ -322,7 +352,9 @@ impl Preprocessor {
                     next_idx += 1;
                 }
 
-                if next_idx >= tokens.len() || !matches!(&tokens[next_idx].kind, TokenKind::Punct(p) if p == "(") {
+                if next_idx >= tokens.len()
+                    || !matches!(&tokens[next_idx].kind, TokenKind::Punct(p) if p == "(")
+                {
                     return Ok((index, index + 1, vec![token.clone()]));
                 }
 
@@ -338,7 +370,8 @@ impl Preprocessor {
                     }
                 }
 
-                let mut expanded = self.substitute_tokens(body, parameters, &args_with_hideset, &new_hideset)?;
+                let mut expanded =
+                    self.substitute_tokens(body, parameters, &args_with_hideset, &new_hideset)?;
 
                 for t in &mut expanded {
                     t.hideset.extend(new_hideset.clone());
@@ -350,7 +383,11 @@ impl Preprocessor {
         }
     }
 
-    fn parse_macro_args(&self, start_idx: usize, tokens: &[Token]) -> Result<(Vec<Vec<Token>>, usize), PreprocessorError> {
+    fn parse_macro_args(
+        &self,
+        start_idx: usize,
+        tokens: &[Token],
+    ) -> Result<(Vec<Vec<Token>>, usize), PreprocessorError> {
         let mut args = Vec::new();
         let mut current_arg = Vec::new();
         let mut paren_level = 1;
@@ -358,7 +395,10 @@ impl Preprocessor {
         while i < tokens.len() {
             let token = &tokens[i];
             match &token.kind {
-                TokenKind::Punct(p) if p == "(" => { paren_level += 1; current_arg.push(token.clone()); }
+                TokenKind::Punct(p) if p == "(" => {
+                    paren_level += 1;
+                    current_arg.push(token.clone());
+                }
                 TokenKind::Punct(p) if p == ")" => {
                     paren_level -= 1;
                     if paren_level == 0 {
@@ -380,7 +420,13 @@ impl Preprocessor {
         Err(PreprocessorError::UnexpectedEofInMacroArgs)
     }
 
-    fn substitute_tokens(&mut self, body: &[Token], parameters: &[String], args: &[Vec<Token>], hideset: &HashSet<String>) -> Result<Vec<Token>, PreprocessorError> {
+    fn substitute_tokens(
+        &mut self,
+        body: &[Token],
+        parameters: &[String],
+        args: &[Vec<Token>],
+        hideset: &HashSet<String>,
+    ) -> Result<Vec<Token>, PreprocessorError> {
         let mut result = Vec::new();
         let mut i = 0;
         while i < body.len() {
@@ -393,8 +439,14 @@ impl Preprocessor {
                             if let Some(idx) = parameters.iter().position(|p| p == param_name) {
                                 if idx < args.len() {
                                     let arg_tokens = &args[idx];
-                                    let stringified = arg_tokens.iter().map(|t| t.kind.to_string()).collect::<String>();
-                                    result.push(Token::new(TokenKind::String(stringified), token.location.clone()));
+                                    let stringified = arg_tokens
+                                        .iter()
+                                        .map(|t| t.kind.to_string())
+                                        .collect::<String>();
+                                    result.push(Token::new(
+                                        TokenKind::String(stringified),
+                                        token.location.clone(),
+                                    ));
                                 }
                                 i += 1;
                                 continue;
@@ -433,7 +485,10 @@ impl Preprocessor {
                         return Err(PreprocessorError::HashHashAtEndOfMacro);
                     };
 
-                    let rhs_str = rhs_tokens.iter().map(|t| t.kind.to_string()).collect::<String>();
+                    let rhs_str = rhs_tokens
+                        .iter()
+                        .map(|t| t.kind.to_string())
+                        .collect::<String>();
                     let pasted_str = format!("{}{}", lhs.kind, rhs_str);
                     let mut lexer = Lexer::new(&pasted_str, lhs.location.file.clone());
                     let mut new_token = lexer.next_token()?;
@@ -467,7 +522,10 @@ impl Preprocessor {
                             for (i, arg) in args[vararg_start..].iter().enumerate() {
                                 result.extend(arg.clone());
                                 if i < args.len() - vararg_start - 1 {
-                                    result.push(Token::new(TokenKind::Punct(",".to_string()), token.location.clone()));
+                                    result.push(Token::new(
+                                        TokenKind::Punct(",".to_string()),
+                                        token.location.clone(),
+                                    ));
                                 }
                             }
                         }
@@ -527,7 +585,10 @@ fn parse_include(start_idx: usize, tokens: &[Token]) -> Result<(String, usize), 
     Err(PreprocessorError::InvalidInclude)
 }
 
-fn parse_conditional_expression(start_idx: usize, tokens: &[Token]) -> Result<(Vec<Token>, usize), PreprocessorError> {
+fn parse_conditional_expression(
+    start_idx: usize,
+    tokens: &[Token],
+) -> Result<(Vec<Token>, usize), PreprocessorError> {
     let mut condition = Vec::new();
     let mut i = start_idx;
     while i < tokens.len() {
@@ -604,7 +665,10 @@ fn find_next_line(start_idx: usize, tokens: &[Token]) -> usize {
     i
 }
 
-fn parse_identifier(start_idx: usize, tokens: &[Token]) -> Result<(String, usize), PreprocessorError> {
+fn parse_identifier(
+    start_idx: usize,
+    tokens: &[Token],
+) -> Result<(String, usize), PreprocessorError> {
     let mut i = start_idx;
     while i < tokens.len() {
         if let TokenKind::Identifier(name) = &tokens[i].kind {
@@ -615,7 +679,10 @@ fn parse_identifier(start_idx: usize, tokens: &[Token]) -> Result<(String, usize
     Err(PreprocessorError::ExpectedIdentifierAfterDefine)
 }
 
-fn parse_error_message(start_idx: usize, tokens: &[Token]) -> Result<(String, usize), PreprocessorError> {
+fn parse_error_message(
+    start_idx: usize,
+    tokens: &[Token],
+) -> Result<(String, usize), PreprocessorError> {
     let mut message = String::new();
     let mut i = start_idx;
     while i < tokens.len() {
@@ -628,7 +695,10 @@ fn parse_error_message(start_idx: usize, tokens: &[Token]) -> Result<(String, us
     Ok((message, i))
 }
 
-fn parse_line_directive(start_idx: usize, tokens: &[Token]) -> Result<(u32, Option<String>, usize), PreprocessorError> {
+fn parse_line_directive(
+    start_idx: usize,
+    tokens: &[Token],
+) -> Result<(u32, Option<String>, usize), PreprocessorError> {
     let mut i = start_idx;
     while i < tokens.len() && tokens[i].kind.is_whitespace() {
         i += 1;
@@ -637,7 +707,9 @@ fn parse_line_directive(start_idx: usize, tokens: &[Token]) -> Result<(u32, Opti
     let line = if let TokenKind::Number(s) = &tokens[i].kind {
         s.parse().unwrap()
     } else {
-        return Err(PreprocessorError::Generic("Expected line number".to_string()));
+        return Err(PreprocessorError::Generic(
+            "Expected line number".to_string(),
+        ));
     };
     i += 1;
 

@@ -35,7 +35,10 @@ impl<'a> Lexer<'a> {
                     self.next_token()
                 } else {
                     self.at_start_of_line = false;
-                    Ok(Token::new(TokenKind::Punct("\\".to_string()), self.location()))
+                    Ok(Token::new(
+                        TokenKind::Punct("\\".to_string()),
+                        self.location(),
+                    ))
                 }
             }
             ' ' | '\t' | '\r' => {
@@ -47,7 +50,10 @@ impl<'a> Lexer<'a> {
                         break;
                     }
                 }
-                Ok(Token::new(TokenKind::Whitespace(whitespace), self.location()))
+                Ok(Token::new(
+                    TokenKind::Whitespace(whitespace),
+                    self.location(),
+                ))
             }
             '\n' => {
                 self.at_start_of_line = true;
@@ -99,10 +105,16 @@ impl<'a> Lexer<'a> {
                 } else if let Some(&'#') = self.input.peek() {
                     self.input.next();
                     self.at_start_of_line = false;
-                    Ok(Token::new(TokenKind::Punct("##".to_string()), self.location()))
+                    Ok(Token::new(
+                        TokenKind::Punct("##".to_string()),
+                        self.location(),
+                    ))
                 } else {
                     self.at_start_of_line = false;
-                    Ok(Token::new(TokenKind::Punct("#".to_string()), self.location()))
+                    Ok(Token::new(
+                        TokenKind::Punct("#".to_string()),
+                        self.location(),
+                    ))
                 }
             }
             '.' => {
@@ -116,7 +128,10 @@ impl<'a> Lexer<'a> {
 
                 if dots == "..." {
                     self.at_start_of_line = false;
-                    return Ok(Token::new(TokenKind::Punct("...".to_string()), self.location()));
+                    return Ok(Token::new(
+                        TokenKind::Punct("...".to_string()),
+                        self.location(),
+                    ));
                 }
 
                 // Handle cases with one or two dots by re-processing
@@ -126,7 +141,10 @@ impl<'a> Lexer<'a> {
                 // This part is tricky as we can't easily push back to the input stream.
                 // For now, we'll just handle the first dot and the rest will be handled in subsequent calls.
                 // A more robust solution might involve a buffer.
-                Ok(Token::new(TokenKind::Punct(first_dot.to_string()), self.location()))
+                Ok(Token::new(
+                    TokenKind::Punct(first_dot.to_string()),
+                    self.location(),
+                ))
             }
             _ if c.is_ascii_punctuation() => {
                 self.at_start_of_line = false;

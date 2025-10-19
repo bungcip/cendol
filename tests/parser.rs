@@ -1,6 +1,6 @@
 use cendol::parser::ast::{Expr, Function, Program, Stmt};
 use cendol::parser::parser::Parser;
-use cendol::preprocessor::token::{Token, TokenKind};
+use cendol::preprocessor::token::{KeywordKind, PunctKind, Token, TokenKind};
 #[cfg(test)]
 mod tests {
     use cendol::parser::ast::{Expr, Function, Program, Stmt};
@@ -35,24 +35,24 @@ fn test_control_flow() {
         line: 0,
     };
     let tokens = vec![
-        Token::new(TokenKind::Keyword("int".to_string()), loc.clone()),
+        Token::new(TokenKind::Keyword(KeywordKind::Int), loc.clone()),
         Token::new(TokenKind::Whitespace(" ".to_string()), loc.clone()),
         Token::new(TokenKind::Identifier("main".to_string()), loc.clone()),
-        Token::new(TokenKind::Punct("(".to_string()), loc.clone()),
-        Token::new(TokenKind::Punct(")".to_string()), loc.clone()),
-        Token::new(TokenKind::Punct("{".to_string()), loc.clone()),
-        Token::new(TokenKind::Keyword("if".to_string()), loc.clone()),
-        Token::new(TokenKind::Punct("(".to_string()), loc.clone()),
+        Token::new(TokenKind::Punct(PunctKind::LeftParen), loc.clone()),
+        Token::new(TokenKind::Punct(PunctKind::RightParen), loc.clone()),
+        Token::new(TokenKind::Punct(PunctKind::LeftBrace), loc.clone()),
+        Token::new(TokenKind::Keyword(KeywordKind::If), loc.clone()),
+        Token::new(TokenKind::Punct(PunctKind::LeftParen), loc.clone()),
         Token::new(TokenKind::Number("1".to_string()), loc.clone()),
-        Token::new(TokenKind::Punct(")".to_string()), loc.clone()),
-        Token::new(TokenKind::Keyword("return".to_string()), loc.clone()),
+        Token::new(TokenKind::Punct(PunctKind::RightParen), loc.clone()),
+        Token::new(TokenKind::Keyword(KeywordKind::Return), loc.clone()),
         Token::new(TokenKind::Number("1".to_string()), loc.clone()),
-        Token::new(TokenKind::Punct(";".to_string()), loc.clone()),
-        Token::new(TokenKind::Keyword("else".to_string()), loc.clone()),
-        Token::new(TokenKind::Keyword("return".to_string()), loc.clone()),
+        Token::new(TokenKind::Punct(PunctKind::Semicolon), loc.clone()),
+        Token::new(TokenKind::Keyword(KeywordKind::Else), loc.clone()),
+        Token::new(TokenKind::Keyword(KeywordKind::Return), loc.clone()),
         Token::new(TokenKind::Number("0".to_string()), loc.clone()),
-        Token::new(TokenKind::Punct(";".to_string()), loc.clone()),
-        Token::new(TokenKind::Punct("}".to_string()), loc.clone()),
+        Token::new(TokenKind::Punct(PunctKind::Semicolon), loc.clone()),
+        Token::new(TokenKind::Punct(PunctKind::RightBrace), loc.clone()),
     ];
     let mut parser = Parser::new(tokens).unwrap();
     let program = parser.parse().unwrap();

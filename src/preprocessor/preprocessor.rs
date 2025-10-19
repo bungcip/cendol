@@ -1,6 +1,6 @@
 use crate::preprocessor::error::PreprocessorError;
 use crate::preprocessor::lexer::Lexer;
-use crate::preprocessor::token::{Token, TokenKind};
+use crate::preprocessor::token::{PunctKind, Token, TokenKind};
 use chrono::Local;
 use std::collections::{HashMap, HashSet};
 
@@ -207,7 +207,7 @@ impl Preprocessor {
         }
 
         if next_token_idx < tokens.len()
-            && matches!(&tokens[next_token_idx].kind, TokenKind::Punct(p) if p == "(")
+            && matches!(&tokens[next_token_idx].kind, TokenKind::Punct(PunctKind::LeftParen))
         {
             tokens.drain(0..next_token_idx);
             tokens.remove(0);
@@ -218,30 +218,24 @@ impl Preprocessor {
                 if tokens.is_empty() {
                     return Err(PreprocessorError::UnexpectedEofInMacroParams);
                 }
-                if let TokenKind::Punct(p) = &tokens[0].kind {
-                    if p == ")" {
-                        tokens.remove(0);
-                        break;
-                    }
+                if let TokenKind::Punct(PunctKind::RightParen) = &tokens[0].kind {
+                    tokens.remove(0);
+                    break;
                 }
 
                 if let TokenKind::Identifier(param) = tokens[0].kind.clone() {
                     parameters.push(param);
                     tokens.remove(0);
-                } else if let TokenKind::Punct(p) = &tokens[0].kind {
-                    if p == "..." {
-                        is_variadic = true;
-                        parameters.push("..".to_string());
-                        tokens.remove(0);
-                    }
+                } else if let TokenKind::Punct(PunctKind::Ellipsis) = &tokens[0].kind {
+                    is_variadic = true;
+                    parameters.push("..".to_string());
+                    tokens.remove(0);
                 }
 
                 self.consume_whitespace(tokens);
                 if !tokens.is_empty() {
-                    if let TokenKind::Punct(p) = &tokens[0].kind {
-                        if p == "," {
-                            tokens.remove(0);
-                        }
+                    if let TokenKind::Punct(PunctKind::Comma) = &tokens[0].kind {
+                        tokens.remove(0);
                     }
                 }
             }
@@ -364,7 +358,7 @@ impl Preprocessor {
                 }
 
                 if next_idx >= tokens.len()
-                    || !matches!(&tokens[next_idx].kind, TokenKind::Punct(p) if p == "(")
+                    || !matches!(&tokens[next_idx].kind, TokenKind::Punct(PunctKind::LeftParen))
                 {
                     return Ok((index, index + 1, vec![token.clone()]));
                 }
@@ -406,11 +400,11 @@ impl Preprocessor {
         while i < tokens.len() {
             let token = &tokens[i];
             match &token.kind {
-                TokenKind::Punct(p) if p == "(" => {
+                TokenKind::Punct(PunctKind::LeftParen) => {
                     paren_level += 1;
                     current_arg.push(token.clone());
                 }
-                TokenKind::Punct(p) if p == ")" => {
+                TokenKind::Punct(PunctKind::RightParen) => {
                     paren_level -= 1;
                     if paren_level == 0 {
                         if !current_arg.is_empty() {
@@ -420,7 +414,7 @@ impl Preprocessor {
                     }
                     current_arg.push(token.clone());
                 }
-                TokenKind::Punct(p) if p == "," && paren_level == 1 => {
+                TokenKind::Punct(PunctKind::Comma) if paren_level == 1 => {
                     args.push(self.trim_whitespace(current_arg));
                     current_arg = Vec::new();
                 }
@@ -443,7 +437,7 @@ impl Preprocessor {
         while i < body.len() {
             let token = &body[i];
             if let TokenKind::Punct(p) = &token.kind {
-                if p == "#" {
+                if p == &PunctKind::Hash {
                     i += 1;
                     if i < body.len() {
                         if let TokenKind::Identifier(param_name) = &body[i].kind {
@@ -464,7 +458,7 @@ impl Preprocessor {
                             }
                         }
                     }
-                } else if p == "##" {
+                } else if p == &PunctKind::HashHash {
                     let mut lhs: Token = result.pop().unwrap();
                     while lhs.kind.is_whitespace() {
                         lhs = result.pop().unwrap();
@@ -534,7 +528,7 @@ impl Preprocessor {
                                 result.extend(arg.clone());
                                 if i < args.len() - vararg_start - 1 {
                                     result.push(Token::new(
-                                        TokenKind::Punct(",".to_string()),
+                                        TokenKind::Punct(PunctKind::Comma),
                                         token.location.clone(),
                                     ));
                                 }
@@ -658,9 +652,9 @@ fn evaluate_expression(tokens: &[Token]) -> Result<bool, PreprocessorError> {
         return Ok(lhs != 0);
     };
 
-    match op.as_str() {
-        "<" => Ok(lhs < rhs),
-        ">" => Ok(lhs > rhs),
+    match op {
+        PunctKind::Other(s) if s == "<" => Ok(lhs < rhs),
+        PunctKind::Other(s) if s == ">" => Ok(lhs > rhs),
         _ => Ok(lhs != 0),
     }
 }

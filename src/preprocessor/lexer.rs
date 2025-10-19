@@ -1,5 +1,5 @@
 use crate::preprocessor::error::PreprocessorError;
-use crate::preprocessor::token::{SourceLocation, Token, TokenKind};
+use crate::preprocessor::token::{KeywordKind, PunctKind, SourceLocation, Token, TokenKind};
 use std::iter::Peekable;
 use std::str::Chars;
 
@@ -36,7 +36,7 @@ impl<'a> Lexer<'a> {
                 } else {
                     self.at_start_of_line = false;
                     Ok(Token::new(
-                        TokenKind::Punct("\\".to_string()),
+                        TokenKind::Punct(PunctKind::Backslash),
                         self.location(),
                     ))
                 }
@@ -70,8 +70,8 @@ impl<'a> Lexer<'a> {
                     }
                 }
                 self.at_start_of_line = false;
-                if is_keyword(&ident) {
-                    Ok(Token::new(TokenKind::Keyword(ident), self.location()))
+                if let Some(keyword) = KeywordKind::from_str(&ident) {
+                    Ok(Token::new(TokenKind::Keyword(keyword), self.location()))
                 } else {
                     Ok(Token::new(TokenKind::Identifier(ident), self.location()))
                 }
@@ -106,13 +106,13 @@ impl<'a> Lexer<'a> {
                     self.input.next();
                     self.at_start_of_line = false;
                     Ok(Token::new(
-                        TokenKind::Punct("##".to_string()),
+                        TokenKind::Punct(PunctKind::HashHash),
                         self.location(),
                     ))
                 } else {
                     self.at_start_of_line = false;
                     Ok(Token::new(
-                        TokenKind::Punct("#".to_string()),
+                        TokenKind::Punct(PunctKind::Hash),
                         self.location(),
                     ))
                 }
@@ -129,7 +129,7 @@ impl<'a> Lexer<'a> {
                 if dots == "..." {
                     self.at_start_of_line = false;
                     return Ok(Token::new(
-                        TokenKind::Punct("...".to_string()),
+                        TokenKind::Punct(PunctKind::Ellipsis),
                         self.location(),
                     ));
                 }
@@ -142,13 +142,22 @@ impl<'a> Lexer<'a> {
                 // For now, we'll just handle the first dot and the rest will be handled in subsequent calls.
                 // A more robust solution might involve a buffer.
                 Ok(Token::new(
-                    TokenKind::Punct(first_dot.to_string()),
+                    TokenKind::Punct(PunctKind::Dot),
                     self.location(),
                 ))
             }
             _ if c.is_ascii_punctuation() => {
                 self.at_start_of_line = false;
-                Ok(Token::new(TokenKind::Punct(c.to_string()), self.location()))
+                let punct = match c {
+                    '(' => PunctKind::LeftParen,
+                    ')' => PunctKind::RightParen,
+                    '{' => PunctKind::LeftBrace,
+                    '}' => PunctKind::RightBrace,
+                    ';' => PunctKind::Semicolon,
+                    ',' => PunctKind::Comma,
+                    _ => PunctKind::Other(c.to_string()),
+                };
+                Ok(Token::new(TokenKind::Punct(punct), self.location()))
             }
             _ => Err(PreprocessorError::UnexpectedChar(c)),
         }
@@ -188,40 +197,3 @@ impl<'a> Lexer<'a> {
     }
 }
 
-fn is_keyword(s: &str) -> bool {
-    matches!(
-        s,
-        "auto"
-            | "break"
-            | "case"
-            | "char"
-            | "const"
-            | "continue"
-            | "default"
-            | "do"
-            | "double"
-            | "else"
-            | "enum"
-            | "extern"
-            | "float"
-            | "for"
-            | "goto"
-            | "if"
-            | "int"
-            | "long"
-            | "register"
-            | "return"
-            | "short"
-            | "signed"
-            | "sizeof"
-            | "static"
-            | "struct"
-            | "switch"
-            | "typedef"
-            | "union"
-            | "unsigned"
-            | "void"
-            | "volatile"
-            | "while"
-    )
-}

@@ -1,6 +1,6 @@
 use crate::parser::ast::{Expr, Function, Program, Stmt};
 use crate::parser::error::ParserError;
-use crate::preprocessor::token::{Token, TokenKind};
+use crate::preprocessor::token::{KeywordKind, PunctKind, Token, TokenKind};
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -40,7 +40,7 @@ impl Parser {
         self.skip_whitespace()
     }
 
-    fn expect_punct(&mut self, value: &str) -> Result<(), ParserError> {
+    fn expect_punct(&mut self, value: PunctKind) -> Result<(), ParserError> {
         let token = self.current_token()?;
         if let TokenKind::Punct(p) = token.kind.clone() {
             if p == value {
@@ -62,7 +62,7 @@ impl Parser {
         Err(ParserError::UnexpectedToken(token.clone()))
     }
 
-    fn expect_keyword(&mut self, value: &str) -> Result<(), ParserError> {
+    fn expect_keyword(&mut self, value: KeywordKind) -> Result<(), ParserError> {
         let token = self.current_token()?;
         if let TokenKind::Keyword(k) = token.kind.clone() {
             if k == value {
@@ -91,12 +91,12 @@ impl Parser {
     fn parse_stmt(&mut self) -> Result<Stmt, ParserError> {
         let token = self.current_token()?;
         if let TokenKind::Punct(p) = token.kind.clone() {
-            if p == "{" {
+            if p == PunctKind::LeftBrace {
                 self.eat()?;
                 let mut stmts = Vec::new();
                 while let Ok(t) = self.current_token() {
                     if let TokenKind::Punct(p) = t.kind {
-                        if p == "}" {
+                        if p == PunctKind::RightBrace {
                             self.eat()?;
                             break;
                         }
@@ -106,42 +106,42 @@ impl Parser {
                 return Ok(Stmt::Block(stmts));
             }
         } else if let TokenKind::Keyword(k) = token.kind.clone() {
-            if k == "return" {
+            if k == KeywordKind::Return {
                 self.eat()?;
                 let expr = self.parse_expr()?;
-                self.expect_punct(";")?;
+                self.expect_punct(PunctKind::Semicolon)?;
                 return Ok(Stmt::Return(expr));
-            } else if k == "if" {
+            } else if k == KeywordKind::If {
                 self.eat()?;
-                self.expect_punct("(")?;
+                self.expect_punct(PunctKind::LeftParen)?;
                 let cond = self.parse_expr()?;
-                self.expect_punct(")")?;
+                self.expect_punct(PunctKind::RightParen)?;
                 let then = self.parse_stmt()?;
                 let mut else_stmt = None;
                 let next_token = self.current_token()?;
                 if let TokenKind::Keyword(k) = next_token.kind.clone() {
-                    if k == "else" {
+                    if k == KeywordKind::Else {
                         self.eat()?;
                         else_stmt = Some(Box::new(self.parse_stmt()?));
                     }
                 }
                 return Ok(Stmt::If(Box::new(cond), Box::new(then), else_stmt));
-            } else if k == "while" {
+            } else if k == KeywordKind::While {
                 self.eat()?;
-                self.expect_punct("(")?;
+                self.expect_punct(PunctKind::LeftParen)?;
                 let cond = self.parse_expr()?;
-                self.expect_punct(")")?;
+                self.expect_punct(PunctKind::RightParen)?;
                 let body = self.parse_stmt()?;
                 return Ok(Stmt::While(Box::new(cond), Box::new(body)));
-            } else if k == "for" {
+            } else if k == KeywordKind::For {
                 self.eat()?;
-                self.expect_punct("(")?;
+                self.expect_punct(PunctKind::LeftParen)?;
                 let init = Some(Box::new(self.parse_expr()?));
-                self.expect_punct(";")?;
+                self.expect_punct(PunctKind::Semicolon)?;
                 let cond = Some(Box::new(self.parse_expr()?));
-                self.expect_punct(";")?;
+                self.expect_punct(PunctKind::Semicolon)?;
                 let inc = Some(Box::new(self.parse_expr()?));
-                self.expect_punct(")")?;
+                self.expect_punct(PunctKind::RightParen)?;
                 let body = self.parse_stmt()?;
                 return Ok(Stmt::For(init, cond, inc, Box::new(body)));
             }
@@ -150,13 +150,13 @@ impl Parser {
     }
 
     fn parse_function(&mut self) -> Result<Function, ParserError> {
-        self.expect_keyword("int")?;
+        self.expect_keyword(KeywordKind::Int)?;
         self.expect_identifier("main")?;
-        self.expect_punct("(")?;
-        self.expect_punct(")")?;
-        self.expect_punct("{")?;
+        self.expect_punct(PunctKind::LeftParen)?;
+        self.expect_punct(PunctKind::RightParen)?;
+        self.expect_punct(PunctKind::LeftBrace)?;
         let body = self.parse_stmt()?;
-        self.expect_punct("}")?;
+        self.expect_punct(PunctKind::RightBrace)?;
         Ok(Function {
             name: "main".to_string(),
             body: Box::new(body),

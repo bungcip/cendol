@@ -53,6 +53,10 @@ pub enum PunctKind {
     Ellipsis,
     Backslash,
     Dot,
+    Plus,
+    Minus,
+    PlusPlus,
+    MinusMinus,
     Other(String),
 }
 
@@ -154,6 +158,10 @@ impl fmt::Display for PunctKind {
             PunctKind::Ellipsis => write!(f, "..."),
             PunctKind::Backslash => write!(f, "\\"),
             PunctKind::Dot => write!(f, "."),
+            PunctKind::Plus => write!(f, "+"),
+            PunctKind::Minus => write!(f, "-"),
+            PunctKind::PlusPlus => write!(f, "++"),
+            PunctKind::MinusMinus => write!(f, "--"),
             PunctKind::Other(s) => write!(f, "{}", s),
         }
     }

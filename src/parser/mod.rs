@@ -223,12 +223,12 @@ impl Parser {
     }
 
     /// Gets the prefix binding power of a token.
-    #[allow(dead_code)]
     fn prefix_binding_power(&self, kind: &TokenKind) -> Option<((), u8)> {
         match kind {
-            TokenKind::Punct(PunctKind::Plus) | TokenKind::Punct(PunctKind::Minus) => {
-                Some(((), 15))
-            }
+            TokenKind::Punct(PunctKind::Plus)
+            | TokenKind::Punct(PunctKind::Minus)
+            | TokenKind::Punct(PunctKind::PlusPlus)
+            | TokenKind::Punct(PunctKind::MinusMinus) => Some(((), 15)),
             TokenKind::Punct(PunctKind::Bang) => Some(((), 15)),
             _ => None,
         }
@@ -238,7 +238,7 @@ impl Parser {
     fn postfix_binding_power(&self, kind: &TokenKind) -> Option<(u8, ())> {
         match kind {
             TokenKind::Punct(PunctKind::PlusPlus) | TokenKind::Punct(PunctKind::MinusMinus) => {
-                Some((16, ()))
+                Some((17, ()))
             }
             _ => None,
         }
@@ -246,7 +246,23 @@ impl Parser {
 
     /// Parses an expression using the Pratt parsing algorithm.
     fn parse_pratt_expr(&mut self, min_bp: u8) -> Result<Expr, ParserError> {
-        let mut lhs = self.parse_primary()?;
+        let mut lhs = if let Some(((), r_bp)) =
+            self.prefix_binding_power(&self.current_token()?.kind)
+        {
+            let token = self.current_token()?;
+            self.eat()?;
+            let rhs = self.parse_pratt_expr(r_bp)?;
+            match token.kind {
+                TokenKind::Punct(PunctKind::PlusPlus) => Expr::Increment(Box::new(rhs)),
+                TokenKind::Punct(PunctKind::MinusMinus) => Expr::Decrement(Box::new(rhs)),
+                TokenKind::Punct(PunctKind::Plus) => rhs,
+                TokenKind::Punct(PunctKind::Minus) => Expr::Neg(Box::new(rhs)),
+                TokenKind::Punct(PunctKind::Bang) => Expr::LogicalNot(Box::new(rhs)),
+                _ => unreachable!(),
+            }
+        } else {
+            self.parse_primary()?
+        };
 
         loop {
             let token = self.current_token()?;
@@ -323,26 +339,42 @@ impl Parser {
             }
             TokenKind::Identifier(name) => {
                 self.eat()?;
-                let token = self.current_token()?;
-                if let TokenKind::Punct(PunctKind::LeftParen) = token.kind {
-                    self.eat()?;
-                    let mut args = Vec::new();
-                    while let Ok(t) = self.current_token() {
-                        if let TokenKind::Punct(PunctKind::RightParen) = t.kind {
+                let mut expr = Expr::Variable(name);
+                while let Ok(token) = self.current_token() {
+                    match token.kind {
+                        TokenKind::Punct(PunctKind::PlusPlus) => {
                             self.eat()?;
-                            break;
+                            expr = Expr::Increment(Box::new(expr));
                         }
-                        args.push(self.parse_expr()?);
-                        if let Ok(t) = self.current_token()
-                            && let TokenKind::Punct(PunctKind::Comma) = t.kind
-                        {
+                        TokenKind::Punct(PunctKind::MinusMinus) => {
                             self.eat()?;
+                            expr = Expr::Decrement(Box::new(expr));
                         }
+                        TokenKind::Punct(PunctKind::LeftParen) => {
+                            self.eat()?;
+                            let mut args = Vec::new();
+                            while let Ok(t) = self.current_token() {
+                                if let TokenKind::Punct(PunctKind::RightParen) = t.kind {
+                                    self.eat()?;
+                                    break;
+                                }
+                                args.push(self.parse_expr()?);
+                                if let Ok(t) = self.current_token()
+                                    && let TokenKind::Punct(PunctKind::Comma) = t.kind
+                                {
+                                    self.eat()?;
+                                }
+                            }
+                            let name = match expr {
+                                Expr::Variable(name) => name,
+                                _ => return Err(ParserError::UnexpectedToken(token)),
+                            };
+                            expr = Expr::Call(name, args);
+                        }
+                        _ => break,
                     }
-                    Ok(Expr::Call(name, args))
-                } else {
-                    Ok(Expr::Variable(name))
                 }
+                Ok(expr)
             }
             TokenKind::Punct(p) => match p {
                 PunctKind::Star => {

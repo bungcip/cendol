@@ -1,11 +1,41 @@
 use cendol::parser::Parser;
 use cendol::parser::ast::{Expr, Function, Program, Stmt};
 use cendol::preprocessor::token::{KeywordKind, PunctKind, Token, TokenKind};
+use cendol::parser::ast::Type;
+
 #[cfg(test)]
 mod tests {
+    use cendol::parser::ast::{Expr, Function, Program, Stmt, Type};
     use cendol::parser::Parser;
-    use cendol::parser::ast::{Expr, Function, Program, Stmt};
     use cendol::preprocessor::Preprocessor;
+
+    #[test]
+    fn test_increment() {
+        let input = "int main() { int a = 0; a++; return 0; }";
+        let mut preprocessor = Preprocessor::new();
+        let tokens = preprocessor.preprocess(input).unwrap();
+        let mut parser = Parser::new(tokens).unwrap();
+        let ast = parser.parse().unwrap();
+        assert_eq!(
+            ast,
+            Program {
+                globals: vec![],
+                function: Function {
+                    name: "main".to_string(),
+                    params: vec![],
+                    body: vec![
+                        Stmt::Declaration(
+                            Type::Int,
+                            "a".to_string(),
+                            Some(Box::new(Expr::Number(0)))
+                        ),
+                        Stmt::Expr(Expr::Increment(Box::new(Expr::Variable("a".to_string())))),
+                        Stmt::Return(Expr::Number(0))
+                    ]
+                }
+            }
+        );
+    }
 
     #[test]
     fn test_parser() {

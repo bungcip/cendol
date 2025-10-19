@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use cendol::preprocessor::lexer::Lexer;
-    use cendol::preprocessor::token::TokenKind;
+    use cendol::preprocessor::token::{PunctKind, TokenKind};
 
     #[test]
     fn test_lexer() {
@@ -21,6 +21,8 @@ FIVE
 
         let token_kinds: Vec<TokenKind> = tokens.into_iter().map(|t| t.kind).collect();
 
+use cendol::preprocessor::token::PunctKind;
+
         let expected_tokens = vec![
             TokenKind::Newline,
             TokenKind::Directive("define".to_string()),
@@ -31,6 +33,28 @@ FIVE
             TokenKind::Newline,
             TokenKind::Identifier("FIVE".to_string()),
             TokenKind::Newline,
+        ];
+        assert_eq!(token_kinds, expected_tokens);
+    }
+
+    #[test]
+    fn test_plusplus() {
+        let input = "a++";
+        let mut lexer = Lexer::new(input, "test.c".to_string());
+        let mut tokens = Vec::new();
+        loop {
+            let token = lexer.next_token().unwrap();
+            if let TokenKind::Eof = token.kind {
+                break;
+            }
+            tokens.push(token);
+        }
+
+        let token_kinds: Vec<TokenKind> = tokens.into_iter().map(|t| t.kind).collect();
+
+        let expected_tokens = vec![
+            TokenKind::Identifier("a".to_string()),
+            TokenKind::Punct(PunctKind::PlusPlus),
         ];
         assert_eq!(token_kinds, expected_tokens);
     }

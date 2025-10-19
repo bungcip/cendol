@@ -74,6 +74,10 @@ impl Parser {
     }
 
     fn parse_expr(&mut self) -> Result<Expr, ParserError> {
+        self.parse_comparison()
+    }
+
+    fn parse_comparison(&mut self) -> Result<Expr, ParserError> {
         let token = self.current_token()?;
         match token.kind.clone() {
             TokenKind::Number(n) => {
@@ -85,10 +89,64 @@ impl Parser {
     }
 
     fn parse_stmt(&mut self) -> Result<Stmt, ParserError> {
-        self.expect_keyword("return")?;
-        let expr = self.parse_expr()?;
-        self.expect_punct(";")?;
-        Ok(Stmt::Return(expr))
+        let token = self.current_token()?;
+        if let TokenKind::Punct(p) = token.kind.clone() {
+            if p == "{" {
+                self.eat()?;
+                let mut stmts = Vec::new();
+                while let Ok(t) = self.current_token() {
+                    if let TokenKind::Punct(p) = t.kind {
+                        if p == "}" {
+                            self.eat()?;
+                            break;
+                        }
+                    }
+                    stmts.push(self.parse_stmt()?);
+                }
+                return Ok(Stmt::Block(stmts));
+            }
+        } else if let TokenKind::Keyword(k) = token.kind.clone() {
+            if k == "return" {
+                self.eat()?;
+                let expr = self.parse_expr()?;
+                self.expect_punct(";")?;
+                return Ok(Stmt::Return(expr));
+            } else if k == "if" {
+                self.eat()?;
+                self.expect_punct("(")?;
+                let cond = self.parse_expr()?;
+                self.expect_punct(")")?;
+                let then = self.parse_stmt()?;
+                let mut else_stmt = None;
+                let next_token = self.current_token()?;
+                if let TokenKind::Keyword(k) = next_token.kind.clone() {
+                    if k == "else" {
+                        self.eat()?;
+                        else_stmt = Some(Box::new(self.parse_stmt()?));
+                    }
+                }
+                return Ok(Stmt::If(Box::new(cond), Box::new(then), else_stmt));
+            } else if k == "while" {
+                self.eat()?;
+                self.expect_punct("(")?;
+                let cond = self.parse_expr()?;
+                self.expect_punct(")")?;
+                let body = self.parse_stmt()?;
+                return Ok(Stmt::While(Box::new(cond), Box::new(body)));
+            } else if k == "for" {
+                self.eat()?;
+                self.expect_punct("(")?;
+                let init = Some(Box::new(self.parse_expr()?));
+                self.expect_punct(";")?;
+                let cond = Some(Box::new(self.parse_expr()?));
+                self.expect_punct(";")?;
+                let inc = Some(Box::new(self.parse_expr()?));
+                self.expect_punct(")")?;
+                let body = self.parse_stmt()?;
+                return Ok(Stmt::For(init, cond, inc, Box::new(body)));
+            }
+        }
+        Err(ParserError::UnexpectedToken(token))
     }
 
     fn parse_function(&mut self) -> Result<Function, ParserError> {
@@ -101,7 +159,7 @@ impl Parser {
         self.expect_punct("}")?;
         Ok(Function {
             name: "main".to_string(),
-            body,
+            body: Box::new(body),
         })
     }
 

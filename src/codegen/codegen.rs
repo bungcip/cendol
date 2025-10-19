@@ -51,7 +51,7 @@ impl CodeGen {
         builder.switch_to_block(entry_block);
         builder.seal_block(entry_block);
 
-        translate_stmt(&mut builder, program.function.body);
+        translate_stmt(&mut builder, *program.function.body);
         builder.finalize();
 
         let id = self
@@ -74,6 +74,7 @@ fn translate_stmt(builder: &mut FunctionBuilder, stmt: Stmt) -> Value {
             builder.ins().return_(&[value]);
             value
         }
+        _ => unimplemented!(),
     }
 }
 
@@ -100,5 +101,6 @@ fn translate_expr(builder: &mut FunctionBuilder, expr: Expr) -> Value {
             let rhs = translate_expr(builder, *rhs);
             builder.ins().sdiv(lhs, rhs)
         }
+        _ => unimplemented!(),
     }
 }

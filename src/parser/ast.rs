@@ -1,6 +1,15 @@
 #[derive(Debug, PartialEq)]
 pub enum Stmt {
     Return(Expr),
+    If(Box<Expr>, Box<Stmt>, Option<Box<Stmt>>),
+    While(Box<Expr>, Box<Stmt>),
+    For(
+        Option<Box<Expr>>,
+        Option<Box<Expr>>,
+        Option<Box<Expr>>,
+        Box<Stmt>,
+    ),
+    Block(Vec<Stmt>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -10,12 +19,13 @@ pub enum Expr {
     Sub(Box<Expr>, Box<Expr>),
     Mul(Box<Expr>, Box<Expr>),
     Div(Box<Expr>, Box<Expr>),
+    Cmp(Box<Expr>, Box<Expr>),
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Function {
     pub name: String,
-    pub body: Stmt,
+    pub body: Box<Stmt>,
 }
 
 #[derive(Debug, PartialEq)]

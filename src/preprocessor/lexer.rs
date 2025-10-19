@@ -22,6 +22,16 @@ impl<'a> Lexer<'a> {
         };
 
         match c {
+            '\\' => {
+                if let Some(&'\n') = self.input.peek() {
+                    self.input.next();
+                    self.at_start_of_line = true;
+                    self.next_token()
+                } else {
+                    self.at_start_of_line = false;
+                    Ok(Token::new(TokenKind::Punct("\\".to_string())))
+                }
+            }
             ' ' | '\t' | '\r' => {
                 let mut whitespace = String::from(c);
                 while let Some(&c) = self.input.peek() {

@@ -109,3 +109,14 @@ fn test_keyword_macro() {
 //     assert_eq!(tokens[0].kind.to_string(), "FIRST");
 //     assert_eq!(tokens[1].kind.to_string(), "42");
 // }
+
+#[test]
+fn test_line_splicing() {
+    let input = "#define A 1 \\\n+ 2\nA";
+    let mut preprocessor = Preprocessor::new();
+    let tokens = preprocessor.preprocess(input).unwrap();
+    assert_eq!(tokens.len(), 3);
+    assert_eq!(tokens[0].kind.to_string(), "1");
+    assert_eq!(tokens[1].kind.to_string(), "+");
+    assert_eq!(tokens[2].kind.to_string(), "2");
+}

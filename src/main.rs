@@ -7,6 +7,7 @@ use std::fs;
 use std::io::Write;
 use std::process::{exit, Command};
 
+/// Command-line arguments for the C-like compiler.
 #[derive(ClapParser)]
 #[command(version, about, long_about = None)]
 struct Cli {
@@ -43,6 +44,9 @@ struct Cli {
     verbose: bool,
 }
 
+/// The main entry point for the application.
+///
+/// Parses command-line arguments and runs the compiler.
 fn main() {
     if let Err(err) = run() {
         report(&Report::new(err.to_string(), None, None));
@@ -50,6 +54,14 @@ fn main() {
     }
 }
 
+/// Runs the compiler.
+///
+/// This function reads the input file, preprocesses it, parses the tokens,
+/// generates code, and optionally links the output.
+///
+/// # Returns
+///
+/// A `Result` which is `Ok` on success or an `Error` on failure.
 fn run() -> Result<(), Error> {
     let cli = Cli::parse();
 

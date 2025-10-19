@@ -12,6 +12,7 @@ use std::collections::HashMap;
 
 pub mod error;
 
+/// A code generator that translates an AST into machine code.
 pub struct CodeGen {
     builder_context: FunctionBuilderContext,
     ctx: Context,
@@ -20,12 +21,14 @@ pub struct CodeGen {
 }
 
 impl Default for CodeGen {
+    /// Creates a new `CodeGen` with default settings.
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl CodeGen {
+    /// Creates a new `CodeGen`.
     pub fn new() -> Self {
         let mut flag_builder = settings::builder();
         flag_builder.set("use_colocated_libcalls", "false").unwrap();
@@ -50,6 +53,15 @@ impl CodeGen {
         }
     }
 
+    /// Compiles a program into a byte vector.
+    ///
+    /// # Arguments
+    ///
+    /// * `program` - The program to compile.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the compiled byte vector, or a `CodegenError` if compilation fails.
     pub fn compile(mut self, program: Program) -> Result<Vec<u8>, CodegenError> {
         if let Some(_global) = program.globals.into_iter().next() {
             unimplemented!()
@@ -91,12 +103,16 @@ impl CodeGen {
     }
 }
 
+/// The state of the current block.
 #[derive(PartialEq, PartialOrd)]
 pub enum BlockState {
+    /// The block is empty.
     Empty,
+    /// The block is filled with instructions.
     Filled,
 }
 
+/// A function translator that translates statements and expressions into Cranelift IR.
 struct FunctionTranslator<'a, 'b> {
     builder: FunctionBuilder<'a>,
     variables: &'b mut HashMap<String, StackSlot>,
@@ -105,11 +121,13 @@ struct FunctionTranslator<'a, 'b> {
 }
 
 impl<'a, 'b> FunctionTranslator<'a, 'b> {
+    /// Switches to a new block.
     fn switch_to_block(&mut self, block: Block) {
         self.builder.switch_to_block(block);
         self.current_block_state = BlockState::Empty;
     }
 
+    /// Jumps to a block if the current block is not filled.
     fn jump_to_block(&mut self, block: Block) {
         if self.current_block_state != BlockState::Filled {
             self.builder.ins().jump(block, &[]);
@@ -117,6 +135,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         }
     }
 
+    /// Translates a statement into Cranelift IR.
     fn translate_stmt(&mut self, stmt: Stmt) -> bool {
         match stmt {
             Stmt::Return(expr) => {
@@ -225,6 +244,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         }
     }
 
+    /// Translates an expression into a Cranelift `Value`.
     fn translate_expr(&mut self, expr: Expr) -> Value {
         match expr {
             Expr::Number(n) => self.builder.ins().iconst(types::I64, n),

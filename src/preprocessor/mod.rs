@@ -8,30 +8,40 @@ pub mod error;
 pub mod lexer;
 pub mod token;
 
+/// Represents a C macro.
 #[derive(Debug, Clone)]
 enum Macro {
+    /// An object-like macro.
     Object {
+        /// The tokens that replace the macro.
         tokens: Vec<Token>,
     },
+    /// A function-like macro.
     Function {
+        /// The parameters of the macro.
         parameters: Vec<String>,
+        /// Whether the macro is variadic.
         _is_variadic: bool,
+        /// The tokens that replace the macro.
         tokens: Vec<Token>,
     },
 }
 
+/// A C preprocessor.
 pub struct Preprocessor {
     macros: HashMap<String, Macro>,
     conditional_stack: Vec<bool>,
 }
 
 impl Default for Preprocessor {
+    /// Creates a new `Preprocessor` with default settings.
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl Preprocessor {
+    /// Creates a new `Preprocessor`.
     pub fn new() -> Self {
         Preprocessor {
             macros: HashMap::new(),
@@ -39,6 +49,15 @@ impl Preprocessor {
         }
     }
 
+    /// Preprocesses a string of C code.
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - The input string to preprocess.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing a vector of tokens, or a `PreprocessorError` if preprocessing fails.
     pub fn preprocess(&mut self, input: &str) -> Result<Vec<Token>, PreprocessorError> {
         let mut tokens = self.tokenize(input)?;
         self.process_directives(&mut tokens)?;
@@ -47,6 +66,11 @@ impl Preprocessor {
         Ok(tokens)
     }
 
+    /// Defines a macro.
+    ///
+    /// # Arguments
+    ///
+    /// * `definition` - The macro definition string.
     pub fn define(&mut self, definition: &str) -> Result<(), PreprocessorError> {
         if definition.is_empty() {
             return Err(PreprocessorError::Generic("Empty definition".to_string()));
@@ -67,6 +91,7 @@ impl Preprocessor {
         Ok(())
     }
 
+    /// Tokenizes an input string.
     fn tokenize(&self, input: &str) -> Result<Vec<Token>, PreprocessorError> {
         let mut lexer = Lexer::new(input, "<input>".to_string());
         let mut tokens = Vec::new();
@@ -80,6 +105,7 @@ impl Preprocessor {
         Ok(tokens)
     }
 
+    /// Processes preprocessor directives.
     fn process_directives(&mut self, tokens: &mut Vec<Token>) -> Result<(), PreprocessorError> {
         let mut i = 0;
         let mut final_tokens = Vec::new();
@@ -217,6 +243,7 @@ impl Preprocessor {
         Ok(())
     }
 
+    /// Handles a `#define` directive.
     fn handle_define(&mut self, tokens: &mut Vec<Token>) -> Result<(), PreprocessorError> {
         self.consume_whitespace(tokens);
         if tokens.is_empty() {
@@ -277,6 +304,7 @@ impl Preprocessor {
         Ok(())
     }
 
+    /// Reads the body of a macro definition.
     fn read_macro_body(
         &mut self,
         tokens: &mut Vec<Token>,
@@ -292,12 +320,14 @@ impl Preprocessor {
         Ok(body)
     }
 
+    /// Consumes whitespace tokens.
     fn consume_whitespace(&mut self, tokens: &mut Vec<Token>) {
         while !tokens.is_empty() && matches!(tokens[0].kind, TokenKind::Whitespace(_)) {
             tokens.remove(0);
         }
     }
 
+    /// Expands all macros in a token stream.
     fn expand_all_macros(&mut self, tokens: &mut Vec<Token>) -> Result<(), PreprocessorError> {
         loop {
             let mut expanded = false;
@@ -342,6 +372,7 @@ impl Preprocessor {
         Ok(())
     }
 
+    /// Expands a single macro.
     fn expand_single_macro(
         &mut self,
         token: &Token,
@@ -408,6 +439,7 @@ impl Preprocessor {
         }
     }
 
+    /// Parses the arguments of a function-like macro.
     fn parse_macro_args(
         &self,
         start_idx: usize,
@@ -445,6 +477,7 @@ impl Preprocessor {
         Err(PreprocessorError::UnexpectedEofInMacroArgs)
     }
 
+    /// Substitutes macro parameters with arguments.
     fn substitute_tokens(
         &mut self,
         body: &[Token],
@@ -564,6 +597,7 @@ impl Preprocessor {
         Ok(result)
     }
 
+    /// Trims whitespace from the beginning and end of a token vector.
     fn trim_whitespace(&self, mut tokens: Vec<Token>) -> Vec<Token> {
         if let Some(first) = tokens.first()
             && first.kind.is_whitespace()
@@ -578,6 +612,7 @@ impl Preprocessor {
         tokens
     }
 
+    /// Includes a file.
     fn include_file(&mut self, filename: &str) -> Result<Vec<Token>, PreprocessorError> {
         let content = std::fs::read_to_string(filename)
             .map_err(|_| PreprocessorError::FileNotFound(filename.to_string()))?;
@@ -594,6 +629,7 @@ impl Preprocessor {
     }
 }
 
+/// Parses an include directive.
 fn parse_include(start_idx: usize, tokens: &[Token]) -> Result<(String, usize), PreprocessorError> {
     let mut i = start_idx;
     while i < tokens.len() && tokens[i].kind.is_whitespace() {
@@ -609,6 +645,7 @@ fn parse_include(start_idx: usize, tokens: &[Token]) -> Result<(String, usize), 
     Err(PreprocessorError::InvalidInclude)
 }
 
+/// Parses a conditional expression.
 fn parse_conditional_expression(
     start_idx: usize,
     tokens: &[Token],
@@ -625,6 +662,7 @@ fn parse_conditional_expression(
     Ok((condition, i))
 }
 
+/// Evaluates a conditional expression.
 fn evaluate_expression(tokens: &[Token]) -> Result<bool, PreprocessorError> {
     let mut i = 0;
     while i < tokens.len() && tokens[i].kind.is_whitespace() {
@@ -678,6 +716,7 @@ fn evaluate_expression(tokens: &[Token]) -> Result<bool, PreprocessorError> {
     }
 }
 
+/// Finds the index of the next newline token.
 fn find_next_line(start_idx: usize, tokens: &[Token]) -> usize {
     let mut i = start_idx;
     while i < tokens.len() {
@@ -689,6 +728,7 @@ fn find_next_line(start_idx: usize, tokens: &[Token]) -> usize {
     i
 }
 
+/// Parses an identifier.
 fn parse_identifier(
     start_idx: usize,
     tokens: &[Token],
@@ -703,6 +743,7 @@ fn parse_identifier(
     Err(PreprocessorError::ExpectedIdentifierAfterDefine)
 }
 
+/// Parses an error message.
 fn parse_error_message(
     start_idx: usize,
     tokens: &[Token],
@@ -719,6 +760,7 @@ fn parse_error_message(
     Ok((message, i))
 }
 
+/// Parses a line directive.
 fn parse_line_directive(
     start_idx: usize,
     tokens: &[Token],

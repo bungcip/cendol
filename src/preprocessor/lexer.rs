@@ -1,3 +1,4 @@
+use crate::preprocessor::error::PreprocessorError;
 use crate::preprocessor::token::{Token, TokenKind};
 use std::iter::Peekable;
 use std::str::Chars;
@@ -15,7 +16,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    pub fn next_token(&mut self) -> Result<Token, crate::preprocessor::error::PreprocessorError> {
+    pub fn next_token(&mut self) -> Result<Token, PreprocessorError> {
         let c = match self.input.next() {
             Some(c) => c,
             None => return Ok(Token::new(TokenKind::Eof)),
@@ -125,11 +126,11 @@ impl<'a> Lexer<'a> {
                 self.at_start_of_line = false;
                 Ok(Token::new(TokenKind::Punct(c.to_string())))
             }
-            _ => Err(crate::preprocessor::error::PreprocessorError::UnexpectedChar(c)),
+            _ => Err(PreprocessorError::UnexpectedChar(c)),
         }
     }
 
-    fn read_directive(&mut self) -> Result<Token, crate::preprocessor::error::PreprocessorError> {
+    fn read_directive(&mut self) -> Result<Token, PreprocessorError> {
         let mut directive = String::new();
         while let Some(&c) = self.input.peek() {
             if c.is_alphabetic() {

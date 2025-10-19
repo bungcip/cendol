@@ -123,17 +123,23 @@ fn test_line_splicing() {
 #[test]
 fn test_conditional_directives() {
     let input = r#"
-#if 1
+#if 1 > 0
     int a = 1;
 #else
     int a = 2;
+#endif
+
+#if 0 > 1
+    int b = 1;
+#else
+    int b = 2;
 #endif
 "#;
     let mut preprocessor = Preprocessor::new();
     let tokens = preprocessor.preprocess(input).unwrap();
     let result = tokens.iter().map(|t| t.to_string()).collect::<String>();
     let result = result.replace(" ", "").replace("\n", "");
-    assert_eq!(result, "inta=1;");
+    assert_eq!(result, "inta=1;intb=2;");
 }
 #[test]
 fn test_ifdef_directive() {

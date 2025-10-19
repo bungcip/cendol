@@ -1,3 +1,4 @@
+use crate::preprocessor::error::PreprocessorError;
 use crate::preprocessor::lexer::Lexer;
 use crate::preprocessor::token::{Token, TokenKind};
 use std::collections::{HashMap, HashSet};
@@ -27,7 +28,7 @@ impl Preprocessor {
         }
     }
 
-    pub fn preprocess(&mut self, input: &str) -> Result<Vec<Token>, crate::preprocessor::error::PreprocessorError> {
+    pub fn preprocess(&mut self, input: &str) -> Result<Vec<Token>, PreprocessorError> {
         let mut tokens = self.tokenize(input)?;
         self.process_directives(&mut tokens)?;
         self.expand_all_macros(&mut tokens)?;
@@ -35,7 +36,7 @@ impl Preprocessor {
         Ok(tokens)
     }
 
-    fn tokenize(&self, input: &str) -> Result<Vec<Token>, crate::preprocessor::error::PreprocessorError> {
+    fn tokenize(&self, input: &str) -> Result<Vec<Token>, PreprocessorError> {
         let mut lexer = Lexer::new(input);
         let mut tokens = Vec::new();
         loop {
@@ -48,7 +49,7 @@ impl Preprocessor {
         Ok(tokens)
     }
 
-    fn process_directives(&mut self, tokens: &mut Vec<Token>) -> Result<(), crate::preprocessor::error::PreprocessorError> {
+    fn process_directives(&mut self, tokens: &mut Vec<Token>) -> Result<(), PreprocessorError> {
         let mut i = 0;
         let mut final_tokens = Vec::new();
         let mut depth = 0;
@@ -67,7 +68,7 @@ impl Preprocessor {
                 }
                 TokenKind::Elif => {
                     if depth == 0 {
-                        return Err(crate::preprocessor::error::PreprocessorError::UnexpectedElif);
+                        return Err(PreprocessorError::UnexpectedElif);
                     }
                     if let Some(last) = self.conditional_stack.last_mut() {
                         if !*last {
@@ -83,7 +84,7 @@ impl Preprocessor {
                 }
                 TokenKind::Else => {
                     if depth == 0 {
-                        return Err(crate::preprocessor::error::PreprocessorError::UnexpectedElse);
+                        return Err(PreprocessorError::UnexpectedElse);
                     }
                     if let Some(last) = self.conditional_stack.last_mut() {
                         *last = !*last;
@@ -93,7 +94,7 @@ impl Preprocessor {
                 }
                 TokenKind::Endif => {
                     if depth == 0 {
-                        return Err(crate::preprocessor::error::PreprocessorError::UnexpectedEndif);
+                        return Err(PreprocessorError::UnexpectedEndif);
                     }
                     self.conditional_stack.pop();
                     depth -= 1;
@@ -143,7 +144,7 @@ impl Preprocessor {
                 TokenKind::Error => {
                     if in_true_branch {
                         let (message, end) = parse_error_message(i + 1, tokens)?;
-                        return Err(crate::preprocessor::error::PreprocessorError::Generic(message));
+                        return Err(PreprocessorError::Generic(message));
                     }
                     i = find_next_line(i + 1, tokens);
                     continue;
@@ -167,20 +168,20 @@ impl Preprocessor {
         }
 
         if depth != 0 {
-            return Err(crate::preprocessor::error::PreprocessorError::UnterminatedConditional);
+            return Err(PreprocessorError::UnterminatedConditional);
         }
 
         *tokens = final_tokens;
         Ok(())
     }
 
-    fn handle_define(&mut self, tokens: &mut Vec<Token>) -> Result<(), crate::preprocessor::error::PreprocessorError> {
+    fn handle_define(&mut self, tokens: &mut Vec<Token>) -> Result<(), PreprocessorError> {
         self.consume_whitespace(tokens);
         if tokens.is_empty() {
             return Ok(());
         }
         let name_token = tokens.remove(0);
-        let name = if let TokenKind::Identifier(name) = name_token.kind { name } else { return Err(crate::preprocessor::error::PreprocessorError::ExpectedIdentifierAfterDefine); };
+        let name = if let TokenKind::Identifier(name) = name_token.kind { name } else { return Err(PreprocessorError::ExpectedIdentifierAfterDefine); };
         
         let mut next_token_idx = 0;
         while next_token_idx < tokens.len() && matches!(&tokens[next_token_idx].kind, TokenKind::Whitespace(_)) {
@@ -194,7 +195,7 @@ impl Preprocessor {
             let mut is_variadic = false;
             loop {
                 self.consume_whitespace(tokens);
-                if tokens.is_empty() { return Err(crate::preprocessor::error::PreprocessorError::UnexpectedEofInMacroParams); }
+                if tokens.is_empty() { return Err(PreprocessorError::UnexpectedEofInMacroParams); }
                 if let TokenKind::Punct(p) = &tokens[0].kind {
                     if p == ")" { tokens.remove(0); break; }
                 }
@@ -228,7 +229,7 @@ impl Preprocessor {
         Ok(())
     }
 
-    fn read_macro_body(&mut self, tokens: &mut Vec<Token>) -> Result<Vec<Token>, crate::preprocessor::error::PreprocessorError> {
+    fn read_macro_body(&mut self, tokens: &mut Vec<Token>) -> Result<Vec<Token>, PreprocessorError> {
         let mut body = Vec::new();
         while !tokens.is_empty() {
             if let TokenKind::Newline = tokens[0].kind {
@@ -246,7 +247,7 @@ impl Preprocessor {
         }
     }
 
-    fn expand_all_macros(&mut self, tokens: &mut Vec<Token>) -> Result<(), crate::preprocessor::error::PreprocessorError> {
+    fn expand_all_macros(&mut self, tokens: &mut Vec<Token>) -> Result<(), PreprocessorError> {
         loop {
             let mut expanded = false;
             let mut i = 0;
@@ -277,7 +278,7 @@ impl Preprocessor {
         macro_def: &Macro,
         index: usize,
         tokens: &[Token],
-    ) -> Result<(usize, usize, Vec<Token>), crate::preprocessor::error::PreprocessorError> {
+    ) -> Result<(usize, usize, Vec<Token>), PreprocessorError> {
         let macro_name = match &token.kind {
             TokenKind::Identifier(name) => name.clone(),
             _ => return Ok((index, index + 1, vec![token.clone()])),
@@ -324,7 +325,7 @@ impl Preprocessor {
         }
     }
 
-    fn parse_macro_args(&self, start_idx: usize, tokens: &[Token]) -> Result<(Vec<Vec<Token>>, usize), crate::preprocessor::error::PreprocessorError> {
+    fn parse_macro_args(&self, start_idx: usize, tokens: &[Token]) -> Result<(Vec<Vec<Token>>, usize), PreprocessorError> {
         let mut args = Vec::new();
         let mut current_arg = Vec::new();
         let mut paren_level = 1;
@@ -351,10 +352,10 @@ impl Preprocessor {
             }
             i += 1;
         }
-        Err(crate::preprocessor::error::PreprocessorError::UnexpectedEofInMacroArgs)
+        Err(PreprocessorError::UnexpectedEofInMacroArgs)
     }
 
-    fn substitute_tokens(&mut self, body: &[Token], parameters: &[String], args: &[Vec<Token>], hideset: &HashSet<String>) -> Result<Vec<Token>, crate::preprocessor::error::PreprocessorError> {
+    fn substitute_tokens(&mut self, body: &[Token], parameters: &[String], args: &[Vec<Token>], hideset: &HashSet<String>) -> Result<Vec<Token>, PreprocessorError> {
         let mut result = Vec::new();
         let mut i = 0;
         while i < body.len() {
@@ -404,7 +405,7 @@ impl Preprocessor {
                         i += 1;
                         res
                     } else {
-                        return Err(crate::preprocessor::error::PreprocessorError::HashHashAtEndOfMacro);
+                        return Err(PreprocessorError::HashHashAtEndOfMacro);
                     };
 
                     let rhs_str = rhs_tokens.iter().map(|t| t.kind.to_string()).collect::<String>();
@@ -470,7 +471,7 @@ impl Preprocessor {
     }
 }
 
-fn parse_conditional_expression(start_idx: usize, tokens: &[Token]) -> Result<(Vec<Token>, usize), crate::preprocessor::error::PreprocessorError> {
+fn parse_conditional_expression(start_idx: usize, tokens: &[Token]) -> Result<(Vec<Token>, usize), PreprocessorError> {
     let mut condition = Vec::new();
     let mut i = start_idx;
     while i < tokens.len() {
@@ -483,9 +484,57 @@ fn parse_conditional_expression(start_idx: usize, tokens: &[Token]) -> Result<(V
     Ok((condition, i))
 }
 
-fn evaluate_expression(tokens: &[Token]) -> Result<bool, crate::preprocessor::error::PreprocessorError> {
-    // For now, we'll just evaluate the expression to true if it's not empty
-    Ok(!tokens.is_empty())
+fn evaluate_expression(tokens: &[Token]) -> Result<bool, PreprocessorError> {
+    let mut i = 0;
+    while i < tokens.len() && tokens[i].kind.is_whitespace() {
+        i += 1;
+    }
+
+    if i >= tokens.len() {
+        return Ok(false);
+    }
+
+    let lhs: i32 = if let TokenKind::Number(s) = &tokens[i].kind {
+        s.parse().unwrap()
+    } else {
+        return Ok(false);
+    };
+    i += 1;
+
+    while i < tokens.len() && tokens[i].kind.is_whitespace() {
+        i += 1;
+    }
+
+    if i >= tokens.len() {
+        return Ok(lhs != 0);
+    }
+
+    let op = if let TokenKind::Punct(s) = &tokens[i].kind {
+        s
+    } else {
+        return Ok(lhs != 0);
+    };
+    i += 1;
+
+    while i < tokens.len() && tokens[i].kind.is_whitespace() {
+        i += 1;
+    }
+
+    if i >= tokens.len() {
+        return Ok(lhs != 0);
+    }
+
+    let rhs: i32 = if let TokenKind::Number(s) = &tokens[i].kind {
+        s.parse().unwrap()
+    } else {
+        return Ok(lhs != 0);
+    };
+
+    match op.as_str() {
+        "<" => Ok(lhs < rhs),
+        ">" => Ok(lhs > rhs),
+        _ => Ok(lhs != 0),
+    }
 }
 
 fn find_next_line(start_idx: usize, tokens: &[Token]) -> usize {
@@ -499,7 +548,7 @@ fn find_next_line(start_idx: usize, tokens: &[Token]) -> usize {
     i
 }
 
-fn parse_identifier(start_idx: usize, tokens: &[Token]) -> Result<(String, usize), crate::preprocessor::error::PreprocessorError> {
+fn parse_identifier(start_idx: usize, tokens: &[Token]) -> Result<(String, usize), PreprocessorError> {
     let mut i = start_idx;
     while i < tokens.len() {
         if let TokenKind::Identifier(name) = &tokens[i].kind {
@@ -507,10 +556,10 @@ fn parse_identifier(start_idx: usize, tokens: &[Token]) -> Result<(String, usize
         }
         i += 1;
     }
-    Err(crate::preprocessor::error::PreprocessorError::ExpectedIdentifierAfterDefine)
+    Err(PreprocessorError::ExpectedIdentifierAfterDefine)
 }
 
-fn parse_error_message(start_idx: usize, tokens: &[Token]) -> Result<(String, usize), crate::preprocessor::error::PreprocessorError> {
+fn parse_error_message(start_idx: usize, tokens: &[Token]) -> Result<(String, usize), PreprocessorError> {
     let mut message = String::new();
     let mut i = start_idx;
     while i < tokens.len() {
@@ -523,7 +572,7 @@ fn parse_error_message(start_idx: usize, tokens: &[Token]) -> Result<(String, us
     Ok((message, i))
 }
 
-fn parse_line_directive(start_idx: usize, tokens: &[Token]) -> Result<(u32, Option<String>, usize), crate::preprocessor::error::PreprocessorError> {
+fn parse_line_directive(start_idx: usize, tokens: &[Token]) -> Result<(u32, Option<String>, usize), PreprocessorError> {
     let mut i = start_idx;
     while i < tokens.len() && tokens[i].kind.is_whitespace() {
         i += 1;
@@ -532,7 +581,7 @@ fn parse_line_directive(start_idx: usize, tokens: &[Token]) -> Result<(u32, Opti
     let line = if let TokenKind::Number(s) = &tokens[i].kind {
         s.parse().unwrap()
     } else {
-        return Err(crate::preprocessor::error::PreprocessorError::Generic("Expected line number".to_string()));
+        return Err(PreprocessorError::Generic("Expected line number".to_string()));
     };
     i += 1;
 

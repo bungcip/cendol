@@ -112,9 +112,11 @@ impl From<preprocessor::token::PunctKind> for PunctKind {
             preprocessor::token::PunctKind::Comma => PunctKind::Comma,
             preprocessor::token::PunctKind::Ellipsis => PunctKind::Ellipsis,
             preprocessor::token::PunctKind::Dot => PunctKind::Dot,
+            preprocessor::token::PunctKind::Plus => PunctKind::Plus,
+            preprocessor::token::PunctKind::Minus => PunctKind::Minus,
+            preprocessor::token::PunctKind::PlusPlus => PunctKind::PlusPlus,
+            preprocessor::token::PunctKind::MinusMinus => PunctKind::MinusMinus,
             preprocessor::token::PunctKind::Other(s) => match s.as_str() {
-                "+" => PunctKind::Plus,
-                "-" => PunctKind::Minus,
                 "*" => PunctKind::Star,
                 "/" => PunctKind::Slash,
                 "=" => PunctKind::Equal,

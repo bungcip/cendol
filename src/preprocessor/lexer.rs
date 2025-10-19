@@ -158,6 +158,36 @@ impl<'a> Lexer<'a> {
                     self.location(),
                 ))
             }
+            '+' => {
+                self.at_start_of_line = false;
+                if let Some(&'+') = self.input.peek() {
+                    self.input.next();
+                    Ok(Token::new(
+                        TokenKind::Punct(PunctKind::PlusPlus),
+                        self.location(),
+                    ))
+                } else {
+                    Ok(Token::new(
+                        TokenKind::Punct(PunctKind::Plus),
+                        self.location(),
+                    ))
+                }
+            }
+            '-' => {
+                self.at_start_of_line = false;
+                if let Some(&'-') = self.input.peek() {
+                    self.input.next();
+                    Ok(Token::new(
+                        TokenKind::Punct(PunctKind::MinusMinus),
+                        self.location(),
+                    ))
+                } else {
+                    Ok(Token::new(
+                        TokenKind::Punct(PunctKind::Minus),
+                        self.location(),
+                    ))
+                }
+            }
             _ if c.is_ascii_punctuation() => {
                 self.at_start_of_line = false;
                 let punct = match c {

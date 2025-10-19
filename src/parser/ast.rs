@@ -24,7 +24,7 @@ pub enum Type {
 }
 
 /// Represents a statement in the C language.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Stmt {
     /// A `return` statement.
     Return(Expr),
@@ -66,7 +66,7 @@ pub enum Stmt {
 }
 
 /// Represents an expression in the C language.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Expr {
     /// A number literal.
     Number(i64),

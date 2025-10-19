@@ -1,4 +1,4 @@
-use crate::preprocessor::token::SourceLocation;
+pub use crate::common::{KeywordKind, SourceLocation};
 use std::collections::HashSet;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -27,42 +27,6 @@ pub enum TokenKind {
     Char(String),
     Punct(PunctKind),
     Eof,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum KeywordKind {
-    Auto,
-    Break,
-    Case,
-    Char,
-    Const,
-    Continue,
-    Default,
-    Do,
-    Double,
-    Else,
-    Enum,
-    Extern,
-    Float,
-    For,
-    Goto,
-    If,
-    Int,
-    Long,
-    Register,
-    Return,
-    Short,
-    Signed,
-    Sizeof,
-    Static,
-    Struct,
-    Switch,
-    Typedef,
-    Union,
-    Unsigned,
-    Void,
-    Volatile,
-    While,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -113,45 +77,6 @@ impl From<preprocessor::token::Token> for Token {
             kind,
             hideset: token.hideset,
             location: token.location,
-        }
-    }
-}
-
-impl From<preprocessor::token::KeywordKind> for KeywordKind {
-    fn from(kind: preprocessor::token::KeywordKind) -> Self {
-        match kind {
-            preprocessor::token::KeywordKind::Auto => KeywordKind::Auto,
-            preprocessor::token::KeywordKind::Break => KeywordKind::Break,
-            preprocessor::token::KeywordKind::Case => KeywordKind::Case,
-            preprocessor::token::KeywordKind::Char => KeywordKind::Char,
-            preprocessor::token::KeywordKind::Const => KeywordKind::Const,
-            preprocessor::token::KeywordKind::Continue => KeywordKind::Continue,
-            preprocessor::token::KeywordKind::Default => KeywordKind::Default,
-            preprocessor::token::KeywordKind::Do => KeywordKind::Do,
-            preprocessor::token::KeywordKind::Double => KeywordKind::Double,
-            preprocessor::token::KeywordKind::Else => KeywordKind::Else,
-            preprocessor::token::KeywordKind::Enum => KeywordKind::Enum,
-            preprocessor::token::KeywordKind::Extern => KeywordKind::Extern,
-            preprocessor::token::KeywordKind::Float => KeywordKind::Float,
-            preprocessor::token::KeywordKind::For => KeywordKind::For,
-            preprocessor::token::KeywordKind::Goto => KeywordKind::Goto,
-            preprocessor::token::KeywordKind::If => KeywordKind::If,
-            preprocessor::token::KeywordKind::Int => KeywordKind::Int,
-            preprocessor::token::KeywordKind::Long => KeywordKind::Long,
-            preprocessor::token::KeywordKind::Register => KeywordKind::Register,
-            preprocessor::token::KeywordKind::Return => KeywordKind::Return,
-            preprocessor::token::KeywordKind::Short => KeywordKind::Short,
-            preprocessor::token::KeywordKind::Signed => KeywordKind::Signed,
-            preprocessor::token::KeywordKind::Sizeof => KeywordKind::Sizeof,
-            preprocessor::token::KeywordKind::Static => KeywordKind::Static,
-            preprocessor::token::KeywordKind::Struct => KeywordKind::Struct,
-            preprocessor::token::KeywordKind::Switch => KeywordKind::Switch,
-            preprocessor::token::KeywordKind::Typedef => KeywordKind::Typedef,
-            preprocessor::token::KeywordKind::Union => KeywordKind::Union,
-            preprocessor::token::KeywordKind::Unsigned => KeywordKind::Unsigned,
-            preprocessor::token::KeywordKind::Void => KeywordKind::Void,
-            preprocessor::token::KeywordKind::Volatile => KeywordKind::Volatile,
-            preprocessor::token::KeywordKind::While => KeywordKind::While,
         }
     }
 }

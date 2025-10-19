@@ -237,3 +237,22 @@ fn test_line_directive() {
     let result = result.replace(" ", "").replace("\n", "");
     assert_eq!(result, "");
 }
+
+#[test]
+fn test_self_referential_macro() {
+    let input = "#define FOO FOO\nFOO";
+    let mut preprocessor = Preprocessor::new();
+    let tokens = preprocessor.preprocess(input).unwrap();
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0].kind.to_string(), "FOO");
+}
+
+#[test]
+fn test_mutually_recursive_macros() {
+    let input = "#define BAR BAZ\n#define BAZ BAR\nBAR BAZ";
+    let mut preprocessor = Preprocessor::new();
+    let tokens = preprocessor.preprocess(input).unwrap();
+    assert_eq!(tokens.len(), 2);
+    assert_eq!(tokens[0].kind.to_string(), "BAR");
+    assert_eq!(tokens[1].kind.to_string(), "BAZ");
+}

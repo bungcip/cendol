@@ -331,7 +331,14 @@ impl Preprocessor {
                 let mut new_hideset = token.hideset.clone();
                 new_hideset.insert(macro_name.clone());
 
-                let mut expanded = self.substitute_tokens(body, parameters, &args, &new_hideset)?;
+                let mut args_with_hideset = args.clone();
+                for arg in &mut args_with_hideset {
+                    for token in arg {
+                        token.hideset.insert(macro_name.clone());
+                    }
+                }
+
+                let mut expanded = self.substitute_tokens(body, parameters, &args_with_hideset, &new_hideset)?;
 
                 for t in &mut expanded {
                     t.hideset.extend(new_hideset.clone());

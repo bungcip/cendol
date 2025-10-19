@@ -73,7 +73,7 @@ impl CodeGen {
             loop_context: Vec::new(),
         };
         for stmt in program.function.body {
-            translator.translate_stmt(stmt);
+            let (_, _) = translator.translate_stmt(stmt);
         }
         translator.builder.finalize();
 
@@ -98,12 +98,12 @@ struct FunctionTranslator<'a, 'b> {
 }
 
 impl<'a, 'b> FunctionTranslator<'a, 'b> {
-    fn translate_stmt(&mut self, stmt: Stmt) -> Value {
+    fn translate_stmt(&mut self, stmt: Stmt) -> (Value, bool) {
         match stmt {
             Stmt::Return(expr) => {
                 let value = self.translate_expr(expr);
                 self.builder.ins().return_(&[value]);
-                value
+                (value, true)
             }
             Stmt::Declaration(_ty, name, initializer) => {
                 let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
@@ -112,7 +112,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     0,
                 ));
                 self.variables.insert(name, slot);
-                if let Some(init) = initializer {
+                let val = if let Some(init) = initializer {
                     let val = self.translate_expr(*init);
                     self.builder.ins().stack_store(val, slot, 0);
                     val
@@ -120,14 +120,103 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     let val = self.builder.ins().iconst(types::I64, 0);
                     self.builder.ins().stack_store(val, slot, 0);
                     val
-                }
+                };
+                (val, false)
             }
             Stmt::Block(stmts) => {
                 let mut last = self.builder.ins().iconst(types::I64, 0);
+                let mut terminated = false;
                 for stmt in stmts {
-                    last = self.translate_stmt(stmt);
+                    if terminated {
+                        break;
+                    }
+                    let (val, term) = self.translate_stmt(stmt);
+                    last = val;
+                    terminated = term;
                 }
-                last
+                (last, terminated)
+            }
+            Stmt::If(cond, then, otherwise) => {
+                let condition_value = self.translate_expr(*cond);
+
+                let then_block = self.builder.create_block();
+                let else_block = self.builder.create_block();
+                let merge_block = self.builder.create_block();
+
+                self.builder.ins().brif(
+                    condition_value,
+                    then_block,
+                    &[],
+                    else_block,
+                    &[],
+                );
+
+                self.builder.switch_to_block(then_block);
+                self.builder.seal_block(then_block);
+                let (_, then_terminated) = self.translate_stmt(*then);
+                if !then_terminated {
+                    self.builder.ins().jump(merge_block, &[]);
+                }
+
+                self.builder.switch_to_block(else_block);
+                self.builder.seal_block(else_block);
+
+                let mut else_terminated = false;
+                if let Some(otherwise) = otherwise {
+                    let (_, term) = self.translate_stmt(*otherwise);
+                    else_terminated = term;
+                }
+
+                if !else_terminated {
+                    self.builder.ins().jump(merge_block, &[]);
+                }
+
+                self.builder.switch_to_block(merge_block);
+                self.builder.seal_block(merge_block);
+
+                (self.builder.ins().iconst(types::I64, 0), then_terminated && else_terminated)
+            }
+            Stmt::While(cond, body) => {
+                let header_block = self.builder.create_block();
+                let body_block = self.builder.create_block();
+                let exit_block = self.builder.create_block();
+
+                self.builder.ins().jump(header_block, &[]);
+                self.builder.switch_to_block(header_block);
+
+                let cond_val = self.translate_expr(*cond);
+                self.builder
+                    .ins()
+                    .brif(cond_val, body_block, &[], exit_block, &[]);
+
+                self.builder.switch_to_block(body_block);
+                self.builder.seal_block(body_block);
+
+                self.loop_context.push((header_block, exit_block));
+                let (_, body_terminated) = self.translate_stmt(*body);
+                self.loop_context.pop();
+
+                if !body_terminated {
+                    self.builder.ins().jump(header_block, &[]);
+                }
+
+                self.builder.switch_to_block(exit_block);
+                self.builder.seal_block(header_block);
+                self.builder.seal_block(exit_block);
+
+                (self.builder.ins().iconst(types::I64, 0), false)
+            }
+            Stmt::Break => {
+                let dummy = self.builder.ins().iconst(types::I64, 0);
+                let (_, exit_block) = self.loop_context.last().unwrap();
+                self.builder.ins().jump(*exit_block, &[]);
+                (dummy, true)
+            }
+            Stmt::Continue => {
+                let dummy = self.builder.ins().iconst(types::I64, 0);
+                let (header_block, _) = self.loop_context.last().unwrap();
+                self.builder.ins().jump(*header_block, &[]);
+                (dummy, true)
             }
             _ => unimplemented!(),
         }

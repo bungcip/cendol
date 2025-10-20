@@ -51,12 +51,11 @@ impl FileManager {
     ) -> Result<FileId, std::io::Error> {
         let mut search_paths = Vec::new();
 
-        if kind == crate::preprocessor::token::IncludeKind::Local {
-            if let Some(includer_path) = self.files.get(&includer) {
-                if let Some(parent) = includer_path.parent() {
-                    search_paths.push(parent.to_path_buf());
-                }
-            }
+        if kind == crate::preprocessor::token::IncludeKind::Local
+            && let Some(includer_path) = self.files.get(&includer)
+            && let Some(parent) = includer_path.parent()
+        {
+            search_paths.push(parent.to_path_buf());
         }
 
         search_paths.extend(self.include_paths.clone());

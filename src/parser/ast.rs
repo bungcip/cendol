@@ -114,6 +114,8 @@ pub enum Expr {
     Increment(Box<Expr>),
     /// A pre-decrement expression.
     Decrement(Box<Expr>),
+    /// A ternary conditional expression.
+    Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
 }
 
 /// Represents a function parameter.

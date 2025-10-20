@@ -7,7 +7,7 @@ fn test_simple_define() {
     let input = "#define A 1\nA";
     let mut preprocessor = Preprocessor::new(FileManager::new());
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
-    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens.len(), 2); // +1 for Eof
     assert_eq!(tokens[0].kind.to_string(), "1");
 }
 
@@ -16,7 +16,7 @@ fn test_function_macro() {
     let input = "#define ADD(a, b) a + b\nADD(1, 2)";
     let mut preprocessor = Preprocessor::new(FileManager::new());
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
-    assert_eq!(tokens.len(), 3);
+    assert_eq!(tokens.len(), 4); // +1 for Eof
     assert_eq!(tokens[0].kind.to_string(), "1");
     assert_eq!(tokens[1].kind.to_string(), "+");
     assert_eq!(tokens[2].kind.to_string(), "2");
@@ -60,7 +60,7 @@ fn test_simple_function_macro() {
     let input = "#define ID(x) x\nID(1)";
     let mut preprocessor = Preprocessor::new(FileManager::new());
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
-    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens.len(), 2); // +1 for Eof
     assert_eq!(tokens[0].kind.to_string(), "1");
 }
 
@@ -89,7 +89,7 @@ fn test_keyword_macro() {
     let input = "#define p(x) int x\np(elif)";
     let mut preprocessor = Preprocessor::new(FileManager::new());
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
-    assert_eq!(tokens.len(), 2);
+    assert_eq!(tokens.len(), 3); // +1 for Eof
     assert!(matches!(tokens[0].kind, TokenKind::Keyword(_)));
     assert_eq!(tokens[0].kind.to_string(), "int");
     assert!(matches!(tokens[1].kind, TokenKind::Identifier(_)));
@@ -116,7 +116,7 @@ fn test_line_splicing() {
     let input = "#define A 1 \\\n+ 2\nA";
     let mut preprocessor = Preprocessor::new(FileManager::new());
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
-    assert_eq!(tokens.len(), 3);
+    assert_eq!(tokens.len(), 4); // +1 for Eof
     assert_eq!(tokens[0].kind.to_string(), "1");
     assert_eq!(tokens[1].kind.to_string(), "+");
     assert_eq!(tokens[2].kind.to_string(), "2");
@@ -209,7 +209,7 @@ fn test_line_and_file_macros() {
     let input = "__LINE__ __FILE__";
     let mut preprocessor = Preprocessor::new(FileManager::new());
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
-    assert_eq!(tokens.len(), 2);
+    assert_eq!(tokens.len(), 3); // +1 for Eof
     assert_eq!(tokens[0].kind.to_string(), "1");
     if let TokenKind::String(s) = &tokens[1].kind {
         assert_eq!(s, "<input>");
@@ -244,7 +244,7 @@ fn test_self_referential_macro() {
     let input = "#define FOO FOO\nFOO";
     let mut preprocessor = Preprocessor::new(FileManager::new());
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
-    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens.len(), 2); // +1 for Eof
     assert_eq!(tokens[0].kind.to_string(), "FOO");
 }
 
@@ -253,7 +253,7 @@ fn test_mutually_recursive_macros() {
     let input = "#define BAR BAZ\n#define BAZ BAR\nBAR BAZ";
     let mut preprocessor = Preprocessor::new(FileManager::new());
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
-    assert_eq!(tokens.len(), 2);
+    assert_eq!(tokens.len(), 3); // +1 for Eof
     assert_eq!(tokens[0].kind.to_string(), "BAR");
     assert_eq!(tokens[1].kind.to_string(), "BAZ");
 }
@@ -263,7 +263,7 @@ fn test_date_and_time_macros() {
     let input = "__DATE__ __TIME__";
     let mut preprocessor = Preprocessor::new(FileManager::new());
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
-    assert_eq!(tokens.len(), 2);
+    assert_eq!(tokens.len(), 3); // +1 for Eof
     if let TokenKind::String(s) = &tokens[0].kind {
         // Check if the date is in the format "Mmm dd yyyy"
         assert!(s.len() > 0);
@@ -283,7 +283,7 @@ fn test_object_macro_with_space_before_paren() {
     let input = "#define A (1)\nA";
     let mut preprocessor = Preprocessor::new(FileManager::new());
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
-    assert_eq!(tokens.len(), 3);
+    assert_eq!(tokens.len(), 4); // +1 for Eof
     assert_eq!(tokens[0].kind.to_string(), "(");
     assert_eq!(tokens[1].kind.to_string(), "1");
     assert_eq!(tokens[2].kind.to_string(), ")");
@@ -296,7 +296,7 @@ fn test_cmdline_define() {
     preprocessor.define("A=1").unwrap();
     preprocessor.define("B").unwrap();
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
-    assert_eq!(tokens.len(), 2);
+    assert_eq!(tokens.len(), 3); // +1 for Eof
     assert_eq!(tokens[0].kind.to_string(), "1");
     assert_eq!(tokens[1].kind.to_string(), "1");
 }

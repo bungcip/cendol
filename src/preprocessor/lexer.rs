@@ -208,11 +208,11 @@ impl<'a> Lexer<'a> {
                     self.input.next();
                     let mut comment = String::new();
                     while let Some(c) = self.input.next() {
-                        if c == '*' {
-                            if let Some(&'/') = self.input.peek() {
-                                self.input.next();
-                                break;
-                            }
+                        if c == '*'
+                            && let Some(&'/') = self.input.peek()
+                        {
+                            self.input.next();
+                            break;
                         }
                         comment.push(c);
                     }

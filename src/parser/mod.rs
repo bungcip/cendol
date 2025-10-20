@@ -223,6 +223,7 @@ impl Parser {
             TokenKind::Punct(PunctKind::Star) | TokenKind::Punct(PunctKind::Slash) => {
                 Some((13, 14))
             }
+            TokenKind::Punct(PunctKind::Question) => Some((1, 2)), // Ternary operator
             _ => None,
         }
     }
@@ -326,6 +327,17 @@ impl Parser {
                     }
                     _ => unreachable!(),
                 };
+                continue;
+            }
+            if let TokenKind::Punct(PunctKind::Question) = token.kind {
+                if 1 < min_bp {
+                    break;
+                }
+                self.eat()?; // Consume '?'
+                let then_expr = self.parse_pratt_expr(0)?;
+                self.expect_punct(PunctKind::Colon)?;
+                let else_expr = self.parse_pratt_expr(2)?;
+                lhs = Expr::Ternary(Box::new(lhs), Box::new(then_expr), Box::new(else_expr));
                 continue;
             }
             break;
@@ -644,7 +656,8 @@ impl Parser {
 
     pub fn parse(&mut self) -> Result<Program, ParserError> {
         let mut globals = Vec::new();
-        while self.current_token().is_ok() {
+        while self.current_token().is_ok() && !matches!(self.current_token()?.kind, TokenKind::Eof)
+        {
             let pos = self.position;
             if self.parse_global().is_ok() {
                 self.position = pos;

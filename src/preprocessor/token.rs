@@ -129,7 +129,6 @@ pub enum IncludeKind {
     Local,
 }
 
-
 impl fmt::Display for DirectiveKind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {

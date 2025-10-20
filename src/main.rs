@@ -1,5 +1,5 @@
 use cendol::codegen::CodeGen;
-use cendol::error::{Error, Report, report};
+use cendol::error::{Report, report};
 use cendol::file::FileManager;
 use cendol::parser::Parser;
 use cendol::preprocessor::Preprocessor;
@@ -49,8 +49,8 @@ struct Cli {
 ///
 /// Parses command-line arguments and runs the compiler.
 fn main() {
-    if let Err(err) = run() {
-        report(&Report::new(err.to_string(), None, None));
+    if let Err(report_data) = run() {
+        report(&report_data);
         exit(1);
     }
 }
@@ -63,7 +63,7 @@ fn main() {
 /// # Returns
 ///
 /// A `Result` which is `Ok` on success or an `Error` on failure.
-fn run() -> Result<(), Error> {
+fn run() -> Result<(), Report> {
     let cli = Cli::parse();
 
     if cli.verbose {
@@ -88,12 +88,17 @@ fn run() -> Result<(), Error> {
     let mut preprocessor = Preprocessor::new(file_manager);
 
     for def in cli.define {
-        preprocessor.define(&def)?;
+        if let Err(err) = preprocessor.define(&def) {
+            return Err(Report::new(err.to_string(), None, None));
+        }
     }
 
     // if cli.preprocess_only {
     if cli.preprocess_only {
-        let output = preprocessor.preprocess(&input, &cli.input_file)?;
+        let output = match preprocessor.preprocess(&input, &cli.input_file) {
+            Ok(output) => output,
+            Err(err) => return Err(Report::new(err.to_string(), None, None)),
+        };
         if let Some(output_file) = cli.output_file {
             fs::write(output_file, format!("{:?}", output))
                 .expect("Failed to write to output file");
@@ -103,13 +108,49 @@ fn run() -> Result<(), Error> {
         return Ok(());
     }
 
-    let tokens = preprocessor.preprocess(&input, &cli.input_file)?;
+    let tokens = match preprocessor.preprocess(&input, &cli.input_file) {
+        Ok(tokens) => tokens,
+        Err(err) => return Err(Report::new(err.to_string(), None, None)),
+    };
 
-    let mut parser = Parser::new(tokens)?;
-    let ast = parser.parse()?;
+    let mut parser = match Parser::new(tokens) {
+        Ok(parser) => parser,
+        Err(err) => return Err(Report::new(err.to_string(), Some(cli.input_file), None)),
+    };
+    let ast = match parser.parse() {
+        Ok(ast) => ast,
+        Err(err) => {
+            let (msg, location) = match err {
+                cendol::parser::error::ParserError::UnexpectedToken(tok) => {
+                    ("Unexpected token".to_string(), Some(tok.location))
+                }
+                cendol::parser::error::ParserError::UnexpectedEof => {
+                    ("Unexpected EOF".to_string(), None)
+                }
+            };
+
+            let (path, loc) = if let Some(location) = location {
+                let path = preprocessor
+                    .file_manager()
+                    .get_path(location.file)
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_string();
+                (Some(path), Some((location.line as usize, 1)))
+            } else {
+                (Some(cli.input_file.clone()), None)
+            };
+
+            return Err(Report::new(msg, path, loc));
+        }
+    };
 
     let codegen = CodeGen::new();
-    let object_bytes = codegen.compile(ast)?;
+    let object_bytes = match codegen.compile(ast) {
+        Ok(bytes) => bytes,
+        Err(err) => return Err(Report::new(err.to_string(), None, None)),
+    };
 
     let object_filename = if cli.compile_only {
         cli.output_file.as_deref().unwrap_or("a.o").to_string()

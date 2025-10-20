@@ -1,5 +1,4 @@
 use cendol::parser::Parser;
-use cendol::parser::ast::Type;
 use cendol::parser::ast::{Expr, Function, Program, Stmt};
 use cendol::preprocessor::token::{KeywordKind, Token, TokenKind};
 

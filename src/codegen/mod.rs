@@ -74,7 +74,6 @@ impl CodeGen {
             }
         }
 
-
         self.ctx
             .func
             .signature
@@ -87,6 +86,7 @@ impl CodeGen {
         builder.switch_to_block(entry_block);
         builder.seal_block(entry_block);
 
+        let pointer_type = self.module.isa().pointer_type();
         let mut translator = FunctionTranslator {
             builder,
             functions: &mut self.functions,
@@ -94,6 +94,7 @@ impl CodeGen {
             module: &mut self.module,
             loop_context: Vec::new(),
             current_block_state: BlockState::Empty,
+            pointer_type,
         };
         for stmt in program.function.body {
             let _ = translator.translate_stmt(stmt);
@@ -130,6 +131,7 @@ struct FunctionTranslator<'a, 'b> {
     module: &'b mut ObjectModule,
     loop_context: Vec<(Block, Block)>,
     current_block_state: BlockState,
+    pointer_type: types::Type,
 }
 
 impl<'a, 'b> FunctionTranslator<'a, 'b> {
@@ -268,7 +270,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let mut data = Vec::with_capacity(s.len() + 1);
                 data.extend_from_slice(s.as_bytes());
                 data.push(0);
-                let id = self.module.declare_data(&s, Linkage::Local, false, false).unwrap();
+                let id = self
+                    .module
+                    .declare_data(&s, Linkage::Local, false, false)
+                    .unwrap();
                 let mut data_desc = cranelift_module::DataDescription::new();
                 data_desc.define(data.into_boxed_slice());
                 self.module.define_data(id, &data_desc).unwrap();
@@ -372,9 +377,12 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             Expr::Call(name, args) => {
                 let mut sig = self.module.make_signature();
-                sig.returns.push(AbiParam::new(types::I64));
-                for _ in &args {
-                    sig.params.push(AbiParam::new(types::I64));
+                sig.returns.push(AbiParam::new(types::I32)); // puts returns int (i32)
+                for arg in &args {
+                    match arg {
+                        Expr::String(_) => sig.params.push(AbiParam::new(self.pointer_type)), // string literal is char*
+                        _ => sig.params.push(AbiParam::new(types::I64)), // default to i64 for other types
+                    }
                 }
 
                 let callee = match self.functions.get(&name) {
@@ -397,6 +405,40 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
                 let call = self.builder.ins().call(local_callee, &arg_values);
                 self.builder.inst_results(call)[0]
+            }
+            Expr::Ternary(cond, then_expr, else_expr) => {
+                let condition_value = self.translate_expr(*cond);
+
+                let then_block = self.builder.create_block();
+                let else_block = self.builder.create_block();
+                let merge_block = self.builder.create_block();
+
+                self.builder
+                    .ins()
+                    .brif(condition_value, then_block, &[], else_block, &[]);
+
+                self.switch_to_block(then_block);
+                self.builder.seal_block(then_block);
+                let then_value = self.translate_expr(*then_expr);
+                self.builder.ins().jump(merge_block, &[then_value.into()]);
+                self.current_block_state = BlockState::Filled;
+
+                self.switch_to_block(else_block);
+                self.builder.seal_block(else_block);
+                let else_value = self.translate_expr(*else_expr);
+                self.builder.ins().jump(merge_block, &[else_value.into()]);
+                self.current_block_state = BlockState::Filled;
+
+                self.switch_to_block(merge_block);
+                self.builder.seal_block(merge_block);
+
+                self.builder.append_block_param(merge_block, types::I64);
+
+                self.switch_to_block(merge_block);
+                self.builder.seal_block(merge_block);
+
+                let phi_value = self.builder.block_params(merge_block)[0];
+                phi_value
             }
             _ => unimplemented!(),
         }

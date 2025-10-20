@@ -1,5 +1,16 @@
+//! Tests for pointer functionality
+//!
+//! This module is a placeholder for future pointer-related tests.
+//! Currently, pointer functionality is not fully implemented in the
+//! compiler, so these tests are commented out.
+
+// TODO: Implement pointer support in the compiler and uncomment these tests
+// TODO: Add comprehensive tests for pointer operations, address-of operator,
+//! dereference operator, and pointer arithmetic
+
 #[cfg(test)]
 mod tests {
+    // Pointer tests are currently disabled until pointer support is implemented
 
     // #[test]
     // fn test_pointers() {

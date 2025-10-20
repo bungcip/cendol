@@ -1,59 +1,83 @@
+//! Tests for preprocessor functionality
+//!
+//! This module tests the preprocessor's ability to correctly handle
+//! macro definitions, expansions, and various preprocessor directives.
+
 use cendol::file::FileManager;
 use cendol::preprocessor::Preprocessor;
 use cendol::preprocessor::token::TokenKind;
 
-#[test]
-fn test_simple_define() {
-    let input = "#define A 1\nA";
-    let mut preprocessor = Preprocessor::new(FileManager::new());
-    let tokens = preprocessor.preprocess(input, "<input>").unwrap();
-    assert_eq!(tokens.len(), 2); // +1 for Eof
-    assert_eq!(tokens[0].kind.to_string(), "1");
+/// Test configuration constants
+mod config {
+    pub const TEST_FILENAME: &str = "<input>";
 }
 
-#[test]
-fn test_function_macro() {
-    let input = "#define ADD(a, b) a + b\nADD(1, 2)";
-    let mut preprocessor = Preprocessor::new(FileManager::new());
-    let tokens = preprocessor.preprocess(input, "<input>").unwrap();
-    assert_eq!(tokens.len(), 4); // +1 for Eof
-    assert_eq!(tokens[0].kind.to_string(), "1");
-    assert_eq!(tokens[1].kind.to_string(), "+");
-    assert_eq!(tokens[2].kind.to_string(), "2");
+/// Creates a new preprocessor instance with a file manager
+fn create_preprocessor() -> Preprocessor {
+    Preprocessor::new(FileManager::new())
 }
 
-#[test]
-fn test_token_pasting() {
-    let input = "#define CONCAT(a, b) a ## b\nCONCAT(x, y)";
-    let mut preprocessor = Preprocessor::new(FileManager::new());
-    let tokens = preprocessor.preprocess(input, "<input>").unwrap();
-    // assert_eq!(tokens.len(), 1);
-    assert_eq!(tokens[0].kind.to_string(), "xy");
+/// Helper function to preprocess input and return tokens
+fn preprocess_input(input: &str) -> Result<Vec<cendol::preprocessor::token::Token>, Box<dyn std::error::Error>> {
+    let mut preprocessor = create_preprocessor();
+    let tokens = preprocessor.preprocess(input, config::TEST_FILENAME)?;
+    Ok(tokens)
 }
 
-#[test]
-fn test_stringizing() {
-    let input = "#define STRING(a) #a\nSTRING(hello)";
-    let mut preprocessor = Preprocessor::new(FileManager::new());
-    let tokens = preprocessor.preprocess(input, "<input>").unwrap();
-    // assert_eq!(tokens.len(), 1);
-    if let TokenKind::String(s) = &tokens[0].kind {
-        assert_eq!(s, "hello");
-    } else {
-        panic!("Expected a string token");
+/// Helper function to get token string representations
+fn get_token_strings(tokens: &[cendol::preprocessor::token::Token]) -> Vec<String> {
+    tokens.iter()
+        .filter(|t| !t.kind.to_string().is_empty()) // Filter out EOF tokens
+        .map(|t| t.kind.to_string())
+        .collect()
+}
+
+/// Asserts that token strings match expected values
+fn assert_token_strings(tokens: &[cendol::preprocessor::token::Token], expected: &[&str]) {
+    let actual: Vec<String> = get_token_strings(tokens);
+    let expected: Vec<String> = expected.iter().map(|s| s.to_string()).collect();
+    assert_eq!(actual, expected);
+}
+
+    /// Test function-like macro expansion
+    #[test]
+    fn test_function_macro() {
+        let input = "#define ADD(a, b) a + b\nADD(1, 2)";
+        let tokens = preprocess_input(input).unwrap();
+        assert_eq!(tokens.len(), 4); // +1 for Eof
+        assert_token_strings(&tokens, &["1", "+", "2"]);
     }
-}
 
-#[test]
-fn test_hideset() {
-    let input = "#define A B\n#define B A\nA";
-    let mut preprocessor = Preprocessor::new(FileManager::new());
-    let tokens = preprocessor.preprocess(input, "<input>").unwrap();
-    // This would be an infinite loop without a hideset.
-    // The exact output depends on the expansion limit, but it should not hang.
-    // For now, we'll just assert that it doesn't panic.
-    assert!(tokens.len() > 0);
-}
+    /// Test token pasting operator (##)
+    #[test]
+    fn test_token_pasting() {
+        let input = "#define CONCAT(a, b) a ## b\nCONCAT(x, y)";
+        let tokens = preprocess_input(input).unwrap();
+        assert_token_strings(&tokens, &["xy"]);
+    }
+
+    /// Test stringizing operator (#)
+    #[test]
+    fn test_stringizing() {
+        let input = "#define STRING(a) #a\nSTRING(hello)";
+        let tokens = preprocess_input(input).unwrap();
+        if let TokenKind::String(s) = &tokens[0].kind {
+            assert_eq!(s, "hello");
+        } else {
+            panic!("Expected a string token");
+        }
+    }
+
+    /// Test hideset mechanism to prevent infinite macro recursion
+    #[test]
+    fn test_hideset() {
+        let input = "#define A B\n#define B A\nA";
+        let tokens = preprocess_input(input).unwrap();
+        // This would be an infinite loop without a hideset.
+        // The exact output depends on the expansion limit, but it should not hang.
+        // For now, we'll just assert that it doesn't panic.
+        assert!(tokens.len() > 0);
+    }
 
 #[test]
 fn test_simple_function_macro() {

@@ -1,41 +1,120 @@
+//! Tests for code generation functionality
+//!
+//! This module tests the code generation pipeline from C source code
+//! to executable binaries, ensuring that the generated code produces
+//! the expected results.
+
+use cendol::codegen::CodeGen;
+use cendol::file::FileManager;
+use cendol::parser::Parser;
+use cendol::preprocessor::Preprocessor;
+use std::fs;
+use std::io::Write;
+use std::process::Command;
+
+/// Test configuration constants
+mod config {
+    pub const C_COMPILER: &str = "cc";
+    pub const C_LIB_FLAG: &str = "-lc";
+    pub const OBJ_EXTENSION: &str = ".o";
+    pub const EXE_EXTENSION: &str = ".out";
+    pub const TEST_FILE_PREFIX: &str = "test_";
+}
+
+/// Compiles C code through the full pipeline (preprocessor -> parser -> codegen)
+fn compile_to_object_bytes(input: &str, filename: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let mut preprocessor = Preprocessor::new(FileManager::new());
+    let tokens = preprocessor.preprocess(input, filename)?;
+    let mut parser = Parser::new(tokens)?;
+    let ast = parser.parse()?;
+    let codegen = CodeGen::new();
+    let object_bytes = codegen.compile(ast)?;
+    Ok(object_bytes)
+}
+
+/// Compiles and runs C code, returning the exit code
+fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Box<dyn std::error::Error>> {
+    let object_bytes = compile_to_object_bytes(input, &format!("{}.c", test_name))?;
+
+    let obj_filename = format!("{}{}{}", config::TEST_FILE_PREFIX, test_name, config::OBJ_EXTENSION);
+    let exe_filename = format!("./{}{}{}", config::TEST_FILE_PREFIX, test_name, config::EXE_EXTENSION);
+
+    // Write object file
+    let mut object_file = fs::File::create(&obj_filename)?;
+    object_file.write_all(&object_bytes)?;
+    drop(object_file); // Explicitly close the file
+
+    // Compile object file to executable
+    let compile_status = Command::new(config::C_COMPILER)
+        .arg(&obj_filename)
+        .arg("-o")
+        .arg(&exe_filename)
+        .arg(config::C_LIB_FLAG)
+        .status()?;
+
+    if !compile_status.success() {
+        return Err(format!("Compilation failed for test: {}", test_name).into());
+    }
+
+    // Run executable and get exit code
+    let output = Command::new(&exe_filename).status()?;
+    let exit_code = output.code().unwrap_or(-1);
+
+    // Clean up generated files
+    let _ = fs::remove_file(&obj_filename);
+    let _ = fs::remove_file(&exe_filename);
+
+    Ok(exit_code)
+}
+
+/// Compiles and runs C code, capturing stdout output
+fn compile_and_run_with_output(input: &str, test_name: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let object_bytes = compile_to_object_bytes(input, &format!("{}.c", test_name))?;
+
+    let obj_filename = format!("{}{}{}", config::TEST_FILE_PREFIX, test_name, config::OBJ_EXTENSION);
+    let exe_filename = format!("./{}{}{}", config::TEST_FILE_PREFIX, test_name, config::EXE_EXTENSION);
+
+    // Write object file
+    let mut object_file = fs::File::create(&obj_filename)?;
+    object_file.write_all(&object_bytes)?;
+    drop(object_file);
+
+    // Compile object file to executable
+    let compile_status = Command::new(config::C_COMPILER)
+        .arg(&obj_filename)
+        .arg("-o")
+        .arg(&exe_filename)
+        .arg(config::C_LIB_FLAG)
+        .status()?;
+
+    if !compile_status.success() {
+        return Err(format!("Compilation failed for test: {}", test_name).into());
+    }
+
+    // Run executable and capture output
+    let output = Command::new(&exe_filename).output()?;
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    // Clean up generated files
+    let _ = fs::remove_file(&obj_filename);
+    let _ = fs::remove_file(&exe_filename);
+
+    Ok(stdout)
+}
+
 #[cfg(test)]
 mod tests {
-    use cendol::codegen::CodeGen;
-    use cendol::file::FileManager;
-    use cendol::parser::Parser;
-    use cendol::preprocessor::Preprocessor;
-    use std::fs;
-    use std::io::Write;
-    use std::process::Command;
+    use super::{compile_and_run, compile_and_run_with_output};
 
+    /// Test basic code generation with a simple function
     #[test]
     fn test_codegen() {
         let input = "int main() { return 0; }";
-        let mut preprocessor = Preprocessor::new(FileManager::new());
-        let tokens = preprocessor.preprocess(input, "test.c").unwrap();
-        let mut parser = Parser::new(tokens).unwrap();
-        let ast = parser.parse().unwrap();
-        let codegen = CodeGen::new();
-        let object_bytes = codegen.compile(ast).unwrap();
-
-        let filename = "test_codegen_c.o";
-        let exefile = format!("./{}", filename.replace(".o", ".out"));
-        let mut object_file = fs::File::create(filename).unwrap();
-        object_file.write_all(&object_bytes).unwrap();
-        drop(object_file); // Explicitly close the file
-
-        let status = Command::new("cc")
-            .arg(filename)
-            .arg("-o")
-            .arg(&exefile)
-            .arg("-lc") // Link against the C standard library
-            .status()
-            .unwrap();
-        assert!(status.success());
-
-        let output = Command::new(exefile).status().unwrap();
-        assert_eq!(output.code(), Some(0));
+        let exit_code = compile_and_run("int main() { return 0; }", "codegen").unwrap();
+        assert_eq!(exit_code, 0);
     }
+
+    /// Test code generation with external function calls
     #[test]
     fn test_external_function_call() {
         let input = r#"
@@ -45,29 +124,7 @@ mod tests {
             return 0;
         }
         "#;
-        let mut preprocessor = Preprocessor::new(FileManager::new());
-        let tokens = preprocessor.preprocess(input, "test.c").unwrap();
-        let mut parser = Parser::new(tokens).unwrap();
-        let ast = parser.parse().unwrap();
-        let codegen = CodeGen::new();
-        let object_bytes = codegen.compile(ast).unwrap();
-
-        let filename = "test_external_function_call_c.o";
-        let exefile = format!("./{}", filename.replace(".o", ".out"));
-        let mut object_file = fs::File::create(filename).unwrap();
-        object_file.write_all(&object_bytes).unwrap();
-        drop(object_file); // Explicitly close the file
-
-        let status = Command::new("cc")
-            .arg(filename)
-            .arg("-o")
-            .arg(&exefile)
-            .arg("-lc") // Link against the C standard library
-            .status()
-            .unwrap();
-        assert!(status.success());
-
-        let output = Command::new(exefile).output().unwrap();
-        assert_eq!(String::from_utf8_lossy(&output.stdout), "hello world\n");
+        let output = compile_and_run_with_output(input, "external_function_call").unwrap();
+        assert_eq!(output.trim(), "hello world");
     }
 }

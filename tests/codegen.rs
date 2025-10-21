@@ -26,7 +26,9 @@ fn compile_to_object_bytes(
     input: &str,
     filename: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let mut preprocessor = Preprocessor::new(FileManager::new());
+    use cendol::file::FileManager;
+    use cendol::preprocessor::Preprocessor;
+    let mut preprocessor = Preprocessor::new(FileManager::new(), false);
     let tokens = preprocessor.preprocess(input, filename)?;
     let mut parser = Parser::new(tokens)?;
     let ast = parser.parse()?;

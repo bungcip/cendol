@@ -14,7 +14,7 @@ mod config {
 
 /// Creates a new preprocessor instance with a file manager
 fn create_preprocessor() -> Preprocessor {
-    Preprocessor::new(FileManager::new())
+    Preprocessor::new(FileManager::new(), false)
 }
 
 /// Helper function to preprocess input and return tokens
@@ -85,7 +85,7 @@ fn test_hideset() {
 #[test]
 fn test_simple_function_macro() {
     let input = "#define ID(x) x\nID(1)";
-    let mut preprocessor = Preprocessor::new(FileManager::new());
+    let mut preprocessor = create_preprocessor();
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
     assert_eq!(tokens.len(), 2); // +1 for Eof
     assert_eq!(tokens[0].kind.to_string(), "1");
@@ -104,7 +104,7 @@ fn test_simple_function_macro() {
 
 // UNROLL(F_PROGRESS(X))
 // "#;
-//     let mut preprocessor = Preprocessor::new(FileManager::new());
+//     let mut preprocessor = create_preprocessor();
 //     let tokens = preprocessor.preprocess(input).unwrap();
 //     let result = tokens.iter().map(|t| t.to_string()).collect::<String>();
 //     let result = result.replace(" ", "").replace("\n", "");
@@ -114,7 +114,7 @@ fn test_simple_function_macro() {
 #[test]
 fn test_keyword_macro() {
     let input = "#define p(x) int x\np(elif)";
-    let mut preprocessor = Preprocessor::new(FileManager::new());
+    let mut preprocessor = create_preprocessor();
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
     assert_eq!(tokens.len(), 3); // +1 for Eof
     assert!(matches!(tokens[0].kind, TokenKind::Keyword(_)));
@@ -131,7 +131,7 @@ fn test_keyword_macro() {
 // #define THIRD SECOND
 // THIRD 42
 // "#;
-//     let mut preprocessor = Preprocessor::new(FileManager::new());
+//     let mut preprocessor = create_preprocessor();
 //     let tokens = preprocessor.preprocess(input).unwrap();
 //     assert_eq!(tokens.len(), 2);
 //     assert_eq!(tokens[0].kind.to_string(), "FIRST");
@@ -141,7 +141,7 @@ fn test_keyword_macro() {
 #[test]
 fn test_line_splicing() {
     let input = "#define A 1 \\\n+ 2\nA";
-    let mut preprocessor = Preprocessor::new(FileManager::new());
+    let mut preprocessor = create_preprocessor();
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
     assert_eq!(tokens.len(), 4); // +1 for Eof
     assert_eq!(tokens[0].kind.to_string(), "1");
@@ -163,7 +163,7 @@ fn test_conditional_directives() {
     int b = 2;
 #endif
 "#;
-    let mut preprocessor = Preprocessor::new(FileManager::new());
+    let mut preprocessor = create_preprocessor();
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
     let result = tokens.iter().map(|t| t.to_string()).collect::<String>();
     let result = result.replace(" ", "").replace("\n", "");
@@ -177,7 +177,7 @@ fn test_ifdef_directive() {
     int a = 1;
 #endif
 "#;
-    let mut preprocessor = Preprocessor::new(FileManager::new());
+    let mut preprocessor = create_preprocessor();
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
     let result = tokens.iter().map(|t| t.to_string()).collect::<String>();
     let result = result.replace(" ", "").replace("\n", "");
@@ -191,7 +191,7 @@ fn test_ifndef_directive() {
     int a = 1;
 #endif
 "#;
-    let mut preprocessor = Preprocessor::new(FileManager::new());
+    let mut preprocessor = create_preprocessor();
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
     let result = tokens.iter().map(|t| t.to_string()).collect::<String>();
     let result = result.replace(" ", "").replace("\n", "");
@@ -207,7 +207,7 @@ fn test_undef_directive() {
     int a = 1;
 #endif
 "#;
-    let mut preprocessor = Preprocessor::new(FileManager::new());
+    let mut preprocessor = create_preprocessor();
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
     let result = tokens.iter().map(|t| t.to_string()).collect::<String>();
     let result = result.replace(" ", "").replace("\n", "");
@@ -222,7 +222,7 @@ fn test_include_directive() {
     let input = r#"
 #include "test.h"
 "#;
-    let mut preprocessor = Preprocessor::new(FileManager::new());
+    let mut preprocessor = create_preprocessor();
     let tokens = preprocessor.preprocess(input, "test.c").unwrap();
     let result = tokens.iter().map(|t| t.to_string()).collect::<String>();
     let result = result.replace(" ", "").replace("\n", "");
@@ -234,7 +234,7 @@ fn test_include_directive() {
 #[test]
 fn test_line_and_file_macros() {
     let input = "__LINE__ __FILE__";
-    let mut preprocessor = Preprocessor::new(FileManager::new());
+    let mut preprocessor = create_preprocessor();
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
     assert_eq!(tokens.len(), 3); // +1 for Eof
     assert_eq!(tokens[0].kind.to_string(), "1");
@@ -250,7 +250,7 @@ fn test_error_directive() {
     let input = r#"
 #error "This is an error"
 "#;
-    let mut preprocessor = Preprocessor::new(FileManager::new());
+    let mut preprocessor = create_preprocessor();
     let result = preprocessor.preprocess(input, "<input>");
     assert!(result.is_err());
 }
@@ -259,7 +259,7 @@ fn test_line_directive() {
     let input = r#"
 #line 10 "foo.c"
 "#;
-    let mut preprocessor = Preprocessor::new(FileManager::new());
+    let mut preprocessor = create_preprocessor();
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
     let result = tokens.iter().map(|t| t.to_string()).collect::<String>();
     let result = result.replace(" ", "").replace("\n", "");
@@ -269,7 +269,7 @@ fn test_line_directive() {
 #[test]
 fn test_self_referential_macro() {
     let input = "#define FOO FOO\nFOO";
-    let mut preprocessor = Preprocessor::new(FileManager::new());
+    let mut preprocessor = create_preprocessor();
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
     assert_eq!(tokens.len(), 2); // +1 for Eof
     assert_eq!(tokens[0].kind.to_string(), "FOO");
@@ -278,7 +278,7 @@ fn test_self_referential_macro() {
 #[test]
 fn test_mutually_recursive_macros() {
     let input = "#define BAR BAZ\n#define BAZ BAR\nBAR BAZ";
-    let mut preprocessor = Preprocessor::new(FileManager::new());
+    let mut preprocessor = create_preprocessor();
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
     assert_eq!(tokens.len(), 3); // +1 for Eof
     assert_eq!(tokens[0].kind.to_string(), "BAR");
@@ -288,7 +288,7 @@ fn test_mutually_recursive_macros() {
 #[test]
 fn test_date_and_time_macros() {
     let input = "__DATE__ __TIME__";
-    let mut preprocessor = Preprocessor::new(FileManager::new());
+    let mut preprocessor = create_preprocessor();
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
     assert_eq!(tokens.len(), 3); // +1 for Eof
     if let TokenKind::String(s) = &tokens[0].kind {
@@ -308,7 +308,7 @@ fn test_date_and_time_macros() {
 #[test]
 fn test_object_macro_with_space_before_paren() {
     let input = "#define A (1)\nA";
-    let mut preprocessor = Preprocessor::new(FileManager::new());
+    let mut preprocessor = create_preprocessor();
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
     assert_eq!(tokens.len(), 4); // +1 for Eof
     assert_eq!(tokens[0].kind.to_string(), "(");
@@ -319,7 +319,7 @@ fn test_object_macro_with_space_before_paren() {
 #[test]
 fn test_cmdline_define() {
     let input = "A B";
-    let mut preprocessor = Preprocessor::new(FileManager::new());
+    let mut preprocessor = create_preprocessor();
     preprocessor.define("A=1").unwrap();
     preprocessor.define("B").unwrap();
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
@@ -330,14 +330,14 @@ fn test_cmdline_define() {
 
 #[test]
 fn test_empty_cmdline_define() {
-    let mut preprocessor = Preprocessor::new(FileManager::new());
+    let mut preprocessor = create_preprocessor();
     let result = preprocessor.define("");
     assert!(result.is_err());
 }
 
 #[test]
 fn test_empty_define_name() {
-    let mut preprocessor = Preprocessor::new(FileManager::new());
+    let mut preprocessor = create_preprocessor();
     let result = preprocessor.define("=1");
     assert!(result.is_err());
 }
@@ -345,7 +345,7 @@ fn test_empty_define_name() {
 #[test]
 fn test_define_without_value() {
     let input = "A";
-    let mut preprocessor = Preprocessor::new(FileManager::new());
+    let mut preprocessor = create_preprocessor();
     preprocessor.define("A").unwrap();
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
     assert_eq!(tokens.len(), 1); // Eof
@@ -364,4 +364,18 @@ fn test_unknown_directive() {
     let input = "#foo";
     let result = preprocess_input(input);
     assert!(result.is_err());
+}
+
+#[test]
+fn test_simple_object_macro_expansion() {
+    let input = "#define COBA AKU\nCOBA";
+    let tokens = preprocess_input(input).unwrap();
+    assert_token_strings(&tokens, &["AKU"]);
+}
+
+#[test]
+fn test_simple_object_macro_expansion_with_spaces() {
+    let input = "#   define COBA AKU\nCOBA";
+    let tokens = preprocess_input(input).unwrap();
+    assert_token_strings(&tokens, &["AKU"]);
 }

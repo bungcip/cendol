@@ -53,16 +53,18 @@ pub struct Preprocessor {
     conditional_stack: Vec<bool>,
     file_manager: FileManager,
     file_stack: Vec<FileState>,
+    verbose: bool,
 }
 
 impl Preprocessor {
     /// Creates a new `Preprocessor`.
-    pub fn new(file_manager: FileManager) -> Self {
+    pub fn new(file_manager: FileManager, verbose: bool) -> Self {
         Preprocessor {
             macros: HashMap::new(),
             conditional_stack: Vec::new(),
             file_manager,
             file_stack: Vec::new(),
+            verbose,
         }
     }
 
@@ -120,7 +122,7 @@ impl Preprocessor {
         }
         let value = if parts.len() > 1 { parts[1] } else { "" };
         let file_id = self.file_manager.open("<cmdline>")?;
-        let mut lexer = Lexer::new(value, file_id);
+        let mut lexer = Lexer::new(value, file_id, self.verbose);
         let mut tokens = Vec::new();
         loop {
             let token = lexer.next_token()?;
@@ -139,7 +141,7 @@ impl Preprocessor {
             .file_manager
             .open(filename)
             .map_err(|_| PreprocessorError::FileNotFound(filename.to_string()))?;
-        let mut lexer = Lexer::new(input, file_id);
+        let mut lexer = Lexer::new(input, file_id, self.verbose);
         let mut tokens = Vec::new();
         loop {
             let token = lexer.next_token()?;
@@ -635,7 +637,7 @@ impl Preprocessor {
                     .map(|t| t.kind.to_string())
                     .collect::<String>();
                 let pasted_str = format!("{}{}", lhs.kind, rhs_str);
-                let mut lexer = Lexer::new(&pasted_str, lhs.location.file);
+                let mut lexer = Lexer::new(&pasted_str, lhs.location.file, self.verbose);
                 let mut new_token = lexer.next_token()?;
                 if !matches!(new_token.kind, TokenKind::Eof) {
                     let mut new_hideset = lhs.hideset.clone();
@@ -711,7 +713,7 @@ impl Preprocessor {
             .file_manager
             .read(file_id)
             .map_err(|_| PreprocessorError::FileNotFound(filename.to_string()))?;
-        let mut lexer = Lexer::new(&content, file_id);
+        let mut lexer = Lexer::new(&content, file_id, self.verbose);
         let mut tokens = Vec::new();
         loop {
             let token = lexer.next_token()?;

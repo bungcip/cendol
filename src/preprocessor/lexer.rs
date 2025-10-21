@@ -10,6 +10,7 @@ pub struct Lexer<'a> {
     at_start_of_line: bool,
     line: u32,
     file: FileId,
+    verbose: bool,
 }
 
 impl<'a> Lexer<'a> {
@@ -19,12 +20,14 @@ impl<'a> Lexer<'a> {
     ///
     /// * `input` - The input string to tokenize.
     /// * `file` - The name of the file being tokenized.
-    pub fn new(input: &'a str, file: FileId) -> Self {
+    /// * `verbose` - Whether to enable verbose debug output.
+    pub fn new(input: &'a str, file: FileId, verbose: bool) -> Self {
         Lexer {
             input: input.chars().peekable(),
             at_start_of_line: true,
             line: 1,
             file,
+            verbose,
         }
     }
 
@@ -224,7 +227,7 @@ impl<'a> Lexer<'a> {
                     Ok(Token::new(TokenKind::Slash, self.location()))
                 }
             }
-            _ if c.is_ascii_punctuation() => {
+            _ if c.is_ascii_punctuation() && c != '#' => {
                 self.at_start_of_line = false;
                 let kind = match c {
                     '(' => TokenKind::LeftParen,
@@ -250,12 +253,110 @@ impl<'a> Lexer<'a> {
     /// Reads a preprocessor directive.
     fn read_directive(&mut self) -> Result<Token, PreprocessorError> {
         let mut directive = String::new();
-        while let Some(&c) = self.input.peek() {
+
+        if self.verbose {
+            eprintln!(
+                "[DEBUG] read_directive called: at_start_of_line={}, line={}",
+                self.at_start_of_line, self.line
+            );
+        }
+
+        // Check if we've reached the end of input before trying to read directive
+        if let Some(&c) = self.input.peek() {
+            if self.verbose {
+                eprintln!("[DEBUG] First character after #: '{}'", c);
+            }
             if c.is_alphabetic() {
                 directive.push(self.input.next().unwrap());
+                if self.verbose {
+                    eprintln!("[DEBUG] Started reading directive with '{}'", c);
+                }
+                while let Some(&c) = self.input.peek() {
+                    if c.is_alphabetic() || c.is_ascii_digit() || c == '_' {
+                        directive.push(self.input.next().unwrap());
+                        if self.verbose {
+                            eprintln!("[DEBUG] Added '{}' to directive, now: '{}'", c, directive);
+                        }
+                    } else {
+                        if self.verbose {
+                            eprintln!("[DEBUG] Stopping directive at non-alphabetic '{}'", c);
+                        }
+                        break;
+                    }
+                }
+            } else if c.is_whitespace() {
+                // Skip whitespace after # and continue reading directive
+                if self.verbose {
+                    eprintln!(
+                        "[DEBUG] Skipping whitespace after # on line {}",
+                        self.line
+                    );
+                }
+                // Skip whitespace characters
+                while let Some(&c) = self.input.peek() {
+                    if c.is_whitespace() && c != '\n' {
+                        self.input.next();
+                        if self.verbose {
+                            eprintln!("[DEBUG] Skipped whitespace '{}'", c);
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                // Now try to read the directive name
+                if let Some(&c) = self.input.peek() {
+                    if c.is_alphabetic() {
+                        directive.push(self.input.next().unwrap());
+                        if self.verbose {
+                            eprintln!("[DEBUG] Started reading directive with '{}'", c);
+                        }
+                        while let Some(&c) = self.input.peek() {
+                            if c.is_alphabetic() || c.is_ascii_digit() || c == '_' {
+                                directive.push(self.input.next().unwrap());
+                                if self.verbose {
+                                    eprintln!("[DEBUG] Added '{}' to directive, now: '{}'", c, directive);
+                                }
+                            } else {
+                                if self.verbose {
+                                    eprintln!("[DEBUG] Stopping directive at non-alphabetic '{}'", c);
+                                }
+                                break;
+                            }
+                        }
+                    } else {
+                        // If after skipping whitespace we don't find alphabetic character, it's invalid
+                        if self.verbose {
+                            eprintln!("[DEBUG] No directive name after whitespace: '{}'", c);
+                        }
+                        return Err(PreprocessorError::UnknownDirective("".to_string()));
+                    }
+                } else {
+                    // End of input reached
+                    if self.verbose {
+                        eprintln!("[DEBUG] End of input after whitespace");
+                    }
+                    return Err(PreprocessorError::UnknownDirective("".to_string()));
+                }
             } else {
-                break;
+                // If the first character after # is not alphabetic or whitespace, it's not a valid directive
+                if self.verbose {
+                    eprintln!("[DEBUG] Invalid directive start: '{}'", c);
+                }
+                return Err(PreprocessorError::UnknownDirective("".to_string()));
             }
+        } else {
+            // End of input reached
+            if self.verbose {
+                eprintln!("[DEBUG] End of input reached while reading directive");
+            }
+            return Err(PreprocessorError::UnknownDirective("".to_string()));
+        }
+
+        if self.verbose {
+            eprintln!(
+                "[DEBUG] read_directive: directive='{}', at_start_of_line={}, line={}",
+                directive, self.at_start_of_line, self.line
+            );
         }
 
         self.at_start_of_line = false;
@@ -271,9 +372,24 @@ impl<'a> Lexer<'a> {
             "line" => DirectiveKind::Line,
             "include" => DirectiveKind::Include,
             "define" => DirectiveKind::Define,
-            "pragma" => return self.next_token(),
-            _ => return Err(PreprocessorError::UnknownDirective(directive)),
+            "pragma" => {
+                // Handle pragma by reading the rest of the line as a directive
+                // For now, treat it as an unknown directive to avoid parsing issues
+                if self.verbose {
+                    eprintln!("[DEBUG] Pragma directive encountered, treating as unknown");
+                }
+                return Err(PreprocessorError::UnknownDirective("pragma".to_string()));
+            }
+            _ => {
+                if self.verbose {
+                    eprintln!("[DEBUG] Unknown directive '{}' encountered", directive);
+                }
+                return Err(PreprocessorError::UnknownDirective(directive));
+            }
         };
+        if self.verbose {
+            eprintln!("[DEBUG] Successfully parsed directive: {:?}", kind);
+        }
         Ok(Token::new(TokenKind::Directive(kind), self.location()))
     }
 

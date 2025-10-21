@@ -16,8 +16,9 @@ mod config {
 
 /// Helper function to parse C code and return the AST
 fn parse_c_code(input: &str) -> Result<Program, Box<dyn std::error::Error>> {
+    use cendol::file::FileManager;
     use cendol::preprocessor::Preprocessor;
-    let mut preprocessor = Preprocessor::new(FileManager::new());
+    let mut preprocessor = Preprocessor::new(FileManager::new(), false);
     let tokens = preprocessor.preprocess(input, config::TEST_FILENAME)?;
     let mut parser = Parser::new(tokens)?;
     let ast = parser.parse()?;
@@ -122,8 +123,8 @@ fn create_test_tokens() -> Vec<Token> {
 mod tests {
     use cendol::parser::ast::{Expr, Stmt, Type};
     use super::{
-        create_bool_program_ast, create_control_flow_program_ast,
-        create_increment_program_ast, create_simple_program_ast, parse_c_code,
+        create_bool_program_ast, create_control_flow_program_ast, create_increment_program_ast,
+        create_simple_program_ast, parse_c_code,
     };
 
     /// Test parsing of simple C programs

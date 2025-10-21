@@ -29,7 +29,7 @@ fn create_test_location(file_id: u32, line: u32) -> SourceLocation {
 fn collect_tokens_from_lexer(input: &str, filename: &str) -> Vec<TokenKind> {
     let mut file_manager = create_file_manager();
     let file_id = file_manager.open(filename).unwrap();
-    let mut lexer = Lexer::new(input, file_id);
+    let mut lexer = Lexer::new(input, file_id, false);
     let mut tokens = Vec::new();
 
     loop {

@@ -30,7 +30,7 @@ pub mod config {
 
 /// Creates a new preprocessor instance with a file manager
 pub fn create_preprocessor() -> Preprocessor {
-    Preprocessor::new(FileManager::new())
+    Preprocessor::new(FileManager::new(), false)
 }
 
 /// Creates a new file manager instance
@@ -232,7 +232,7 @@ pub fn create_control_flow_program_ast() -> Program {
 pub fn collect_tokens_from_lexer(input: &str, filename: &str) -> Vec<Token> {
     let mut file_manager = create_file_manager();
     let file_id = file_manager.open(filename).unwrap();
-    let mut lexer = Lexer::new(input, file_id);
+    let mut lexer = Lexer::new(input, file_id, false);
     let mut tokens = Vec::new();
 
     loop {

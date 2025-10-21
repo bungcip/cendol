@@ -85,7 +85,7 @@ fn run() -> Result<(), Report> {
         file_manager.add_include_path(&path);
     }
 
-    let mut preprocessor = Preprocessor::new(file_manager);
+    let mut preprocessor = Preprocessor::new(file_manager, cli.verbose);
 
     for def in cli.define {
         if let Err(err) = preprocessor.define(&def) {

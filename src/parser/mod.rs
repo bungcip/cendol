@@ -101,10 +101,18 @@ impl Parser {
             }
             let mut ty = match k {
                 KeywordKind::Long => {
-                    self.eat()?;
-                    if let Ok(tok) = self.current_token() && matches!(tok.kind, TokenKind::Keyword(KeywordKind::Long)) {
-                        self.eat()?;
-                        if let Ok(tok) = self.current_token() && matches!(tok.kind, TokenKind::Keyword(KeywordKind::Int)) {
+                    let next_token = self.tokens.get(self.position + 1).cloned();
+                    if let Some(next) = next_token {
+                        if let TokenKind::Keyword(KeywordKind::Long) = next.kind {
+                            self.eat()?;
+                            let next2 = self.tokens.get(self.position + 1).cloned();
+                            if let Some(n2) = next2
+                                && let TokenKind::Keyword(KeywordKind::Int) = n2.kind
+                            {
+                                self.eat()?;
+                            }
+                            Type::LongLong
+                        } else if let TokenKind::Keyword(KeywordKind::Int) = next.kind {
                             self.eat()?;
                         }
                         Type::LongLong

@@ -358,3 +358,10 @@ fn test_pasting_at_start_of_macro() {
     let result = preprocess_input(input);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_unknown_directive() {
+    let input = "#foo";
+    let result = preprocess_input(input);
+    assert!(result.is_err());
+}

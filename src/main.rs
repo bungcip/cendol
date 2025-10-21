@@ -1,6 +1,7 @@
 use cendol::codegen::CodeGen;
 use cendol::error::{Report, report};
 use cendol::file::FileManager;
+use cendol::logger::Logger;
 use cendol::parser::Parser;
 use cendol::preprocessor::Preprocessor;
 use clap::Parser as ClapParser;
@@ -66,9 +67,8 @@ fn main() {
 fn run() -> Result<(), Report> {
     let cli = Cli::parse();
 
-    if cli.verbose {
-        todo!("Verbose output");
-    }
+    let logger = Logger::new(cli.verbose);
+    logger.log("Verbose output enabled");
 
     if cli.wall {
         todo!("Enable all warnings");
@@ -89,7 +89,9 @@ fn run() -> Result<(), Report> {
 
     for def in cli.define {
         if let Err(err) = preprocessor.define(&def) {
-            return Err(Report::new(err.to_string(), None, None));
+            let mut report = Report::new(err.to_string(), None, None);
+            report.verbose = cli.verbose;
+            return Err(report);
         }
     }
 
@@ -97,7 +99,11 @@ fn run() -> Result<(), Report> {
     if cli.preprocess_only {
         let output = match preprocessor.preprocess(&input, &cli.input_file) {
             Ok(output) => output,
-            Err(err) => return Err(Report::new(err.to_string(), None, None)),
+            Err(err) => {
+                let mut report = Report::new(err.to_string(), None, None);
+                report.verbose = cli.verbose;
+                return Err(report);
+            }
         };
         if let Some(output_file) = cli.output_file {
             fs::write(output_file, format!("{:?}", output))
@@ -110,12 +116,20 @@ fn run() -> Result<(), Report> {
 
     let tokens = match preprocessor.preprocess(&input, &cli.input_file) {
         Ok(tokens) => tokens,
-        Err(err) => return Err(Report::new(err.to_string(), None, None)),
+        Err(err) => {
+            let mut report = Report::new(err.to_string(), None, None);
+            report.verbose = cli.verbose;
+            return Err(report);
+        }
     };
 
     let mut parser = match Parser::new(tokens) {
         Ok(parser) => parser,
-        Err(err) => return Err(Report::new(err.to_string(), Some(cli.input_file), None)),
+        Err(err) => {
+            let mut report = Report::new(err.to_string(), Some(cli.input_file), None);
+            report.verbose = cli.verbose;
+            return Err(report);
+        }
     };
     let ast = match parser.parse() {
         Ok(ast) => ast,
@@ -142,14 +156,20 @@ fn run() -> Result<(), Report> {
                 (Some(cli.input_file.clone()), None)
             };
 
-            return Err(Report::new(msg, path, loc));
+            let mut report = Report::new(msg, path, loc);
+            report.verbose = cli.verbose;
+            return Err(report);
         }
     };
 
     let codegen = CodeGen::new();
     let object_bytes = match codegen.compile(ast) {
         Ok(bytes) => bytes,
-        Err(err) => return Err(Report::new(err.to_string(), None, None)),
+        Err(err) => {
+            let mut report = Report::new(err.to_string(), None, None);
+            report.verbose = cli.verbose;
+            return Err(report);
+        }
     };
 
     let object_filename = if cli.compile_only {

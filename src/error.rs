@@ -33,6 +33,8 @@ pub struct Report {
     pub path: Option<String>,
     /// The location (line and column) of the error.
     pub loc: Option<(usize, usize)>,
+    /// Whether to print verbose output.
+    pub verbose: bool,
 }
 
 impl Report {
@@ -48,7 +50,7 @@ impl Report {
     ///
     /// A new `Report` instance.
     pub fn new(msg: String, path: Option<String>, loc: Option<(usize, usize)>) -> Self {
-        Self { msg, path, loc }
+        Self { msg, path, loc, verbose: false }
     }
 }
 
@@ -58,6 +60,10 @@ impl Report {
 ///
 /// * `report` - The report to print.
 pub fn report(report: &Report) {
+    if report.verbose {
+        eprintln!("[VERBOSE] Reporting error: {:?}", report);
+    }
+
     let path = report.path.clone().unwrap_or_else(|| "input".to_string());
     let msg = report.msg.clone();
 

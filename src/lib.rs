@@ -8,6 +8,8 @@ pub mod codegen;
 pub mod common;
 /// Contains the error types for the application.
 pub mod error;
+/// Contains the logger.
+pub mod logger;
 pub mod parser;
 /// Contains the preprocessor.
 pub mod preprocessor;

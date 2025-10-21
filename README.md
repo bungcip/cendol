@@ -39,4 +39,4 @@ cargo run -- <input_file> [options]
 * `-D<macro>[=<value>]`: Define a macro.
 * `-I<path>`: Add an include path.
 * `--wall`: Enable all warnings.
-* `-v`: Verbose output.
+* `--verbose`: Verbose output.

@@ -269,7 +269,7 @@ impl<'a> Lexer<'a> {
             "include" => DirectiveKind::Include,
             "define" => DirectiveKind::Define,
             "pragma" => return self.next_token(),
-            _ => return self.next_token(),
+            _ => return Err(PreprocessorError::UnknownDirective(directive)),
         };
         Ok(Token::new(TokenKind::Directive(kind), self.location()))
     }

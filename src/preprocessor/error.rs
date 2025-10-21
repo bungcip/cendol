@@ -9,6 +9,9 @@ pub enum PreprocessorError {
     /// An unexpected directive was encountered.
     #[error("Unexpected directive: {0}")]
     UnexpectedDirective(String),
+    /// An unknown directive was encountered.
+    #[error("Unknown directive: {0}")]
+    UnknownDirective(String),
     /// The end of the input was reached unexpectedly in macro arguments.
     #[error("Unexpected EOF in macro arguments")]
     UnexpectedEofInMacroArgs,

@@ -240,8 +240,100 @@ pub fn assert_programs_equal(actual: &Program, expected: &Program) {
 /// Cleanup helper for generated test files
 pub fn cleanup_test_files(test_name: &str) {
     let obj_filename = format!("{}{}{}", config::TEST_FILE_PREFIX, test_name, config::OBJ_EXTENSION);
-    let exe_filename = format!("{}{}{}", config::TEST_FILE_PREFIX, test_name, config::EXE_EXTENSION);
+    let exe_filename = format!("./{}{}{}", config::TEST_FILE_PREFIX, test_name, config::EXE_EXTENSION);
 
     let _ = fs::remove_file(&obj_filename);
     let _ = fs::remove_file(&exe_filename);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_simple_program_ast() {
+        let ast = create_simple_program_ast();
+        assert_eq!(ast.function.name, "main");
+        assert_eq!(ast.function.body.len(), 1);
+        if let Stmt::Return(_) = &ast.function.body[0] {
+            // Expected return statement
+        } else {
+            panic!("Expected return statement");
+        }
+    }
+
+    #[test]
+    fn test_collect_tokens_from_lexer() {
+        let input = "int main";
+        let tokens = collect_tokens_from_lexer(input, "test.c");
+        assert_eq!(tokens.len(), 3);
+        assert!(matches!(tokens[0].kind, TokenKind::Keyword(KeywordKind::Int)));
+        assert!(matches!(tokens[1].kind, TokenKind::Whitespace(_)));
+        assert!(matches!(tokens[2].kind, TokenKind::Identifier(_)));
+    }
+
+    #[test]
+    fn test_get_token_kinds() {
+        let tokens = vec![
+            Token {
+                kind: TokenKind::Keyword(KeywordKind::Int),
+                location: create_test_location(0, 0),
+                hideset: std::collections::HashSet::new(),
+                expansion_locs: Vec::new(),
+            },
+            Token {
+                kind: TokenKind::Identifier("main".to_string()),
+                location: create_test_location(0, 0),
+                hideset: std::collections::HashSet::new(),
+                expansion_locs: Vec::new(),
+            },
+        ];
+        let kinds = get_token_kinds(&tokens);
+        assert_eq!(kinds.len(), 2);
+        assert!(matches!(kinds[0], TokenKind::Keyword(KeywordKind::Int)));
+        assert!(matches!(kinds[1], TokenKind::Identifier(_)));
+    }
+}
+
+use cendol::error::Report;
+
+/// Compiles C code and returns a report on error
+pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> {
+    let mut preprocessor = create_preprocessor();
+    let tokens = match preprocessor.preprocess(input, filename) {
+        Ok(tokens) => tokens,
+        Err(err) => return Err(Report::new(err.to_string(), None, None)),
+    };
+    let mut parser = match Parser::new(tokens) {
+        Ok(parser) => parser,
+        Err(err) => return Err(Report::new(err.to_string(), Some(filename.to_string()), None)),
+    };
+    match parser.parse() {
+        Ok(_) => Ok(()),
+        Err(err) => {
+            let (msg, location) = match err {
+                cendol::parser::error::ParserError::UnexpectedToken(tok) => {
+                    ("Unexpected token".to_string(), Some(tok.location))
+                }
+                cendol::parser::error::ParserError::UnexpectedEof => {
+                    ("Unexpected EOF".to_string(), None)
+                }
+            };
+
+            let (path, loc) = if let Some(location) = location {
+                let path = preprocessor
+                    .file_manager()
+                    .get_path(location.file)
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_string();
+                (Some(path), Some((location.line as usize, 1)))
+            } else {
+                (Some(filename.to_string()), None)
+            };
+
+            Err(Report::new(msg, path, loc))
+        }
+    }
 }

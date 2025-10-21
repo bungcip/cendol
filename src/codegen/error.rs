@@ -12,4 +12,16 @@ pub enum CodegenError {
     /// An error from the Cranelift module.
     #[error("Module error: {0}")]
     Module(#[from] Box<CraneliftModuleError>),
+    /// An unknown field was used in a struct initializer.
+    #[error("Unknown field `{0}` in initializer")]
+    UnknownField(String),
+    /// An initializer list was too long.
+    #[error("Initializer list too long")]
+    InitializerTooLong,
+    /// An initializer for a non-struct type was found.
+    #[error("Initializer for non-struct type")]
+    NotAStruct,
+    /// A pointer member access was attempted on a non-pointer type.
+    #[error("Pointer member access on non-pointer type")]
+    NotAPointer,
 }

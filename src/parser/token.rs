@@ -68,6 +68,7 @@ pub enum TokenKind {
     Question,
     Ellipsis,
     Dot,
+    Arrow,
     PlusPlus,
     MinusMinus,
     /// The end of the input.
@@ -94,6 +95,7 @@ impl From<preprocessor::token::Token> for Token {
             preprocessor::token::TokenKind::Comma => TokenKind::Comma,
             preprocessor::token::TokenKind::Ellipsis => TokenKind::Ellipsis,
             preprocessor::token::TokenKind::Dot => TokenKind::Dot,
+            preprocessor::token::TokenKind::Arrow => TokenKind::Arrow,
             preprocessor::token::TokenKind::Plus => TokenKind::Plus,
             preprocessor::token::TokenKind::Minus => TokenKind::Minus,
             preprocessor::token::TokenKind::PlusPlus => TokenKind::PlusPlus,

@@ -22,9 +22,9 @@ pub enum Type {
     /// An array of a specific size.
     Array(Box<Type>, usize),
     /// A struct definition.
-    Struct(Vec<Parameter>),
+    Struct(Option<String>, Vec<Parameter>),
     /// A union definition.
-    Union(Vec<Parameter>),
+    Union(Option<String>, Vec<Parameter>),
     /// An enum definition.
     Enum(Vec<String>),
 }
@@ -131,6 +131,14 @@ pub enum Expr {
     Decrement(Box<Expr>),
     /// A ternary conditional expression.
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
+    /// A struct initializer expression.
+    StructInitializer(Vec<Expr>),
+    /// A designated initializer expression.
+    DesignatedInitializer(String, Box<Expr>),
+    /// A member access expression.
+    Member(Box<Expr>, String),
+    /// A pointer member access expression.
+    PointerMember(Box<Expr>, String),
 }
 
 /// Represents a function parameter.
@@ -145,6 +153,8 @@ pub struct Parameter {
 /// Represents a function definition.
 #[derive(Debug, PartialEq)]
 pub struct Function {
+    /// The return type of the function.
+    pub return_type: Type,
     /// The name of the function.
     pub name: String,
     /// The parameters of the function.
@@ -158,6 +168,6 @@ pub struct Function {
 pub struct Program {
     /// The global variables.
     pub globals: Vec<Stmt>,
-    /// The main function.
-    pub function: Function,
+    /// The functions in the program.
+    pub functions: Vec<Function>,
 }

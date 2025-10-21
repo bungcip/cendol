@@ -271,4 +271,62 @@ mod tests {
         let exit_code = compile_and_run(input, "bool_variable").unwrap();
         assert_eq!(exit_code, 42);
     }
+
+    /// Test code generation with designated initializers for structs
+    #[test]
+    fn test_designated_initializer() {
+        let input = r#"
+        int main() {
+            struct { int x; int y; } point = { .y = 10, .x = 20 };
+            return point.x;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "designated_initializer").unwrap();
+        assert_eq!(exit_code, 20);
+    }
+
+    /// Test code generation with struct padding
+    #[test]
+    fn test_struct_padding() {
+        let input = r#"
+        int main() {
+            struct { char a; int b; } s = { .a = 1, .b = 2 };
+            return s.b;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "struct_padding").unwrap();
+        assert_eq!(exit_code, 2);
+    }
+
+    /// Test code generation with pointer member access
+    #[test]
+    fn test_pointer_member_access() {
+        let input = r#"
+        int main() {
+            struct { int x; int y; } point = { .x = 10, .y = 20 };
+            struct { int x; int y; } *p = &point;
+            return p->y;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "pointer_member_access").unwrap();
+        assert_eq!(exit_code, 20);
+    }
+
+    /// Test code generation with advanced pointer member access
+    #[test]
+    fn test_advanced_pointer_member_access() {
+        let input = r#"
+        struct Point { int x; int y; };
+        struct Point get_point() {
+            struct Point p;
+            p.y = 20;
+            return p;
+        }
+        int main() {
+            return get_point().y;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "advanced_pointer_member_access").unwrap();
+        assert_eq!(exit_code, 20);
+    }
 }

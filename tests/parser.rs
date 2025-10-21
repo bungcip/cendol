@@ -28,11 +28,12 @@ fn parse_c_code(input: &str) -> Result<Program, Box<dyn std::error::Error>> {
 fn create_simple_program_ast() -> Program {
     Program {
         globals: vec![],
-        function: Function {
+        functions: vec![Function {
+            return_type: Type::Int,
             name: "main".to_string(),
             params: vec![],
             body: vec![Stmt::Return(Expr::Number(0))],
-        },
+        }],
     }
 }
 
@@ -40,14 +41,15 @@ fn create_simple_program_ast() -> Program {
 fn create_bool_program_ast() -> Program {
     Program {
         globals: vec![],
-        function: Function {
+        functions: vec![Function {
+            return_type: Type::Int,
             name: "main".to_string(),
             params: vec![],
             body: vec![
                 Stmt::Declaration(Type::Bool, "a".to_string(), Some(Box::new(Expr::Number(1)))),
                 Stmt::Return(Expr::Number(0)),
             ],
-        },
+        }],
     }
 }
 
@@ -55,7 +57,8 @@ fn create_bool_program_ast() -> Program {
 fn create_increment_program_ast() -> Program {
     Program {
         globals: vec![],
-        function: Function {
+        functions: vec![Function {
+            return_type: Type::Int,
             name: "main".to_string(),
             params: vec![],
             body: vec![
@@ -63,7 +66,7 @@ fn create_increment_program_ast() -> Program {
                 Stmt::Expr(Expr::Increment(Box::new(Expr::Variable("a".to_string())))),
                 Stmt::Return(Expr::Number(0)),
             ],
-        },
+        }],
     }
 }
 
@@ -71,7 +74,8 @@ fn create_increment_program_ast() -> Program {
 fn create_control_flow_program_ast() -> Program {
     Program {
         globals: vec![],
-        function: Function {
+        functions: vec![Function {
+            return_type: Type::Int,
             name: "main".to_string(),
             params: vec![],
             body: vec![Stmt::If(
@@ -79,7 +83,7 @@ fn create_control_flow_program_ast() -> Program {
                 Box::new(Stmt::Return(Expr::Number(1))),
                 Some(Box::new(Stmt::Return(Expr::Number(0)))),
             )],
-        },
+        }],
     }
 }
 
@@ -116,6 +120,7 @@ fn create_test_tokens() -> Vec<Token> {
 
 #[cfg(test)]
 mod tests {
+    use cendol::parser::ast::{Expr, Stmt, Type};
     use super::{
         create_bool_program_ast, create_control_flow_program_ast,
         create_increment_program_ast, create_simple_program_ast, parse_c_code,
@@ -127,8 +132,11 @@ mod tests {
         let input = "int main() { return 0; }";
         let ast = parse_c_code(input).unwrap();
         let expected = create_simple_program_ast();
-        assert_eq!(ast.function.name, expected.function.name);
-        assert_eq!(ast.function.body.len(), expected.function.body.len());
+        assert_eq!(ast.functions[0].name, expected.functions[0].name);
+        assert_eq!(
+            ast.functions[0].body.len(),
+            expected.functions[0].body.len()
+        );
     }
 
     /// Test parsing of programs with variable declarations and increment operations
@@ -137,8 +145,11 @@ mod tests {
         let input = "int main() { int a = 0; a++; return 0; }";
         let ast = parse_c_code(input).unwrap();
         let expected = create_increment_program_ast();
-        assert_eq!(ast.function.name, expected.function.name);
-        assert_eq!(ast.function.body.len(), expected.function.body.len());
+        assert_eq!(ast.functions[0].name, expected.functions[0].name);
+        assert_eq!(
+            ast.functions[0].body.len(),
+            expected.functions[0].body.len()
+        );
     }
 
     /// Test parsing of programs with control flow (if-else statements)
@@ -147,8 +158,11 @@ mod tests {
         let input = "int main() { if (1) return 1; else return 0; }";
         let ast = parse_c_code(input).unwrap();
         let expected = create_control_flow_program_ast();
-        assert_eq!(ast.function.name, expected.function.name);
-        assert_eq!(ast.function.body.len(), expected.function.body.len());
+        assert_eq!(ast.functions[0].name, expected.functions[0].name);
+        assert_eq!(
+            ast.functions[0].body.len(),
+            expected.functions[0].body.len()
+        );
     }
 
     /// Test parsing of programs with _Bool variable declarations
@@ -157,7 +171,35 @@ mod tests {
         let input = "int main() { _Bool a = 1; return 0; }";
         let ast = parse_c_code(input).unwrap();
         let expected = create_bool_program_ast();
-        assert_eq!(ast.function.name, expected.function.name);
-        assert_eq!(ast.function.body, expected.function.body);
+        assert_eq!(ast.functions[0].name, expected.functions[0].name);
+        assert_eq!(ast.functions[0].body, expected.functions[0].body);
+    }
+
+    /// Test parsing of designated initializers for structs
+    #[test]
+    fn test_designated_initializer() {
+        let input = "int main() { struct { int x; int y; } point = { .y = 10, .x = 20 }; return 0; }";
+        let ast = parse_c_code(input).unwrap();
+        let expected_body = vec![
+            Stmt::Declaration(
+                Type::Struct(None, vec![
+                    cendol::parser::ast::Parameter {
+                        ty: Type::Int,
+                        name: "x".to_string(),
+                    },
+                    cendol::parser::ast::Parameter {
+                        ty: Type::Int,
+                        name: "y".to_string(),
+                    },
+                ]),
+                "point".to_string(),
+                Some(Box::new(Expr::StructInitializer(vec![
+                    Expr::DesignatedInitializer("y".to_string(), Box::new(Expr::Number(10))),
+                    Expr::DesignatedInitializer("x".to_string(), Box::new(Expr::Number(20))),
+                ]))),
+            ),
+            Stmt::Return(Expr::Number(0)),
+        ];
+        assert_eq!(ast.functions[0].body, expected_body);
     }
 }

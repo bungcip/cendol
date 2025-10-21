@@ -150,6 +150,9 @@ impl<'a> Lexer<'a> {
                 if let Some(&'-') = self.input.peek() {
                     self.input.next();
                     Ok(Token::new(TokenKind::MinusMinus, self.location()))
+                } else if let Some(&'>') = self.input.peek() {
+                    self.input.next();
+                    Ok(Token::new(TokenKind::Arrow, self.location()))
                 } else {
                     Ok(Token::new(TokenKind::Minus, self.location()))
                 }

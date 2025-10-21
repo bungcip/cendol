@@ -185,11 +185,12 @@ pub fn create_test_tokens() -> Vec<Token> {
 pub fn create_simple_program_ast() -> Program {
     Program {
         globals: vec![],
-        function: Function {
+        functions: vec![Function {
+            return_type: Type::Int,
             name: "main".to_string(),
             params: vec![],
             body: vec![Stmt::Return(Expr::Number(0))],
-        },
+        }],
     }
 }
 
@@ -197,7 +198,8 @@ pub fn create_simple_program_ast() -> Program {
 pub fn create_increment_program_ast() -> Program {
     Program {
         globals: vec![],
-        function: Function {
+        functions: vec![Function {
+            return_type: Type::Int,
             name: "main".to_string(),
             params: vec![],
             body: vec![
@@ -205,7 +207,7 @@ pub fn create_increment_program_ast() -> Program {
                 Stmt::Expr(Expr::Increment(Box::new(Expr::Variable("a".to_string())))),
                 Stmt::Return(Expr::Number(0)),
             ],
-        },
+        }],
     }
 }
 
@@ -213,7 +215,8 @@ pub fn create_increment_program_ast() -> Program {
 pub fn create_control_flow_program_ast() -> Program {
     Program {
         globals: vec![],
-        function: Function {
+        functions: vec![Function {
+            return_type: Type::Int,
             name: "main".to_string(),
             params: vec![],
             body: vec![Stmt::If(
@@ -221,7 +224,7 @@ pub fn create_control_flow_program_ast() -> Program {
                 Box::new(Stmt::Return(Expr::Number(1))),
                 Some(Box::new(Stmt::Return(Expr::Number(0)))),
             )],
-        },
+        }],
     }
 }
 
@@ -257,9 +260,16 @@ pub fn assert_tokens_equal(actual: &[Token], expected: &[TokenKind]) {
 /// Asserts that two AST programs are equal
 pub fn assert_programs_equal(actual: &Program, expected: &Program) {
     assert_eq!(actual.globals.len(), expected.globals.len());
-    assert_eq!(actual.function.name, expected.function.name);
-    assert_eq!(actual.function.params.len(), expected.function.params.len());
-    assert_eq!(actual.function.body.len(), expected.function.body.len());
+    assert_eq!(actual.functions.len(), expected.functions.len());
+    assert_eq!(actual.functions[0].name, expected.functions[0].name);
+    assert_eq!(
+        actual.functions[0].params.len(),
+        expected.functions[0].params.len()
+    );
+    assert_eq!(
+        actual.functions[0].body.len(),
+        expected.functions[0].body.len()
+    );
 }
 
 /// Cleanup helper for generated test files
@@ -288,9 +298,9 @@ mod tests {
     #[test]
     fn test_create_simple_program_ast() {
         let ast = create_simple_program_ast();
-        assert_eq!(ast.function.name, "main");
-        assert_eq!(ast.function.body.len(), 1);
-        if let Stmt::Return(_) = &ast.function.body[0] {
+        assert_eq!(ast.functions[0].name, "main");
+        assert_eq!(ast.functions[0].body.len(), 1);
+        if let Stmt::Return(_) = &ast.functions[0].body[0] {
             // Expected return statement
         } else {
             panic!("Expected return statement");

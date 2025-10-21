@@ -9,6 +9,10 @@ pub enum Type {
     Float,
     /// The `double` type.
     Double,
+    /// The `long` type.
+    Long,
+    /// The `long long` type.
+    LongLong,
     /// The `void` type.
     Void,
     /// The `_Bool` type.

@@ -52,7 +52,7 @@ pub struct CodeGen {
     builder_context: FunctionBuilderContext,
     ctx: Context,
     module: ObjectModule,
-    variables: SymbolTable<String, StackSlot>,
+    variables: SymbolTable<String, (StackSlot, Type)>,
     functions: HashMap<String, FuncId>,
 }
 
@@ -160,7 +160,7 @@ pub enum BlockState {
 struct FunctionTranslator<'a, 'b> {
     builder: FunctionBuilder<'a>,
     functions: &'b mut HashMap<String, FuncId>,
-    variables: &'b mut SymbolTable<String, StackSlot>,
+    variables: &'b mut SymbolTable<String, (StackSlot, Type)>,
     module: &'b mut ObjectModule,
     loop_context: Vec<(Block, Block)>,
     current_block_state: BlockState,
@@ -189,6 +189,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             Type::Char => 1,
             Type::Float => 4,
             Type::Double => 8,
+            Type::Long => 8,
+            Type::LongLong => 8,
             Type::Void => 0,
             Type::Bool => 1,
             Type::Pointer(_) => 8,
@@ -212,7 +214,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     size,
                     0,
                 ));
-                self.variables.insert(name, slot);
+                self.variables.insert(name, (slot, ty));
                 if let Some(init) = initializer {
                     let val = self.translate_expr(*init);
                     self.builder.ins().stack_store(val, slot, 0);
@@ -324,7 +326,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                                 size,
                                 0,
                             ));
-                            self.variables.insert(name, slot);
+                            self.variables.insert(name, (slot, ty));
                             if let Some(init) = initializer {
                                 let val = self.translate_expr(*init);
                                 self.builder.ins().stack_store(val, slot, 0);
@@ -398,13 +400,13 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.builder.ins().global_value(types::I64, local_id)
             }
             Expr::Variable(name) => {
-                let slot = self.variables.get(&name).unwrap();
+                let (slot, _ty) = self.variables.get(&name).unwrap();
                 self.builder.ins().stack_load(types::I64, slot, 0)
             }
             Expr::Assign(lhs, rhs) => {
                 let value = self.translate_expr(*rhs);
                 if let Expr::Variable(name) = *lhs {
-                    let slot = self.variables.get(&name).unwrap();
+                    let (slot, _) = self.variables.get(&name).unwrap();
                     self.builder.ins().stack_store(value, slot, 0);
                 } else if let Expr::Deref(ptr) = *lhs {
                     let ptr = self.translate_expr(*ptr);
@@ -486,7 +488,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             Expr::AddressOf(expr) => {
                 if let Expr::Variable(name) = *expr {
-                    let slot = self.variables.get(&name).unwrap();
+                    let (slot, _) = self.variables.get(&name).unwrap();
                     self.builder.ins().stack_addr(types::I64, slot, 0)
                 } else {
                     unimplemented!()

@@ -1,5 +1,5 @@
 use crate::codegen::error::CodegenError;
-use crate::parser::ast::{Expr, Program, Stmt};
+use crate::parser::ast::{Expr, Program, Stmt, Type};
 use cranelift::prelude::*;
 use cranelift_codegen::Context;
 use cranelift_codegen::ir::types;
@@ -149,6 +149,20 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         }
     }
 
+    /// Returns the size of a given type in bytes.
+    fn get_type_size(&self, ty: &Type) -> u32 {
+        match ty {
+            Type::Int => 8,
+            Type::Char => 1,
+            Type::Float => 4,
+            Type::Double => 8,
+            Type::Void => 0,
+            Type::Bool => 1,
+            Type::Pointer(_) => 8,
+            _ => unimplemented!(),
+        }
+    }
+
     /// Translates a statement into Cranelift IR.
     fn translate_stmt(&mut self, stmt: Stmt) -> bool {
         match stmt {
@@ -158,10 +172,11 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.current_block_state = BlockState::Filled;
                 true
             }
-            Stmt::Declaration(_ty, name, initializer) => {
+            Stmt::Declaration(ty, name, initializer) => {
+                let size = self.get_type_size(&ty);
                 let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
                     StackSlotKind::ExplicitSlot,
-                    8,
+                    size,
                     0,
                 ));
                 self.variables.insert(name, slot);
@@ -199,22 +214,27 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.switch_to_block(then_block);
                 self.builder.seal_block(then_block);
                 let then_terminated = self.translate_stmt(*then);
-                let if_has_return = self.current_block_state == BlockState::Filled;
-                self.jump_to_block(merge_block);
+                if !then_terminated {
+                    self.jump_to_block(merge_block);
+                }
 
                 self.switch_to_block(else_block);
                 self.builder.seal_block(else_block);
+                let mut else_terminated = false;
                 if let Some(otherwise) = otherwise {
-                    self.translate_stmt(*otherwise);
-                }
-                if self.current_block_state != BlockState::Filled {
-                    self.jump_to_block(merge_block);
-                    self.switch_to_block(merge_block);
-                } else if !if_has_return {
-                    self.switch_to_block(merge_block);
+                    else_terminated = self.translate_stmt(*otherwise);
                 }
 
-                then_terminated
+                if !else_terminated {
+                    self.jump_to_block(merge_block);
+                }
+
+                if !then_terminated || !else_terminated {
+                    self.switch_to_block(merge_block);
+                    self.builder.seal_block(merge_block);
+                }
+
+                then_terminated && else_terminated
             }
             Stmt::While(cond, body) => {
                 let header_block = self.builder.create_block();

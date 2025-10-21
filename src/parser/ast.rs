@@ -11,6 +11,8 @@ pub enum Type {
     Double,
     /// The `void` type.
     Void,
+    /// The `_Bool` type.
+    Bool,
     /// A pointer to another type.
     Pointer(Box<Type>),
     /// An array of a specific size.

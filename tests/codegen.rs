@@ -255,4 +255,20 @@ mod tests {
         let exit_code = compile_and_run(input, "ternary_basic").unwrap();
         assert_eq!(exit_code, 42);
     }
+
+    /// Test code generation with _Bool variable declarations
+    #[test]
+    fn test_bool_variable() {
+        let input = r#"
+        int main() {
+            _Bool a = 1;
+            if (a) {
+                return 42;
+            }
+            return 0;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "bool_variable").unwrap();
+        assert_eq!(exit_code, 42);
+    }
 }

@@ -40,10 +40,7 @@ pub fn create_file_manager() -> FileManager {
 
 /// Creates a source location for testing
 pub fn create_test_location(file_id: u32, line: u32) -> SourceLocation {
-    SourceLocation {
-        file: FileId(file_id),
-        line,
-    }
+    SourceLocation::new(FileId(file_id), line, 1)
 }
 
 /// Compiles C code through the full pipeline (preprocessor -> parser -> codegen)
@@ -401,7 +398,7 @@ pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> 
                     .to_str()
                     .unwrap()
                     .to_string();
-                (Some(path), Some((location.line as usize, 1)))
+                (Some(path), Some((location.line as usize, location.column as usize)))
             } else {
                 (Some(filename.to_string()), None)
             };

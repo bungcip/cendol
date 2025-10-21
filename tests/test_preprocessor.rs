@@ -276,7 +276,7 @@ fn test_ifndef_directive() {
     int a = 1;
 #endif
 "#;
-    let mut preprocessor = create_preprocessor();
+    let mut preprocessor = Preprocessor::new(FileManager::new(), true); // Enable verbose mode
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
     let tokens = get_clean_token(tokens);
 

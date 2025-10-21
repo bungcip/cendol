@@ -9,6 +9,7 @@ pub struct Lexer<'a> {
     input: Peekable<Chars<'a>>,
     at_start_of_line: bool,
     line: u32,
+    column: u32,
     file: FileId,
     verbose: bool,
 }
@@ -26,6 +27,7 @@ impl<'a> Lexer<'a> {
             input: input.chars().peekable(),
             at_start_of_line: true,
             line: 1,
+            column: 1,
             file,
             verbose,
         }
@@ -42,177 +44,222 @@ impl<'a> Lexer<'a> {
             None => return Ok(Token::new(TokenKind::Eof, self.location())),
         };
 
+        // Track the starting position of this token
+        let start_location = self.location();
+
         match c {
             '\\' => {
                 if let Some(&'\n') = self.input.peek() {
                     self.input.next();
-                    self.at_start_of_line = true;
-                    self.line += 1;
+                    self.consume_char('\n');
                     self.next_token()
                 } else {
-                    self.at_start_of_line = false;
-                    Ok(Token::new(TokenKind::Backslash, self.location()))
+                    self.consume_char(c);
+                    Ok(Token::new(TokenKind::Backslash, start_location))
                 }
             }
             ' ' | '\t' | '\r' => {
                 let mut whitespace = String::from(c);
+                self.consume_char(c);
                 while let Some(&c) = self.input.peek() {
                     if c == ' ' || c == '\t' || c == '\r' {
                         whitespace.push(self.input.next().unwrap());
+                        self.consume_char(c);
                     } else {
                         break;
                     }
                 }
                 Ok(Token::new(
                     TokenKind::Whitespace(whitespace),
-                    self.location(),
+                    start_location,
                 ))
             }
             '\n' => {
-                self.at_start_of_line = true;
-                self.line += 1;
-                Ok(Token::new(TokenKind::Newline, self.location()))
+                self.consume_char(c);
+                self.at_start_of_line = true; // Explicitly set this
+                Ok(Token::new(TokenKind::Newline, start_location))
             }
             _ if c.is_alphabetic() || c == '_' => {
                 let mut ident = String::from(c);
+                self.consume_char(c);
                 while let Some(&c) = self.input.peek() {
                     if c.is_alphanumeric() || c == '_' {
                         ident.push(self.input.next().unwrap());
+                        self.consume_char(c);
                     } else {
                         break;
                     }
                 }
                 self.at_start_of_line = false;
                 if let Ok(keyword) = ident.parse() {
-                    Ok(Token::new(TokenKind::Keyword(keyword), self.location()))
+                    Ok(Token::new(TokenKind::Keyword(keyword), start_location))
                 } else {
-                    Ok(Token::new(TokenKind::Identifier(ident), self.location()))
+                    Ok(Token::new(TokenKind::Identifier(ident), start_location))
                 }
             }
             _ if c.is_ascii_digit() => {
                 let mut num = String::from(c);
+                self.consume_char(c);
                 while let Some(&c) = self.input.peek() {
                     if c.is_ascii_digit() {
                         num.push(self.input.next().unwrap());
+                        self.consume_char(c);
                     } else {
                         break;
                     }
                 }
                 self.at_start_of_line = false;
-                Ok(Token::new(TokenKind::Number(num), self.location()))
+                Ok(Token::new(TokenKind::Number(num), start_location))
             }
             '"' => {
                 let mut s = String::new();
+                self.consume_char(c);
+                let mut chars = Vec::new();
                 for c in self.input.by_ref() {
                     if c == '"' {
                         break;
                     }
                     s.push(c);
+                    chars.push(c);
+                }
+                // Consume all the characters we collected
+                for ch in chars {
+                    self.consume_char(ch);
                 }
                 self.at_start_of_line = false;
-                Ok(Token::new(TokenKind::String(s), self.location()))
+                Ok(Token::new(TokenKind::String(s), start_location))
             }
             '#' => {
                 if self.at_start_of_line {
+                    self.consume_char(c);
                     self.read_directive()
                 } else if let Some(&'#') = self.input.peek() {
+                    self.consume_char(c);
                     self.input.next();
+                    self.consume_char('#');
                     self.at_start_of_line = false;
-                    Ok(Token::new(TokenKind::HashHash, self.location()))
+                    Ok(Token::new(TokenKind::HashHash, start_location))
                 } else {
+                    self.consume_char(c);
                     self.at_start_of_line = false;
-                    Ok(Token::new(TokenKind::Hash, self.location()))
+                    Ok(Token::new(TokenKind::Hash, start_location))
                 }
             }
             '.' => {
+                self.consume_char(c);
                 if self.input.peek() == Some(&'.') {
                     self.input.next();
+                    self.consume_char('.');
                     if self.input.peek() == Some(&'.') {
                         self.input.next();
+                        self.consume_char('.');
                         self.at_start_of_line = false;
-                        return Ok(Token::new(TokenKind::Ellipsis, self.location()));
+                        return Ok(Token::new(TokenKind::Ellipsis, start_location));
                     }
                     // This is a bit of a hack. A better solution would be to have a buffer.
                     // We are effectively putting the dots back into the stream.
                     // This is not yet implemented.
                 }
                 self.at_start_of_line = false;
-                Ok(Token::new(TokenKind::Dot, self.location()))
+                Ok(Token::new(TokenKind::Dot, start_location))
             }
             '+' => {
+                self.consume_char(c);
                 self.at_start_of_line = false;
                 if let Some(&'+') = self.input.peek() {
                     self.input.next();
-                    Ok(Token::new(TokenKind::PlusPlus, self.location()))
+                    self.consume_char('+');
+                    Ok(Token::new(TokenKind::PlusPlus, start_location))
                 } else {
-                    Ok(Token::new(TokenKind::Plus, self.location()))
+                    Ok(Token::new(TokenKind::Plus, start_location))
                 }
             }
             '-' => {
+                self.consume_char(c);
                 self.at_start_of_line = false;
                 if let Some(&'-') = self.input.peek() {
                     self.input.next();
-                    Ok(Token::new(TokenKind::MinusMinus, self.location()))
+                    self.consume_char('-');
+                    Ok(Token::new(TokenKind::MinusMinus, start_location))
                 } else if let Some(&'>') = self.input.peek() {
                     self.input.next();
-                    Ok(Token::new(TokenKind::Arrow, self.location()))
+                    self.consume_char('>');
+                    Ok(Token::new(TokenKind::Arrow, start_location))
                 } else {
-                    Ok(Token::new(TokenKind::Minus, self.location()))
+                    Ok(Token::new(TokenKind::Minus, start_location))
                 }
             }
             '*' => {
+                self.consume_char(c);
                 self.at_start_of_line = false;
-                Ok(Token::new(TokenKind::Star, self.location()))
+                Ok(Token::new(TokenKind::Star, start_location))
             }
             '|' => {
+                self.consume_char(c);
                 self.at_start_of_line = false;
                 if let Some(&'|') = self.input.peek() {
                     self.input.next();
-                    Ok(Token::new(TokenKind::PipePipe, self.location()))
+                    self.consume_char('|');
+                    Ok(Token::new(TokenKind::PipePipe, start_location))
                 } else {
-                    Ok(Token::new(TokenKind::Pipe, self.location()))
+                    Ok(Token::new(TokenKind::Pipe, start_location))
                 }
             }
             '&' => {
+                self.consume_char(c);
                 self.at_start_of_line = false;
                 if let Some(&'&') = self.input.peek() {
                     self.input.next();
-                    Ok(Token::new(TokenKind::AmpersandAmpersand, self.location()))
+                    self.consume_char('&');
+                    Ok(Token::new(TokenKind::AmpersandAmpersand, start_location))
                 } else {
-                    Ok(Token::new(TokenKind::Ampersand, self.location()))
+                    Ok(Token::new(TokenKind::Ampersand, start_location))
                 }
             }
             '^' => {
+                self.consume_char(c);
                 self.at_start_of_line = false;
-                Ok(Token::new(TokenKind::Caret, self.location()))
+                Ok(Token::new(TokenKind::Caret, start_location))
             }
             '~' => {
+                self.consume_char(c);
                 self.at_start_of_line = false;
-                Ok(Token::new(TokenKind::Tilde, self.location()))
+                Ok(Token::new(TokenKind::Tilde, start_location))
             }
             '!' => {
+                self.consume_char(c);
                 self.at_start_of_line = false;
-                Ok(Token::new(TokenKind::Bang, self.location()))
+                Ok(Token::new(TokenKind::Bang, start_location))
             }
             '?' => {
+                self.consume_char(c);
                 self.at_start_of_line = false;
-                Ok(Token::new(TokenKind::Question, self.location()))
+                Ok(Token::new(TokenKind::Question, start_location))
             }
             '/' => {
+                self.consume_char(c);
                 self.at_start_of_line = false;
                 if let Some(&'/') = self.input.peek() {
                     self.input.next();
+                    self.consume_char('/');
                     let mut comment = String::new();
+                    let mut chars = Vec::new();
                     while let Some(&c) = self.input.peek() {
                         if c == '\n' {
                             break;
                         }
                         comment.push(self.input.next().unwrap());
+                        chars.push(c);
                     }
-                    Ok(Token::new(TokenKind::Comment(comment), self.location()))
+                    for ch in chars {
+                        self.consume_char(ch);
+                    }
+                    Ok(Token::new(TokenKind::Comment(comment), start_location))
                 } else if let Some(&'*') = self.input.peek() {
                     self.input.next();
+                    self.consume_char('*');
                     let mut comment = String::new();
+                    let mut chars = Vec::new();
                     while let Some(c) = self.input.next() {
                         if c == '*'
                             && let Some(&'/') = self.input.peek()
@@ -221,13 +268,18 @@ impl<'a> Lexer<'a> {
                             break;
                         }
                         comment.push(c);
+                        chars.push(c);
                     }
-                    Ok(Token::new(TokenKind::Comment(comment), self.location()))
+                    for ch in chars {
+                        self.consume_char(ch);
+                    }
+                    Ok(Token::new(TokenKind::Comment(comment), start_location))
                 } else {
-                    Ok(Token::new(TokenKind::Slash, self.location()))
+                    Ok(Token::new(TokenKind::Slash, start_location))
                 }
             }
             _ if c.is_ascii_punctuation() && c != '#' => {
+                self.consume_char(c);
                 self.at_start_of_line = false;
                 let kind = match c {
                     '(' => TokenKind::LeftParen,
@@ -242,6 +294,7 @@ impl<'a> Lexer<'a> {
                     '=' => {
                         if let Some(&'=') = self.input.peek() {
                             self.input.next();
+                            self.consume_char('=');
                             TokenKind::EqualEqual
                         } else {
                             TokenKind::Equal
@@ -250,7 +303,8 @@ impl<'a> Lexer<'a> {
                     '!' => {
                         if let Some(&'=') = self.input.peek() {
                             self.input.next();
-                            return Ok(Token::new(TokenKind::BangEqual, self.location()));
+                            self.consume_char('=');
+                            return Ok(Token::new(TokenKind::BangEqual, start_location));
                         } else {
                             TokenKind::Bang
                         }
@@ -258,7 +312,8 @@ impl<'a> Lexer<'a> {
                     '<' => {
                         if let Some(&'=') = self.input.peek() {
                             self.input.next();
-                            return Ok(Token::new(TokenKind::LessThanEqual, self.location()));
+                            self.consume_char('=');
+                            return Ok(Token::new(TokenKind::LessThanEqual, start_location));
                         } else {
                             TokenKind::LessThan
                         }
@@ -266,14 +321,15 @@ impl<'a> Lexer<'a> {
                     '>' => {
                         if let Some(&'=') = self.input.peek() {
                             self.input.next();
-                            return Ok(Token::new(TokenKind::GreaterThanEqual, self.location()));
+                            self.consume_char('=');
+                            return Ok(Token::new(TokenKind::GreaterThanEqual, start_location));
                         } else {
                             TokenKind::GreaterThan
                         }
                     }
                     _ => return Err(PreprocessorError::UnexpectedChar(c)),
                 };
-                Ok(Token::new(kind, self.location()))
+                Ok(Token::new(kind, start_location))
             }
             _ => Err(PreprocessorError::UnexpectedChar(c)),
         }
@@ -431,9 +487,18 @@ impl<'a> Lexer<'a> {
 
     /// Returns the current location in the source file.
     fn location(&self) -> SourceLocation {
-        SourceLocation {
-            file: self.file,
-            line: self.line,
+        SourceLocation::new(self.file, self.line, self.column)
+    }
+
+    /// Consumes a character and updates position tracking.
+    fn consume_char(&mut self, c: char) {
+        if c == '\n' {
+            self.line += 1;
+            self.column = 1;
+            self.at_start_of_line = true;
+        } else {
+            self.column += 1;
+            self.at_start_of_line = false;
         }
     }
 }

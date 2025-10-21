@@ -197,7 +197,7 @@ fn run() -> Result<(), Report> {
                     .to_str()
                     .unwrap()
                     .to_string();
-                (Some(path), Some((location.line as usize, 1)))
+                (Some(path), Some((location.line as usize, location.column as usize)))
             } else {
                 (Some(cli.input_file.clone()), None)
             };

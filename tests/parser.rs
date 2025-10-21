@@ -92,10 +92,7 @@ fn create_control_flow_program_ast() -> Program {
 fn create_test_tokens() -> Vec<Token> {
     let mut file_manager = FileManager::new();
     let file_id = file_manager.open(config::TEST_FILENAME).unwrap();
-    let loc = SourceLocation {
-        file: file_id,
-        line: 0,
-    };
+    let loc = SourceLocation::new(file_id, 0, 1);
 
     vec![
         Token::new(TokenKind::Keyword(KeywordKind::Int), loc.clone()),

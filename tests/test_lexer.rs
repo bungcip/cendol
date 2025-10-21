@@ -19,10 +19,7 @@ fn create_file_manager() -> FileManager {
 
 /// Creates a source location for testing
 fn create_test_location(file_id: u32, line: u32) -> SourceLocation {
-    SourceLocation {
-        file: FileId(file_id),
-        line,
-    }
+    SourceLocation::new(FileId(file_id), line, 1)
 }
 
 /// Helper function to collect all tokens from a lexer

@@ -9,6 +9,25 @@ pub struct SourceLocation {
     pub file: FileId,
     /// The line number.
     pub line: u32,
+    /// The column number (1-based).
+    pub column: u32,
+}
+
+impl SourceLocation {
+    /// Creates a new `SourceLocation` instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `file` - The file identifier.
+    /// * `line` - The line number (1-based).
+    /// * `column` - The column number (1-based).
+    ///
+    /// # Returns
+    ///
+    /// A new `SourceLocation` instance.
+    pub fn new(file: FileId, line: u32, column: u32) -> Self {
+        SourceLocation { file, line, column }
+    }
 }
 
 /// Represents C keywords.

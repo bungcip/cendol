@@ -101,31 +101,19 @@ impl Preprocessor {
         // Add initial line directive
         final_tokens.push(Token::new(
             TokenKind::Directive(DirectiveKind::Line),
-            SourceLocation {
-                file: FileId(0),
-                line: 0,
-            },
+            SourceLocation::new(FileId(0), 0, 0),
         ));
         final_tokens.push(Token::new(
             TokenKind::Number(current_line.to_string()),
-            SourceLocation {
-                file: FileId(0),
-                line: 0,
-            },
+            SourceLocation::new(FileId(0), 0, 0),
         ));
         final_tokens.push(Token::new(
             TokenKind::String(current_file.to_string()),
-            SourceLocation {
-                file: FileId(0),
-                line: 0,
-            },
+            SourceLocation::new(FileId(0), 0, 0),
         ));
         final_tokens.push(Token::new(
             TokenKind::Newline,
-            SourceLocation {
-                file: FileId(0),
-                line: 0,
-            },
+            SourceLocation::new(FileId(0), 0, 0),
         ));
 
         while !self.file_stack.is_empty() {
@@ -142,31 +130,35 @@ impl Preprocessor {
                         current_file = path.to_str().unwrap();
                         final_tokens.push(Token::new(
                             TokenKind::Directive(DirectiveKind::Line),
-                            SourceLocation {
-                                file: token.location.file,
-                                line: token.location.line,
-                            },
+                            SourceLocation::new(
+                                token.location.file,
+                                token.location.line,
+                                token.location.column,
+                            ),
                         ));
                         final_tokens.push(Token::new(
                             TokenKind::Number(current_line.to_string()),
-                            SourceLocation {
-                                file: token.location.file,
-                                line: token.location.line,
-                            },
+                            SourceLocation::new(
+                                token.location.file,
+                                token.location.line,
+                                token.location.column,
+                            ),
                         ));
                         final_tokens.push(Token::new(
                             TokenKind::String(current_file.to_string()),
-                            SourceLocation {
-                                file: token.location.file,
-                                line: token.location.line,
-                            },
+                            SourceLocation::new(
+                                token.location.file,
+                                token.location.line,
+                                token.location.column,
+                            ),
                         ));
                         final_tokens.push(Token::new(
                             TokenKind::Newline,
-                            SourceLocation {
-                                file: token.location.file,
-                                line: token.location.line,
-                            },
+                            SourceLocation::new(
+                                token.location.file,
+                                token.location.line,
+                                token.location.column,
+                            ),
                         ));
                     }
                 }
@@ -248,6 +240,7 @@ impl Preprocessor {
             file_state.index += 1;
 
             let in_true_branch = self.conditional_stack.iter().all(|&x| x);
+
 
             if let TokenKind::Directive(directive) = token.kind {
                 match directive {
@@ -718,7 +711,11 @@ impl Preprocessor {
                         let quoted = format!("\"{}\"", stringified);
                         result.push(Token::new(
                             TokenKind::String(quoted),
-                            token.location.clone(),
+                            SourceLocation::new(
+                                token.location.file,
+                                token.location.line,
+                                token.location.column,
+                            ),
                         ));
                     }
                     i += 1;
@@ -771,7 +768,11 @@ impl Preprocessor {
                 let mut new_token = lexer.next_token()?;
                 if !matches!(new_token.kind, TokenKind::Eof) {
                     let mut new_hideset = lhs.hideset.clone();
-                    new_token.location = lhs.location.clone();
+                    new_token.location = SourceLocation::new(
+                        lhs.location.file,
+                        lhs.location.line,
+                        lhs.location.column,
+                    );
                     for t in &rhs_tokens {
                         new_hideset.extend(t.hideset.clone());
                     }
@@ -799,7 +800,11 @@ impl Preprocessor {
                         for (i, arg) in args[vararg_start..].iter().enumerate() {
                             result.extend(arg.clone());
                             if i < args.len() - vararg_start - 1 {
-                                result.push(Token::new(TokenKind::Comma, token.location.clone()));
+                                result.push(Token::new(TokenKind::Comma, SourceLocation::new(
+                                    token.location.file,
+                                    token.location.line,
+                                    token.location.column,
+                                )));
                             }
                         }
                     }
@@ -873,14 +878,22 @@ impl Preprocessor {
                     if !last_was_whitespace && !result.is_empty() {
                         result.push(Token::new(
                             TokenKind::Whitespace(" ".to_string()),
-                            token.location.clone(),
+                            SourceLocation::new(
+                                token.location.file,
+                                token.location.line,
+                                token.location.column,
+                            ),
                         ));
                         last_was_whitespace = true;
                     }
                 }
                 TokenKind::Newline => {
                     // Preserve newlines - add as newline token
-                    result.push(Token::new(TokenKind::Newline, token.location.clone()));
+                    result.push(Token::new(TokenKind::Newline, SourceLocation::new(
+                        token.location.file,
+                        token.location.line,
+                        token.location.column,
+                    )));
                     last_was_whitespace = false;
                 }
                 _ => {
@@ -1031,10 +1044,23 @@ fn parse_error_message(
     let mut message = String::new();
     let mut i = start_idx;
     while i < tokens.len() {
-        if matches!(tokens[i].kind, TokenKind::Newline) {
-            return Ok((message, i));
+        match &tokens[i].kind {
+            TokenKind::Newline => {
+                return Ok((message, i));
+            }
+            TokenKind::String(s) => {
+                // For string literals, use the content without quotes
+                message.push_str(s);
+            }
+            TokenKind::Whitespace(_) => {
+                // For whitespace, add a single space
+                message.push(' ');
+            }
+            _ => {
+                // For other tokens, use their string representation
+                message.push_str(&tokens[i].kind.to_string());
+            }
         }
-        message.push_str(&tokens[i].kind.to_string());
         i += 1;
     }
     Ok((message, i))

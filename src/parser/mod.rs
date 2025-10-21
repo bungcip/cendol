@@ -1,6 +1,5 @@
 use crate::parser::ast::{Expr, Function, Parameter, Program, Stmt, Type};
 use crate::parser::error::ParserError;
-use crate::parser::token::PunctKind;
 use crate::parser::token::{KeywordKind, Token, TokenKind};
 use crate::preprocessor;
 
@@ -59,11 +58,9 @@ impl Parser {
     }
 
     /// Expects a specific punctuation token.
-    fn expect_punct(&mut self, value: PunctKind) -> Result<(), ParserError> {
+    fn expect_punct(&mut self, value: TokenKind) -> Result<(), ParserError> {
         let token = self.current_token()?;
-        if let TokenKind::Punct(p) = token.kind.clone()
-            && p == value
-        {
+        if token.kind == value {
             self.eat()?;
             return Ok(());
         }
@@ -110,10 +107,10 @@ impl Parser {
                 KeywordKind::Void => Type::Void,
                 KeywordKind::Struct => {
                     self.eat()?;
-                    self.expect_punct(PunctKind::LeftBrace)?;
+                    self.expect_punct(TokenKind::LeftBrace)?;
                     let mut members = Vec::new();
                     while let Ok(t) = self.current_token() {
-                        if let TokenKind::Punct(PunctKind::RightBrace) = t.kind {
+                        if let TokenKind::RightBrace = t.kind {
                             self.eat()?;
                             break;
                         }
@@ -123,16 +120,16 @@ impl Parser {
                             self.eat()?;
                             members.push(Parameter { ty, name: id });
                         }
-                        self.expect_punct(PunctKind::Semicolon)?;
+                        self.expect_punct(TokenKind::Semicolon)?;
                     }
                     Type::Struct(members)
                 }
                 KeywordKind::Union => {
                     self.eat()?;
-                    self.expect_punct(PunctKind::LeftBrace)?;
+                    self.expect_punct(TokenKind::LeftBrace)?;
                     let mut members = Vec::new();
                     while let Ok(t) = self.current_token() {
-                        if let TokenKind::Punct(PunctKind::RightBrace) = t.kind {
+                        if let TokenKind::RightBrace = t.kind {
                             self.eat()?;
                             break;
                         }
@@ -142,16 +139,16 @@ impl Parser {
                             self.eat()?;
                             members.push(Parameter { ty, name: id });
                         }
-                        self.expect_punct(PunctKind::Semicolon)?;
+                        self.expect_punct(TokenKind::Semicolon)?;
                     }
                     Type::Union(members)
                 }
                 KeywordKind::Enum => {
                     self.eat()?;
-                    self.expect_punct(PunctKind::LeftBrace)?;
+                    self.expect_punct(TokenKind::LeftBrace)?;
                     let mut enumerators = Vec::new();
                     while let Ok(t) = self.current_token() {
-                        if let TokenKind::Punct(PunctKind::RightBrace) = t.kind {
+                        if let TokenKind::RightBrace = t.kind {
                             self.eat()?;
                             break;
                         }
@@ -161,7 +158,7 @@ impl Parser {
                             enumerators.push(id);
                         }
                         if let Ok(t) = self.current_token()
-                            && let TokenKind::Punct(PunctKind::Comma) = t.kind
+                            && let TokenKind::Comma = t.kind
                         {
                             self.eat()?;
                         }
@@ -173,11 +170,12 @@ impl Parser {
             self.eat()?;
             let mut ty = ty;
             while let Ok(token) = self.current_token() {
-                if let TokenKind::Punct(p) = token.kind.clone() {
-                    if p == PunctKind::Star {
+                match token.kind.clone() {
+                    TokenKind::Star => {
                         self.eat()?;
                         ty = Type::Pointer(Box::new(ty));
-                    } else if p == PunctKind::LeftBracket {
+                    }
+                    TokenKind::LeftBracket => {
                         self.eat()?;
                         let size = self.parse_expr()?;
                         if let Expr::Number(n) = size {
@@ -185,12 +183,11 @@ impl Parser {
                         } else {
                             return Err(ParserError::UnexpectedToken(token));
                         }
-                        self.expect_punct(PunctKind::RightBracket)?;
-                    } else {
+                        self.expect_punct(TokenKind::RightBracket)?;
+                    }
+                    _ => {
                         break;
                     }
-                } else {
-                    break;
                 }
             }
             Ok(ty)
@@ -207,22 +204,16 @@ impl Parser {
     /// Gets the infix binding power of a token.
     fn infix_binding_power(&self, kind: &TokenKind) -> Option<(u8, u8)> {
         match kind {
-            TokenKind::Punct(PunctKind::Equal) => Some((2, 1)),
-            TokenKind::Punct(PunctKind::PipePipe) => Some((3, 4)),
-            TokenKind::Punct(PunctKind::AmpersandAmpersand) => Some((5, 6)),
-            TokenKind::Punct(PunctKind::EqualEqual) | TokenKind::Punct(PunctKind::BangEqual) => {
-                Some((7, 8))
-            }
-            TokenKind::Punct(PunctKind::LessThan)
-            | TokenKind::Punct(PunctKind::GreaterThan)
-            | TokenKind::Punct(PunctKind::LessThanEqual)
-            | TokenKind::Punct(PunctKind::GreaterThanEqual) => Some((9, 10)),
-            TokenKind::Punct(PunctKind::Plus) | TokenKind::Punct(PunctKind::Minus) => {
-                Some((11, 12))
-            }
-            TokenKind::Punct(PunctKind::Star) | TokenKind::Punct(PunctKind::Slash) => {
-                Some((13, 14))
-            }
+            TokenKind::Equal => Some((2, 1)),
+            TokenKind::PipePipe => Some((3, 4)),
+            TokenKind::AmpersandAmpersand => Some((5, 6)),
+            TokenKind::EqualEqual | TokenKind::BangEqual => Some((7, 8)),
+            TokenKind::LessThan
+            | TokenKind::GreaterThan
+            | TokenKind::LessThanEqual
+            | TokenKind::GreaterThanEqual => Some((9, 10)),
+            TokenKind::Plus | TokenKind::Minus => Some((11, 12)),
+            TokenKind::Star | TokenKind::Slash => Some((13, 14)),
             _ => None,
         }
     }
@@ -230,11 +221,10 @@ impl Parser {
     /// Gets the prefix binding power of a token.
     fn prefix_binding_power(&self, kind: &TokenKind) -> Option<((), u8)> {
         match kind {
-            TokenKind::Punct(PunctKind::Plus)
-            | TokenKind::Punct(PunctKind::Minus)
-            | TokenKind::Punct(PunctKind::PlusPlus)
-            | TokenKind::Punct(PunctKind::MinusMinus) => Some(((), 15)),
-            TokenKind::Punct(PunctKind::Bang) => Some(((), 15)),
+            TokenKind::Plus | TokenKind::Minus | TokenKind::PlusPlus | TokenKind::MinusMinus => {
+                Some(((), 15))
+            }
+            TokenKind::Bang => Some(((), 15)),
             _ => None,
         }
     }
@@ -242,9 +232,7 @@ impl Parser {
     /// Gets the postfix binding power of a token.
     fn postfix_binding_power(&self, kind: &TokenKind) -> Option<(u8, ())> {
         match kind {
-            TokenKind::Punct(PunctKind::PlusPlus) | TokenKind::Punct(PunctKind::MinusMinus) => {
-                Some((17, ()))
-            }
+            TokenKind::PlusPlus | TokenKind::MinusMinus => Some((17, ())),
             _ => None,
         }
     }
@@ -257,11 +245,11 @@ impl Parser {
                 self.eat()?;
                 let rhs = self.parse_pratt_expr(r_bp)?;
                 match token.kind {
-                    TokenKind::Punct(PunctKind::PlusPlus) => Expr::Increment(Box::new(rhs)),
-                    TokenKind::Punct(PunctKind::MinusMinus) => Expr::Decrement(Box::new(rhs)),
-                    TokenKind::Punct(PunctKind::Plus) => rhs,
-                    TokenKind::Punct(PunctKind::Minus) => Expr::Neg(Box::new(rhs)),
-                    TokenKind::Punct(PunctKind::Bang) => Expr::LogicalNot(Box::new(rhs)),
+                    TokenKind::PlusPlus => Expr::Increment(Box::new(rhs)),
+                    TokenKind::MinusMinus => Expr::Decrement(Box::new(rhs)),
+                    TokenKind::Plus => rhs,
+                    TokenKind::Minus => Expr::Neg(Box::new(rhs)),
+                    TokenKind::Bang => Expr::LogicalNot(Box::new(rhs)),
                     _ => unreachable!(),
                 }
             } else {
@@ -278,8 +266,8 @@ impl Parser {
                 self.eat()?;
 
                 lhs = match token.kind {
-                    TokenKind::Punct(PunctKind::PlusPlus) => Expr::Increment(Box::new(lhs)),
-                    TokenKind::Punct(PunctKind::MinusMinus) => Expr::Decrement(Box::new(lhs)),
+                    TokenKind::PlusPlus => Expr::Increment(Box::new(lhs)),
+                    TokenKind::MinusMinus => Expr::Decrement(Box::new(lhs)),
                     _ => unreachable!(),
                 };
                 continue;
@@ -293,48 +281,32 @@ impl Parser {
                 let rhs = self.parse_pratt_expr(r_bp)?;
 
                 lhs = match token.kind {
-                    TokenKind::Punct(PunctKind::Equal) => {
-                        Expr::Assign(Box::new(lhs), Box::new(rhs))
-                    }
-                    TokenKind::Punct(PunctKind::Plus) => Expr::Add(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::Punct(PunctKind::Minus) => Expr::Sub(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::Punct(PunctKind::Star) => Expr::Mul(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::Punct(PunctKind::Slash) => Expr::Div(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::Punct(PunctKind::EqualEqual) => {
-                        Expr::Equal(Box::new(lhs), Box::new(rhs))
-                    }
-                    TokenKind::Punct(PunctKind::BangEqual) => {
-                        Expr::NotEqual(Box::new(lhs), Box::new(rhs))
-                    }
-                    TokenKind::Punct(PunctKind::LessThan) => {
-                        Expr::LessThan(Box::new(lhs), Box::new(rhs))
-                    }
-                    TokenKind::Punct(PunctKind::GreaterThan) => {
-                        Expr::GreaterThan(Box::new(lhs), Box::new(rhs))
-                    }
-                    TokenKind::Punct(PunctKind::LessThanEqual) => {
-                        Expr::LessThanOrEqual(Box::new(lhs), Box::new(rhs))
-                    }
-                    TokenKind::Punct(PunctKind::GreaterThanEqual) => {
+                    TokenKind::Equal => Expr::Assign(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::Plus => Expr::Add(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::Minus => Expr::Sub(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::Star => Expr::Mul(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::Slash => Expr::Div(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::EqualEqual => Expr::Equal(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::BangEqual => Expr::NotEqual(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::LessThan => Expr::LessThan(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::GreaterThan => Expr::GreaterThan(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::LessThanEqual => Expr::LessThanOrEqual(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::GreaterThanEqual => {
                         Expr::GreaterThanOrEqual(Box::new(lhs), Box::new(rhs))
                     }
-                    TokenKind::Punct(PunctKind::AmpersandAmpersand) => {
-                        Expr::LogicalAnd(Box::new(lhs), Box::new(rhs))
-                    }
-                    TokenKind::Punct(PunctKind::PipePipe) => {
-                        Expr::LogicalOr(Box::new(lhs), Box::new(rhs))
-                    }
+                    TokenKind::AmpersandAmpersand => Expr::LogicalAnd(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::PipePipe => Expr::LogicalOr(Box::new(lhs), Box::new(rhs)),
                     _ => unreachable!(),
                 };
                 continue;
             }
-            if let TokenKind::Punct(PunctKind::Question) = token.kind {
+            if let TokenKind::Question = token.kind {
                 if 1 < min_bp {
                     break;
                 }
                 self.eat()?; // Consume '?'
                 let then_expr = self.parse_pratt_expr(0)?;
-                self.expect_punct(PunctKind::Colon)?;
+                self.expect_punct(TokenKind::Colon)?;
                 let else_expr = self.parse_pratt_expr(2)?;
                 lhs = Expr::Ternary(Box::new(lhs), Box::new(then_expr), Box::new(else_expr));
                 continue;
@@ -361,25 +333,25 @@ impl Parser {
                 let mut expr = Expr::Variable(name);
                 while let Ok(token) = self.current_token() {
                     match token.kind {
-                        TokenKind::Punct(PunctKind::PlusPlus) => {
+                        TokenKind::PlusPlus => {
                             self.eat()?;
                             expr = Expr::Increment(Box::new(expr));
                         }
-                        TokenKind::Punct(PunctKind::MinusMinus) => {
+                        TokenKind::MinusMinus => {
                             self.eat()?;
                             expr = Expr::Decrement(Box::new(expr));
                         }
-                        TokenKind::Punct(PunctKind::LeftParen) => {
+                        TokenKind::LeftParen => {
                             self.eat()?;
                             let mut args = Vec::new();
                             while let Ok(t) = self.current_token() {
-                                if let TokenKind::Punct(PunctKind::RightParen) = t.kind {
+                                if let TokenKind::RightParen = t.kind {
                                     self.eat()?;
                                     break;
                                 }
                                 args.push(self.parse_expr()?);
                                 if let Ok(t) = self.current_token()
-                                    && let TokenKind::Punct(PunctKind::Comma) = t.kind
+                                    && let TokenKind::Comma = t.kind
                                 {
                                     self.eat()?;
                                 }
@@ -395,33 +367,30 @@ impl Parser {
                 }
                 Ok(expr)
             }
-            TokenKind::Punct(p) => match p {
-                PunctKind::Star => {
-                    self.eat()?;
-                    let expr = self.parse_primary()?;
-                    Ok(Expr::Deref(Box::new(expr)))
-                }
-                PunctKind::Ampersand => {
-                    self.eat()?;
-                    let expr = self.parse_primary()?;
-                    Ok(Expr::AddressOf(Box::new(expr)))
-                }
-                PunctKind::Minus => {
-                    self.eat()?;
-                    let expr = self.parse_pratt_expr(7)?;
-                    Ok(Expr::Neg(Box::new(expr)))
-                }
-                PunctKind::Plus => {
-                    self.eat()?;
-                    self.parse_pratt_expr(7)
-                }
-                PunctKind::Bang => {
-                    self.eat()?;
-                    let expr = self.parse_pratt_expr(15)?;
-                    Ok(Expr::LogicalNot(Box::new(expr)))
-                }
-                _ => Err(ParserError::UnexpectedToken(token.clone())),
-            },
+            TokenKind::Star => {
+                self.eat()?;
+                let expr = self.parse_primary()?;
+                Ok(Expr::Deref(Box::new(expr)))
+            }
+            TokenKind::Ampersand => {
+                self.eat()?;
+                let expr = self.parse_primary()?;
+                Ok(Expr::AddressOf(Box::new(expr)))
+            }
+            TokenKind::Minus => {
+                self.eat()?;
+                let expr = self.parse_pratt_expr(7)?;
+                Ok(Expr::Neg(Box::new(expr)))
+            }
+            TokenKind::Plus => {
+                self.eat()?;
+                self.parse_pratt_expr(7)
+            }
+            TokenKind::Bang => {
+                self.eat()?;
+                let expr = self.parse_pratt_expr(15)?;
+                Ok(Expr::LogicalNot(Box::new(expr)))
+            }
             _ => Err(ParserError::UnexpectedToken(token.clone())),
         }
     }
@@ -429,46 +398,42 @@ impl Parser {
     /// Parses a statement.
     fn parse_stmt(&mut self) -> Result<Stmt, ParserError> {
         let token = self.current_token()?;
-        if let TokenKind::Punct(p) = token.kind.clone() {
-            if p == PunctKind::LeftBrace {
-                self.eat()?;
-                let mut stmts = Vec::new();
-                while let Ok(t) = self.current_token() {
-                    if let TokenKind::Punct(p) = t.kind
-                        && p == PunctKind::RightBrace
-                    {
-                        self.eat()?;
-                        break;
-                    }
-                    stmts.push(self.parse_stmt()?);
+        if let TokenKind::LeftBrace = token.kind.clone() {
+            self.eat()?;
+            let mut stmts = Vec::new();
+            while let Ok(t) = self.current_token() {
+                if let TokenKind::RightBrace = t.kind {
+                    self.eat()?;
+                    break;
                 }
-                return Ok(Stmt::Block(stmts));
+                stmts.push(self.parse_stmt()?);
             }
+            return Ok(Stmt::Block(stmts));
         } else if let Ok(ty) = self.parse_type() {
             let token = self.current_token()?;
             if let TokenKind::Identifier(id) = token.kind.clone() {
                 self.eat()?;
                 let mut initializer = None;
                 if let Ok(t) = self.current_token()
-                    && let TokenKind::Punct(PunctKind::Equal) = t.kind
+                    && let TokenKind::Equal = t.kind
                 {
                     self.eat()?;
                     initializer = Some(Box::new(self.parse_expr()?));
                 }
-                self.expect_punct(PunctKind::Semicolon)?;
+                self.expect_punct(TokenKind::Semicolon)?;
                 return Ok(Stmt::Declaration(ty, id, initializer));
             }
         } else if let TokenKind::Keyword(k) = token.kind.clone() {
             if k == KeywordKind::Return {
                 self.eat()?;
                 let expr = self.parse_expr()?;
-                self.expect_punct(PunctKind::Semicolon)?;
+                self.expect_punct(TokenKind::Semicolon)?;
                 return Ok(Stmt::Return(expr));
             } else if k == KeywordKind::If {
                 self.eat()?;
-                self.expect_punct(PunctKind::LeftParen)?;
+                self.expect_punct(TokenKind::LeftParen)?;
                 let cond = self.parse_expr()?;
-                self.expect_punct(PunctKind::RightParen)?;
+                self.expect_punct(TokenKind::RightParen)?;
                 let then = self.parse_stmt()?;
                 let mut else_stmt = None;
                 let next_token = self.current_token()?;
@@ -481,38 +446,38 @@ impl Parser {
                 return Ok(Stmt::If(Box::new(cond), Box::new(then), else_stmt));
             } else if k == KeywordKind::While {
                 self.eat()?;
-                self.expect_punct(PunctKind::LeftParen)?;
+                self.expect_punct(TokenKind::LeftParen)?;
                 let cond = self.parse_expr()?;
-                self.expect_punct(PunctKind::RightParen)?;
+                self.expect_punct(TokenKind::RightParen)?;
                 let body = self.parse_stmt()?;
                 return Ok(Stmt::While(Box::new(cond), Box::new(body)));
             } else if k == KeywordKind::For {
                 self.eat()?;
-                self.expect_punct(PunctKind::LeftParen)?;
+                self.expect_punct(TokenKind::LeftParen)?;
                 let init = Some(Box::new(self.parse_expr()?));
-                self.expect_punct(PunctKind::Semicolon)?;
+                self.expect_punct(TokenKind::Semicolon)?;
                 let cond = Some(Box::new(self.parse_expr()?));
-                self.expect_punct(PunctKind::Semicolon)?;
+                self.expect_punct(TokenKind::Semicolon)?;
                 let inc = Some(Box::new(self.parse_expr()?));
-                self.expect_punct(PunctKind::RightParen)?;
+                self.expect_punct(TokenKind::RightParen)?;
                 let body = self.parse_stmt()?;
                 return Ok(Stmt::For(init, cond, inc, Box::new(body)));
             } else if k == KeywordKind::Switch {
                 self.eat()?;
-                self.expect_punct(PunctKind::LeftParen)?;
+                self.expect_punct(TokenKind::LeftParen)?;
                 let expr = self.parse_expr()?;
-                self.expect_punct(PunctKind::RightParen)?;
+                self.expect_punct(TokenKind::RightParen)?;
                 let stmt = self.parse_stmt()?;
                 return Ok(Stmt::Switch(Box::new(expr), Box::new(stmt)));
             } else if k == KeywordKind::Case {
                 self.eat()?;
                 let expr = self.parse_expr()?;
-                self.expect_punct(PunctKind::Colon)?;
+                self.expect_punct(TokenKind::Colon)?;
                 let stmt = self.parse_stmt()?;
                 return Ok(Stmt::Case(Box::new(expr), Box::new(stmt)));
             } else if k == KeywordKind::Default {
                 self.eat()?;
-                self.expect_punct(PunctKind::Colon)?;
+                self.expect_punct(TokenKind::Colon)?;
                 let stmt = self.parse_stmt()?;
                 return Ok(Stmt::Default(Box::new(stmt)));
             } else if k == KeywordKind::Goto {
@@ -520,25 +485,25 @@ impl Parser {
                 let token = self.current_token()?;
                 if let TokenKind::Identifier(id) = token.kind.clone() {
                     self.eat()?;
-                    self.expect_punct(PunctKind::Semicolon)?;
+                    self.expect_punct(TokenKind::Semicolon)?;
                     return Ok(Stmt::Goto(id));
                 }
             } else if k == KeywordKind::Break {
                 self.eat()?;
-                self.expect_punct(PunctKind::Semicolon)?;
+                self.expect_punct(TokenKind::Semicolon)?;
                 return Ok(Stmt::Break);
             } else if k == KeywordKind::Continue {
                 self.eat()?;
-                self.expect_punct(PunctKind::Semicolon)?;
+                self.expect_punct(TokenKind::Semicolon)?;
                 return Ok(Stmt::Continue);
             } else if k == KeywordKind::Do {
                 self.eat()?;
                 let body = self.parse_stmt()?;
                 self.expect_keyword(KeywordKind::While)?;
-                self.expect_punct(PunctKind::LeftParen)?;
+                self.expect_punct(TokenKind::LeftParen)?;
                 let cond = self.parse_expr()?;
-                self.expect_punct(PunctKind::RightParen)?;
-                self.expect_punct(PunctKind::Semicolon)?;
+                self.expect_punct(TokenKind::RightParen)?;
+                self.expect_punct(TokenKind::Semicolon)?;
                 return Ok(Stmt::DoWhile(Box::new(body), Box::new(cond)));
             } else if k == KeywordKind::Typedef {
                 self.eat()?;
@@ -546,14 +511,14 @@ impl Parser {
                 let token = self.current_token()?;
                 if let TokenKind::Identifier(id) = token.kind.clone() {
                     self.eat()?;
-                    self.expect_punct(PunctKind::Semicolon)?;
+                    self.expect_punct(TokenKind::Semicolon)?;
                     return Ok(Stmt::Typedef(ty, id));
                 }
             }
         }
 
         let expr = self.parse_expr()?;
-        self.expect_punct(PunctKind::Semicolon)?;
+        self.expect_punct(TokenKind::Semicolon)?;
         Ok(Stmt::Expr(expr))
     }
 
@@ -561,10 +526,10 @@ impl Parser {
     fn parse_function(&mut self) -> Result<Function, ParserError> {
         let _ty = self.parse_type()?;
         self.expect_identifier("main")?;
-        self.expect_punct(PunctKind::LeftParen)?;
+        self.expect_punct(TokenKind::LeftParen)?;
         let mut params = Vec::new();
         while let Ok(t) = self.current_token() {
-            if let TokenKind::Punct(PunctKind::RightParen) = t.kind {
+            if let TokenKind::RightParen = t.kind {
                 self.eat()?;
                 break;
             }
@@ -575,17 +540,15 @@ impl Parser {
                 params.push(Parameter { ty, name: id });
             }
             if let Ok(t) = self.current_token()
-                && let TokenKind::Punct(PunctKind::Comma) = t.kind
+                && let TokenKind::Comma = t.kind
             {
                 self.eat()?;
             }
         }
-        self.expect_punct(PunctKind::LeftBrace)?;
+        self.expect_punct(TokenKind::LeftBrace)?;
         let mut stmts = Vec::new();
         while let Ok(t) = self.current_token() {
-            if let TokenKind::Punct(p) = t.kind
-                && p == PunctKind::RightBrace
-            {
+            if let TokenKind::RightBrace = t.kind {
                 self.eat()?;
                 break;
             }
@@ -609,11 +572,11 @@ impl Parser {
         if let TokenKind::Identifier(id) = token.kind.clone() {
             self.eat()?;
             let token = self.current_token()?;
-            if let TokenKind::Punct(PunctKind::LeftParen) = token.kind {
+            if let TokenKind::LeftParen = token.kind {
                 self.eat()?;
                 let mut params = Vec::new();
                 while let Ok(t) = self.current_token() {
-                    if let TokenKind::Punct(PunctKind::RightParen) = t.kind {
+                    if let TokenKind::RightParen = t.kind {
                         self.eat()?;
                         break;
                     }
@@ -622,17 +585,17 @@ impl Parser {
                     if let TokenKind::Identifier(id) = token.kind.clone() {
                         self.eat()?;
                         params.push(Parameter { ty, name: id });
-                    } else if let TokenKind::Punct(PunctKind::RightParen) = token.kind {
+                    } else if let TokenKind::RightParen = token.kind {
                         break;
                     }
                     if let Ok(t) = self.current_token()
-                        && let TokenKind::Punct(PunctKind::Comma) = t.kind
+                        && let TokenKind::Comma = t.kind
                     {
                         self.eat()?;
                     }
                 }
                 let token = self.current_token()?;
-                if let TokenKind::Punct(PunctKind::Semicolon) = token.kind {
+                if let TokenKind::Semicolon = token.kind {
                     self.eat()?;
                     return Ok(Stmt::FunctionDeclaration(ty, id, params));
                 } else {
@@ -642,12 +605,12 @@ impl Parser {
             }
             let mut initializer = None;
             if let Ok(t) = self.current_token()
-                && let TokenKind::Punct(PunctKind::Equal) = t.kind
+                && let TokenKind::Equal = t.kind
             {
                 self.eat()?;
                 initializer = Some(Box::new(self.parse_expr()?));
             }
-            self.expect_punct(PunctKind::Semicolon)?;
+            self.expect_punct(TokenKind::Semicolon)?;
             return Ok(Stmt::Declaration(ty, id, initializer));
         }
         Err(ParserError::UnexpectedToken(token))

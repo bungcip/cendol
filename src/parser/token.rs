@@ -38,15 +38,6 @@ pub enum TokenKind {
     String(String),
     /// A character literal.
     Char(String),
-    /// A punctuation mark.
-    Punct(PunctKind),
-    /// The end of the input.
-    Eof,
-}
-
-/// The kind of a punctuation mark.
-#[derive(Debug, PartialEq, Clone)]
-pub enum PunctKind {
     LeftParen,
     RightParen,
     LeftBrace,
@@ -79,6 +70,8 @@ pub enum PunctKind {
     Dot,
     PlusPlus,
     MinusMinus,
+    /// The end of the input.
+    Eof,
 }
 use crate::preprocessor;
 
@@ -90,37 +83,33 @@ impl From<preprocessor::token::Token> for Token {
             preprocessor::token::TokenKind::Number(s) => TokenKind::Number(s),
             preprocessor::token::TokenKind::String(s) => TokenKind::String(s),
             preprocessor::token::TokenKind::Char(s) => TokenKind::Char(s),
-            preprocessor::token::TokenKind::LeftParen => TokenKind::Punct(PunctKind::LeftParen),
-            preprocessor::token::TokenKind::RightParen => TokenKind::Punct(PunctKind::RightParen),
-            preprocessor::token::TokenKind::LeftBrace => TokenKind::Punct(PunctKind::LeftBrace),
-            preprocessor::token::TokenKind::RightBrace => TokenKind::Punct(PunctKind::RightBrace),
-            preprocessor::token::TokenKind::LeftBracket => TokenKind::Punct(PunctKind::LeftBracket),
-            preprocessor::token::TokenKind::RightBracket => {
-                TokenKind::Punct(PunctKind::RightBracket)
-            }
-            preprocessor::token::TokenKind::Semicolon => TokenKind::Punct(PunctKind::Semicolon),
-            preprocessor::token::TokenKind::Colon => TokenKind::Punct(PunctKind::Colon),
-            preprocessor::token::TokenKind::Comma => TokenKind::Punct(PunctKind::Comma),
-            preprocessor::token::TokenKind::Ellipsis => TokenKind::Punct(PunctKind::Ellipsis),
-            preprocessor::token::TokenKind::Dot => TokenKind::Punct(PunctKind::Dot),
-            preprocessor::token::TokenKind::Plus => TokenKind::Punct(PunctKind::Plus),
-            preprocessor::token::TokenKind::Minus => TokenKind::Punct(PunctKind::Minus),
-            preprocessor::token::TokenKind::PlusPlus => TokenKind::Punct(PunctKind::PlusPlus),
-            preprocessor::token::TokenKind::MinusMinus => TokenKind::Punct(PunctKind::MinusMinus),
-            preprocessor::token::TokenKind::Star => TokenKind::Punct(PunctKind::Star),
-            preprocessor::token::TokenKind::Equal => TokenKind::Punct(PunctKind::Equal),
-            preprocessor::token::TokenKind::LessThan => TokenKind::Punct(PunctKind::LessThan),
-            preprocessor::token::TokenKind::GreaterThan => TokenKind::Punct(PunctKind::GreaterThan),
-            preprocessor::token::TokenKind::Pipe => TokenKind::Punct(PunctKind::Pipe),
-            preprocessor::token::TokenKind::PipePipe => TokenKind::Punct(PunctKind::PipePipe),
-            preprocessor::token::TokenKind::Ampersand => TokenKind::Punct(PunctKind::Ampersand),
-            preprocessor::token::TokenKind::AmpersandAmpersand => {
-                TokenKind::Punct(PunctKind::AmpersandAmpersand)
-            }
-            preprocessor::token::TokenKind::Caret => TokenKind::Punct(PunctKind::Caret),
-            preprocessor::token::TokenKind::Tilde => TokenKind::Punct(PunctKind::Tilde),
-            preprocessor::token::TokenKind::Bang => TokenKind::Punct(PunctKind::Bang),
-            preprocessor::token::TokenKind::Question => TokenKind::Punct(PunctKind::Question),
+            preprocessor::token::TokenKind::LeftParen => TokenKind::LeftParen,
+            preprocessor::token::TokenKind::RightParen => TokenKind::RightParen,
+            preprocessor::token::TokenKind::LeftBrace => TokenKind::LeftBrace,
+            preprocessor::token::TokenKind::RightBrace => TokenKind::RightBrace,
+            preprocessor::token::TokenKind::LeftBracket => TokenKind::LeftBracket,
+            preprocessor::token::TokenKind::RightBracket => TokenKind::RightBracket,
+            preprocessor::token::TokenKind::Semicolon => TokenKind::Semicolon,
+            preprocessor::token::TokenKind::Colon => TokenKind::Colon,
+            preprocessor::token::TokenKind::Comma => TokenKind::Comma,
+            preprocessor::token::TokenKind::Ellipsis => TokenKind::Ellipsis,
+            preprocessor::token::TokenKind::Dot => TokenKind::Dot,
+            preprocessor::token::TokenKind::Plus => TokenKind::Plus,
+            preprocessor::token::TokenKind::Minus => TokenKind::Minus,
+            preprocessor::token::TokenKind::PlusPlus => TokenKind::PlusPlus,
+            preprocessor::token::TokenKind::MinusMinus => TokenKind::MinusMinus,
+            preprocessor::token::TokenKind::Star => TokenKind::Star,
+            preprocessor::token::TokenKind::Equal => TokenKind::Equal,
+            preprocessor::token::TokenKind::LessThan => TokenKind::LessThan,
+            preprocessor::token::TokenKind::GreaterThan => TokenKind::GreaterThan,
+            preprocessor::token::TokenKind::Pipe => TokenKind::Pipe,
+            preprocessor::token::TokenKind::PipePipe => TokenKind::PipePipe,
+            preprocessor::token::TokenKind::Ampersand => TokenKind::Ampersand,
+            preprocessor::token::TokenKind::AmpersandAmpersand => TokenKind::AmpersandAmpersand,
+            preprocessor::token::TokenKind::Caret => TokenKind::Caret,
+            preprocessor::token::TokenKind::Tilde => TokenKind::Tilde,
+            preprocessor::token::TokenKind::Bang => TokenKind::Bang,
+            preprocessor::token::TokenKind::Question => TokenKind::Question,
             preprocessor::token::TokenKind::Eof => TokenKind::Eof,
             _ => panic!("cannot convert preprocessor token to parser token"),
         };

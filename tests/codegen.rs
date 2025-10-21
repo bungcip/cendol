@@ -22,7 +22,10 @@ mod config {
 }
 
 /// Compiles C code through the full pipeline (preprocessor -> parser -> codegen)
-fn compile_to_object_bytes(input: &str, filename: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+fn compile_to_object_bytes(
+    input: &str,
+    filename: &str,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let mut preprocessor = Preprocessor::new(FileManager::new());
     let tokens = preprocessor.preprocess(input, filename)?;
     let mut parser = Parser::new(tokens)?;
@@ -36,8 +39,18 @@ fn compile_to_object_bytes(input: &str, filename: &str) -> Result<Vec<u8>, Box<d
 fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Box<dyn std::error::Error>> {
     let object_bytes = compile_to_object_bytes(input, &format!("{}.c", test_name))?;
 
-    let obj_filename = format!("{}{}{}", config::TEST_FILE_PREFIX, test_name, config::OBJ_EXTENSION);
-    let exe_filename = format!("./{}{}{}", config::TEST_FILE_PREFIX, test_name, config::EXE_EXTENSION);
+    let obj_filename = format!(
+        "{}{}{}",
+        config::TEST_FILE_PREFIX,
+        test_name,
+        config::OBJ_EXTENSION
+    );
+    let exe_filename = format!(
+        "./{}{}{}",
+        config::TEST_FILE_PREFIX,
+        test_name,
+        config::EXE_EXTENSION
+    );
 
     // Write object file
     let mut object_file = fs::File::create(&obj_filename)?;
@@ -68,11 +81,24 @@ fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Box<dyn std::err
 }
 
 /// Compiles and runs C code, capturing stdout output
-fn compile_and_run_with_output(input: &str, test_name: &str) -> Result<String, Box<dyn std::error::Error>> {
+fn compile_and_run_with_output(
+    input: &str,
+    test_name: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
     let object_bytes = compile_to_object_bytes(input, &format!("{}.c", test_name))?;
 
-    let obj_filename = format!("{}{}{}", config::TEST_FILE_PREFIX, test_name, config::OBJ_EXTENSION);
-    let exe_filename = format!("./{}{}{}", config::TEST_FILE_PREFIX, test_name, config::EXE_EXTENSION);
+    let obj_filename = format!(
+        "{}{}{}",
+        config::TEST_FILE_PREFIX,
+        test_name,
+        config::OBJ_EXTENSION
+    );
+    let exe_filename = format!(
+        "./{}{}{}",
+        config::TEST_FILE_PREFIX,
+        test_name,
+        config::EXE_EXTENSION
+    );
 
     // Write object file
     let mut object_file = fs::File::create(&obj_filename)?;

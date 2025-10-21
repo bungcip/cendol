@@ -3,17 +3,16 @@
 //! This module tests the parser's ability to correctly parse C source code
 //! and generate the expected Abstract Syntax Tree (AST) structures.
 
+use cendol::file::FileManager;
 use cendol::parser::Parser;
 use cendol::parser::ast::{Expr, Function, Program, Stmt, Type};
-use cendol::parser::token::{Token, TokenKind, KeywordKind, PunctKind};
-use cendol::file::{FileManager, FileId};
+use cendol::parser::token::{KeywordKind, Token, TokenKind};
 use cendol::preprocessor::token::SourceLocation;
 
 /// Test configuration constants
 mod config {
     pub const TEST_FILENAME: &str = "test.c";
 }
-
 
 /// Helper function to parse C code and return the AST
 fn parse_c_code(input: &str) -> Result<Program, Box<dyn std::error::Error>> {
@@ -45,11 +44,7 @@ fn create_increment_program_ast() -> Program {
             name: "main".to_string(),
             params: vec![],
             body: vec![
-                Stmt::Declaration(
-                    Type::Int,
-                    "a".to_string(),
-                    Some(Box::new(Expr::Number(0))),
-                ),
+                Stmt::Declaration(Type::Int, "a".to_string(), Some(Box::new(Expr::Number(0)))),
                 Stmt::Expr(Expr::Increment(Box::new(Expr::Variable("a".to_string())))),
                 Stmt::Return(Expr::Number(0)),
             ],
@@ -77,33 +72,39 @@ fn create_control_flow_program_ast() -> Program {
 fn create_test_tokens() -> Vec<Token> {
     let mut file_manager = FileManager::new();
     let file_id = file_manager.open(config::TEST_FILENAME).unwrap();
-    let loc = SourceLocation { file: file_id, line: 0 };
+    let loc = SourceLocation {
+        file: file_id,
+        line: 0,
+    };
 
     vec![
         Token::new(TokenKind::Keyword(KeywordKind::Int), loc.clone()),
         Token::new(TokenKind::Identifier("main".to_string()), loc.clone()),
-        Token::new(TokenKind::Punct(PunctKind::LeftParen), loc.clone()),
-        Token::new(TokenKind::Punct(PunctKind::RightParen), loc.clone()),
-        Token::new(TokenKind::Punct(PunctKind::LeftBrace), loc.clone()),
+        Token::new(TokenKind::LeftParen, loc.clone()),
+        Token::new(TokenKind::RightParen, loc.clone()),
+        Token::new(TokenKind::LeftBrace, loc.clone()),
         Token::new(TokenKind::Keyword(KeywordKind::If), loc.clone()),
-        Token::new(TokenKind::Punct(PunctKind::LeftParen), loc.clone()),
+        Token::new(TokenKind::LeftParen, loc.clone()),
         Token::new(TokenKind::Number("1".to_string()), loc.clone()),
-        Token::new(TokenKind::Punct(PunctKind::RightParen), loc.clone()),
+        Token::new(TokenKind::RightParen, loc.clone()),
         Token::new(TokenKind::Keyword(KeywordKind::Return), loc.clone()),
         Token::new(TokenKind::Number("1".to_string()), loc.clone()),
-        Token::new(TokenKind::Punct(PunctKind::Semicolon), loc.clone()),
+        Token::new(TokenKind::Semicolon, loc.clone()),
         Token::new(TokenKind::Keyword(KeywordKind::Else), loc.clone()),
         Token::new(TokenKind::Keyword(KeywordKind::Return), loc.clone()),
         Token::new(TokenKind::Number("0".to_string()), loc.clone()),
-        Token::new(TokenKind::Punct(PunctKind::Semicolon), loc.clone()),
-        Token::new(TokenKind::Punct(PunctKind::RightBrace), loc.clone()),
+        Token::new(TokenKind::Semicolon, loc.clone()),
+        Token::new(TokenKind::RightBrace, loc.clone()),
         Token::new(TokenKind::Eof, loc.clone()),
     ]
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_c_code, create_simple_program_ast, create_increment_program_ast, create_control_flow_program_ast, create_test_tokens, Parser};
+    use super::{
+        create_control_flow_program_ast, create_increment_program_ast, create_simple_program_ast,
+        parse_c_code,
+    };
 
     /// Test parsing of simple C programs
     #[test]
@@ -134,5 +135,4 @@ mod tests {
         assert_eq!(ast.function.name, expected.function.name);
         assert_eq!(ast.function.body.len(), expected.function.body.len());
     }
-
 }

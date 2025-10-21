@@ -1,4 +1,4 @@
-use crate::parser::ast::{Expr, Function, Parameter, Program, Stmt, Type};
+use crate::parser::ast::{Expr, ForInit, Function, Parameter, Program, Stmt, Type};
 use crate::parser::error::ParserError;
 use crate::parser::token::{KeywordKind, Token, TokenKind};
 use crate::preprocessor;
@@ -455,7 +455,24 @@ impl Parser {
             } else if k == KeywordKind::For {
                 self.eat()?;
                 self.expect_punct(TokenKind::LeftParen)?;
-                let init = Some(Box::new(self.parse_expr()?));
+                let init = if let Ok(ty) = self.parse_type() {
+                    let token = self.current_token()?;
+                    if let TokenKind::Identifier(id) = token.kind.clone() {
+                        self.eat()?;
+                        let mut initializer = None;
+                        if let Ok(t) = self.current_token()
+                            && let TokenKind::Equal = t.kind
+                        {
+                            self.eat()?;
+                            initializer = Some(Box::new(self.parse_expr()?));
+                        }
+                        Some(ForInit::Declaration(ty, id, initializer))
+                    } else {
+                        return Err(ParserError::UnexpectedToken(token));
+                    }
+                } else {
+                    Some(ForInit::Expr(self.parse_expr()?))
+                };
                 self.expect_punct(TokenKind::Semicolon)?;
                 let cond = Some(Box::new(self.parse_expr()?));
                 self.expect_punct(TokenKind::Semicolon)?;

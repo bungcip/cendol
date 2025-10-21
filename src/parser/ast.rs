@@ -25,6 +25,15 @@ pub enum Type {
     Enum(Vec<String>),
 }
 
+/// Represents the initializer of a `for` loop.
+#[derive(Debug, PartialEq, Clone)]
+pub enum ForInit {
+    /// A variable declaration.
+    Declaration(Type, String, Option<Box<Expr>>),
+    /// An expression.
+    Expr(Expr),
+}
+
 /// Represents a statement in the C language.
 #[derive(Debug, PartialEq, Clone)]
 pub enum Stmt {
@@ -36,7 +45,7 @@ pub enum Stmt {
     While(Box<Expr>, Box<Stmt>),
     /// A `for` loop.
     For(
-        Option<Box<Expr>>,
+        Option<ForInit>,
         Option<Box<Expr>>,
         Option<Box<Expr>>,
         Box<Stmt>,

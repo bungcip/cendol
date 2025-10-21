@@ -1,5 +1,5 @@
 use crate::codegen::error::CodegenError;
-use crate::parser::ast::{Expr, Program, Stmt, Type};
+use crate::parser::ast::{Expr, ForInit, Program, Stmt, Type};
 use cranelift::prelude::*;
 use cranelift_codegen::Context;
 use cranelift_codegen::ir::types;
@@ -12,6 +12,39 @@ use std::collections::HashMap;
 
 pub mod error;
 
+struct SymbolTable<K, V> {
+    scopes: Vec<HashMap<K, V>>,
+}
+
+impl<K: std::hash::Hash + Eq + Clone, V: Clone> SymbolTable<K, V> {
+    fn new() -> Self {
+        Self {
+            scopes: vec![HashMap::new()],
+        }
+    }
+
+    fn enter_scope(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
+    fn exit_scope(&mut self) {
+        self.scopes.pop();
+    }
+
+    fn insert(&mut self, key: K, value: V) {
+        self.scopes.last_mut().unwrap().insert(key, value);
+    }
+
+    fn get(&self, key: &K) -> Option<V> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(value) = scope.get(key) {
+                return Some(value.clone());
+            }
+        }
+        None
+    }
+}
+
 /// A code generator that translates an AST into machine code.
 use cranelift_module::FuncId;
 
@@ -19,7 +52,7 @@ pub struct CodeGen {
     builder_context: FunctionBuilderContext,
     ctx: Context,
     module: ObjectModule,
-    variables: HashMap<String, StackSlot>,
+    variables: SymbolTable<String, StackSlot>,
     functions: HashMap<String, FuncId>,
 }
 
@@ -52,7 +85,7 @@ impl CodeGen {
             builder_context,
             ctx,
             module,
-            variables: HashMap::new(),
+            variables: SymbolTable::new(),
             functions: HashMap::new(),
         }
     }
@@ -127,7 +160,7 @@ pub enum BlockState {
 struct FunctionTranslator<'a, 'b> {
     builder: FunctionBuilder<'a>,
     functions: &'b mut HashMap<String, FuncId>,
-    variables: &'b mut HashMap<String, StackSlot>,
+    variables: &'b mut SymbolTable<String, StackSlot>,
     module: &'b mut ObjectModule,
     loop_context: Vec<(Block, Block)>,
     current_block_state: BlockState,
@@ -190,6 +223,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 false
             }
             Stmt::Block(stmts) => {
+                self.variables.enter_scope();
                 let mut terminated = false;
                 for stmt in stmts {
                     if terminated {
@@ -198,6 +232,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     let term = self.translate_stmt(stmt);
                     terminated = term;
                 }
+                self.variables.exit_scope();
                 terminated
             }
             Stmt::If(cond, then, otherwise) => {
@@ -274,6 +309,68 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.jump_to_block(*header_block);
                 true
             }
+            Stmt::For(init, cond, inc, body) => {
+                let header_block = self.builder.create_block();
+                let body_block = self.builder.create_block();
+                let exit_block = self.builder.create_block();
+
+                self.variables.enter_scope();
+                if let Some(init) = init {
+                    match init {
+                        ForInit::Declaration(ty, name, initializer) => {
+                            let size = self.get_type_size(&ty);
+                            let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+                                StackSlotKind::ExplicitSlot,
+                                size,
+                                0,
+                            ));
+                            self.variables.insert(name, slot);
+                            if let Some(init) = initializer {
+                                let val = self.translate_expr(*init);
+                                self.builder.ins().stack_store(val, slot, 0);
+                            } else {
+                                let val = self.builder.ins().iconst(types::I64, 0);
+                                self.builder.ins().stack_store(val, slot, 0);
+                            };
+                        }
+                        ForInit::Expr(expr) => {
+                            self.translate_expr(expr);
+                        }
+                    }
+                }
+
+                self.jump_to_block(header_block);
+                self.switch_to_block(header_block);
+
+                if let Some(cond) = cond {
+                    let cond_val = self.translate_expr(*cond);
+                    self.builder
+                        .ins()
+                        .brif(cond_val, body_block, &[], exit_block, &[]);
+                } else {
+                    self.jump_to_block(body_block);
+                }
+
+                self.switch_to_block(body_block);
+                self.builder.seal_block(body_block);
+
+                self.loop_context.push((header_block, exit_block));
+                self.translate_stmt(*body);
+                self.loop_context.pop();
+
+                if let Some(inc) = inc {
+                    self.translate_expr(*inc);
+                }
+
+                self.jump_to_block(header_block);
+
+                self.switch_to_block(exit_block);
+                self.builder.seal_block(header_block);
+                self.builder.seal_block(exit_block);
+
+                self.variables.exit_scope();
+                false
+            }
             Stmt::Expr(expr) => {
                 self.translate_expr(expr);
                 false
@@ -302,13 +399,13 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             Expr::Variable(name) => {
                 let slot = self.variables.get(&name).unwrap();
-                self.builder.ins().stack_load(types::I64, *slot, 0)
+                self.builder.ins().stack_load(types::I64, slot, 0)
             }
             Expr::Assign(lhs, rhs) => {
                 let value = self.translate_expr(*rhs);
                 if let Expr::Variable(name) = *lhs {
                     let slot = self.variables.get(&name).unwrap();
-                    self.builder.ins().stack_store(value, *slot, 0);
+                    self.builder.ins().stack_store(value, slot, 0);
                 } else if let Expr::Deref(ptr) = *lhs {
                     let ptr = self.translate_expr(*ptr);
                     self.builder.ins().store(MemFlags::new(), value, ptr, 0);
@@ -390,7 +487,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             Expr::AddressOf(expr) => {
                 if let Expr::Variable(name) = *expr {
                     let slot = self.variables.get(&name).unwrap();
-                    self.builder.ins().stack_addr(types::I64, *slot, 0)
+                    self.builder.ins().stack_addr(types::I64, slot, 0)
                 } else {
                     unimplemented!()
                 }

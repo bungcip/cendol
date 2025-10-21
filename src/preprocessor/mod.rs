@@ -291,6 +291,20 @@ impl Preprocessor {
                             file_state.index = find_next_line(file_state.index, &file_state.tokens);
                         }
                     }
+                    DirectiveKind::Warning => {
+                        if in_true_branch {
+                            let (message, _end) = {
+                                let file_state = self.file_stack.last().unwrap();
+                                parse_warning_message(file_state.index, &file_state.tokens)?
+                            };
+                            eprintln!("{}:{}: warning: {}",
+                                self.file_manager.get_path(token.location.file).unwrap().to_str().unwrap(),
+                                token.location.line,
+                                message);
+                        }
+                        let file_state = self.file_stack.last_mut().unwrap();
+                        file_state.index = find_next_line(file_state.index, &file_state.tokens);
+                    }
                     DirectiveKind::Include => {
                         if in_true_branch {
                             let (filename, include_kind, end) = {
@@ -857,6 +871,23 @@ fn parse_identifier(
 
 /// Parses an error message.
 fn parse_error_message(
+    start_idx: usize,
+    tokens: &[Token],
+) -> Result<(String, usize), PreprocessorError> {
+    let mut message = String::new();
+    let mut i = start_idx;
+    while i < tokens.len() {
+        if matches!(tokens[i].kind, TokenKind::Newline) {
+            return Ok((message, i));
+        }
+        message.push_str(&tokens[i].kind.to_string());
+        i += 1;
+    }
+    Ok((message, i))
+}
+
+/// Parses a warning message.
+fn parse_warning_message(
     start_idx: usize,
     tokens: &[Token],
 ) -> Result<(String, usize), PreprocessorError> {

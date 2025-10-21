@@ -119,6 +119,8 @@ pub enum DirectiveKind {
     Include,
     /// The `#define` directive.
     Define,
+    /// The `#warning` directive.
+    Warning,
 }
 
 /// The kind of an include directive.
@@ -144,6 +146,7 @@ impl fmt::Display for DirectiveKind {
             DirectiveKind::Line => write!(f, "#line"),
             DirectiveKind::Include => write!(f, "#include"),
             DirectiveKind::Define => write!(f, "#define"),
+            DirectiveKind::Warning => write!(f, "#warning"),
         }
     }
 }

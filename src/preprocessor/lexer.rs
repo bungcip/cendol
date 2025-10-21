@@ -372,6 +372,7 @@ impl<'a> Lexer<'a> {
             "line" => DirectiveKind::Line,
             "include" => DirectiveKind::Include,
             "define" => DirectiveKind::Define,
+            "warning" => DirectiveKind::Warning,
             "pragma" => {
                 // Handle pragma by reading the rest of the line as a directive
                 // For now, treat it as an unknown directive to avoid parsing issues
@@ -383,6 +384,7 @@ impl<'a> Lexer<'a> {
             _ => {
                 if self.verbose {
                     eprintln!("[DEBUG] Unknown directive '{}' encountered", directive);
+                    eprintln!("[DEBUG] Available directives: if, else, elif, endif, ifdef, ifndef, undef, error, line, include, define, pragma");
                 }
                 return Err(PreprocessorError::UnknownDirective(directive));
             }

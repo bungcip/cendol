@@ -100,6 +100,28 @@ impl Parser {
                 return self.parse_type();
             }
             let ty = match k {
+                KeywordKind::Long => {
+                    let next_token = self.tokens.get(self.position + 1).cloned();
+                    if let Some(next) = next_token {
+                        if let TokenKind::Keyword(KeywordKind::Long) = next.kind {
+                            self.eat()?;
+                            let next2 = self.tokens.get(self.position + 1).cloned();
+                            if let Some(n2) = next2 {
+                                if let TokenKind::Keyword(KeywordKind::Int) = n2.kind {
+                                    self.eat()?;
+                                }
+                            }
+                            Type::LongLong
+                        } else if let TokenKind::Keyword(KeywordKind::Int) = next.kind {
+                            self.eat()?;
+                            Type::Long
+                        } else {
+                            Type::Long
+                        }
+                    } else {
+                        Type::Long
+                    }
+                }
                 KeywordKind::Int => Type::Int,
                 KeywordKind::Char => Type::Char,
                 KeywordKind::Float => Type::Float,

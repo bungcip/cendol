@@ -118,7 +118,7 @@ impl Preprocessor {
                 "Macro name must not be empty".to_string(),
             ));
         }
-        let value = if parts.len() > 1 { parts[1] } else { "1" };
+        let value = if parts.len() > 1 { parts[1] } else { "" };
         let file_id = self.file_manager.open("<cmdline>")?;
         let mut lexer = Lexer::new(value, file_id);
         let mut tokens = Vec::new();

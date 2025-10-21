@@ -186,6 +186,7 @@ pub fn create_simple_program_ast() -> Program {
     Program {
         globals: vec![],
         functions: vec![Function {
+            return_type: Type::Int,
             name: "main".to_string(),
             params: vec![],
             body: vec![Stmt::Return(Expr::Number(0))],
@@ -198,6 +199,7 @@ pub fn create_increment_program_ast() -> Program {
     Program {
         globals: vec![],
         functions: vec![Function {
+            return_type: Type::Int,
             name: "main".to_string(),
             params: vec![],
             body: vec![
@@ -214,6 +216,7 @@ pub fn create_control_flow_program_ast() -> Program {
     Program {
         globals: vec![],
         functions: vec![Function {
+            return_type: Type::Int,
             name: "main".to_string(),
             params: vec![],
             body: vec![Stmt::If(

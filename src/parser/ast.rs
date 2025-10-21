@@ -153,6 +153,8 @@ pub struct Parameter {
 /// Represents a function definition.
 #[derive(Debug, PartialEq)]
 pub struct Function {
+    /// The return type of the function.
+    pub return_type: Type,
     /// The name of the function.
     pub name: String,
     /// The parameters of the function.

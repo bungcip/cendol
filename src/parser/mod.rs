@@ -678,7 +678,7 @@ impl Parser {
 
     /// Parses a function.
     fn parse_function(&mut self) -> Result<Function, ParserError> {
-        let (_ty, name, params) = self.parse_function_signature()?;
+        let (return_type, name, params) = self.parse_function_signature()?;
         self.expect_punct(TokenKind::LeftBrace)?;
         let mut stmts = Vec::new();
         while let Ok(t) = self.current_token() {
@@ -689,6 +689,7 @@ impl Parser {
             stmts.push(self.parse_stmt()?);
         }
         Ok(Function {
+            return_type,
             name,
             params,
             body: stmts,

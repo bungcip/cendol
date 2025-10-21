@@ -127,15 +127,7 @@ impl CodeGen {
 
         for function in program.functions {
             let mut sig = self.module.make_signature();
-            let mut ret_ty = Type::Int;
-            if !program.globals.is_empty() {
-                if let Stmt::Declaration(ty, _, _) = &program.globals[0] {
-                    if let Type::Struct(_, _) = ty {
-                        ret_ty = ty.clone();
-                    }
-                }
-            }
-            if let Type::Struct(_, _) = ret_ty {
+            if let Type::Struct(_, _) = function.return_type {
                 sig.params.push(AbiParam::new(types::I64));
             }
             for _ in &function.params {
@@ -155,8 +147,10 @@ impl CodeGen {
                     &sig,
                 )
                 .unwrap();
-            self.functions
-                .insert(function.name.clone(), (id, ret_ty));
+            self.functions.insert(
+                function.name.clone(),
+                (id, function.return_type.clone()),
+            );
 
             self.ctx.clear();
             self.ctx.func.signature = sig;
@@ -226,7 +220,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
     /// Returns the alignment of a given type in bytes.
     fn get_type_alignment(&self, ty: &Type) -> u32 {
-        match ty {
+        let real_ty = self.get_real_type(ty).unwrap();
+        match &real_ty {
             Type::Int => 8,
             Type::Char => 1,
             Type::Float => 4,
@@ -243,7 +238,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
     /// Returns the size of a given type in bytes.
     fn get_type_size(&self, ty: &Type) -> u32 {
-        match ty {
+        let real_ty = self.get_real_type(ty).unwrap();
+        match &real_ty {
             Type::Int => 8,
             Type::Char => 1,
             Type::Float => 4,

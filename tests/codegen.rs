@@ -27,9 +27,11 @@ fn compile_to_object_bytes(
     filename: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     use cendol::file::FileManager;
-    use cendol::preprocessor::Preprocessor;
+    use cendol::preprocessor::{Preprocessor, token::{Token, TokenKind}};
     let mut preprocessor = Preprocessor::new(FileManager::new(), false);
     let tokens = preprocessor.preprocess(input, filename)?;
+
+    // Parser now handles filtering internally
     let mut parser = Parser::new(tokens)?;
     let ast = parser.parse()?;
     let codegen = CodeGen::new();
@@ -138,7 +140,21 @@ mod tests {
     #[test]
     fn test_codegen() {
         let input = "int main() { return 0; }";
-        let exit_code = compile_and_run("int main() { return 0; }", "codegen").unwrap();
+        println!("Testing input: {}", input);
+
+        // Let's debug the tokenization process
+        use cendol::file::FileManager;
+        use cendol::preprocessor::{Preprocessor, token::{Token, TokenKind}};
+        let mut preprocessor = Preprocessor::new(FileManager::new(), false);
+        let tokens = preprocessor.preprocess(input, "test.c").unwrap();
+        println!("Preprocessor tokens:");
+        for token in &tokens {
+            println!("  {:?}", token);
+        }
+
+        // Parser now handles filtering internally
+
+        let exit_code = compile_and_run(input, "codegen").unwrap();
         assert_eq!(exit_code, 0);
     }
 

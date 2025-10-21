@@ -1,4 +1,5 @@
-use crate::file::FileManager;
+use crate::common::SourceLocation;
+use crate::file::{FileId, FileManager};
 use crate::preprocessor::error::PreprocessorError;
 use crate::preprocessor::lexer::Lexer;
 use crate::preprocessor::token::{DirectiveKind, IncludeKind, Token, TokenKind};
@@ -94,13 +95,64 @@ impl Preprocessor {
         });
 
         let mut final_tokens = Vec::new();
+        let mut current_line = 1;
+        let mut current_file = filename;
+
+        // Add initial line directive
+        final_tokens.push(Token::new(
+            TokenKind::Directive(DirectiveKind::Line),
+            SourceLocation { file: FileId(0), line: 0 },
+        ));
+        final_tokens.push(Token::new(
+            TokenKind::Number(current_line.to_string()),
+            SourceLocation { file: FileId(0), line: 0 },
+        ));
+        final_tokens.push(Token::new(
+            TokenKind::String(current_file.to_string()),
+            SourceLocation { file: FileId(0), line: 0 },
+        ));
+        final_tokens.push(Token::new(
+            TokenKind::Newline,
+            SourceLocation { file: FileId(0), line: 0 },
+        ));
+
         while !self.file_stack.is_empty() {
             let mut tokens = self.process_directives()?;
             self.expand_all_macros(&mut tokens)?;
+
+            // Update line number tracking for line directives
+            for token in &tokens {
+                if token.location.line != current_line || token.location.file.0 != self.file_stack.len() as u32 {
+                    current_line = token.location.line;
+                    if let Some(path) = self.file_manager.get_path(token.location.file) {
+                        current_file = path.to_str().unwrap();
+                        final_tokens.push(Token::new(
+                            TokenKind::Directive(DirectiveKind::Line),
+                            SourceLocation { file: token.location.file, line: token.location.line },
+                        ));
+                        final_tokens.push(Token::new(
+                            TokenKind::Number(current_line.to_string()),
+                            SourceLocation { file: token.location.file, line: token.location.line },
+                        ));
+                        final_tokens.push(Token::new(
+                            TokenKind::String(current_file.to_string()),
+                            SourceLocation { file: token.location.file, line: token.location.line },
+                        ));
+                        final_tokens.push(Token::new(
+                            TokenKind::Newline,
+                            SourceLocation { file: token.location.file, line: token.location.line },
+                        ));
+                    }
+                }
+            }
+
             final_tokens.extend(tokens);
         }
 
-        final_tokens.retain(|t| !matches!(t.kind, TokenKind::Whitespace(_) | TokenKind::Newline));
+        // Normalize whitespace and remove comments
+        self.normalize_tokens(&mut final_tokens);
+
+        // Don't remove whitespace yet - handle it in the output formatting
         Ok(final_tokens)
     }
 
@@ -429,44 +481,48 @@ impl Preprocessor {
             let mut expanded = false;
             let mut i = 0;
             while i < tokens.len() {
-                if let TokenKind::Identifier(name) = &tokens[i].kind
-                    && !tokens[i].hideset.contains(name)
-                {
-                    if name == "__LINE__" {
-                        let line = tokens[i].location.line;
-                        tokens[i] = Token::new(
-                            TokenKind::Number(line.to_string()),
-                            tokens[i].location.clone(),
-                        );
-                        expanded = true;
-                    } else if name == "__FILE__" {
-                        let file = self
-                            .file_manager
-                            .get_path(tokens[i].location.file)
-                            .unwrap()
-                            .to_str()
-                            .unwrap()
-                            .to_string();
-                        tokens[i] = Token::new(TokenKind::String(file), tokens[i].location.clone());
-                        expanded = true;
-                    } else if name == "__DATE__" {
-                        let date = Local::now().format("%b %-d %Y").to_string();
-                        tokens[i] = Token::new(TokenKind::String(date), tokens[i].location.clone());
-                        expanded = true;
-                    } else if name == "__TIME__" {
-                        let time = Local::now().format("%H:%M:%S").to_string();
-                        tokens[i] = Token::new(TokenKind::String(time), tokens[i].location.clone());
-                        expanded = true;
-                    } else if let Some(macro_def) = self.macros.get(name).cloned() {
-                        let (start, end, expanded_tokens) =
-                            self.expand_single_macro(&tokens[i], &macro_def, i, tokens)?;
-                        tokens.splice(start..end, expanded_tokens);
-                        expanded = true;
-                        break;
+                if let TokenKind::Identifier(name) = &tokens[i].kind {
+                    if !tokens[i].hideset.contains(name) {
+                        if name == "__LINE__" {
+                            let line = tokens[i].location.line;
+                            tokens[i] = Token::new(
+                                TokenKind::Number(line.to_string()),
+                                tokens[i].location.clone(),
+                            );
+                            expanded = true;
+                        } else if name == "__FILE__" {
+                            let file = self
+                                .file_manager
+                                .get_path(tokens[i].location.file)
+                                .unwrap()
+                                .to_str()
+                                .unwrap()
+                                .to_string();
+                            tokens[i] =
+                                Token::new(TokenKind::String(file), tokens[i].location.clone());
+                            expanded = true;
+                        } else if name == "__DATE__" {
+                            let date = Local::now().format("%b %-d %Y").to_string();
+                            tokens[i] =
+                                Token::new(TokenKind::String(date), tokens[i].location.clone());
+                            expanded = true;
+                        } else if name == "__TIME__" {
+                            let time = Local::now().format("%H:%M:%S").to_string();
+                            tokens[i] =
+                                Token::new(TokenKind::String(time), tokens[i].location.clone());
+                            expanded = true;
+                        } else if let Some(macro_def) = self.macros.get(name).cloned() {
+                            let (start, end, expanded_tokens) =
+                                self.expand_single_macro(&tokens[i], &macro_def, i, tokens)?;
+                            tokens.splice(start..end, expanded_tokens);
+                            expanded = true;
+                            break;
+                        }
                     }
                 }
                 i += 1;
             }
+
             if !expanded {
                 break;
             }
@@ -482,19 +538,23 @@ impl Preprocessor {
         index: usize,
         tokens: &[Token],
     ) -> Result<(usize, usize, Vec<Token>), PreprocessorError> {
-        let macro_name = match &token.kind {
-            TokenKind::Identifier(name) => name.clone(),
-            _ => return Ok((index, index + 1, vec![token.clone()])),
+        let macro_name = if let TokenKind::Identifier(name) = &token.kind {
+            name.clone()
+        } else {
+            return Ok((index, index + 1, vec![token.clone()]));
         };
 
         match macro_def {
             Macro::Object { tokens: body } => {
                 let mut new_hideset = token.hideset.clone();
                 new_hideset.insert(macro_name);
+
                 let mut expanded = self.substitute_tokens(body, &[], &[], &new_hideset)?;
+                self.normalize_tokens(&mut expanded);
                 for t in &mut expanded {
                     t.hideset.extend(new_hideset.clone());
                 }
+
                 Ok((index, index + 1, expanded))
             }
             Macro::Function {
@@ -503,12 +563,14 @@ impl Preprocessor {
                 ..
             } => {
                 let mut next_idx = index + 1;
-                while next_idx < tokens.len() && tokens[next_idx].kind.is_whitespace() {
+                while next_idx < tokens.len()
+                    && matches!(tokens[next_idx].kind, TokenKind::Whitespace(_))
+                {
                     next_idx += 1;
                 }
 
                 if next_idx >= tokens.len()
-                    || !matches!(&tokens[next_idx].kind, TokenKind::LeftParen)
+                    || !matches!(tokens[next_idx].kind, TokenKind::LeftParen)
                 {
                     return Ok((index, index + 1, vec![token.clone()]));
                 }
@@ -517,22 +579,18 @@ impl Preprocessor {
 
                 let mut new_hideset = token.hideset.clone();
                 new_hideset.insert(macro_name.clone());
-
-                let mut args_with_hideset = args.clone();
-                for arg in &mut args_with_hideset {
-                    for token in arg {
-                        token.hideset.insert(macro_name.clone());
+                for arg in &args {
+                    for t in arg {
+                        new_hideset.extend(t.hideset.clone());
                     }
                 }
 
-                let mut expanded =
-                    self.substitute_tokens(body, parameters, &args_with_hideset, &new_hideset)?;
-
+                let mut expanded = self.substitute_tokens(body, parameters, &args, &new_hideset)?;
+                self.normalize_tokens(&mut expanded);
                 for t in &mut expanded {
                     t.hideset.extend(new_hideset.clone());
                 }
 
-                self.expand_all_macros(&mut expanded)?;
                 Ok((index, end_idx + 1, expanded))
             }
         }
@@ -595,13 +653,42 @@ impl Preprocessor {
                     && let Some(idx) = parameters.iter().position(|p| p == param_name)
                 {
                     if idx < args.len() {
-                        let arg_tokens = &args[idx];
-                        let stringified = arg_tokens
-                            .iter()
-                            .map(|t| t.kind.to_string())
-                            .collect::<String>();
+                        let mut arg_tokens = args[idx].clone();
+                        // Expand macros in the argument before stringifying
+                        self.expand_all_macros(&mut arg_tokens)?;
+
+                        // Normalize tokens (remove comments, normalize whitespace)
+                        self.normalize_tokens(&mut arg_tokens);
+
+                        // Convert tokens to strings, normalizing whitespace
+                        let mut parts: Vec<String> = Vec::new();
+                        for t in &arg_tokens {
+                            match &t.kind {
+                                TokenKind::Whitespace(_) | TokenKind::Newline => {
+                                    // Collapse consecutive whitespace and newlines
+                                    if let Some(last) = parts.last_mut() {
+                                        if !last.ends_with(' ') {
+                                            *last = format!("{} ", last);
+                                        }
+                                    }
+                                }
+                                TokenKind::Comment(_) => {
+                                    // Skip comments in stringification
+                                    continue;
+                                }
+                                _ => {
+                                    parts.push(t.kind.to_string());
+                                }
+                            }
+                        }
+
+                        let mut stringified = parts.join("");
+                        // Remove trailing whitespace
+                        stringified = stringified.trim_end().to_string();
+                        // Properly quote the stringified content
+                        let quoted = format!("\"{}\"", stringified);
                         result.push(Token::new(
-                            TokenKind::String(stringified),
+                            TokenKind::String(quoted),
                             token.location.clone(),
                         ));
                     }
@@ -737,6 +824,38 @@ impl Preprocessor {
             }
         }
         Ok(tokens)
+    }
+
+    /// Normalizes tokens by handling whitespace and comments appropriately.
+    fn normalize_tokens(&self, tokens: &mut Vec<Token>) {
+        // Simple approach: remove comments and collapse multiple whitespace
+        let mut result: Vec<Token> = Vec::new();
+        let mut last_was_whitespace = false;
+
+        for token in tokens.drain(..) {
+            match &token.kind {
+                TokenKind::Comment(_) => {
+                    // Skip comments
+                    continue;
+                }
+                TokenKind::Whitespace(_) | TokenKind::Newline => {
+                    // Collapse consecutive whitespace - only add a single space
+                    if !last_was_whitespace && !result.is_empty() {
+                        result.push(Token::new(
+                            TokenKind::Whitespace(" ".to_string()),
+                            token.location.clone(),
+                        ));
+                        last_was_whitespace = true;
+                    }
+                }
+                _ => {
+                    result.push(token);
+                    last_was_whitespace = false;
+                }
+            }
+        }
+
+        *tokens = result;
     }
 }
 

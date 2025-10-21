@@ -239,9 +239,38 @@ impl<'a> Lexer<'a> {
                     ';' => TokenKind::Semicolon,
                     ':' => TokenKind::Colon,
                     ',' => TokenKind::Comma,
-                    '=' => TokenKind::Equal,
-                    '<' => TokenKind::LessThan,
-                    '>' => TokenKind::GreaterThan,
+                    '=' => {
+                        if let Some(&'=') = self.input.peek() {
+                            self.input.next();
+                            TokenKind::EqualEqual
+                        } else {
+                            TokenKind::Equal
+                        }
+                    }
+                    '!' => {
+                        if let Some(&'=') = self.input.peek() {
+                            self.input.next();
+                            return Ok(Token::new(TokenKind::BangEqual, self.location()));
+                        } else {
+                            TokenKind::Bang
+                        }
+                    }
+                    '<' => {
+                        if let Some(&'=') = self.input.peek() {
+                            self.input.next();
+                            return Ok(Token::new(TokenKind::LessThanEqual, self.location()));
+                        } else {
+                            TokenKind::LessThan
+                        }
+                    }
+                    '>' => {
+                        if let Some(&'=') = self.input.peek() {
+                            self.input.next();
+                            return Ok(Token::new(TokenKind::GreaterThanEqual, self.location()));
+                        } else {
+                            TokenKind::GreaterThan
+                        }
+                    }
                     _ => return Err(PreprocessorError::UnexpectedChar(c)),
                 };
                 Ok(Token::new(kind, self.location()))

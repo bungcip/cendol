@@ -3,7 +3,7 @@ use cendol::error::{Report, report};
 use cendol::file::FileManager;
 use cendol::logger::Logger;
 use cendol::parser::Parser;
-use cendol::preprocessor::Preprocessor;
+use cendol::preprocessor::{Preprocessor, token::{Token, TokenKind, DirectiveKind}};
 use clap::Parser as ClapParser;
 use std::fs;
 use std::io::Write;
@@ -44,6 +44,47 @@ struct Cli {
     /// Verbose output
     #[arg(short, long)]
     verbose: bool,
+}
+
+/// Formats tokens for output, handling line directives specially.
+fn format_tokens(tokens: &[Token]) -> String {
+    let mut result = String::new();
+    let mut i = 0;
+
+    while i < tokens.len() {
+        let token = &tokens[i];
+
+        // Check if this is a line directive
+        if let TokenKind::Directive(DirectiveKind::Line) = token.kind {
+            // Look ahead for number and string tokens
+            if i + 2 < tokens.len() {
+                if let (TokenKind::Number(line), TokenKind::String(filename)) =
+                    (&tokens[i + 1].kind, &tokens[i + 2].kind) {
+                    result.push_str(&format!("# {} \"{}\"\n", line, filename));
+                    i += 3; // Skip the number and string tokens
+                    continue;
+                }
+            }
+        }
+
+        // Handle whitespace normalization
+        if let TokenKind::Whitespace(_) = token.kind {
+            // Convert any whitespace to a single space
+            result.push(' ');
+        } else if let TokenKind::Newline = token.kind {
+            result.push('\n');
+        } else if let TokenKind::Comment(_) = token.kind {
+            // Skip comments in output
+            i += 1;
+            continue;
+        } else {
+            result.push_str(&token.to_string());
+        }
+
+        i += 1;
+    }
+
+    result
 }
 
 /// The main entry point for the application.
@@ -106,10 +147,12 @@ fn run() -> Result<(), Report> {
             }
         };
         if let Some(output_file) = cli.output_file {
-            fs::write(output_file, format!("{:?}", output))
+            let formatted_output = format_tokens(&output);
+            fs::write(output_file, formatted_output)
                 .expect("Failed to write to output file");
         } else {
-            println!("{:?}", output);
+            let formatted_output = format_tokens(&output);
+            print!("{}", formatted_output);
         }
         return Ok(());
     }

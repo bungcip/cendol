@@ -24,20 +24,43 @@ impl Parser {
     ///
     /// A `Result` containing the new `Parser` instance, or a `ParserError` if tokenization fails.
     pub fn new(tokens: Vec<preprocessor::token::Token>) -> Result<Self, ParserError> {
-        let tokens = tokens
-            .into_iter()
-            .filter(|t| {
-                !matches!(
-                    t.kind,
-                    preprocessor::token::TokenKind::Whitespace(_)
-                        | preprocessor::token::TokenKind::Newline
-                )
-            })
-            .map(|t| t.into())
-            .collect();
+        // Filter out tokens that the parser can't handle
+        let mut filtered_tokens: Vec<Token> = Vec::new();
+        let mut skip_next_tokens = false;
+
+        for token in tokens {
+            match &token.kind {
+                preprocessor::token::TokenKind::Directive(_) => {
+                    skip_next_tokens = true;
+                    continue;
+                }
+                preprocessor::token::TokenKind::Whitespace(_) |
+                preprocessor::token::TokenKind::Newline |
+                preprocessor::token::TokenKind::Comment(_) => {
+                    continue;
+                }
+                // Skip tokens that come from directive expansions
+                _ if !token.expansion_locs.is_empty() => {
+                    continue;
+                }
+                // Skip tokens that immediately follow a directive (like line directive arguments)
+                _ if skip_next_tokens => {
+                    // Check if this is likely a directive argument (Number or String at the beginning)
+                    if (matches!(token.kind,
+                        preprocessor::token::TokenKind::Number(_) |
+                        preprocessor::token::TokenKind::String(_)))
+                        && filtered_tokens.is_empty() {
+                        continue;
+                    }
+                    skip_next_tokens = false;
+                }
+                _ => {}
+            }
+            filtered_tokens.push(token.into());
+        }
 
         let parser = Parser {
-            tokens,
+            tokens: filtered_tokens,
             position: 0,
         };
         Ok(parser)

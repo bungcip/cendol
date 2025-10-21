@@ -53,6 +53,8 @@ pub fn compile_to_object_bytes(
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let mut preprocessor = create_preprocessor();
     let tokens = preprocessor.preprocess(input, filename)?;
+
+    // Parser now handles filtering internally
     let mut parser = Parser::new(tokens)?;
     let ast = parser.parse()?;
     let codegen = CodeGen::new();
@@ -62,7 +64,14 @@ pub fn compile_to_object_bytes(
 
 /// Compiles and runs C code, returning the exit code
 pub fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Box<dyn std::error::Error>> {
-    let object_bytes = compile_to_object_bytes(input, &format!("{}.c", test_name))?;
+    let mut preprocessor = create_preprocessor();
+    let tokens = preprocessor.preprocess(input, &format!("{}.c", test_name))?;
+
+    // Parser now handles filtering internally
+    let mut parser = Parser::new(tokens)?;
+    let ast = parser.parse()?;
+    let codegen = CodeGen::new();
+    let object_bytes = codegen.compile(ast)?;
 
     let obj_filename = format!(
         "{}{}{}",
@@ -110,7 +119,14 @@ pub fn compile_and_run_with_output(
     input: &str,
     test_name: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let object_bytes = compile_to_object_bytes(input, &format!("{}.c", test_name))?;
+    let mut preprocessor = create_preprocessor();
+    let tokens = preprocessor.preprocess(input, &format!("{}.c", test_name))?;
+
+    // Parser now handles filtering internally
+    let mut parser = Parser::new(tokens)?;
+    let ast = parser.parse()?;
+    let codegen = CodeGen::new();
+    let object_bytes = codegen.compile(ast)?;
 
     let obj_filename = format!(
         "{}{}{}",
@@ -352,6 +368,9 @@ pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> 
         Ok(tokens) => tokens,
         Err(err) => return Err(Report::new(err.to_string(), None, None)),
     };
+
+    // Parser now handles filtering internally
+
     let mut parser = match Parser::new(tokens) {
         Ok(parser) => parser,
         Err(err) => {

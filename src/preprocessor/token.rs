@@ -80,8 +80,12 @@ pub enum TokenKind {
     Bang,
     Question,
     Equal,
+    EqualEqual,
+    BangEqual,
     LessThan,
+    LessThanEqual,
     GreaterThan,
+    GreaterThanEqual,
     /// Whitespace.
     Whitespace(String),
     /// A newline character.
@@ -157,6 +161,12 @@ impl fmt::Display for Token {
     }
 }
 
+impl fmt::Display for SourceLocation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "file{}:line{}", self.file.0, self.line)
+    }
+}
+
 impl fmt::Display for TokenKind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -195,12 +205,21 @@ impl fmt::Display for TokenKind {
             TokenKind::Bang => write!(f, "!"),
             TokenKind::Question => write!(f, "?"),
             TokenKind::Equal => write!(f, "="),
+            TokenKind::EqualEqual => write!(f, "=="),
+            TokenKind::BangEqual => write!(f, "!="),
             TokenKind::LessThan => write!(f, "<"),
+            TokenKind::LessThanEqual => write!(f, "<="),
             TokenKind::GreaterThan => write!(f, ">"),
+            TokenKind::GreaterThanEqual => write!(f, ">="),
             TokenKind::Whitespace(s) => write!(f, "{}", s),
             TokenKind::Newline => writeln!(f),
             TokenKind::Comment(s) => write!(f, "{}", s),
-            TokenKind::Directive(d) => write!(f, "{}", d),
+            TokenKind::Directive(d) => {
+                match d {
+                    DirectiveKind::Line => write!(f, "#line"),
+                    _ => write!(f, "{}", d),
+                }
+            }
             TokenKind::Eof => write!(f, ""),
         }
     }

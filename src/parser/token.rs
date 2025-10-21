@@ -101,9 +101,17 @@ impl From<preprocessor::token::Token> for Token {
             preprocessor::token::TokenKind::PlusPlus => TokenKind::PlusPlus,
             preprocessor::token::TokenKind::MinusMinus => TokenKind::MinusMinus,
             preprocessor::token::TokenKind::Star => TokenKind::Star,
+            preprocessor::token::TokenKind::Slash => {
+                // Slash tokens should be filtered out by preprocessor, but handle just in case
+                panic!("Slash token should have been filtered out by preprocessor");
+            }
             preprocessor::token::TokenKind::Equal => TokenKind::Equal,
+            preprocessor::token::TokenKind::EqualEqual => TokenKind::EqualEqual,
+            preprocessor::token::TokenKind::BangEqual => TokenKind::BangEqual,
             preprocessor::token::TokenKind::LessThan => TokenKind::LessThan,
+            preprocessor::token::TokenKind::LessThanEqual => TokenKind::LessThanEqual,
             preprocessor::token::TokenKind::GreaterThan => TokenKind::GreaterThan,
+            preprocessor::token::TokenKind::GreaterThanEqual => TokenKind::GreaterThanEqual,
             preprocessor::token::TokenKind::Pipe => TokenKind::Pipe,
             preprocessor::token::TokenKind::PipePipe => TokenKind::PipePipe,
             preprocessor::token::TokenKind::Ampersand => TokenKind::Ampersand,
@@ -112,8 +120,28 @@ impl From<preprocessor::token::Token> for Token {
             preprocessor::token::TokenKind::Tilde => TokenKind::Tilde,
             preprocessor::token::TokenKind::Bang => TokenKind::Bang,
             preprocessor::token::TokenKind::Question => TokenKind::Question,
+            preprocessor::token::TokenKind::Directive(_) => {
+                // Directive tokens should be filtered out by preprocessor, but handle just in case
+                panic!("Directive token should have been filtered out by preprocessor");
+            }
+            preprocessor::token::TokenKind::Hash => {
+                // Hash tokens should be filtered out by preprocessor, but handle just in case
+                panic!("Hash token should have been filtered out by preprocessor");
+            }
+            preprocessor::token::TokenKind::HashHash => {
+                // HashHash tokens should be filtered out by preprocessor, but handle just in case
+                panic!("HashHash token should have been filtered out by preprocessor");
+            }
+            preprocessor::token::TokenKind::Backslash => {
+                // Backslash tokens should be filtered out by preprocessor, but handle just in case
+                panic!("Backslash token should have been filtered out by preprocessor");
+            }
             preprocessor::token::TokenKind::Eof => TokenKind::Eof,
-            _ => panic!("cannot convert preprocessor token to parser token"),
+            _ => {
+                // Debug: print the token type that's not handled
+                eprintln!("Unhandled preprocessor token type: {:?}", token.kind);
+                panic!("cannot convert preprocessor token to parser token");
+            }
         };
 
         Token {

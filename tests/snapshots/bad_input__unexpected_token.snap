@@ -1,0 +1,10 @@
+---
+source: tests/bad_input.rs
+assertion_line: 7
+expression: err.unwrap_err()
+---
+msg: Unexpected token
+path: unexpected_token.c
+loc:
+  - 1
+  - 1

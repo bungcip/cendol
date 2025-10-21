@@ -22,15 +22,17 @@ pub enum Error {
     Codegen(#[from] CodegenError),
 }
 
+use serde::Serialize;
+
 /// Represents a report of an error.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Report {
     /// The error message.
-    msg: String,
+    pub msg: String,
     /// The path of the file where the error occurred.
-    path: Option<String>,
+    pub path: Option<String>,
     /// The location (line and column) of the error.
-    loc: Option<(usize, usize)>,
+    pub loc: Option<(usize, usize)>,
 }
 
 impl Report {

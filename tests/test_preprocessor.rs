@@ -348,3 +348,10 @@ fn test_define_without_value() {
     assert_eq!(tokens.len(), 1); // Eof
     assert!(matches!(tokens[0].kind, TokenKind::Eof));
 }
+
+#[test]
+fn test_pasting_at_start_of_macro() {
+    let input = "#define A ##B\nA";
+    let result = preprocess_input(input);
+    assert!(result.is_err());
+}

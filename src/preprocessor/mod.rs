@@ -475,7 +475,7 @@ impl Preprocessor {
             Macro::Object { tokens: body } => {
                 let mut new_hideset = token.hideset.clone();
                 new_hideset.insert(macro_name);
-                let mut expanded = body.clone();
+                let mut expanded = self.substitute_tokens(body, &[], &[], &new_hideset)?;
                 for t in &mut expanded {
                     t.hideset.extend(new_hideset.clone());
                 }
@@ -593,8 +593,14 @@ impl Preprocessor {
                     continue;
                 }
             } else if let TokenKind::HashHash = &token.kind {
+                if result.is_empty() {
+                    return Err(PreprocessorError::HashHashAtStartOfMacro);
+                }
                 let mut lhs: Token = result.pop().unwrap();
                 while lhs.kind.is_whitespace() {
+                    if result.is_empty() {
+                        return Err(PreprocessorError::HashHashAtStartOfMacro);
+                    }
                     lhs = result.pop().unwrap();
                 }
 

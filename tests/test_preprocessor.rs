@@ -18,7 +18,9 @@ fn create_preprocessor() -> Preprocessor {
 }
 
 /// Helper function to preprocess input and return tokens
-fn preprocess_input(input: &str) -> Result<Vec<cendol::preprocessor::token::Token>, Box<dyn std::error::Error>> {
+fn preprocess_input(
+    input: &str,
+) -> Result<Vec<cendol::preprocessor::token::Token>, Box<dyn std::error::Error>> {
     let mut preprocessor = create_preprocessor();
     let tokens = preprocessor.preprocess(input, config::TEST_FILENAME)?;
     Ok(tokens)
@@ -26,7 +28,8 @@ fn preprocess_input(input: &str) -> Result<Vec<cendol::preprocessor::token::Toke
 
 /// Helper function to get token string representations
 fn get_token_strings(tokens: &[cendol::preprocessor::token::Token]) -> Vec<String> {
-    tokens.iter()
+    tokens
+        .iter()
         .filter(|t| !t.kind.to_string().is_empty()) // Filter out EOF tokens
         .map(|t| t.kind.to_string())
         .collect()
@@ -39,45 +42,45 @@ fn assert_token_strings(tokens: &[cendol::preprocessor::token::Token], expected:
     assert_eq!(actual, expected);
 }
 
-    /// Test function-like macro expansion
-    #[test]
-    fn test_function_macro() {
-        let input = "#define ADD(a, b) a + b\nADD(1, 2)";
-        let tokens = preprocess_input(input).unwrap();
-        assert_eq!(tokens.len(), 4); // +1 for Eof
-        assert_token_strings(&tokens, &["1", "+", "2"]);
-    }
+/// Test function-like macro expansion
+#[test]
+fn test_function_macro() {
+    let input = "#define ADD(a, b) a + b\nADD(1, 2)";
+    let tokens = preprocess_input(input).unwrap();
+    assert_eq!(tokens.len(), 4); // +1 for Eof
+    assert_token_strings(&tokens, &["1", "+", "2"]);
+}
 
-    /// Test token pasting operator (##)
-    #[test]
-    fn test_token_pasting() {
-        let input = "#define CONCAT(a, b) a ## b\nCONCAT(x, y)";
-        let tokens = preprocess_input(input).unwrap();
-        assert_token_strings(&tokens, &["xy"]);
-    }
+/// Test token pasting operator (##)
+#[test]
+fn test_token_pasting() {
+    let input = "#define CONCAT(a, b) a ## b\nCONCAT(x, y)";
+    let tokens = preprocess_input(input).unwrap();
+    assert_token_strings(&tokens, &["xy"]);
+}
 
-    /// Test stringizing operator (#)
-    #[test]
-    fn test_stringizing() {
-        let input = "#define STRING(a) #a\nSTRING(hello)";
-        let tokens = preprocess_input(input).unwrap();
-        if let TokenKind::String(s) = &tokens[0].kind {
-            assert_eq!(s, "hello");
-        } else {
-            panic!("Expected a string token");
-        }
+/// Test stringizing operator (#)
+#[test]
+fn test_stringizing() {
+    let input = "#define STRING(a) #a\nSTRING(hello)";
+    let tokens = preprocess_input(input).unwrap();
+    if let TokenKind::String(s) = &tokens[0].kind {
+        assert_eq!(s, "hello");
+    } else {
+        panic!("Expected a string token");
     }
+}
 
-    /// Test hideset mechanism to prevent infinite macro recursion
-    #[test]
-    fn test_hideset() {
-        let input = "#define A B\n#define B A\nA";
-        let tokens = preprocess_input(input).unwrap();
-        // This would be an infinite loop without a hideset.
-        // The exact output depends on the expansion limit, but it should not hang.
-        // For now, we'll just assert that it doesn't panic.
-        assert!(tokens.len() > 0);
-    }
+/// Test hideset mechanism to prevent infinite macro recursion
+#[test]
+fn test_hideset() {
+    let input = "#define A B\n#define B A\nA";
+    let tokens = preprocess_input(input).unwrap();
+    // This would be an infinite loop without a hideset.
+    // The exact output depends on the expansion limit, but it should not hang.
+    // For now, we'll just assert that it doesn't panic.
+    assert!(tokens.len() > 0);
+}
 
 #[test]
 fn test_simple_function_macro() {

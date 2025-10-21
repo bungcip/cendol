@@ -4,12 +4,12 @@
 //! test modules to reduce code duplication and improve maintainability.
 
 use cendol::codegen::CodeGen;
-use cendol::file::{FileManager, FileId};
+use cendol::file::{FileId, FileManager};
 use cendol::parser::Parser;
 use cendol::parser::ast::{Expr, Function, Program, Stmt, Type};
 use cendol::preprocessor::Preprocessor;
 use cendol::preprocessor::lexer::Lexer;
-use cendol::preprocessor::token::{KeywordKind, Token, TokenKind, SourceLocation};
+use cendol::preprocessor::token::{KeywordKind, SourceLocation, Token, TokenKind};
 use std::fs;
 use std::io::Write;
 use std::process::Command;
@@ -40,11 +40,17 @@ pub fn create_file_manager() -> FileManager {
 
 /// Creates a source location for testing
 pub fn create_test_location(file_id: u32, line: u32) -> SourceLocation {
-    SourceLocation { file: FileId(file_id), line }
+    SourceLocation {
+        file: FileId(file_id),
+        line,
+    }
 }
 
 /// Compiles C code through the full pipeline (preprocessor -> parser -> codegen)
-pub fn compile_to_object_bytes(input: &str, filename: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+pub fn compile_to_object_bytes(
+    input: &str,
+    filename: &str,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let mut preprocessor = create_preprocessor();
     let tokens = preprocessor.preprocess(input, filename)?;
     let mut parser = Parser::new(tokens)?;
@@ -58,8 +64,18 @@ pub fn compile_to_object_bytes(input: &str, filename: &str) -> Result<Vec<u8>, B
 pub fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Box<dyn std::error::Error>> {
     let object_bytes = compile_to_object_bytes(input, &format!("{}.c", test_name))?;
 
-    let obj_filename = format!("{}{}{}", config::TEST_FILE_PREFIX, test_name, config::OBJ_EXTENSION);
-    let exe_filename = format!("./{}{}{}", config::TEST_FILE_PREFIX, test_name, config::EXE_EXTENSION);
+    let obj_filename = format!(
+        "{}{}{}",
+        config::TEST_FILE_PREFIX,
+        test_name,
+        config::OBJ_EXTENSION
+    );
+    let exe_filename = format!(
+        "./{}{}{}",
+        config::TEST_FILE_PREFIX,
+        test_name,
+        config::EXE_EXTENSION
+    );
 
     // Write object file
     let mut object_file = fs::File::create(&obj_filename)?;
@@ -90,11 +106,24 @@ pub fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Box<dyn std:
 }
 
 /// Compiles and runs C code, capturing stdout output
-pub fn compile_and_run_with_output(input: &str, test_name: &str) -> Result<String, Box<dyn std::error::Error>> {
+pub fn compile_and_run_with_output(
+    input: &str,
+    test_name: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
     let object_bytes = compile_to_object_bytes(input, &format!("{}.c", test_name))?;
 
-    let obj_filename = format!("{}{}{}", config::TEST_FILE_PREFIX, test_name, config::OBJ_EXTENSION);
-    let exe_filename = format!("./{}{}{}", config::TEST_FILE_PREFIX, test_name, config::EXE_EXTENSION);
+    let obj_filename = format!(
+        "{}{}{}",
+        config::TEST_FILE_PREFIX,
+        test_name,
+        config::OBJ_EXTENSION
+    );
+    let exe_filename = format!(
+        "./{}{}{}",
+        config::TEST_FILE_PREFIX,
+        test_name,
+        config::EXE_EXTENSION
+    );
 
     // Write object file
     let mut object_file = fs::File::create(&obj_filename)?;
@@ -172,11 +201,7 @@ pub fn create_increment_program_ast() -> Program {
             name: "main".to_string(),
             params: vec![],
             body: vec![
-                Stmt::Declaration(
-                    Type::Int,
-                    "a".to_string(),
-                    Some(Box::new(Expr::Number(0))),
-                ),
+                Stmt::Declaration(Type::Int, "a".to_string(), Some(Box::new(Expr::Number(0)))),
                 Stmt::Expr(Expr::Increment(Box::new(Expr::Variable("a".to_string())))),
                 Stmt::Return(Expr::Number(0)),
             ],
@@ -239,8 +264,18 @@ pub fn assert_programs_equal(actual: &Program, expected: &Program) {
 
 /// Cleanup helper for generated test files
 pub fn cleanup_test_files(test_name: &str) {
-    let obj_filename = format!("{}{}{}", config::TEST_FILE_PREFIX, test_name, config::OBJ_EXTENSION);
-    let exe_filename = format!("./{}{}{}", config::TEST_FILE_PREFIX, test_name, config::EXE_EXTENSION);
+    let obj_filename = format!(
+        "{}{}{}",
+        config::TEST_FILE_PREFIX,
+        test_name,
+        config::OBJ_EXTENSION
+    );
+    let exe_filename = format!(
+        "./{}{}{}",
+        config::TEST_FILE_PREFIX,
+        test_name,
+        config::EXE_EXTENSION
+    );
 
     let _ = fs::remove_file(&obj_filename);
     let _ = fs::remove_file(&exe_filename);
@@ -267,7 +302,10 @@ mod tests {
         let input = "int main";
         let tokens = collect_tokens_from_lexer(input, "test.c");
         assert_eq!(tokens.len(), 3);
-        assert!(matches!(tokens[0].kind, TokenKind::Keyword(KeywordKind::Int)));
+        assert!(matches!(
+            tokens[0].kind,
+            TokenKind::Keyword(KeywordKind::Int)
+        ));
         assert!(matches!(tokens[1].kind, TokenKind::Whitespace(_)));
         assert!(matches!(tokens[2].kind, TokenKind::Identifier(_)));
     }
@@ -306,7 +344,13 @@ pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> 
     };
     let mut parser = match Parser::new(tokens) {
         Ok(parser) => parser,
-        Err(err) => return Err(Report::new(err.to_string(), Some(filename.to_string()), None)),
+        Err(err) => {
+            return Err(Report::new(
+                err.to_string(),
+                Some(filename.to_string()),
+                None,
+            ));
+        }
     };
     match parser.parse() {
         Ok(_) => Ok(()),

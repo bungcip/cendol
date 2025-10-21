@@ -3,9 +3,9 @@
 //! This module tests the lexer's ability to correctly tokenize C source code
 //! and preprocessor directives.
 
-use cendol::file::{FileManager, FileId};
+use cendol::file::{FileId, FileManager};
 use cendol::preprocessor::lexer::Lexer;
-use cendol::preprocessor::token::{DirectiveKind, TokenKind, SourceLocation};
+use cendol::preprocessor::token::{DirectiveKind, SourceLocation, TokenKind};
 
 /// Test configuration constants
 mod config {
@@ -19,7 +19,10 @@ fn create_file_manager() -> FileManager {
 
 /// Creates a source location for testing
 fn create_test_location(file_id: u32, line: u32) -> SourceLocation {
-    SourceLocation { file: FileId(file_id), line }
+    SourceLocation {
+        file: FileId(file_id),
+        line,
+    }
 }
 
 /// Helper function to collect all tokens from a lexer
@@ -52,7 +55,7 @@ fn assert_tokens_equal(actual: &[TokenKind], expected: &[TokenKind]) {
 
 #[cfg(test)]
 mod tests {
-    use super::{collect_tokens_from_lexer, assert_tokens_equal, TokenKind, DirectiveKind};
+    use super::{DirectiveKind, TokenKind, assert_tokens_equal, collect_tokens_from_lexer};
 
     /// Test basic lexer functionality with preprocessor directives
     #[test]

@@ -320,9 +320,9 @@ fn test_cmdline_define() {
     preprocessor.define("A=1").unwrap();
     preprocessor.define("B").unwrap();
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
-    assert_eq!(tokens.len(), 3); // +1 for Eof
+    assert_eq!(tokens.len(), 2); // "1" and Eof
     assert_eq!(tokens[0].kind.to_string(), "1");
-    assert_eq!(tokens[1].kind.to_string(), "1");
+    assert!(matches!(tokens[1].kind, TokenKind::Eof));
 }
 
 #[test]
@@ -337,4 +337,14 @@ fn test_empty_define_name() {
     let mut preprocessor = Preprocessor::new(FileManager::new());
     let result = preprocessor.define("=1");
     assert!(result.is_err());
+}
+
+#[test]
+fn test_define_without_value() {
+    let input = "A";
+    let mut preprocessor = Preprocessor::new(FileManager::new());
+    preprocessor.define("A").unwrap();
+    let tokens = preprocessor.preprocess(input, "<input>").unwrap();
+    assert_eq!(tokens.len(), 1); // Eof
+    assert!(matches!(tokens[0].kind, TokenKind::Eof));
 }

@@ -214,12 +214,10 @@ impl fmt::Display for TokenKind {
             TokenKind::Whitespace(s) => write!(f, "{}", s),
             TokenKind::Newline => writeln!(f),
             TokenKind::Comment(s) => write!(f, "{}", s),
-            TokenKind::Directive(d) => {
-                match d {
-                    DirectiveKind::Line => write!(f, "#line"),
-                    _ => write!(f, "{}", d),
-                }
-            }
+            TokenKind::Directive(d) => match d {
+                DirectiveKind::Line => write!(f, "#line"),
+                _ => write!(f, "{}", d),
+            },
             TokenKind::Eof => write!(f, ""),
         }
     }

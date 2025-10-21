@@ -34,9 +34,9 @@ impl Parser {
                     skip_next_tokens = true;
                     continue;
                 }
-                preprocessor::token::TokenKind::Whitespace(_) |
-                preprocessor::token::TokenKind::Newline |
-                preprocessor::token::TokenKind::Comment(_) => {
+                preprocessor::token::TokenKind::Whitespace(_)
+                | preprocessor::token::TokenKind::Newline
+                | preprocessor::token::TokenKind::Comment(_) => {
                     continue;
                 }
                 // Skip tokens that come from directive expansions
@@ -46,10 +46,12 @@ impl Parser {
                 // Skip tokens that immediately follow a directive (like line directive arguments)
                 _ if skip_next_tokens => {
                     // Check if this is likely a directive argument (Number or String at the beginning)
-                    if (matches!(token.kind,
-                        preprocessor::token::TokenKind::Number(_) |
-                        preprocessor::token::TokenKind::String(_)))
-                        && filtered_tokens.is_empty() {
+                    if (matches!(
+                        token.kind,
+                        preprocessor::token::TokenKind::Number(_)
+                            | preprocessor::token::TokenKind::String(_)
+                    )) && filtered_tokens.is_empty()
+                    {
                         continue;
                     }
                     skip_next_tokens = false;
@@ -90,18 +92,6 @@ impl Parser {
         Err(ParserError::UnexpectedToken(token.clone()))
     }
 
-    /// Expects a specific identifier.
-    fn expect_identifier(&mut self, value: &str) -> Result<(), ParserError> {
-        let token = self.current_token()?;
-        if let TokenKind::Identifier(id) = token.kind.clone()
-            && id == value
-        {
-            self.eat()?;
-            return Ok(());
-        }
-        Err(ParserError::UnexpectedToken(token.clone()))
-    }
-
     /// Expects a specific keyword.
     fn expect_keyword(&mut self, value: KeywordKind) -> Result<(), ParserError> {
         let token = self.current_token()?;
@@ -127,31 +117,52 @@ impl Parser {
                     let next_token = self.tokens.get(self.position + 1).cloned();
                     if let Some(next) = next_token {
                         if let TokenKind::Keyword(KeywordKind::Long) = next.kind {
-                            self.eat()?;
-                            let next2 = self.tokens.get(self.position + 1).cloned();
+                            self.eat()?; // consume first "long"
+                            self.eat()?; // consume second "long"
+                            let next2 = self.tokens.get(self.position).cloned();
                             if let Some(n2) = next2
                                 && let TokenKind::Keyword(KeywordKind::Int) = n2.kind
                             {
-                                self.eat()?;
+                                self.eat()?; // consume "int"
                             }
                             Type::LongLong
                         } else if let TokenKind::Keyword(KeywordKind::Int) = next.kind {
-                            self.eat()?;
+                            self.eat()?; // consume "long"
+                            self.eat()?; // consume "int"
+                            Type::Long
+                        } else {
+                            self.eat()?; // consume "long"
+                            Type::Long
                         }
-                        Type::LongLong
-                    } else if let Ok(tok) = self.current_token() && matches!(tok.kind, TokenKind::Keyword(KeywordKind::Int)) {
-                        self.eat()?;
-                        Type::Long
                     } else {
+                        self.eat()?;
                         Type::Long
                     }
                 }
-                KeywordKind::Int => { self.eat()?; Type::Int },
-                KeywordKind::Char => { self.eat()?; Type::Char },
-                KeywordKind::Float => { self.eat()?; Type::Float },
-                KeywordKind::Double => { self.eat()?; Type::Double },
-                KeywordKind::Void => { self.eat()?; Type::Void },
-                KeywordKind::Bool => { self.eat()?; Type::Bool },
+                KeywordKind::Int => {
+                    self.eat()?;
+                    Type::Int
+                }
+                KeywordKind::Char => {
+                    self.eat()?;
+                    Type::Char
+                }
+                KeywordKind::Float => {
+                    self.eat()?;
+                    Type::Float
+                }
+                KeywordKind::Double => {
+                    self.eat()?;
+                    Type::Double
+                }
+                KeywordKind::Void => {
+                    self.eat()?;
+                    Type::Void
+                }
+                KeywordKind::Bool => {
+                    self.eat()?;
+                    Type::Bool
+                }
                 KeywordKind::Struct => {
                     self.eat()?;
                     let name = if let Ok(token) = self.current_token() {
@@ -182,12 +193,10 @@ impl Parser {
                                 self.expect_punct(TokenKind::Semicolon)?;
                             }
                             Type::Struct(name, members)
+                        } else if let Some(name) = name {
+                            Type::Struct(Some(name), Vec::new())
                         } else {
-                            if let Some(name) = name {
-                                Type::Struct(Some(name), Vec::new())
-                            } else {
-                                return Err(ParserError::UnexpectedToken(token));
-                            }
+                            return Err(ParserError::UnexpectedToken(token));
                         }
                     } else {
                         return Err(ParserError::UnexpectedEof);
@@ -223,12 +232,10 @@ impl Parser {
                                 self.expect_punct(TokenKind::Semicolon)?;
                             }
                             Type::Union(name, members)
+                        } else if let Some(name) = name {
+                            Type::Union(Some(name), Vec::new())
                         } else {
-                            if let Some(name) = name {
-                                Type::Union(Some(name), Vec::new())
-                            } else {
-                                return Err(ParserError::UnexpectedToken(token));
-                            }
+                            return Err(ParserError::UnexpectedToken(token));
                         }
                     } else {
                         return Err(ParserError::UnexpectedEof);

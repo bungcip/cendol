@@ -112,7 +112,7 @@ impl CodeGen {
                     sig.returns.push(AbiParam::new(types::I64));
                     let id = self
                         .module
-                        .declare_function(&name, Linkage::Import, &sig)
+                        .declare_function(name, Linkage::Import, &sig)
                         .unwrap();
                     self.functions.insert(name.clone(), (id, ty.clone()));
                 }
@@ -147,10 +147,8 @@ impl CodeGen {
                     &sig,
                 )
                 .unwrap();
-            self.functions.insert(
-                function.name.clone(),
-                (id, function.return_type.clone()),
-            );
+            self.functions
+                .insert(function.name.clone(), (id, function.return_type.clone()));
 
             self.ctx.clear();
             self.ctx.func.signature = sig;
@@ -231,7 +229,11 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             Type::Void => 1,
             Type::Bool => 1,
             Type::Pointer(_) => 8,
-            Type::Struct(_, members) => members.iter().map(|m| self.get_type_alignment(&m.ty)).max().unwrap_or(1),
+            Type::Struct(_, members) => members
+                .iter()
+                .map(|m| self.get_type_alignment(&m.ty))
+                .max()
+                .unwrap_or(1),
             _ => unimplemented!(),
         }
     }
@@ -270,7 +272,9 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             Stmt::Return(expr) => {
                 let (value, ty) = self.translate_expr(expr)?;
                 if let Type::Struct(_, _) = ty {
-                    let dest = self.builder.block_params(self.builder.current_block().unwrap())[0];
+                    let dest = self
+                        .builder
+                        .block_params(self.builder.current_block().unwrap())[0];
                     let src = value;
                     let size = self.get_type_size(&ty);
                     self.builder.emit_small_memory_copy(
@@ -316,7 +320,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                                     let mut found = false;
                                     for (i, member) in members.iter().enumerate() {
                                         let member_alignment = self.get_type_alignment(&member.ty);
-                                        offset = (offset + member_alignment - 1) & !(member_alignment - 1);
+                                        offset = (offset + member_alignment - 1)
+                                            & !(member_alignment - 1);
                                         if member.name == name {
                                             member_index = i;
                                             found = true;
@@ -334,10 +339,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                                         return Err(CodegenError::InitializerTooLong);
                                     }
                                     let mut offset = 0;
-                                    for j in 0..member_index {
-                                        let member = &members[j];
+                                    for member in members.iter().take(member_index) {
                                         let member_alignment = self.get_type_alignment(&member.ty);
-                                        offset = (offset + member_alignment - 1) & !(member_alignment - 1);
+                                        offset = (offset + member_alignment - 1)
+                                            & !(member_alignment - 1);
                                         offset += self.get_type_size(&member.ty);
                                     }
                                     let (val, _) = self.translate_expr(initializer)?;
@@ -517,10 +522,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
     /// Resolves the real type of a struct.
     fn get_real_type(&self, ty: &Type) -> Result<Type, CodegenError> {
-        if let Type::Struct(Some(name), members) = ty {
-            if members.is_empty() {
-                return Ok(self.structs.get(name).unwrap().clone());
-            }
+        if let Type::Struct(Some(name), members) = ty
+            && members.is_empty()
+        {
+            return Ok(self.structs.get(name).unwrap().clone());
         }
         Ok(ty.clone())
     }
@@ -541,7 +546,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 data_desc.define(data.into_boxed_slice());
                 self.module.define_data(id, &data_desc).unwrap();
                 let local_id = self.module.declare_data_in_func(id, self.builder.func);
-                Ok((self.builder.ins().global_value(types::I64, local_id), Type::Pointer(Box::new(Type::Char))))
+                Ok((
+                    self.builder.ins().global_value(types::I64, local_id),
+                    Type::Pointer(Box::new(Type::Char)),
+                ))
             }
             Expr::Variable(name) => {
                 let (slot, ty) = self.variables.get(&name).unwrap();
@@ -651,7 +659,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             Expr::Deref(expr) => {
                 let (ptr, ty) = self.translate_expr(*expr)?;
                 if let Type::Pointer(base_ty) = ty {
-                    Ok((self.builder.ins().load(types::I64, MemFlags::new(), ptr, 0), *base_ty))
+                    Ok((
+                        self.builder.ins().load(types::I64, MemFlags::new(), ptr, 0),
+                        *base_ty,
+                    ))
                 } else {
                     unimplemented!()
                 }
@@ -681,7 +692,15 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                             }
                             offset += self.get_type_size(&m.ty);
                         }
-                        Ok((self.builder.ins().load(types::I64, MemFlags::new(), ptr, offset as i32), member_ty.unwrap()))
+                        Ok((
+                            self.builder.ins().load(
+                                types::I64,
+                                MemFlags::new(),
+                                ptr,
+                                offset as i32,
+                            ),
+                            member_ty.unwrap(),
+                        ))
                     } else {
                         Err(CodegenError::NotAStruct)
                     }
@@ -764,7 +783,12 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         }
                         offset += self.get_type_size(&m.ty);
                     }
-                    Ok((self.builder.ins().load(types::I64, MemFlags::new(), ptr, offset as i32), member_ty.unwrap()))
+                    Ok((
+                        self.builder
+                            .ins()
+                            .load(types::I64, MemFlags::new(), ptr, offset as i32),
+                        member_ty.unwrap(),
+                    ))
                 } else {
                     Err(CodegenError::NotAStruct)
                 }

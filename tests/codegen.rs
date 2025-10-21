@@ -27,7 +27,10 @@ fn compile_to_object_bytes(
     filename: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     use cendol::file::FileManager;
-    use cendol::preprocessor::{Preprocessor, token::{Token, TokenKind}};
+    use cendol::preprocessor::{
+        Preprocessor,
+        token::{Token, TokenKind},
+    };
     let mut preprocessor = Preprocessor::new(FileManager::new(), false);
     let tokens = preprocessor.preprocess(input, filename)?;
 
@@ -144,7 +147,10 @@ mod tests {
 
         // Let's debug the tokenization process
         use cendol::file::FileManager;
-        use cendol::preprocessor::{Preprocessor, token::{Token, TokenKind}};
+        use cendol::preprocessor::{
+            Preprocessor,
+            token::{Token, TokenKind},
+        };
         let mut preprocessor = Preprocessor::new(FileManager::new(), false);
         let tokens = preprocessor.preprocess(input, "test.c").unwrap();
         println!("Preprocessor tokens:");

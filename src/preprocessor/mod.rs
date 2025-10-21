@@ -101,19 +101,31 @@ impl Preprocessor {
         // Add initial line directive
         final_tokens.push(Token::new(
             TokenKind::Directive(DirectiveKind::Line),
-            SourceLocation { file: FileId(0), line: 0 },
+            SourceLocation {
+                file: FileId(0),
+                line: 0,
+            },
         ));
         final_tokens.push(Token::new(
             TokenKind::Number(current_line.to_string()),
-            SourceLocation { file: FileId(0), line: 0 },
+            SourceLocation {
+                file: FileId(0),
+                line: 0,
+            },
         ));
         final_tokens.push(Token::new(
             TokenKind::String(current_file.to_string()),
-            SourceLocation { file: FileId(0), line: 0 },
+            SourceLocation {
+                file: FileId(0),
+                line: 0,
+            },
         ));
         final_tokens.push(Token::new(
             TokenKind::Newline,
-            SourceLocation { file: FileId(0), line: 0 },
+            SourceLocation {
+                file: FileId(0),
+                line: 0,
+            },
         ));
 
         while !self.file_stack.is_empty() {
@@ -122,25 +134,39 @@ impl Preprocessor {
 
             // Update line number tracking for line directives
             for token in &tokens {
-                if token.location.line != current_line || token.location.file.0 != self.file_stack.len() as u32 {
+                if token.location.line != current_line
+                    || token.location.file.0 != self.file_stack.len() as u32
+                {
                     current_line = token.location.line;
                     if let Some(path) = self.file_manager.get_path(token.location.file) {
                         current_file = path.to_str().unwrap();
                         final_tokens.push(Token::new(
                             TokenKind::Directive(DirectiveKind::Line),
-                            SourceLocation { file: token.location.file, line: token.location.line },
+                            SourceLocation {
+                                file: token.location.file,
+                                line: token.location.line,
+                            },
                         ));
                         final_tokens.push(Token::new(
                             TokenKind::Number(current_line.to_string()),
-                            SourceLocation { file: token.location.file, line: token.location.line },
+                            SourceLocation {
+                                file: token.location.file,
+                                line: token.location.line,
+                            },
                         ));
                         final_tokens.push(Token::new(
                             TokenKind::String(current_file.to_string()),
-                            SourceLocation { file: token.location.file, line: token.location.line },
+                            SourceLocation {
+                                file: token.location.file,
+                                line: token.location.line,
+                            },
                         ));
                         final_tokens.push(Token::new(
                             TokenKind::Newline,
-                            SourceLocation { file: token.location.file, line: token.location.line },
+                            SourceLocation {
+                                file: token.location.file,
+                                line: token.location.line,
+                            },
                         ));
                     }
                 }
@@ -349,10 +375,16 @@ impl Preprocessor {
                                 let file_state = self.file_stack.last().unwrap();
                                 parse_warning_message(file_state.index, &file_state.tokens)?
                             };
-                            eprintln!("{}:{}: warning: {}",
-                                self.file_manager.get_path(token.location.file).unwrap().to_str().unwrap(),
+                            eprintln!(
+                                "{}:{}: warning: {}",
+                                self.file_manager
+                                    .get_path(token.location.file)
+                                    .unwrap()
+                                    .to_str()
+                                    .unwrap(),
                                 token.location.line,
-                                message);
+                                message
+                            );
                         }
                         let file_state = self.file_stack.last_mut().unwrap();
                         file_state.index = find_next_line(file_state.index, &file_state.tokens);
@@ -481,43 +513,40 @@ impl Preprocessor {
             let mut expanded = false;
             let mut i = 0;
             while i < tokens.len() {
-                if let TokenKind::Identifier(name) = &tokens[i].kind {
-                    if !tokens[i].hideset.contains(name) {
-                        if name == "__LINE__" {
-                            let line = tokens[i].location.line;
-                            tokens[i] = Token::new(
-                                TokenKind::Number(line.to_string()),
-                                tokens[i].location.clone(),
-                            );
-                            expanded = true;
-                        } else if name == "__FILE__" {
-                            let file = self
-                                .file_manager
-                                .get_path(tokens[i].location.file)
-                                .unwrap()
-                                .to_str()
-                                .unwrap()
-                                .to_string();
-                            tokens[i] =
-                                Token::new(TokenKind::String(file), tokens[i].location.clone());
-                            expanded = true;
-                        } else if name == "__DATE__" {
-                            let date = Local::now().format("%b %-d %Y").to_string();
-                            tokens[i] =
-                                Token::new(TokenKind::String(date), tokens[i].location.clone());
-                            expanded = true;
-                        } else if name == "__TIME__" {
-                            let time = Local::now().format("%H:%M:%S").to_string();
-                            tokens[i] =
-                                Token::new(TokenKind::String(time), tokens[i].location.clone());
-                            expanded = true;
-                        } else if let Some(macro_def) = self.macros.get(name).cloned() {
-                            let (start, end, expanded_tokens) =
-                                self.expand_single_macro(&tokens[i], &macro_def, i, tokens)?;
-                            tokens.splice(start..end, expanded_tokens);
-                            expanded = true;
-                            break;
-                        }
+                if let TokenKind::Identifier(name) = &tokens[i].kind
+                    && !tokens[i].hideset.contains(name)
+                {
+                    if name == "__LINE__" {
+                        let line = tokens[i].location.line;
+                        tokens[i] = Token::new(
+                            TokenKind::Number(line.to_string()),
+                            tokens[i].location.clone(),
+                        );
+                        expanded = true;
+                    } else if name == "__FILE__" {
+                        let file = self
+                            .file_manager
+                            .get_path(tokens[i].location.file)
+                            .unwrap()
+                            .to_str()
+                            .unwrap()
+                            .to_string();
+                        tokens[i] = Token::new(TokenKind::String(file), tokens[i].location.clone());
+                        expanded = true;
+                    } else if name == "__DATE__" {
+                        let date = Local::now().format("%b %-d %Y").to_string();
+                        tokens[i] = Token::new(TokenKind::String(date), tokens[i].location.clone());
+                        expanded = true;
+                    } else if name == "__TIME__" {
+                        let time = Local::now().format("%H:%M:%S").to_string();
+                        tokens[i] = Token::new(TokenKind::String(time), tokens[i].location.clone());
+                        expanded = true;
+                    } else if let Some(macro_def) = self.macros.get(name).cloned() {
+                        let (start, end, expanded_tokens) =
+                            self.expand_single_macro(&tokens[i], &macro_def, i, tokens)?;
+                        tokens.splice(start..end, expanded_tokens);
+                        expanded = true;
+                        break;
                     }
                 }
                 i += 1;
@@ -666,10 +695,10 @@ impl Preprocessor {
                             match &t.kind {
                                 TokenKind::Whitespace(_) | TokenKind::Newline => {
                                     // Collapse consecutive whitespace and newlines
-                                    if let Some(last) = parts.last_mut() {
-                                        if !last.ends_with(' ') {
-                                            *last = format!("{} ", last);
-                                        }
+                                    if let Some(last) = parts.last_mut()
+                                        && !last.ends_with(' ')
+                                    {
+                                        *last = format!("{} ", last);
                                     }
                                 }
                                 TokenKind::Comment(_) => {
@@ -827,6 +856,7 @@ impl Preprocessor {
     }
 
     /// Normalizes tokens by handling whitespace and comments appropriately.
+    /// If preserve_newlines is true, Newline tokens are preserved instead of being converted to spaces.
     fn normalize_tokens(&self, tokens: &mut Vec<Token>) {
         // Simple approach: remove comments and collapse multiple whitespace
         let mut result: Vec<Token> = Vec::new();
@@ -838,7 +868,7 @@ impl Preprocessor {
                     // Skip comments
                     continue;
                 }
-                TokenKind::Whitespace(_) | TokenKind::Newline => {
+                TokenKind::Whitespace(_) => {
                     // Collapse consecutive whitespace - only add a single space
                     if !last_was_whitespace && !result.is_empty() {
                         result.push(Token::new(
@@ -847,6 +877,11 @@ impl Preprocessor {
                         ));
                         last_was_whitespace = true;
                     }
+                }
+                TokenKind::Newline => {
+                    // Preserve newlines - add as newline token
+                    result.push(Token::new(TokenKind::Newline, token.location.clone()));
+                    last_was_whitespace = false;
                 }
                 _ => {
                     result.push(token);

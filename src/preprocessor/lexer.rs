@@ -316,10 +316,7 @@ impl<'a> Lexer<'a> {
             } else if c.is_whitespace() {
                 // Skip whitespace after # and continue reading directive
                 if self.verbose {
-                    eprintln!(
-                        "[DEBUG] Skipping whitespace after # on line {}",
-                        self.line
-                    );
+                    eprintln!("[DEBUG] Skipping whitespace after # on line {}", self.line);
                 }
                 // Skip whitespace characters
                 while let Some(&c) = self.input.peek() {
@@ -343,11 +340,17 @@ impl<'a> Lexer<'a> {
                             if c.is_alphabetic() || c.is_ascii_digit() || c == '_' {
                                 directive.push(self.input.next().unwrap());
                                 if self.verbose {
-                                    eprintln!("[DEBUG] Added '{}' to directive, now: '{}'", c, directive);
+                                    eprintln!(
+                                        "[DEBUG] Added '{}' to directive, now: '{}'",
+                                        c, directive
+                                    );
                                 }
                             } else {
                                 if self.verbose {
-                                    eprintln!("[DEBUG] Stopping directive at non-alphabetic '{}'", c);
+                                    eprintln!(
+                                        "[DEBUG] Stopping directive at non-alphabetic '{}'",
+                                        c
+                                    );
                                 }
                                 break;
                             }
@@ -413,7 +416,9 @@ impl<'a> Lexer<'a> {
             _ => {
                 if self.verbose {
                     eprintln!("[DEBUG] Unknown directive '{}' encountered", directive);
-                    eprintln!("[DEBUG] Available directives: if, else, elif, endif, ifdef, ifndef, undef, error, line, include, define, pragma");
+                    eprintln!(
+                        "[DEBUG] Available directives: if, else, elif, endif, ifdef, ifndef, undef, error, line, include, define, pragma"
+                    );
                 }
                 return Err(PreprocessorError::UnknownDirective(directive));
             }

@@ -121,11 +121,11 @@ fn create_test_tokens() -> Vec<Token> {
 
 #[cfg(test)]
 mod tests {
-    use cendol::parser::ast::{Expr, Stmt, Type};
     use super::{
         create_bool_program_ast, create_control_flow_program_ast, create_increment_program_ast,
         create_simple_program_ast, parse_c_code,
     };
+    use cendol::parser::ast::{Expr, Stmt, Type};
 
     /// Test parsing of simple C programs
     #[test]
@@ -179,20 +179,24 @@ mod tests {
     /// Test parsing of designated initializers for structs
     #[test]
     fn test_designated_initializer() {
-        let input = "int main() { struct { int x; int y; } point = { .y = 10, .x = 20 }; return 0; }";
+        let input =
+            "int main() { struct { int x; int y; } point = { .y = 10, .x = 20 }; return 0; }";
         let ast = parse_c_code(input).unwrap();
         let expected_body = vec![
             Stmt::Declaration(
-                Type::Struct(None, vec![
-                    cendol::parser::ast::Parameter {
-                        ty: Type::Int,
-                        name: "x".to_string(),
-                    },
-                    cendol::parser::ast::Parameter {
-                        ty: Type::Int,
-                        name: "y".to_string(),
-                    },
-                ]),
+                Type::Struct(
+                    None,
+                    vec![
+                        cendol::parser::ast::Parameter {
+                            ty: Type::Int,
+                            name: "x".to_string(),
+                        },
+                        cendol::parser::ast::Parameter {
+                            ty: Type::Int,
+                            name: "y".to_string(),
+                        },
+                    ],
+                ),
                 "point".to_string(),
                 Some(Box::new(Expr::StructInitializer(vec![
                     Expr::DesignatedInitializer("y".to_string(), Box::new(Expr::Number(10))),

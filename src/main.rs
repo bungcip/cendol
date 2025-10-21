@@ -3,7 +3,10 @@ use cendol::error::{Report, report};
 use cendol::file::FileManager;
 use cendol::logger::Logger;
 use cendol::parser::Parser;
-use cendol::preprocessor::{Preprocessor, token::{Token, TokenKind, DirectiveKind}};
+use cendol::preprocessor::{
+    Preprocessor,
+    token::{DirectiveKind, Token, TokenKind},
+};
 use clap::Parser as ClapParser;
 use std::fs;
 use std::io::Write;
@@ -57,13 +60,13 @@ fn format_tokens(tokens: &[Token]) -> String {
         // Check if this is a line directive
         if let TokenKind::Directive(DirectiveKind::Line) = token.kind {
             // Look ahead for number and string tokens
-            if i + 2 < tokens.len() {
-                if let (TokenKind::Number(line), TokenKind::String(filename)) =
-                    (&tokens[i + 1].kind, &tokens[i + 2].kind) {
-                    result.push_str(&format!("# {} \"{}\"\n", line, filename));
-                    i += 3; // Skip the number and string tokens
-                    continue;
-                }
+            if i + 2 < tokens.len()
+                && let (TokenKind::Number(line), TokenKind::String(filename)) =
+                    (&tokens[i + 1].kind, &tokens[i + 2].kind)
+            {
+                result.push_str(&format!("# {} \"{}\"\n", line, filename));
+                i += 3; // Skip the number and string tokens
+                continue;
             }
         }
 
@@ -146,10 +149,10 @@ fn run() -> Result<(), Report> {
                 return Err(report);
             }
         };
+
         if let Some(output_file) = cli.output_file {
             let formatted_output = format_tokens(&output);
-            fs::write(output_file, formatted_output)
-                .expect("Failed to write to output file");
+            fs::write(output_file, formatted_output).expect("Failed to write to output file");
         } else {
             let formatted_output = format_tokens(&output);
             print!("{}", formatted_output);

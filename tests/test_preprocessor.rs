@@ -25,39 +25,6 @@ fn preprocess_input(input: &str) -> Result<Vec<Token>, Box<dyn std::error::Error
     Ok(tokens)
 }
 
-    /// Helper function to get clean token string representations (without line directives)
-    fn get_clean_token_strings(tokens: &[Token]) -> Vec<String> {
-        tokens
-            .iter()
-            .filter(|t| !t.kind.to_string().is_empty()) // Filter out EOF tokens
-            .filter(|t| !t.kind.to_string().starts_with("#line")) // Filter out line directives
-            .map(|t| t.kind.to_string())
-            .collect()
-    }
-
-    /// Helper function to get clean result string (without line directives)
-    fn get_clean_result_string(tokens: &[Token]) -> String {
-        let filtered_tokens: Vec<String> = get_clean_token_strings(tokens);
-        filtered_tokens.join("")
-    }
-
-    /// Helper function to get token string representations
-    fn get_token_strings(tokens: &[Token]) -> Vec<String> {
-        tokens
-            .iter()
-            .filter(|t| !t.kind.to_string().is_empty()) // Filter out EOF tokens
-            .filter(|t| !t.kind.to_string().starts_with("#line")) // Filter out line directives
-            .map(|t| t.kind.to_string())
-            .collect()
-    }
-
-    /// Asserts that token strings match expected values
-    fn assert_token_strings(tokens: &[Token], expected: &[&str]) {
-        let actual: Vec<String> = get_token_strings(tokens);
-        let expected: Vec<String> = expected.iter().map(|s| s.to_string()).collect();
-        assert_eq!(actual, expected);
-    }
-
 fn get_clean_token(tokens: Vec<Token>) -> Vec<Token> {
     // Filter out tokens that the parser can't handle
     tokens
@@ -74,9 +41,6 @@ fn get_clean_token(tokens: Vec<Token>) -> Vec<Token> {
         })
         .collect()
 }
-
-
-
 
 /// Test function-like macro expansion
 #[test]

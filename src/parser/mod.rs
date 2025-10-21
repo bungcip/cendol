@@ -223,7 +223,6 @@ impl Parser {
             TokenKind::Punct(PunctKind::Star) | TokenKind::Punct(PunctKind::Slash) => {
                 Some((13, 14))
             }
-            TokenKind::Punct(PunctKind::Question) => Some((1, 2)), // Ternary operator
             _ => None,
         }
     }

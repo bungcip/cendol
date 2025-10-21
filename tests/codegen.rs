@@ -127,4 +127,106 @@ mod tests {
         let output = compile_and_run_with_output(input, "external_function_call").unwrap();
         assert_eq!(output.trim(), "hello world");
     }
+
+    /// Test code generation with ternary conditional expressions
+    #[test]
+    fn test_ternary_true_condition() {
+        let input = r#"
+        int main() {
+            return 1 ? 42 : 24;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "ternary_true").unwrap();
+        assert_eq!(exit_code, 42);
+    }
+
+    /// Test code generation with ternary conditional expressions (false condition)
+    #[test]
+    fn test_ternary_false_condition() {
+        let input = r#"
+        int main() {
+            return 0 ? 42 : 24;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "ternary_false").unwrap();
+        assert_eq!(exit_code, 24);
+    }
+
+    /// Test code generation with ternary in variable assignment
+    #[test]
+    fn test_ternary_assignment() {
+        let input = r#"
+        int main() {
+            int result;
+            result = 1 ? 100 : 200;
+            return result;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "ternary_assignment").unwrap();
+        assert_eq!(exit_code, 100);
+    }
+
+    /// Test code generation with ternary using variable condition
+    #[test]
+    fn test_ternary_variable_condition() {
+        let input = r#"
+        int main() {
+            int condition = 1;
+            return condition ? 77 : 88;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "ternary_var_condition").unwrap();
+        assert_eq!(exit_code, 77);
+    }
+
+    /// Test code generation with nested ternary expressions
+    #[test]
+    fn test_nested_ternary() {
+        let input = r#"
+        int main() {
+            return 1 ? 0 ? 10 : 20 : 30;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "nested_ternary").unwrap();
+        assert_eq!(exit_code, 20);
+    }
+
+    /// Test code generation with ternary in arithmetic expression
+    #[test]
+    fn test_ternary_arithmetic() {
+        let input = r#"
+        int main() {
+            int x = 5;
+            return x > 0 ? x + 10 : x - 10;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "ternary_arithmetic").unwrap();
+        assert_eq!(exit_code, 15);
+    }
+
+    /// Test code generation with ternary in function argument
+    #[test]
+    fn test_ternary_function_arg() {
+        let input = r#"
+        int printf(const char *s, int n);
+        int main() {
+            printf("%d\n", 1 ? 123 : 456);
+            return 0;
+        }
+        "#;
+        let output = compile_and_run_with_output(input, "ternary_function_arg").unwrap();
+        assert_eq!(output, "123\\n");
+    }
+
+    /// Test code generation with ternary expressions (basic functionality)
+    #[test]
+    fn test_ternary_basic() {
+        let input = r#"
+        int main() {
+            return 1 ? 42 : 24;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "ternary_basic").unwrap();
+        assert_eq!(exit_code, 42);
+    }
 }

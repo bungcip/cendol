@@ -435,7 +435,6 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.builder.append_block_param(merge_block, types::I64);
 
                 self.switch_to_block(merge_block);
-                self.builder.seal_block(merge_block);
 
                 let phi_value = self.builder.block_params(merge_block)[0];
                 phi_value

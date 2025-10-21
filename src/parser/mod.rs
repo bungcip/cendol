@@ -99,72 +99,109 @@ impl Parser {
                 self.eat()?;
                 return self.parse_type();
             }
-            let ty = match k {
+            let mut ty = match k {
                 KeywordKind::Long => {
-                    let next_token = self.tokens.get(self.position + 1).cloned();
-                    if let Some(next) = next_token {
-                        if let TokenKind::Keyword(KeywordKind::Long) = next.kind {
+                    self.eat()?;
+                    if let Ok(tok) = self.current_token() && matches!(tok.kind, TokenKind::Keyword(KeywordKind::Long)) {
+                        self.eat()?;
+                        if let Ok(tok) = self.current_token() && matches!(tok.kind, TokenKind::Keyword(KeywordKind::Int)) {
                             self.eat()?;
-                            let next2 = self.tokens.get(self.position + 1).cloned();
-                            if let Some(n2) = next2 {
-                                if let TokenKind::Keyword(KeywordKind::Int) = n2.kind {
-                                    self.eat()?;
-                                }
-                            }
-                            Type::LongLong
-                        } else if let TokenKind::Keyword(KeywordKind::Int) = next.kind {
-                            self.eat()?;
-                            Type::Long
-                        } else {
-                            Type::Long
                         }
+                        Type::LongLong
+                    } else if let Ok(tok) = self.current_token() && matches!(tok.kind, TokenKind::Keyword(KeywordKind::Int)) {
+                        self.eat()?;
+                        Type::Long
                     } else {
                         Type::Long
                     }
                 }
-                KeywordKind::Int => Type::Int,
-                KeywordKind::Char => Type::Char,
-                KeywordKind::Float => Type::Float,
-                KeywordKind::Double => Type::Double,
-                KeywordKind::Void => Type::Void,
-                KeywordKind::Bool => Type::Bool,
+                KeywordKind::Int => { self.eat()?; Type::Int },
+                KeywordKind::Char => { self.eat()?; Type::Char },
+                KeywordKind::Float => { self.eat()?; Type::Float },
+                KeywordKind::Double => { self.eat()?; Type::Double },
+                KeywordKind::Void => { self.eat()?; Type::Void },
+                KeywordKind::Bool => { self.eat()?; Type::Bool },
                 KeywordKind::Struct => {
                     self.eat()?;
-                    self.expect_punct(TokenKind::LeftBrace)?;
-                    let mut members = Vec::new();
-                    while let Ok(t) = self.current_token() {
-                        if let TokenKind::RightBrace = t.kind {
-                            self.eat()?;
-                            break;
-                        }
-                        let ty = self.parse_type()?;
-                        let token = self.current_token()?;
+                    let name = if let Ok(token) = self.current_token() {
                         if let TokenKind::Identifier(id) = token.kind.clone() {
                             self.eat()?;
-                            members.push(Parameter { ty, name: id });
+                            Some(id)
+                        } else {
+                            None
                         }
-                        self.expect_punct(TokenKind::Semicolon)?;
+                    } else {
+                        None
+                    };
+                    if let Ok(token) = self.current_token() {
+                        if let TokenKind::LeftBrace = token.kind {
+                            self.eat()?;
+                            let mut members = Vec::new();
+                            while let Ok(t) = self.current_token() {
+                                if let TokenKind::RightBrace = t.kind {
+                                    self.eat()?;
+                                    break;
+                                }
+                                let ty = self.parse_type()?;
+                                let token = self.current_token()?;
+                                if let TokenKind::Identifier(id) = token.kind.clone() {
+                                    self.eat()?;
+                                    members.push(Parameter { ty, name: id });
+                                }
+                                self.expect_punct(TokenKind::Semicolon)?;
+                            }
+                            Type::Struct(name, members)
+                        } else {
+                            if let Some(name) = name {
+                                Type::Struct(Some(name), Vec::new())
+                            } else {
+                                return Err(ParserError::UnexpectedToken(token));
+                            }
+                        }
+                    } else {
+                        return Err(ParserError::UnexpectedEof);
                     }
-                    Type::Struct(members)
                 }
                 KeywordKind::Union => {
                     self.eat()?;
-                    self.expect_punct(TokenKind::LeftBrace)?;
-                    let mut members = Vec::new();
-                    while let Ok(t) = self.current_token() {
-                        if let TokenKind::RightBrace = t.kind {
-                            self.eat()?;
-                            break;
-                        }
-                        let ty = self.parse_type()?;
-                        let token = self.current_token()?;
+                    let name = if let Ok(token) = self.current_token() {
                         if let TokenKind::Identifier(id) = token.kind.clone() {
                             self.eat()?;
-                            members.push(Parameter { ty, name: id });
+                            Some(id)
+                        } else {
+                            None
                         }
-                        self.expect_punct(TokenKind::Semicolon)?;
+                    } else {
+                        None
+                    };
+                    if let Ok(token) = self.current_token() {
+                        if let TokenKind::LeftBrace = token.kind {
+                            self.eat()?;
+                            let mut members = Vec::new();
+                            while let Ok(t) = self.current_token() {
+                                if let TokenKind::RightBrace = t.kind {
+                                    self.eat()?;
+                                    break;
+                                }
+                                let ty = self.parse_type()?;
+                                let token = self.current_token()?;
+                                if let TokenKind::Identifier(id) = token.kind.clone() {
+                                    self.eat()?;
+                                    members.push(Parameter { ty, name: id });
+                                }
+                                self.expect_punct(TokenKind::Semicolon)?;
+                            }
+                            Type::Union(name, members)
+                        } else {
+                            if let Some(name) = name {
+                                Type::Union(Some(name), Vec::new())
+                            } else {
+                                return Err(ParserError::UnexpectedToken(token));
+                            }
+                        }
+                    } else {
+                        return Err(ParserError::UnexpectedEof);
                     }
-                    Type::Union(members)
                 }
                 KeywordKind::Enum => {
                     self.eat()?;
@@ -190,8 +227,6 @@ impl Parser {
                 }
                 _ => return Err(ParserError::UnexpectedToken(token)),
             };
-            self.eat()?;
-            let mut ty = ty;
             while let Ok(token) = self.current_token() {
                 match token.kind.clone() {
                     TokenKind::Star => {
@@ -237,6 +272,7 @@ impl Parser {
             | TokenKind::GreaterThanEqual => Some((9, 10)),
             TokenKind::Plus | TokenKind::Minus => Some((11, 12)),
             TokenKind::Star | TokenKind::Slash => Some((13, 14)),
+            TokenKind::Arrow => Some((15, 16)),
             _ => None,
         }
     }
@@ -319,6 +355,13 @@ impl Parser {
                     }
                     TokenKind::AmpersandAmpersand => Expr::LogicalAnd(Box::new(lhs), Box::new(rhs)),
                     TokenKind::PipePipe => Expr::LogicalOr(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::Arrow => {
+                        if let Expr::Variable(name) = rhs {
+                            Expr::PointerMember(Box::new(lhs), name)
+                        } else {
+                            return Err(ParserError::UnexpectedToken(token));
+                        }
+                    }
                     _ => unreachable!(),
                 };
                 continue;
@@ -385,6 +428,16 @@ impl Parser {
                             };
                             expr = Expr::Call(name, args);
                         }
+                        TokenKind::Dot => {
+                            self.eat()?;
+                            let token = self.current_token()?;
+                            if let TokenKind::Identifier(id) = token.kind.clone() {
+                                self.eat()?;
+                                expr = Expr::Member(Box::new(expr), id);
+                            } else {
+                                return Err(ParserError::UnexpectedToken(token));
+                            }
+                        }
                         _ => break,
                     }
                 }
@@ -413,6 +466,36 @@ impl Parser {
                 self.eat()?;
                 let expr = self.parse_pratt_expr(15)?;
                 Ok(Expr::LogicalNot(Box::new(expr)))
+            }
+            TokenKind::LeftBrace => {
+                self.eat()?;
+                let mut initializers = Vec::new();
+                while let Ok(t) = self.current_token() {
+                    if let TokenKind::RightBrace = t.kind {
+                        self.eat()?;
+                        break;
+                    }
+                    if let TokenKind::Dot = self.current_token()?.kind {
+                        self.eat()?;
+                        let token = self.current_token()?;
+                        if let TokenKind::Identifier(id) = token.kind.clone() {
+                            self.eat()?;
+                            self.expect_punct(TokenKind::Equal)?;
+                            let expr = self.parse_expr()?;
+                            initializers.push(Expr::DesignatedInitializer(id, Box::new(expr)));
+                        } else {
+                            return Err(ParserError::UnexpectedToken(token));
+                        }
+                    } else {
+                        initializers.push(self.parse_expr()?);
+                    }
+                    if let Ok(t) = self.current_token()
+                        && let TokenKind::Comma = t.kind
+                    {
+                        self.eat()?;
+                    }
+                }
+                Ok(Expr::StructInitializer(initializers))
             }
             _ => Err(ParserError::UnexpectedToken(token.clone())),
         }
@@ -562,29 +645,40 @@ impl Parser {
         Ok(Stmt::Expr(expr))
     }
 
+    /// Parses a function signature.
+    fn parse_function_signature(&mut self) -> Result<(Type, String, Vec<Parameter>), ParserError> {
+        let ty = self.parse_type()?;
+        let token = self.current_token()?;
+        if let TokenKind::Identifier(id) = token.kind.clone() {
+            self.eat()?;
+            self.expect_punct(TokenKind::LeftParen)?;
+            let mut params = Vec::new();
+            while let Ok(t) = self.current_token() {
+                if let TokenKind::RightParen = t.kind {
+                    self.eat()?;
+                    break;
+                }
+                let ty = self.parse_type()?;
+                let token = self.current_token()?;
+                if let TokenKind::Identifier(id) = token.kind.clone() {
+                    self.eat()?;
+                    params.push(Parameter { ty, name: id });
+                }
+                if let Ok(t) = self.current_token()
+                    && let TokenKind::Comma = t.kind
+                {
+                    self.eat()?;
+                }
+            }
+            Ok((ty, id, params))
+        } else {
+            Err(ParserError::UnexpectedToken(token))
+        }
+    }
+
     /// Parses a function.
     fn parse_function(&mut self) -> Result<Function, ParserError> {
-        let _ty = self.parse_type()?;
-        self.expect_identifier("main")?;
-        self.expect_punct(TokenKind::LeftParen)?;
-        let mut params = Vec::new();
-        while let Ok(t) = self.current_token() {
-            if let TokenKind::RightParen = t.kind {
-                self.eat()?;
-                break;
-            }
-            let ty = self.parse_type()?;
-            let token = self.current_token()?;
-            if let TokenKind::Identifier(id) = token.kind.clone() {
-                self.eat()?;
-                params.push(Parameter { ty, name: id });
-            }
-            if let Ok(t) = self.current_token()
-                && let TokenKind::Comma = t.kind
-            {
-                self.eat()?;
-            }
-        }
+        let (_ty, name, params) = self.parse_function_signature()?;
         self.expect_punct(TokenKind::LeftBrace)?;
         let mut stmts = Vec::new();
         while let Ok(t) = self.current_token() {
@@ -595,7 +689,7 @@ impl Parser {
             stmts.push(self.parse_stmt()?);
         }
         Ok(Function {
-            name: "main".to_string(),
+            name,
             params,
             body: stmts,
         })
@@ -607,42 +701,23 @@ impl Parser {
     ///
     /// A `Result` containing the parsed `Program`, or a `ParserError` if parsing fails.
     fn parse_global(&mut self) -> Result<Stmt, ParserError> {
+        let pos = self.position;
+        if let Ok((ty, id, params)) = self.parse_function_signature() {
+            let token = self.current_token()?;
+            if let TokenKind::Semicolon = token.kind {
+                self.eat()?;
+                return Ok(Stmt::FunctionDeclaration(ty, id, params));
+            } else {
+                self.position = pos;
+                return Err(ParserError::UnexpectedToken(token));
+            }
+        }
+        self.position = pos;
+
         let ty = self.parse_type()?;
         let token = self.current_token()?;
         if let TokenKind::Identifier(id) = token.kind.clone() {
             self.eat()?;
-            let token = self.current_token()?;
-            if let TokenKind::LeftParen = token.kind {
-                self.eat()?;
-                let mut params = Vec::new();
-                while let Ok(t) = self.current_token() {
-                    if let TokenKind::RightParen = t.kind {
-                        self.eat()?;
-                        break;
-                    }
-                    let ty = self.parse_type()?;
-                    let token = self.current_token()?;
-                    if let TokenKind::Identifier(id) = token.kind.clone() {
-                        self.eat()?;
-                        params.push(Parameter { ty, name: id });
-                    } else if let TokenKind::RightParen = token.kind {
-                        break;
-                    }
-                    if let Ok(t) = self.current_token()
-                        && let TokenKind::Comma = t.kind
-                    {
-                        self.eat()?;
-                    }
-                }
-                let token = self.current_token()?;
-                if let TokenKind::Semicolon = token.kind {
-                    self.eat()?;
-                    return Ok(Stmt::FunctionDeclaration(ty, id, params));
-                } else {
-                    self.position -= 2;
-                    return Err(ParserError::UnexpectedToken(token));
-                }
-            }
             let mut initializer = None;
             if let Ok(t) = self.current_token()
                 && let TokenKind::Equal = t.kind
@@ -653,11 +728,16 @@ impl Parser {
             self.expect_punct(TokenKind::Semicolon)?;
             return Ok(Stmt::Declaration(ty, id, initializer));
         }
+        if let Type::Struct(_, _) = ty {
+            self.expect_punct(TokenKind::Semicolon)?;
+            return Ok(Stmt::Declaration(ty, "".to_string(), None));
+        }
         Err(ParserError::UnexpectedToken(token))
     }
 
     pub fn parse(&mut self) -> Result<Program, ParserError> {
         let mut globals = Vec::new();
+        let mut functions = Vec::new();
         while self.current_token().is_ok() && !matches!(self.current_token()?.kind, TokenKind::Eof)
         {
             let pos = self.position;
@@ -666,10 +746,9 @@ impl Parser {
                 globals.push(self.parse_global()?);
             } else {
                 self.position = pos;
-                break;
+                functions.push(self.parse_function()?);
             }
         }
-        let function = self.parse_function()?;
-        Ok(Program { globals, function })
+        Ok(Program { globals, functions })
     }
 }

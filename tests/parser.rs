@@ -36,6 +36,21 @@ fn create_simple_program_ast() -> Program {
     }
 }
 
+/// Creates a program AST with a _Bool variable declaration
+fn create_bool_program_ast() -> Program {
+    Program {
+        globals: vec![],
+        function: Function {
+            name: "main".to_string(),
+            params: vec![],
+            body: vec![
+                Stmt::Declaration(Type::Bool, "a".to_string(), Some(Box::new(Expr::Number(1)))),
+                Stmt::Return(Expr::Number(0)),
+            ],
+        },
+    }
+}
+
 /// Creates a program AST with variable declaration and increment
 fn create_increment_program_ast() -> Program {
     Program {
@@ -102,8 +117,8 @@ fn create_test_tokens() -> Vec<Token> {
 #[cfg(test)]
 mod tests {
     use super::{
-        create_control_flow_program_ast, create_increment_program_ast, create_simple_program_ast,
-        parse_c_code,
+        create_bool_program_ast, create_control_flow_program_ast,
+        create_increment_program_ast, create_simple_program_ast, parse_c_code,
     };
 
     /// Test parsing of simple C programs
@@ -134,5 +149,15 @@ mod tests {
         let expected = create_control_flow_program_ast();
         assert_eq!(ast.function.name, expected.function.name);
         assert_eq!(ast.function.body.len(), expected.function.body.len());
+    }
+
+    /// Test parsing of programs with _Bool variable declarations
+    #[test]
+    fn test_bool_declaration() {
+        let input = "int main() { _Bool a = 1; return 0; }";
+        let ast = parse_c_code(input).unwrap();
+        let expected = create_bool_program_ast();
+        assert_eq!(ast.function.name, expected.function.name);
+        assert_eq!(ast.function.body, expected.function.body);
     }
 }

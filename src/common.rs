@@ -46,6 +46,7 @@ pub enum KeywordKind {
     Void,
     Volatile,
     While,
+    Bool,
 }
 
 impl FromStr for KeywordKind {
@@ -94,6 +95,7 @@ impl FromStr for KeywordKind {
             "void" => Ok(KeywordKind::Void),
             "volatile" => Ok(KeywordKind::Volatile),
             "while" => Ok(KeywordKind::While),
+            "_Bool" => Ok(KeywordKind::Bool),
             _ => Err(()),
         }
     }
@@ -143,6 +145,7 @@ impl fmt::Display for KeywordKind {
             KeywordKind::Void => write!(f, "void"),
             KeywordKind::Volatile => write!(f, "volatile"),
             KeywordKind::While => write!(f, "while"),
+            KeywordKind::Bool => write!(f, "_Bool"),
         }
     }
 }

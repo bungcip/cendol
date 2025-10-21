@@ -105,6 +105,7 @@ impl Parser {
                 KeywordKind::Float => Type::Float,
                 KeywordKind::Double => Type::Double,
                 KeywordKind::Void => Type::Void,
+                KeywordKind::Bool => Type::Bool,
                 KeywordKind::Struct => {
                     self.eat()?;
                     self.expect_punct(TokenKind::LeftBrace)?;

@@ -24,4 +24,7 @@ pub enum CodegenError {
     /// A pointer member access was attempted on a non-pointer type.
     #[error("Pointer member access on non-pointer type")]
     NotAPointer,
+    /// An initializer for a non-struct or non-array type was found.
+    #[error("Initializer for non-struct or non-array type")]
+    NotAStructOrArray,
 }

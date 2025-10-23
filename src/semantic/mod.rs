@@ -405,6 +405,14 @@ impl SemanticAnalyzer {
             Expr::DesignatedInitializer(_, expr) => {
                 self.check_expression(*expr, filename);
             }
+            Expr::Cast(_, expr) => {
+                self.check_expression(*expr, filename);
+            }
+            Expr::CompoundLiteral(_, exprs) => {
+                for expr in exprs {
+                    self.check_expression(expr, filename);
+                }
+            }
             // Literals don't need checking
             Expr::Number(_) | Expr::String(_) => {}
             Expr::Increment(_) | Expr::Decrement(_) => {

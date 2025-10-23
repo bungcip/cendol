@@ -781,7 +781,15 @@ impl Parser {
     }
 
     /// Parses a function signature.
-    fn parse_function_signature(&mut self) -> Result<(Type, String, Vec<Parameter>), ParserError> {
+    fn parse_function_signature(&mut self) -> Result<(Type, String, Vec<Parameter>, bool), ParserError> {
+        let mut is_inline = false;
+        // Check for inline keyword before return type
+        if let Ok(token) = self.current_token() {
+            if let TokenKind::Keyword(KeywordKind::Inline) = token.kind {
+                self.eat()?;
+                is_inline = true;
+            }
+        }
         let ty = self.parse_type()?;
         let token = self.current_token()?;
         if let TokenKind::Identifier(id) = token.kind.clone() {
@@ -805,7 +813,7 @@ impl Parser {
                     self.eat()?;
                 }
             }
-            Ok((ty, id, params))
+            Ok((ty, id, params, is_inline))
         } else {
             Err(ParserError::UnexpectedToken(token))
         }
@@ -813,7 +821,7 @@ impl Parser {
 
     /// Parses a function.
     fn parse_function(&mut self) -> Result<Function, ParserError> {
-        let (return_type, name, params) = self.parse_function_signature()?;
+        let (return_type, name, params, is_inline) = self.parse_function_signature()?;
         self.expect_punct(TokenKind::LeftBrace)?;
         let mut stmts = Vec::new();
         while let Ok(t) = self.current_token() {
@@ -828,6 +836,7 @@ impl Parser {
             name,
             params,
             body: stmts,
+            is_inline,
         })
     }
 
@@ -838,7 +847,7 @@ impl Parser {
     /// A `Result` containing the parsed `Program`, or a `ParserError` if parsing fails.
     fn parse_global(&mut self) -> Result<Stmt, ParserError> {
         let pos = self.position;
-        if let Ok((ty, id, params)) = self.parse_function_signature() {
+        if let Ok((ty, id, params, _is_inline)) = self.parse_function_signature() {
             let token = self.current_token()?;
             if let TokenKind::Semicolon = token.kind {
                 self.eat()?;

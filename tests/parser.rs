@@ -33,6 +33,7 @@ fn create_simple_program_ast() -> Program {
             name: "main".to_string(),
             params: vec![],
             body: vec![Stmt::Return(Expr::Number(0))],
+            is_inline: false,
         }],
     }
 }
@@ -49,6 +50,7 @@ fn create_bool_program_ast() -> Program {
                 Stmt::Declaration(Type::Bool, "a".to_string(), Some(Box::new(Expr::Number(1)))),
                 Stmt::Return(Expr::Number(0)),
             ],
+            is_inline: false,
         }],
     }
 }
@@ -73,6 +75,7 @@ fn create_increment_program_ast() -> Program {
                 )))),
                 Stmt::Return(Expr::Number(0)),
             ],
+            is_inline: false,
         }],
     }
 }
@@ -90,6 +93,7 @@ fn create_control_flow_program_ast() -> Program {
                 Box::new(Stmt::Return(Expr::Number(1))),
                 Some(Box::new(Stmt::Return(Expr::Number(0)))),
             )],
+            is_inline: false,
         }],
     }
 }

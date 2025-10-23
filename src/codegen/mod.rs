@@ -54,6 +54,7 @@ pub struct CodeGen {
     module: ObjectModule,
     variables: SymbolTable<String, (StackSlot, Type)>,
     functions: HashMap<String, (FuncId, Type)>,
+    signatures: HashMap<String, cranelift::prelude::Signature>,
     structs: HashMap<String, Type>,
 }
 
@@ -88,6 +89,7 @@ impl CodeGen {
             module,
             variables: SymbolTable::new(),
             functions: HashMap::new(),
+            signatures: HashMap::new(),
             structs: HashMap::new(),
         }
     }
@@ -125,7 +127,8 @@ impl CodeGen {
             }
         }
 
-        for function in program.functions {
+        // First, declare all functions
+        for function in &program.functions {
             let mut sig = self.module.make_signature();
             if let Type::Struct(_, _) = function.return_type {
                 sig.params.push(AbiParam::new(types::I64));
@@ -149,6 +152,13 @@ impl CodeGen {
                 .unwrap();
             self.functions
                 .insert(function.name.clone(), (id, function.return_type.clone()));
+            self.signatures.insert(function.name.clone(), sig);
+        }
+
+        // Then, define all functions
+        for function_name in program.functions.iter().map(|f| &f.name) {
+            let (id, _) = self.functions.get(function_name).unwrap();
+            let sig = self.signatures.get(function_name).unwrap().clone();
 
             self.ctx.clear();
             self.ctx.func.signature = sig;
@@ -161,18 +171,33 @@ impl CodeGen {
 
             let mut translator = FunctionTranslator {
                 builder,
-                functions: &mut self.functions,
+                functions: &self.functions,
                 variables: &mut self.variables,
-                structs: &mut self.structs,
+                structs: &self.structs,
                 module: &mut self.module,
                 loop_context: Vec::new(),
                 current_block_state: BlockState::Empty,
             };
-            for stmt in function.body {
-                let _ = translator.translate_stmt(stmt)?;
+            // Find the function body
+            let function = program.functions.iter().find(|f| &f.name == function_name).unwrap();
+            // Add parameters to variables and store block params
+            let block_params = translator.builder.block_params(entry_block).to_vec();
+            for (i, param) in function.params.iter().enumerate() {
+                let size = translator.get_type_size(&param.ty);
+                let slot = translator.builder.create_sized_stack_slot(StackSlotData::new(
+                    StackSlotKind::ExplicitSlot,
+                    size,
+                    0,
+                ));
+                translator.variables.insert(param.name.clone(), (slot, param.ty.clone()));
+                // Store the block parameter into the stack slot
+                translator.builder.ins().stack_store(block_params[i], slot, 0);
+            }
+            for stmt in &function.body {
+                let _ = translator.translate_stmt(stmt.clone())?;
             }
             translator.builder.finalize();
-            self.module.define_function(id, &mut self.ctx).unwrap();
+            self.module.define_function(*id, &mut self.ctx).unwrap();
         }
 
         let product = self.module.finish();
@@ -193,9 +218,9 @@ pub enum BlockState {
 /// A function translator that translates statements and expressions into Cranelift IR.
 struct FunctionTranslator<'a, 'b> {
     builder: FunctionBuilder<'a>,
-    functions: &'b mut HashMap<String, (FuncId, Type)>,
+    functions: &'b HashMap<String, (FuncId, Type)>,
     variables: &'b mut SymbolTable<String, (StackSlot, Type)>,
-    structs: &'b mut HashMap<String, Type>,
+    structs: &'b HashMap<String, Type>,
     module: &'b mut ObjectModule,
     loop_context: Vec<(Block, Block)>,
     current_block_state: BlockState,

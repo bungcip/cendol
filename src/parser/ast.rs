@@ -175,6 +175,8 @@ pub struct Function {
     pub params: Vec<Parameter>,
     /// The body of the function.
     pub body: Vec<Stmt>,
+    /// Whether the function is declared as inline.
+    pub is_inline: bool,
 }
 
 /// Represents a program.

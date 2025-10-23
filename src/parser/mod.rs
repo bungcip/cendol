@@ -273,13 +273,18 @@ impl Parser {
                     }
                     TokenKind::LeftBracket => {
                         self.eat()?;
-                        let size = self.parse_expr()?;
-                        if let Expr::Number(n) = size {
-                            ty = Type::Array(Box::new(ty), n as usize);
+                        if self.current_token()?.kind == TokenKind::RightBracket {
+                            self.eat()?;
+                            ty = Type::Array(Box::new(ty), 0);
                         } else {
-                            return Err(ParserError::UnexpectedToken(token));
+                            let size = self.parse_expr()?;
+                            if let Expr::Number(n) = size {
+                                ty = Type::Array(Box::new(ty), n as usize);
+                            } else {
+                                return Err(ParserError::UnexpectedToken(token));
+                            }
+                            self.expect_punct(TokenKind::RightBracket)?;
                         }
-                        self.expect_punct(TokenKind::RightBracket)?;
                     }
                     _ => {
                         break;
@@ -478,6 +483,13 @@ impl Parser {
                                 return Err(ParserError::UnexpectedToken(token));
                             }
                         }
+                        TokenKind::LeftBracket => {
+                            self.eat()?;
+                            let index = self.parse_expr()?;
+                            self.expect_punct(TokenKind::RightBracket)?;
+                            let add = Expr::Add(Box::new(expr), Box::new(index));
+                            expr = Expr::Deref(Box::new(add));
+                        }
                         _ => break,
                     }
                 }
@@ -507,38 +519,98 @@ impl Parser {
                 let expr = self.parse_pratt_expr(15)?;
                 Ok(Expr::LogicalNot(Box::new(expr)))
             }
-            TokenKind::LeftBrace => {
-                self.eat()?;
-                let mut initializers = Vec::new();
-                while let Ok(t) = self.current_token() {
-                    if let TokenKind::RightBrace = t.kind {
-                        self.eat()?;
-                        break;
-                    }
-                    if let TokenKind::Dot = self.current_token()?.kind {
-                        self.eat()?;
-                        let token = self.current_token()?;
-                        if let TokenKind::Identifier(id) = token.kind.clone() {
-                            self.eat()?;
-                            self.expect_punct(TokenKind::Equal)?;
-                            let expr = self.parse_expr()?;
-                            initializers.push(Expr::DesignatedInitializer(id, Box::new(expr)));
-                        } else {
-                            return Err(ParserError::UnexpectedToken(token));
-                        }
+            TokenKind::LeftParen => {
+                self.eat()?; // Consume '('
+
+                // Check for cast or compound literal
+                let pos = self.position;
+                let is_type = if let Ok(_ty) = self.parse_type() {
+                    if let Ok(token) = self.current_token() {
+                        token.kind == TokenKind::RightParen
                     } else {
-                        initializers.push(self.parse_expr()?);
+                        false
                     }
-                    if let Ok(t) = self.current_token()
-                        && let TokenKind::Comma = t.kind
+                } else {
+                    false
+                };
+                self.position = pos; // backtrack after peeking
+
+                if is_type {
+                    let ty = self.parse_type()?;
+                    self.expect_punct(TokenKind::RightParen)?;
+
+                    if self.current_token().is_ok()
+                        && self.current_token()?.kind == TokenKind::LeftBrace
                     {
-                        self.eat()?;
+                        // Compound Literal: (type){...}
+                        let initializers = self.parse_initializer_list()?;
+                        Ok(Expr::CompoundLiteral(Box::new(ty), initializers))
+                    } else {
+                        // Cast: (type)expr
+                        let expr = self.parse_pratt_expr(15)?; // High precedence for cast's operand
+                        Ok(Expr::Cast(Box::new(ty), Box::new(expr)))
                     }
+                } else {
+                    // Grouped expression: (expr)
+                    let expr = self.parse_expr()?;
+                    self.expect_punct(TokenKind::RightParen)?;
+                    Ok(expr)
                 }
+            }
+            TokenKind::LeftBrace => {
+                let initializers = self.parse_initializer_list()?;
                 Ok(Expr::StructInitializer(initializers))
             }
             _ => Err(ParserError::UnexpectedToken(token.clone())),
         }
+    }
+
+    /// Parses an initializer list.
+    fn parse_initializer_list(&mut self) -> Result<Vec<Expr>, ParserError> {
+        self.expect_punct(TokenKind::LeftBrace)?;
+        let mut initializers = Vec::new();
+
+        // Handle empty initializer list: {}
+        if self.current_token()?.kind == TokenKind::RightBrace {
+            self.eat()?;
+            return Ok(initializers);
+        }
+
+        loop {
+            // Parse one initializer expression (either designated or normal)
+            if self.current_token()?.kind == TokenKind::Dot {
+                self.eat()?;
+                let token = self.current_token()?;
+                if let TokenKind::Identifier(id) = token.kind.clone() {
+                    self.eat()?;
+                    self.expect_punct(TokenKind::Equal)?;
+                    let expr = self.parse_expr()?;
+                    initializers.push(Expr::DesignatedInitializer(id, Box::new(expr)));
+                } else {
+                    return Err(ParserError::UnexpectedToken(token));
+                }
+            } else {
+                initializers.push(self.parse_expr()?);
+            }
+
+            // After an initializer, expect a comma or a closing brace
+            let token = self.current_token()?;
+            if token.kind == TokenKind::Comma {
+                self.eat()?;
+                // If a comma is followed by a brace, it's a trailing comma.
+                if self.current_token()?.kind == TokenKind::RightBrace {
+                    self.eat()?;
+                    break;
+                }
+            } else if token.kind == TokenKind::RightBrace {
+                self.eat()?;
+                break;
+            } else {
+                // Any other token is an error.
+                return Err(ParserError::UnexpectedToken(token));
+            }
+        }
+        Ok(initializers)
     }
 
     /// Parses a statement.
@@ -555,10 +627,27 @@ impl Parser {
                 stmts.push(self.parse_stmt()?);
             }
             return Ok(Stmt::Block(stmts));
-        } else if let Ok(ty) = self.parse_type() {
+        } else if let Ok(mut ty) = self.parse_type() {
             let token = self.current_token()?;
             if let TokenKind::Identifier(id) = token.kind.clone() {
                 self.eat()?;
+                // Check for array type declaration after identifier
+                if self.current_token()?.kind == TokenKind::LeftBracket {
+                    self.eat()?;
+                    if self.current_token()?.kind == TokenKind::RightBracket {
+                        self.eat()?;
+                        ty = Type::Array(Box::new(ty), 0);
+                    } else {
+                        let size = self.parse_expr()?;
+                        if let Expr::Number(n) = size {
+                            ty = Type::Array(Box::new(ty), n as usize);
+                        } else {
+                            return Err(ParserError::UnexpectedToken(token));
+                        }
+                        self.expect_punct(TokenKind::RightBracket)?;
+                    }
+                }
+
                 let mut initializer = None;
                 if let Ok(t) = self.current_token()
                     && let TokenKind::Equal = t.kind

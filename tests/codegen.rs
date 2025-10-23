@@ -332,4 +332,60 @@ mod tests {
         let exit_code = compile_and_run(input, "advanced_pointer_member_access").unwrap();
         assert_eq!(exit_code, 20);
     }
+
+    /// Test code generation for type casting
+    #[test]
+    fn test_type_casting() {
+        let input = r#"
+        int main() {
+            int x = 1;
+            char y = (char)x;
+            return y;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "type_casting").unwrap();
+        assert_eq!(exit_code, 1);
+    }
+
+    /// Test code generation for compound literals with structs
+    #[test]
+    fn test_compound_literal_struct() {
+        let input = r#"
+        struct Point { int x; int y; };
+        int main() {
+            struct Point p = (struct Point){ .x = 10, .y = 20 };
+            return p.x;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "compound_literal_struct").unwrap();
+        assert_eq!(exit_code, 10);
+    }
+
+    /// Test code generation for compound literals with arrays
+    #[test]
+    fn test_compound_literal_array() {
+        let input = r#"
+        int main() {
+            int *p = (int[]){ 1, 2, 3 };
+            return p[1];
+        }
+        "#;
+        let exit_code = compile_and_run(input, "compound_literal_array").unwrap();
+        assert_eq!(exit_code, 2);
+    }
+
+    /// Test code generation for pointer subtraction
+    #[test]
+    fn test_pointer_subtraction() {
+        let input = r#"
+        int main() {
+            int arr[5];
+            int *p1 = &arr[1];
+            int *p2 = &arr[4];
+            return p2 - p1;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "pointer_subtraction").unwrap();
+        assert_eq!(exit_code, 3);
+    }
 }

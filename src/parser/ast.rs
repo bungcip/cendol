@@ -29,6 +29,13 @@ pub enum Type {
     Enum(Vec<String>),
 }
 
+impl Type {
+    /// Returns `true` if the type is a pointer.
+    pub fn is_pointer(&self) -> bool {
+        matches!(self, Type::Pointer(_))
+    }
+}
+
 /// Represents the initializer of a `for` loop.
 #[derive(Debug, PartialEq, Clone)]
 pub enum ForInit {
@@ -139,6 +146,10 @@ pub enum Expr {
     Member(Box<Expr>, String),
     /// A pointer member access expression.
     PointerMember(Box<Expr>, String),
+    /// A type cast expression.
+    Cast(Box<Type>, Box<Expr>),
+    /// A compound literal expression.
+    CompoundLiteral(Box<Type>, Vec<Expr>),
 }
 
 /// Represents a function parameter.

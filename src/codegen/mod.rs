@@ -234,6 +234,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 .map(|m| self.get_type_alignment(&m.ty))
                 .max()
                 .unwrap_or(1),
+            Type::Array(elem_ty, _) => self.get_type_alignment(elem_ty),
             _ => unimplemented!(),
         }
     }
@@ -262,6 +263,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let struct_alignment = self.get_type_alignment(ty);
                 (size + struct_alignment - 1) & !(struct_alignment - 1)
             }
+            Type::Array(elem_ty, size) => self.get_type_size(elem_ty) * *size as u32,
             _ => unimplemented!(),
         }
     }
@@ -354,8 +356,24 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                             return Err(CodegenError::NotAStruct);
                         }
                     } else {
-                        let (val, _) = self.translate_expr(*init)?;
-                        self.builder.ins().stack_store(val, slot, 0);
+                        let (val, val_ty) = self.translate_expr(*init)?;
+                        if let Type::Struct(_, _) = val_ty {
+                            let dest = self.builder.ins().stack_addr(types::I64, slot, 0);
+                            let src = val;
+                            let size = self.get_type_size(&val_ty);
+                            self.builder.emit_small_memory_copy(
+                                self.module.target_config(),
+                                dest,
+                                src,
+                                size as u64,
+                                self.get_type_alignment(&val_ty) as u8,
+                                self.get_type_alignment(&val_ty) as u8,
+                                true,
+                                MemFlags::new(),
+                            );
+                        } else {
+                            self.builder.ins().stack_store(val, slot, 0);
+                        }
                     }
                 } else {
                     let val = self.builder.ins().iconst(types::I64, 0);
@@ -553,10 +571,22 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             Expr::Variable(name, _) => {
                 let (slot, ty) = self.variables.get(&name).unwrap();
-                if let Type::Struct(_, _) = ty {
-                    return Ok((self.builder.ins().stack_addr(types::I64, slot, 0), ty));
+                if let Type::Struct(_, _) = &ty {
+                    return Ok((self.builder.ins().stack_addr(types::I64, slot, 0), ty.clone()));
                 }
-                Ok((self.builder.ins().stack_load(types::I64, slot, 0), ty))
+                if let Type::Array(elem_ty, _) = &ty {
+                    // Array decays to a pointer to its first element
+                    let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
+                    return Ok((addr, Type::Pointer(elem_ty.clone())));
+                }
+                let loaded_val = match ty {
+                    Type::Char | Type::Bool => {
+                        let val = self.builder.ins().stack_load(types::I8, slot, 0);
+                        self.builder.ins().sextend(types::I64, val)
+                    }
+                    _ => self.builder.ins().stack_load(types::I64, slot, 0),
+                };
+                Ok((loaded_val, ty))
             }
             Expr::Assign(lhs, rhs) => {
                 let (value, ty) = self.translate_expr(*rhs)?;
@@ -591,14 +621,52 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 Ok((value, ty))
             }
             Expr::Add(lhs, rhs) => {
-                let (lhs, _) = self.translate_expr(*lhs)?;
-                let (rhs, _) = self.translate_expr(*rhs)?;
-                Ok((self.builder.ins().iadd(lhs, rhs), Type::Int))
+                let (lhs_val, lhs_ty) = self.translate_expr(*lhs)?;
+                let (rhs_val, rhs_ty) = self.translate_expr(*rhs)?;
+                let result_val = match (&lhs_ty, &rhs_ty) {
+                    (Type::Pointer(base_ty), Type::Int) => {
+                        let size = self.get_type_size(base_ty);
+                        let offset = self.builder.ins().imul_imm(rhs_val, size as i64);
+                        self.builder.ins().iadd(lhs_val, offset)
+                    }
+                    (Type::Int, Type::Pointer(base_ty)) => {
+                        let size = self.get_type_size(base_ty);
+                        let offset = self.builder.ins().imul_imm(lhs_val, size as i64);
+                        self.builder.ins().iadd(rhs_val, offset)
+                    }
+                    _ => self.builder.ins().iadd(lhs_val, rhs_val),
+                };
+                let result_ty = if lhs_ty.is_pointer() {
+                    lhs_ty
+                } else {
+                    rhs_ty
+                };
+                Ok((result_val, result_ty))
             }
             Expr::Sub(lhs, rhs) => {
-                let (lhs, _) = self.translate_expr(*lhs)?;
-                let (rhs, _) = self.translate_expr(*rhs)?;
-                Ok((self.builder.ins().isub(lhs, rhs), Type::Int))
+                let (lhs_val, lhs_ty) = self.translate_expr(*lhs)?;
+                let (rhs_val, rhs_ty) = self.translate_expr(*rhs)?;
+                let result_val = match (&lhs_ty, &rhs_ty) {
+                    (Type::Pointer(base_ty), Type::Int) => {
+                        let size = self.get_type_size(base_ty);
+                        let offset = self.builder.ins().imul_imm(rhs_val, size as i64);
+                        self.builder.ins().isub(lhs_val, offset)
+                    }
+                    (Type::Pointer(lhs_base), Type::Pointer(rhs_base))
+                        if lhs_base == rhs_base =>
+                    {
+                        let diff = self.builder.ins().isub(lhs_val, rhs_val);
+                        let size = self.get_type_size(lhs_base);
+                        self.builder.ins().sdiv_imm(diff, size as i64)
+                    }
+                    _ => self.builder.ins().isub(lhs_val, rhs_val),
+                };
+                let result_ty = match (&lhs_ty, &rhs_ty) {
+                    (Type::Pointer(_), Type::Pointer(_)) => Type::Int,
+                    (Type::Pointer(_), Type::Int) => lhs_ty,
+                    _ => lhs_ty,
+                };
+                Ok((result_val, result_ty))
             }
             Expr::Mul(lhs, rhs) => {
                 let (lhs, _) = self.translate_expr(*lhs)?;
@@ -672,6 +740,9 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     let (slot, ty) = self.variables.get(&name).unwrap();
                     let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
                     Ok((addr, Type::Pointer(Box::new(ty))))
+                } else if let Expr::Deref(ptr_expr) = *expr {
+                    // Taking the address of a dereference is a no-op
+                    self.translate_expr(*ptr_expr)
                 } else {
                     unimplemented!()
                 }
@@ -796,6 +867,90 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 } else {
                     Err(CodegenError::NotAStruct)
                 }
+            }
+            Expr::Cast(ty, expr) => {
+                let (val, _) = self.translate_expr(*expr)?;
+                let cast_val = match *ty {
+                    Type::Char => self.builder.ins().ireduce(types::I8, val),
+                    Type::Bool => self.builder.ins().ireduce(types::I8, val),
+                    _ => val, // Other types are already I64
+                };
+
+                // The ABI requires function arguments and return values to be I64,
+                // so we extend smaller types back to I64 after casting.
+                let extended_val = match *ty {
+                    Type::Char | Type::Bool => self.builder.ins().sextend(types::I64, cast_val),
+                    _ => cast_val,
+                };
+
+                Ok((extended_val, *ty))
+            }
+            Expr::CompoundLiteral(mut ty, initializers) => {
+                // If the type is an array with an unspecified size, update it
+                if let Type::Array(_, ref mut size @ 0) = *ty {
+                    *size = initializers.len();
+                }
+
+                let size = self.get_type_size(&ty);
+                let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+                    StackSlotKind::ExplicitSlot,
+                    size,
+                    0,
+                ));
+                let s = self.get_real_type(&ty)?;
+
+                match s {
+                    Type::Struct(_, members) => {
+                        let mut member_index = 0;
+                        for initializer in initializers {
+                            if let Expr::DesignatedInitializer(name, expr) = initializer {
+                                let mut offset = 0;
+                                let mut found = false;
+                                for (i, member) in members.iter().enumerate() {
+                                    let member_alignment = self.get_type_alignment(&member.ty);
+                                    offset =
+                                        (offset + member_alignment - 1) & !(member_alignment - 1);
+                                    if member.name == name {
+                                        member_index = i;
+                                        found = true;
+                                        break;
+                                    }
+                                    offset += self.get_type_size(&member.ty);
+                                }
+                                if !found {
+                                    return Err(CodegenError::UnknownField(name));
+                                }
+                                let (val, _) = self.translate_expr(*expr)?;
+                                self.builder.ins().stack_store(val, slot, offset as i32);
+                            } else {
+                                if member_index >= members.len() {
+                                    return Err(CodegenError::InitializerTooLong);
+                                }
+                                let mut offset = 0;
+                                for member in members.iter().take(member_index) {
+                                    let member_alignment = self.get_type_alignment(&member.ty);
+                                    offset =
+                                        (offset + member_alignment - 1) & !(member_alignment - 1);
+                                    offset += self.get_type_size(&member.ty);
+                                }
+                                let (val, _) = self.translate_expr(initializer)?;
+                                self.builder.ins().stack_store(val, slot, offset as i32);
+                            }
+                            member_index += 1;
+                        }
+                    }
+                    Type::Array(elem_ty, _) => {
+                        let elem_size = self.get_type_size(&elem_ty);
+                        for (i, initializer) in initializers.into_iter().enumerate() {
+                            let (val, _) = self.translate_expr(initializer)?;
+                            let offset = (i as u32 * elem_size) as i32;
+                            self.builder.ins().stack_store(val, slot, offset);
+                        }
+                    }
+                    _ => return Err(CodegenError::NotAStructOrArray),
+                }
+
+                Ok((self.builder.ins().stack_addr(types::I64, slot, 0), *ty))
             }
             _ => unimplemented!(),
         }

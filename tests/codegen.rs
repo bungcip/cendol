@@ -4,34 +4,21 @@
 //! to executable binaries, ensuring that the generated code produces
 //! the expected results.
 
-use cendol::codegen::CodeGen;
-use cendol::file::FileManager;
-use cendol::parser::Parser;
-use cendol::preprocessor::Preprocessor;
 use std::fs;
 use std::io::Write;
 use std::process::Command;
 
-/// Test configuration constants
-mod config {
-    pub const C_COMPILER: &str = "cc";
-    pub const C_LIB_FLAG: &str = "-lc";
-    pub const OBJ_EXTENSION: &str = ".o";
-    pub const EXE_EXTENSION: &str = ".out";
-    pub const TEST_FILE_PREFIX: &str = "test_";
-}
+use cendol::codegen::CodeGen;
+use cendol::file::{FileId, FileManager};
+use cendol::parser::Parser;
+use cendol::preprocessor::Preprocessor;
 
-/// Compiles C code through the full pipeline (preprocessor -> parser -> codegen)
+// Compiles C code through the full pipeline (preprocessor -> parser -> codegen)
 fn compile_to_object_bytes(
     input: &str,
     filename: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    use cendol::file::FileManager;
-    use cendol::preprocessor::{
-        Preprocessor,
-        token::{Token, TokenKind},
-    };
-    let mut preprocessor = Preprocessor::new(FileManager::new(), false);
+    let mut preprocessor = Preprocessor::new(FileManager::new());
     let tokens = preprocessor.preprocess(input, filename)?;
 
     // Parser now handles filtering internally
@@ -40,6 +27,15 @@ fn compile_to_object_bytes(
     let codegen = CodeGen::new();
     let object_bytes = codegen.compile(ast)?;
     Ok(object_bytes)
+}
+
+/// Test configuration constants
+mod config {
+    pub const C_COMPILER: &str = "cc";
+    pub const C_LIB_FLAG: &str = "-lc";
+    pub const OBJ_EXTENSION: &str = ".o";
+    pub const EXE_EXTENSION: &str = ".out";
+    pub const TEST_FILE_PREFIX: &str = "test_";
 }
 
 /// Compiles and runs C code, returning the exit code
@@ -143,23 +139,6 @@ mod tests {
     #[test]
     fn test_codegen() {
         let input = "int main() { return 0; }";
-        println!("Testing input: {}", input);
-
-        // Let's debug the tokenization process
-        use cendol::file::FileManager;
-        use cendol::preprocessor::{
-            Preprocessor,
-            token::{Token, TokenKind},
-        };
-        let mut preprocessor = Preprocessor::new(FileManager::new(), false);
-        let tokens = preprocessor.preprocess(input, "test.c").unwrap();
-        println!("Preprocessor tokens:");
-        for token in &tokens {
-            println!("  {:?}", token);
-        }
-
-        // Parser now handles filtering internally
-
         let exit_code = compile_and_run(input, "codegen").unwrap();
         assert_eq!(exit_code, 0);
     }

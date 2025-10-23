@@ -13,3 +13,5 @@ pub mod logger;
 pub mod parser;
 /// Contains the preprocessor.
 pub mod preprocessor;
+/// Contains the semantic analyzer.
+pub mod semantic;

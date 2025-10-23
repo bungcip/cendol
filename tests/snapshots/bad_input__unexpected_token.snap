@@ -4,7 +4,14 @@ expression: err.unwrap_err()
 ---
 msg: Unexpected token
 path: unexpected_token.c
-loc:
-  - 1
-  - 25
+span:
+  file: 0
+  start:
+    file: 0
+    line: 1
+    column: 25
+  end:
+    file: 0
+    line: 1
+    column: 26
 verbose: false

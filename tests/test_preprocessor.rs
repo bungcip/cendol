@@ -15,7 +15,7 @@ mod config {
 
 /// Creates a new preprocessor instance with a file manager
 fn create_preprocessor() -> Preprocessor {
-    Preprocessor::new(FileManager::new(), false)
+    Preprocessor::new(FileManager::new())
 }
 
 /// Helper function to preprocess input and return tokens
@@ -39,7 +39,7 @@ fn get_clean_token(tokens: Vec<Token>) -> Vec<Token> {
                 TokenKind::String(s) => {
                     // Filter out file name strings like "<input>"
                     !s.contains('<') || !s.contains('>')
-                },
+                }
                 _ => true,
             }
         })
@@ -48,7 +48,10 @@ fn get_clean_token(tokens: Vec<Token>) -> Vec<Token> {
 
 /// Helper function to extract token kinds as strings for comparison
 fn get_token_kinds(tokens: &[Token]) -> Vec<String> {
-    tokens.iter().map(|token| format!("{}", token.kind)).collect()
+    tokens
+        .iter()
+        .map(|token| format!("{}", token.kind))
+        .collect()
 }
 
 /// Helper function to verify token sequence matches expected content
@@ -63,9 +66,18 @@ fn assert_tokens_contain(tokens: &[Token], expected: &[&str]) {
     let actual: Vec<String> = get_token_kinds(tokens);
     for (i, expected_token) in expected.iter().enumerate() {
         if i < actual.len() {
-            assert_eq!(actual[i], *expected_token, "Token at position {} doesn't match", i);
+            assert_eq!(
+                actual[i], *expected_token,
+                "Token at position {} doesn't match",
+                i
+            );
         } else {
-            panic!("Expected token '{}' at position {}, but only {} tokens found", expected_token, i, actual.len());
+            panic!(
+                "Expected token '{}' at position {}, but only {} tokens found",
+                expected_token,
+                i,
+                actual.len()
+            );
         }
     }
 }
@@ -74,7 +86,11 @@ fn assert_tokens_contain(tokens: &[Token], expected: &[&str]) {
 fn assert_token_types(tokens: &[Token], expected_types: &[(&str, &str)]) {
     for (i, (expected_kind, expected_value)) in expected_types.iter().enumerate() {
         if i >= tokens.len() {
-            panic!("Expected token at position {}, but only {} tokens found", i, tokens.len());
+            panic!(
+                "Expected token at position {}, but only {} tokens found",
+                i,
+                tokens.len()
+            );
         }
 
         let actual_kind = match &tokens[i].kind {
@@ -86,10 +102,18 @@ fn assert_token_types(tokens: &[Token], expected_types: &[(&str, &str)]) {
             _ => "other",
         };
 
-        assert_eq!(actual_kind, *expected_kind, "Token kind at position {} doesn't match", i);
+        assert_eq!(
+            actual_kind, *expected_kind,
+            "Token kind at position {} doesn't match",
+            i
+        );
 
         let actual_value = format!("{}", tokens[i].kind);
-        assert_eq!(actual_value, *expected_value, "Token value at position {} doesn't match", i);
+        assert_eq!(
+            actual_value, *expected_value,
+            "Token value at position {} doesn't match",
+            i
+        );
     }
 }
 
@@ -107,13 +131,25 @@ fn test_function_macro() {
 
     // For now, let's just verify that we get the expected expansion tokens
     // and that the macro expansion worked (we should see 1, +, 2)
-    assert!(tokens.len() >= 3, "Should have at least the expansion tokens");
+    assert!(
+        tokens.len() >= 3,
+        "Should have at least the expansion tokens"
+    );
 
     // Check that the essential tokens from the expansion are present
     let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(token_strings.contains(&"1".to_string()), "Should contain '1' from macro expansion");
-    assert!(token_strings.contains(&"+".to_string()), "Should contain '+' from macro expansion");
-    assert!(token_strings.contains(&"2".to_string()), "Should contain '2' from macro expansion");
+    assert!(
+        token_strings.contains(&"1".to_string()),
+        "Should contain '1' from macro expansion"
+    );
+    assert!(
+        token_strings.contains(&"+".to_string()),
+        "Should contain '+' from macro expansion"
+    );
+    assert!(
+        token_strings.contains(&"2".to_string()),
+        "Should contain '2' from macro expansion"
+    );
 }
 
 /// Test token pasting operator (##)
@@ -125,11 +161,17 @@ fn test_token_pasting() {
 
     // Should expand to: xy (token pasting of x and y)
     // Expected tokens: Identifier("xy")
-    println!("DEBUG: Token pasting tokens: {:?}", get_token_kinds(&tokens));
+    println!(
+        "DEBUG: Token pasting tokens: {:?}",
+        get_token_kinds(&tokens)
+    );
 
     // Verify that token pasting worked by checking for the concatenated result
     let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(token_strings.contains(&"xy".to_string()), "Should contain 'xy' from token pasting");
+    assert!(
+        token_strings.contains(&"xy".to_string()),
+        "Should contain 'xy' from token pasting"
+    );
 }
 
 /// Test stringizing operator (#)
@@ -145,7 +187,10 @@ fn test_stringizing() {
 
     // Verify that stringizing worked by checking for the quoted result
     let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(token_strings.contains(&"\"hello\"".to_string()), "Should contain '\"hello\"' from stringizing");
+    assert!(
+        token_strings.contains(&"\"hello\"".to_string()),
+        "Should contain '\"hello\"' from stringizing"
+    );
 }
 
 /// Test hideset mechanism to prevent infinite macro recursion
@@ -169,11 +214,17 @@ fn test_simple_function_macro() {
 
     // Should expand to: 1
     // Expected tokens: Number("1")
-    println!("DEBUG: Simple function macro tokens: {:?}", get_token_kinds(&tokens));
+    println!(
+        "DEBUG: Simple function macro tokens: {:?}",
+        get_token_kinds(&tokens)
+    );
 
     // Verify that the macro expansion worked
     let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(token_strings.contains(&"1".to_string()), "Should contain '1' from macro expansion");
+    assert!(
+        token_strings.contains(&"1".to_string()),
+        "Should contain '1' from macro expansion"
+    );
 }
 
 #[test]
@@ -185,12 +236,21 @@ fn test_keyword_macro() {
 
     // Should expand to: int elif
     // Expected tokens: int, elif
-    println!("DEBUG: Keyword macro tokens: {:?}", get_token_kinds(&tokens));
+    println!(
+        "DEBUG: Keyword macro tokens: {:?}",
+        get_token_kinds(&tokens)
+    );
 
     // Verify that the macro expansion worked
     let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(token_strings.contains(&"int".to_string()), "Should contain 'int' from macro expansion");
-    assert!(token_strings.contains(&"elif".to_string()), "Should contain 'elif' from macro expansion");
+    assert!(
+        token_strings.contains(&"int".to_string()),
+        "Should contain 'int' from macro expansion"
+    );
+    assert!(
+        token_strings.contains(&"elif".to_string()),
+        "Should contain 'elif' from macro expansion"
+    );
 }
 
 #[test]
@@ -202,13 +262,25 @@ fn test_line_splicing() {
 
     // Should expand to: 1 + 2
     // Expected tokens: Number("1"), Plus, Number("2")
-    println!("DEBUG: Line splicing tokens: {:?}", get_token_kinds(&tokens));
+    println!(
+        "DEBUG: Line splicing tokens: {:?}",
+        get_token_kinds(&tokens)
+    );
 
     // Verify that line splicing worked
     let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(token_strings.contains(&"1".to_string()), "Should contain '1' from line splicing");
-    assert!(token_strings.contains(&"+".to_string()), "Should contain '+' from line splicing");
-    assert!(token_strings.contains(&"2".to_string()), "Should contain '2' from line splicing");
+    assert!(
+        token_strings.contains(&"1".to_string()),
+        "Should contain '1' from line splicing"
+    );
+    assert!(
+        token_strings.contains(&"+".to_string()),
+        "Should contain '+' from line splicing"
+    );
+    assert!(
+        token_strings.contains(&"2".to_string()),
+        "Should contain '2' from line splicing"
+    );
 }
 #[test]
 fn test_conditional_directives() {
@@ -235,11 +307,26 @@ fn test_conditional_directives() {
 
     // Verify that conditional compilation worked correctly
     let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(token_strings.contains(&"int".to_string()), "Should contain 'int' from branches");
-    assert!(token_strings.contains(&"a".to_string()), "Should contain 'a' from first branch");
-    assert!(token_strings.contains(&"1".to_string()), "Should contain '1' from first branch (true condition)");
-    assert!(token_strings.contains(&"b".to_string()), "Should contain 'b' from second branch");
-    assert!(token_strings.contains(&"2".to_string()), "Should contain '2' from second branch (true condition)");
+    assert!(
+        token_strings.contains(&"int".to_string()),
+        "Should contain 'int' from branches"
+    );
+    assert!(
+        token_strings.contains(&"a".to_string()),
+        "Should contain 'a' from first branch"
+    );
+    assert!(
+        token_strings.contains(&"1".to_string()),
+        "Should contain '1' from first branch (true condition)"
+    );
+    assert!(
+        token_strings.contains(&"b".to_string()),
+        "Should contain 'b' from second branch"
+    );
+    assert!(
+        token_strings.contains(&"2".to_string()),
+        "Should contain '2' from second branch (true condition)"
+    );
 
     // The key test: verify that we got the right values from the right branches
     // We should have "1" for variable a (from the true #if 1 > 0 branch)
@@ -264,9 +351,18 @@ fn test_ifdef_directive() {
 
     // Verify that ifdef worked correctly
     let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(token_strings.contains(&"int".to_string()), "Should contain 'int' from ifdef branch");
-    assert!(token_strings.contains(&"a".to_string()), "Should contain 'a' from ifdef branch");
-    assert!(token_strings.contains(&"1".to_string()), "Should contain '1' from ifdef branch");
+    assert!(
+        token_strings.contains(&"int".to_string()),
+        "Should contain 'int' from ifdef branch"
+    );
+    assert!(
+        token_strings.contains(&"a".to_string()),
+        "Should contain 'a' from ifdef branch"
+    );
+    assert!(
+        token_strings.contains(&"1".to_string()),
+        "Should contain '1' from ifdef branch"
+    );
 }
 
 #[test]
@@ -276,7 +372,7 @@ fn test_ifndef_directive() {
     int a = 1;
 #endif
 "#;
-    let mut preprocessor = Preprocessor::new(FileManager::new(), true); // Enable verbose mode
+    let mut preprocessor = Preprocessor::new(FileManager::new()); // Enable verbose mode
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
     let tokens = get_clean_token(tokens);
 
@@ -286,9 +382,18 @@ fn test_ifndef_directive() {
 
     // Verify that ifndef worked correctly
     let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(token_strings.contains(&"int".to_string()), "Should contain 'int' from ifndef branch");
-    assert!(token_strings.contains(&"a".to_string()), "Should contain 'a' from ifndef branch");
-    assert!(token_strings.contains(&"1".to_string()), "Should contain '1' from ifndef branch");
+    assert!(
+        token_strings.contains(&"int".to_string()),
+        "Should contain 'int' from ifndef branch"
+    );
+    assert!(
+        token_strings.contains(&"a".to_string()),
+        "Should contain 'a' from ifndef branch"
+    );
+    assert!(
+        token_strings.contains(&"1".to_string()),
+        "Should contain '1' from ifndef branch"
+    );
 }
 
 #[test]
@@ -306,12 +411,17 @@ fn test_undef_directive() {
 
     // Should not include the code because FOO was undefined
     // Expected: no tokens from the ifdef branch
-    println!("DEBUG: Undef directive tokens: {:?}", get_token_kinds(&tokens));
+    println!(
+        "DEBUG: Undef directive tokens: {:?}",
+        get_token_kinds(&tokens)
+    );
 
     // Verify that undef worked correctly - FOO should not be defined after undef
     let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(!token_strings.contains(&"int".to_string()) || !token_strings.contains(&"a".to_string()),
-            "Should not contain tokens from the ifdef branch after undef");
+    assert!(
+        !token_strings.contains(&"int".to_string()) || !token_strings.contains(&"a".to_string()),
+        "Should not contain tokens from the ifdef branch after undef"
+    );
 }
 
 #[test]
@@ -328,13 +438,25 @@ fn test_include_directive() {
 
     // Should include content: int a = 1 ;
     // Expected tokens: int, a, =, 1, ;
-    println!("DEBUG: Include directive tokens: {:?}", get_token_kinds(&tokens));
+    println!(
+        "DEBUG: Include directive tokens: {:?}",
+        get_token_kinds(&tokens)
+    );
 
     // Verify that file inclusion worked
     let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(token_strings.contains(&"int".to_string()), "Should contain 'int' from included file");
-    assert!(token_strings.contains(&"a".to_string()), "Should contain 'a' from included file");
-    assert!(token_strings.contains(&"1".to_string()), "Should contain '1' from included file");
+    assert!(
+        token_strings.contains(&"int".to_string()),
+        "Should contain 'int' from included file"
+    );
+    assert!(
+        token_strings.contains(&"a".to_string()),
+        "Should contain 'a' from included file"
+    );
+    assert!(
+        token_strings.contains(&"1".to_string()),
+        "Should contain '1' from included file"
+    );
 
     std::fs::remove_file("test.h").unwrap();
 }
@@ -348,10 +470,16 @@ fn test_line_and_file_macros() {
 
     // Should expand __LINE__ to current line number and __FILE__ to filename
     // The exact values depend on the implementation, but we should get some tokens
-    println!("DEBUG: Line and file macro tokens: {:?}", get_token_kinds(&tokens));
+    println!(
+        "DEBUG: Line and file macro tokens: {:?}",
+        get_token_kinds(&tokens)
+    );
 
     // Verify that we got some tokens from the macro expansion
-    assert!(tokens.len() > 0, "Should have tokens from line/file macro expansion");
+    assert!(
+        tokens.len() > 0,
+        "Should have tokens from line/file macro expansion"
+    );
 }
 
 #[test]
@@ -374,7 +502,10 @@ fn test_line_directive() {
 
     // The line directive should set the line number and filename
     // We don't expect content tokens, but the directive should be processed
-    println!("DEBUG: Line directive tokens: {:?}", get_token_kinds(&tokens));
+    println!(
+        "DEBUG: Line directive tokens: {:?}",
+        get_token_kinds(&tokens)
+    );
 
     // The line directive itself doesn't produce content tokens, so this should be empty or minimal
     // If there are tokens, they should be related to the directive processing
@@ -390,10 +521,16 @@ fn test_self_referential_macro() {
 
     // Self-referential macros should be handled gracefully (not cause infinite loops)
     // The exact output depends on the implementation's recursion handling
-    println!("DEBUG: Self-referential macro tokens: {:?}", get_token_kinds(&tokens));
+    println!(
+        "DEBUG: Self-referential macro tokens: {:?}",
+        get_token_kinds(&tokens)
+    );
 
     // Just verify that the test doesn't hang and produces some result
-    assert!(tokens.len() >= 0, "Self-referential macro test completed without hanging");
+    assert!(
+        tokens.len() >= 0,
+        "Self-referential macro test completed without hanging"
+    );
 }
 
 #[test]
@@ -405,10 +542,16 @@ fn test_mutually_recursive_macros() {
 
     // Mutually recursive macros should be handled gracefully
     // The exact output depends on the implementation's recursion handling
-    println!("DEBUG: Mutually recursive macro tokens: {:?}", get_token_kinds(&tokens));
+    println!(
+        "DEBUG: Mutually recursive macro tokens: {:?}",
+        get_token_kinds(&tokens)
+    );
 
     // Just verify that the test doesn't hang and produces some result
-    assert!(tokens.len() >= 0, "Mutually recursive macro test completed without hanging");
+    assert!(
+        tokens.len() >= 0,
+        "Mutually recursive macro test completed without hanging"
+    );
 }
 
 #[test]
@@ -420,14 +563,22 @@ fn test_date_and_time_macros() {
 
     // Should expand __DATE__ and __TIME__ to current date/time strings
     // The exact values depend on when the test runs, but we should get string tokens
-    println!("DEBUG: Date and time macro tokens: {:?}", get_token_kinds(&tokens));
+    println!(
+        "DEBUG: Date and time macro tokens: {:?}",
+        get_token_kinds(&tokens)
+    );
 
     // Verify that we got some tokens from the macro expansion
-    assert!(tokens.len() > 0, "Should have tokens from date/time macro expansion");
+    assert!(
+        tokens.len() > 0,
+        "Should have tokens from date/time macro expansion"
+    );
 
     // Check that we have string tokens (date and time should be strings)
     let token_strings: Vec<String> = get_token_kinds(&tokens);
-    let has_date_time = token_strings.iter().any(|s| s.contains("202") || s.contains(":"));
+    let has_date_time = token_strings
+        .iter()
+        .any(|s| s.contains("202") || s.contains(":"));
     assert!(has_date_time, "Should contain date or time information");
 }
 
@@ -440,13 +591,25 @@ fn test_object_macro_with_space_before_paren() {
 
     // Should expand to: (1)
     // Expected tokens: LeftParen, Number("1"), RightParen
-    println!("DEBUG: Object macro with space tokens: {:?}", get_token_kinds(&tokens));
+    println!(
+        "DEBUG: Object macro with space tokens: {:?}",
+        get_token_kinds(&tokens)
+    );
 
     // Verify that the macro expansion worked
     let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(token_strings.contains(&"(".to_string()), "Should contain '(' from macro expansion");
-    assert!(token_strings.contains(&"1".to_string()), "Should contain '1' from macro expansion");
-    assert!(token_strings.contains(&")".to_string()), "Should contain ')' from macro expansion");
+    assert!(
+        token_strings.contains(&"(".to_string()),
+        "Should contain '(' from macro expansion"
+    );
+    assert!(
+        token_strings.contains(&"1".to_string()),
+        "Should contain '1' from macro expansion"
+    );
+    assert!(
+        token_strings.contains(&")".to_string()),
+        "Should contain ')' from macro expansion"
+    );
 }
 
 #[test]
@@ -460,11 +623,17 @@ fn test_cmdline_define() {
 
     // Should expand A to 1 and B to nothing (empty define)
     // Expected tokens: Number("1")
-    println!("DEBUG: Cmdline define tokens: {:?}", get_token_kinds(&tokens));
+    println!(
+        "DEBUG: Cmdline define tokens: {:?}",
+        get_token_kinds(&tokens)
+    );
 
     // Verify that the cmdline define worked
     let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(token_strings.contains(&"1".to_string()), "Should contain '1' from A=1 cmdline define");
+    assert!(
+        token_strings.contains(&"1".to_string()),
+        "Should contain '1' from A=1 cmdline define"
+    );
 }
 
 #[test]
@@ -512,11 +681,17 @@ fn test_simple_object_macro_expansion() {
 
     // Should expand to: AKU
     // Expected tokens: Identifier("AKU")
-    println!("DEBUG: Simple object macro tokens: {:?}", get_token_kinds(&tokens));
+    println!(
+        "DEBUG: Simple object macro tokens: {:?}",
+        get_token_kinds(&tokens)
+    );
 
     // Verify that the macro expansion worked
     let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(token_strings.contains(&"AKU".to_string()), "Should contain 'AKU' from macro expansion");
+    assert!(
+        token_strings.contains(&"AKU".to_string()),
+        "Should contain 'AKU' from macro expansion"
+    );
 }
 
 #[test]
@@ -527,9 +702,15 @@ fn test_simple_object_macro_expansion_with_spaces() {
 
     // Should expand to: AKU (spaces in define should not affect expansion)
     // Expected tokens: Identifier("AKU")
-    println!("DEBUG: Simple object macro with spaces tokens: {:?}", get_token_kinds(&tokens));
+    println!(
+        "DEBUG: Simple object macro with spaces tokens: {:?}",
+        get_token_kinds(&tokens)
+    );
 
     // Verify that the macro expansion worked
     let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(token_strings.contains(&"AKU".to_string()), "Should contain 'AKU' from macro expansion");
+    assert!(
+        token_strings.contains(&"AKU".to_string()),
+        "Should contain 'AKU' from macro expansion"
+    );
 }

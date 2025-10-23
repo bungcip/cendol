@@ -1,6 +1,6 @@
 use crate::file::FileId;
 use crate::preprocessor::error::PreprocessorError;
-use crate::preprocessor::token::{DirectiveKind, SourceLocation, Token, TokenKind};
+use crate::preprocessor::token::{DirectiveKind, SourceLocation, SourceSpan, Token, TokenKind};
 use std::iter::Peekable;
 use std::str::Chars;
 
@@ -11,7 +11,8 @@ pub struct Lexer<'a> {
     line: u32,
     column: u32,
     file: FileId,
-    verbose: bool,
+    start_line: u32,
+    start_column: u32,
 }
 
 impl<'a> Lexer<'a> {
@@ -22,14 +23,15 @@ impl<'a> Lexer<'a> {
     /// * `input` - The input string to tokenize.
     /// * `file` - The name of the file being tokenized.
     /// * `verbose` - Whether to enable verbose debug output.
-    pub fn new(input: &'a str, file: FileId, verbose: bool) -> Self {
+    pub fn new(input: &'a str, file: FileId) -> Self {
         Lexer {
             input: input.chars().peekable(),
             at_start_of_line: true,
             line: 1,
             column: 1,
             file,
-            verbose,
+            start_line: 1,
+            start_column: 1,
         }
     }
 
@@ -41,11 +43,12 @@ impl<'a> Lexer<'a> {
     pub fn next_token(&mut self) -> Result<Token, PreprocessorError> {
         let c = match self.input.next() {
             Some(c) => c,
-            None => return Ok(Token::new(TokenKind::Eof, self.location())),
+            None => return Ok(Token::new(TokenKind::Eof, self.current_span())),
         };
 
         // Track the starting position of this token
-        let start_location = self.location();
+        self.start_line = self.line;
+        self.start_column = self.column;
 
         match c {
             '\\' => {
@@ -55,7 +58,7 @@ impl<'a> Lexer<'a> {
                     self.next_token()
                 } else {
                     self.consume_char(c);
-                    Ok(Token::new(TokenKind::Backslash, start_location))
+                    Ok(Token::new(TokenKind::Backslash, self.current_span()))
                 }
             }
             ' ' | '\t' | '\r' => {
@@ -71,13 +74,13 @@ impl<'a> Lexer<'a> {
                 }
                 Ok(Token::new(
                     TokenKind::Whitespace(whitespace),
-                    start_location,
+                    self.current_span(),
                 ))
             }
             '\n' => {
                 self.consume_char(c);
                 self.at_start_of_line = true; // Explicitly set this
-                Ok(Token::new(TokenKind::Newline, start_location))
+                Ok(Token::new(TokenKind::Newline, self.current_span()))
             }
             _ if c.is_alphabetic() || c == '_' => {
                 let mut ident = String::from(c);
@@ -92,9 +95,12 @@ impl<'a> Lexer<'a> {
                 }
                 self.at_start_of_line = false;
                 if let Ok(keyword) = ident.parse() {
-                    Ok(Token::new(TokenKind::Keyword(keyword), start_location))
+                    Ok(Token::new(TokenKind::Keyword(keyword), self.current_span()))
                 } else {
-                    Ok(Token::new(TokenKind::Identifier(ident), start_location))
+                    Ok(Token::new(
+                        TokenKind::Identifier(ident),
+                        self.current_span(),
+                    ))
                 }
             }
             _ if c.is_ascii_digit() => {
@@ -109,7 +115,7 @@ impl<'a> Lexer<'a> {
                     }
                 }
                 self.at_start_of_line = false;
-                Ok(Token::new(TokenKind::Number(num), start_location))
+                Ok(Token::new(TokenKind::Number(num), self.current_span()))
             }
             '"' => {
                 let mut s = String::new();
@@ -127,7 +133,7 @@ impl<'a> Lexer<'a> {
                     self.consume_char(ch);
                 }
                 self.at_start_of_line = false;
-                Ok(Token::new(TokenKind::String(s), start_location))
+                Ok(Token::new(TokenKind::String(s), self.current_span()))
             }
             '#' => {
                 if self.at_start_of_line {
@@ -138,11 +144,11 @@ impl<'a> Lexer<'a> {
                     self.input.next();
                     self.consume_char('#');
                     self.at_start_of_line = false;
-                    Ok(Token::new(TokenKind::HashHash, start_location))
+                    Ok(Token::new(TokenKind::HashHash, self.current_span()))
                 } else {
                     self.consume_char(c);
                     self.at_start_of_line = false;
-                    Ok(Token::new(TokenKind::Hash, start_location))
+                    Ok(Token::new(TokenKind::Hash, self.current_span()))
                 }
             }
             '.' => {
@@ -154,14 +160,14 @@ impl<'a> Lexer<'a> {
                         self.input.next();
                         self.consume_char('.');
                         self.at_start_of_line = false;
-                        return Ok(Token::new(TokenKind::Ellipsis, start_location));
+                        return Ok(Token::new(TokenKind::Ellipsis, self.current_span()));
                     }
                     // This is a bit of a hack. A better solution would be to have a buffer.
                     // We are effectively putting the dots back into the stream.
                     // This is not yet implemented.
                 }
                 self.at_start_of_line = false;
-                Ok(Token::new(TokenKind::Dot, start_location))
+                Ok(Token::new(TokenKind::Dot, self.current_span()))
             }
             '+' => {
                 self.consume_char(c);
@@ -169,9 +175,9 @@ impl<'a> Lexer<'a> {
                 if let Some(&'+') = self.input.peek() {
                     self.input.next();
                     self.consume_char('+');
-                    Ok(Token::new(TokenKind::PlusPlus, start_location))
+                    Ok(Token::new(TokenKind::PlusPlus, self.current_span()))
                 } else {
-                    Ok(Token::new(TokenKind::Plus, start_location))
+                    Ok(Token::new(TokenKind::Plus, self.current_span()))
                 }
             }
             '-' => {
@@ -180,19 +186,19 @@ impl<'a> Lexer<'a> {
                 if let Some(&'-') = self.input.peek() {
                     self.input.next();
                     self.consume_char('-');
-                    Ok(Token::new(TokenKind::MinusMinus, start_location))
+                    Ok(Token::new(TokenKind::MinusMinus, self.current_span()))
                 } else if let Some(&'>') = self.input.peek() {
                     self.input.next();
                     self.consume_char('>');
-                    Ok(Token::new(TokenKind::Arrow, start_location))
+                    Ok(Token::new(TokenKind::Arrow, self.current_span()))
                 } else {
-                    Ok(Token::new(TokenKind::Minus, start_location))
+                    Ok(Token::new(TokenKind::Minus, self.current_span()))
                 }
             }
             '*' => {
                 self.consume_char(c);
                 self.at_start_of_line = false;
-                Ok(Token::new(TokenKind::Star, start_location))
+                Ok(Token::new(TokenKind::Star, self.current_span()))
             }
             '|' => {
                 self.consume_char(c);
@@ -200,9 +206,9 @@ impl<'a> Lexer<'a> {
                 if let Some(&'|') = self.input.peek() {
                     self.input.next();
                     self.consume_char('|');
-                    Ok(Token::new(TokenKind::PipePipe, start_location))
+                    Ok(Token::new(TokenKind::PipePipe, self.current_span()))
                 } else {
-                    Ok(Token::new(TokenKind::Pipe, start_location))
+                    Ok(Token::new(TokenKind::Pipe, self.current_span()))
                 }
             }
             '&' => {
@@ -211,30 +217,33 @@ impl<'a> Lexer<'a> {
                 if let Some(&'&') = self.input.peek() {
                     self.input.next();
                     self.consume_char('&');
-                    Ok(Token::new(TokenKind::AmpersandAmpersand, start_location))
+                    Ok(Token::new(
+                        TokenKind::AmpersandAmpersand,
+                        self.current_span(),
+                    ))
                 } else {
-                    Ok(Token::new(TokenKind::Ampersand, start_location))
+                    Ok(Token::new(TokenKind::Ampersand, self.current_span()))
                 }
             }
             '^' => {
                 self.consume_char(c);
                 self.at_start_of_line = false;
-                Ok(Token::new(TokenKind::Caret, start_location))
+                Ok(Token::new(TokenKind::Caret, self.current_span()))
             }
             '~' => {
                 self.consume_char(c);
                 self.at_start_of_line = false;
-                Ok(Token::new(TokenKind::Tilde, start_location))
+                Ok(Token::new(TokenKind::Tilde, self.current_span()))
             }
             '!' => {
                 self.consume_char(c);
                 self.at_start_of_line = false;
-                Ok(Token::new(TokenKind::Bang, start_location))
+                Ok(Token::new(TokenKind::Bang, self.current_span()))
             }
             '?' => {
                 self.consume_char(c);
                 self.at_start_of_line = false;
-                Ok(Token::new(TokenKind::Question, start_location))
+                Ok(Token::new(TokenKind::Question, self.current_span()))
             }
             '/' => {
                 self.consume_char(c);
@@ -254,7 +263,7 @@ impl<'a> Lexer<'a> {
                     for ch in chars {
                         self.consume_char(ch);
                     }
-                    Ok(Token::new(TokenKind::Comment(comment), start_location))
+                    Ok(Token::new(TokenKind::Comment(comment), self.current_span()))
                 } else if let Some(&'*') = self.input.peek() {
                     self.input.next();
                     self.consume_char('*');
@@ -273,9 +282,9 @@ impl<'a> Lexer<'a> {
                     for ch in chars {
                         self.consume_char(ch);
                     }
-                    Ok(Token::new(TokenKind::Comment(comment), start_location))
+                    Ok(Token::new(TokenKind::Comment(comment), self.current_span()))
                 } else {
-                    Ok(Token::new(TokenKind::Slash, start_location))
+                    Ok(Token::new(TokenKind::Slash, self.current_span()))
                 }
             }
             _ if c.is_ascii_punctuation() && c != '#' => {
@@ -304,7 +313,7 @@ impl<'a> Lexer<'a> {
                         if let Some(&'=') = self.input.peek() {
                             self.input.next();
                             self.consume_char('=');
-                            return Ok(Token::new(TokenKind::BangEqual, start_location));
+                            return Ok(Token::new(TokenKind::BangEqual, self.current_span()));
                         } else {
                             TokenKind::Bang
                         }
@@ -313,7 +322,7 @@ impl<'a> Lexer<'a> {
                         if let Some(&'=') = self.input.peek() {
                             self.input.next();
                             self.consume_char('=');
-                            return Ok(Token::new(TokenKind::LessThanEqual, start_location));
+                            return Ok(Token::new(TokenKind::LessThanEqual, self.current_span()));
                         } else {
                             TokenKind::LessThan
                         }
@@ -322,14 +331,17 @@ impl<'a> Lexer<'a> {
                         if let Some(&'=') = self.input.peek() {
                             self.input.next();
                             self.consume_char('=');
-                            return Ok(Token::new(TokenKind::GreaterThanEqual, start_location));
+                            return Ok(Token::new(
+                                TokenKind::GreaterThanEqual,
+                                self.current_span(),
+                            ));
                         } else {
                             TokenKind::GreaterThan
                         }
                     }
                     _ => return Err(PreprocessorError::UnexpectedChar(c)),
                 };
-                Ok(Token::new(kind, start_location))
+                Ok(Token::new(kind, self.current_span()))
             }
             _ => Err(PreprocessorError::UnexpectedChar(c)),
         }
@@ -339,48 +351,23 @@ impl<'a> Lexer<'a> {
     fn read_directive(&mut self) -> Result<Token, PreprocessorError> {
         let mut directive = String::new();
 
-        if self.verbose {
-            eprintln!(
-                "[DEBUG] read_directive called: at_start_of_line={}, line={}",
-                self.at_start_of_line, self.line
-            );
-        }
-
         // Check if we've reached the end of input before trying to read directive
         if let Some(&c) = self.input.peek() {
-            if self.verbose {
-                eprintln!("[DEBUG] First character after #: '{}'", c);
-            }
             if c.is_alphabetic() {
                 directive.push(self.input.next().unwrap());
-                if self.verbose {
-                    eprintln!("[DEBUG] Started reading directive with '{}'", c);
-                }
                 while let Some(&c) = self.input.peek() {
                     if c.is_alphabetic() || c.is_ascii_digit() || c == '_' {
                         directive.push(self.input.next().unwrap());
-                        if self.verbose {
-                            eprintln!("[DEBUG] Added '{}' to directive, now: '{}'", c, directive);
-                        }
                     } else {
-                        if self.verbose {
-                            eprintln!("[DEBUG] Stopping directive at non-alphabetic '{}'", c);
-                        }
                         break;
                     }
                 }
             } else if c.is_whitespace() {
                 // Skip whitespace after # and continue reading directive
-                if self.verbose {
-                    eprintln!("[DEBUG] Skipping whitespace after # on line {}", self.line);
-                }
                 // Skip whitespace characters
                 while let Some(&c) = self.input.peek() {
                     if c.is_whitespace() && c != '\n' {
                         self.input.next();
-                        if self.verbose {
-                            eprintln!("[DEBUG] Skipped whitespace '{}'", c);
-                        }
                     } else {
                         break;
                     }
@@ -389,62 +376,28 @@ impl<'a> Lexer<'a> {
                 if let Some(&c) = self.input.peek() {
                     if c.is_alphabetic() {
                         directive.push(self.input.next().unwrap());
-                        if self.verbose {
-                            eprintln!("[DEBUG] Started reading directive with '{}'", c);
-                        }
                         while let Some(&c) = self.input.peek() {
                             if c.is_alphabetic() || c.is_ascii_digit() || c == '_' {
                                 directive.push(self.input.next().unwrap());
-                                if self.verbose {
-                                    eprintln!(
-                                        "[DEBUG] Added '{}' to directive, now: '{}'",
-                                        c, directive
-                                    );
-                                }
                             } else {
-                                if self.verbose {
-                                    eprintln!(
-                                        "[DEBUG] Stopping directive at non-alphabetic '{}'",
-                                        c
-                                    );
-                                }
                                 break;
                             }
                         }
                     } else {
                         // If after skipping whitespace we don't find alphabetic character, it's invalid
-                        if self.verbose {
-                            eprintln!("[DEBUG] No directive name after whitespace: '{}'", c);
-                        }
                         return Err(PreprocessorError::UnknownDirective("".to_string()));
                     }
                 } else {
                     // End of input reached
-                    if self.verbose {
-                        eprintln!("[DEBUG] End of input after whitespace");
-                    }
                     return Err(PreprocessorError::UnknownDirective("".to_string()));
                 }
             } else {
                 // If the first character after # is not alphabetic or whitespace, it's not a valid directive
-                if self.verbose {
-                    eprintln!("[DEBUG] Invalid directive start: '{}'", c);
-                }
                 return Err(PreprocessorError::UnknownDirective("".to_string()));
             }
         } else {
             // End of input reached
-            if self.verbose {
-                eprintln!("[DEBUG] End of input reached while reading directive");
-            }
             return Err(PreprocessorError::UnknownDirective("".to_string()));
-        }
-
-        if self.verbose {
-            eprintln!(
-                "[DEBUG] read_directive: directive='{}', at_start_of_line={}, line={}",
-                directive, self.at_start_of_line, self.line
-            );
         }
 
         self.at_start_of_line = false;
@@ -464,30 +417,27 @@ impl<'a> Lexer<'a> {
             "pragma" => {
                 // Handle pragma by reading the rest of the line as a directive
                 // For now, treat it as an unknown directive to avoid parsing issues
-                if self.verbose {
-                    eprintln!("[DEBUG] Pragma directive encountered, treating as unknown");
-                }
                 return Err(PreprocessorError::UnknownDirective("pragma".to_string()));
             }
             _ => {
-                if self.verbose {
-                    eprintln!("[DEBUG] Unknown directive '{}' encountered", directive);
-                    eprintln!(
-                        "[DEBUG] Available directives: if, else, elif, endif, ifdef, ifndef, undef, error, line, include, define, pragma"
-                    );
-                }
                 return Err(PreprocessorError::UnknownDirective(directive));
             }
         };
-        if self.verbose {
-            eprintln!("[DEBUG] Successfully parsed directive: {:?}", kind);
-        }
-        Ok(Token::new(TokenKind::Directive(kind), self.location()))
+        Ok(Token::new(TokenKind::Directive(kind), self.current_span()))
     }
 
     /// Returns the current location in the source file.
-    fn location(&self) -> SourceLocation {
+    fn current_location(&self) -> SourceLocation {
         SourceLocation::new(self.file, self.line, self.column)
+    }
+
+    /// Returns the current span from start to current.
+    fn current_span(&self) -> SourceSpan {
+        SourceSpan::new(
+            self.file,
+            SourceLocation::new(self.file, self.start_line, self.start_column),
+            self.current_location(),
+        )
     }
 
     /// Consumes a character and updates position tracking.

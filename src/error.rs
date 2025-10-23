@@ -22,6 +22,7 @@ pub enum Error {
     Codegen(#[from] CodegenError),
 }
 
+use crate::common::SourceSpan;
 use serde::Serialize;
 
 /// Represents a report of an error.
@@ -31,8 +32,8 @@ pub struct Report {
     pub msg: String,
     /// The path of the file where the error occurred.
     pub path: Option<String>,
-    /// The location (line and column) of the error.
-    pub loc: Option<(usize, usize)>,
+    /// The span of the error.
+    pub span: Option<SourceSpan>,
     /// Whether to print verbose output.
     pub verbose: bool,
 }
@@ -44,16 +45,16 @@ impl Report {
     ///
     /// * `msg` - The error message.
     /// * `path` - The path of the file where the error occurred.
-    /// * `loc` - The location (line and column) of the error.
+    /// * `span` - The span of the error.
     ///
     /// # Returns
     ///
     /// A new `Report` instance.
-    pub fn new(msg: String, path: Option<String>, loc: Option<(usize, usize)>) -> Self {
+    pub fn new(msg: String, path: Option<String>, span: Option<SourceSpan>) -> Self {
         Self {
             msg,
             path,
-            loc,
+            span,
             verbose: false,
         }
     }
@@ -65,28 +66,39 @@ impl Report {
 ///
 /// * `report` - The report to print.
 pub fn report(report: &Report) {
-    if report.verbose {
-        eprintln!("[VERBOSE] Reporting error: {:?}", report);
-    }
-
     let path = report.path.clone().unwrap_or_else(|| "input".to_string());
     let msg = report.msg.clone();
 
-    if let Some((line, col)) = report.loc {
+    if let Some(span) = &report.span {
         let source = std::fs::read_to_string(&path).unwrap_or_else(|_| "".to_string());
-        let offset = source
-            .lines()
-            .take(line - 1)
-            .map(|line| line.len() + 1)
-            .sum::<usize>()
-            + col
-            - 1;
+        let start_offset = if span.start.line == 0 || span.start.column == 0 {
+            0
+        } else {
+            source
+                .lines()
+                .take(span.start.line as usize - 1)
+                .map(|line| line.len() + 1)
+                .sum::<usize>()
+                + span.start.column as usize
+                - 1
+        };
+        let end_offset = if span.end.line == 0 || span.end.column == 0 {
+            start_offset + 1
+        } else {
+            source
+                .lines()
+                .take(span.end.line as usize - 1)
+                .map(|line| line.len() + 1)
+                .sum::<usize>()
+                + span.end.column as usize
+                - 1
+        };
 
-        AriadneReport::<'static, Span>::build(ReportKind::Error, path.clone(), offset)
+        AriadneReport::<'static, Span>::build(ReportKind::Error, path.clone(), start_offset)
             .with_code(3)
             .with_message(&msg)
             .with_label(
-                Label::new((path.clone(), offset..offset + 1))
+                Label::new((path.clone(), start_offset..end_offset))
                     .with_message(msg.fg(Color::Red))
                     .with_color(Color::Red),
             )

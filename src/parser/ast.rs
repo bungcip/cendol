@@ -88,7 +88,7 @@ pub enum Expr {
     Number(i64),
     String(String),
     /// A variable.
-    Variable(String),
+    Variable(String, crate::common::SourceSpan),
     /// An assignment expression.
     Assign(Box<Expr>, Box<Expr>),
     /// An addition expression.
@@ -112,7 +112,7 @@ pub enum Expr {
     /// A greater-than-or-equal-to comparison.
     GreaterThanOrEqual(Box<Expr>, Box<Expr>),
     /// A function call.
-    Call(String, Vec<Expr>),
+    Call(String, Vec<Expr>, crate::common::SourceSpan),
     /// A logical AND expression.
     LogicalAnd(Box<Expr>, Box<Expr>),
     /// A logical OR expression.
@@ -151,7 +151,7 @@ pub struct Parameter {
 }
 
 /// Represents a function definition.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Function {
     /// The return type of the function.
     pub return_type: Type,
@@ -164,7 +164,7 @@ pub struct Function {
 }
 
 /// Represents a program.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Program {
     /// The global variables.
     pub globals: Vec<Stmt>,

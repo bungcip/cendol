@@ -1,12 +1,12 @@
-pub use crate::common::{KeywordKind, SourceLocation};
+pub use crate::common::{KeywordKind, SourceLocation, SourceSpan};
 
 /// Represents a token in the C language.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Token {
     /// The kind of token.
     pub kind: TokenKind,
-    /// The location of the token in the source code.
-    pub location: SourceLocation,
+    /// The span of the token in the source code.
+    pub span: SourceSpan,
 }
 
 impl Token {
@@ -15,13 +15,13 @@ impl Token {
     /// # Arguments
     ///
     /// * `kind` - The kind of token.
-    /// * `location` - The location of the token in the source code.
+    /// * `span` - The span of the token in the source code.
     ///
     /// # Returns
     ///
     /// A new `Token` instance.
-    pub fn new(kind: TokenKind, location: SourceLocation) -> Self {
-        Token { kind, location }
+    pub fn new(kind: TokenKind, span: SourceSpan) -> Self {
+        Token { kind, span }
     }
 }
 
@@ -146,7 +146,7 @@ impl From<preprocessor::token::Token> for Token {
 
         Token {
             kind,
-            location: token.location,
+            span: token.span,
         }
     }
 }

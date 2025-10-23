@@ -1,4 +1,4 @@
-use crate::common::SourceLocation;
+use crate::common::{SourceLocation, SourceSpan};
 use crate::file::{FileId, FileManager};
 use crate::preprocessor::error::PreprocessorError;
 use crate::preprocessor::lexer::Lexer;
@@ -54,18 +54,16 @@ pub struct Preprocessor {
     conditional_stack: Vec<bool>,
     file_manager: FileManager,
     file_stack: Vec<FileState>,
-    verbose: bool,
 }
 
 impl Preprocessor {
     /// Creates a new `Preprocessor`.
-    pub fn new(file_manager: FileManager, verbose: bool) -> Self {
+    pub fn new(file_manager: FileManager) -> Self {
         Preprocessor {
             macros: HashMap::new(),
             conditional_stack: Vec::new(),
             file_manager,
             file_stack: Vec::new(),
-            verbose,
         }
     }
 
@@ -99,21 +97,22 @@ impl Preprocessor {
         let mut current_file = filename;
 
         // Add initial line directive
+        let dummy_loc = SourceLocation::new(FileId(0), 0, 0);
         final_tokens.push(Token::new(
             TokenKind::Directive(DirectiveKind::Line),
-            SourceLocation::new(FileId(0), 0, 0),
+            SourceSpan::new(FileId(0), dummy_loc.clone(), dummy_loc.clone()),
         ));
         final_tokens.push(Token::new(
             TokenKind::Number(current_line.to_string()),
-            SourceLocation::new(FileId(0), 0, 0),
+            SourceSpan::new(FileId(0), dummy_loc.clone(), dummy_loc.clone()),
         ));
         final_tokens.push(Token::new(
             TokenKind::String(current_file.to_string()),
-            SourceLocation::new(FileId(0), 0, 0),
+            SourceSpan::new(FileId(0), dummy_loc.clone(), dummy_loc.clone()),
         ));
         final_tokens.push(Token::new(
             TokenKind::Newline,
-            SourceLocation::new(FileId(0), 0, 0),
+            SourceSpan::new(FileId(0), dummy_loc.clone(), dummy_loc.clone()),
         ));
 
         while !self.file_stack.is_empty() {
@@ -122,43 +121,28 @@ impl Preprocessor {
 
             // Update line number tracking for line directives
             for token in &tokens {
-                if token.location.line != current_line
-                    || token.location.file.0 != self.file_stack.len() as u32
+                if token.span.start.line != current_line
+                    || token.span.start.file.0 != self.file_stack.len() as u32
                 {
-                    current_line = token.location.line;
-                    if let Some(path) = self.file_manager.get_path(token.location.file) {
+                    current_line = token.span.start.line;
+                    if let Some(path) = self.file_manager.get_path(token.span.start.file) {
                         current_file = path.to_str().unwrap();
+                        let loc = token.span.start.clone();
                         final_tokens.push(Token::new(
                             TokenKind::Directive(DirectiveKind::Line),
-                            SourceLocation::new(
-                                token.location.file,
-                                token.location.line,
-                                token.location.column,
-                            ),
+                            SourceSpan::new(loc.file, loc.clone(), loc.clone()),
                         ));
                         final_tokens.push(Token::new(
                             TokenKind::Number(current_line.to_string()),
-                            SourceLocation::new(
-                                token.location.file,
-                                token.location.line,
-                                token.location.column,
-                            ),
+                            SourceSpan::new(loc.file, loc.clone(), loc.clone()),
                         ));
                         final_tokens.push(Token::new(
                             TokenKind::String(current_file.to_string()),
-                            SourceLocation::new(
-                                token.location.file,
-                                token.location.line,
-                                token.location.column,
-                            ),
+                            SourceSpan::new(loc.file, loc.clone(), loc.clone()),
                         ));
                         final_tokens.push(Token::new(
                             TokenKind::Newline,
-                            SourceLocation::new(
-                                token.location.file,
-                                token.location.line,
-                                token.location.column,
-                            ),
+                            SourceSpan::new(loc.file, loc.clone(), loc.clone()),
                         ));
                     }
                 }
@@ -192,7 +176,7 @@ impl Preprocessor {
         }
         let value = if parts.len() > 1 { parts[1] } else { "" };
         let file_id = self.file_manager.open("<cmdline>")?;
-        let mut lexer = Lexer::new(value, file_id, self.verbose);
+        let mut lexer = Lexer::new(value, file_id);
         let mut tokens = Vec::new();
         loop {
             let token = lexer.next_token()?;
@@ -211,7 +195,7 @@ impl Preprocessor {
             .file_manager
             .open(filename)
             .map_err(|_| PreprocessorError::FileNotFound(filename.to_string()))?;
-        let mut lexer = Lexer::new(input, file_id, self.verbose);
+        let mut lexer = Lexer::new(input, file_id);
         let mut tokens = Vec::new();
         loop {
             let token = lexer.next_token()?;
@@ -240,7 +224,6 @@ impl Preprocessor {
             file_state.index += 1;
 
             let in_true_branch = self.conditional_stack.iter().all(|&x| x);
-
 
             if let TokenKind::Directive(directive) = token.kind {
                 match directive {
@@ -371,11 +354,11 @@ impl Preprocessor {
                             eprintln!(
                                 "{}:{}: warning: {}",
                                 self.file_manager
-                                    .get_path(token.location.file)
+                                    .get_path(token.span.start.file)
                                     .unwrap()
                                     .to_str()
                                     .unwrap(),
-                                token.location.line,
+                                token.span.start.line,
                                 message
                             );
                         }
@@ -389,7 +372,7 @@ impl Preprocessor {
                                 parse_include(file_state.index, &file_state.tokens)?
                             };
                             let new_tokens =
-                                self.include_file(&filename, include_kind, token.location.file)?;
+                                self.include_file(&filename, include_kind, token.span.start.file)?;
                             self.file_stack.last_mut().unwrap().index = end;
                             self.file_stack.push(FileState {
                                 tokens: new_tokens,
@@ -510,29 +493,27 @@ impl Preprocessor {
                     && !tokens[i].hideset.contains(name)
                 {
                     if name == "__LINE__" {
-                        let line = tokens[i].location.line;
-                        tokens[i] = Token::new(
-                            TokenKind::Number(line.to_string()),
-                            tokens[i].location.clone(),
-                        );
+                        let line = tokens[i].span.start.line;
+                        tokens[i] =
+                            Token::new(TokenKind::Number(line.to_string()), tokens[i].span.clone());
                         expanded = true;
                     } else if name == "__FILE__" {
                         let file = self
                             .file_manager
-                            .get_path(tokens[i].location.file)
+                            .get_path(tokens[i].span.start.file)
                             .unwrap()
                             .to_str()
                             .unwrap()
                             .to_string();
-                        tokens[i] = Token::new(TokenKind::String(file), tokens[i].location.clone());
+                        tokens[i] = Token::new(TokenKind::String(file), tokens[i].span.clone());
                         expanded = true;
                     } else if name == "__DATE__" {
                         let date = Local::now().format("%b %-d %Y").to_string();
-                        tokens[i] = Token::new(TokenKind::String(date), tokens[i].location.clone());
+                        tokens[i] = Token::new(TokenKind::String(date), tokens[i].span.clone());
                         expanded = true;
                     } else if name == "__TIME__" {
                         let time = Local::now().format("%H:%M:%S").to_string();
-                        tokens[i] = Token::new(TokenKind::String(time), tokens[i].location.clone());
+                        tokens[i] = Token::new(TokenKind::String(time), tokens[i].span.clone());
                         expanded = true;
                     } else if let Some(macro_def) = self.macros.get(name).cloned() {
                         let (start, end, expanded_tokens) =
@@ -711,10 +692,10 @@ impl Preprocessor {
                         let quoted = format!("\"{}\"", stringified);
                         result.push(Token::new(
                             TokenKind::String(quoted),
-                            SourceLocation::new(
-                                token.location.file,
-                                token.location.line,
-                                token.location.column,
+                            SourceSpan::new(
+                                token.span.start.file,
+                                token.span.start.clone(),
+                                token.span.start.clone(),
                             ),
                         ));
                     }
@@ -764,14 +745,14 @@ impl Preprocessor {
                     .map(|t| t.kind.to_string())
                     .collect::<String>();
                 let pasted_str = format!("{}{}", lhs.kind, rhs_str);
-                let mut lexer = Lexer::new(&pasted_str, lhs.location.file, self.verbose);
+                let mut lexer = Lexer::new(&pasted_str, lhs.span.start.file);
                 let mut new_token = lexer.next_token()?;
                 if !matches!(new_token.kind, TokenKind::Eof) {
                     let mut new_hideset = lhs.hideset.clone();
-                    new_token.location = SourceLocation::new(
-                        lhs.location.file,
-                        lhs.location.line,
-                        lhs.location.column,
+                    new_token.span = SourceSpan::new(
+                        lhs.span.start.file,
+                        lhs.span.start.clone(),
+                        lhs.span.start.clone(),
                     );
                     for t in &rhs_tokens {
                         new_hideset.extend(t.hideset.clone());
@@ -800,11 +781,14 @@ impl Preprocessor {
                         for (i, arg) in args[vararg_start..].iter().enumerate() {
                             result.extend(arg.clone());
                             if i < args.len() - vararg_start - 1 {
-                                result.push(Token::new(TokenKind::Comma, SourceLocation::new(
-                                    token.location.file,
-                                    token.location.line,
-                                    token.location.column,
-                                )));
+                                result.push(Token::new(
+                                    TokenKind::Comma,
+                                    SourceSpan::new(
+                                        token.span.start.file,
+                                        token.span.start.clone(),
+                                        token.span.start.clone(),
+                                    ),
+                                ));
                             }
                         }
                     }
@@ -848,7 +832,7 @@ impl Preprocessor {
             .file_manager
             .read(file_id)
             .map_err(|_| PreprocessorError::FileNotFound(filename.to_string()))?;
-        let mut lexer = Lexer::new(&content, file_id, self.verbose);
+        let mut lexer = Lexer::new(&content, file_id);
         let mut tokens = Vec::new();
         loop {
             let token = lexer.next_token()?;
@@ -878,10 +862,10 @@ impl Preprocessor {
                     if !last_was_whitespace && !result.is_empty() {
                         result.push(Token::new(
                             TokenKind::Whitespace(" ".to_string()),
-                            SourceLocation::new(
-                                token.location.file,
-                                token.location.line,
-                                token.location.column,
+                            SourceSpan::new(
+                                token.span.start.file,
+                                token.span.start.clone(),
+                                token.span.start.clone(),
                             ),
                         ));
                         last_was_whitespace = true;
@@ -889,11 +873,14 @@ impl Preprocessor {
                 }
                 TokenKind::Newline => {
                     // Preserve newlines - add as newline token
-                    result.push(Token::new(TokenKind::Newline, SourceLocation::new(
-                        token.location.file,
-                        token.location.line,
-                        token.location.column,
-                    )));
+                    result.push(Token::new(
+                        TokenKind::Newline,
+                        SourceSpan::new(
+                            token.span.start.file,
+                            token.span.start.clone(),
+                            token.span.start.clone(),
+                        ),
+                    ));
                     last_was_whitespace = false;
                 }
                 _ => {

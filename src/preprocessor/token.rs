@@ -1,4 +1,4 @@
-pub use crate::common::{KeywordKind, SourceLocation};
+pub use crate::common::{KeywordKind, SourceLocation, SourceSpan};
 use std::collections::HashSet;
 use std::fmt;
 
@@ -9,8 +9,8 @@ pub struct Token {
     pub kind: TokenKind,
     /// A set of macro names that are hidden from this token.
     pub hideset: HashSet<String>,
-    /// The location of the token in the source code.
-    pub location: SourceLocation,
+    /// The span of the token in the source code.
+    pub span: SourceSpan,
     /// The locations of macro expansions that produced this token.
     pub expansion_locs: Vec<SourceLocation>,
 }
@@ -21,16 +21,16 @@ impl Token {
     /// # Arguments
     ///
     /// * `kind` - The kind of token.
-    /// * `location` - The location of the token in the source code.
+    /// * `span` - The span of the token in the source code.
     ///
     /// # Returns
     ///
     /// A new `Token` instance.
-    pub fn new(kind: TokenKind, location: SourceLocation) -> Self {
+    pub fn new(kind: TokenKind, span: SourceSpan) -> Self {
         Token {
             kind,
             hideset: HashSet::new(),
-            location,
+            span,
             expansion_locs: Vec::new(),
         }
     }

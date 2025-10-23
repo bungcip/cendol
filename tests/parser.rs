@@ -3,11 +3,12 @@
 //! This module tests the parser's ability to correctly parse C source code
 //! and generate the expected Abstract Syntax Tree (AST) structures.
 
+use cendol::common::{SourceLocation, SourceSpan};
 use cendol::file::FileManager;
 use cendol::parser::Parser;
 use cendol::parser::ast::{Expr, Function, Program, Stmt, Type};
 use cendol::parser::token::{KeywordKind, Token, TokenKind};
-use cendol::preprocessor::token::SourceLocation;
+use cendol::preprocessor::Preprocessor;
 
 /// Test configuration constants
 mod config {
@@ -16,9 +17,7 @@ mod config {
 
 /// Helper function to parse C code and return the AST
 fn parse_c_code(input: &str) -> Result<Program, Box<dyn std::error::Error>> {
-    use cendol::file::FileManager;
-    use cendol::preprocessor::Preprocessor;
-    let mut preprocessor = Preprocessor::new(FileManager::new(), false);
+    let mut preprocessor = Preprocessor::new(FileManager::new());
     let tokens = preprocessor.preprocess(input, config::TEST_FILENAME)?;
     let mut parser = Parser::new(tokens)?;
     let ast = parser.parse()?;
@@ -64,7 +63,14 @@ fn create_increment_program_ast() -> Program {
             params: vec![],
             body: vec![
                 Stmt::Declaration(Type::Int, "a".to_string(), Some(Box::new(Expr::Number(0)))),
-                Stmt::Expr(Expr::Increment(Box::new(Expr::Variable("a".to_string())))),
+                Stmt::Expr(Expr::Increment(Box::new(Expr::Variable(
+                    "a".to_string(),
+                    SourceSpan::new(
+                        cendol::file::FileId(0),
+                        SourceLocation::new(cendol::file::FileId(0), 1, 1),
+                        SourceLocation::new(cendol::file::FileId(0), 1, 1),
+                    ),
+                )))),
                 Stmt::Return(Expr::Number(0)),
             ],
         }],
@@ -92,7 +98,8 @@ fn create_control_flow_program_ast() -> Program {
 fn create_test_tokens() -> Vec<Token> {
     let mut file_manager = FileManager::new();
     let file_id = file_manager.open(config::TEST_FILENAME).unwrap();
-    let loc = SourceLocation::new(file_id, 0, 1);
+    let location = SourceLocation::new(file_id, 0, 1);
+    let loc = SourceSpan::new(file_id, location.clone(), location);
 
     vec![
         Token::new(TokenKind::Keyword(KeywordKind::Int), loc.clone()),

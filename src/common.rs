@@ -3,7 +3,7 @@ use std::fmt;
 use std::str::FromStr;
 
 /// Represents a location in a source file.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, serde::Serialize)]
 pub struct SourceLocation {
     /// The file name.
     pub file: FileId,
@@ -27,6 +27,34 @@ impl SourceLocation {
     /// A new `SourceLocation` instance.
     pub fn new(file: FileId, line: u32, column: u32) -> Self {
         SourceLocation { file, line, column }
+    }
+}
+
+/// Represents a span in a source file, from start to end.
+#[derive(Debug, PartialEq, Clone, serde::Serialize)]
+pub struct SourceSpan {
+    /// The file name.
+    pub file: FileId,
+    /// The start location.
+    pub start: SourceLocation,
+    /// The end location.
+    pub end: SourceLocation,
+}
+
+impl SourceSpan {
+    /// Creates a new `SourceSpan` instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `file` - The file identifier.
+    /// * `start` - The start location.
+    /// * `end` - The end location.
+    ///
+    /// # Returns
+    ///
+    /// A new `SourceSpan` instance.
+    pub fn new(file: FileId, start: SourceLocation, end: SourceLocation) -> Self {
+        SourceSpan { file, start, end }
     }
 }
 

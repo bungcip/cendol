@@ -7,6 +7,7 @@ use cendol::preprocessor::{
     Preprocessor,
     token::{DirectiveKind, Token, TokenKind},
 };
+use cendol::semantic::SemanticAnalyzer;
 use clap::Parser as ClapParser;
 use std::fs;
 use std::io::Write;
@@ -129,7 +130,7 @@ fn run() -> Result<(), Report> {
         file_manager.add_include_path(&path);
     }
 
-    let mut preprocessor = Preprocessor::new(file_manager, cli.verbose);
+    let mut preprocessor = Preprocessor::new(file_manager);
 
     for def in cli.define {
         if let Err(err) = preprocessor.define(&def) {
@@ -182,37 +183,58 @@ fn run() -> Result<(), Report> {
         Err(err) => {
             let (msg, location) = match err {
                 cendol::parser::error::ParserError::UnexpectedToken(tok) => {
-                    ("Unexpected token".to_string(), Some(tok.location))
+                    ("Unexpected token".to_string(), Some(tok.span))
                 }
                 cendol::parser::error::ParserError::UnexpectedEof => {
                     ("Unexpected EOF".to_string(), None)
                 }
             };
 
-            let (path, loc) = if let Some(location) = location {
+            let (path, span) = if let Some(location) = location {
                 let path = preprocessor
                     .file_manager()
-                    .get_path(location.file)
+                    .get_path(location.start.file)
                     .unwrap()
                     .to_str()
                     .unwrap()
                     .to_string();
-                (Some(path), Some((location.line as usize, location.column as usize)))
+                (Some(path), Some(location))
             } else {
                 (Some(cli.input_file.clone()), None)
             };
 
-            let mut report = Report::new(msg, path, loc);
+            let mut report = Report::new(msg, path, span);
             report.verbose = cli.verbose;
             return Err(report);
         }
     };
 
+    // Perform semantic analysis
+    let semantic_analyzer = SemanticAnalyzer::new();
+    match semantic_analyzer.analyze(ast.clone(), &cli.input_file) {
+        Ok(_) => {
+            logger.log("Semantic analysis passed");
+        }
+        Err(errors) => {
+            for (error, file, span) in errors {
+                let mut report_data =
+                    Report::new(error.to_string(), Some(file.clone()), Some(span));
+                report_data.verbose = cli.verbose;
+                report(&report_data);
+            }
+            return Err(Report::new(
+                "Semantic errors found".to_string(),
+                Some(cli.input_file),
+                None,
+            ));
+        }
+    }
+
     let codegen = CodeGen::new();
     let object_bytes = match codegen.compile(ast) {
         Ok(bytes) => bytes,
         Err(err) => {
-            let mut report = Report::new(err.to_string(), None, None);
+            let mut report = Report::new(err.to_string(), Some(cli.input_file.clone()), None);
             report.verbose = cli.verbose;
             return Err(report);
         }

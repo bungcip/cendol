@@ -394,7 +394,7 @@ impl Parser {
                     TokenKind::AmpersandAmpersand => Expr::LogicalAnd(Box::new(lhs), Box::new(rhs)),
                     TokenKind::PipePipe => Expr::LogicalOr(Box::new(lhs), Box::new(rhs)),
                     TokenKind::Arrow => {
-                        if let Expr::Variable(name) = rhs {
+                        if let Expr::Variable(name, _) = rhs {
                             Expr::PointerMember(Box::new(lhs), name)
                         } else {
                             return Err(ParserError::UnexpectedToken(token));
@@ -434,7 +434,7 @@ impl Parser {
             }
             TokenKind::Identifier(name) => {
                 self.eat()?;
-                let mut expr = Expr::Variable(name);
+                let mut expr = Expr::Variable(name, token.span.clone());
                 while let Ok(token) = self.current_token() {
                     match token.kind {
                         TokenKind::PlusPlus => {
@@ -446,6 +446,8 @@ impl Parser {
                             expr = Expr::Decrement(Box::new(expr));
                         }
                         TokenKind::LeftParen => {
+                            let location = token.span.clone(); // Clone span before using token
+                            let token_for_error = token.clone(); // Clone token for error reporting
                             self.eat()?;
                             let mut args = Vec::new();
                             while let Ok(t) = self.current_token() {
@@ -461,10 +463,10 @@ impl Parser {
                                 }
                             }
                             let name = match expr {
-                                Expr::Variable(name) => name,
-                                _ => return Err(ParserError::UnexpectedToken(token)),
+                                Expr::Variable(name, _) => name,
+                                _ => return Err(ParserError::UnexpectedToken(token_for_error)),
                             };
-                            expr = Expr::Call(name, args);
+                            expr = Expr::Call(name, args, location);
                         }
                         TokenKind::Dot => {
                             self.eat()?;

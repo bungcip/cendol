@@ -4,12 +4,13 @@
 //! test modules to reduce code duplication and improve maintainability.
 
 use cendol::codegen::CodeGen;
+use cendol::common::{SourceLocation, SourceSpan};
 use cendol::file::{FileId, FileManager};
 use cendol::parser::Parser;
 use cendol::parser::ast::{Expr, Function, Program, Stmt, Type};
 use cendol::preprocessor::Preprocessor;
 use cendol::preprocessor::lexer::Lexer;
-use cendol::preprocessor::token::{KeywordKind, SourceLocation, Token, TokenKind};
+use cendol::preprocessor::token::{KeywordKind, Token, TokenKind};
 use std::fs;
 use std::io::Write;
 use std::process::Command;
@@ -30,7 +31,7 @@ pub mod config {
 
 /// Creates a new preprocessor instance with a file manager
 pub fn create_preprocessor() -> Preprocessor {
-    Preprocessor::new(FileManager::new(), false)
+    Preprocessor::new(FileManager::new())
 }
 
 /// Creates a new file manager instance
@@ -39,8 +40,9 @@ pub fn create_file_manager() -> FileManager {
 }
 
 /// Creates a source location for testing
-pub fn create_test_location(file_id: u32, line: u32) -> SourceLocation {
-    SourceLocation::new(FileId(file_id), line, 1)
+pub fn create_test_location(file_id: u32, line: u32) -> SourceSpan {
+    let location = SourceLocation::new(FileId(file_id), line, 1);
+    SourceSpan::new(FileId(file_id), location.clone(), location)
 }
 
 /// Compiles C code through the full pipeline (preprocessor -> parser -> codegen)
@@ -207,45 +209,12 @@ pub fn create_simple_program_ast() -> Program {
     }
 }
 
-/// Creates a program AST with variable declaration and increment
-pub fn create_increment_program_ast() -> Program {
-    Program {
-        globals: vec![],
-        functions: vec![Function {
-            return_type: Type::Int,
-            name: "main".to_string(),
-            params: vec![],
-            body: vec![
-                Stmt::Declaration(Type::Int, "a".to_string(), Some(Box::new(Expr::Number(0)))),
-                Stmt::Expr(Expr::Increment(Box::new(Expr::Variable("a".to_string())))),
-                Stmt::Return(Expr::Number(0)),
-            ],
-        }],
-    }
-}
-
-/// Creates a program AST with if-else control flow
-pub fn create_control_flow_program_ast() -> Program {
-    Program {
-        globals: vec![],
-        functions: vec![Function {
-            return_type: Type::Int,
-            name: "main".to_string(),
-            params: vec![],
-            body: vec![Stmt::If(
-                Box::new(Expr::Number(1)),
-                Box::new(Stmt::Return(Expr::Number(1))),
-                Some(Box::new(Stmt::Return(Expr::Number(0)))),
-            )],
-        }],
-    }
-}
 
 /// Helper function to collect all tokens from a lexer
 pub fn collect_tokens_from_lexer(input: &str, filename: &str) -> Vec<Token> {
     let mut file_manager = create_file_manager();
     let file_id = file_manager.open(filename).unwrap();
-    let mut lexer = Lexer::new(input, file_id, false);
+    let mut lexer = Lexer::new(input, file_id);
     let mut tokens = Vec::new();
 
     loop {
@@ -338,13 +307,13 @@ mod tests {
         let tokens = vec![
             Token {
                 kind: TokenKind::Keyword(KeywordKind::Int),
-                location: create_test_location(0, 0),
+                span: create_test_location(0, 0),
                 hideset: std::collections::HashSet::new(),
                 expansion_locs: Vec::new(),
             },
             Token {
                 kind: TokenKind::Identifier("main".to_string()),
-                location: create_test_location(0, 0),
+                span: create_test_location(0, 0),
                 hideset: std::collections::HashSet::new(),
                 expansion_locs: Vec::new(),
             },
@@ -383,27 +352,27 @@ pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> 
         Err(err) => {
             let (msg, location) = match err {
                 cendol::parser::error::ParserError::UnexpectedToken(tok) => {
-                    ("Unexpected token".to_string(), Some(tok.location))
+                    ("Unexpected token".to_string(), Some(tok.span))
                 }
                 cendol::parser::error::ParserError::UnexpectedEof => {
                     ("Unexpected EOF".to_string(), None)
                 }
             };
 
-            let (path, loc) = if let Some(location) = location {
+            let (path, span) = if let Some(location) = location {
                 let path = preprocessor
                     .file_manager()
-                    .get_path(location.file)
+                    .get_path(location.start.file)
                     .unwrap()
                     .to_str()
                     .unwrap()
                     .to_string();
-                (Some(path), Some((location.line as usize, location.column as usize)))
+                (Some(path), Some(location))
             } else {
                 (Some(filename.to_string()), None)
             };
 
-            Err(Report::new(msg, path, loc))
+            Err(Report::new(msg, path, span))
         }
     }
 }

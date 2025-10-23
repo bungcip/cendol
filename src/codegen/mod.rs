@@ -551,7 +551,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     Type::Pointer(Box::new(Type::Char)),
                 ))
             }
-            Expr::Variable(name) => {
+            Expr::Variable(name, _) => {
                 let (slot, ty) = self.variables.get(&name).unwrap();
                 if let Type::Struct(_, _) = ty {
                     return Ok((self.builder.ins().stack_addr(types::I64, slot, 0), ty));
@@ -560,7 +560,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             Expr::Assign(lhs, rhs) => {
                 let (value, ty) = self.translate_expr(*rhs)?;
-                if let Expr::Variable(name) = *lhs {
+                if let Expr::Variable(name, _) = *lhs {
                     let (slot, _) = self.variables.get(&name).unwrap();
                     self.builder.ins().stack_store(value, slot, 0);
                 } else if let Expr::Deref(ptr) = *lhs {
@@ -668,7 +668,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 }
             }
             Expr::AddressOf(expr) => {
-                if let Expr::Variable(name) = *expr {
+                if let Expr::Variable(name, _) = *expr {
                     let (slot, ty) = self.variables.get(&name).unwrap();
                     let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
                     Ok((addr, Type::Pointer(Box::new(ty))))
@@ -708,8 +708,12 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     Err(CodegenError::NotAPointer)
                 }
             }
-            Expr::Call(name, args) => {
-                let (callee, ret_ty) = self.functions.get(&name).unwrap().clone();
+            Expr::Call(name, args, _location) => {
+                let (callee, ret_ty) = self
+                    .functions
+                    .get(&name)
+                    .cloned()
+                    .unwrap_or_else(|| panic!("Undefined function: {}", name));
                 let local_callee = self.module.declare_func_in_func(callee, self.builder.func);
 
                 let mut arg_values = Vec::new();

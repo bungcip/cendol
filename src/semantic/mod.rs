@@ -414,7 +414,7 @@ impl SemanticAnalyzer {
                 }
             }
             // Literals don't need checking
-            Expr::Number(_) | Expr::String(_) => {}
+            Expr::Number(_) | Expr::String(_) | Expr::Char(_) => {}
             Expr::Increment(_) | Expr::Decrement(_) => {
                 // These are handled by the parser, but we'll check the expression anyway
             }

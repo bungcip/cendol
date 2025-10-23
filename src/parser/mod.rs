@@ -431,11 +431,17 @@ impl Parser {
         match token.kind.clone() {
             TokenKind::Number(n) => {
                 self.eat()?;
-                Ok(Expr::Number(n.parse().unwrap()))
+                // Strip suffixes like L, U, LL, UU
+                let num_str = n.trim_end_matches(|c: char| c == 'L' || c == 'U' || c == 'l' || c == 'u');
+                Ok(Expr::Number(num_str.parse().unwrap()))
             }
             TokenKind::String(s) => {
                 self.eat()?;
                 Ok(Expr::String(s))
+            }
+            TokenKind::Char(s) => {
+                self.eat()?;
+                Ok(Expr::Char(s))
             }
             TokenKind::Identifier(name) => {
                 self.eat()?;

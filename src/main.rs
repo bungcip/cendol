@@ -125,6 +125,7 @@ fn run() -> Result<(), Report> {
     file_manager.add_include_path("/usr/include");
     file_manager.add_include_path("/usr/include/x86_64-linux-gnu");
     file_manager.add_include_path("/usr/lib/gcc/x86_64-linux-gnu/11/include");
+    file_manager.add_include_path("/usr/local/include");
 
     for path in cli.include_path {
         file_manager.add_include_path(&path);

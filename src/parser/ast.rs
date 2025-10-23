@@ -93,7 +93,10 @@ pub enum Stmt {
 pub enum Expr {
     /// A number literal.
     Number(i64),
+    /// A string literal.
     String(String),
+    /// A character literal.
+    Char(String),
     /// A variable.
     Variable(String, crate::common::SourceSpan),
     /// An assignment expression.

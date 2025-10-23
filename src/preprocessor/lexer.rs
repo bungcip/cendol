@@ -114,6 +114,23 @@ impl<'a> Lexer<'a> {
                         break;
                     }
                 }
+                // Handle suffixes for long and unsigned
+                if let Some(&c) = self.input.peek() {
+                    if c == 'L' || c == 'U' || c == 'l' || c == 'u' {
+                        num.push(self.input.next().unwrap());
+                        self.consume_char(c);
+                        // Handle LL or UU
+                        if let Some(&c) = self.input.peek() {
+                            if (c == 'L' || c == 'l') && num.ends_with('L') || num.ends_with('l') {
+                                num.push(self.input.next().unwrap());
+                                self.consume_char(c);
+                            } else if (c == 'U' || c == 'u') && num.ends_with('U') || num.ends_with('u') {
+                                num.push(self.input.next().unwrap());
+                                self.consume_char(c);
+                            }
+                        }
+                    }
+                }
                 self.at_start_of_line = false;
                 Ok(Token::new(TokenKind::Number(num), self.current_span()))
             }
@@ -134,6 +151,24 @@ impl<'a> Lexer<'a> {
                 }
                 self.at_start_of_line = false;
                 Ok(Token::new(TokenKind::String(s), self.current_span()))
+            }
+            '\'' => {
+                let mut s = String::new();
+                self.consume_char(c);
+                let mut chars = Vec::new();
+                for c in self.input.by_ref() {
+                    if c == '\'' {
+                        break;
+                    }
+                    s.push(c);
+                    chars.push(c);
+                }
+                // Consume all the characters we collected
+                for ch in chars {
+                    self.consume_char(ch);
+                }
+                self.at_start_of_line = false;
+                Ok(Token::new(TokenKind::Char(s), self.current_span()))
             }
             '#' => {
                 if self.at_start_of_line {

@@ -31,7 +31,7 @@ pub enum PreprocessorError {
     #[error("Macro expansion too deep, possible infinite recursion")]
     MacroExpansionTooDeep,
     /// A generic error.
-    #[error("u: {0}")]
+    #[error("{0}")]
     Generic(String),
     /// An unexpected #elif directive was encountered.
     #[error("Unexpected #elif")]

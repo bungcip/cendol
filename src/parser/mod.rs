@@ -277,11 +277,11 @@ impl Parser {
                             self.eat()?;
                             ty = Type::Array(Box::new(ty), 0);
                         } else {
-                            let size = self.parse_expr()?;
-                            if let Expr::Number(n) = size {
+                            let size_expr = self.parse_expr()?;
+                            if let Expr::Number(n) = size_expr {
                                 ty = Type::Array(Box::new(ty), n as usize);
                             } else {
-                                return Err(ParserError::UnexpectedToken(token));
+                                return Err(ParserError::UnexpectedToken(self.current_token()?));
                             }
                             self.expect_punct(TokenKind::RightBracket)?;
                         }
@@ -622,6 +622,13 @@ impl Parser {
     /// Parses a statement.
     fn parse_stmt(&mut self) -> Result<Stmt, ParserError> {
         let token = self.current_token()?;
+        let is_static = if let TokenKind::Keyword(KeywordKind::Static) = token.kind {
+            self.eat()?;
+            true
+        } else {
+            false
+        };
+
         if let TokenKind::LeftBrace = token.kind.clone() {
             self.eat()?;
             let mut stmts = Vec::new();
@@ -644,11 +651,11 @@ impl Parser {
                         self.eat()?;
                         ty = Type::Array(Box::new(ty), 0);
                     } else {
-                        let size = self.parse_expr()?;
-                        if let Expr::Number(n) = size {
+                        let size_expr = self.parse_expr()?;
+                        if let Expr::Number(n) = size_expr {
                             ty = Type::Array(Box::new(ty), n as usize);
                         } else {
-                            return Err(ParserError::UnexpectedToken(token));
+                            return Err(ParserError::UnexpectedToken(self.current_token()?));
                         }
                         self.expect_punct(TokenKind::RightBracket)?;
                     }
@@ -662,7 +669,7 @@ impl Parser {
                     initializer = Some(Box::new(self.parse_expr()?));
                 }
                 self.expect_punct(TokenKind::Semicolon)?;
-                return Ok(Stmt::Declaration(ty, id, initializer));
+                return Ok(Stmt::Declaration(ty, id, initializer, is_static));
             }
         } else if let TokenKind::Keyword(k) = token.kind.clone() {
             if k == KeywordKind::Return {
@@ -706,7 +713,7 @@ impl Parser {
                             self.eat()?;
                             initializer = Some(Box::new(self.parse_expr()?));
                         }
-                        Some(ForInit::Declaration(ty, id, initializer))
+                        Some(ForInit::Declaration(ty, id, initializer, is_static))
                     } else {
                         return Err(ParserError::UnexpectedToken(token));
                     }
@@ -837,6 +844,14 @@ impl Parser {
     ///
     /// A `Result` containing the parsed `Program`, or a `ParserError` if parsing fails.
     fn parse_global(&mut self) -> Result<Stmt, ParserError> {
+        let token = self.current_token()?;
+        let is_static = if let TokenKind::Keyword(KeywordKind::Static) = token.kind {
+            self.eat()?;
+            true
+        } else {
+            false
+        };
+
         let pos = self.position;
         if let Ok((ty, id, params)) = self.parse_function_signature() {
             let token = self.current_token()?;
@@ -862,11 +877,16 @@ impl Parser {
                 initializer = Some(Box::new(self.parse_expr()?));
             }
             self.expect_punct(TokenKind::Semicolon)?;
-            return Ok(Stmt::Declaration(ty, id, initializer));
+            return Ok(Stmt::Declaration(ty, id, initializer, is_static));
         }
         if let Type::Struct(_, _) = ty {
             self.expect_punct(TokenKind::Semicolon)?;
-            return Ok(Stmt::Declaration(ty, "".to_string(), None));
+            return Ok(Stmt::Declaration(
+                ty,
+                "".to_string(),
+                None,
+                is_static,
+            ));
         }
         Err(ParserError::UnexpectedToken(token))
     }

@@ -6,7 +6,7 @@ use cranelift_codegen::ir::types;
 use cranelift_codegen::ir::{AbiParam, InstBuilder, Value};
 use cranelift_codegen::ir::{StackSlot, StackSlotData, StackSlotKind};
 use cranelift_codegen::settings;
-use cranelift_module::{Linkage, Module};
+use cranelift_module::{DataId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::collections::HashMap;
 
@@ -55,6 +55,7 @@ pub struct CodeGen {
     variables: SymbolTable<String, (StackSlot, Type)>,
     functions: HashMap<String, (FuncId, Type)>,
     structs: HashMap<String, Type>,
+    statics: HashMap<String, (DataId, Type)>,
 }
 
 impl Default for CodeGen {
@@ -89,6 +90,7 @@ impl CodeGen {
             variables: SymbolTable::new(),
             functions: HashMap::new(),
             structs: HashMap::new(),
+            statics: HashMap::new(),
         }
     }
 
@@ -116,7 +118,7 @@ impl CodeGen {
                         .unwrap();
                     self.functions.insert(name.clone(), (id, ty.clone()));
                 }
-                Stmt::Declaration(ty, _, _) => {
+                Stmt::Declaration(ty, _, _, _) => {
                     if let Type::Struct(Some(name), _) = &ty {
                         self.structs.insert(name.clone(), ty.clone());
                     }
@@ -161,9 +163,11 @@ impl CodeGen {
 
             let mut translator = FunctionTranslator {
                 builder,
+                function_name: &function.name,
                 functions: &mut self.functions,
                 variables: &mut self.variables,
                 structs: &mut self.structs,
+                statics: &mut self.statics,
                 module: &mut self.module,
                 loop_context: Vec::new(),
                 current_block_state: BlockState::Empty,
@@ -193,9 +197,11 @@ pub enum BlockState {
 /// A function translator that translates statements and expressions into Cranelift IR.
 struct FunctionTranslator<'a, 'b> {
     builder: FunctionBuilder<'a>,
+    function_name: &'b str,
     functions: &'b mut HashMap<String, (FuncId, Type)>,
     variables: &'b mut SymbolTable<String, (StackSlot, Type)>,
     structs: &'b mut HashMap<String, Type>,
+    statics: &'b mut HashMap<String, (DataId, Type)>,
     module: &'b mut ObjectModule,
     loop_context: Vec<(Block, Block)>,
     current_block_state: BlockState,
@@ -296,7 +302,28 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.current_block_state = BlockState::Filled;
                 Ok(true)
             }
-            Stmt::Declaration(ty, name, initializer) => {
+            Stmt::Declaration(ty, name, initializer, is_static) => {
+                if is_static {
+                    let mangled_name = format!("{}.{}", self.function_name, name);
+                    let id = self
+                        .module
+                        .declare_data(&mangled_name, Linkage::Local, true, false)
+                        .unwrap();
+                    self.statics.insert(name.clone(), (id, ty.clone()));
+                    let mut data_desc = cranelift_module::DataDescription::new();
+                    if let Some(init) = initializer {
+                        if let Expr::Number(n) = *init {
+                            let bytes = n.to_le_bytes().to_vec();
+                            data_desc.define(bytes.into_boxed_slice());
+                        } else {
+                            return Err(CodegenError::InvalidStaticInitializer);
+                        }
+                    } else {
+                        data_desc.define_zeroinit(self.get_type_size(&ty) as usize);
+                    }
+                    self.module.define_data(id, &data_desc).unwrap();
+                    return Ok(false);
+                }
                 let size = self.get_type_size(&ty);
                 let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
                     StackSlotKind::ExplicitSlot,
@@ -476,21 +503,44 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.variables.enter_scope();
                 if let Some(init) = init {
                     match init {
-                        ForInit::Declaration(ty, name, initializer) => {
-                            let size = self.get_type_size(&ty);
-                            let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-                                StackSlotKind::ExplicitSlot,
-                                size,
-                                0,
-                            ));
-                            self.variables.insert(name, (slot, ty));
-                            if let Some(init) = initializer {
-                                let (val, _) = self.translate_expr(*init)?;
-                                self.builder.ins().stack_store(val, slot, 0);
+                        ForInit::Declaration(ty, name, initializer, is_static) => {
+                            if is_static {
+                                if self.statics.get(&name).is_none() {
+                                    let mangled_name = format!("{}.{}", self.function_name, name);
+                                    let id = self
+                                        .module
+                                        .declare_data(&mangled_name, Linkage::Local, true, false)
+                                        .unwrap();
+                                    self.statics.insert(name.clone(), (id, ty.clone()));
+                                    let mut data_desc = cranelift_module::DataDescription::new();
+                                    if let Some(init) = initializer {
+                                        if let Expr::Number(n) = *init {
+                                            let bytes = n.to_le_bytes().to_vec();
+                                            data_desc.define(bytes.into_boxed_slice());
+                                        } else {
+                                            return Err(CodegenError::InvalidStaticInitializer);
+                                        }
+                                    } else {
+                                        data_desc.define_zeroinit(self.get_type_size(&ty) as usize);
+                                    }
+                                    self.module.define_data(id, &data_desc).unwrap();
+                                }
                             } else {
-                                let val = self.builder.ins().iconst(types::I64, 0);
-                                self.builder.ins().stack_store(val, slot, 0);
-                            };
+                                let size = self.get_type_size(&ty);
+                                let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+                                    StackSlotKind::ExplicitSlot,
+                                    size,
+                                    0,
+                                ));
+                                self.variables.insert(name, (slot, ty));
+                                if let Some(init) = initializer {
+                                    let (val, _) = self.translate_expr(*init)?;
+                                    self.builder.ins().stack_store(val, slot, 0);
+                                } else {
+                                    let val = self.builder.ins().iconst(types::I64, 0);
+                                    self.builder.ins().stack_store(val, slot, 0);
+                                };
+                            }
                         }
                         ForInit::Expr(expr) => {
                             self.translate_expr(expr)?;
@@ -570,6 +620,12 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 ))
             }
             Expr::Variable(name, _) => {
+                if let Some((id, ty)) = self.statics.get(&name) {
+                    let local_id = self.module.declare_data_in_func(*id, self.builder.func);
+                    let addr = self.builder.ins().global_value(types::I64, local_id);
+                    let loaded_val = self.builder.ins().load(types::I64, MemFlags::new(), addr, 0);
+                    return Ok((loaded_val, ty.clone()));
+                }
                 let (slot, ty) = self.variables.get(&name).unwrap();
                 if let Type::Struct(_, _) = &ty {
                     return Ok((self.builder.ins().stack_addr(types::I64, slot, 0), ty.clone()));
@@ -591,8 +647,14 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             Expr::Assign(lhs, rhs) => {
                 let (value, ty) = self.translate_expr(*rhs)?;
                 if let Expr::Variable(name, _) = *lhs {
-                    let (slot, _) = self.variables.get(&name).unwrap();
-                    self.builder.ins().stack_store(value, slot, 0);
+                    if let Some((id, _)) = self.statics.get(&name) {
+                        let local_id = self.module.declare_data_in_func(*id, self.builder.func);
+                        let addr = self.builder.ins().global_value(types::I64, local_id);
+                        self.builder.ins().store(MemFlags::new(), value, addr, 0);
+                    } else {
+                        let (slot, _) = self.variables.get(&name).unwrap();
+                        self.builder.ins().stack_store(value, slot, 0);
+                    }
                 } else if let Expr::Deref(ptr) = *lhs {
                     let (ptr, _) = self.translate_expr(*ptr)?;
                     self.builder.ins().store(MemFlags::new(), value, ptr, 0);
@@ -720,6 +782,48 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     .icmp(IntCC::SignedGreaterThanOrEqual, lhs, rhs);
                 Ok((self.builder.ins().uextend(types::I64, c), Type::Int))
             }
+            Expr::Increment(expr) => {
+                if let Expr::Variable(name, _) = &*expr {
+                    if let Some((id, ty)) = self.statics.get(name) {
+                        let local_id = self.module.declare_data_in_func(*id, self.builder.func);
+                        let addr = self.builder.ins().global_value(types::I64, local_id);
+                        let val = self.builder.ins().load(types::I64, MemFlags::new(), addr, 0);
+                        let one = self.builder.ins().iconst(types::I64, 1);
+                        let add = self.builder.ins().iadd(val, one);
+                        self.builder.ins().store(MemFlags::new(), add, addr, 0);
+                        return Ok((add, ty.clone()));
+                    }
+                }
+                let (val, ty) = self.translate_expr(*expr.clone())?;
+                let one = self.builder.ins().iconst(types::I64, 1);
+                let add = self.builder.ins().iadd(val, one);
+                if let Expr::Variable(name, _) = &*expr {
+                    let (slot, _) = self.variables.get(&name).unwrap();
+                    self.builder.ins().stack_store(add, slot, 0);
+                }
+                Ok((add, ty))
+            }
+            Expr::Decrement(expr) => {
+                if let Expr::Variable(name, _) = &*expr {
+                    if let Some((id, ty)) = self.statics.get(name) {
+                        let local_id = self.module.declare_data_in_func(*id, self.builder.func);
+                        let addr = self.builder.ins().global_value(types::I64, local_id);
+                        let val = self.builder.ins().load(types::I64, MemFlags::new(), addr, 0);
+                        let one = self.builder.ins().iconst(types::I64, 1);
+                        let sub = self.builder.ins().isub(val, one);
+                        self.builder.ins().store(MemFlags::new(), sub, addr, 0);
+                        return Ok((sub, ty.clone()));
+                    }
+                }
+                let (val, ty) = self.translate_expr(*expr.clone())?;
+                let one = self.builder.ins().iconst(types::I64, 1);
+                let sub = self.builder.ins().isub(val, one);
+                if let Expr::Variable(name, _) = &*expr {
+                    let (slot, _) = self.variables.get(&name).unwrap();
+                    self.builder.ins().stack_store(sub, slot, 0);
+                }
+                Ok((sub, ty))
+            }
             Expr::Neg(expr) => {
                 let (val, ty) = self.translate_expr(*expr)?;
                 Ok((self.builder.ins().ineg(val), ty))
@@ -737,6 +841,11 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             Expr::AddressOf(expr) => {
                 if let Expr::Variable(name, _) = *expr {
+                    if let Some((id, ty)) = self.statics.get(&name) {
+                        let local_id = self.module.declare_data_in_func(*id, self.builder.func);
+                        let addr = self.builder.ins().global_value(types::I64, local_id);
+                        return Ok((addr, Type::Pointer(Box::new(ty.clone()))));
+                    }
                     let (slot, ty) = self.variables.get(&name).unwrap();
                     let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
                     Ok((addr, Type::Pointer(Box::new(ty))))

@@ -121,7 +121,7 @@ impl SemanticAnalyzer {
                         );
                     }
                 }
-                Stmt::Declaration(ty, name, _) => {
+                Stmt::Declaration(ty, name, _, _) => {
                     if let Some(existing) = self.symbol_table.get(name) {
                         if !existing.is_function {
                             self.errors.push((
@@ -226,7 +226,7 @@ impl SemanticAnalyzer {
     /// Checks a statement for semantic errors.
     fn check_statement(&mut self, stmt: Stmt, filename: &str) {
         match stmt {
-            Stmt::Declaration(ty, name, initializer) => {
+            Stmt::Declaration(ty, name, initializer, _) => {
                 // Check for redeclaration in local scope
                 if let Some(existing) = self.symbol_table.get(&name) {
                     if !existing.is_function {
@@ -276,7 +276,7 @@ impl SemanticAnalyzer {
             Stmt::For(init, cond, inc, body) => {
                 if let Some(init) = init {
                     match init {
-                        crate::parser::ast::ForInit::Declaration(ty, name, initializer) => {
+                        crate::parser::ast::ForInit::Declaration(ty, name, initializer, _) => {
                             if let Some(existing) = self.symbol_table.get(&name) {
                                 if !existing.is_function {
                                     self.errors.push((

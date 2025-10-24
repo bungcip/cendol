@@ -27,4 +27,7 @@ pub enum CodegenError {
     /// An initializer for a non-struct or non-array type was found.
     #[error("Initializer for non-struct or non-array type")]
     NotAStructOrArray,
+    /// An invalid initializer for a static variable was found.
+    #[error("Invalid initializer for static variable")]
+    InvalidStaticInitializer,
 }

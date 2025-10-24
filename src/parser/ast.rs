@@ -40,7 +40,7 @@ impl Type {
 #[derive(Debug, PartialEq, Clone)]
 pub enum ForInit {
     /// A variable declaration.
-    Declaration(Type, String, Option<Box<Expr>>),
+    Declaration(Type, String, Option<Box<Expr>>, bool),
     /// An expression.
     Expr(Expr),
 }
@@ -74,7 +74,7 @@ pub enum Stmt {
     /// A `goto` statement.
     Goto(String),
     /// A variable declaration.
-    Declaration(Type, String, Option<Box<Expr>>),
+    Declaration(Type, String, Option<Box<Expr>>, bool),
     FunctionDeclaration(Type, String, Vec<Parameter>),
     /// A `typedef` statement.
     Typedef(Type, String),

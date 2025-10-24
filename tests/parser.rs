@@ -46,7 +46,12 @@ fn create_bool_program_ast() -> Program {
             name: "main".to_string(),
             params: vec![],
             body: vec![
-                Stmt::Declaration(Type::Bool, "a".to_string(), Some(Box::new(Expr::Number(1)))),
+                Stmt::Declaration(
+                    Type::Bool,
+                    "a".to_string(),
+                    Some(Box::new(Expr::Number(1))),
+                    false,
+                ),
                 Stmt::Return(Expr::Number(0)),
             ],
         }],
@@ -62,7 +67,12 @@ fn create_increment_program_ast() -> Program {
             name: "main".to_string(),
             params: vec![],
             body: vec![
-                Stmt::Declaration(Type::Int, "a".to_string(), Some(Box::new(Expr::Number(0)))),
+                Stmt::Declaration(
+                    Type::Int,
+                    "a".to_string(),
+                    Some(Box::new(Expr::Number(0))),
+                    false,
+                ),
                 Stmt::Expr(Expr::Increment(Box::new(Expr::Variable(
                     "a".to_string(),
                     SourceSpan::new(
@@ -206,6 +216,7 @@ mod tests {
                     Expr::DesignatedInitializer("y".to_string(), Box::new(Expr::Number(10))),
                     Expr::DesignatedInitializer("x".to_string(), Box::new(Expr::Number(20))),
                 ]))),
+                false,
             ),
             Stmt::Return(Expr::Number(0)),
         ];

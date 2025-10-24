@@ -388,4 +388,41 @@ mod tests {
         let exit_code = compile_and_run(input, "pointer_subtraction").unwrap();
         assert_eq!(exit_code, 3);
     }
+
+    /// Test code generation for static variables
+    #[test]
+    fn test_static_variable() {
+        let c_code = r#"
+            int counter() {
+                static int count = 0;
+                count++;
+                return count;
+            }
+            int main() {
+                counter();
+                counter();
+                return counter();
+            }
+        "#;
+        let result = compile_and_run(c_code, "test_static_variable").unwrap();
+        assert_eq!(result, 3);
+    }
+
+    /// Test code generation for static variables in for loops
+    #[test]
+    fn test_static_in_for() {
+        let c_code = r#"
+            int main() {
+                int result = 0;
+                for (int i = 0; i < 3; i++) {
+                    static int x = 0;
+                    x++;
+                    result = x;
+                }
+                return result;
+            }
+        "#;
+        let result = compile_and_run(c_code, "test_static_in_for").unwrap();
+        assert_eq!(result, 3);
+    }
 }

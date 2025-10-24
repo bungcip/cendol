@@ -167,7 +167,6 @@ impl CodeGen {
             let entry_block = builder.create_block();
             builder.append_block_params_for_function_params(entry_block);
             builder.switch_to_block(entry_block);
-            builder.seal_block(entry_block);
 
             let mut translator = FunctionTranslator {
                 builder,
@@ -205,6 +204,7 @@ impl CodeGen {
                 let zero = translator.builder.ins().iconst(types::I64, 0);
                 translator.builder.ins().return_(&[zero]);
             }
+            translator.builder.seal_all_blocks();
             translator.builder.finalize();
             self.module.define_function(*id, &mut self.ctx).unwrap();
         }
@@ -440,14 +440,12 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     .brif(condition_value, then_block, &[], else_block, &[]);
 
                 self.switch_to_block(then_block);
-                self.builder.seal_block(then_block);
                 let then_terminated = self.translate_stmt(*then)?;
                 if !then_terminated {
                     self.jump_to_block(merge_block);
                 }
 
                 self.switch_to_block(else_block);
-                self.builder.seal_block(else_block);
                 let mut else_terminated = false;
                 if let Some(otherwise) = otherwise {
                     else_terminated = self.translate_stmt(*otherwise)?;
@@ -459,7 +457,6 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
                 if !then_terminated || !else_terminated {
                     self.switch_to_block(merge_block);
-                    self.builder.seal_block(merge_block);
                 }
 
                 Ok(then_terminated && else_terminated)
@@ -478,7 +475,6 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     .brif(cond_val, body_block, &[], exit_block, &[]);
 
                 self.switch_to_block(body_block);
-                self.builder.seal_block(body_block);
 
                 self.loop_context.push((header_block, exit_block));
                 self.translate_stmt(*body)?;
@@ -487,8 +483,6 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.jump_to_block(header_block);
 
                 self.switch_to_block(exit_block);
-                self.builder.seal_block(header_block);
-                self.builder.seal_block(exit_block);
 
                 Ok(false)
             }
@@ -545,8 +539,6 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 }
 
                 self.switch_to_block(body_block);
-                self.builder.seal_block(body_block);
-
                 self.loop_context.push((header_block, exit_block));
                 self.translate_stmt(*body)?;
                 self.loop_context.pop();
@@ -558,8 +550,6 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.jump_to_block(header_block);
 
                 self.switch_to_block(exit_block);
-                self.builder.seal_block(header_block);
-                self.builder.seal_block(exit_block);
 
                 self.variables.exit_scope();
                 Ok(false)
@@ -569,6 +559,26 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 Ok(false)
             }
             Stmt::Empty => Ok(false),
+            Stmt::DoWhile(body, cond) => {
+                let header_block = self.builder.create_block();
+                let cond_block = self.builder.create_block();
+                let exit_block = self.builder.create_block();
+
+                self.jump_to_block(header_block);
+                self.switch_to_block(header_block);
+
+                self.translate_stmt(*body)?;
+                self.jump_to_block(cond_block);
+
+                self.switch_to_block(cond_block);
+
+                let (cond_val, _) = self.translate_expr(*cond)?;
+                self.builder.ins().brif(cond_val, header_block, &[], exit_block, &[]);
+
+                self.switch_to_block(exit_block);
+
+                Ok(false)
+            }
             _ => unimplemented!(),
         }
     }

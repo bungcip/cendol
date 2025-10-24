@@ -84,6 +84,8 @@ pub enum Stmt {
     Continue,
     /// A `do-while` loop.
     DoWhile(Box<Stmt>, Box<Expr>),
+    /// An empty statement.
+    Empty,
     /// An expression statement.
     Expr(Expr),
 }

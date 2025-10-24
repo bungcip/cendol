@@ -695,7 +695,10 @@ impl Parser {
             } else if k == KeywordKind::For {
                 self.eat()?;
                 self.expect_punct(TokenKind::LeftParen)?;
-                let init = if let Ok(ty) = self.parse_type() {
+                let init = if self.current_token()?.kind == TokenKind::Semicolon {
+                    self.eat()?; // consume ;
+                    None
+                } else if let Ok(ty) = self.parse_type() {
                     let token = self.current_token()?;
                     if let TokenKind::Identifier(id) = token.kind.clone() {
                         self.eat()?;
@@ -713,11 +716,31 @@ impl Parser {
                 } else {
                     Some(ForInit::Expr(self.parse_expr()?))
                 };
-                self.expect_punct(TokenKind::Semicolon)?;
-                let cond = Some(Box::new(self.parse_expr()?));
-                self.expect_punct(TokenKind::Semicolon)?;
-                let inc = Some(Box::new(self.parse_expr()?));
-                self.expect_punct(TokenKind::RightParen)?;
+
+                // Optional ; for cond
+                if self.current_token()?.kind == TokenKind::Semicolon {
+                    self.eat()?; // consume ;
+                }
+                let cond = if self.current_token()?.kind == TokenKind::Semicolon {
+                    self.eat()?; // consume ;
+                    None
+                } else {
+                    Some(Box::new(self.parse_expr()?))
+                };
+
+                // Optional ; for inc
+                if self.current_token()?.kind == TokenKind::Semicolon {
+                    self.eat()?; // consume ;
+                }
+                let inc = if self.current_token()?.kind == TokenKind::RightParen {
+                    self.eat()?; // consume )
+                    None
+                } else {
+                    let result = self.parse_expr()?;
+                    self.expect_punct(TokenKind::RightParen)?;
+                    Some(Box::new(result))
+                };
+
                 let body = self.parse_stmt()?;
                 return Ok(Stmt::For(init, cond, inc, Box::new(body)));
             } else if k == KeywordKind::Switch {
@@ -773,6 +796,11 @@ impl Parser {
                     return Ok(Stmt::Typedef(ty, id));
                 }
             }
+        }
+
+        if let TokenKind::Semicolon = token.kind {
+            self.eat()?;
+            return Ok(Stmt::Empty);
         }
 
         let expr = self.parse_expr()?;

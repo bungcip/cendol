@@ -7,6 +7,7 @@ pub mod error;
 
 /// Represents a symbol in the symbol table.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct Symbol {
     ty: Type,
     is_function: bool,

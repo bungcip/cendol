@@ -122,28 +122,30 @@ impl SemanticAnalyzer {
                         );
                     }
                 }
-                Stmt::Declaration(ty, name, _) => {
-                    if let Some(existing) = self.symbol_table.get(name) {
-                        if !existing.is_function {
-                            self.errors.push((
-                                SemanticError::VariableRedeclaration(name.clone()),
-                                filename.to_string(),
-                                SourceSpan::new(
-                                    crate::file::FileId(0),
-                                    SourceLocation::new(crate::file::FileId(0), 0, 0),
-                                    SourceLocation::new(crate::file::FileId(0), 0, 0),
-                                ),
-                            ));
+                Stmt::Declaration(_, declarators) => {
+                    for declarator in declarators {
+                        if let Some(existing) = self.symbol_table.get(&declarator.name) {
+                            if !existing.is_function {
+                                self.errors.push((
+                                    SemanticError::VariableRedeclaration(declarator.name.clone()),
+                                    filename.to_string(),
+                                    SourceSpan::new(
+                                        crate::file::FileId(0),
+                                        SourceLocation::new(crate::file::FileId(0), 0, 0),
+                                        SourceLocation::new(crate::file::FileId(0), 0, 0),
+                                    ),
+                                ));
+                            }
+                        } else {
+                            self.symbol_table.insert(
+                                declarator.name.clone(),
+                                Symbol {
+                                    ty: declarator.ty.clone(),
+                                    is_function: false,
+                                    defined_at: filename.to_string(),
+                                },
+                            );
                         }
-                    } else {
-                        self.symbol_table.insert(
-                            name.clone(),
-                            Symbol {
-                                ty: ty.clone(),
-                                is_function: false,
-                                defined_at: filename.to_string(),
-                            },
-                        );
                     }
                 }
                 _ => {}
@@ -227,34 +229,36 @@ impl SemanticAnalyzer {
     /// Checks a statement for semantic errors.
     fn check_statement(&mut self, stmt: Stmt, filename: &str) {
         match stmt {
-            Stmt::Declaration(ty, name, initializer) => {
-                // Check for redeclaration in local scope
-                if let Some(existing) = self.symbol_table.get(&name) {
-                    if !existing.is_function {
-                        self.errors.push((
-                            SemanticError::VariableRedeclaration(name.clone()),
-                            filename.to_string(),
-                            SourceSpan::new(
-                                crate::file::FileId(0),
-                                SourceLocation::new(crate::file::FileId(0), 0, 0),
-                                SourceLocation::new(crate::file::FileId(0), 0, 0),
-                            ),
-                        ));
+            Stmt::Declaration(_, declarators) => {
+                for declarator in declarators {
+                    // Check for redeclaration in local scope
+                    if let Some(existing) = self.symbol_table.get(&declarator.name) {
+                        if !existing.is_function {
+                            self.errors.push((
+                                SemanticError::VariableRedeclaration(declarator.name.clone()),
+                                filename.to_string(),
+                                SourceSpan::new(
+                                    crate::file::FileId(0),
+                                    SourceLocation::new(crate::file::FileId(0), 0, 0),
+                                    SourceLocation::new(crate::file::FileId(0), 0, 0),
+                                ),
+                            ));
+                        }
+                    } else {
+                        self.symbol_table.insert(
+                            declarator.name.clone(),
+                            Symbol {
+                                ty: declarator.ty,
+                                is_function: false,
+                                defined_at: filename.to_string(),
+                            },
+                        );
                     }
-                } else {
-                    self.symbol_table.insert(
-                        name.clone(),
-                        Symbol {
-                            ty,
-                            is_function: false,
-                            defined_at: filename.to_string(),
-                        },
-                    );
-                }
 
-                // Check initializer expression
-                if let Some(init_expr) = initializer {
-                    self.check_expression(*init_expr, filename);
+                    // Check initializer expression
+                    if let Some(init_expr) = declarator.initializer {
+                        self.check_expression(*init_expr, filename);
+                    }
                 }
             }
             Stmt::Expr(expr) => {
@@ -320,19 +324,9 @@ impl SemanticAnalyzer {
 
                 self.check_statement(*body, filename);
             }
-            Stmt::Block(stmts, is_explicit_block) => {
-                if is_explicit_block {
-                    // Enter a new scope for explicit blocks
-                    let old_symbol_table = self.symbol_table.clone();
-                    for stmt in stmts {
-                        self.check_statement(stmt, filename);
-                    }
-                    self.symbol_table = old_symbol_table; // Exit scope
-                } else {
-                    // For implicit blocks (like multiple declarations), don't create a new scope
-                    for stmt in stmts {
-                        self.check_statement(stmt, filename);
-                    }
+            Stmt::Block(stmts) => {
+                for stmt in stmts {
+                    self.check_statement(stmt, filename);
                 }
             }
             _ => {

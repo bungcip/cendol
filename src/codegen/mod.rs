@@ -120,9 +120,14 @@ impl CodeGen {
                         .insert(name.clone(), (id, ty.clone(), *is_variadic));
                     self.signatures.insert(name.clone(), sig);
                 }
-                Stmt::Declaration(ty, _, _) => {
-                    if let Type::Struct(Some(name), _) = &ty {
-                        self.structs.insert(name.clone(), ty.clone());
+                Stmt::Declaration(base_ty, declarators) => {
+                    if let Type::Struct(Some(name), _) = &base_ty {
+                        self.structs.insert(name.clone(), base_ty.clone());
+                    }
+                    for declarator in declarators {
+                        if let Type::Struct(Some(name), _) = &declarator.ty {
+                            self.structs.insert(name.clone(), declarator.ty.clone());
+                        }
                     }
                 }
                 _ => {}
@@ -350,95 +355,98 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.current_block_state = BlockState::Filled;
                 Ok(true)
             }
-            Stmt::Declaration(ty, name, initializer) => {
-                let size = self.get_type_size(&ty);
-                let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-                    StackSlotKind::ExplicitSlot,
-                    size,
-                    0,
-                ));
-                self.variables.insert(name, (slot, ty.clone()));
-                if let Some(init) = initializer {
-                    if let Expr::StructInitializer(initializers) = *init {
-                        let s = self.get_real_type(&ty)?;
-                        if let Type::Struct(_, members) = s {
-                            let mut offset = 0;
-                            for member in &members {
-                                let val = self.builder.ins().iconst(types::I64, 0);
-                                self.builder.ins().stack_store(val, slot, offset as i32);
-                                offset += self.get_type_size(&member.ty);
-                            }
-
-                            let mut member_index = 0;
-                            for initializer in initializers {
-                                if let Expr::DesignatedInitializer(name, expr) = initializer {
-                                    let mut offset = 0;
-                                    let mut found = false;
-                                    for (i, member) in members.iter().enumerate() {
-                                        let member_alignment = self.get_type_alignment(&member.ty);
-                                        offset = (offset + member_alignment - 1)
-                                            & !(member_alignment - 1);
-                                        if member.name == name {
-                                            member_index = i;
-                                            found = true;
-                                            break;
-                                        }
-                                        offset += self.get_type_size(&member.ty);
-                                    }
-                                    if !found {
-                                        return Err(CodegenError::UnknownField(name));
-                                    }
-                                    let (val, _) = self.translate_expr(*expr)?;
+            Stmt::Declaration(_, declarators) => {
+                for declarator in declarators {
+                    let size = self.get_type_size(&declarator.ty);
+                    let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+                        StackSlotKind::ExplicitSlot,
+                        size,
+                        0,
+                    ));
+                    self.variables
+                        .insert(declarator.name, (slot, declarator.ty.clone()));
+                    if let Some(init) = declarator.initializer {
+                        if let Expr::StructInitializer(initializers) = *init {
+                            let s = self.get_real_type(&declarator.ty)?;
+                            if let Type::Struct(_, members) = s {
+                                let mut offset = 0;
+                                for member in &members {
+                                    let val = self.builder.ins().iconst(types::I64, 0);
                                     self.builder.ins().stack_store(val, slot, offset as i32);
-                                } else {
-                                    if member_index >= members.len() {
-                                        return Err(CodegenError::InitializerTooLong);
-                                    }
-                                    let mut offset = 0;
-                                    for member in members.iter().take(member_index) {
-                                        let member_alignment = self.get_type_alignment(&member.ty);
-                                        offset = (offset + member_alignment - 1)
-                                            & !(member_alignment - 1);
-                                        offset += self.get_type_size(&member.ty);
-                                    }
-                                    let (val, _) = self.translate_expr(initializer)?;
-                                    self.builder.ins().stack_store(val, slot, offset as i32);
+                                    offset += self.get_type_size(&member.ty);
                                 }
-                                member_index += 1;
+
+                                let mut member_index = 0;
+                                for initializer in initializers {
+                                    if let Expr::DesignatedInitializer(name, expr) = initializer {
+                                        let mut offset = 0;
+                                        let mut found = false;
+                                        for (i, member) in members.iter().enumerate() {
+                                            let member_alignment =
+                                                self.get_type_alignment(&member.ty);
+                                            offset = (offset + member_alignment - 1)
+                                                & !(member_alignment - 1);
+                                            if member.name == name {
+                                                member_index = i;
+                                                found = true;
+                                                break;
+                                            }
+                                            offset += self.get_type_size(&member.ty);
+                                        }
+                                        if !found {
+                                            return Err(CodegenError::UnknownField(name));
+                                        }
+                                        let (val, _) = self.translate_expr(*expr)?;
+                                        self.builder.ins().stack_store(val, slot, offset as i32);
+                                    } else {
+                                        if member_index >= members.len() {
+                                            return Err(CodegenError::InitializerTooLong);
+                                        }
+                                        let mut offset = 0;
+                                        for member in members.iter().take(member_index) {
+                                            let member_alignment =
+                                                self.get_type_alignment(&member.ty);
+                                            offset = (offset + member_alignment - 1)
+                                                & !(member_alignment - 1);
+                                            offset += self.get_type_size(&member.ty);
+                                        }
+                                        let (val, _) = self.translate_expr(initializer)?;
+                                        self.builder.ins().stack_store(val, slot, offset as i32);
+                                    }
+                                    member_index += 1;
+                                }
+                            } else {
+                                return Err(CodegenError::NotAStruct);
                             }
                         } else {
-                            return Err(CodegenError::NotAStruct);
+                            let (val, val_ty) = self.translate_expr(*init)?;
+                            if let Type::Struct(_, _) = val_ty {
+                                let dest = self.builder.ins().stack_addr(types::I64, slot, 0);
+                                let src = val;
+                                let size = self.get_type_size(&val_ty);
+                                self.builder.emit_small_memory_copy(
+                                    self.module.target_config(),
+                                    dest,
+                                    src,
+                                    size as u64,
+                                    self.get_type_alignment(&val_ty) as u8,
+                                    self.get_type_alignment(&val_ty) as u8,
+                                    true,
+                                    MemFlags::new(),
+                                );
+                            } else {
+                                self.builder.ins().stack_store(val, slot, 0);
+                            }
                         }
                     } else {
-                        let (val, val_ty) = self.translate_expr(*init)?;
-                        if let Type::Struct(_, _) = val_ty {
-                            let dest = self.builder.ins().stack_addr(types::I64, slot, 0);
-                            let src = val;
-                            let size = self.get_type_size(&val_ty);
-                            self.builder.emit_small_memory_copy(
-                                self.module.target_config(),
-                                dest,
-                                src,
-                                size as u64,
-                                self.get_type_alignment(&val_ty) as u8,
-                                self.get_type_alignment(&val_ty) as u8,
-                                true,
-                                MemFlags::new(),
-                            );
-                        } else {
-                            self.builder.ins().stack_store(val, slot, 0);
-                        }
-                    }
-                } else {
-                    let val = self.builder.ins().iconst(types::I64, 0);
-                    self.builder.ins().stack_store(val, slot, 0);
-                };
+                        let val = self.builder.ins().iconst(types::I64, 0);
+                        self.builder.ins().stack_store(val, slot, 0);
+                    };
+                }
                 Ok(false)
             }
-            Stmt::Block(stmts, is_explicit_block) => {
-                if is_explicit_block {
-                    self.variables.enter_scope();
-                }
+            Stmt::Block(stmts) => {
+                self.variables.enter_scope();
                 let mut terminated = false;
                 for stmt in stmts {
                     if terminated {
@@ -447,9 +455,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     let term = self.translate_stmt(stmt)?;
                     terminated = term;
                 }
-                if is_explicit_block {
-                    self.variables.exit_scope();
-                }
+                self.variables.exit_scope();
                 Ok(terminated)
             }
             Stmt::If(cond, then, otherwise) => {
@@ -609,32 +615,14 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         }
     }
 
-    /// Resolves the real type of a given type, unwrapping `Type::Const` and `Type::Typedef`.
+    /// Resolves the real type of a struct.
     fn get_real_type(&self, ty: &Type) -> Result<Type, CodegenError> {
-        match ty {
-            Type::Const(base_ty) => self.get_real_type(base_ty),
-            Type::Typedef(name) => {
-                // Look up the typedef in the parser's typedefs (if available) or a global map
-                // For now, we'll assume typedefs are resolved to their base types during parsing
-                // or that the `variables` symbol table already stores the resolved type.
-                // If `self.variables` stores the original `Type::Typedef`, we need a way to get its definition.
-                // For simplicity, let's assume `self.variables` stores the resolved type for now.
-                // If this assumption is wrong, we'll need a global typedef map in CodeGen.
-                // For now, we'll treat it as an unknown type if not found in structs.
-                if let Some(resolved_ty) = self.structs.get(name) {
-                    self.get_real_type(resolved_ty)
-                } else {
-                    // If it's a typedef to a primitive or pointer, it should already be resolved
-                    // by the parser or handled directly. If it reaches here, it's an error.
-                    Err(CodegenError::UnknownType(name.clone()))
-                }
-            }
-            Type::Struct(Some(name), members) if members.is_empty() => {
-                // This handles forward declarations of structs
-                Ok(self.structs.get(name).unwrap().clone())
-            }
-            _ => Ok(ty.clone()),
+        if let Type::Struct(Some(name), members) = ty
+            && members.is_empty()
+        {
+            return Ok(self.structs.get(name).unwrap().clone());
         }
+        Ok(ty.clone())
     }
 
     /// Translates an expression into a Cranelift `Value`.
@@ -1167,7 +1155,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                             break;
                         }
                         offset += self.get_type_size(&m.ty);
-                        }
+                    }
                     Ok((
                         self.builder
                             .ins()

@@ -27,8 +27,6 @@ pub enum Type {
     Union(Option<String>, Vec<Parameter>),
     /// An enum definition.
     Enum(Vec<String>),
-    /// A const-qualified type.
-    Const(Box<Type>),
     /// A typedef'd type.
     Typedef(String),
 }
@@ -49,6 +47,14 @@ pub enum ForInit {
     Expr(Expr),
 }
 
+/// Represents a declarator, which includes the type modifiers (pointers, arrays) and the identifier.
+#[derive(Debug, PartialEq, Clone)]
+pub struct Declarator {
+    pub ty: Type,
+    pub name: String,
+    pub initializer: Option<Box<Expr>>,
+}
+
 /// Represents a statement in the C language.
 #[derive(Debug, PartialEq, Clone)]
 pub enum Stmt {
@@ -65,8 +71,8 @@ pub enum Stmt {
         Option<Box<Expr>>,
         Box<Stmt>,
     ),
-    /// A block of statements. The boolean indicates if it's an explicit block from source code.
-    Block(Vec<Stmt>, bool),
+    /// A block of statements.
+    Block(Vec<Stmt>),
     /// A `switch` statement.
     Switch(Box<Expr>, Box<Stmt>),
     /// A `case` statement.
@@ -78,7 +84,7 @@ pub enum Stmt {
     /// A `goto` statement.
     Goto(String),
     /// A variable declaration.
-    Declaration(Type, String, Option<Box<Expr>>),
+    Declaration(Type, Vec<Declarator>),
     FunctionDeclaration(Type, String, Vec<Parameter>, bool),
     /// A `typedef` statement.
     Typedef(Type, String),

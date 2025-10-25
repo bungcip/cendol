@@ -5,7 +5,7 @@
 
 use cendol::file::FileManager;
 use cendol::parser::Parser;
-use cendol::parser::ast::{Expr, Function, Program, Stmt, Type};
+use cendol::parser::ast::{Declarator, Expr, Function, Program, Stmt, Type};
 use cendol::preprocessor::Preprocessor;
 
 /// Test configuration constants
@@ -27,7 +27,6 @@ fn parse_c_body(input: &str) -> Vec<Stmt> {
     let input = format!("
         int func1() {{ return 0; }}
         int func2(int a, int b, int c) {{ return 0; }}
-        struct S {{ int member; }};
 
         void c_body(int x, int y, int a, int b, int c, int arr[], struct S obj, struct S *ptr, int *p)
         {{
@@ -69,7 +68,14 @@ fn create_bool_program_ast() -> Program {
             name: "main".to_string(),
             params: vec![],
             body: vec![
-                Stmt::Declaration(Type::Bool, "a".to_string(), Some(Box::new(Expr::Number(1)))),
+                Stmt::Declaration(
+                    Type::Bool,
+                    vec![Declarator {
+                        ty: Type::Bool,
+                        name: "a".to_string(),
+                        initializer: Some(Box::new(Expr::Number(1))),
+                    }],
+                ),
                 Stmt::Return(Expr::Number(0)),
             ],
             is_inline: false,
@@ -106,7 +112,7 @@ mod tests {
         create_bool_program_ast, create_control_flow_program_ast,
         create_simple_program_ast, parse_c_code,
     };
-    use cendol::parser::ast::{Expr, Stmt, Type};
+    use cendol::parser::ast::{Declarator, Expr, Stmt, Type};
 
     /// Test parsing of simple C programs
     #[test]
@@ -143,6 +149,37 @@ mod tests {
         let expected = create_bool_program_ast();
         assert_eq!(ast.functions[0].name, expected.functions[0].name);
         assert_eq!(ast.functions[0].body, expected.functions[0].body);
+    }
+
+    /// Test parsing of multiple declarators in a single declaration
+    #[test]
+    fn test_multiple_declarators() {
+        let input = "int main() { int x, *p, **pp; return 0; }";
+        let ast = parse_c_code(input).unwrap();
+        let expected_body = vec![
+            Stmt::Declaration(
+                Type::Int,
+                vec![
+                    Declarator {
+                        ty: Type::Int,
+                        name: "x".to_string(),
+                        initializer: None,
+                    },
+                    Declarator {
+                        ty: Type::Pointer(Box::new(Type::Int)),
+                        name: "p".to_string(),
+                        initializer: None,
+                    },
+                    Declarator {
+                        ty: Type::Pointer(Box::new(Type::Pointer(Box::new(Type::Int)))),
+                        name: "pp".to_string(),
+                        initializer: None,
+                    },
+                ],
+            ),
+            Stmt::Return(Expr::Number(0)),
+        ];
+        assert_eq!(ast.functions[0].body, expected_body);
     }
 
     // /// Test parsing of designated initializers for structs

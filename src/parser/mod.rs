@@ -270,7 +270,7 @@ impl Parser {
             TokenKind::Semicolon,
             |p| {
                 let base_ty = p.parse_type_specifier()?;
-                let (ty, name) = p.parse_declarator_suffix(base_ty)?;
+                let (ty, name) = p.parse_declarator_suffix(base_ty, true)?;
                 Ok(Parameter { ty, name })
             },
         )
@@ -278,7 +278,11 @@ impl Parser {
 
     /// Parses declarator suffixes (pointers and arrays) and returns the final type and identifier.
     /// This function assumes the base type has already been parsed.
-    fn parse_declarator_suffix(&mut self, base_type: Type) -> Result<(Type, String), ParserError> {
+    fn parse_declarator_suffix(
+        &mut self,
+        base_type: Type,
+        name_required: bool,
+    ) -> Result<(Type, String), ParserError> {
         let mut ty = base_type;
 
         // Parse pointers
@@ -286,7 +290,11 @@ impl Parser {
             ty = Type::Pointer(Box::new(ty));
         }
 
-        let id = self.expect_name()?;
+        let id = if name_required {
+            self.expect_name()?
+        } else {
+            self.maybe_name()?.unwrap_or_default()
+        };
 
         // Parse array dimensions
         while self.eat_token(&TokenKind::LeftBracket)? {
@@ -307,8 +315,12 @@ impl Parser {
         Ok((ty, id))
     }
     /// Parses a declarator with optional initializer.
-    fn parse_declarator(&mut self, base_type: Type) -> Result<ast::Declarator, ParserError> {
-        let (ty, name) = self.parse_declarator_suffix(base_type)?;
+    fn parse_declarator(
+        &mut self,
+        base_type: Type,
+        name_required: bool,
+    ) -> Result<ast::Declarator, ParserError> {
+        let (ty, name) = self.parse_declarator_suffix(base_type, name_required)?;
         let mut initializer = None;
         if self.eat_token(&TokenKind::Equal)? {
             initializer = Some(Box::new(self.parse_expr()?));
@@ -330,7 +342,7 @@ impl Parser {
         let original_pos = self.position;
         if let Ok(kind) = self.current_kind()
             && matches!(kind, TokenKind::Star | TokenKind::LeftBracket)
-            && let Ok((ty, _)) = self.parse_declarator_suffix(base_type.clone())
+            && let Ok((ty, _)) = self.parse_declarator_suffix(base_type.clone(), false)
         {
             return Ok(ty);
         }
@@ -715,7 +727,7 @@ impl Parser {
         } else if let Ok(base_type) = self.parse_type_specifier() {
             let mut declarators = Vec::new();
             loop {
-                let declarator = self.parse_declarator(base_type.clone())?;
+                let declarator = self.parse_declarator(base_type.clone(), true)?;
                 declarators.push(declarator);
 
                 if self.eat_token(&TokenKind::Comma)? == false {
@@ -850,6 +862,7 @@ impl Parser {
     /// Parses a function signature.
     fn parse_function_signature(
         &mut self,
+        param_name_required: bool,
     ) -> Result<(Type, String, Vec<Parameter>, bool, bool), ParserError> {
         let mut is_inline = false;
         // Check for inline keyword before return type
@@ -869,7 +882,7 @@ impl Parser {
                 break;
             }
             let base_type = self.parse_type_specifier()?;
-            let declarator = self.parse_declarator(base_type)?;
+            let declarator = self.parse_declarator(base_type, param_name_required)?;
             params.push(Parameter {
                 ty: declarator.ty,
                 name: declarator.name,
@@ -883,7 +896,7 @@ impl Parser {
     /// Parses a function.
     fn parse_function(&mut self) -> Result<Function, ParserError> {
         let (return_type, name, params, is_inline, is_variadic) =
-            self.parse_function_signature()?;
+            self.parse_function_signature(false)?;
         self.expect_punct(TokenKind::LeftBrace)?;
         let mut stmts = Vec::new();
         while self.eat_token(&TokenKind::RightBrace)? == false {
@@ -906,7 +919,7 @@ impl Parser {
     /// A `Result` containing the parsed `Program`, or a `ParserError` if parsing fails.
     fn parse_global(&mut self) -> Result<Stmt, ParserError> {
         let pos = self.position;
-        if let Ok((ty, id, params, _is_inline, is_variadic)) = self.parse_function_signature() {
+        if let Ok((ty, id, params, _is_inline, is_variadic)) = self.parse_function_signature(false) {
             if self.eat_token(&TokenKind::Semicolon)? {
                 return Ok(Stmt::FunctionDeclaration(ty, id, params, is_variadic));
             } else {
@@ -920,7 +933,7 @@ impl Parser {
         let base_type = self.parse_type_specifier()?;
         let mut declarators = Vec::new();
         loop {
-            let (ty, name) = self.parse_declarator_suffix(base_type.clone())?;
+            let (ty, name) = self.parse_declarator_suffix(base_type.clone(), true)?;
 
             let mut initializer = None;
             if self.eat_token(&TokenKind::Equal)? {

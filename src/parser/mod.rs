@@ -2,7 +2,7 @@ use crate::parser::ast::{Expr, ForInit, Function, Parameter, Program, Stmt, Type
 use crate::parser::error::ParserError;
 use crate::parser::token::{KeywordKind, Token, TokenKind};
 use crate::preprocessor;
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 pub mod ast;
 pub mod error;
@@ -12,7 +12,7 @@ pub mod token;
 pub struct Parser {
     tokens: Vec<Token>,
     position: usize,
-    typedefs: HashSet<String>,
+    typedefs: HashMap<String, Type>,
 }
 
 impl Parser {
@@ -66,7 +66,7 @@ impl Parser {
         let parser = Parser {
             tokens: filtered_tokens,
             position: 0,
-            typedefs: HashSet::new(),
+            typedefs: HashMap::new(),
         };
         Ok(parser)
     }
@@ -156,9 +156,9 @@ impl Parser {
                 return self.parse_type_specifier();
             }
             self.parse_type_specifier_kind(k)
-        } else if self.typedefs.contains(&token.to_string()) {
+        } else if let Some(ty) = self.typedefs.get(&token.to_string()).cloned() {
             self.eat()?;
-            Ok(Type::Typedef(token.to_string()))
+            Ok(ty)
         } else {
             Err(ParserError::UnexpectedToken(token))
         }
@@ -823,12 +823,16 @@ impl Parser {
                 return Ok(Stmt::DoWhile(Box::new(body), Box::new(cond)));
             } else if k == KeywordKind::Typedef {
                 self.eat()?;
-                let ty = self.parse_type()?;
-                if let Some(id) = self.maybe_name()? {
-                    self.typedefs.insert(id.clone());
-                    self.expect_punct(TokenKind::Semicolon)?;
-                    return Ok(Stmt::Typedef(ty, id));
+                let base_ty = self.parse_type_specifier()?;
+                loop {
+                    let (ty, name) = self.parse_declarator_suffix(base_ty.clone())?;
+                    self.typedefs.insert(name, ty);
+                    if !self.eat_token(&TokenKind::Comma)? {
+                        break;
+                    }
                 }
+                self.expect_punct(TokenKind::Semicolon)?;
+                return Ok(Stmt::Empty);
             }
         }
 
@@ -916,6 +920,19 @@ impl Parser {
             }
         }
         self.position = pos;
+
+        if self.eat_token(&TokenKind::Keyword(KeywordKind::Typedef))? {
+            let base_ty = self.parse_type_specifier()?;
+            loop {
+                let (ty, name) = self.parse_declarator_suffix(base_ty.clone())?;
+                self.typedefs.insert(name, ty);
+                if !self.eat_token(&TokenKind::Comma)? {
+                    break;
+                }
+            }
+            self.expect_punct(TokenKind::Semicolon)?;
+            return Ok(Stmt::Empty);
+        }
 
         let base_type = self.parse_type_specifier()?;
         let mut declarators = Vec::new();

@@ -178,122 +178,128 @@ impl Parser {
                 self.eat()?;
                 return self.parse_type_specifier();
             }
-            match k {
-                KeywordKind::Long => {
-                    self.eat()?; // consume "long"
-                    let next_token = self.tokens.get(self.position).cloned();
-                    if let Some(next) = next_token {
-                        if let TokenKind::Keyword(KeywordKind::Long) = next.kind {
-                            self.eat()?; // consume second "long"
-                            let next2 = self.tokens.get(self.position).cloned();
-                            if let Some(n2) = next2
-                                && let TokenKind::Keyword(KeywordKind::Int) = n2.kind
-                            {
-                                self.eat()?; // consume "int"
-                            }
-                            Ok(Type::LongLong)
-                        } else if let TokenKind::Keyword(KeywordKind::Int) = next.kind {
-                            self.eat()?; // consume "int"
-                            Ok(Type::Long)
-                        } else {
-                            Ok(Type::Long)
-                        }
-                    } else {
-                        Ok(Type::Long)
-                    }
-                }
-                KeywordKind::Int => {
-                    self.eat()?;
-                    Ok(Type::Int)
-                }
-                KeywordKind::Char => {
-                    self.eat()?;
-                    Ok(Type::Char)
-                }
-                KeywordKind::Float => {
-                    self.eat()?;
-                    Ok(Type::Float)
-                }
-                KeywordKind::Double => {
-                    self.eat()?;
-                    Ok(Type::Double)
-                }
-                KeywordKind::Void => {
-                    self.eat()?;
-                    Ok(Type::Void)
-                }
-                KeywordKind::Bool => {
-                    self.eat()?;
-                    Ok(Type::Bool)
-                }
-                KeywordKind::Struct => {
-                    self.eat()?;
-                    let name = self.maybe_name()?;
-                    if let Ok(token) = self.current_token() {
-                        if let TokenKind::LeftBrace = token.kind {
-                            let members = self.parse_struct_or_union_members()?;
-                            Ok(Type::Struct(name, members))
-                        } else if let Some(name) = name {
-                            Ok(Type::Struct(Some(name), Vec::new()))
-                        } else {
-                            Err(ParserError::UnexpectedToken(token))
-                        }
-                    } else {
-                        Err(ParserError::UnexpectedEof)
-                    }
-                }
-                KeywordKind::Union => {
-                    self.eat()?;
-                    let name = self.maybe_name()?;
-                    if let Ok(token) = self.current_token() {
-                        if let TokenKind::LeftBrace = token.kind {
-                            let members = self.parse_struct_or_union_members()?;
-                            Ok(Type::Union(name, members))
-                        } else if let Some(name) = name {
-                            Ok(Type::Union(Some(name), Vec::new()))
-                        } else {
-                            Err(ParserError::UnexpectedToken(token))
-                        }
-                    } else {
-                        Err(ParserError::UnexpectedEof)
-                    }
-                }
-                KeywordKind::Enum => {
-                    self.eat()?;
-                    let _name = self.maybe_name()?;
-
-                    self.expect_punct(TokenKind::LeftBrace)?;
-                    let mut enumerators = Vec::new();
-                    while let Ok(t) = self.current_token() {
-                        if let TokenKind::RightBrace = t.kind {
-                            self.eat()?;
-                            break;
-                        }
-                        if let Some(id) = self.maybe_name()? {
-                            enumerators.push(id);
-                        }
-                        // Handle optional assignment for enum values
-                        if let Ok(t) = self.current_token()
-                            && let TokenKind::Equal = t.kind
-                        {
-                            self.eat()?;
-                            self.parse_expr()?; // Consume the expression for the enum value
-                        }
-                        if let Ok(t) = self.current_token()
-                            && let TokenKind::Comma = t.kind
-                        {
-                            self.eat()?;
-                        }
-                    }
-                    Ok(Type::Enum(enumerators))
-                }
-                _ => Err(ParserError::UnexpectedToken(token)),
-            }
+            self.parse_type_specifier_kind(k)
         } else if self.typedefs.contains(&token.to_string()) {
             self.eat()?;
             Ok(Type::Typedef(token.to_string()))
         } else {
             Err(ParserError::UnexpectedToken(token))
+        }
+    }
+
+    /// Parses a type specifier kind.
+    fn parse_type_specifier_kind(&mut self, k: KeywordKind) -> Result<Type, ParserError> {
+        let token = self.current_token()?;
+        match k {
+            KeywordKind::Long => {
+                self.eat()?; // consume "long"
+                let next_token = self.tokens.get(self.position).cloned();
+                if let Some(next) = next_token {
+                    if let TokenKind::Keyword(KeywordKind::Long) = next.kind {
+                        self.eat()?; // consume second "long"
+                        let next2 = self.tokens.get(self.position).cloned();
+                        if let Some(n2) = next2
+                            && let TokenKind::Keyword(KeywordKind::Int) = n2.kind
+                        {
+                            self.eat()?; // consume "int"
+                        }
+                        Ok(Type::LongLong)
+                    } else if let TokenKind::Keyword(KeywordKind::Int) = next.kind {
+                        self.eat()?; // consume "int"
+                        Ok(Type::Long)
+                    } else {
+                        Ok(Type::Long)
+                    }
+                } else {
+                    Ok(Type::Long)
+                }
+            }
+            KeywordKind::Int => {
+                self.eat()?;
+                Ok(Type::Int)
+            }
+            KeywordKind::Char => {
+                self.eat()?;
+                Ok(Type::Char)
+            }
+            KeywordKind::Float => {
+                self.eat()?;
+                Ok(Type::Float)
+            }
+            KeywordKind::Double => {
+                self.eat()?;
+                Ok(Type::Double)
+            }
+            KeywordKind::Void => {
+                self.eat()?;
+                Ok(Type::Void)
+            }
+            KeywordKind::Bool => {
+                self.eat()?;
+                Ok(Type::Bool)
+            }
+            KeywordKind::Struct => {
+                self.eat()?;
+                let name = self.maybe_name()?;
+                if let Ok(token) = self.current_token() {
+                    if let TokenKind::LeftBrace = token.kind {
+                        let members = self.parse_struct_or_union_members()?;
+                        Ok(Type::Struct(name, members))
+                    } else if let Some(name) = name {
+                        Ok(Type::Struct(Some(name), Vec::new()))
+                    } else {
+                        Err(ParserError::UnexpectedToken(token))
+                    }
+                } else {
+                    Err(ParserError::UnexpectedEof)
+                }
+            }
+            KeywordKind::Union => {
+                self.eat()?;
+                let name = self.maybe_name()?;
+                if let Ok(token) = self.current_token() {
+                    if let TokenKind::LeftBrace = token.kind {
+                        let members = self.parse_struct_or_union_members()?;
+                        Ok(Type::Union(name, members))
+                    } else if let Some(name) = name {
+                        Ok(Type::Union(Some(name), Vec::new()))
+                    } else {
+                        Err(ParserError::UnexpectedToken(token))
+                    }
+                } else {
+                    Err(ParserError::UnexpectedEof)
+                }
+            }
+            KeywordKind::Enum => {
+                self.eat()?;
+                let _name = self.maybe_name()?;
+
+                self.expect_punct(TokenKind::LeftBrace)?;
+                let mut enumerators = Vec::new();
+                while let Ok(t) = self.current_token() {
+                    if let TokenKind::RightBrace = t.kind {
+                        self.eat()?;
+                        break;
+                    }
+                    if let Some(id) = self.maybe_name()? {
+                        enumerators.push(id);
+                    }
+                    // Handle optional assignment for enum values
+                    if let Ok(t) = self.current_token()
+                        && let TokenKind::Equal = t.kind
+                    {
+                        self.eat()?;
+                        self.parse_expr()?; // Consume the expression for the enum value
+                    }
+                    if let Ok(t) = self.current_token()
+                        && let TokenKind::Comma = t.kind
+                    {
+                        self.eat()?;
+                    }
+                }
+                Ok(Type::Enum(enumerators))
+            }
+            _ => Err(ParserError::UnexpectedToken(token)),
         }
     }
     /// Parses members for struct or union.
@@ -498,9 +504,9 @@ impl Parser {
     /// Parses an expression using the Pratt parsing algorithm.
     fn parse_pratt_expr(&mut self, min_bp: u8) -> Result<Expr, ParserError> {
         let mut lhs = if let Some(((), r_bp)) = self.prefix_binding_power(&self.current_kind()?) {
-            let token = self.current_token()?;
+            let kind = self.current_kind()?;
             self.eat()?;
-            match token.kind {
+            match kind {
                 TokenKind::PlusPlus => {
                     let rhs = self.parse_pratt_expr(r_bp)?;
                     Expr::Increment(Box::new(rhs))
@@ -545,22 +551,22 @@ impl Parser {
         };
 
         loop {
-            let token = self.current_token()?;
-            if let Some((l_bp, ())) = self.postfix_binding_power(&token.kind) {
+            let kind = self.current_kind()?;
+            if let Some((l_bp, ())) = self.postfix_binding_power(&kind) {
                 if l_bp <= min_bp {
                     break;
                 }
 
                 self.eat()?;
 
-                lhs = match token.kind {
+                lhs = match kind {
                     TokenKind::PlusPlus => Expr::PostIncrement(Box::new(lhs)),
                     TokenKind::MinusMinus => Expr::PostDecrement(Box::new(lhs)),
                     _ => unreachable!(),
                 };
                 continue;
             }
-            if let Some((l_bp, r_bp)) = self.infix_binding_power(&token.kind) {
+            if let Some((l_bp, r_bp)) = self.infix_binding_power(&kind) {
                 if l_bp <= min_bp {
                     break;
                 }
@@ -568,11 +574,12 @@ impl Parser {
                 self.eat()?;
                 let rhs = self.parse_pratt_expr(r_bp)?;
 
-                lhs = match token.kind {
+                lhs = match kind {
                     TokenKind::Arrow => {
                         if let Expr::Variable(name, _) = rhs {
                             Expr::PointerMember(Box::new(lhs), name)
                         } else {
+                            let token = self.current_token()?;
                             return Err(ParserError::UnexpectedToken(token));
                         }
                     }
@@ -580,14 +587,15 @@ impl Parser {
                         if let Expr::Variable(name, _) = rhs {
                             Expr::Member(Box::new(lhs), name)
                         } else {
+                            let token = self.current_token()?;
                             return Err(ParserError::UnexpectedToken(token));
                         }
                     }
-                    _ => self.create_binary_expr(lhs, rhs, token.kind),
+                    _ => self.create_binary_expr(lhs, rhs, kind),
                 };
                 continue;
             }
-            if let TokenKind::Question = token.kind {
+            if kind == TokenKind::Question {
                 let l_bp = 2;
                 if l_bp < min_bp {
                     break;
@@ -791,11 +799,7 @@ impl Parser {
         if let TokenKind::LeftBrace = token.kind.clone() {
             self.eat()?;
             let mut stmts = Vec::new();
-            while let Ok(t) = self.current_token() {
-                if let TokenKind::RightBrace = t.kind {
-                    self.eat()?;
-                    break;
-                }
+            while self.eat_token(&TokenKind::RightBrace)? == false {
                 stmts.push(self.parse_stmt()?);
             }
             return Ok(Stmt::Block(stmts));
@@ -805,11 +809,7 @@ impl Parser {
                 let declarator = self.parse_declarator(base_type.clone())?;
                 declarators.push(declarator);
 
-                if let Ok(t) = self.current_token()
-                    && let TokenKind::Comma = t.kind
-                {
-                    self.eat()?;
-                } else {
+                if self.eat_token(&TokenKind::Comma)? == false {
                     break;
                 }
             }
@@ -842,8 +842,7 @@ impl Parser {
             } else if k == KeywordKind::For {
                 self.eat()?;
                 self.expect_punct(TokenKind::LeftParen)?;
-                let init = if self.current_token()?.kind == TokenKind::Semicolon {
-                    self.eat()?; // consume ;
+                let init = if self.eat_token(&TokenKind::Semicolon)? {
                     None
                 } else if let Ok(ty) = self.parse_type() {
                     let id = self.expect_name()?;

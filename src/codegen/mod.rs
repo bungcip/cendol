@@ -564,6 +564,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             Stmt::For(init, cond, inc, body) => {
                 let header_block = self.builder.create_block();
                 let body_block = self.builder.create_block();
+                let inc_block = self.builder.create_block();
                 let exit_block = self.builder.create_block();
 
                 self.variables.enter_scope();
@@ -604,9 +605,12 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 }
 
                 self.switch_to_block(body_block);
-                self.loop_context.push((header_block, exit_block));
+                self.loop_context.push((inc_block, exit_block));
                 self.translate_stmt(*body)?;
                 self.loop_context.pop();
+
+                self.jump_to_block(inc_block);
+                self.switch_to_block(inc_block);
 
                 if let Some(inc) = inc {
                     self.translate_expr(*inc)?;

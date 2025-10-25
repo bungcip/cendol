@@ -330,6 +330,7 @@ impl Parser {
                 initializer = Some(Box::new(self.parse_expr()?));
             }
         }
+        let initializer = self.maybe_start(&TokenKind::Equal, |p| Ok(Box::new(p.parse_expr()?)))?;
         Ok(ast::Declarator {
             ty,
             name,
@@ -731,6 +732,9 @@ impl Parser {
             }
             return Ok(Stmt::Block(stmts));
         } else if let Ok(base_type) = self.parse_type_specifier() {
+            if self.eat_token(&TokenKind::Semicolon)? {
+                return Ok(Stmt::Declaration(base_type, vec![]));
+            }
             let mut declarators = Vec::new();
             loop {
                 let declarator = self.parse_declarator(base_type.clone(), true)?;
@@ -769,38 +773,26 @@ impl Parser {
             } else if k == KeywordKind::For {
                 self.eat()?;
                 self.expect_punct(TokenKind::LeftParen)?;
-                let init = if self.eat_token(&TokenKind::Semicolon)? {
-                    None
-                } else if let Ok(ty) = self.parse_type() {
-                    let id = self.expect_name()?;
-                    let mut initializer = None;
-                    if self.eat_token(&TokenKind::Equal)? {
-                        initializer = Some(Box::new(self.parse_expr()?));
-                    }
-                    Some(ForInit::Declaration(ty, id, initializer))
-                } else {
-                    Some(ForInit::Expr(self.parse_expr()?))
-                };
 
-                // Optional ; for cond
-                self.eat_token(&TokenKind::Semicolon)?;
-                let cond = if self.eat_token(&TokenKind::Semicolon)? {
-                    None
-                } else {
-                    Some(Box::new(self.parse_expr()?))
-                };
+                let init = self.maybe_end(&TokenKind::Semicolon, |p| {
+                    let result = if let Ok(ty) = p.parse_type() {
+                        let id = p.expect_name()?;
+                        let initializer =
+                            p.maybe_start(&TokenKind::Equal, |p| Ok(Box::new(p.parse_expr()?)))?;
+                        ForInit::Declaration(ty, id, initializer)
+                    } else {
+                        ForInit::Expr(p.parse_expr()?)
+                    };
 
-                // Optional ; for inc
-                self.eat_token(&TokenKind::Semicolon)?;
-                let inc = if self.eat_token(&TokenKind::RightParen)? {
-                    None
-                } else {
-                    let result = self.parse_expr()?;
-                    self.expect_punct(TokenKind::RightParen)?;
-                    Some(Box::new(result))
-                };
+                    Ok(result)
+                })?;
 
+                let cond =
+                    self.maybe_end(&TokenKind::Semicolon, |p| Ok(Box::new(p.parse_expr()?)))?;
+                let inc =
+                    self.maybe_end(&TokenKind::RightParen, |p| Ok(Box::new(p.parse_expr()?)))?;
                 let body = self.parse_stmt()?;
+
                 return Ok(Stmt::For(init, cond, inc, Box::new(body)));
             } else if k == KeywordKind::Switch {
                 self.eat()?;
@@ -874,11 +866,8 @@ impl Parser {
         &mut self,
         param_name_required: bool,
     ) -> Result<(Type, String, Vec<Parameter>, bool, bool), ParserError> {
-        let mut is_inline = false;
         // Check for inline keyword before return type
-        if self.eat_token(&TokenKind::Keyword(KeywordKind::Inline))? {
-            is_inline = true;
-        }
+        let is_inline = self.eat_token(&TokenKind::Keyword(KeywordKind::Inline))?;
         let ty = self.parse_type()?;
         let id = self.expect_name()?;
         self.expect_punct(TokenKind::LeftParen)?;
@@ -929,7 +918,8 @@ impl Parser {
     /// A `Result` containing the parsed `Program`, or a `ParserError` if parsing fails.
     fn parse_global(&mut self) -> Result<Stmt, ParserError> {
         let pos = self.position;
-        if let Ok((ty, id, params, _is_inline, is_variadic)) = self.parse_function_signature(false) {
+        if let Ok((ty, id, params, _is_inline, is_variadic)) = self.parse_function_signature(false)
+        {
             if self.eat_token(&TokenKind::Semicolon)? {
                 return Ok(Stmt::FunctionDeclaration(ty, id, params, is_variadic));
             } else {
@@ -954,14 +944,16 @@ impl Parser {
         }
 
         let base_type = self.parse_type_specifier()?;
+        if self.eat_token(&TokenKind::Semicolon)? {
+            return Ok(Stmt::Declaration(base_type, vec![]));
+        }
         let mut declarators = Vec::new();
         loop {
             let (ty, name) = self.parse_declarator_suffix(base_type.clone(), true)?;
 
-            let mut initializer = None;
-            if self.eat_token(&TokenKind::Equal)? {
-                initializer = Some(Box::new(self.parse_expr()?));
-            }
+            let initializer = self.maybe_start(&TokenKind::Equal, |p| {
+                Ok(Box::new(p.parse_expr()?))
+            })?;
             declarators.push(ast::Declarator {
                 ty,
                 name,
@@ -991,6 +983,42 @@ impl Parser {
             }
         }
         Ok(Program { globals, functions })
+    }
+
+    /// parse a option action when start token is found
+    fn maybe_start<T, F>(
+        &mut self,
+        start_token: &TokenKind,
+        mut parse_fn: F,
+    ) -> Result<Option<T>, ParserError>
+    where
+        F: FnMut(&mut Self) -> Result<T, ParserError>,
+    {
+        if self.eat_token(start_token)? {
+            let item = parse_fn(self)?;
+            Ok(Some(item))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Parses a optional action
+    fn maybe_end<T, F>(
+        &mut self,
+        end_token: &TokenKind,
+        mut parse_fn: F,
+    ) -> Result<Option<T>, ParserError>
+    where
+        F: FnMut(&mut Self) -> Result<T, ParserError>,
+    {
+        if self.eat_token(end_token)? {
+            Ok(None)
+        } else {
+            let item = parse_fn(self)?;
+            self.expect_punct(end_token.clone())?;
+
+            Ok(Some(item))
+        }
     }
 
     /// Parses a delimited list of items.

@@ -660,13 +660,13 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             Expr::Assign(lhs, rhs) => {
                 let (rhs_val, ty) = self.translate_expr(*rhs)?;
-                if let Expr::Variable(name, _) = *lhs {
+                if let Expr::Variable(name, _) = *lhs.clone() {
                     let (slot, _) = self.variables.get(&name).unwrap();
                     self.builder.ins().stack_store(rhs_val, slot, 0);
-                } else if let Expr::Deref(ptr) = *lhs {
+                } else if let Expr::Deref(ptr) = *lhs.clone() {
                     let (ptr, _) = self.translate_expr(*ptr)?;
                     self.builder.ins().store(MemFlags::new(), rhs_val, ptr, 0);
-                } else if let Expr::Member(expr, member) = *lhs {
+                } else if let Expr::Member(expr, member) = *lhs.clone() {
                     let (ptr, ty) = self.translate_expr(*expr)?;
                     let s = self.get_real_type(&ty)?;
                     if let Type::Struct(_, members) = s {
@@ -685,10 +685,9 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     } else {
                         return Err(CodegenError::NotAStruct);
                     }
-                } else {
-                    unimplemented!()
                 }
-                Ok((rhs_val, ty))
+                let (lhs_val, _) = self.translate_expr(*lhs)?;
+                Ok((lhs_val, ty))
             }
             Expr::AssignAdd(lhs, rhs) => {
                 let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;

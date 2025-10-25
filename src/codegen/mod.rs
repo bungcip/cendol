@@ -178,19 +178,30 @@ impl CodeGen {
                 current_block_state: BlockState::Empty,
             };
             // Find the function body
-            let function = program.functions.iter().find(|f| &f.name == function_name).unwrap();
+            let function = program
+                .functions
+                .iter()
+                .find(|f| &f.name == function_name)
+                .unwrap();
             // Add parameters to variables and store block params
             let block_params = translator.builder.block_params(entry_block).to_vec();
             for (i, param) in function.params.iter().enumerate() {
                 let size = translator.get_type_size(&param.ty);
-                let slot = translator.builder.create_sized_stack_slot(StackSlotData::new(
-                    StackSlotKind::ExplicitSlot,
-                    size,
-                    0,
-                ));
-                translator.variables.insert(param.name.clone(), (slot, param.ty.clone()));
+                let slot = translator
+                    .builder
+                    .create_sized_stack_slot(StackSlotData::new(
+                        StackSlotKind::ExplicitSlot,
+                        size,
+                        0,
+                    ));
+                translator
+                    .variables
+                    .insert(param.name.clone(), (slot, param.ty.clone()));
                 // Store the block parameter into the stack slot
-                translator.builder.ins().stack_store(block_params[i], slot, 0);
+                translator
+                    .builder
+                    .ins()
+                    .stack_store(block_params[i], slot, 0);
             }
             let mut terminated = false;
             for stmt in &function.body {
@@ -573,7 +584,9 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.switch_to_block(cond_block);
 
                 let (cond_val, _) = self.translate_expr(*cond)?;
-                self.builder.ins().brif(cond_val, header_block, &[], exit_block, &[]);
+                self.builder
+                    .ins()
+                    .brif(cond_val, header_block, &[], exit_block, &[]);
 
                 self.switch_to_block(exit_block);
 
@@ -617,7 +630,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             Expr::Variable(name, _) => {
                 let (slot, ty) = self.variables.get(&name).unwrap();
                 if let Type::Struct(_, _) = &ty {
-                    return Ok((self.builder.ins().stack_addr(types::I64, slot, 0), ty.clone()));
+                    return Ok((
+                        self.builder.ins().stack_addr(types::I64, slot, 0),
+                        ty.clone(),
+                    ));
                 }
                 if let Type::Array(elem_ty, _) = &ty {
                     // Array decays to a pointer to its first element
@@ -681,11 +697,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     }
                     _ => self.builder.ins().iadd(lhs_val, rhs_val),
                 };
-                let result_ty = if lhs_ty.is_pointer() {
-                    lhs_ty
-                } else {
-                    rhs_ty
-                };
+                let result_ty = if lhs_ty.is_pointer() { lhs_ty } else { rhs_ty };
                 Ok((result_val, result_ty))
             }
             Expr::Sub(lhs, rhs) => {
@@ -697,9 +709,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         let offset = self.builder.ins().imul_imm(rhs_val, size as i64);
                         self.builder.ins().isub(lhs_val, offset)
                     }
-                    (Type::Pointer(lhs_base), Type::Pointer(rhs_base))
-                        if lhs_base == rhs_base =>
-                    {
+                    (Type::Pointer(lhs_base), Type::Pointer(rhs_base)) if lhs_base == rhs_base => {
                         let diff = self.builder.ins().isub(lhs_val, rhs_val);
                         let size = self.get_type_size(lhs_base);
                         self.builder.ins().sdiv_imm(diff, size as i64)

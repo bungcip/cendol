@@ -3,9 +3,9 @@
 //! This module tests the lexer's ability to correctly tokenize C source code
 //! and preprocessor directives.
 
-use cendol::file::{FileId, FileManager};
+use cendol::file::FileManager;
 use cendol::preprocessor::lexer::Lexer;
-use cendol::preprocessor::token::{DirectiveKind, SourceLocation, TokenKind, KeywordKind};
+use cendol::preprocessor::token::{DirectiveKind, KeywordKind, TokenKind};
 
 /// Test configuration constants
 mod config {
@@ -15,11 +15,6 @@ mod config {
 /// Creates a new file manager instance
 fn create_file_manager() -> FileManager {
     FileManager::new()
-}
-
-/// Creates a source location for testing
-fn create_test_location(file_id: u32, line: u32) -> SourceLocation {
-    SourceLocation::new(FileId(file_id), line, 1)
 }
 
 /// Helper function to collect all tokens from a lexer
@@ -41,7 +36,8 @@ fn collect_tokens(input: &str, filename: &str) -> Vec<TokenKind> {
 }
 
 /// Helper function to collect all tokens from a lexer
-fn collect_tokens_without_whitespace(input: &str, filename: &str) -> Vec<TokenKind> {
+fn collect_tokens_without_whitespace(input: &str) -> Vec<TokenKind> {
+    let filename = "test.c";
     let mut file_manager = create_file_manager();
     let file_id = file_manager.open(filename).unwrap();
     let mut lexer = Lexer::new(input, file_id);
@@ -57,11 +53,6 @@ fn collect_tokens_without_whitespace(input: &str, filename: &str) -> Vec<TokenKi
     }
 
     tokens
-}
-
-/// Helper function to extract token kinds from tokens
-fn get_token_kinds(tokens: &[TokenKind]) -> Vec<TokenKind> {
-    tokens.to_vec()
 }
 
 /// Asserts that two token kind vectors are equal
@@ -100,27 +91,74 @@ FIVE
     }
 
     #[test]
-    fn test_punct_token() {
-        let input = "(){}[];:,.##...\\..<>";
-        let token_kinds = collect_tokens_without_whitespace(input, super::config::TEST_FILENAME);
+    fn test_single_char_punct_token() {
+        let input = "
+        [ ] ( ) { } 
+        .  &  *  +  -  ~  !  /  %  <  >  ^  |  ?  :  ;  =  ,  #
+        ";
+        let token_kinds = collect_tokens_without_whitespace(input);
 
         let expected_tokens = vec![
+            TokenKind::LeftBracket,
+            TokenKind::RightBracket,
             TokenKind::LeftParen,
             TokenKind::RightParen,
             TokenKind::LeftBrace,
             TokenKind::RightBrace,
-            TokenKind::LeftBracket,
-            TokenKind::RightBracket,
-            TokenKind::Semicolon,
-            TokenKind::Colon,
-            TokenKind::Comma,
             TokenKind::Dot,
-            TokenKind::HashHash,
-            TokenKind::Ellipsis,
-            TokenKind::Backslash,
-            TokenKind::Dot,
+            TokenKind::Ampersand,
+            TokenKind::Star,
+            TokenKind::Plus,
+            TokenKind::Minus,
+            TokenKind::Tilde,
+            TokenKind::Bang,
+            TokenKind::Slash,
+            TokenKind::Percent,
             TokenKind::LessThan,
             TokenKind::GreaterThan,
+            TokenKind::Caret,
+            TokenKind::Pipe,
+            TokenKind::Question,
+            TokenKind::Colon,
+            TokenKind::Semicolon,
+            TokenKind::Equal,
+            TokenKind::Comma,
+            TokenKind::Hash,
+        ];
+        assert_tokens_equal(&token_kinds, &expected_tokens);
+    }
+
+    #[test]
+    fn test_multi_char_punct_token() {
+        let input = "
+        ##   ->   ++   --   <<   >>   <=   >=   ==   !=
+        &&   ||   *=   /=   %=   +=   -=   <<=  >>= &=  ^=  |=
+        ";
+        let token_kinds = collect_tokens_without_whitespace(input);
+
+        let expected_tokens = vec![
+            TokenKind::HashHash,
+            TokenKind::Arrow,
+            TokenKind::PlusPlus,
+            TokenKind::MinusMinus,
+            TokenKind::LessThanLessThan,
+            TokenKind::GreaterThanGreaterThan,
+            TokenKind::LessThanEqual,
+            TokenKind::GreaterThanEqual,
+            TokenKind::EqualEqual,
+            TokenKind::BangEqual,
+            TokenKind::AmpersandAmpersand,
+            TokenKind::PipePipe,
+            TokenKind::AsteriskEqual,
+            TokenKind::SlashEqual,
+            TokenKind::PercentEqual,
+            TokenKind::PlusEqual,
+            TokenKind::MinusEqual,
+            TokenKind::LessThanLessThanEqual,
+            TokenKind::GreaterThanGreaterThanEqual,
+            TokenKind::AmpersandEqual,
+            TokenKind::CaretEqual,
+            TokenKind::PipeEqual,
         ];
         assert_tokens_equal(&token_kinds, &expected_tokens);
     }
@@ -129,7 +167,7 @@ FIVE
     #[test]
     fn test_equality_token() {
         let input = "= == += -= %= *= >= <=";
-        let token_kinds = collect_tokens_without_whitespace(input, super::config::TEST_FILENAME);
+        let token_kinds = collect_tokens_without_whitespace(input);
 
         let expected_tokens = vec![
             TokenKind::Equal,
@@ -144,19 +182,25 @@ FIVE
         assert_tokens_equal(&token_kinds, &expected_tokens);
     }
 
-    /// Test lexer with token which include '+' & '-' characters
+    /// Test lexer with greedy tokens like '++' and '--'
     #[test]
-    fn test_plusminus_token() {
-        let input = "++ -- + - += -=";
-        let token_kinds = collect_tokens_without_whitespace(input, super::config::TEST_FILENAME);
+    fn test_greddyness() {
+        let input = "+++---<<<>>>&&&|||";
+        let token_kinds = collect_tokens_without_whitespace(input);
 
         let expected_tokens = vec![
             TokenKind::PlusPlus,
-            TokenKind::MinusMinus,
             TokenKind::Plus,
+            TokenKind::MinusMinus,
             TokenKind::Minus,
-            TokenKind::PlusEqual,
-            TokenKind::MinusEqual,
+            TokenKind::LessThanLessThan,
+            TokenKind::LessThan,
+            TokenKind::GreaterThanGreaterThan,
+            TokenKind::GreaterThan,
+            TokenKind::AmpersandAmpersand,
+            TokenKind::Ampersand,
+            TokenKind::PipePipe,
+            TokenKind::Pipe,
         ];
         assert_tokens_equal(&token_kinds, &expected_tokens);
     }
@@ -173,7 +217,7 @@ FIVE
         unsigned    void        volatile    while       _Bool       _Complex
         _Imaginary
         ";
-        let token_kinds = collect_tokens_without_whitespace(input, super::config::TEST_FILENAME);
+        let token_kinds = collect_tokens_without_whitespace(input);
 
         let expected_tokens = vec![
             TokenKind::Keyword(KeywordKind::Auto),

@@ -409,7 +409,10 @@ impl Preprocessor {
         let name = if let TokenKind::Identifier(name) = name_token.kind {
             name
         } else {
-            return Err(PreprocessorError::Generic(format!("Expected identifier after #define, but found {} at line {}, column {}", name_token.kind, name_token.span.start.line, name_token.span.start.column)));
+            return Err(PreprocessorError::Generic(format!(
+                "Expected identifier after #define, but found {} at line {}, column {}",
+                name_token.kind, name_token.span.start.line, name_token.span.start.column
+            )));
         };
 
         if !tokens.is_empty() && matches!(&tokens[0].kind, TokenKind::LeftParen) {
@@ -1085,7 +1088,10 @@ fn parse_line_directive(
     let line = if let TokenKind::Number(s) = &tokens[i].kind {
         s.parse().unwrap()
     } else {
-        return Err(PreprocessorError::Generic(format!("Expected line number, but found {} at line {}, column {}", tokens[i].kind, tokens[i].span.start.line, tokens[i].span.start.column)));
+        return Err(PreprocessorError::Generic(format!(
+            "Expected line number, but found {} at line {}, column {}",
+            tokens[i].kind, tokens[i].span.start.line, tokens[i].span.start.column
+        )));
     };
     i += 1;
 
@@ -1129,7 +1135,8 @@ fn parse_expr_bp(tokens: &[Token], i: &mut usize, min_bp: u8) -> Result<Expr, Pr
         TokenKind::Number(n) => {
             *i += 1;
             // Strip suffixes for long and unsigned
-            let num_str = n.trim_end_matches(|c: char| c == 'L' || c == 'U' || c == 'l' || c == 'u');
+            let num_str =
+                n.trim_end_matches(|c: char| c == 'L' || c == 'U' || c == 'l' || c == 'u');
             Expr::Number(num_str.parse().unwrap())
         }
         TokenKind::Identifier(s) => {
@@ -1140,11 +1147,21 @@ fn parse_expr_bp(tokens: &[Token], i: &mut usize, min_bp: u8) -> Result<Expr, Pr
                     let name = if let TokenKind::Identifier(name) = &tokens[*i].kind {
                         name.clone()
                     } else {
-                        return Err(PreprocessorError::Generic(format!("Expected identifier, but found {} at line {}, column {}", tokens[*i].kind, tokens[*i].span.start.line, tokens[*i].span.start.column)));
+                        return Err(PreprocessorError::Generic(format!(
+                            "Expected identifier, but found {} at line {}, column {}",
+                            tokens[*i].kind,
+                            tokens[*i].span.start.line,
+                            tokens[*i].span.start.column
+                        )));
                     };
                     *i += 1;
                     if !matches!(tokens[*i].kind, TokenKind::RightParen) {
-                        return Err(PreprocessorError::Generic(format!("Expected ')', but found {} at line {}, column {}", tokens[*i].kind, tokens[*i].span.start.line, tokens[*i].span.start.column)));
+                        return Err(PreprocessorError::Generic(format!(
+                            "Expected ')', but found {} at line {}, column {}",
+                            tokens[*i].kind,
+                            tokens[*i].span.start.line,
+                            tokens[*i].span.start.column
+                        )));
                     }
                     *i += 1;
                     name
@@ -1152,7 +1169,10 @@ fn parse_expr_bp(tokens: &[Token], i: &mut usize, min_bp: u8) -> Result<Expr, Pr
                     *i += 1;
                     name.clone()
                 } else {
-                    return Err(PreprocessorError::Generic(format!("Expected identifier, but found {} at line {}, column {}", tokens[*i].kind, tokens[*i].span.start.line, tokens[*i].span.start.column)));
+                    return Err(PreprocessorError::Generic(format!(
+                        "Expected identifier, but found {} at line {}, column {}",
+                        tokens[*i].kind, tokens[*i].span.start.line, tokens[*i].span.start.column
+                    )));
                 };
                 Expr::Variable(name)
             } else {
@@ -1168,13 +1188,19 @@ fn parse_expr_bp(tokens: &[Token], i: &mut usize, min_bp: u8) -> Result<Expr, Pr
             *i += 1;
             let expr = parse_expr_bp(tokens, i, 0)?;
             if !matches!(tokens[*i].kind, TokenKind::RightParen) {
-                return Err(PreprocessorError::Generic(format!("Expected ')', but found {} at line {}, column {}", tokens[*i].kind, tokens[*i].span.start.line, tokens[*i].span.start.column)));
+                return Err(PreprocessorError::Generic(format!(
+                    "Expected ')', but found {} at line {}, column {}",
+                    tokens[*i].kind, tokens[*i].span.start.line, tokens[*i].span.start.column
+                )));
             }
             *i += 1;
             expr
         }
         _ => {
-            return Err(PreprocessorError::Generic(format!("Expected expression, but found {} at line {}, column {}", tokens[*i].kind, tokens[*i].span.start.line, tokens[*i].span.start.column)));
+            return Err(PreprocessorError::Generic(format!(
+                "Expected expression, but found {} at line {}, column {}",
+                tokens[*i].kind, tokens[*i].span.start.line, tokens[*i].span.start.column
+            )));
         }
     };
 
@@ -1195,7 +1221,10 @@ fn parse_expr_bp(tokens: &[Token], i: &mut usize, min_bp: u8) -> Result<Expr, Pr
             TokenKind::Caret => (7, 8),
             TokenKind::Ampersand => (9, 10),
             TokenKind::Equal | TokenKind::Bang => (11, 12),
-            TokenKind::LessThan | TokenKind::GreaterThan | TokenKind::LessThanEqual | TokenKind::GreaterThanEqual => (13, 14),
+            TokenKind::LessThan
+            | TokenKind::GreaterThan
+            | TokenKind::LessThanEqual
+            | TokenKind::GreaterThanEqual => (13, 14),
             TokenKind::Plus | TokenKind::Minus => (15, 16),
             TokenKind::Star | TokenKind::Slash => (17, 18),
             _ => break,

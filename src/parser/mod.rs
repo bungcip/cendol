@@ -433,7 +433,8 @@ impl Parser {
             TokenKind::Number(n) => {
                 self.eat()?;
                 // Strip suffixes like L, U, LL, UU
-                let num_str = n.trim_end_matches(|c: char| c == 'L' || c == 'U' || c == 'l' || c == 'u');
+                let num_str =
+                    n.trim_end_matches(|c: char| c == 'L' || c == 'U' || c == 'l' || c == 'u');
                 Ok(Expr::Number(num_str.parse().unwrap()))
             }
             TokenKind::String(s) => {
@@ -810,7 +811,9 @@ impl Parser {
     }
 
     /// Parses a function signature.
-    fn parse_function_signature(&mut self) -> Result<(Type, String, Vec<Parameter>, bool), ParserError> {
+    fn parse_function_signature(
+        &mut self,
+    ) -> Result<(Type, String, Vec<Parameter>, bool), ParserError> {
         let mut is_inline = false;
         // Check for inline keyword before return type
         if let Ok(token) = self.current_token() {

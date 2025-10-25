@@ -210,7 +210,6 @@ pub fn create_simple_program_ast() -> Program {
     }
 }
 
-
 /// Helper function to collect all tokens from a lexer
 pub fn collect_tokens_from_lexer(input: &str, filename: &str) -> Vec<Token> {
     let mut file_manager = create_file_manager();

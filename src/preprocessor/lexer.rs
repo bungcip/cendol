@@ -124,7 +124,9 @@ impl<'a> Lexer<'a> {
                             if (c == 'L' || c == 'l') && num.ends_with('L') || num.ends_with('l') {
                                 num.push(self.input.next().unwrap());
                                 self.consume_char(c);
-                            } else if (c == 'U' || c == 'u') && num.ends_with('U') || num.ends_with('u') {
+                            } else if (c == 'U' || c == 'u') && num.ends_with('U')
+                                || num.ends_with('u')
+                            {
                                 num.push(self.input.next().unwrap());
                                 self.consume_char(c);
                             }
@@ -252,7 +254,11 @@ impl<'a> Lexer<'a> {
             '/' => {
                 self.consume_char(c);
                 self.at_start_of_line = false;
-                if let Some(&'/') = self.input.peek() {
+                if let Some(&'=') = self.input.peek() {
+                    self.input.next();
+                    self.consume_char('=');
+                    Ok(Token::new(TokenKind::SlashEqual, self.current_span()))
+                } else if let Some(&'/') = self.input.peek() {
                     self.input.next();
                     self.consume_char('/');
                     let mut comment = String::new();
@@ -274,7 +280,9 @@ impl<'a> Lexer<'a> {
                     let mut comment = String::new();
                     let mut chars = Vec::new();
                     while let Some(c) = self.input.next() {
-                        if c == '*' && let Some(&'/') = self.input.peek() {
+                        if c == '*'
+                            && let Some(&'/') = self.input.peek()
+                        {
                             self.input.next();
                             break;
                         }
@@ -307,6 +315,10 @@ impl<'a> Lexer<'a> {
                     self.input.next();
                     self.consume_char('|');
                     Ok(Token::new(TokenKind::PipePipe, self.current_span()))
+                } else if let Some(&'=') = self.input.peek() {
+                    self.input.next();
+                    self.consume_char('=');
+                    Ok(Token::new(TokenKind::PipeEqual, self.current_span()))
                 } else {
                     Ok(Token::new(TokenKind::Pipe, self.current_span()))
                 }
@@ -321,6 +333,10 @@ impl<'a> Lexer<'a> {
                         TokenKind::AmpersandAmpersand,
                         self.current_span(),
                     ))
+                } else if let Some(&'=') = self.input.peek() {
+                    self.input.next();
+                    self.consume_char('=');
+                    Ok(Token::new(TokenKind::AmpersandEqual, self.current_span()))
                 } else {
                     Ok(Token::new(TokenKind::Ampersand, self.current_span()))
                 }
@@ -328,7 +344,13 @@ impl<'a> Lexer<'a> {
             '^' => {
                 self.consume_char(c);
                 self.at_start_of_line = false;
-                Ok(Token::new(TokenKind::Caret, self.current_span()))
+                if let Some(&'=') = self.input.peek() {
+                    self.input.next();
+                    self.consume_char('=');
+                    Ok(Token::new(TokenKind::CaretEqual, self.current_span()))
+                } else {
+                    Ok(Token::new(TokenKind::Caret, self.current_span()))
+                }
             }
             '~' => {
                 self.consume_char(c);
@@ -365,7 +387,20 @@ impl<'a> Lexer<'a> {
             '<' => {
                 self.consume_char(c);
                 self.at_start_of_line = false;
-                if let Some(&'=') = self.input.peek() {
+                if let Some(&'<') = self.input.peek() {
+                    self.input.next();
+                    self.consume_char('<');
+                    if let Some(&'=') = self.input.peek() {
+                        self.input.next();
+                        self.consume_char('=');
+                        Ok(Token::new(
+                            TokenKind::LessThanLessThanEqual,
+                            self.current_span(),
+                        ))
+                    } else {
+                        Ok(Token::new(TokenKind::LessThanLessThan, self.current_span()))
+                    }
+                } else if let Some(&'=') = self.input.peek() {
                     self.input.next();
                     self.consume_char('=');
                     Ok(Token::new(TokenKind::LessThanEqual, self.current_span()))
@@ -376,7 +411,23 @@ impl<'a> Lexer<'a> {
             '>' => {
                 self.consume_char(c);
                 self.at_start_of_line = false;
-                if let Some(&'=') = self.input.peek() {
+                if let Some(&'>') = self.input.peek() {
+                    self.input.next();
+                    self.consume_char('>');
+                    if let Some(&'=') = self.input.peek() {
+                        self.input.next();
+                        self.consume_char('=');
+                        Ok(Token::new(
+                            TokenKind::GreaterThanGreaterThanEqual,
+                            self.current_span(),
+                        ))
+                    } else {
+                        Ok(Token::new(
+                            TokenKind::GreaterThanGreaterThan,
+                            self.current_span(),
+                        ))
+                    }
+                } else if let Some(&'=') = self.input.peek() {
                     self.input.next();
                     self.consume_char('=');
                     Ok(Token::new(TokenKind::GreaterThanEqual, self.current_span()))

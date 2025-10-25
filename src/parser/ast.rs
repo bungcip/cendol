@@ -27,6 +27,10 @@ pub enum Type {
     Union(Option<String>, Vec<Parameter>),
     /// An enum definition.
     Enum(Vec<String>),
+    /// A const-qualified type.
+    Const(Box<Type>),
+    /// A typedef'd type.
+    Typedef(String),
 }
 
 impl Type {
@@ -61,8 +65,8 @@ pub enum Stmt {
         Option<Box<Expr>>,
         Box<Stmt>,
     ),
-    /// A block of statements.
-    Block(Vec<Stmt>),
+    /// A block of statements. The boolean indicates if it's an explicit block from source code.
+    Block(Vec<Stmt>, bool),
     /// A `switch` statement.
     Switch(Box<Expr>, Box<Stmt>),
     /// A `case` statement.

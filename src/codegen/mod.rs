@@ -435,8 +435,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 };
                 Ok(false)
             }
-            Stmt::Block(stmts) => {
-                self.variables.enter_scope();
+            Stmt::Block(stmts, is_explicit_block) => {
+                if is_explicit_block {
+                    self.variables.enter_scope();
+                }
                 let mut terminated = false;
                 for stmt in stmts {
                     if terminated {
@@ -445,7 +447,9 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     let term = self.translate_stmt(stmt)?;
                     terminated = term;
                 }
-                self.variables.exit_scope();
+                if is_explicit_block {
+                    self.variables.exit_scope();
+                }
                 Ok(terminated)
             }
             Stmt::If(cond, then, otherwise) => {
@@ -605,14 +609,32 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         }
     }
 
-    /// Resolves the real type of a struct.
+    /// Resolves the real type of a given type, unwrapping `Type::Const` and `Type::Typedef`.
     fn get_real_type(&self, ty: &Type) -> Result<Type, CodegenError> {
-        if let Type::Struct(Some(name), members) = ty
-            && members.is_empty()
-        {
-            return Ok(self.structs.get(name).unwrap().clone());
+        match ty {
+            Type::Const(base_ty) => self.get_real_type(base_ty),
+            Type::Typedef(name) => {
+                // Look up the typedef in the parser's typedefs (if available) or a global map
+                // For now, we'll assume typedefs are resolved to their base types during parsing
+                // or that the `variables` symbol table already stores the resolved type.
+                // If `self.variables` stores the original `Type::Typedef`, we need a way to get its definition.
+                // For simplicity, let's assume `self.variables` stores the resolved type for now.
+                // If this assumption is wrong, we'll need a global typedef map in CodeGen.
+                // For now, we'll treat it as an unknown type if not found in structs.
+                if let Some(resolved_ty) = self.structs.get(name) {
+                    self.get_real_type(resolved_ty)
+                } else {
+                    // If it's a typedef to a primitive or pointer, it should already be resolved
+                    // by the parser or handled directly. If it reaches here, it's an error.
+                    Err(CodegenError::UnknownType(name.clone()))
+                }
+            }
+            Type::Struct(Some(name), members) if members.is_empty() => {
+                // This handles forward declarations of structs
+                Ok(self.structs.get(name).unwrap().clone())
+            }
+            _ => Ok(ty.clone()),
         }
-        Ok(ty.clone())
     }
 
     /// Translates an expression into a Cranelift `Value`.
@@ -1145,7 +1167,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                             break;
                         }
                         offset += self.get_type_size(&m.ty);
-                    }
+                        }
                     Ok((
                         self.builder
                             .ins()

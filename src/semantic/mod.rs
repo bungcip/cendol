@@ -320,9 +320,19 @@ impl SemanticAnalyzer {
 
                 self.check_statement(*body, filename);
             }
-            Stmt::Block(stmts) => {
-                for stmt in stmts {
-                    self.check_statement(stmt, filename);
+            Stmt::Block(stmts, is_explicit_block) => {
+                if is_explicit_block {
+                    // Enter a new scope for explicit blocks
+                    let old_symbol_table = self.symbol_table.clone();
+                    for stmt in stmts {
+                        self.check_statement(stmt, filename);
+                    }
+                    self.symbol_table = old_symbol_table; // Exit scope
+                } else {
+                    // For implicit blocks (like multiple declarations), don't create a new scope
+                    for stmt in stmts {
+                        self.check_statement(stmt, filename);
+                    }
                 }
             }
             _ => {

@@ -27,4 +27,7 @@ pub enum CodegenError {
     /// An initializer for a non-struct or non-array type was found.
     #[error("Initializer for non-struct or non-array type")]
     NotAStructOrArray,
+    /// An unknown type was encountered.
+    #[error("Unknown type: {0}")]
+    UnknownType(String),
 }

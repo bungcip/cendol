@@ -434,4 +434,22 @@ mod tests {
         let exit_code = compile_and_run(input, "chained_assignment").unwrap();
         assert_eq!(exit_code, 0);
     }
+
+    /// Test code generation for bitwise and shift assignment operators
+    #[test]
+    fn test_bitwise_and_shift_assignment_operators() {
+        let input = r#"
+        int main() {
+            int x = 15;
+            x &= 7;
+            x |= 8;
+            x ^= 12;
+            x <<= 1;
+            x >>= 2;
+            return x;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "bitwise_and_shift_assignment_operators").unwrap();
+        assert_eq!(exit_code, 1);
+    }
 }

@@ -542,4 +542,31 @@ mod tests {
         let exit_code = compile_and_run(input, "union").unwrap();
         assert_eq!(exit_code, 0);
     }
+
+    /// Test code generation for nested structs
+    #[test]
+    fn test_nested_struct() {
+        let input = r#"
+        struct s {
+            int x;
+            struct {
+                int y;
+                int z;
+            } nest;
+        };
+
+        int
+        main() {
+            struct s v;
+            v.x = 1;
+            v.nest.y = 2;
+            v.nest.z = 3;
+            if (v.x + v.nest.y + v.nest.z != 6)
+                return 1;
+            return 0;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "nested_struct").unwrap();
+        assert_eq!(exit_code, 0);
+    }
 }

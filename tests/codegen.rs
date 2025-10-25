@@ -500,4 +500,26 @@ mod tests {
         let exit_code = compile_and_run(input, "typedef").unwrap();
         assert_eq!(exit_code, 0);
     }
+
+    /// Test code generation for break and continue in for loops
+    #[test]
+    fn test_for_loop_break_continue() {
+        let input = r#"
+        int main() {
+            int y = 0;
+            for (int x = 0; x < 20; x = x + 1) {
+                if (x > 10) {
+                    break;
+                }
+                if (x % 2 == 0) {
+                    continue;
+                }
+                y = y + 1;
+            }
+            return y;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "for_loop_break_continue").unwrap();
+        assert_eq!(exit_code, 5);
+    }
 }

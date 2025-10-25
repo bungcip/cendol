@@ -109,6 +109,11 @@ pub enum Expr {
     AssignMul(Box<Expr>, Box<Expr>),
     AssignDiv(Box<Expr>, Box<Expr>),
     AssignMod(Box<Expr>, Box<Expr>),
+    AssignLeftShift(Box<Expr>, Box<Expr>),
+    AssignRightShift(Box<Expr>, Box<Expr>),
+    AssignBitwiseAnd(Box<Expr>, Box<Expr>),
+    AssignBitwiseXor(Box<Expr>, Box<Expr>),
+    AssignBitwiseOr(Box<Expr>, Box<Expr>),
     /// An addition expression.
     Add(Box<Expr>, Box<Expr>),
     /// A subtraction expression.
@@ -131,12 +136,22 @@ pub enum Expr {
     LessThanOrEqual(Box<Expr>, Box<Expr>),
     /// A greater-than-or-equal-to comparison.
     GreaterThanOrEqual(Box<Expr>, Box<Expr>),
+    /// A left shift expression.
+    LeftShift(Box<Expr>, Box<Expr>),
+    /// A right shift expression.
+    RightShift(Box<Expr>, Box<Expr>),
     /// A function call.
     Call(String, Vec<Expr>, crate::common::SourceSpan),
     /// A logical AND expression.
     LogicalAnd(Box<Expr>, Box<Expr>),
     /// A logical OR expression.
     LogicalOr(Box<Expr>, Box<Expr>),
+    /// A bitwise OR expression.
+    BitwiseOr(Box<Expr>, Box<Expr>),
+    /// A bitwise XOR expression.
+    BitwiseXor(Box<Expr>, Box<Expr>),
+    /// A bitwise AND expression.
+    BitwiseAnd(Box<Expr>, Box<Expr>),
     /// A logical NOT expression.
     LogicalNot(Box<Expr>),
     /// A dereference expression.
@@ -169,6 +184,8 @@ pub enum Expr {
     Cast(Box<Type>, Box<Expr>),
     /// A compound literal expression.
     CompoundLiteral(Box<Type>, Vec<Expr>),
+    /// A comma expression.
+    Comma(Box<Expr>, Box<Expr>),
 }
 
 /// Represents a function parameter.

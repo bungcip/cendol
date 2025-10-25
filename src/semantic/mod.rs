@@ -365,7 +365,12 @@ impl SemanticAnalyzer {
             | Expr::AssignSub(lhs, rhs)
             | Expr::AssignMul(lhs, rhs)
             | Expr::AssignDiv(lhs, rhs)
-            | Expr::AssignMod(lhs, rhs) => {
+            | Expr::AssignMod(lhs, rhs)
+            | Expr::AssignLeftShift(lhs, rhs)
+            | Expr::AssignRightShift(lhs, rhs)
+            | Expr::AssignBitwiseAnd(lhs, rhs)
+            | Expr::AssignBitwiseXor(lhs, rhs)
+            | Expr::AssignBitwiseOr(lhs, rhs) => {
                 self.check_expression(*lhs, filename);
                 self.check_expression(*rhs, filename);
             }
@@ -386,7 +391,17 @@ impl SemanticAnalyzer {
                 self.check_expression(*lhs, filename);
                 self.check_expression(*rhs, filename);
             }
-            Expr::LogicalAnd(lhs, rhs) | Expr::LogicalOr(lhs, rhs) => {
+            Expr::LogicalAnd(lhs, rhs)
+            | Expr::LogicalOr(lhs, rhs)
+            | Expr::BitwiseOr(lhs, rhs)
+            | Expr::BitwiseXor(lhs, rhs)
+            | Expr::BitwiseAnd(lhs, rhs)
+            | Expr::LeftShift(lhs, rhs)
+            | Expr::RightShift(lhs, rhs) => {
+                self.check_expression(*lhs, filename);
+                self.check_expression(*rhs, filename);
+            }
+            Expr::Comma(lhs, rhs) => {
                 self.check_expression(*lhs, filename);
                 self.check_expression(*rhs, filename);
             }

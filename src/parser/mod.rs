@@ -317,24 +317,6 @@ impl Parser {
         self.parse_pratt_expr(0)
     }
 
-    /// Gets the infix binding power of a token.
-    fn infix_binding_power(&self, kind: &TokenKind) -> Option<(u8, u8)> {
-        match kind {
-            TokenKind::Equal | TokenKind::PlusEqual | TokenKind::MinusEqual | TokenKind::AsteriskEqual | TokenKind::SlashEqual | TokenKind::PercentEqual => Some((2, 1)),
-            TokenKind::PipePipe => Some((3, 4)),
-            TokenKind::AmpersandAmpersand => Some((5, 6)),
-            TokenKind::EqualEqual | TokenKind::BangEqual => Some((7, 8)),
-            TokenKind::LessThan
-            | TokenKind::GreaterThan
-            | TokenKind::LessThanEqual
-            | TokenKind::GreaterThanEqual => Some((9, 10)),
-            TokenKind::Plus | TokenKind::Minus => Some((11, 12)),
-            TokenKind::Star | TokenKind::Slash | TokenKind::Percent => Some((13, 14)),
-            TokenKind::Arrow => Some((15, 16)),
-            _ => None,
-        }
-    }
-
     /// Gets the prefix binding power of a token.
     fn prefix_binding_power(&self, kind: &TokenKind) -> Option<((), u8)> {
         match kind {
@@ -355,9 +337,28 @@ impl Parser {
         }
     }
 
+    /// Gets the infix binding power of a token.
+    fn infix_binding_power(&self, kind: &TokenKind) -> Option<(u8, u8)> {
+        match kind {
+            TokenKind::Comma => Some((2, 1)),
+            TokenKind::PipePipe => Some((3, 4)),
+            TokenKind::AmpersandAmpersand => Some((5, 6)),
+            TokenKind::Pipe => Some((7, 8)),
+            TokenKind::Caret => Some((9, 10)),
+            TokenKind::Ampersand => Some((11, 12)),
+            TokenKind::EqualEqual | TokenKind::BangEqual => Some((13, 14)),
+            TokenKind::LessThan | TokenKind::GreaterThan | TokenKind::LessThanEqual | TokenKind::GreaterThanEqual => Some((15, 16)),
+            TokenKind::LessThanLessThan | TokenKind::GreaterThanGreaterThan => Some((17, 18)),
+            TokenKind::Plus | TokenKind::Minus => Some((19, 20)),
+            TokenKind::Star | TokenKind::Slash | TokenKind::Percent => Some((21, 22)),
+            TokenKind::Arrow | TokenKind::Dot => Some((23, 24)),
+            TokenKind::Equal | TokenKind::PlusEqual | TokenKind::MinusEqual | TokenKind::AsteriskEqual | TokenKind::SlashEqual | TokenKind::PercentEqual | TokenKind::LessThanLessThanEqual | TokenKind::GreaterThanGreaterThanEqual | TokenKind::AmpersandEqual | TokenKind::CaretEqual | TokenKind::PipeEqual => Some((4, 3)),
+            _ => None,
+        }
+    }
+ 
     /// Parses an expression using the Pratt parsing algorithm.
     fn parse_pratt_expr(&mut self, min_bp: u8) -> Result<Expr, ParserError> {
-        self.logger.log(&format!("Parsing Pratt expression, min_bp: {}, current token: {:?}", min_bp, self.current_token()));
         let mut lhs =
             if let Some(((), r_bp)) = self.prefix_binding_power(&self.current_token()?.kind) {
                 let token = self.current_token()?;
@@ -410,7 +411,7 @@ impl Parser {
         loop {
             let token = self.current_token()?;
             if let Some((l_bp, ())) = self.postfix_binding_power(&token.kind) {
-                if l_bp < min_bp {
+                if l_bp <= min_bp {
                     break;
                 }
 
@@ -424,7 +425,7 @@ impl Parser {
                 continue;
             }
             if let Some((l_bp, r_bp)) = self.infix_binding_power(&token.kind) {
-                if l_bp < min_bp {
+                if l_bp <= min_bp {
                     break;
                 }
 
@@ -432,12 +433,24 @@ impl Parser {
                 let rhs = self.parse_pratt_expr(r_bp)?;
 
                 lhs = match token.kind {
+                    TokenKind::Comma => Expr::Comma(Box::new(lhs), Box::new(rhs)),
                     TokenKind::Equal => Expr::Assign(Box::new(lhs), Box::new(rhs)),
                     TokenKind::PlusEqual => Expr::AssignAdd(Box::new(lhs), Box::new(rhs)),
                     TokenKind::MinusEqual => Expr::AssignSub(Box::new(lhs), Box::new(rhs)),
                     TokenKind::AsteriskEqual => Expr::AssignMul(Box::new(lhs), Box::new(rhs)),
                     TokenKind::SlashEqual => Expr::AssignDiv(Box::new(lhs), Box::new(rhs)),
                     TokenKind::PercentEqual => Expr::AssignMod(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::LessThanLessThanEqual => {
+                        Expr::AssignLeftShift(Box::new(lhs), Box::new(rhs))
+                    }
+                    TokenKind::GreaterThanGreaterThanEqual => {
+                        Expr::AssignRightShift(Box::new(lhs), Box::new(rhs))
+                    }
+                    TokenKind::AmpersandEqual => {
+                        Expr::AssignBitwiseAnd(Box::new(lhs), Box::new(rhs))
+                    }
+                    TokenKind::CaretEqual => Expr::AssignBitwiseXor(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::PipeEqual => Expr::AssignBitwiseOr(Box::new(lhs), Box::new(rhs)),
                     TokenKind::Plus => Expr::Add(Box::new(lhs), Box::new(rhs)),
                     TokenKind::Minus => Expr::Sub(Box::new(lhs), Box::new(rhs)),
                     TokenKind::Star => Expr::Mul(Box::new(lhs), Box::new(rhs)),
@@ -447,15 +460,33 @@ impl Parser {
                     TokenKind::BangEqual => Expr::NotEqual(Box::new(lhs), Box::new(rhs)),
                     TokenKind::LessThan => Expr::LessThan(Box::new(lhs), Box::new(rhs)),
                     TokenKind::GreaterThan => Expr::GreaterThan(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::LessThanEqual => Expr::LessThanOrEqual(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::LessThanEqual => {
+                        Expr::LessThanOrEqual(Box::new(lhs), Box::new(rhs))
+                    }
                     TokenKind::GreaterThanEqual => {
                         Expr::GreaterThanOrEqual(Box::new(lhs), Box::new(rhs))
                     }
-                    TokenKind::AmpersandAmpersand => Expr::LogicalAnd(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::AmpersandAmpersand => {
+                        Expr::LogicalAnd(Box::new(lhs), Box::new(rhs))
+                    }
                     TokenKind::PipePipe => Expr::LogicalOr(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::Pipe => Expr::BitwiseOr(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::Caret => Expr::BitwiseXor(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::Ampersand => Expr::BitwiseAnd(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::LessThanLessThan => Expr::LeftShift(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::GreaterThanGreaterThan => {
+                        Expr::RightShift(Box::new(lhs), Box::new(rhs))
+                    }
                     TokenKind::Arrow => {
                         if let Expr::Variable(name, _) = rhs {
                             Expr::PointerMember(Box::new(lhs), name)
+                        } else {
+                            return Err(ParserError::UnexpectedToken(token));
+                        }
+                    }
+                    TokenKind::Dot => {
+                        if let Expr::Variable(name, _) = rhs {
+                            Expr::Member(Box::new(lhs), name)
                         } else {
                             return Err(ParserError::UnexpectedToken(token));
                         }
@@ -465,13 +496,14 @@ impl Parser {
                 continue;
             }
             if let TokenKind::Question = token.kind {
-                if 1 < min_bp {
+                let l_bp = 2;
+                if l_bp < min_bp {
                     break;
                 }
                 self.eat()?; // Consume '?'
                 let then_expr = self.parse_pratt_expr(0)?;
                 self.expect_punct(TokenKind::Colon)?;
-                let else_expr = self.parse_pratt_expr(2)?;
+                let else_expr = self.parse_pratt_expr(l_bp - 1)?;
                 lhs = Expr::Ternary(Box::new(lhs), Box::new(then_expr), Box::new(else_expr));
                 continue;
             }
@@ -482,7 +514,6 @@ impl Parser {
 
     /// Parses a primary expression.
     fn parse_primary(&mut self) -> Result<Expr, ParserError> {
-        self.logger.log(&format!("Parsing primary expression, current token: {:?}", self.current_token()));
         let token = self.current_token()?;
         match token.kind.clone() {
             TokenKind::Number(n) => {
@@ -535,16 +566,6 @@ impl Parser {
                                 _ => return Err(ParserError::UnexpectedToken(token_for_error)),
                             };
                             expr = Expr::Call(name, args, location);
-                        }
-                        TokenKind::Dot => {
-                            self.eat()?;
-                            let token = self.current_token()?;
-                            if let TokenKind::Identifier(id) = token.kind.clone() {
-                                self.eat()?;
-                                expr = Expr::Member(Box::new(expr), id);
-                            } else {
-                                return Err(ParserError::UnexpectedToken(token));
-                            }
                         }
                         TokenKind::LeftBracket => {
                             self.eat()?;
@@ -628,6 +649,19 @@ impl Parser {
         }
     }
 
+    fn parse_designator(&mut self) -> Result<Expr, ParserError> {
+        self.eat()?; // consume .
+        let token = self.current_token()?;
+        if let TokenKind::Identifier(id) = token.kind.clone() {
+            self.eat()?;
+            self.expect_punct(TokenKind::Equal)?;
+            let expr = self.parse_expr()?;
+            Ok(Expr::DesignatedInitializer(id, Box::new(expr)))
+        } else {
+            Err(ParserError::UnexpectedToken(token))
+        }
+    }
+
     /// Parses an initializer list.
     fn parse_initializer_list(&mut self) -> Result<Vec<Expr>, ParserError> {
         self.expect_punct(TokenKind::LeftBrace)?;
@@ -642,16 +676,7 @@ impl Parser {
         loop {
             // Parse one initializer expression (either designated or normal)
             if self.current_token()?.kind == TokenKind::Dot {
-                self.eat()?;
-                let token = self.current_token()?;
-                if let TokenKind::Identifier(id) = token.kind.clone() {
-                    self.eat()?;
-                    self.expect_punct(TokenKind::Equal)?;
-                    let expr = self.parse_expr()?;
-                    initializers.push(Expr::DesignatedInitializer(id, Box::new(expr)));
-                } else {
-                    return Err(ParserError::UnexpectedToken(token));
-                }
+                initializers.push(self.parse_designator()?);
             } else {
                 initializers.push(self.parse_expr()?);
             }

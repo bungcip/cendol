@@ -176,6 +176,7 @@ impl CodeGen {
                 module: &mut self.module,
                 loop_context: Vec::new(),
                 current_block_state: BlockState::Empty,
+                signatures: &self.signatures,
             };
             // Find the function body
             let function = program
@@ -244,6 +245,7 @@ struct FunctionTranslator<'a, 'b> {
     module: &'b mut ObjectModule,
     loop_context: Vec<(Block, Block)>,
     current_block_state: BlockState,
+    signatures: &'b HashMap<String, Signature>,
 }
 
 impl<'a, 'b> FunctionTranslator<'a, 'b> {
@@ -650,13 +652,13 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 Ok((loaded_val, ty))
             }
             Expr::Assign(lhs, rhs) => {
-                let (value, ty) = self.translate_expr(*rhs)?;
+                let (rhs_val, ty) = self.translate_expr(*rhs)?;
                 if let Expr::Variable(name, _) = *lhs {
                     let (slot, _) = self.variables.get(&name).unwrap();
-                    self.builder.ins().stack_store(value, slot, 0);
+                    self.builder.ins().stack_store(rhs_val, slot, 0);
                 } else if let Expr::Deref(ptr) = *lhs {
                     let (ptr, _) = self.translate_expr(*ptr)?;
-                    self.builder.ins().store(MemFlags::new(), value, ptr, 0);
+                    self.builder.ins().store(MemFlags::new(), rhs_val, ptr, 0);
                 } else if let Expr::Member(expr, member) = *lhs {
                     let (ptr, ty) = self.translate_expr(*expr)?;
                     let s = self.get_real_type(&ty)?;
@@ -672,14 +674,14 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         }
                         self.builder
                             .ins()
-                            .store(MemFlags::new(), value, ptr, offset as i32);
+                            .store(MemFlags::new(), rhs_val, ptr, offset as i32);
                     } else {
                         return Err(CodegenError::NotAStruct);
                     }
                 } else {
                     unimplemented!()
                 }
-                Ok((value, ty))
+                Ok((rhs_val, ty))
             }
             Expr::AssignAdd(lhs, rhs) => {
                 let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
@@ -866,6 +868,11 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 }
                 Ok((result_val, lhs_ty))
             }
+            Expr::AssignBitwiseAnd(..) => todo!(),
+            Expr::AssignBitwiseOr(..) => todo!(),
+            Expr::AssignBitwiseXor(..) => todo!(),
+            Expr::AssignLeftShift(..) => todo!(),
+            Expr::AssignRightShift(..) => todo!(),
             Expr::Add(lhs, rhs) => {
                 let (lhs_val, lhs_ty) = self.translate_expr(*lhs)?;
                 let (rhs_val, rhs_ty) = self.translate_expr(*rhs)?;
@@ -1262,13 +1269,38 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let c = self.builder.ins().bor(lhs, rhs);
                 Ok((self.builder.ins().uextend(types::I64, c), Type::Int))
             }
+            Expr::BitwiseOr(lhs, rhs) => {
+                let (lhs, _) = self.translate_expr(*lhs)?;
+                let (rhs, _) = self.translate_expr(*rhs)?;
+                Ok((self.builder.ins().bor(lhs, rhs), Type::Int))
+            }
+            Expr::BitwiseXor(lhs, rhs) => {
+                let (lhs, _) = self.translate_expr(*lhs)?;
+                let (rhs, _) = self.translate_expr(*rhs)?;
+                Ok((self.builder.ins().bxor(lhs, rhs), Type::Int))
+            }
+            Expr::BitwiseAnd(lhs, rhs) => {
+                let (lhs, _) = self.translate_expr(*lhs)?;
+                let (rhs, _) = self.translate_expr(*rhs)?;
+                Ok((self.builder.ins().band(lhs, rhs), Type::Int))
+            }
+            Expr::LeftShift(lhs, rhs) => {
+                let (lhs, _) = self.translate_expr(*lhs)?;
+                let (rhs, _) = self.translate_expr(*rhs)?;
+                Ok((self.builder.ins().ishl(lhs, rhs), Type::Int))
+            }
+            Expr::RightShift(lhs, rhs) => {
+                let (lhs, _) = self.translate_expr(*lhs)?;
+                let (rhs, _) = self.translate_expr(*rhs)?;
+                Ok((self.builder.ins().sshr(lhs, rhs), Type::Int))
+            }
             Expr::LogicalNot(expr) => {
                 let (val, _) = self.translate_expr(*expr)?;
                 let zero = self.builder.ins().iconst(types::I64, 0);
                 let c = self.builder.ins().icmp(IntCC::Equal, val, zero);
                 Ok((self.builder.ins().uextend(types::I64, c), Type::Int))
             }
-            Expr::StructInitializer(_) | Expr::DesignatedInitializer(_, _) => unimplemented!(),
+            Expr::StructInitializer(_) | Expr::DesignatedInitializer(_, _) | Expr::Comma(..)=> unimplemented!(),
         }
     }
 }

@@ -6,6 +6,8 @@ pub mod file;
 pub mod codegen;
 /// Contains common data structures and types.
 pub mod common;
+/// Contains the compiler.
+pub mod compiler;
 /// Contains the error types for the application.
 pub mod error;
 /// Contains the logger.
@@ -15,5 +17,3 @@ pub mod parser;
 pub mod preprocessor;
 /// Contains the semantic analyzer.
 pub mod semantic;
-/// Contains the compiler.
-pub mod compiler;

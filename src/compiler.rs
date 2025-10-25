@@ -1,6 +1,6 @@
+use crate::error::Report;
 use crate::file::FileManager;
 use crate::preprocessor::Preprocessor;
-use crate::error::Report;
 use clap::Parser as ClapParser;
 
 /// Command-line arguments for the C-like compiler.
@@ -44,11 +44,11 @@ use crate::codegen::CodeGen;
 use crate::logger::Logger;
 use crate::parser::Parser;
 use crate::parser::error::ParserError;
+use crate::preprocessor::token::{DirectiveKind, Token, TokenKind};
 use crate::semantic::SemanticAnalyzer;
 use std::fs;
 use std::io::Write;
 use std::process::Command;
-use crate::preprocessor::token::{Token, TokenKind, DirectiveKind};
 
 pub struct Compiler {
     preprocessor: Preprocessor,
@@ -198,13 +198,17 @@ impl Compiler {
             "a.o".to_string()
         };
 
-        let mut object_file = fs::File::create(&object_filename).expect("Failed to create object file");
+        let mut object_file =
+            fs::File::create(&object_filename).expect("Failed to create object file");
         object_file
             .write_all(&object_bytes)
             .expect("Failed to write to object file");
 
         if !cli.compile_only {
-            let output_filename = cli.output_file.clone().unwrap_or_else(|| "a.out".to_string());
+            let output_filename = cli
+                .output_file
+                .clone()
+                .unwrap_or_else(|| "a.out".to_string());
             Command::new("cc")
                 .arg(&object_filename)
                 .arg("-o")

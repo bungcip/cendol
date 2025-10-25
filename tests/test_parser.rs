@@ -84,7 +84,6 @@ fn create_bool_program_ast() -> Program {
     }
 }
 
-
 /// Creates a program AST with if-else control flow
 fn create_control_flow_program_ast() -> Program {
     Program {
@@ -109,8 +108,8 @@ mod tests {
     use crate::parse_c_body;
 
     use super::{
-        create_bool_program_ast, create_control_flow_program_ast,
-        create_simple_program_ast, parse_c_code,
+        create_bool_program_ast, create_control_flow_program_ast, create_simple_program_ast,
+        parse_c_code,
     };
     use cendol::parser::ast::{Declarator, Expr, Stmt, Type};
 
@@ -126,7 +125,6 @@ mod tests {
             expected.functions[0].body.len()
         );
     }
-
 
     /// Test parsing of programs with control flow (if-else statements)
     #[test]

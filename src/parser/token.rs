@@ -130,9 +130,15 @@ impl From<preprocessor::token::Token> for Token {
             preprocessor::token::TokenKind::MinusEqual => TokenKind::MinusEqual,
             preprocessor::token::TokenKind::PercentEqual => TokenKind::PercentEqual,
             preprocessor::token::TokenKind::LessThanLessThan => TokenKind::LessThanLessThan,
-            preprocessor::token::TokenKind::GreaterThanGreaterThan => TokenKind::GreaterThanGreaterThan,
-            preprocessor::token::TokenKind::LessThanLessThanEqual => TokenKind::LessThanLessThanEqual,
-            preprocessor::token::TokenKind::GreaterThanGreaterThanEqual => TokenKind::GreaterThanGreaterThanEqual,
+            preprocessor::token::TokenKind::GreaterThanGreaterThan => {
+                TokenKind::GreaterThanGreaterThan
+            }
+            preprocessor::token::TokenKind::LessThanLessThanEqual => {
+                TokenKind::LessThanLessThanEqual
+            }
+            preprocessor::token::TokenKind::GreaterThanGreaterThanEqual => {
+                TokenKind::GreaterThanGreaterThanEqual
+            }
             preprocessor::token::TokenKind::Pipe => TokenKind::Pipe,
             preprocessor::token::TokenKind::PipePipe => TokenKind::PipePipe,
             preprocessor::token::TokenKind::PipeEqual => TokenKind::PipeEqual,

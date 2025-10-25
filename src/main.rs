@@ -1,5 +1,5 @@
 use cendol::compiler::{Cli, Compiler};
-use cendol::error::{report, Report};
+use cendol::error::{Report, report};
 use clap::Parser as ClapParser;
 use std::process::exit;
 

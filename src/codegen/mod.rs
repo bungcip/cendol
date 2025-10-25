@@ -261,11 +261,7 @@ struct FunctionTranslator<'a, 'b> {
 }
 
 impl<'a, 'b> FunctionTranslator<'a, 'b> {
-    fn translate_assignment(
-        &mut self,
-        lhs: Expr,
-        rhs_val: Value,
-    ) -> Result<(), CodegenError> {
+    fn translate_assignment(&mut self, lhs: Expr, rhs_val: Value) -> Result<(), CodegenError> {
         match lhs {
             Expr::Variable(name, _) => {
                 let (slot, _) = self.variables.get(&name).unwrap();
@@ -1262,7 +1258,9 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let c = self.builder.ins().icmp(IntCC::Equal, val, zero);
                 Ok((self.builder.ins().uextend(types::I64, c), Type::Int))
             }
-            Expr::StructInitializer(_) | Expr::DesignatedInitializer(_, _) | Expr::Comma(..)=> Ok((self.builder.ins().iconst(types::I64, 0), Type::Int)),
+            Expr::StructInitializer(_) | Expr::DesignatedInitializer(_, _) | Expr::Comma(..) => {
+                Ok((self.builder.ins().iconst(types::I64, 0), Type::Int))
+            }
         }
     }
 }

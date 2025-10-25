@@ -176,7 +176,7 @@ impl CodeGen {
                 builder,
                 functions: &self.functions,
                 variables: &mut self.variables,
-                structs: &self.structs,
+                structs: &mut self.structs,
                 module: &mut self.module,
                 loop_context: Vec::new(),
                 current_block_state: BlockState::Empty,
@@ -248,7 +248,7 @@ struct FunctionTranslator<'a, 'b> {
     builder: FunctionBuilder<'a>,
     functions: &'b HashMap<String, (FuncId, Type, bool)>,
     variables: &'b mut SymbolTable<String, (StackSlot, Type)>,
-    structs: &'b HashMap<String, Type>,
+    structs: &'b mut HashMap<String, Type>,
     module: &'b mut ObjectModule,
     loop_context: Vec<(Block, Block)>,
     current_block_state: BlockState,
@@ -351,6 +351,9 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 Ok(true)
             }
             Stmt::Declaration(ty, name, initializer) => {
+                if let Type::Struct(Some(name), _) = &ty {
+                    self.structs.insert(name.clone(), ty.clone());
+                }
                 let size = self.get_type_size(&ty);
                 let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
                     StackSlotKind::ExplicitSlot,
@@ -684,6 +687,29 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                             .store(MemFlags::new(), rhs_val, ptr, offset as i32);
                     } else {
                         return Err(CodegenError::NotAStruct);
+                    }
+                } else if let Expr::PointerMember(expr, member) = *lhs {
+                    let (ptr, ty) = self.translate_expr(*expr)?;
+                    if let Type::Pointer(base_ty) = ty {
+                        let s = self.get_real_type(&base_ty)?;
+                        if let Type::Struct(_, members) = s {
+                            let mut offset = 0;
+                            for m in &members {
+                                let member_alignment = self.get_type_alignment(&m.ty);
+                                offset = (offset + member_alignment - 1) & !(member_alignment - 1);
+                                if m.name == *member {
+                                    break;
+                                }
+                                offset += self.get_type_size(&m.ty);
+                            }
+                            self.builder
+                                .ins()
+                                .store(MemFlags::new(), rhs_val, ptr, offset as i32);
+                        } else {
+                            return Err(CodegenError::NotAStruct);
+                        }
+                    } else {
+                        return Err(CodegenError::NotAPointer);
                     }
                 } else {
                     unimplemented!()

@@ -321,10 +321,7 @@ impl Parser {
         name_required: bool,
     ) -> Result<ast::Declarator, ParserError> {
         let (ty, name) = self.parse_declarator_suffix(base_type, name_required)?;
-        let mut initializer = None;
-        if self.eat_token(&TokenKind::Equal)? {
-            initializer = Some(Box::new(self.parse_expr()?));
-        }
+        let initializer = self.maybe_start(&TokenKind::Equal, |p| Ok(Box::new(p.parse_expr()?)))?;
         Ok(ast::Declarator {
             ty,
             name,
@@ -764,13 +761,11 @@ impl Parser {
                 self.eat()?;
                 self.expect_punct(TokenKind::LeftParen)?;
 
-                let init = self.parse_optional(&TokenKind::Semicolon, |p| {
+                let init = self.maybe_end(&TokenKind::Semicolon, |p| {
                     let result = if let Ok(ty) = p.parse_type() {
                         let id = p.expect_name()?;
-                        let mut initializer = None;
-                        if p.eat_token(&TokenKind::Equal)? {
-                            initializer = Some(Box::new(p.parse_expr()?));
-                        }
+                        let initializer =
+                            p.maybe_start(&TokenKind::Equal, |p| Ok(Box::new(p.parse_expr()?)))?;
                         ForInit::Declaration(ty, id, initializer)
                     } else {
                         ForInit::Expr(p.parse_expr()?)
@@ -780,14 +775,11 @@ impl Parser {
                 })?;
 
                 let cond =
-                    self.parse_optional(&TokenKind::Semicolon, |p| Ok(Box::new(p.parse_expr()?)))?;
-
-                let inc = self.parse_optional(&TokenKind::RightParen, |p| {
-                    let result = p.parse_expr()?;
-                    Ok(Box::new(result))
-                })?;
-
+                    self.maybe_end(&TokenKind::Semicolon, |p| Ok(Box::new(p.parse_expr()?)))?;
+                let inc =
+                    self.maybe_end(&TokenKind::RightParen, |p| Ok(Box::new(p.parse_expr()?)))?;
                 let body = self.parse_stmt()?;
+
                 return Ok(Stmt::For(init, cond, inc, Box::new(body)));
             } else if k == KeywordKind::Switch {
                 self.eat()?;
@@ -861,11 +853,8 @@ impl Parser {
         &mut self,
         param_name_required: bool,
     ) -> Result<(Type, String, Vec<Parameter>, bool, bool), ParserError> {
-        let mut is_inline = false;
         // Check for inline keyword before return type
-        if self.eat_token(&TokenKind::Keyword(KeywordKind::Inline))? {
-            is_inline = true;
-        }
+        let is_inline = self.eat_token(&TokenKind::Keyword(KeywordKind::Inline))?;
         let ty = self.parse_type()?;
         let id = self.expect_name()?;
         self.expect_punct(TokenKind::LeftParen)?;
@@ -946,10 +935,9 @@ impl Parser {
         loop {
             let (ty, name) = self.parse_declarator_suffix(base_type.clone(), true)?;
 
-            let mut initializer = None;
-            if self.eat_token(&TokenKind::Equal)? {
-                initializer = Some(Box::new(self.parse_expr()?));
-            }
+            let initializer = self.maybe_start(&TokenKind::Equal, |p| {
+                Ok(Box::new(p.parse_expr()?))
+            })?;
             declarators.push(ast::Declarator {
                 ty,
                 name,
@@ -981,8 +969,25 @@ impl Parser {
         Ok(Program { globals, functions })
     }
 
+    /// parse a option action when start token is found
+    fn maybe_start<T, F>(
+        &mut self,
+        start_token: &TokenKind,
+        mut parse_fn: F,
+    ) -> Result<Option<T>, ParserError>
+    where
+        F: FnMut(&mut Self) -> Result<T, ParserError>,
+    {
+        if self.eat_token(start_token)? {
+            let item = parse_fn(self)?;
+            Ok(Some(item))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Parses a optional action
-    fn parse_optional<T, F>(
+    fn maybe_end<T, F>(
         &mut self,
         end_token: &TokenKind,
         mut parse_fn: F,

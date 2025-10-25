@@ -1012,9 +1012,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                             .map(|m| m.ty.clone())
                             .unwrap();
                         Ok((
-                            self.builder
-                                .ins()
-                                .load(types::I64, MemFlags::new(), ptr, 0),
+                            self.builder.ins().load(types::I64, MemFlags::new(), ptr, 0),
                             member_ty,
                         ))
                     } else {
@@ -1133,9 +1131,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         .map(|m| m.ty.clone())
                         .unwrap();
                     Ok((
-                        self.builder
-                            .ins()
-                            .load(types::I64, MemFlags::new(), ptr, 0),
+                        self.builder.ins().load(types::I64, MemFlags::new(), ptr, 0),
                         member_ty,
                     ))
                 } else {

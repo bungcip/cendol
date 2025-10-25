@@ -64,7 +64,6 @@ fn test_for_loop_forever() {
     assert_eq!(exit_code, 5);
 }
 
-
 #[test]
 fn test_for_loop_with_break() {
     let input = r#"

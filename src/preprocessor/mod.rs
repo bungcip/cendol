@@ -1135,8 +1135,7 @@ fn parse_expr_bp(tokens: &[Token], i: &mut usize, min_bp: u8) -> Result<Expr, Pr
         TokenKind::Number(n) => {
             *i += 1;
             // Strip suffixes for long and unsigned
-            let num_str =
-                n.trim_end_matches(|c: char| c == 'L' || c == 'U' || c == 'l' || c == 'u');
+            let num_str = n.trim_end_matches(['L', 'U', 'l', 'u']);
             Expr::Number(num_str.parse().unwrap())
         }
         TokenKind::Identifier(s) => {

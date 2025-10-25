@@ -509,7 +509,7 @@ fn test_line_directive() {
 
     // The line directive itself doesn't produce content tokens, so this should be empty or minimal
     // If there are tokens, they should be related to the directive processing
-    assert!(tokens.len() >= 0, "Line directive test passed");
+    assert!(tokens.len() > 0, "Line directive test passed");
 }
 
 #[test]
@@ -528,7 +528,7 @@ fn test_self_referential_macro() {
 
     // Just verify that the test doesn't hang and produces some result
     assert!(
-        tokens.len() >= 0,
+        tokens.len() > 0,
         "Self-referential macro test completed without hanging"
     );
 }
@@ -549,7 +549,7 @@ fn test_mutually_recursive_macros() {
 
     // Just verify that the test doesn't hang and produces some result
     assert!(
-        tokens.len() >= 0,
+        tokens.len() > 0,
         "Mutually recursive macro test completed without hanging"
     );
 }

@@ -115,21 +115,18 @@ impl<'a> Lexer<'a> {
                     }
                 }
                 // Handle suffixes for long and unsigned
-                if let Some(&c) = self.input.peek() {
-                    if c == 'L' || c == 'U' || c == 'l' || c == 'u' {
-                        num.push(self.input.next().unwrap());
-                        self.consume_char(c);
-                        // Handle LL or UU
-                        if let Some(&c) = self.input.peek() {
-                            if (c == 'L' || c == 'l') && num.ends_with('L') || num.ends_with('l') {
-                                num.push(self.input.next().unwrap());
-                                self.consume_char(c);
-                            } else if (c == 'U' || c == 'u') && num.ends_with('U')
-                                || num.ends_with('u')
-                            {
-                                num.push(self.input.next().unwrap());
-                                self.consume_char(c);
-                            }
+                if let Some(&c) = self.input.peek()
+                    && (c == 'L' || c == 'U' || c == 'l' || c == 'u')
+                {
+                    num.push(self.input.next().unwrap());
+                    self.consume_char(c);
+                    // Handle LL or UU
+                    if let Some(&c) = self.input.peek() {
+                        if ((c == 'L' || c == 'l') && num.ends_with('L') || num.ends_with('l'))
+                            || ((c == 'U' || c == 'u') && num.ends_with('U') || num.ends_with('u'))
+                        {
+                            num.push(self.input.next().unwrap());
+                            self.consume_char(c);
                         }
                     }
                 }

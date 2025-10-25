@@ -101,11 +101,10 @@ impl Parser {
 
     /// Expects a specific punctuation token.
     fn expect_punct(&mut self, value: TokenKind) -> Result<(), ParserError> {
-        let token = self.current_token()?;
-        if token.kind == value {
-            self.eat()?;
+        if self.eat_token(&value)? {
             return Ok(());
         }
+        let token = self.current_token()?;
         Err(ParserError::UnexpectedToken(token))
     }
 
@@ -145,28 +144,6 @@ impl Parser {
             Ok(id)
         } else {
             Err(ParserError::UnexpectedToken(token))
-        }
-    }
-
-    /// Parses an optional delimited construct.
-    /// If the current token matches `begin_kind`, calls `parse_fn` to parse the content,
-    /// then consumes the `end_kind` token, and returns `Some(result)`.
-    /// If not, returns `None`.
-    fn parse_optional_delimited<T, F>(
-        &mut self,
-        begin_kind: &TokenKind,
-        end_kind: &TokenKind,
-        parse_fn: F,
-    ) -> Result<Option<T>, ParserError>
-    where
-        F: FnOnce(&mut Self) -> Result<T, ParserError>,
-    {
-        if self.eat_token(&begin_kind)? {
-            let result = parse_fn(self)?;
-            self.eat_token(&end_kind)?;
-            Ok(Some(result))
-        } else {
-            Ok(None)
         }
     }
 
@@ -244,26 +221,15 @@ impl Parser {
 
                 self.expect_punct(TokenKind::LeftBrace)?;
                 let mut enumerators = Vec::new();
-                while let Ok(t) = self.current_token() {
-                    if let TokenKind::RightBrace = t.kind {
-                        self.eat()?;
-                        break;
-                    }
+                while self.eat_token(&TokenKind::RightBrace)? == false {
                     if let Some(id) = self.maybe_name()? {
                         enumerators.push(id);
                     }
                     // Handle optional assignment for enum values
-                    if let Ok(t) = self.current_token()
-                        && let TokenKind::Equal = t.kind
-                    {
-                        self.eat()?;
+                    if self.eat_token(&TokenKind::Equal)? {
                         self.parse_expr()?; // Consume the expression for the enum value
                     }
-                    if let Ok(t) = self.current_token()
-                        && let TokenKind::Comma = t.kind
-                    {
-                        self.eat()?;
-                    }
+                    self.eat_token(&TokenKind::Comma)?;
                 }
                 Ok(Type::Enum(enumerators))
             }
@@ -314,37 +280,28 @@ impl Parser {
     /// This function assumes the base type has already been parsed.
     fn parse_declarator_suffix(&mut self, base_type: Type) -> Result<(Type, String), ParserError> {
         let mut ty = base_type;
+
         // Parse pointers
-        while let Ok(token) = self.current_token() {
-            if let TokenKind::Star = token.kind {
-                self.eat()?;
-                ty = Type::Pointer(Box::new(ty));
-            } else {
-                break;
-            }
+        while self.eat_token(&TokenKind::Star)? {
+            ty = Type::Pointer(Box::new(ty));
         }
 
-        let token = self.current_token()?;
         let id = self.expect_name()?;
 
         // Parse array dimensions
-        while let Ok(token) = self.current_token() {
-            if let TokenKind::LeftBracket = token.kind {
-                self.eat()?;
-                if self.eat_token(&TokenKind::RightBracket)? {
-                    ty = Type::Array(Box::new(ty), 0); // Unsized array
-                } else {
-                    let size_expr = self.parse_expr()?;
-                    let size = if let Expr::Number(n) = size_expr {
-                        n as usize
-                    } else {
-                        return Err(ParserError::UnexpectedToken(token));
-                    };
-                    self.expect_punct(TokenKind::RightBracket)?;
-                    ty = Type::Array(Box::new(ty), size);
-                }
+        while self.eat_token(&TokenKind::LeftBracket)? {
+            if self.eat_token(&TokenKind::RightBracket)? {
+                ty = Type::Array(Box::new(ty), 0); // Unsized array
             } else {
-                break;
+                let size_expr = self.parse_expr()?;
+                let size = if let Expr::Number(n) = size_expr {
+                    n as usize
+                } else {
+                    let token = self.current_token()?;
+                    return Err(ParserError::UnexpectedToken(token));
+                };
+                self.expect_punct(TokenKind::RightBracket)?;
+                ty = Type::Array(Box::new(ty), size);
             }
         }
         Ok((ty, id))
@@ -353,10 +310,7 @@ impl Parser {
     fn parse_declarator(&mut self, base_type: Type) -> Result<ast::Declarator, ParserError> {
         let (ty, name) = self.parse_declarator_suffix(base_type)?;
         let mut initializer = None;
-        if let Ok(t) = self.current_token()
-            && let TokenKind::Equal = t.kind
-        {
-            self.eat()?;
+        if self.eat_token(&TokenKind::Equal)? {
             initializer = Some(Box::new(self.parse_expr()?));
         }
         Ok(ast::Declarator {
@@ -598,8 +552,7 @@ impl Parser {
             TokenKind::Number(n) => {
                 self.eat()?;
                 // Strip suffixes like L, U, LL, UU
-                let num_str =
-                    n.trim_end_matches(|c: char| c == 'L' || c == 'U' || c == 'l' || c == 'u');
+                let num_str = n.trim_end_matches(['L', 'U', 'l', 'u']);
                 Ok(Expr::Number(num_str.parse().unwrap()))
             }
             TokenKind::String(s) => {
@@ -701,9 +654,7 @@ impl Parser {
                     let param_ty = self.parse_type()?;
                     self.expect_punct(TokenKind::RightParen)?;
 
-                    if self.current_token().is_ok()
-                        && self.current_token()?.kind == TokenKind::LeftBrace
-                    {
+                    if let Ok(TokenKind::LeftBrace) = self.current_kind() {
                         // Compound Literal: (type){...}
                         let initializers = self.parse_initializer_list()?;
                         Ok(Expr::CompoundLiteral(Box::new(param_ty), initializers))
@@ -742,7 +693,7 @@ impl Parser {
             TokenKind::RightBrace,
             TokenKind::Comma,
             |p| {
-                if p.current_token()?.kind == TokenKind::Dot {
+                if p.current_kind()? == TokenKind::Dot {
                     p.parse_designator()
                 } else {
                     p.parse_expr()
@@ -814,20 +765,15 @@ impl Parser {
                 };
 
                 // Optional ; for cond
-                if self.current_token()?.kind == TokenKind::Semicolon {
-                    self.eat()?; // consume ;
-                }
-                let cond = if self.current_token()?.kind == TokenKind::Semicolon {
-                    self.eat()?; // consume ;
+                self.eat_token(&TokenKind::Semicolon)?;
+                let cond = if self.eat_token(&TokenKind::Semicolon)? {
                     None
                 } else {
                     Some(Box::new(self.parse_expr()?))
                 };
 
                 // Optional ; for inc
-                if self.current_token()?.kind == TokenKind::Semicolon {
-                    self.eat()?; // consume ;
-                }
+                self.eat_token(&TokenKind::Semicolon)?;
                 let inc = if self.eat_token(&TokenKind::RightParen)? {
                     None
                 } else {
@@ -940,11 +886,7 @@ impl Parser {
             self.parse_function_signature()?;
         self.expect_punct(TokenKind::LeftBrace)?;
         let mut stmts = Vec::new();
-        while let Ok(t) = self.current_token() {
-            if let TokenKind::RightBrace = t.kind {
-                self.eat()?;
-                break;
-            }
+        while self.eat_token(&TokenKind::RightBrace)? == false {
             stmts.push(self.parse_stmt()?);
         }
         Ok(Function {

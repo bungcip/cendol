@@ -96,6 +96,9 @@ pub enum KeywordKind {
     Volatile,
     While,
     Bool,
+    Restrict,
+    Complex,
+    Imaginary,
 }
 
 impl FromStr for KeywordKind {
@@ -146,6 +149,9 @@ impl FromStr for KeywordKind {
             "volatile" => Ok(KeywordKind::Volatile),
             "while" => Ok(KeywordKind::While),
             "_Bool" => Ok(KeywordKind::Bool),
+            "_Complex" => Ok(KeywordKind::Complex),
+            "_Imaginary" => Ok(KeywordKind::Imaginary),
+            "restrict" => Ok(KeywordKind::Restrict),
             _ => Err(()),
         }
     }
@@ -198,6 +204,9 @@ impl fmt::Display for KeywordKind {
             KeywordKind::Volatile => write!(f, "volatile"),
             KeywordKind::While => write!(f, "while"),
             KeywordKind::Bool => write!(f, "_Bool"),
+            KeywordKind::Restrict => write!(f, "restrict"),
+            KeywordKind::Complex => write!(f, "_Complex"),
+            KeywordKind::Imaginary => write!(f, "_Imaginary"),
         }
     }
 }

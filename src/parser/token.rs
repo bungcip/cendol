@@ -51,6 +51,7 @@ pub enum TokenKind {
     Minus,
     Star,
     Slash,
+    Percent,
     Equal,
     EqualEqual,
     BangEqual,
@@ -101,10 +102,8 @@ impl From<preprocessor::token::Token> for Token {
             preprocessor::token::TokenKind::PlusPlus => TokenKind::PlusPlus,
             preprocessor::token::TokenKind::MinusMinus => TokenKind::MinusMinus,
             preprocessor::token::TokenKind::Star => TokenKind::Star,
-            preprocessor::token::TokenKind::Slash => {
-                // Slash tokens should be filtered out by preprocessor, but handle just in case
-                panic!("Slash token should have been filtered out by preprocessor");
-            }
+            preprocessor::token::TokenKind::Slash => TokenKind::Slash,
+            preprocessor::token::TokenKind::Percent => TokenKind::Percent,
             preprocessor::token::TokenKind::Equal => TokenKind::Equal,
             preprocessor::token::TokenKind::EqualEqual => TokenKind::EqualEqual,
             preprocessor::token::TokenKind::BangEqual => TokenKind::BangEqual,

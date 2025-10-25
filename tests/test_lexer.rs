@@ -5,7 +5,7 @@
 
 use cendol::file::{FileId, FileManager};
 use cendol::preprocessor::lexer::Lexer;
-use cendol::preprocessor::token::{DirectiveKind, SourceLocation, TokenKind};
+use cendol::preprocessor::token::{DirectiveKind, SourceLocation, TokenKind, KeywordKind};
 
 /// Test configuration constants
 mod config {
@@ -23,7 +23,7 @@ fn create_test_location(file_id: u32, line: u32) -> SourceLocation {
 }
 
 /// Helper function to collect all tokens from a lexer
-fn collect_tokens_from_lexer(input: &str, filename: &str) -> Vec<TokenKind> {
+fn collect_tokens(input: &str, filename: &str) -> Vec<TokenKind> {
     let mut file_manager = create_file_manager();
     let file_id = file_manager.open(filename).unwrap();
     let mut lexer = Lexer::new(input, file_id);
@@ -35,6 +35,25 @@ fn collect_tokens_from_lexer(input: &str, filename: &str) -> Vec<TokenKind> {
             break;
         }
         tokens.push(token.kind);
+    }
+
+    tokens
+}
+
+/// Helper function to collect all tokens from a lexer
+fn collect_tokens_without_whitespace(input: &str, filename: &str) -> Vec<TokenKind> {
+    let mut file_manager = create_file_manager();
+    let file_id = file_manager.open(filename).unwrap();
+    let mut lexer = Lexer::new(input, file_id);
+    let mut tokens = Vec::new();
+
+    loop {
+        let token = lexer.next_token().unwrap();
+        match token.kind {
+            TokenKind::Whitespace(_) | TokenKind::Newline => continue,
+            TokenKind::Eof => break,
+            _ => tokens.push(token.kind),
+        }
     }
 
     tokens
@@ -52,7 +71,10 @@ fn assert_tokens_equal(actual: &[TokenKind], expected: &[TokenKind]) {
 
 #[cfg(test)]
 mod tests {
-    use super::{DirectiveKind, TokenKind, assert_tokens_equal, collect_tokens_from_lexer};
+    use super::{
+        DirectiveKind, KeywordKind, TokenKind, assert_tokens_equal, collect_tokens,
+        collect_tokens_without_whitespace,
+    };
 
     /// Test basic lexer functionality with preprocessor directives
     #[test]
@@ -61,7 +83,7 @@ mod tests {
 #define FIVE 5
 FIVE
 "#;
-        let token_kinds = collect_tokens_from_lexer(input, super::config::TEST_FILENAME);
+        let token_kinds = collect_tokens(input, super::config::TEST_FILENAME);
 
         let expected_tokens = vec![
             TokenKind::Newline,
@@ -77,11 +99,10 @@ FIVE
         assert_tokens_equal(&token_kinds, &expected_tokens);
     }
 
-    /// Test lexer with various token types
     #[test]
-    fn test_all_tokens() {
-        let input = "(){}[];:,.##...\\..++--+-<>";
-        let token_kinds = collect_tokens_from_lexer(input, super::config::TEST_FILENAME);
+    fn test_punct_token() {
+        let input = "(){}[];:,.##...\\..<>";
+        let token_kinds = collect_tokens_without_whitespace(input, super::config::TEST_FILENAME);
 
         let expected_tokens = vec![
             TokenKind::LeftParen,
@@ -98,23 +119,101 @@ FIVE
             TokenKind::Ellipsis,
             TokenKind::Backslash,
             TokenKind::Dot,
-            TokenKind::PlusPlus,
-            TokenKind::MinusMinus,
-            TokenKind::Plus,
-            TokenKind::Minus,
             TokenKind::LessThan,
             TokenKind::GreaterThan,
         ];
         assert_tokens_equal(&token_kinds, &expected_tokens);
     }
 
-    /// Test lexer with increment operator
+    /// Test lexer with token which include '=' character
     #[test]
-    fn test_plusplus() {
-        let input = "a++";
-        let token_kinds = collect_tokens_from_lexer(input, super::config::TEST_FILENAME);
+    fn test_equality_token() {
+        let input = "= == += -= %= *= >= <=";
+        let token_kinds = collect_tokens_without_whitespace(input, super::config::TEST_FILENAME);
 
-        let expected_tokens = vec![TokenKind::Identifier("a".to_string()), TokenKind::PlusPlus];
+        let expected_tokens = vec![
+            TokenKind::Equal,
+            TokenKind::EqualEqual,
+            TokenKind::PlusEqual,
+            TokenKind::MinusEqual,
+            TokenKind::PercentEqual,
+            TokenKind::AsteriskEqual,
+            TokenKind::GreaterThanEqual,
+            TokenKind::LessThanEqual,
+        ];
+        assert_tokens_equal(&token_kinds, &expected_tokens);
+    }
+
+    /// Test lexer with token which include '+' & '-' characters
+    #[test]
+    fn test_plusminus_token() {
+        let input = "++ -- + - += -=";
+        let token_kinds = collect_tokens_without_whitespace(input, super::config::TEST_FILENAME);
+
+        let expected_tokens = vec![
+            TokenKind::PlusPlus,
+            TokenKind::MinusMinus,
+            TokenKind::Plus,
+            TokenKind::Minus,
+            TokenKind::PlusEqual,
+            TokenKind::MinusEqual,
+        ];
+        assert_tokens_equal(&token_kinds, &expected_tokens);
+    }
+
+    /// Test lexer with token which contain keyword tokens
+    #[test]
+    fn test_keyword_token() {
+        let input = "
+        auto        break       case        char        const       continue
+        default     do          double      else        enum        extern
+        float       for         goto        if          inline      int
+        long        register    restrict    return      short       signed
+        sizeof      static      struct      switch      typedef     union
+        unsigned    void        volatile    while       _Bool       _Complex
+        _Imaginary
+        ";
+        let token_kinds = collect_tokens_without_whitespace(input, super::config::TEST_FILENAME);
+
+        let expected_tokens = vec![
+            TokenKind::Keyword(KeywordKind::Auto),
+            TokenKind::Keyword(KeywordKind::Break),
+            TokenKind::Keyword(KeywordKind::Case),
+            TokenKind::Keyword(KeywordKind::Char),
+            TokenKind::Keyword(KeywordKind::Const),
+            TokenKind::Keyword(KeywordKind::Continue),
+            TokenKind::Keyword(KeywordKind::Default),
+            TokenKind::Keyword(KeywordKind::Do),
+            TokenKind::Keyword(KeywordKind::Double),
+            TokenKind::Keyword(KeywordKind::Else),
+            TokenKind::Keyword(KeywordKind::Enum),
+            TokenKind::Keyword(KeywordKind::Extern),
+            TokenKind::Keyword(KeywordKind::Float),
+            TokenKind::Keyword(KeywordKind::For),
+            TokenKind::Keyword(KeywordKind::Goto),
+            TokenKind::Keyword(KeywordKind::If),
+            TokenKind::Keyword(KeywordKind::Inline),
+            TokenKind::Keyword(KeywordKind::Int),
+            TokenKind::Keyword(KeywordKind::Long),
+            TokenKind::Keyword(KeywordKind::Register),
+            TokenKind::Keyword(KeywordKind::Restrict),
+            TokenKind::Keyword(KeywordKind::Return),
+            TokenKind::Keyword(KeywordKind::Short),
+            TokenKind::Keyword(KeywordKind::Signed),
+            TokenKind::Keyword(KeywordKind::Sizeof),
+            TokenKind::Keyword(KeywordKind::Static),
+            TokenKind::Keyword(KeywordKind::Struct),
+            TokenKind::Keyword(KeywordKind::Switch),
+            TokenKind::Keyword(KeywordKind::Typedef),
+            TokenKind::Keyword(KeywordKind::Union),
+            TokenKind::Keyword(KeywordKind::Unsigned),
+            TokenKind::Keyword(KeywordKind::Void),
+            TokenKind::Keyword(KeywordKind::Volatile),
+            TokenKind::Keyword(KeywordKind::While),
+            TokenKind::Keyword(KeywordKind::Bool),
+            TokenKind::Keyword(KeywordKind::Complex),
+            TokenKind::Keyword(KeywordKind::Imaginary),
+        ];
         assert_tokens_equal(&token_kinds, &expected_tokens);
     }
 }

@@ -207,7 +207,11 @@ impl<'a> Lexer<'a> {
             '+' => {
                 self.consume_char(c);
                 self.at_start_of_line = false;
-                if let Some(&'+') = self.input.peek() {
+                if let Some(&'=') = self.input.peek() {
+                    self.input.next();
+                    self.consume_char('=');
+                    Ok(Token::new(TokenKind::PlusEqual, self.current_span()))
+                } else if let Some(&'+') = self.input.peek() {
                     self.input.next();
                     self.consume_char('+');
                     Ok(Token::new(TokenKind::PlusPlus, self.current_span()))
@@ -218,7 +222,11 @@ impl<'a> Lexer<'a> {
             '-' => {
                 self.consume_char(c);
                 self.at_start_of_line = false;
-                if let Some(&'-') = self.input.peek() {
+                if let Some(&'=') = self.input.peek() {
+                    self.input.next();
+                    self.consume_char('=');
+                    Ok(Token::new(TokenKind::MinusEqual, self.current_span()))
+                } else if let Some(&'-') = self.input.peek() {
                     self.input.next();
                     self.consume_char('-');
                     Ok(Token::new(TokenKind::MinusMinus, self.current_span()))
@@ -233,7 +241,64 @@ impl<'a> Lexer<'a> {
             '*' => {
                 self.consume_char(c);
                 self.at_start_of_line = false;
-                Ok(Token::new(TokenKind::Star, self.current_span()))
+                if let Some(&'=') = self.input.peek() {
+                    self.input.next();
+                    self.consume_char('=');
+                    Ok(Token::new(TokenKind::AsteriskEqual, self.current_span()))
+                } else {
+                    Ok(Token::new(TokenKind::Star, self.current_span()))
+                }
+            }
+            '/' => {
+                self.consume_char(c);
+                self.at_start_of_line = false;
+                if let Some(&'/') = self.input.peek() {
+                    self.input.next();
+                    self.consume_char('/');
+                    let mut comment = String::new();
+                    let mut chars = Vec::new();
+                    while let Some(&c) = self.input.peek() {
+                        if c == '\n' {
+                            break;
+                        }
+                        comment.push(self.input.next().unwrap());
+                        chars.push(c);
+                    }
+                    for ch in chars {
+                        self.consume_char(ch);
+                    }
+                    Ok(Token::new(TokenKind::Comment(comment), self.current_span()))
+                } else if let Some(&'*') = self.input.peek() {
+                    self.input.next();
+                    self.consume_char('*');
+                    let mut comment = String::new();
+                    let mut chars = Vec::new();
+                    while let Some(c) = self.input.next() {
+                        if c == '*' && let Some(&'/') = self.input.peek() {
+                            self.input.next();
+                            break;
+                        }
+                        comment.push(c);
+                        chars.push(c);
+                    }
+                    for ch in chars {
+                        self.consume_char(ch);
+                    }
+                    Ok(Token::new(TokenKind::Comment(comment), self.current_span()))
+                } else {
+                    Ok(Token::new(TokenKind::Slash, self.current_span()))
+                }
+            }
+            '%' => {
+                self.consume_char(c);
+                self.at_start_of_line = false;
+                if let Some(&'=') = self.input.peek() {
+                    self.input.next();
+                    self.consume_char('=');
+                    Ok(Token::new(TokenKind::PercentEqual, self.current_span()))
+                } else {
+                    Ok(Token::new(TokenKind::Percent, self.current_span()))
+                }
             }
             '|' => {
                 self.consume_char(c);
@@ -273,110 +338,96 @@ impl<'a> Lexer<'a> {
             '!' => {
                 self.consume_char(c);
                 self.at_start_of_line = false;
-                Ok(Token::new(TokenKind::Bang, self.current_span()))
+                if let Some(&'=') = self.input.peek() {
+                    self.input.next();
+                    self.consume_char('=');
+                    Ok(Token::new(TokenKind::BangEqual, self.current_span()))
+                } else {
+                    Ok(Token::new(TokenKind::Bang, self.current_span()))
+                }
             }
             '?' => {
                 self.consume_char(c);
                 self.at_start_of_line = false;
                 Ok(Token::new(TokenKind::Question, self.current_span()))
             }
-            '/' => {
+            '=' => {
                 self.consume_char(c);
                 self.at_start_of_line = false;
-                if let Some(&'/') = self.input.peek() {
+                if let Some(&'=') = self.input.peek() {
                     self.input.next();
-                    self.consume_char('/');
-                    let mut comment = String::new();
-                    let mut chars = Vec::new();
-                    while let Some(&c) = self.input.peek() {
-                        if c == '\n' {
-                            break;
-                        }
-                        comment.push(self.input.next().unwrap());
-                        chars.push(c);
-                    }
-                    for ch in chars {
-                        self.consume_char(ch);
-                    }
-                    Ok(Token::new(TokenKind::Comment(comment), self.current_span()))
-                } else if let Some(&'*') = self.input.peek() {
-                    self.input.next();
-                    self.consume_char('*');
-                    let mut comment = String::new();
-                    let mut chars = Vec::new();
-                    while let Some(c) = self.input.next() {
-                        if c == '*'
-                            && let Some(&'/') = self.input.peek()
-                        {
-                            self.input.next();
-                            break;
-                        }
-                        comment.push(c);
-                        chars.push(c);
-                    }
-                    for ch in chars {
-                        self.consume_char(ch);
-                    }
-                    Ok(Token::new(TokenKind::Comment(comment), self.current_span()))
+                    self.consume_char('=');
+                    Ok(Token::new(TokenKind::EqualEqual, self.current_span()))
                 } else {
-                    Ok(Token::new(TokenKind::Slash, self.current_span()))
+                    Ok(Token::new(TokenKind::Equal, self.current_span()))
                 }
             }
-            _ if c.is_ascii_punctuation() && c != '#' => {
+            '<' => {
                 self.consume_char(c);
                 self.at_start_of_line = false;
-                let kind = match c {
-                    '(' => TokenKind::LeftParen,
-                    ')' => TokenKind::RightParen,
-                    '{' => TokenKind::LeftBrace,
-                    '}' => TokenKind::RightBrace,
-                    '[' => TokenKind::LeftBracket,
-                    ']' => TokenKind::RightBracket,
-                    ';' => TokenKind::Semicolon,
-                    ':' => TokenKind::Colon,
-                    ',' => TokenKind::Comma,
-                    '=' => {
-                        if let Some(&'=') = self.input.peek() {
-                            self.input.next();
-                            self.consume_char('=');
-                            TokenKind::EqualEqual
-                        } else {
-                            TokenKind::Equal
-                        }
-                    }
-                    '!' => {
-                        if let Some(&'=') = self.input.peek() {
-                            self.input.next();
-                            self.consume_char('=');
-                            return Ok(Token::new(TokenKind::BangEqual, self.current_span()));
-                        } else {
-                            TokenKind::Bang
-                        }
-                    }
-                    '<' => {
-                        if let Some(&'=') = self.input.peek() {
-                            self.input.next();
-                            self.consume_char('=');
-                            return Ok(Token::new(TokenKind::LessThanEqual, self.current_span()));
-                        } else {
-                            TokenKind::LessThan
-                        }
-                    }
-                    '>' => {
-                        if let Some(&'=') = self.input.peek() {
-                            self.input.next();
-                            self.consume_char('=');
-                            return Ok(Token::new(
-                                TokenKind::GreaterThanEqual,
-                                self.current_span(),
-                            ));
-                        } else {
-                            TokenKind::GreaterThan
-                        }
-                    }
-                    _ => return Err(PreprocessorError::UnexpectedChar(c)),
-                };
-                Ok(Token::new(kind, self.current_span()))
+                if let Some(&'=') = self.input.peek() {
+                    self.input.next();
+                    self.consume_char('=');
+                    Ok(Token::new(TokenKind::LessThanEqual, self.current_span()))
+                } else {
+                    Ok(Token::new(TokenKind::LessThan, self.current_span()))
+                }
+            }
+            '>' => {
+                self.consume_char(c);
+                self.at_start_of_line = false;
+                if let Some(&'=') = self.input.peek() {
+                    self.input.next();
+                    self.consume_char('=');
+                    Ok(Token::new(TokenKind::GreaterThanEqual, self.current_span()))
+                } else {
+                    Ok(Token::new(TokenKind::GreaterThan, self.current_span()))
+                }
+            }
+            ';' => {
+                self.consume_char(c);
+                self.at_start_of_line = false;
+                Ok(Token::new(TokenKind::Semicolon, self.current_span()))
+            }
+            ':' => {
+                self.consume_char(c);
+                self.at_start_of_line = false;
+                Ok(Token::new(TokenKind::Colon, self.current_span()))
+            }
+            ',' => {
+                self.consume_char(c);
+                self.at_start_of_line = false;
+                Ok(Token::new(TokenKind::Comma, self.current_span()))
+            }
+            '(' => {
+                self.consume_char(c);
+                self.at_start_of_line = false;
+                Ok(Token::new(TokenKind::LeftParen, self.current_span()))
+            }
+            ')' => {
+                self.consume_char(c);
+                self.at_start_of_line = false;
+                Ok(Token::new(TokenKind::RightParen, self.current_span()))
+            }
+            '{' => {
+                self.consume_char(c);
+                self.at_start_of_line = false;
+                Ok(Token::new(TokenKind::LeftBrace, self.current_span()))
+            }
+            '}' => {
+                self.consume_char(c);
+                self.at_start_of_line = false;
+                Ok(Token::new(TokenKind::RightBrace, self.current_span()))
+            }
+            '[' => {
+                self.consume_char(c);
+                self.at_start_of_line = false;
+                Ok(Token::new(TokenKind::LeftBracket, self.current_span()))
+            }
+            ']' => {
+                self.consume_char(c);
+                self.at_start_of_line = false;
+                Ok(Token::new(TokenKind::RightBracket, self.current_span()))
             }
             _ => Err(PreprocessorError::UnexpectedChar(c)),
         }

@@ -314,7 +314,7 @@ impl Parser {
             | TokenKind::LessThanEqual
             | TokenKind::GreaterThanEqual => Some((9, 10)),
             TokenKind::Plus | TokenKind::Minus => Some((11, 12)),
-            TokenKind::Star | TokenKind::Slash => Some((13, 14)),
+            TokenKind::Star | TokenKind::Slash | TokenKind::Percent => Some((13, 14)),
             TokenKind::Arrow => Some((15, 16)),
             _ => None,
         }
@@ -388,6 +388,7 @@ impl Parser {
                     TokenKind::Minus => Expr::Sub(Box::new(lhs), Box::new(rhs)),
                     TokenKind::Star => Expr::Mul(Box::new(lhs), Box::new(rhs)),
                     TokenKind::Slash => Expr::Div(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::Percent => Expr::Mod(Box::new(lhs), Box::new(rhs)),
                     TokenKind::EqualEqual => Expr::Equal(Box::new(lhs), Box::new(rhs)),
                     TokenKind::BangEqual => Expr::NotEqual(Box::new(lhs), Box::new(rhs)),
                     TokenKind::LessThan => Expr::LessThan(Box::new(lhs), Box::new(rhs)),

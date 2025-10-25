@@ -723,6 +723,11 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let (rhs, _) = self.translate_expr(*rhs)?;
                 Ok((self.builder.ins().sdiv(lhs, rhs), Type::Int))
             }
+            Expr::Mod(lhs, rhs) => {
+                let (lhs, _) = self.translate_expr(*lhs)?;
+                let (rhs, _) = self.translate_expr(*rhs)?;
+                Ok((self.builder.ins().srem(lhs, rhs), Type::Int))
+            }
             Expr::Equal(lhs, rhs) => {
                 let (lhs, _) = self.translate_expr(*lhs)?;
                 let (rhs, _) = self.translate_expr(*rhs)?;
@@ -1033,7 +1038,29 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     unimplemented!()
                 }
             }
-            _ => unimplemented!(),
+            Expr::Char(_) => {
+                // Literals are handled directly by the `translate_expr` function
+                unreachable!()
+            }
+            Expr::LogicalAnd(lhs, rhs) => {
+                let (lhs, _) = self.translate_expr(*lhs)?;
+                let (rhs, _) = self.translate_expr(*rhs)?;
+                let c = self.builder.ins().band(lhs, rhs);
+                Ok((self.builder.ins().uextend(types::I64, c), Type::Int))
+            }
+            Expr::LogicalOr(lhs, rhs) => {
+                let (lhs, _) = self.translate_expr(*lhs)?;
+                let (rhs, _) = self.translate_expr(*rhs)?;
+                let c = self.builder.ins().bor(lhs, rhs);
+                Ok((self.builder.ins().uextend(types::I64, c), Type::Int))
+            }
+            Expr::LogicalNot(expr) => {
+                let (val, _) = self.translate_expr(*expr)?;
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                let c = self.builder.ins().icmp(IntCC::Equal, val, zero);
+                Ok((self.builder.ins().uextend(types::I64, c), Type::Int))
+            }
+            Expr::StructInitializer(_) | Expr::DesignatedInitializer(_, _) => unimplemented!(),
         }
     }
 }

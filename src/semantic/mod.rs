@@ -364,7 +364,8 @@ impl SemanticAnalyzer {
             Expr::Add(lhs, rhs)
             | Expr::Sub(lhs, rhs)
             | Expr::Mul(lhs, rhs)
-            | Expr::Div(lhs, rhs) => {
+            | Expr::Div(lhs, rhs)
+            | Expr::Mod(lhs, rhs) => {
                 self.check_expression(*lhs, filename);
                 self.check_expression(*rhs, filename);
             }

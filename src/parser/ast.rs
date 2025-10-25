@@ -111,6 +111,8 @@ pub enum Expr {
     Mul(Box<Expr>, Box<Expr>),
     /// A division expression.
     Div(Box<Expr>, Box<Expr>),
+    /// A modulo expression.
+    Mod(Box<Expr>, Box<Expr>),
     /// An equality comparison.
     Equal(Box<Expr>, Box<Expr>),
     /// An inequality comparison.

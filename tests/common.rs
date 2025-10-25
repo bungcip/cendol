@@ -205,6 +205,7 @@ pub fn create_simple_program_ast() -> Program {
             name: "main".to_string(),
             params: vec![],
             body: vec![Stmt::Return(Expr::Number(0))],
+            is_inline: false,
         }],
     }
 }

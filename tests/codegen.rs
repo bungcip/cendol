@@ -424,5 +424,18 @@ mod tests {
         "#;
         let result = compile_and_run(c_code, "test_static_in_for").unwrap();
         assert_eq!(result, 3);
+    /// Test code generation for inline functions
+    #[test]
+    fn test_inline_function() {
+        let input = r#"
+        inline int add(int a, int b) {
+            return a + b;
+        }
+        int main() {
+            return add(5, 3);
+        }
+        "#;
+        let exit_code = compile_and_run(input, "inline_function").unwrap();
+        assert_eq!(exit_code, 8);
     }
 }

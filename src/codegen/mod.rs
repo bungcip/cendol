@@ -54,6 +54,7 @@ pub struct CodeGen {
     module: ObjectModule,
     variables: SymbolTable<String, (StackSlot, Type)>,
     functions: HashMap<String, (FuncId, Type)>,
+    signatures: HashMap<String, cranelift::prelude::Signature>,
     structs: HashMap<String, Type>,
     statics: HashMap<String, (DataId, Type)>,
 }
@@ -89,6 +90,7 @@ impl CodeGen {
             module,
             variables: SymbolTable::new(),
             functions: HashMap::new(),
+            signatures: HashMap::new(),
             structs: HashMap::new(),
             statics: HashMap::new(),
         }
@@ -127,7 +129,8 @@ impl CodeGen {
             }
         }
 
-        for function in program.functions {
+        // First, declare all functions
+        for function in &program.functions {
             let mut sig = self.module.make_signature();
             if let Type::Struct(_, _) = function.return_type {
                 sig.params.push(AbiParam::new(types::I64));
@@ -151,6 +154,13 @@ impl CodeGen {
                 .unwrap();
             self.functions
                 .insert(function.name.clone(), (id, function.return_type.clone()));
+            self.signatures.insert(function.name.clone(), sig);
+        }
+
+        // Then, define all functions
+        for function_name in program.functions.iter().map(|f| &f.name) {
+            let (id, _) = self.functions.get(function_name).unwrap();
+            let sig = self.signatures.get(function_name).unwrap().clone();
 
             self.ctx.clear();
             self.ctx.func.signature = sig;
@@ -159,7 +169,6 @@ impl CodeGen {
             let entry_block = builder.create_block();
             builder.append_block_params_for_function_params(entry_block);
             builder.switch_to_block(entry_block);
-            builder.seal_block(entry_block);
 
             let mut translator = FunctionTranslator {
                 builder,
@@ -168,15 +177,43 @@ impl CodeGen {
                 variables: &mut self.variables,
                 structs: &mut self.structs,
                 statics: &mut self.statics,
+                functions: &self.functions,
+                variables: &mut self.variables,
+                structs: &self.structs,
                 module: &mut self.module,
                 loop_context: Vec::new(),
                 current_block_state: BlockState::Empty,
             };
-            for stmt in function.body {
-                let _ = translator.translate_stmt(stmt)?;
+            // Find the function body
+            let function = program.functions.iter().find(|f| &f.name == function_name).unwrap();
+            // Add parameters to variables and store block params
+            let block_params = translator.builder.block_params(entry_block).to_vec();
+            for (i, param) in function.params.iter().enumerate() {
+                let size = translator.get_type_size(&param.ty);
+                let slot = translator.builder.create_sized_stack_slot(StackSlotData::new(
+                    StackSlotKind::ExplicitSlot,
+                    size,
+                    0,
+                ));
+                translator.variables.insert(param.name.clone(), (slot, param.ty.clone()));
+                // Store the block parameter into the stack slot
+                translator.builder.ins().stack_store(block_params[i], slot, 0);
             }
+            let mut terminated = false;
+            for stmt in &function.body {
+                if terminated {
+                    break;
+                }
+                let term = translator.translate_stmt(stmt.clone())?;
+                terminated = term;
+            }
+            if !terminated {
+                let zero = translator.builder.ins().iconst(types::I64, 0);
+                translator.builder.ins().return_(&[zero]);
+            }
+            translator.builder.seal_all_blocks();
             translator.builder.finalize();
-            self.module.define_function(id, &mut self.ctx).unwrap();
+            self.module.define_function(*id, &mut self.ctx).unwrap();
         }
 
         let product = self.module.finish();
@@ -202,6 +239,9 @@ struct FunctionTranslator<'a, 'b> {
     variables: &'b mut SymbolTable<String, (StackSlot, Type)>,
     structs: &'b mut HashMap<String, Type>,
     statics: &'b mut HashMap<String, (DataId, Type)>,
+    functions: &'b HashMap<String, (FuncId, Type)>,
+    variables: &'b mut SymbolTable<String, (StackSlot, Type)>,
+    structs: &'b HashMap<String, Type>,
     module: &'b mut ObjectModule,
     loop_context: Vec<(Block, Block)>,
     current_block_state: BlockState,
@@ -433,14 +473,12 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     .brif(condition_value, then_block, &[], else_block, &[]);
 
                 self.switch_to_block(then_block);
-                self.builder.seal_block(then_block);
                 let then_terminated = self.translate_stmt(*then)?;
                 if !then_terminated {
                     self.jump_to_block(merge_block);
                 }
 
                 self.switch_to_block(else_block);
-                self.builder.seal_block(else_block);
                 let mut else_terminated = false;
                 if let Some(otherwise) = otherwise {
                     else_terminated = self.translate_stmt(*otherwise)?;
@@ -452,7 +490,6 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
                 if !then_terminated || !else_terminated {
                     self.switch_to_block(merge_block);
-                    self.builder.seal_block(merge_block);
                 }
 
                 Ok(then_terminated && else_terminated)
@@ -471,7 +508,6 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     .brif(cond_val, body_block, &[], exit_block, &[]);
 
                 self.switch_to_block(body_block);
-                self.builder.seal_block(body_block);
 
                 self.loop_context.push((header_block, exit_block));
                 self.translate_stmt(*body)?;
@@ -480,8 +516,6 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.jump_to_block(header_block);
 
                 self.switch_to_block(exit_block);
-                self.builder.seal_block(header_block);
-                self.builder.seal_block(exit_block);
 
                 Ok(false)
             }
@@ -561,8 +595,6 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 }
 
                 self.switch_to_block(body_block);
-                self.builder.seal_block(body_block);
-
                 self.loop_context.push((header_block, exit_block));
                 self.translate_stmt(*body)?;
                 self.loop_context.pop();
@@ -574,14 +606,33 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.jump_to_block(header_block);
 
                 self.switch_to_block(exit_block);
-                self.builder.seal_block(header_block);
-                self.builder.seal_block(exit_block);
 
                 self.variables.exit_scope();
                 Ok(false)
             }
             Stmt::Expr(expr) => {
                 self.translate_expr(expr)?;
+                Ok(false)
+            }
+            Stmt::Empty => Ok(false),
+            Stmt::DoWhile(body, cond) => {
+                let header_block = self.builder.create_block();
+                let cond_block = self.builder.create_block();
+                let exit_block = self.builder.create_block();
+
+                self.jump_to_block(header_block);
+                self.switch_to_block(header_block);
+
+                self.translate_stmt(*body)?;
+                self.jump_to_block(cond_block);
+
+                self.switch_to_block(cond_block);
+
+                let (cond_val, _) = self.translate_expr(*cond)?;
+                self.builder.ins().brif(cond_val, header_block, &[], exit_block, &[]);
+
+                self.switch_to_block(exit_block);
+
                 Ok(false)
             }
             _ => unimplemented!(),
@@ -1060,6 +1111,42 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 }
 
                 Ok((self.builder.ins().stack_addr(types::I64, slot, 0), *ty))
+            }
+            Expr::Increment(expr) => {
+                if let Expr::Variable(name, _) = *expr {
+                    let (slot, ty) = self.variables.get(&name).unwrap();
+                    let loaded_val = match ty {
+                        Type::Char | Type::Bool => {
+                            let val = self.builder.ins().stack_load(types::I8, slot, 0);
+                            self.builder.ins().sextend(types::I64, val)
+                        }
+                        _ => self.builder.ins().stack_load(types::I64, slot, 0),
+                    };
+                    let one = self.builder.ins().iconst(types::I64, 1);
+                    let new_val = self.builder.ins().iadd(loaded_val, one);
+                    self.builder.ins().stack_store(new_val, slot, 0);
+                    Ok((loaded_val, ty))
+                } else {
+                    unimplemented!()
+                }
+            }
+            Expr::Decrement(expr) => {
+                if let Expr::Variable(name, _) = *expr {
+                    let (slot, ty) = self.variables.get(&name).unwrap();
+                    let loaded_val = match ty {
+                        Type::Char | Type::Bool => {
+                            let val = self.builder.ins().stack_load(types::I8, slot, 0);
+                            self.builder.ins().sextend(types::I64, val)
+                        }
+                        _ => self.builder.ins().stack_load(types::I64, slot, 0),
+                    };
+                    let one = self.builder.ins().iconst(types::I64, 1);
+                    let new_val = self.builder.ins().isub(loaded_val, one);
+                    self.builder.ins().stack_store(new_val, slot, 0);
+                    Ok((loaded_val, ty))
+                } else {
+                    unimplemented!()
+                }
             }
             _ => unimplemented!(),
         }

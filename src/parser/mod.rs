@@ -85,6 +85,15 @@ impl Parser {
         Ok(())
     }
 
+    /// consume the current token if same kind
+    fn eat_token(&mut self, kind: TokenKind) -> Result<bool, ParserError> {
+        if self.current_token()?.kind == kind {
+            self.eat()?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
     /// Expects a specific punctuation token.
     fn expect_punct(&mut self, value: TokenKind) -> Result<(), ParserError> {
         let token = self.current_token()?;
@@ -113,6 +122,27 @@ impl Parser {
         let result = self.parse_type().is_ok();
         self.position = original_pos;
         result
+    }
+
+    fn parse_optional_name(&mut self) -> Result<Option<String>, ParserError> {
+        let token = self.current_token()?;
+        if let TokenKind::Identifier(id) = token.kind {
+            self.eat()?;
+            Ok(Some(id))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Expects and consumes an identifier, returning its name.
+    fn expect_name(&mut self) -> Result<String, ParserError> {
+        let token = self.current_token()?;
+        if let TokenKind::Identifier(id) = token.kind {
+            self.eat()?;
+            Ok(id)
+        } else {
+            Err(ParserError::UnexpectedToken(token))
+        }
     }
 
     /// Parses a type specifier (e.g., `int`, `struct S`, `long long`).
@@ -173,16 +203,7 @@ impl Parser {
                 }
                 KeywordKind::Struct => {
                     self.eat()?;
-                    let name = if let Ok(token) = self.current_token() {
-                        if let TokenKind::Identifier(id) = token.kind.clone() {
-                            self.eat()?;
-                            Some(id)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
+                    let name = self.parse_optional_name()?;
                     if let Ok(token) = self.current_token() {
                         if let TokenKind::LeftBrace = token.kind {
                             let members = self.parse_struct_or_union_members()?;
@@ -198,16 +219,7 @@ impl Parser {
                 }
                 KeywordKind::Union => {
                     self.eat()?;
-                    let name = if let Ok(token) = self.current_token() {
-                        if let TokenKind::Identifier(id) = token.kind.clone() {
-                            self.eat()?;
-                            Some(id)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
+                    let name = self.parse_optional_name()?;
                     if let Ok(token) = self.current_token() {
                         if let TokenKind::LeftBrace = token.kind {
                             let members = self.parse_struct_or_union_members()?;
@@ -223,17 +235,7 @@ impl Parser {
                 }
                 KeywordKind::Enum => {
                     self.eat()?;
-                    // Optional identifier for enum tag
-                    let _name = if let Ok(token) = self.current_token() {
-                        if let TokenKind::Identifier(id) = token.kind.clone() {
-                            self.eat()?;
-                            Some(id)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
+                    let _name = self.parse_optional_name()?;
 
                     self.expect_punct(TokenKind::LeftBrace)?;
                     let mut enumerators = Vec::new();
@@ -242,9 +244,7 @@ impl Parser {
                             self.eat()?;
                             break;
                         }
-                        let token = self.current_token()?;
-                        if let TokenKind::Identifier(id) = token.kind.clone() {
-                            self.eat()?;
+                        if let Some(id) = self.parse_optional_name()? {
                             enumerators.push(id);
                         }
                         // Handle optional assignment for enum values
@@ -267,8 +267,7 @@ impl Parser {
         } else if self.typedefs.contains(&token.to_string()) {
             self.eat()?;
             Ok(Type::Typedef(token.to_string()))
-        }
-        else {
+        } else {
             Err(ParserError::UnexpectedToken(token))
         }
     }
@@ -290,10 +289,11 @@ impl Parser {
                     break;
                 }
             }
-            let token = self.current_token()?;
-            if let TokenKind::Identifier(id) = token.kind.clone() {
-                self.eat()?;
-                members.push(Parameter { ty: current_ty, name: id });
+            if let Some(id) = self.parse_optional_name()? {
+                members.push(Parameter {
+                    ty: current_ty,
+                    name: id,
+                });
             }
             self.expect_punct(TokenKind::Semicolon)?;
         }
@@ -315,19 +315,15 @@ impl Parser {
         }
 
         let token = self.current_token()?;
-        let id = if let TokenKind::Identifier(id) = token.kind.clone() {
-            self.eat()?;
-            id
-        } else {
-            return Err(ParserError::UnexpectedToken(token));
-        };
+        let id = self
+            .parse_optional_name()?
+            .ok_or_else(|| ParserError::UnexpectedToken(token.clone()))?;
 
         // Parse array dimensions
         while let Ok(token) = self.current_token() {
             if let TokenKind::LeftBracket = token.kind {
                 self.eat()?;
-                if self.current_token()?.kind == TokenKind::RightBracket {
-                    self.eat()?;
+                if self.eat_token(TokenKind::RightBracket)? {
                     ty = Type::Array(Box::new(ty), 0); // Unsized array
                 } else {
                     let size_expr = self.parse_expr()?;
@@ -416,12 +412,25 @@ impl Parser {
             TokenKind::Caret => Some((9, 10)),
             TokenKind::Ampersand => Some((11, 12)),
             TokenKind::EqualEqual | TokenKind::BangEqual => Some((13, 14)),
-            TokenKind::LessThan | TokenKind::GreaterThan | TokenKind::LessThanEqual | TokenKind::GreaterThanEqual => Some((15, 16)),
+            TokenKind::LessThan
+            | TokenKind::GreaterThan
+            | TokenKind::LessThanEqual
+            | TokenKind::GreaterThanEqual => Some((15, 16)),
             TokenKind::LessThanLessThan | TokenKind::GreaterThanGreaterThan => Some((17, 18)),
             TokenKind::Plus | TokenKind::Minus => Some((19, 20)),
             TokenKind::Star | TokenKind::Slash | TokenKind::Percent => Some((21, 22)),
             TokenKind::Arrow | TokenKind::Dot => Some((23, 24)),
-            TokenKind::Equal | TokenKind::PlusEqual | TokenKind::MinusEqual | TokenKind::AsteriskEqual | TokenKind::SlashEqual | TokenKind::PercentEqual | TokenKind::LessThanLessThanEqual | TokenKind::GreaterThanGreaterThanEqual | TokenKind::AmpersandEqual | TokenKind::CaretEqual | TokenKind::PipeEqual => Some((4, 3)),
+            TokenKind::Equal
+            | TokenKind::PlusEqual
+            | TokenKind::MinusEqual
+            | TokenKind::AsteriskEqual
+            | TokenKind::SlashEqual
+            | TokenKind::PercentEqual
+            | TokenKind::LessThanLessThanEqual
+            | TokenKind::GreaterThanGreaterThanEqual
+            | TokenKind::AmpersandEqual
+            | TokenKind::CaretEqual
+            | TokenKind::PipeEqual => Some((4, 3)),
             _ => None,
         }
     }
@@ -436,7 +445,9 @@ impl Parser {
             TokenKind::SlashEqual => Expr::AssignDiv(Box::new(lhs), Box::new(rhs)),
             TokenKind::PercentEqual => Expr::AssignMod(Box::new(lhs), Box::new(rhs)),
             TokenKind::LessThanLessThanEqual => Expr::AssignLeftShift(Box::new(lhs), Box::new(rhs)),
-            TokenKind::GreaterThanGreaterThanEqual => Expr::AssignRightShift(Box::new(lhs), Box::new(rhs)),
+            TokenKind::GreaterThanGreaterThanEqual => {
+                Expr::AssignRightShift(Box::new(lhs), Box::new(rhs))
+            }
             TokenKind::AmpersandEqual => Expr::AssignBitwiseAnd(Box::new(lhs), Box::new(rhs)),
             TokenKind::CaretEqual => Expr::AssignBitwiseXor(Box::new(lhs), Box::new(rhs)),
             TokenKind::PipeEqual => Expr::AssignBitwiseOr(Box::new(lhs), Box::new(rhs)),
@@ -461,7 +472,7 @@ impl Parser {
             _ => unreachable!(),
         }
     }
- 
+
     /// Parses an expression using the Pratt parsing algorithm.
     fn parse_pratt_expr(&mut self, min_bp: u8) -> Result<Expr, ParserError> {
         let mut lhs =
@@ -491,8 +502,7 @@ impl Parser {
                         Expr::BitwiseNot(Box::new(rhs))
                     }
                     TokenKind::Keyword(KeywordKind::Sizeof) => {
-                        if self.current_token()?.kind == TokenKind::LeftParen {
-                            self.eat()?; // consume (
+                        if self.eat_token(TokenKind::LeftParen)? {
                             let expr = if self.is_type_name() {
                                 let ty = self.parse_type()?;
                                 Expr::SizeofType(ty)
@@ -711,15 +721,10 @@ impl Parser {
 
     fn parse_designator(&mut self) -> Result<Expr, ParserError> {
         self.eat()?; // consume .
-        let token = self.current_token()?;
-        if let TokenKind::Identifier(id) = token.kind.clone() {
-            self.eat()?;
-            self.expect_punct(TokenKind::Equal)?;
-            let expr = self.parse_expr()?;
-            Ok(Expr::DesignatedInitializer(id, Box::new(expr)))
-        } else {
-            Err(ParserError::UnexpectedToken(token))
-        }
+        let id = self.expect_name()?;
+        self.expect_punct(TokenKind::Equal)?;
+        let expr = self.parse_expr()?;
+        Ok(Expr::DesignatedInitializer(id, Box::new(expr)))
     }
 
     /// Parses an initializer list.
@@ -728,8 +733,7 @@ impl Parser {
         let mut initializers = Vec::new();
 
         // Handle empty initializer list: {}
-        if self.current_token()?.kind == TokenKind::RightBrace {
-            self.eat()?;
+        if self.eat_token(TokenKind::RightBrace)? {
             return Ok(initializers);
         }
 
@@ -746,8 +750,7 @@ impl Parser {
             if token.kind == TokenKind::Comma {
                 self.eat()?;
                 // If a comma is followed by a brace, it's a trailing comma.
-                if self.current_token()?.kind == TokenKind::RightBrace {
-                    self.eat()?;
+                if self.eat_token(TokenKind::RightBrace)? {
                     break;
                 }
             } else if token.kind == TokenKind::RightBrace {
@@ -780,7 +783,7 @@ impl Parser {
             loop {
                 let declarator = self.parse_declarator(base_type.clone())?;
                 declarators.push(declarator);
-    
+
                 if let Ok(t) = self.current_token()
                     && let TokenKind::Comma = t.kind
                 {
@@ -826,20 +829,15 @@ impl Parser {
                     self.eat()?; // consume ;
                     None
                 } else if let Ok(ty) = self.parse_type() {
-                    let token = self.current_token()?;
-                    if let TokenKind::Identifier(id) = token.kind.clone() {
+                    let id = self.expect_name()?;
+                    let mut initializer = None;
+                    if let Ok(t) = self.current_token()
+                        && let TokenKind::Equal = t.kind
+                    {
                         self.eat()?;
-                        let mut initializer = None;
-                        if let Ok(t) = self.current_token()
-                            && let TokenKind::Equal = t.kind
-                        {
-                            self.eat()?;
-                            initializer = Some(Box::new(self.parse_expr()?));
-                        }
-                        Some(ForInit::Declaration(ty, id, initializer))
-                    } else {
-                        return Err(ParserError::UnexpectedToken(token));
+                        initializer = Some(Box::new(self.parse_expr()?));
                     }
+                    Some(ForInit::Declaration(ty, id, initializer))
                 } else {
                     Some(ForInit::Expr(self.parse_expr()?))
                 };
@@ -890,9 +888,7 @@ impl Parser {
                 return Ok(Stmt::Default(Box::new(stmt)));
             } else if k == KeywordKind::Goto {
                 self.eat()?;
-                let token = self.current_token()?;
-                if let TokenKind::Identifier(id) = token.kind.clone() {
-                    self.eat()?;
+                if let Some(id) = self.parse_optional_name()? {
                     self.expect_punct(TokenKind::Semicolon)?;
                     return Ok(Stmt::Goto(id));
                 }
@@ -912,9 +908,7 @@ impl Parser {
             } else if k == KeywordKind::Typedef {
                 self.eat()?;
                 let ty = self.parse_type()?;
-                let token = self.current_token()?;
-                if let TokenKind::Identifier(id) = token.kind.clone() {
-                    self.eat()?;
+                if let Some(id) = self.parse_optional_name()? {
                     self.typedefs.insert(id.clone());
                     self.expect_punct(TokenKind::Semicolon)?;
                     return Ok(Stmt::Typedef(ty, id));
@@ -922,8 +916,7 @@ impl Parser {
             }
         }
 
-        if let TokenKind::Semicolon = token.kind {
-            self.eat()?;
+        if self.eat_token(TokenKind::Semicolon)? {
             return Ok(Stmt::Empty);
         }
 
@@ -951,38 +944,36 @@ impl Parser {
             }
         }
         let ty = self.parse_type()?;
-        let token = self.current_token()?;
-        if let TokenKind::Identifier(id) = token.kind.clone() {
-            self.eat()?;
-            self.expect_punct(TokenKind::LeftParen)?;
-            let mut params = Vec::new();
-            let mut is_variadic = false;
-            while let Ok(t) = self.current_token() {
-                if let TokenKind::RightParen = t.kind {
-                    self.eat()?;
-                    break;
-                }
-                if let TokenKind::Ellipsis = t.kind {
-                    self.eat()?;
-                    is_variadic = true;
-                    // Expect a closing parenthesis after ...
-                    self.expect_punct(TokenKind::RightParen)?;
-                    break;
-                }
-                let base_type = self.parse_type_specifier()?;
-                let declarator = self.parse_declarator(base_type)?;
-                params.push(Parameter { ty: declarator.ty, name: declarator.name });
-
-                if let Ok(t) = self.current_token()
-                    && let TokenKind::Comma = t.kind
-                {
-                    self.eat()?;
-                }
+        let id = self.expect_name()?;
+        self.expect_punct(TokenKind::LeftParen)?;
+        let mut params = Vec::new();
+        let mut is_variadic = false;
+        while let Ok(t) = self.current_token() {
+            if let TokenKind::RightParen = t.kind {
+                self.eat()?;
+                break;
             }
-            Ok((ty, id, params, is_inline, is_variadic))
-        } else {
-            Err(ParserError::UnexpectedToken(token))
+            if let TokenKind::Ellipsis = t.kind {
+                self.eat()?;
+                is_variadic = true;
+                // Expect a closing parenthesis after ...
+                self.expect_punct(TokenKind::RightParen)?;
+                break;
+            }
+            let base_type = self.parse_type_specifier()?;
+            let declarator = self.parse_declarator(base_type)?;
+            params.push(Parameter {
+                ty: declarator.ty,
+                name: declarator.name,
+            });
+
+            if let Ok(t) = self.current_token()
+                && let TokenKind::Comma = t.kind
+            {
+                self.eat()?;
+            }
         }
+        Ok((ty, id, params, is_inline, is_variadic))
     }
 
     /// Parses a function.
@@ -1074,10 +1065,14 @@ impl Parser {
         Ok(Program { globals, functions })
     }
 
-    
     /// Parses a comma-separated list of items until the end token.
-    fn parse_comma_separated_list<T, F>(&mut self, mut parse_item: F, end_token: TokenKind) -> Result<Vec<T>, ParserError>
-    where F: FnMut(&mut Self) -> Result<T, ParserError>
+    fn parse_comma_separated_list<T, F>(
+        &mut self,
+        mut parse_item: F,
+        end_token: TokenKind,
+    ) -> Result<Vec<T>, ParserError>
+    where
+        F: FnMut(&mut Self) -> Result<T, ParserError>,
     {
         let mut items = Vec::new();
         loop {
@@ -1100,5 +1095,3 @@ impl Parser {
         Ok(items)
     }
 }
-
-

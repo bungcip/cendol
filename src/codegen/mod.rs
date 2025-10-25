@@ -247,7 +247,13 @@ pub enum BlockState {
     /// The block is filled with instructions.
     Filled,
 }
-
+/// Represents the l-value of an expression.
+enum LValue {
+    /// A stack slot.
+    Stack(StackSlot),
+    /// A dereferenced pointer.
+    Deref(Value),
+}
 /// A function translator that translates statements and expressions into Cranelift IR.
 struct FunctionTranslator<'a, 'b> {
     builder: FunctionBuilder<'a>,
@@ -401,7 +407,16 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     self.variables
                         .insert(declarator.name, (slot, declarator.ty.clone()));
                     if let Some(init) = declarator.initializer {
-                        if let Expr::StructInitializer(initializers) = *init {
+                        if let Type::Array(elem_ty, _) = &declarator.ty {
+                            if let Expr::StructInitializer(initializers) = *init {
+                                let elem_size = self.get_type_size(elem_ty);
+                                for (i, initializer) in initializers.into_iter().enumerate() {
+                                    let (val, _) = self.translate_expr(initializer)?;
+                                    let offset = (i as u32 * elem_size) as i32;
+                                    self.builder.ins().stack_store(val, slot, offset);
+                                }
+                            }
+                        } else if let Expr::StructInitializer(initializers) = *init {
                             let s = self.get_real_type(&declarator.ty)?;
                             if let Type::Struct(_, members) = s {
                                 let mut offset = 0;
@@ -664,6 +679,61 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         Ok(ty.clone())
     }
 
+    fn get_lvalue(&mut self, expr: Expr) -> Result<(LValue, Type), CodegenError> {
+        match expr {
+            Expr::Variable(name, _) => {
+                let (slot, ty) = self.variables.get(&name).unwrap();
+                Ok((LValue::Stack(slot), ty))
+            }
+            Expr::Deref(ptr_expr) => {
+                let (ptr, ptr_ty) = self.translate_expr(*ptr_expr)?;
+                if let Type::Pointer(base_ty) = ptr_ty {
+                    Ok((LValue::Deref(ptr), *base_ty))
+                } else {
+                    Err(CodegenError::NotAPointer)
+                }
+            }
+            _ => unimplemented!(),
+        }
+    }
+
+    fn translate_inc_dec(
+        &mut self,
+        expr: Expr,
+        is_post: bool,
+        is_inc: bool,
+    ) -> Result<(Value, Type), CodegenError> {
+        let (lval, ty) = self.get_lvalue(expr)?;
+        let loaded_val = match lval {
+            LValue::Stack(slot) => self.builder.ins().stack_load(types::I64, slot, 0),
+            LValue::Deref(ptr) => self.builder.ins().load(types::I64, MemFlags::new(), ptr, 0),
+        };
+
+        let amount = if let Type::Pointer(base_ty) = &ty {
+            self.get_type_size(base_ty) as i64
+        } else {
+            1
+        };
+        let amount_val = self.builder.ins().iconst(types::I64, amount);
+
+        let new_val = if is_inc {
+            self.builder.ins().iadd(loaded_val, amount_val)
+        } else {
+            self.builder.ins().isub(loaded_val, amount_val)
+        };
+
+        match lval {
+            LValue::Stack(slot) => self.builder.ins().stack_store(new_val, slot, 0),
+            LValue::Deref(ptr) => self.builder.ins().store(MemFlags::new(), new_val, ptr, 0),
+        };
+
+        if is_post {
+            Ok((loaded_val, ty))
+        } else {
+            Ok((new_val, ty))
+        }
+    }
+
     /// Translates an expression into a Cranelift `Value`.
     fn translate_expr(&mut self, expr: Expr) -> Result<(Value, Type), CodegenError> {
         match expr {
@@ -899,6 +969,38 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 Ok((self.builder.ins().iconst(types::I64, size), Type::Int))
             }
             Expr::Deref(expr) => {
+                match *expr {
+                    Expr::PostIncrement(ref lval_expr) => {
+                        if let Expr::Variable(ref name, _) = **lval_expr {
+                            let (slot, ty) = self.variables.get(name).unwrap();
+                            if let Type::Pointer(base_ty) = ty {
+                                let ptr = self.builder.ins().stack_load(types::I64, slot, 0);
+                                let result = self.builder.ins().load(types::I64, MemFlags::new(), ptr, 0);
+                                let size = self.get_type_size(&base_ty);
+                                let amount = self.builder.ins().iconst(types::I64, size as i64);
+                                let new_ptr = self.builder.ins().iadd(ptr, amount);
+                                self.builder.ins().stack_store(new_ptr, slot, 0);
+                                return Ok((result, *base_ty));
+                            }
+                        }
+                    },
+                    Expr::PostDecrement(ref lval_expr) => {
+                        if let Expr::Variable(ref name, _) = **lval_expr {
+                             let (slot, ty) = self.variables.get(name).unwrap();
+                            if let Type::Pointer(base_ty) = ty {
+                                let ptr = self.builder.ins().stack_load(types::I64, slot, 0);
+                                let result = self.builder.ins().load(types::I64, MemFlags::new(), ptr, 0);
+                                let size = self.get_type_size(&base_ty);
+                                let amount = self.builder.ins().iconst(types::I64, size as i64);
+                                let new_ptr = self.builder.ins().isub(ptr, amount);
+                                self.builder.ins().stack_store(new_ptr, slot, 0);
+                                return Ok((result, *base_ty));
+                            }
+                        }
+                    },
+                    _ => {}
+                }
+
                 let (ptr, ty) = self.translate_expr(*expr)?;
                 if let Type::Pointer(base_ty) = ty {
                     Ok((
@@ -906,7 +1008,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         *base_ty,
                     ))
                 } else {
-                    unimplemented!()
+                    Err(CodegenError::NotAPointer)
                 }
             }
             Expr::AddressOf(expr) => {
@@ -1143,78 +1245,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
                 Ok((self.builder.ins().stack_addr(types::I64, slot, 0), *ty))
             }
-            Expr::Increment(expr) => {
-                if let Expr::Variable(name, _) = *expr {
-                    let (slot, ty) = self.variables.get(&name).unwrap();
-                    let loaded_val = match ty {
-                        Type::Char | Type::Bool => {
-                            let val = self.builder.ins().stack_load(types::I8, slot, 0);
-                            self.builder.ins().sextend(types::I64, val)
-                        }
-                        _ => self.builder.ins().stack_load(types::I64, slot, 0),
-                    };
-                    let one = self.builder.ins().iconst(types::I64, 1);
-                    let new_val = self.builder.ins().iadd(loaded_val, one);
-                    self.builder.ins().stack_store(new_val, slot, 0);
-                    Ok((new_val, ty))
-                } else {
-                    unimplemented!()
-                }
-            }
-            Expr::Decrement(expr) => {
-                if let Expr::Variable(name, _) = *expr {
-                    let (slot, ty) = self.variables.get(&name).unwrap();
-                    let loaded_val = match ty {
-                        Type::Char | Type::Bool => {
-                            let val = self.builder.ins().stack_load(types::I8, slot, 0);
-                            self.builder.ins().sextend(types::I64, val)
-                        }
-                        _ => self.builder.ins().stack_load(types::I64, slot, 0),
-                    };
-                    let one = self.builder.ins().iconst(types::I64, 1);
-                    let new_val = self.builder.ins().isub(loaded_val, one);
-                    self.builder.ins().stack_store(new_val, slot, 0);
-                    Ok((new_val, ty))
-                } else {
-                    unimplemented!()
-                }
-            }
-            Expr::PostIncrement(expr) => {
-                if let Expr::Variable(name, _) = *expr {
-                    let (slot, ty) = self.variables.get(&name).unwrap();
-                    let loaded_val = match ty {
-                        Type::Char | Type::Bool => {
-                            let val = self.builder.ins().stack_load(types::I8, slot, 0);
-                            self.builder.ins().sextend(types::I64, val)
-                        }
-                        _ => self.builder.ins().stack_load(types::I64, slot, 0),
-                    };
-                    let one = self.builder.ins().iconst(types::I64, 1);
-                    let new_val = self.builder.ins().iadd(loaded_val, one);
-                    self.builder.ins().stack_store(new_val, slot, 0);
-                    Ok((loaded_val, ty))
-                } else {
-                    unimplemented!()
-                }
-            }
-            Expr::PostDecrement(expr) => {
-                if let Expr::Variable(name, _) = *expr {
-                    let (slot, ty) = self.variables.get(&name).unwrap();
-                    let loaded_val = match ty {
-                        Type::Char | Type::Bool => {
-                            let val = self.builder.ins().stack_load(types::I8, slot, 0);
-                            self.builder.ins().sextend(types::I64, val)
-                        }
-                        _ => self.builder.ins().stack_load(types::I64, slot, 0),
-                    };
-                    let one = self.builder.ins().iconst(types::I64, 1);
-                    let new_val = self.builder.ins().isub(loaded_val, one);
-                    self.builder.ins().stack_store(new_val, slot, 0);
-                    Ok((loaded_val, ty))
-                } else {
-                    unimplemented!()
-                }
-            }
+            Expr::Increment(expr) => self.translate_inc_dec(*expr, false, true),
+            Expr::Decrement(expr) => self.translate_inc_dec(*expr, false, false),
+            Expr::PostIncrement(expr) => self.translate_inc_dec(*expr, true, true),
+            Expr::PostDecrement(expr) => self.translate_inc_dec(*expr, true, false),
             Expr::Char(_) => {
                 // Literals are handled directly by the `translate_expr` function
                 unreachable!()

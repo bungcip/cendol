@@ -2,3 +2,4 @@
 *.o
 *.out
 .kilo
+input.c

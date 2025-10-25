@@ -58,6 +58,7 @@ fn create_simple_program_ast() -> Program {
             params: vec![],
             body: vec![Stmt::Return(Expr::Number(0))],
             is_inline: false,
+            is_variadic: false,
         }],
     }
 }
@@ -75,6 +76,7 @@ fn create_bool_program_ast() -> Program {
                 Stmt::Return(Expr::Number(0)),
             ],
             is_inline: false,
+            is_variadic: false,
         }],
     }
 }
@@ -94,6 +96,7 @@ fn create_control_flow_program_ast() -> Program {
                 Some(Box::new(Stmt::Return(Expr::Number(0)))),
             )],
             is_inline: false,
+            is_variadic: false,
         }],
     }
 }

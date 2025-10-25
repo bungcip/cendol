@@ -75,7 +75,7 @@ pub enum Stmt {
     Goto(String),
     /// A variable declaration.
     Declaration(Type, String, Option<Box<Expr>>),
-    FunctionDeclaration(Type, String, Vec<Parameter>),
+    FunctionDeclaration(Type, String, Vec<Parameter>, bool),
     /// A `typedef` statement.
     Typedef(Type, String),
     /// A `break` statement.
@@ -210,6 +210,8 @@ pub struct Function {
     pub body: Vec<Stmt>,
     /// Whether the function is declared as inline.
     pub is_inline: bool,
+    /// Whether the function is variadic.
+    pub is_variadic: bool,
 }
 
 /// Represents a program.

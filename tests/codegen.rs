@@ -405,4 +405,20 @@ mod tests {
     //     let exit_code = compile_and_run(input, "inline_function").unwrap();
     //     assert_eq!(exit_code, 8);
     // }
+
+    /// Test code generation for variadic functions
+    #[test]
+    fn test_variadic_function() {
+        let input = r#"
+        int variadic_func(int a, ...);
+        int main() {
+            return variadic_func(42, 1, 2, 3);
+        }
+        int variadic_func(int a, ...) {
+            return a;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "variadic_function").unwrap();
+        assert_eq!(exit_code, 42);
+    }
 }

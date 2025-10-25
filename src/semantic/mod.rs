@@ -98,7 +98,7 @@ impl SemanticAnalyzer {
     fn collect_symbols(&mut self, program: &Program, filename: &str) {
         for global in &program.globals {
             match global {
-                Stmt::FunctionDeclaration(ty, name, _params) => {
+                Stmt::FunctionDeclaration(ty, name, _params, _) => {
                     if let Some(existing) = self.symbol_table.get(name) {
                         if existing.is_function {
                             self.errors.push((

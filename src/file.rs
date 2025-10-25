@@ -7,6 +7,7 @@ use std::path::PathBuf;
 pub struct FileId(pub u32);
 
 /// Manages files, providing a centralized way to access and read them.
+#[derive(Clone)]
 pub struct FileManager {
     files: HashMap<FileId, PathBuf>,
     next_id: u32,

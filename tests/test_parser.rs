@@ -4,7 +4,6 @@
 //! and generate the expected Abstract Syntax Tree (AST) structures.
 
 use cendol::file::FileManager;
-use cendol::logger::Logger;
 use cendol::parser::Parser;
 use cendol::parser::ast::{Expr, Function, Program, Stmt, Type};
 use cendol::preprocessor::Preprocessor;
@@ -18,8 +17,7 @@ mod config {
 fn parse_c_code(input: &str) -> Result<Program, Box<dyn std::error::Error>> {
     let mut preprocessor = Preprocessor::new(FileManager::new());
     let tokens = preprocessor.preprocess(input, config::TEST_FILENAME)?;
-    let logger = Logger::new(true); // Enable verbose logging for debugging
-    let mut parser = Parser::new(tokens, logger)?;
+    let mut parser = Parser::new(tokens)?;
     let ast = parser.parse()?;
     Ok(ast)
 }
@@ -41,8 +39,7 @@ fn parse_c_body(input: &str) -> Vec<Stmt> {
     let tokens = preprocessor
         .preprocess(&input, config::TEST_FILENAME)
         .unwrap();
-    let logger = Logger::new(true); // Enable verbose logging for debugging
-    let mut parser = Parser::new(tokens, logger).unwrap();
+    let mut parser = Parser::new(tokens).unwrap();
     let ast = parser.parse().unwrap();
     let body = ast.functions.last().unwrap().body.clone();
     body

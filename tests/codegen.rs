@@ -419,4 +419,19 @@ mod tests {
         let exit_code = compile_and_run(input, "variadic_function").unwrap();
         assert_eq!(exit_code, 42);
     }
+
+    /// Test code generation for chained assignments
+    #[test]
+    fn test_chained_assignment() {
+        let input = r#"
+        int main() {
+            int x;
+            int y;
+            x = y = 0;
+            return x;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "chained_assignment").unwrap();
+        assert_eq!(exit_code, 0);
+    }
 }

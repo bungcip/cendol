@@ -483,6 +483,9 @@ mod tests {
         }
         "#;
         let exit_code = compile_and_run(input, "string_literal").unwrap();
+        assert_eq!(exit_code, 0);
+    }
+
     /// Test code generation for typedef
     #[test]
     fn test_typedef() {

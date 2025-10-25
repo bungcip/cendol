@@ -837,7 +837,7 @@ impl Parser {
                 self.eat()?;
                 let base_ty = self.parse_type_specifier()?;
                 loop {
-                    let (ty, name) = self.parse_declarator_suffix(base_ty.clone())?;
+                    let (ty, name) = self.parse_declarator_suffix(base_ty.clone(), true)?;
                     self.typedefs.insert(name, ty);
                     if !self.eat_token(&TokenKind::Comma)? {
                         break;
@@ -937,7 +937,7 @@ impl Parser {
         if self.eat_token(&TokenKind::Keyword(KeywordKind::Typedef))? {
             let base_ty = self.parse_type_specifier()?;
             loop {
-                let (ty, name) = self.parse_declarator_suffix(base_ty.clone())?;
+                let (ty, name) = self.parse_declarator_suffix(base_ty.clone(), true)?;
                 self.typedefs.insert(name, ty);
                 if !self.eat_token(&TokenKind::Comma)? {
                     break;

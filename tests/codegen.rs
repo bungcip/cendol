@@ -452,4 +452,19 @@ mod tests {
         let exit_code = compile_and_run(input, "bitwise_and_shift_assignment_operators").unwrap();
         assert_eq!(exit_code, 1);
     }
+
+    /// Test code generation for post-increment and post-decrement operators
+    #[test]
+    fn test_post_increment_and_decrement() {
+        let input = r#"
+        int main() {
+            int i = 0;
+            int j = i++;
+            int k = i--;
+            return j + k + i;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "post_increment_and_decrement").unwrap();
+        assert_eq!(exit_code, 1);
+    }
 }

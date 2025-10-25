@@ -492,8 +492,8 @@ impl Parser {
                 self.eat()?;
 
                 lhs = match token.kind {
-                    TokenKind::PlusPlus => Expr::Increment(Box::new(lhs)),
-                    TokenKind::MinusMinus => Expr::Decrement(Box::new(lhs)),
+                    TokenKind::PlusPlus => Expr::PostIncrement(Box::new(lhs)),
+                    TokenKind::MinusMinus => Expr::PostDecrement(Box::new(lhs)),
                     _ => unreachable!(),
                 };
                 continue;

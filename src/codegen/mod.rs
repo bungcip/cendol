@@ -1156,12 +1156,48 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     let one = self.builder.ins().iconst(types::I64, 1);
                     let new_val = self.builder.ins().iadd(loaded_val, one);
                     self.builder.ins().stack_store(new_val, slot, 0);
-                    Ok((loaded_val, ty))
+                    Ok((new_val, ty))
                 } else {
                     unimplemented!()
                 }
             }
             Expr::Decrement(expr) => {
+                if let Expr::Variable(name, _) = *expr {
+                    let (slot, ty) = self.variables.get(&name).unwrap();
+                    let loaded_val = match ty {
+                        Type::Char | Type::Bool => {
+                            let val = self.builder.ins().stack_load(types::I8, slot, 0);
+                            self.builder.ins().sextend(types::I64, val)
+                        }
+                        _ => self.builder.ins().stack_load(types::I64, slot, 0),
+                    };
+                    let one = self.builder.ins().iconst(types::I64, 1);
+                    let new_val = self.builder.ins().isub(loaded_val, one);
+                    self.builder.ins().stack_store(new_val, slot, 0);
+                    Ok((new_val, ty))
+                } else {
+                    unimplemented!()
+                }
+            }
+            Expr::PostIncrement(expr) => {
+                if let Expr::Variable(name, _) = *expr {
+                    let (slot, ty) = self.variables.get(&name).unwrap();
+                    let loaded_val = match ty {
+                        Type::Char | Type::Bool => {
+                            let val = self.builder.ins().stack_load(types::I8, slot, 0);
+                            self.builder.ins().sextend(types::I64, val)
+                        }
+                        _ => self.builder.ins().stack_load(types::I64, slot, 0),
+                    };
+                    let one = self.builder.ins().iconst(types::I64, 1);
+                    let new_val = self.builder.ins().iadd(loaded_val, one);
+                    self.builder.ins().stack_store(new_val, slot, 0);
+                    Ok((loaded_val, ty))
+                } else {
+                    unimplemented!()
+                }
+            }
+            Expr::PostDecrement(expr) => {
                 if let Expr::Variable(name, _) = *expr {
                     let (slot, ty) = self.variables.get(&name).unwrap();
                     let loaded_val = match ty {

@@ -180,6 +180,10 @@ pub enum Expr {
     Increment(Box<Expr>),
     /// A pre-decrement expression.
     Decrement(Box<Expr>),
+    /// A post-increment expression.
+    PostIncrement(Box<Expr>),
+    /// A post-decrement expression.
+    PostDecrement(Box<Expr>),
     /// A ternary conditional expression.
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
     /// A struct initializer expression.

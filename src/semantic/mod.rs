@@ -449,8 +449,9 @@ impl SemanticAnalyzer {
             }
             // Literals don't need checking
             Expr::Number(_) | Expr::String(_) | Expr::Char(_) => {}
-            Expr::Increment(_) | Expr::Decrement(_) => {
+            Expr::Increment(expr) | Expr::Decrement(expr) | Expr::PostIncrement(expr) | Expr::PostDecrement(expr) => {
                 // These are handled by the parser, but we'll check the expression anyway
+                self.check_expression(*expr, filename);
             }
         }
     }

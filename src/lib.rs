@@ -15,3 +15,5 @@ pub mod parser;
 pub mod preprocessor;
 /// Contains the semantic analyzer.
 pub mod semantic;
+/// Contains the compiler.
+pub mod compiler;

@@ -1,4 +1,3 @@
-use crate::logger::Logger;
 use crate::parser::ast::{Expr, ForInit, Function, Parameter, Program, Stmt, Type};
 use crate::parser::error::ParserError;
 use crate::parser::token::{KeywordKind, Token, TokenKind};
@@ -13,7 +12,6 @@ pub mod token;
 pub struct Parser {
     tokens: Vec<Token>,
     position: usize,
-    logger: Logger,
     typedefs: HashSet<String>,
 }
 
@@ -23,12 +21,11 @@ impl Parser {
     /// # Arguments
     ///
     /// * `tokens` - A vector of preprocessor tokens.
-    /// * `logger` - A logger for verbose output.
     ///
     /// # Returns
     ///
     /// A `Result` containing the new `Parser` instance, or a `ParserError` if tokenization fails.
-    pub fn new(tokens: Vec<preprocessor::token::Token>, logger: Logger) -> Result<Self, ParserError> {
+    pub fn new(tokens: Vec<preprocessor::token::Token>) -> Result<Self, ParserError> {
         // Filter out tokens that the parser can't handle
         let mut filtered_tokens: Vec<Token> = Vec::new();
         let mut skip_next_tokens = false;
@@ -69,7 +66,6 @@ impl Parser {
         let parser = Parser {
             tokens: filtered_tokens,
             position: 0,
-            logger,
             typedefs: HashSet::new(),
         };
         Ok(parser)

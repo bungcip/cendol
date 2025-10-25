@@ -468,6 +468,24 @@ mod tests {
         assert_eq!(exit_code, 1);
     }
 
+    #[test]
+    fn test_string_literal() {
+        let input = r#"
+        int strlen(char *);
+
+        int
+        main()
+        {
+        char *p;
+
+        p = "hello";
+        return strlen(p) - 5;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "string_literal").unwrap();
+        assert_eq!(exit_code, 0);
+    }
+
     /// Test code generation for typedef
     #[test]
     fn test_typedef() {

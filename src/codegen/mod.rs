@@ -269,43 +269,6 @@ struct FunctionTranslator<'a, 'b> {
 }
 
 impl<'a, 'b> FunctionTranslator<'a, 'b> {
-    fn translate_assignment(&mut self, lhs: Expr, rhs_val: Value) -> Result<(), CodegenError> {
-        match lhs {
-            Expr::Variable(name, _) => {
-                let (slot, _) = self.variables.get(&name).unwrap();
-                self.builder.ins().stack_store(rhs_val, slot, 0);
-            }
-            Expr::Deref(ptr) => {
-                let (ptr, _) = self.translate_expr(*ptr)?;
-                self.builder.ins().store(MemFlags::new(), rhs_val, ptr, 0);
-            }
-            Expr::Member(expr, member) => {
-                let (ptr, ty) = self.translate_expr(*expr)?;
-                let s = self.get_real_type(&ty)?;
-                if let Type::Struct(_, members) = s {
-                    let mut offset = 0;
-                    for m in &members {
-                        let member_alignment = self.get_type_alignment(&m.ty);
-                        offset = (offset + member_alignment - 1) & !(member_alignment - 1);
-                        if m.name == *member {
-                            break;
-                        }
-                        offset += self.get_type_size(&m.ty);
-                    }
-                    self.builder
-                        .ins()
-                        .store(MemFlags::new(), rhs_val, ptr, offset as i32);
-                } else if let Type::Union(_, _) = s {
-                    self.builder.ins().store(MemFlags::new(), rhs_val, ptr, 0);
-                } else {
-                    return Err(CodegenError::NotAStruct);
-                }
-            }
-            _ => unimplemented!(),
-        }
-        Ok(())
-    }
-
     /// Switches to a new block.
     fn switch_to_block(&mut self, block: Block) {
         self.builder.switch_to_block(block);
@@ -693,6 +656,43 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     }
 
     /// Translates an expression into a Cranelift `Value`.
+    fn translate_assignment(&mut self, lhs: Expr, rhs_val: Value) -> Result<(), CodegenError> {
+        match lhs {
+            Expr::Variable(name, _) => {
+                let (slot, _) = self.variables.get(&name).unwrap();
+                self.builder.ins().stack_store(rhs_val, slot, 0);
+            }
+            Expr::Deref(ptr) => {
+                let (ptr, _) = self.translate_expr(*ptr)?;
+                self.builder.ins().store(MemFlags::new(), rhs_val, ptr, 0);
+            }
+            Expr::Member(expr, member) => {
+                let (ptr, ty) = self.translate_expr(*expr)?;
+                let s = self.get_real_type(&ty)?;
+                if let Type::Struct(_, members) = s {
+                    let mut offset = 0;
+                    for m in &members {
+                        let member_alignment = self.get_type_alignment(&m.ty);
+                        offset = (offset + member_alignment - 1) & !(member_alignment - 1);
+                        if m.name == *member {
+                            break;
+                        }
+                        offset += self.get_type_size(&m.ty);
+                    }
+                    self.builder
+                        .ins()
+                        .store(MemFlags::new(), rhs_val, ptr, offset as i32);
+                } else if let Type::Union(_, _) = s {
+                    self.builder.ins().store(MemFlags::new(), rhs_val, ptr, 0);
+                } else {
+                    return Err(CodegenError::NotAStruct);
+                }
+            }
+            _ => unimplemented!(),
+        }
+        Ok(())
+    }
+
     fn translate_expr(&mut self, expr: Expr) -> Result<(Value, Type), CodegenError> {
         match expr {
             Expr::Number(n) => Ok((self.builder.ins().iconst(types::I64, n), Type::Int)),
@@ -987,24 +987,29 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     if let Type::Struct(_, members) = s {
                         let mut offset = 0;
                         let mut member_ty = None;
-                        for m in members {
+                        for m in &members {
                             let member_alignment = self.get_type_alignment(&m.ty);
                             offset = (offset + member_alignment - 1) & !(member_alignment - 1);
                             if m.name == member {
-                                member_ty = Some(m.ty);
+                                member_ty = Some(m.ty.clone());
                                 break;
                             }
                             offset += self.get_type_size(&m.ty);
                         }
-                        Ok((
-                            self.builder.ins().load(
-                                types::I64,
-                                MemFlags::new(),
-                                ptr,
-                                offset as i32,
-                            ),
-                            member_ty.unwrap(),
-                        ))
+                        let member_ty = member_ty.unwrap();
+                        let member_addr = self.builder.ins().iadd_imm(ptr, offset as i64);
+
+                        if let Type::Struct(_, _) | Type::Union(_, _) | Type::Array(_, _) = member_ty
+                        {
+                            Ok((member_addr, member_ty))
+                        } else {
+                            Ok((
+                                self.builder
+                                    .ins()
+                                    .load(types::I64, MemFlags::new(), member_addr, 0),
+                                member_ty,
+                            ))
+                        }
                     } else if let Type::Union(_, members) = s {
                         let member_ty = members
                             .iter()
@@ -1106,26 +1111,33 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 Ok((self.builder.block_params(merge_block)[0], ty))
             }
             Expr::Member(expr, member) => {
-                let (ptr, ty) = self.translate_expr(*expr.clone())?;
+                let (ptr, ty) = self.translate_expr(*expr)?;
                 let s = self.get_real_type(&ty)?;
                 if let Type::Struct(_, members) = s {
                     let mut offset = 0;
                     let mut member_ty = None;
-                    for m in members {
+                    for m in &members {
                         let member_alignment = self.get_type_alignment(&m.ty);
                         offset = (offset + member_alignment - 1) & !(member_alignment - 1);
                         if m.name == member {
-                            member_ty = Some(m.ty);
+                            member_ty = Some(m.ty.clone());
                             break;
                         }
                         offset += self.get_type_size(&m.ty);
                     }
-                    Ok((
-                        self.builder
-                            .ins()
-                            .load(types::I64, MemFlags::new(), ptr, offset as i32),
-                        member_ty.unwrap(),
-                    ))
+                    let member_ty = member_ty.unwrap();
+                    let member_addr = self.builder.ins().iadd_imm(ptr, offset as i64);
+
+                    if let Type::Struct(_, _) | Type::Union(_, _) | Type::Array(_, _) = member_ty {
+                        Ok((member_addr, member_ty))
+                    } else {
+                        Ok((
+                            self.builder
+                                .ins()
+                                .load(types::I64, MemFlags::new(), member_addr, 0),
+                            member_ty,
+                        ))
+                    }
                 } else if let Type::Union(_, members) = s {
                     let member_ty = members
                         .iter()

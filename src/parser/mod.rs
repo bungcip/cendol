@@ -725,6 +725,9 @@ impl Parser {
             }
             return Ok(Stmt::Block(stmts));
         } else if let Ok(base_type) = self.parse_type_specifier() {
+            if self.eat_token(&TokenKind::Semicolon)? {
+                return Ok(Stmt::Declaration(base_type, vec![]));
+            }
             let mut declarators = Vec::new();
             loop {
                 let declarator = self.parse_declarator(base_type.clone(), true)?;
@@ -948,6 +951,9 @@ impl Parser {
         }
 
         let base_type = self.parse_type_specifier()?;
+        if self.eat_token(&TokenKind::Semicolon)? {
+            return Ok(Stmt::Declaration(base_type, vec![]));
+        }
         let mut declarators = Vec::new();
         loop {
             let (ty, name) = self.parse_declarator_suffix(base_type.clone(), true)?;

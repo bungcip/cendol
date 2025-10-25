@@ -321,6 +321,15 @@ impl Parser {
         name_required: bool,
     ) -> Result<ast::Declarator, ParserError> {
         let (ty, name) = self.parse_declarator_suffix(base_type, name_required)?;
+        let mut initializer = None;
+        if self.eat_token(&TokenKind::Equal)? {
+            if self.current_kind()? == TokenKind::LeftBrace {
+                let initializers = self.parse_initializer_list()?;
+                initializer = Some(Box::new(Expr::StructInitializer(initializers)));
+            } else {
+                initializer = Some(Box::new(self.parse_expr()?));
+            }
+        }
         let initializer = self.maybe_start(&TokenKind::Equal, |p| Ok(Box::new(p.parse_expr()?)))?;
         Ok(ast::Declarator {
             ty,
@@ -705,7 +714,8 @@ impl Parser {
                 if p.current_kind()? == TokenKind::Dot {
                     p.parse_designator()
                 } else {
-                    p.parse_expr()
+                    // Use a binding power of 2 to stop parsing at a comma
+                    p.parse_pratt_expr(2)
                 }
             },
         )

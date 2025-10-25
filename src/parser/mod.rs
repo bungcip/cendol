@@ -185,31 +185,7 @@ impl Parser {
                     };
                     if let Ok(token) = self.current_token() {
                         if let TokenKind::LeftBrace = token.kind {
-                            self.eat()?;
-                            let mut members = Vec::new();
-                            while let Ok(t) = self.current_token() {
-                                if let TokenKind::RightBrace = t.kind {
-                                    self.eat()?;
-                                    break;
-                                }
-                                let ty = self.parse_type_specifier()?; // Use parse_type_specifier here
-                                let mut current_ty = ty;
-                                // Handle pointer declarators for struct members
-                                while let Ok(t) = self.current_token() {
-                                    if let TokenKind::Star = t.kind {
-                                        self.eat()?;
-                                        current_ty = Type::Pointer(Box::new(current_ty));
-                                    } else {
-                                        break;
-                                    }
-                                }
-                                let token = self.current_token()?;
-                                if let TokenKind::Identifier(id) = token.kind.clone() {
-                                    self.eat()?;
-                                    members.push(Parameter { ty: current_ty, name: id });
-                                }
-                                self.expect_punct(TokenKind::Semicolon)?;
-                            }
+                            let members = self.parse_struct_or_union_members()?;
                             Ok(Type::Struct(name, members))
                         } else if let Some(name) = name {
                             Ok(Type::Struct(Some(name), Vec::new()))
@@ -234,31 +210,7 @@ impl Parser {
                     };
                     if let Ok(token) = self.current_token() {
                         if let TokenKind::LeftBrace = token.kind {
-                            self.eat()?;
-                            let mut members = Vec::new();
-                            while let Ok(t) = self.current_token() {
-                                if let TokenKind::RightBrace = t.kind {
-                                    self.eat()?;
-                                    break;
-                                }
-                                let ty = self.parse_type_specifier()?; // Use parse_type_specifier here
-                                let mut current_ty = ty;
-                                // Handle pointer declarators for union members
-                                while let Ok(t) = self.current_token() {
-                                    if let TokenKind::Star = t.kind {
-                                        self.eat()?;
-                                        current_ty = Type::Pointer(Box::new(current_ty));
-                                    } else {
-                                        break;
-                                    }
-                                }
-                                let token = self.current_token()?;
-                                if let TokenKind::Identifier(id) = token.kind.clone() {
-                                    self.eat()?;
-                                    members.push(Parameter { ty: current_ty, name: id });
-                                }
-                                self.expect_punct(TokenKind::Semicolon)?;
-                            }
+                            let members = self.parse_struct_or_union_members()?;
                             Ok(Type::Union(name, members))
                         } else if let Some(name) = name {
                             Ok(Type::Union(Some(name), Vec::new()))
@@ -320,6 +272,33 @@ impl Parser {
             Err(ParserError::UnexpectedToken(token))
         }
     }
+    /// Parses members for struct or union.
+    fn parse_struct_or_union_members(&mut self) -> Result<Vec<Parameter>, ParserError> {
+        self.eat()?; // consume '{'
+        let mut members = Vec::new();
+        while let Ok(t) = self.current_token() {
+            if let TokenKind::RightBrace = t.kind {
+                break;
+            }
+            let ty = self.parse_type_specifier()?;
+            let mut current_ty = ty;
+            while let Ok(t) = self.current_token() {
+                if let TokenKind::Star = t.kind {
+                    self.eat()?;
+                    current_ty = Type::Pointer(Box::new(current_ty));
+                } else {
+                    break;
+                }
+            }
+            let token = self.current_token()?;
+            if let TokenKind::Identifier(id) = token.kind.clone() {
+                self.eat()?;
+                members.push(Parameter { ty: current_ty, name: id });
+            }
+            self.expect_punct(TokenKind::Semicolon)?;
+        }
+        Ok(members)
+    }
 
     /// Parses declarator suffixes (pointers and arrays) and returns the final type and identifier.
     /// This function assumes the base type has already been parsed.
@@ -365,6 +344,22 @@ impl Parser {
             }
         }
         Ok((ty, id))
+    }
+    /// Parses a declarator with optional initializer.
+    fn parse_declarator(&mut self, base_type: Type) -> Result<ast::Declarator, ParserError> {
+        let (ty, name) = self.parse_declarator_suffix(base_type)?;
+        let mut initializer = None;
+        if let Ok(t) = self.current_token()
+            && let TokenKind::Equal = t.kind
+        {
+            self.eat()?;
+            initializer = Some(Box::new(self.parse_expr()?));
+        }
+        Ok(ast::Declarator {
+            ty,
+            name,
+            initializer,
+        })
     }
 
     /// Parses a type. This function now orchestrates `parse_type_specifier` and `parse_declarator_suffix`.
@@ -428,6 +423,42 @@ impl Parser {
             TokenKind::Arrow | TokenKind::Dot => Some((23, 24)),
             TokenKind::Equal | TokenKind::PlusEqual | TokenKind::MinusEqual | TokenKind::AsteriskEqual | TokenKind::SlashEqual | TokenKind::PercentEqual | TokenKind::LessThanLessThanEqual | TokenKind::GreaterThanGreaterThanEqual | TokenKind::AmpersandEqual | TokenKind::CaretEqual | TokenKind::PipeEqual => Some((4, 3)),
             _ => None,
+        }
+    }
+    /// Creates a binary expression based on the operator token.
+    fn create_binary_expr(&self, lhs: Expr, rhs: Expr, op: TokenKind) -> Expr {
+        match op {
+            TokenKind::Comma => Expr::Comma(Box::new(lhs), Box::new(rhs)),
+            TokenKind::Equal => Expr::Assign(Box::new(lhs), Box::new(rhs)),
+            TokenKind::PlusEqual => Expr::AssignAdd(Box::new(lhs), Box::new(rhs)),
+            TokenKind::MinusEqual => Expr::AssignSub(Box::new(lhs), Box::new(rhs)),
+            TokenKind::AsteriskEqual => Expr::AssignMul(Box::new(lhs), Box::new(rhs)),
+            TokenKind::SlashEqual => Expr::AssignDiv(Box::new(lhs), Box::new(rhs)),
+            TokenKind::PercentEqual => Expr::AssignMod(Box::new(lhs), Box::new(rhs)),
+            TokenKind::LessThanLessThanEqual => Expr::AssignLeftShift(Box::new(lhs), Box::new(rhs)),
+            TokenKind::GreaterThanGreaterThanEqual => Expr::AssignRightShift(Box::new(lhs), Box::new(rhs)),
+            TokenKind::AmpersandEqual => Expr::AssignBitwiseAnd(Box::new(lhs), Box::new(rhs)),
+            TokenKind::CaretEqual => Expr::AssignBitwiseXor(Box::new(lhs), Box::new(rhs)),
+            TokenKind::PipeEqual => Expr::AssignBitwiseOr(Box::new(lhs), Box::new(rhs)),
+            TokenKind::Plus => Expr::Add(Box::new(lhs), Box::new(rhs)),
+            TokenKind::Minus => Expr::Sub(Box::new(lhs), Box::new(rhs)),
+            TokenKind::Star => Expr::Mul(Box::new(lhs), Box::new(rhs)),
+            TokenKind::Slash => Expr::Div(Box::new(lhs), Box::new(rhs)),
+            TokenKind::Percent => Expr::Mod(Box::new(lhs), Box::new(rhs)),
+            TokenKind::EqualEqual => Expr::Equal(Box::new(lhs), Box::new(rhs)),
+            TokenKind::BangEqual => Expr::NotEqual(Box::new(lhs), Box::new(rhs)),
+            TokenKind::LessThan => Expr::LessThan(Box::new(lhs), Box::new(rhs)),
+            TokenKind::GreaterThan => Expr::GreaterThan(Box::new(lhs), Box::new(rhs)),
+            TokenKind::LessThanEqual => Expr::LessThanOrEqual(Box::new(lhs), Box::new(rhs)),
+            TokenKind::GreaterThanEqual => Expr::GreaterThanOrEqual(Box::new(lhs), Box::new(rhs)),
+            TokenKind::AmpersandAmpersand => Expr::LogicalAnd(Box::new(lhs), Box::new(rhs)),
+            TokenKind::PipePipe => Expr::LogicalOr(Box::new(lhs), Box::new(rhs)),
+            TokenKind::Pipe => Expr::BitwiseOr(Box::new(lhs), Box::new(rhs)),
+            TokenKind::Caret => Expr::BitwiseXor(Box::new(lhs), Box::new(rhs)),
+            TokenKind::Ampersand => Expr::BitwiseAnd(Box::new(lhs), Box::new(rhs)),
+            TokenKind::LessThanLessThan => Expr::LeftShift(Box::new(lhs), Box::new(rhs)),
+            TokenKind::GreaterThanGreaterThan => Expr::RightShift(Box::new(lhs), Box::new(rhs)),
+            _ => unreachable!(),
         }
     }
  
@@ -507,50 +538,6 @@ impl Parser {
                 let rhs = self.parse_pratt_expr(r_bp)?;
 
                 lhs = match token.kind {
-                    TokenKind::Comma => Expr::Comma(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::Equal => Expr::Assign(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::PlusEqual => Expr::AssignAdd(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::MinusEqual => Expr::AssignSub(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::AsteriskEqual => Expr::AssignMul(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::SlashEqual => Expr::AssignDiv(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::PercentEqual => Expr::AssignMod(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::LessThanLessThanEqual => {
-                        Expr::AssignLeftShift(Box::new(lhs), Box::new(rhs))
-                    }
-                    TokenKind::GreaterThanGreaterThanEqual => {
-                        Expr::AssignRightShift(Box::new(lhs), Box::new(rhs))
-                    }
-                    TokenKind::AmpersandEqual => {
-                        Expr::AssignBitwiseAnd(Box::new(lhs), Box::new(rhs))
-                    }
-                    TokenKind::CaretEqual => Expr::AssignBitwiseXor(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::PipeEqual => Expr::AssignBitwiseOr(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::Plus => Expr::Add(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::Minus => Expr::Sub(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::Star => Expr::Mul(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::Slash => Expr::Div(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::Percent => Expr::Mod(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::EqualEqual => Expr::Equal(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::BangEqual => Expr::NotEqual(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::LessThan => Expr::LessThan(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::GreaterThan => Expr::GreaterThan(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::LessThanEqual => {
-                        Expr::LessThanOrEqual(Box::new(lhs), Box::new(rhs))
-                    }
-                    TokenKind::GreaterThanEqual => {
-                        Expr::GreaterThanOrEqual(Box::new(lhs), Box::new(rhs))
-                    }
-                    TokenKind::AmpersandAmpersand => {
-                        Expr::LogicalAnd(Box::new(lhs), Box::new(rhs))
-                    }
-                    TokenKind::PipePipe => Expr::LogicalOr(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::Pipe => Expr::BitwiseOr(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::Caret => Expr::BitwiseXor(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::Ampersand => Expr::BitwiseAnd(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::LessThanLessThan => Expr::LeftShift(Box::new(lhs), Box::new(rhs)),
-                    TokenKind::GreaterThanGreaterThan => {
-                        Expr::RightShift(Box::new(lhs), Box::new(rhs))
-                    }
                     TokenKind::Arrow => {
                         if let Expr::Variable(name, _) = rhs {
                             Expr::PointerMember(Box::new(lhs), name)
@@ -565,7 +552,7 @@ impl Parser {
                             return Err(ParserError::UnexpectedToken(token));
                         }
                     }
-                    _ => unreachable!(),
+                    _ => self.create_binary_expr(lhs, rhs, token.kind),
                 };
                 continue;
             }
@@ -791,21 +778,9 @@ impl Parser {
         } else if let Ok(base_type) = self.parse_type_specifier() {
             let mut declarators = Vec::new();
             loop {
-                let (ty, name) = self.parse_declarator_suffix(base_type.clone())?;
-
-                let mut initializer = None;
-                if let Ok(t) = self.current_token()
-                    && let TokenKind::Equal = t.kind
-                {
-                    self.eat()?;
-                    initializer = Some(Box::new(self.parse_expr()?));
-                }
-                declarators.push(ast::Declarator {
-                    ty,
-                    name,
-                    initializer,
-                });
-
+                let declarator = self.parse_declarator(base_type.clone())?;
+                declarators.push(declarator);
+    
                 if let Ok(t) = self.current_token()
                     && let TokenKind::Comma = t.kind
                 {
@@ -922,13 +897,9 @@ impl Parser {
                     return Ok(Stmt::Goto(id));
                 }
             } else if k == KeywordKind::Break {
-                self.eat()?;
-                self.expect_punct(TokenKind::Semicolon)?;
-                return Ok(Stmt::Break);
+                return self.parse_simple_statement(Stmt::Break);
             } else if k == KeywordKind::Continue {
-                self.eat()?;
-                self.expect_punct(TokenKind::Semicolon)?;
-                return Ok(Stmt::Continue);
+                return self.parse_simple_statement(Stmt::Continue);
             } else if k == KeywordKind::Do {
                 self.eat()?;
                 let body = self.parse_stmt()?;
@@ -959,6 +930,12 @@ impl Parser {
         let expr = self.parse_expr()?;
         self.expect_punct(TokenKind::Semicolon)?;
         Ok(Stmt::Expr(expr))
+    }
+    /// Parses a simple statement like Break or Continue.
+    fn parse_simple_statement(&mut self, stmt: Stmt) -> Result<Stmt, ParserError> {
+        self.eat()?; // eat the keyword
+        self.expect_punct(TokenKind::Semicolon)?;
+        Ok(stmt)
     }
 
     /// Parses a function signature.
@@ -993,8 +970,8 @@ impl Parser {
                     break;
                 }
                 let base_type = self.parse_type_specifier()?;
-                let (param_ty, id) = self.parse_declarator_suffix(base_type)?;
-                params.push(Parameter { ty: param_ty, name: id });
+                let declarator = self.parse_declarator(base_type)?;
+                params.push(Parameter { ty: declarator.ty, name: declarator.name });
 
                 if let Ok(t) = self.current_token()
                     && let TokenKind::Comma = t.kind
@@ -1096,4 +1073,32 @@ impl Parser {
         }
         Ok(Program { globals, functions })
     }
+
+    
+    /// Parses a comma-separated list of items until the end token.
+    fn parse_comma_separated_list<T, F>(&mut self, mut parse_item: F, end_token: TokenKind) -> Result<Vec<T>, ParserError>
+    where F: FnMut(&mut Self) -> Result<T, ParserError>
+    {
+        let mut items = Vec::new();
+        loop {
+            let t = self.current_token()?;
+            if t.kind == end_token {
+                self.eat()?;
+                break;
+            }
+            items.push(parse_item(self)?);
+            let t = self.current_token()?;
+            if t.kind == TokenKind::Comma {
+                self.eat()?;
+            } else if t.kind == end_token {
+                self.eat()?;
+                break;
+            } else {
+                return Err(ParserError::UnexpectedToken(t));
+            }
+        }
+        Ok(items)
+    }
 }
+
+

@@ -467,4 +467,19 @@ mod tests {
         let exit_code = compile_and_run(input, "post_increment_and_decrement").unwrap();
         assert_eq!(exit_code, 1);
     }
+
+    /// Test code generation for typedef
+    #[test]
+    fn test_typedef() {
+        let input = r#"
+        typedef int x;
+        int main() {
+            x v;
+            v = 0;
+            return v;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "typedef").unwrap();
+        assert_eq!(exit_code, 0);
+    }
 }

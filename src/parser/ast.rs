@@ -27,8 +27,6 @@ pub enum Type {
     Union(Option<String>, Vec<Parameter>),
     /// An enum definition.
     Enum(Vec<String>),
-    /// A typedef'd type.
-    Typedef(String),
 }
 
 impl Type {
@@ -86,8 +84,6 @@ pub enum Stmt {
     /// A variable declaration.
     Declaration(Type, Vec<Declarator>),
     FunctionDeclaration(Type, String, Vec<Parameter>, bool),
-    /// A `typedef` statement.
-    Typedef(Type, String),
     /// A `break` statement.
     Break,
     /// A `continue` statement.

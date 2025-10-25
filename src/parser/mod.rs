@@ -763,36 +763,29 @@ impl Parser {
             } else if k == KeywordKind::For {
                 self.eat()?;
                 self.expect_punct(TokenKind::LeftParen)?;
-                let init = if self.eat_token(&TokenKind::Semicolon)? {
-                    None
-                } else if let Ok(ty) = self.parse_type() {
-                    let id = self.expect_name()?;
-                    let mut initializer = None;
-                    if self.eat_token(&TokenKind::Equal)? {
-                        initializer = Some(Box::new(self.parse_expr()?));
-                    }
-                    Some(ForInit::Declaration(ty, id, initializer))
-                } else {
-                    Some(ForInit::Expr(self.parse_expr()?))
-                };
 
-                // Optional ; for cond
-                self.eat_token(&TokenKind::Semicolon)?;
-                let cond = if self.eat_token(&TokenKind::Semicolon)? {
-                    None
-                } else {
-                    Some(Box::new(self.parse_expr()?))
-                };
+                let init = self.parse_optional(&TokenKind::Semicolon, |p| {
+                    let result = if let Ok(ty) = p.parse_type() {
+                        let id = p.expect_name()?;
+                        let mut initializer = None;
+                        if p.eat_token(&TokenKind::Equal)? {
+                            initializer = Some(Box::new(p.parse_expr()?));
+                        }
+                        ForInit::Declaration(ty, id, initializer)
+                    } else {
+                        ForInit::Expr(p.parse_expr()?)
+                    };
 
-                // Optional ; for inc
-                self.eat_token(&TokenKind::Semicolon)?;
-                let inc = if self.eat_token(&TokenKind::RightParen)? {
-                    None
-                } else {
-                    let result = self.parse_expr()?;
-                    self.expect_punct(TokenKind::RightParen)?;
-                    Some(Box::new(result))
-                };
+                    Ok(result)
+                })?;
+
+                let cond =
+                    self.parse_optional(&TokenKind::Semicolon, |p| Ok(Box::new(p.parse_expr()?)))?;
+
+                let inc = self.parse_optional(&TokenKind::RightParen, |p| {
+                    let result = p.parse_expr()?;
+                    Ok(Box::new(result))
+                })?;
 
                 let body = self.parse_stmt()?;
                 return Ok(Stmt::For(init, cond, inc, Box::new(body)));
@@ -923,7 +916,8 @@ impl Parser {
     /// A `Result` containing the parsed `Program`, or a `ParserError` if parsing fails.
     fn parse_global(&mut self) -> Result<Stmt, ParserError> {
         let pos = self.position;
-        if let Ok((ty, id, params, _is_inline, is_variadic)) = self.parse_function_signature(false) {
+        if let Ok((ty, id, params, _is_inline, is_variadic)) = self.parse_function_signature(false)
+        {
             if self.eat_token(&TokenKind::Semicolon)? {
                 return Ok(Stmt::FunctionDeclaration(ty, id, params, is_variadic));
             } else {
@@ -985,6 +979,25 @@ impl Parser {
             }
         }
         Ok(Program { globals, functions })
+    }
+
+    /// Parses a optional action
+    fn parse_optional<T, F>(
+        &mut self,
+        end_token: &TokenKind,
+        mut parse_fn: F,
+    ) -> Result<Option<T>, ParserError>
+    where
+        F: FnMut(&mut Self) -> Result<T, ParserError>,
+    {
+        if self.eat_token(end_token)? {
+            Ok(None)
+        } else {
+            let item = parse_fn(self)?;
+            self.expect_punct(end_token.clone())?;
+
+            Ok(Some(item))
+        }
     }
 
     /// Parses a delimited list of items.

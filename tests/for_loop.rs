@@ -47,6 +47,25 @@ fn test_for_loop_with_empty_init() {
 }
 
 #[test]
+fn test_for_loop_forever() {
+    let input = r#"
+    int main() {
+        int i = 0;
+        for (;;) {
+            i += 1;
+            if (i == 5) {
+                break;
+            }
+        }
+        return i;
+    }
+    "#;
+    let exit_code = compile_and_run(input, "for_loop_forever").unwrap();
+    assert_eq!(exit_code, 5);
+}
+
+
+#[test]
 fn test_for_loop_with_break() {
     let input = r#"
     int main() {

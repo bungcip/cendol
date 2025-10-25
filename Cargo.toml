@@ -3,6 +3,9 @@ name = "cendol"
 version = "0.1.0"
 edition = "2024"
 
+[workspace.lints.clippy]
+bool-comparison = "allow" ## reason: `== false` is more readable in some cases
+
 [dependencies]
 cranelift = "0.123"
 cranelift-codegen = "0.123"

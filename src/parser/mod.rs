@@ -214,62 +214,30 @@ impl Parser {
                     Ok(Type::Long)
                 }
             }
-            KeywordKind::Int => {
-                self.eat()?;
-                Ok(Type::Int)
-            }
-            KeywordKind::Char => {
-                self.eat()?;
-                Ok(Type::Char)
-            }
-            KeywordKind::Float => {
-                self.eat()?;
-                Ok(Type::Float)
-            }
-            KeywordKind::Double => {
-                self.eat()?;
-                Ok(Type::Double)
-            }
-            KeywordKind::Void => {
-                self.eat()?;
-                Ok(Type::Void)
-            }
-            KeywordKind::Bool => {
-                self.eat()?;
-                Ok(Type::Bool)
-            }
-            KeywordKind::Struct => {
-                self.eat()?;
-                let name = self.maybe_name()?;
-                if let Ok(token) = self.current_token() {
-                    if let TokenKind::LeftBrace = token.kind {
-                        let members = self.parse_struct_or_union_members()?;
-                        Ok(Type::Struct(name, members))
-                    } else if let Some(name) = name {
-                        Ok(Type::Struct(Some(name), Vec::new()))
-                    } else {
-                        Err(ParserError::UnexpectedToken(token))
-                    }
+            KeywordKind::Int => self.parse_simple_type(Type::Int),
+            KeywordKind::Char => self.parse_simple_type(Type::Char),
+            KeywordKind::Float => self.parse_simple_type(Type::Float),
+            KeywordKind::Double => self.parse_simple_type(Type::Double),
+            KeywordKind::Void => self.parse_simple_type(Type::Void),
+            KeywordKind::Bool => self.parse_simple_type(Type::Bool),
+            KeywordKind::Struct => self.parse_struct_or_union(|name, members| {
+                if let Some(members) = members {
+                    Type::Struct(name, members)
+                } else if let Some(name) = name {
+                    Type::Struct(Some(name), Vec::new())
                 } else {
-                    Err(ParserError::UnexpectedEof)
+                    unreachable!()
                 }
-            }
-            KeywordKind::Union => {
-                self.eat()?;
-                let name = self.maybe_name()?;
-                if let Ok(token) = self.current_token() {
-                    if let TokenKind::LeftBrace = token.kind {
-                        let members = self.parse_struct_or_union_members()?;
-                        Ok(Type::Union(name, members))
-                    } else if let Some(name) = name {
-                        Ok(Type::Union(Some(name), Vec::new()))
-                    } else {
-                        Err(ParserError::UnexpectedToken(token))
-                    }
+            }),
+            KeywordKind::Union => self.parse_struct_or_union(|name, members| {
+                if let Some(members) = members {
+                    Type::Union(name, members)
+                } else if let Some(name) = name {
+                    Type::Union(Some(name), Vec::new())
                 } else {
-                    Err(ParserError::UnexpectedEof)
+                    unreachable!()
                 }
-            }
+            }),
             KeywordKind::Enum => {
                 self.eat()?;
                 let _name = self.maybe_name()?;
@@ -302,33 +270,44 @@ impl Parser {
             _ => Err(ParserError::UnexpectedToken(token)),
         }
     }
+    /// Parses a simple type keyword and returns the corresponding `Type`.
+    fn parse_simple_type(&mut self, ty: Type) -> Result<Type, ParserError> {
+        self.eat()?;
+        Ok(ty)
+    }
+
+    /// Parses a struct or union type.
+    fn parse_struct_or_union<F>(&mut self, constructor: F) -> Result<Type, ParserError>
+    where
+        F: Fn(Option<String>, Option<Vec<Parameter>>) -> Type,
+    {
+        self.eat()?;
+        let name = self.maybe_name()?;
+        if let Ok(token) = self.current_token() {
+            if let TokenKind::LeftBrace = token.kind {
+                let members = self.parse_struct_or_union_members()?;
+                Ok(constructor(name, Some(members)))
+            } else if let Some(name) = name {
+                Ok(constructor(Some(name), None))
+            } else {
+                Err(ParserError::UnexpectedToken(token))
+            }
+        } else {
+            Err(ParserError::UnexpectedEof)
+        }
+    }
     /// Parses members for struct or union.
     fn parse_struct_or_union_members(&mut self) -> Result<Vec<Parameter>, ParserError> {
-        self.eat()?; // consume '{'
-        let mut members = Vec::new();
-        while let Ok(t) = self.current_token() {
-            if let TokenKind::RightBrace = t.kind {
-                break;
-            }
-            let ty = self.parse_type_specifier()?;
-            let mut current_ty = ty;
-            while let Ok(t) = self.current_token() {
-                if let TokenKind::Star = t.kind {
-                    self.eat()?;
-                    current_ty = Type::Pointer(Box::new(current_ty));
-                } else {
-                    break;
-                }
-            }
-            if let Some(id) = self.maybe_name()? {
-                members.push(Parameter {
-                    ty: current_ty,
-                    name: id,
-                });
-            }
-            self.expect_punct(TokenKind::Semicolon)?;
-        }
-        Ok(members)
+        self.parse_delimited_list(
+            TokenKind::LeftBrace,
+            TokenKind::RightBrace,
+            TokenKind::Semicolon,
+            |p| {
+                let base_ty = p.parse_type_specifier()?;
+                let (ty, name) = p.parse_declarator_suffix(base_ty)?;
+                Ok(Parameter { ty, name })
+            },
+        )
     }
 
     /// Parses declarator suffixes (pointers and arrays) and returns the final type and identifier.
@@ -758,39 +737,18 @@ impl Parser {
 
     /// Parses an initializer list.
     fn parse_initializer_list(&mut self) -> Result<Vec<Expr>, ParserError> {
-        self.expect_punct(TokenKind::LeftBrace)?;
-        let mut initializers = Vec::new();
-
-        // Handle empty initializer list: {}
-        if self.eat_token(&TokenKind::RightBrace)? {
-            return Ok(initializers);
-        }
-
-        loop {
-            // Parse one initializer expression (either designated or normal)
-            if self.current_token()?.kind == TokenKind::Dot {
-                initializers.push(self.parse_designator()?);
-            } else {
-                initializers.push(self.parse_expr()?);
-            }
-
-            // After an initializer, expect a comma or a closing brace
-            let token = self.current_token()?;
-            if token.kind == TokenKind::Comma {
-                self.eat()?;
-                // If a comma is followed by a brace, it's a trailing comma.
-                if self.eat_token(&TokenKind::RightBrace)? {
-                    break;
+        self.parse_delimited_list(
+            TokenKind::LeftBrace,
+            TokenKind::RightBrace,
+            TokenKind::Comma,
+            |p| {
+                if p.current_token()?.kind == TokenKind::Dot {
+                    p.parse_designator()
+                } else {
+                    p.parse_expr()
                 }
-            } else if token.kind == TokenKind::RightBrace {
-                self.eat()?;
-                break;
-            } else {
-                // Any other token is an error.
-                return Err(ParserError::UnexpectedToken(token));
-            }
-        }
-        Ok(initializers)
+            },
+        )
     }
 
     /// Parses a statement.
@@ -1057,31 +1015,30 @@ impl Parser {
         Ok(Program { globals, functions })
     }
 
-    /// Parses a comma-separated list of items until the end token.
-    fn parse_comma_separated_list<T, F>(
+    /// Parses a delimited list of items.
+    fn parse_delimited_list<T, F>(
         &mut self,
-        mut parse_item: F,
+        start_token: TokenKind,
         end_token: TokenKind,
+        separator: TokenKind,
+        mut parse_item: F,
     ) -> Result<Vec<T>, ParserError>
     where
         F: FnMut(&mut Self) -> Result<T, ParserError>,
     {
+        self.expect_punct(start_token)?;
         let mut items = Vec::new();
+        if self.eat_token(&end_token)? {
+            return Ok(items);
+        }
         loop {
-            let t = self.current_token()?;
-            if t.kind == end_token {
-                self.eat()?;
+            items.push(parse_item(self)?);
+            if self.eat_token(&end_token)? {
                 break;
             }
-            items.push(parse_item(self)?);
-            let t = self.current_token()?;
-            if t.kind == TokenKind::Comma {
-                self.eat()?;
-            } else if t.kind == end_token {
-                self.eat()?;
+            self.expect_punct(separator.clone())?;
+            if self.eat_token(&end_token)? {
                 break;
-            } else {
-                return Err(ParserError::UnexpectedToken(t));
             }
         }
         Ok(items)

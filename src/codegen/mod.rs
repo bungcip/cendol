@@ -665,7 +665,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         for m in &members {
                             let member_alignment = self.get_type_alignment(&m.ty);
                             offset = (offset + member_alignment - 1) & !(member_alignment - 1);
-                            if m.name == member {
+                            if m.name == *member {
                                 break;
                             }
                             offset += self.get_type_size(&m.ty);
@@ -680,6 +680,191 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     unimplemented!()
                 }
                 Ok((value, ty))
+            }
+            Expr::AssignAdd(lhs, rhs) => {
+                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (rhs_val, _) = self.translate_expr(*rhs)?;
+                let result_val = self.builder.ins().iadd(lhs_val, rhs_val);
+                match &*lhs {
+                    Expr::Variable(name, _) => {
+                        let (slot, _) = self.variables.get(&name).unwrap();
+                        self.builder.ins().stack_store(result_val, slot, 0);
+                    }
+                    Expr::Deref(ptr) => {
+                        let (ptr, _) = self.translate_expr(*ptr.clone())?;
+                        self.builder.ins().store(MemFlags::new(), result_val, ptr, 0);
+                    }
+                    Expr::Member(expr, member) => {
+                        let (ptr, ty) = self.translate_expr(*expr.clone())?;
+                        let s = self.get_real_type(&ty)?;
+                        if let Type::Struct(_, members) = s {
+                            let mut offset = 0;
+                            for m in &members {
+                                let member_alignment = self.get_type_alignment(&m.ty);
+                                offset = (offset + member_alignment - 1) & !(member_alignment - 1);
+                                if m.name == *member {
+                                    break;
+                                }
+                                offset += self.get_type_size(&m.ty);
+                            }
+                            self.builder
+                                .ins()
+                                .store(MemFlags::new(), result_val, ptr, offset as i32);
+                        } else {
+                            return Err(CodegenError::NotAStruct);
+                        }
+                    }
+                    _ => unimplemented!(),
+                }
+                Ok((result_val, lhs_ty))
+            }
+            Expr::AssignSub(lhs, rhs) => {
+                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (rhs_val, _) = self.translate_expr(*rhs)?;
+                let result_val = self.builder.ins().isub(lhs_val, rhs_val);
+                match *lhs {
+                    Expr::Variable(name, _) => {
+                        let (slot, _) = self.variables.get(&name).unwrap();
+                        self.builder.ins().stack_store(result_val, slot, 0);
+                    }
+                    Expr::Deref(ptr) => {
+                        let (ptr, _) = self.translate_expr(*ptr)?;
+                        self.builder.ins().store(MemFlags::new(), result_val, ptr, 0);
+                    }
+                    Expr::Member(expr, member) => {
+                        let (ptr, ty) = self.translate_expr(*expr.clone())?;
+                        let s = self.get_real_type(&ty)?;
+                        if let Type::Struct(_, members) = s {
+                            let mut offset = 0;
+                            for m in &members {
+                                let member_alignment = self.get_type_alignment(&m.ty);
+                                offset = (offset + member_alignment - 1) & !(member_alignment - 1);
+                                if m.name == *member {
+                                    break;
+                                }
+                                offset += self.get_type_size(&m.ty);
+                            }
+                            self.builder
+                                .ins()
+                                .store(MemFlags::new(), result_val, ptr, offset as i32);
+                        } else {
+                            return Err(CodegenError::NotAStruct);
+                        }
+                    }
+                    _ => unimplemented!(),
+                }
+                Ok((result_val, lhs_ty))
+            }
+            Expr::AssignMul(lhs, rhs) => {
+                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (rhs_val, _) = self.translate_expr(*rhs)?;
+                let result_val = self.builder.ins().imul(lhs_val, rhs_val);
+                match *lhs {
+                    Expr::Variable(name, _) => {
+                        let (slot, _) = self.variables.get(&name).unwrap();
+                        self.builder.ins().stack_store(result_val, slot, 0);
+                    }
+                    Expr::Deref(ptr) => {
+                        let (ptr, _) = self.translate_expr(*ptr)?;
+                        self.builder.ins().store(MemFlags::new(), result_val, ptr, 0);
+                    }
+                    Expr::Member(expr, member) => {
+                        let (ptr, ty) = self.translate_expr(*expr.clone())?;
+                        let s = self.get_real_type(&ty)?;
+                        if let Type::Struct(_, members) = s {
+                            let mut offset = 0;
+                            for m in &members {
+                                let member_alignment = self.get_type_alignment(&m.ty);
+                                offset = (offset + member_alignment - 1) & !(member_alignment - 1);
+                                if m.name == *member {
+                                    break;
+                                }
+                                offset += self.get_type_size(&m.ty);
+                            }
+                            self.builder
+                                .ins()
+                                .store(MemFlags::new(), result_val, ptr, offset as i32);
+                        } else {
+                            return Err(CodegenError::NotAStruct);
+                        }
+                    }
+                    _ => unimplemented!(),
+                }
+                Ok((result_val, lhs_ty))
+            }
+            Expr::AssignDiv(lhs, rhs) => {
+                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (rhs_val, _) = self.translate_expr(*rhs)?;
+                let result_val = self.builder.ins().sdiv(lhs_val, rhs_val);
+                match *lhs {
+                    Expr::Variable(name, _) => {
+                        let (slot, _) = self.variables.get(&name).unwrap();
+                        self.builder.ins().stack_store(result_val, slot, 0);
+                    }
+                    Expr::Deref(ptr) => {
+                        let (ptr, _) = self.translate_expr(*ptr)?;
+                        self.builder.ins().store(MemFlags::new(), result_val, ptr, 0);
+                    }
+                    Expr::Member(expr, member) => {
+                        let (ptr, ty) = self.translate_expr(*expr.clone())?;
+                        let s = self.get_real_type(&ty)?;
+                        if let Type::Struct(_, members) = s {
+                            let mut offset = 0;
+                            for m in &members {
+                                let member_alignment = self.get_type_alignment(&m.ty);
+                                offset = (offset + member_alignment - 1) & !(member_alignment - 1);
+                                if m.name == *member {
+                                    break;
+                                }
+                                offset += self.get_type_size(&m.ty);
+                            }
+                            self.builder
+                                .ins()
+                                .store(MemFlags::new(), result_val, ptr, offset as i32);
+                        } else {
+                            return Err(CodegenError::NotAStruct);
+                        }
+                    }
+                    _ => unimplemented!(),
+                }
+                Ok((result_val, lhs_ty))
+            }
+            Expr::AssignMod(lhs, rhs) => {
+                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (rhs_val, _) = self.translate_expr(*rhs)?;
+                let result_val = self.builder.ins().srem(lhs_val, rhs_val);
+                match *lhs {
+                    Expr::Variable(name, _) => {
+                        let (slot, _) = self.variables.get(&name).unwrap();
+                        self.builder.ins().stack_store(result_val, slot, 0);
+                    }
+                    Expr::Deref(ptr) => {
+                        let (ptr, _) = self.translate_expr(*ptr)?;
+                        self.builder.ins().store(MemFlags::new(), result_val, ptr, 0);
+                    }
+                    Expr::Member(expr, member) => {
+                        let (ptr, ty) = self.translate_expr(*expr.clone())?;
+                        let s = self.get_real_type(&ty)?;
+                        if let Type::Struct(_, members) = s {
+                            let mut offset = 0;
+                            for m in &members {
+                                let member_alignment = self.get_type_alignment(&m.ty);
+                                offset = (offset + member_alignment - 1) & !(member_alignment - 1);
+                                if m.name == *member {
+                                    break;
+                                }
+                                offset += self.get_type_size(&m.ty);
+                            }
+                            self.builder
+                                .ins()
+                                .store(MemFlags::new(), result_val, ptr, offset as i32);
+                        } else {
+                            return Err(CodegenError::NotAStruct);
+                        }
+                    }
+                    _ => unimplemented!(),
+                }
+                Ok((result_val, lhs_ty))
             }
             Expr::Add(lhs, rhs) => {
                 let (lhs_val, lhs_ty) = self.translate_expr(*lhs)?;
@@ -904,7 +1089,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 Ok((self.builder.block_params(merge_block)[0], ty))
             }
             Expr::Member(expr, member) => {
-                let (ptr, ty) = self.translate_expr(*expr)?;
+                let (ptr, ty) = self.translate_expr(*expr.clone())?;
                 let s = self.get_real_type(&ty)?;
                 if let Type::Struct(_, members) = s {
                     let mut offset = 0;

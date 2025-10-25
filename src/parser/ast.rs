@@ -103,6 +103,12 @@ pub enum Expr {
     Variable(String, crate::common::SourceSpan),
     /// An assignment expression.
     Assign(Box<Expr>, Box<Expr>),
+    /// A compound assignment expression (e.g., +=, -=, *=, /=, %=).
+    AssignAdd(Box<Expr>, Box<Expr>),
+    AssignSub(Box<Expr>, Box<Expr>),
+    AssignMul(Box<Expr>, Box<Expr>),
+    AssignDiv(Box<Expr>, Box<Expr>),
+    AssignMod(Box<Expr>, Box<Expr>),
     /// An addition expression.
     Add(Box<Expr>, Box<Expr>),
     /// A subtraction expression.

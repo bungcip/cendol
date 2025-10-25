@@ -305,7 +305,7 @@ impl Parser {
     /// Gets the infix binding power of a token.
     fn infix_binding_power(&self, kind: &TokenKind) -> Option<(u8, u8)> {
         match kind {
-            TokenKind::Equal => Some((2, 1)),
+            TokenKind::Equal | TokenKind::PlusEqual | TokenKind::MinusEqual | TokenKind::AsteriskEqual | TokenKind::SlashEqual | TokenKind::PercentEqual => Some((2, 1)),
             TokenKind::PipePipe => Some((3, 4)),
             TokenKind::AmpersandAmpersand => Some((5, 6)),
             TokenKind::EqualEqual | TokenKind::BangEqual => Some((7, 8)),
@@ -384,6 +384,11 @@ impl Parser {
 
                 lhs = match token.kind {
                     TokenKind::Equal => Expr::Assign(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::PlusEqual => Expr::AssignAdd(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::MinusEqual => Expr::AssignSub(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::AsteriskEqual => Expr::AssignMul(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::SlashEqual => Expr::AssignDiv(Box::new(lhs), Box::new(rhs)),
+                    TokenKind::PercentEqual => Expr::AssignMod(Box::new(lhs), Box::new(rhs)),
                     TokenKind::Plus => Expr::Add(Box::new(lhs), Box::new(rhs)),
                     TokenKind::Minus => Expr::Sub(Box::new(lhs), Box::new(rhs)),
                     TokenKind::Star => Expr::Mul(Box::new(lhs), Box::new(rhs)),

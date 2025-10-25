@@ -1,4 +1,5 @@
 pub use crate::common::{KeywordKind, SourceLocation, SourceSpan};
+use std::fmt;
 
 /// Represents a token in the C language.
 #[derive(Debug, PartialEq, Clone)]
@@ -51,7 +52,9 @@ pub enum TokenKind {
     Minus,
     Star,
     Slash,
+    SlashEqual,
     Percent,
+    AsteriskEqual,
     Equal,
     EqualEqual,
     BangEqual,
@@ -59,12 +62,22 @@ pub enum TokenKind {
     GreaterThan,
     LessThanEqual,
     GreaterThanEqual,
+    PlusEqual,
+    MinusEqual,
+    PercentEqual,
+    LessThanLessThan,
+    GreaterThanGreaterThan,
+    LessThanLessThanEqual,
+    GreaterThanGreaterThanEqual,
     AmpersandAmpersand,
+    AmpersandEqual,
     Pipe,
     PipePipe,
+    PipeEqual,
     Bang,
     Ampersand,
     Caret,
+    CaretEqual,
     Tilde,
     Question,
     Ellipsis,
@@ -103,6 +116,8 @@ impl From<preprocessor::token::Token> for Token {
             preprocessor::token::TokenKind::MinusMinus => TokenKind::MinusMinus,
             preprocessor::token::TokenKind::Star => TokenKind::Star,
             preprocessor::token::TokenKind::Slash => TokenKind::Slash,
+            preprocessor::token::TokenKind::SlashEqual => TokenKind::SlashEqual,
+            preprocessor::token::TokenKind::AsteriskEqual => TokenKind::AsteriskEqual,
             preprocessor::token::TokenKind::Percent => TokenKind::Percent,
             preprocessor::token::TokenKind::Equal => TokenKind::Equal,
             preprocessor::token::TokenKind::EqualEqual => TokenKind::EqualEqual,
@@ -111,11 +126,21 @@ impl From<preprocessor::token::Token> for Token {
             preprocessor::token::TokenKind::LessThanEqual => TokenKind::LessThanEqual,
             preprocessor::token::TokenKind::GreaterThan => TokenKind::GreaterThan,
             preprocessor::token::TokenKind::GreaterThanEqual => TokenKind::GreaterThanEqual,
+            preprocessor::token::TokenKind::PlusEqual => TokenKind::PlusEqual,
+            preprocessor::token::TokenKind::MinusEqual => TokenKind::MinusEqual,
+            preprocessor::token::TokenKind::PercentEqual => TokenKind::PercentEqual,
+            preprocessor::token::TokenKind::LessThanLessThan => TokenKind::LessThanLessThan,
+            preprocessor::token::TokenKind::GreaterThanGreaterThan => TokenKind::GreaterThanGreaterThan,
+            preprocessor::token::TokenKind::LessThanLessThanEqual => TokenKind::LessThanLessThanEqual,
+            preprocessor::token::TokenKind::GreaterThanGreaterThanEqual => TokenKind::GreaterThanGreaterThanEqual,
             preprocessor::token::TokenKind::Pipe => TokenKind::Pipe,
             preprocessor::token::TokenKind::PipePipe => TokenKind::PipePipe,
+            preprocessor::token::TokenKind::PipeEqual => TokenKind::PipeEqual,
             preprocessor::token::TokenKind::Ampersand => TokenKind::Ampersand,
             preprocessor::token::TokenKind::AmpersandAmpersand => TokenKind::AmpersandAmpersand,
+            preprocessor::token::TokenKind::AmpersandEqual => TokenKind::AmpersandEqual,
             preprocessor::token::TokenKind::Caret => TokenKind::Caret,
+            preprocessor::token::TokenKind::CaretEqual => TokenKind::CaretEqual,
             preprocessor::token::TokenKind::Tilde => TokenKind::Tilde,
             preprocessor::token::TokenKind::Bang => TokenKind::Bang,
             preprocessor::token::TokenKind::Question => TokenKind::Question,
@@ -146,6 +171,71 @@ impl From<preprocessor::token::Token> for Token {
         Token {
             kind,
             span: token.span,
+        }
+    }
+}
+
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.kind)
+    }
+}
+
+impl fmt::Display for TokenKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            TokenKind::Identifier(s) => write!(f, "{}", s),
+            TokenKind::Keyword(k) => write!(f, "{}", k),
+            TokenKind::Number(s) => write!(f, "{}", s),
+            TokenKind::String(s) => write!(f, "{}", s),
+            TokenKind::Char(s) => write!(f, "{}", s),
+            TokenKind::LeftParen => write!(f, "("),
+            TokenKind::RightParen => write!(f, ")"),
+            TokenKind::LeftBrace => write!(f, "{{"), // Note: using {{ for braces in Rust
+            TokenKind::RightBrace => write!(f, "}}"),
+            TokenKind::LeftBracket => write!(f, "["),
+            TokenKind::RightBracket => write!(f, "]"),
+            TokenKind::Semicolon => write!(f, ";"),
+            TokenKind::Colon => write!(f, ":"),
+            TokenKind::Comma => write!(f, ","),
+            TokenKind::Plus => write!(f, "+"),
+            TokenKind::Minus => write!(f, "-"),
+            TokenKind::Star => write!(f, "*"),
+            TokenKind::Slash => write!(f, "/"),
+            TokenKind::SlashEqual => write!(f, "/="),
+            TokenKind::AsteriskEqual => write!(f, "*="),
+            TokenKind::Percent => write!(f, "%"),
+            TokenKind::Equal => write!(f, "="),
+            TokenKind::EqualEqual => write!(f, "=="),
+            TokenKind::BangEqual => write!(f, "!="),
+            TokenKind::LessThan => write!(f, "<"),
+            TokenKind::LessThanEqual => write!(f, "<="),
+            TokenKind::LessThanLessThan => write!(f, "<<"),
+            TokenKind::GreaterThan => write!(f, ">"),
+            TokenKind::GreaterThanEqual => write!(f, ">="),
+            TokenKind::PlusEqual => write!(f, "+="),
+            TokenKind::MinusEqual => write!(f, "-="),
+            TokenKind::PercentEqual => write!(f, "%="),
+            TokenKind::GreaterThanGreaterThan => write!(f, ">>"),
+            TokenKind::LessThanLessThanEqual => write!(f, "<<="),
+            TokenKind::GreaterThanGreaterThanEqual => write!(f, ">>="),
+            TokenKind::AmpersandAmpersand => write!(f, "&&"),
+            TokenKind::AmpersandEqual => write!(f, "&="),
+            TokenKind::Pipe => write!(f, "|"),
+            TokenKind::PipePipe => write!(f, "||"),
+            TokenKind::PipeEqual => write!(f, "|="),
+            TokenKind::Bang => write!(f, "!"),
+            TokenKind::Ampersand => write!(f, "&"),
+            TokenKind::Caret => write!(f, "^"),
+            TokenKind::CaretEqual => write!(f, "^="),
+            TokenKind::Tilde => write!(f, "~"),
+            TokenKind::Question => write!(f, "?"),
+            TokenKind::Ellipsis => write!(f, "..."),
+            TokenKind::Dot => write!(f, "."),
+            TokenKind::Arrow => write!(f, "->"),
+            TokenKind::PlusPlus => write!(f, "++"),
+            TokenKind::MinusMinus => write!(f, "--"),
+            TokenKind::Eof => write!(f, ""),
         }
     }
 }

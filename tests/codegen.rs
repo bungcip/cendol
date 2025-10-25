@@ -10,6 +10,7 @@ use std::process::Command;
 
 use cendol::codegen::CodeGen;
 use cendol::file::{FileId, FileManager};
+use cendol::logger::Logger;
 use cendol::parser::Parser;
 use cendol::preprocessor::Preprocessor;
 
@@ -22,7 +23,8 @@ fn compile_to_object_bytes(
     let tokens = preprocessor.preprocess(input, filename)?;
 
     // Parser now handles filtering internally
-    let mut parser = Parser::new(tokens)?;
+    let logger = Logger::new(false); // Non-verbose for utility functions
+    let mut parser = Parser::new(tokens, logger)?;
     let ast = parser.parse()?;
     let codegen = CodeGen::new();
     let object_bytes = codegen.compile(ast)?;

@@ -392,9 +392,14 @@ impl SemanticAnalyzer {
             }
             Expr::Neg(expr)
             | Expr::LogicalNot(expr)
+            | Expr::BitwiseNot(expr)
+            | Expr::Sizeof(expr)
             | Expr::Deref(expr)
             | Expr::AddressOf(expr) => {
                 self.check_expression(*expr, filename);
+            }
+            Expr::SizeofType(_) => {
+                // No need to check, as it's a type
             }
             Expr::Ternary(cond, then_expr, else_expr) => {
                 self.check_expression(*cond, filename);

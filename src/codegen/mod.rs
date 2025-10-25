@@ -969,6 +969,19 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let (val, ty) = self.translate_expr(*expr)?;
                 Ok((self.builder.ins().ineg(val), ty))
             }
+            Expr::BitwiseNot(expr) => {
+                let (val, ty) = self.translate_expr(*expr)?;
+                Ok((self.builder.ins().bnot(val), ty))
+            }
+            Expr::Sizeof(expr) => {
+                let (_, ty) = self.translate_expr(*expr)?;
+                let size = self.get_type_size(&ty) as i64;
+                Ok((self.builder.ins().iconst(types::I64, size), Type::Int))
+            }
+            Expr::SizeofType(ty) => {
+                let size = self.get_type_size(&ty) as i64;
+                Ok((self.builder.ins().iconst(types::I64, size), Type::Int))
+            }
             Expr::Deref(expr) => {
                 let (ptr, ty) = self.translate_expr(*expr)?;
                 if let Type::Pointer(base_ty) = ty {

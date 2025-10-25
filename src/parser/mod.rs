@@ -1,7 +1,9 @@
+use crate::logger::Logger;
 use crate::parser::ast::{Expr, ForInit, Function, Parameter, Program, Stmt, Type};
 use crate::parser::error::ParserError;
 use crate::parser::token::{KeywordKind, Token, TokenKind};
 use crate::preprocessor;
+use std::collections::HashSet;
 
 pub mod ast;
 pub mod error;
@@ -11,6 +13,8 @@ pub mod token;
 pub struct Parser {
     tokens: Vec<Token>,
     position: usize,
+    logger: Logger,
+    typedefs: HashSet<String>,
 }
 
 impl Parser {
@@ -19,11 +23,12 @@ impl Parser {
     /// # Arguments
     ///
     /// * `tokens` - A vector of preprocessor tokens.
+    /// * `logger` - A logger for verbose output.
     ///
     /// # Returns
     ///
     /// A `Result` containing the new `Parser` instance, or a `ParserError` if tokenization fails.
-    pub fn new(tokens: Vec<preprocessor::token::Token>) -> Result<Self, ParserError> {
+    pub fn new(tokens: Vec<preprocessor::token::Token>, logger: Logger) -> Result<Self, ParserError> {
         // Filter out tokens that the parser can't handle
         let mut filtered_tokens: Vec<Token> = Vec::new();
         let mut skip_next_tokens = false;
@@ -64,6 +69,8 @@ impl Parser {
         let parser = Parser {
             tokens: filtered_tokens,
             position: 0,
+            logger,
+            typedefs: HashSet::new(),
         };
         Ok(parser)
     }
@@ -102,6 +109,14 @@ impl Parser {
             return Ok(());
         }
         Err(ParserError::UnexpectedToken(token.clone()))
+    }
+
+    /// Peeks if the current token sequence is a type name without consuming tokens.
+    fn is_type_name(&mut self) -> bool {
+        let original_pos = self.position;
+        let is_type = self.parse_type().is_ok();
+        self.position = original_pos; // Backtrack
+        is_type
     }
 
     /// Parses a type.
@@ -326,7 +341,8 @@ impl Parser {
             TokenKind::Plus | TokenKind::Minus | TokenKind::PlusPlus | TokenKind::MinusMinus => {
                 Some(((), 15))
             }
-            TokenKind::Bang => Some(((), 15)),
+            TokenKind::Bang | TokenKind::Tilde => Some(((), 15)),
+            TokenKind::Keyword(KeywordKind::Sizeof) => Some(((), 15)),
             _ => None,
         }
     }
@@ -341,17 +357,50 @@ impl Parser {
 
     /// Parses an expression using the Pratt parsing algorithm.
     fn parse_pratt_expr(&mut self, min_bp: u8) -> Result<Expr, ParserError> {
+        self.logger.log(&format!("Parsing Pratt expression, min_bp: {}, current token: {:?}", min_bp, self.current_token()));
         let mut lhs =
             if let Some(((), r_bp)) = self.prefix_binding_power(&self.current_token()?.kind) {
                 let token = self.current_token()?;
                 self.eat()?;
-                let rhs = self.parse_pratt_expr(r_bp)?;
                 match token.kind {
-                    TokenKind::PlusPlus => Expr::Increment(Box::new(rhs)),
-                    TokenKind::MinusMinus => Expr::Decrement(Box::new(rhs)),
-                    TokenKind::Plus => rhs,
-                    TokenKind::Minus => Expr::Neg(Box::new(rhs)),
-                    TokenKind::Bang => Expr::LogicalNot(Box::new(rhs)),
+                    TokenKind::PlusPlus => {
+                        let rhs = self.parse_pratt_expr(r_bp)?;
+                        Expr::Increment(Box::new(rhs))
+                    }
+                    TokenKind::MinusMinus => {
+                        let rhs = self.parse_pratt_expr(r_bp)?;
+                        Expr::Decrement(Box::new(rhs))
+                    }
+                    TokenKind::Plus => self.parse_pratt_expr(r_bp)?,
+                    TokenKind::Minus => {
+                        let rhs = self.parse_pratt_expr(r_bp)?;
+                        Expr::Neg(Box::new(rhs))
+                    }
+                    TokenKind::Bang => {
+                        let rhs = self.parse_pratt_expr(r_bp)?;
+                        Expr::LogicalNot(Box::new(rhs))
+                    }
+                    TokenKind::Tilde => {
+                        let rhs = self.parse_pratt_expr(r_bp)?;
+                        Expr::BitwiseNot(Box::new(rhs))
+                    }
+                    TokenKind::Keyword(KeywordKind::Sizeof) => {
+                        if self.current_token()?.kind == TokenKind::LeftParen {
+                            self.eat()?; // consume (
+                            let expr = if self.is_type_name() {
+                                let ty = self.parse_type()?;
+                                Expr::SizeofType(ty)
+                            } else {
+                                let expr = self.parse_expr()?;
+                                Expr::Sizeof(Box::new(expr))
+                            };
+                            self.expect_punct(TokenKind::RightParen)?;
+                            expr
+                        } else {
+                            let expr = self.parse_pratt_expr(r_bp)?;
+                            Expr::Sizeof(Box::new(expr))
+                        }
+                    }
                     _ => unreachable!(),
                 }
             } else {
@@ -433,6 +482,7 @@ impl Parser {
 
     /// Parses a primary expression.
     fn parse_primary(&mut self) -> Result<Expr, ParserError> {
+        self.logger.log(&format!("Parsing primary expression, current token: {:?}", self.current_token()));
         let token = self.current_token()?;
         match token.kind.clone() {
             TokenKind::Number(n) => {
@@ -549,7 +599,7 @@ impl Parser {
                 self.position = pos; // backtrack after peeking
 
                 if is_type {
-                    let ty = self.parse_type()?;
+                    let param_ty = self.parse_type()?;
                     self.expect_punct(TokenKind::RightParen)?;
 
                     if self.current_token().is_ok()
@@ -557,11 +607,11 @@ impl Parser {
                     {
                         // Compound Literal: (type){...}
                         let initializers = self.parse_initializer_list()?;
-                        Ok(Expr::CompoundLiteral(Box::new(ty), initializers))
+                        Ok(Expr::CompoundLiteral(Box::new(param_ty), initializers))
                     } else {
                         // Cast: (type)expr
                         let expr = self.parse_pratt_expr(15)?; // High precedence for cast's operand
-                        Ok(Expr::Cast(Box::new(ty), Box::new(expr)))
+                        Ok(Expr::Cast(Box::new(param_ty), Box::new(expr)))
                     }
                 } else {
                     // Grouped expression: (expr)
@@ -799,6 +849,7 @@ impl Parser {
                 let token = self.current_token()?;
                 if let TokenKind::Identifier(id) = token.kind.clone() {
                     self.eat()?;
+                    self.typedefs.insert(id.clone());
                     self.expect_punct(TokenKind::Semicolon)?;
                     return Ok(Stmt::Typedef(ty, id));
                 }
@@ -842,7 +893,30 @@ impl Parser {
                 let token = self.current_token()?;
                 if let TokenKind::Identifier(id) = token.kind.clone() {
                     self.eat()?;
-                    params.push(Parameter { ty, name: id });
+                    // Check for array declarator
+                    let array_ty = if let Ok(t) = self.current_token() && t.kind == TokenKind::LeftBracket {
+                        self.eat()?; // consume [
+                        if let Ok(t) = self.current_token() && t.kind == TokenKind::RightBracket {
+                            self.eat()?; // consume ]
+                            Some(Type::Array(Box::new(ty.clone()), 0))
+                        } else {
+                            let size = self.parse_expr()?;
+                            if let Expr::Number(n) = size {
+                                self.expect_punct(TokenKind::RightBracket)?;
+                                Some(Type::Array(Box::new(ty.clone()), n as usize))
+                            } else {
+                                return Err(ParserError::UnexpectedToken(self.current_token()?));
+                            }
+                        }
+                    } else {
+                        None
+                    };
+                    let param_ty = if let Some(new_ty) = array_ty {
+                        new_ty
+                    } else {
+                        ty
+                    };
+                    params.push(Parameter { ty: param_ty.clone(), name: id.clone() });
                 }
                 if let Ok(t) = self.current_token()
                     && let TokenKind::Comma = t.kind

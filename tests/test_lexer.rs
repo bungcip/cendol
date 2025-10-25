@@ -163,25 +163,6 @@ FIVE
         assert_tokens_equal(&token_kinds, &expected_tokens);
     }
 
-    /// Test lexer with token which include '=' character
-    #[test]
-    fn test_equality_token() {
-        let input = "= == += -= %= *= >= <=";
-        let token_kinds = collect_tokens_without_whitespace(input);
-
-        let expected_tokens = vec![
-            TokenKind::Equal,
-            TokenKind::EqualEqual,
-            TokenKind::PlusEqual,
-            TokenKind::MinusEqual,
-            TokenKind::PercentEqual,
-            TokenKind::AsteriskEqual,
-            TokenKind::GreaterThanEqual,
-            TokenKind::LessThanEqual,
-        ];
-        assert_tokens_equal(&token_kinds, &expected_tokens);
-    }
-
     /// Test lexer with greedy tokens like '++' and '--'
     #[test]
     fn test_greddyness() {

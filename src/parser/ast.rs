@@ -145,6 +145,12 @@ pub enum Expr {
     AddressOf(Box<Expr>),
     /// A negation expression.
     Neg(Box<Expr>),
+    /// A bitwise NOT expression.
+    BitwiseNot(Box<Expr>),
+    /// A sizeof expression.
+    Sizeof(Box<Expr>),
+    /// A sizeof type expression.
+    SizeofType(Type),
     /// A pre-increment expression.
     Increment(Box<Expr>),
     /// A pre-decrement expression.

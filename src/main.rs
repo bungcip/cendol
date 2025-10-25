@@ -171,7 +171,7 @@ fn run() -> Result<(), Report> {
         }
     };
 
-    let mut parser = match Parser::new(tokens) {
+    let mut parser = match Parser::new(tokens, logger) {
         Ok(parser) => parser,
         Err(err) => {
             let mut report = Report::new(err.to_string(), Some(cli.input_file), None);

@@ -6,6 +6,7 @@
 use cendol::codegen::CodeGen;
 use cendol::common::{SourceLocation, SourceSpan};
 use cendol::file::{FileId, FileManager};
+use cendol::logger::Logger;
 use cendol::parser::Parser;
 use cendol::parser::ast::{Expr, Function, Program, Stmt, Type};
 use cendol::preprocessor::Preprocessor;
@@ -54,7 +55,8 @@ pub fn compile_to_object_bytes(
     let tokens = preprocessor.preprocess(input, filename)?;
 
     // Parser now handles filtering internally
-    let mut parser = Parser::new(tokens)?;
+    let logger = Logger::new(false); // Non-verbose for utility functions
+    let mut parser = Parser::new(tokens, logger)?;
     let ast = parser.parse()?;
     let codegen = CodeGen::new();
     let object_bytes = codegen.compile(ast)?;
@@ -67,7 +69,8 @@ pub fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Box<dyn std:
     let tokens = preprocessor.preprocess(input, &format!("{}.c", test_name))?;
 
     // Parser now handles filtering internally
-    let mut parser = Parser::new(tokens)?;
+    let logger = Logger::new(false); // Non-verbose for utility functions
+    let mut parser = Parser::new(tokens, logger)?;
     let ast = parser.parse()?;
     let codegen = CodeGen::new();
     let object_bytes = codegen.compile(ast)?;
@@ -122,7 +125,8 @@ pub fn compile_and_run_with_output(
     let tokens = preprocessor.preprocess(input, &format!("{}.c", test_name))?;
 
     // Parser now handles filtering internally
-    let mut parser = Parser::new(tokens)?;
+    let logger = Logger::new(false); // Non-verbose for utility functions
+    let mut parser = Parser::new(tokens, logger)?;
     let ast = parser.parse()?;
     let codegen = CodeGen::new();
     let object_bytes = codegen.compile(ast)?;
@@ -337,7 +341,8 @@ pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> 
 
     // Parser now handles filtering internally
 
-    let mut parser = match Parser::new(tokens) {
+    let logger = Logger::new(false); // Non-verbose for utility functions
+    let mut parser = match Parser::new(tokens, logger) {
         Ok(parser) => parser,
         Err(err) => {
             return Err(Report::new(

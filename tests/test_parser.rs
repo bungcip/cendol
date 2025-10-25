@@ -5,6 +5,7 @@
 
 use cendol::common::{SourceLocation, SourceSpan};
 use cendol::file::FileManager;
+use cendol::logger::Logger;
 use cendol::parser::Parser;
 use cendol::parser::ast::{Expr, Function, Program, Stmt, Type};
 use cendol::parser::token::{KeywordKind, Token, TokenKind};
@@ -19,9 +20,34 @@ mod config {
 fn parse_c_code(input: &str) -> Result<Program, Box<dyn std::error::Error>> {
     let mut preprocessor = Preprocessor::new(FileManager::new());
     let tokens = preprocessor.preprocess(input, config::TEST_FILENAME)?;
-    let mut parser = Parser::new(tokens)?;
+    let logger = Logger::new(true); // Enable verbose logging for debugging
+    let mut parser = Parser::new(tokens, logger)?;
     let ast = parser.parse()?;
     Ok(ast)
+}
+
+/// helper function to parse C function body and return the statements
+fn parse_c_body(input: &str) -> Vec<Stmt> {
+    let input = format!("
+        int func1() {{ return 0; }}
+        int func2(int a, int b, int c) {{ return 0; }}
+        struct S {{ int member; }};
+
+        void c_body(int x, int y, int a, int b, int c, int arr[], struct S obj, struct S *ptr, int *p)
+        {{
+            {input}
+        }}
+    ");
+
+    let mut preprocessor = Preprocessor::new(FileManager::new());
+    let tokens = preprocessor
+        .preprocess(&input, config::TEST_FILENAME)
+        .unwrap();
+    let logger = Logger::new(true); // Enable verbose logging for debugging
+    let mut parser = Parser::new(tokens, logger).unwrap();
+    let ast = parser.parse().unwrap();
+    let body = ast.functions.last().unwrap().body.clone();
+    body
 }
 
 /// Creates a simple C program AST for testing
@@ -129,6 +155,8 @@ fn create_test_tokens() -> Vec<Token> {
 
 #[cfg(test)]
 mod tests {
+    use crate::parse_c_body;
+
     use super::{
         create_bool_program_ast, create_control_flow_program_ast, create_increment_program_ast,
         create_simple_program_ast, parse_c_code,
@@ -214,5 +242,62 @@ mod tests {
             Stmt::Return(Expr::Number(0)),
         ];
         assert_eq!(ast.functions[0].body, expected_body);
+    }
+
+    #[test]
+    fn test_all_expressions() {
+        let input = r#"
+            // Primary
+            x;
+            42;
+            'a';
+            "hello";
+            (x + 1);
+
+            // Postfix
+            arr[2];
+            func1();
+            func2(a, b, c);
+            obj.member;
+            ptr->member;
+            x++;
+            y--;
+            (int){1, 2}; // compound literal (C99)
+
+            // unary
+            ++x;
+            --y;
+            &x;
+            *p;
+            +x;
+            -x;
+            ~x;
+            !x;
+            sizeof x;
+            sizeof(int);
+        "#;
+        let stmts = parse_c_body(input);
+
+        // primary expressions
+        assert!(matches!(stmts[0], Stmt::Expr(Expr::Variable(_, _))));
+        assert!(matches!(stmts[1], Stmt::Expr(Expr::Number(_))));
+        assert!(matches!(stmts[2], Stmt::Expr(Expr::Char(_))));
+        assert!(matches!(stmts[3], Stmt::Expr(Expr::String(_))));
+        assert!(matches!(stmts[4], Stmt::Expr(Expr::Add(..)))); // currenty don't have Paren expr
+
+        // postfix expressions
+        assert!(matches!(stmts[5], Stmt::Expr(Expr::Deref(..))));
+        assert!(matches!(stmts[6], Stmt::Expr(Expr::Call(..))));
+        assert!(matches!(stmts[7], Stmt::Expr(Expr::Call(..))));
+        assert!(matches!(stmts[8], Stmt::Expr(Expr::Member(..))));
+        assert!(matches!(stmts[9], Stmt::Expr(Expr::PointerMember(..))));
+        assert!(matches!(stmts[10], Stmt::Expr(Expr::Increment(..))));
+        assert!(matches!(stmts[11], Stmt::Expr(Expr::Decrement(..))));
+        assert!(matches!(stmts[12], Stmt::Expr(Expr::CompoundLiteral(..))));
+
+        // unary expressions continued
+        assert!(matches!(stmts[21], Stmt::Expr(Expr::Sizeof(..))));
+        assert!(matches!(stmts[22], Stmt::Expr(Expr::SizeofType(..))));
+
     }
 }

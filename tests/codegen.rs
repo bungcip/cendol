@@ -522,4 +522,24 @@ mod tests {
         let exit_code = compile_and_run(input, "for_loop_break_continue").unwrap();
         assert_eq!(exit_code, 5);
     }
+
+    /// Test code generation for unions
+    #[test]
+    fn test_union() {
+        let input = r#"
+        int
+        main()
+        {
+            union { int a; int b; } u;
+            u.a = 1;
+            u.b = 3;
+
+            if (u.a != 3 || u.b != 3)
+                return 1;
+            return 0;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "union").unwrap();
+        assert_eq!(exit_code, 0);
+    }
 }

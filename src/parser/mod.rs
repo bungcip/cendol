@@ -541,22 +541,21 @@ impl Parser {
                             expr = Expr::Decrement(Box::new(expr));
                         }
                         TokenKind::LeftParen => {
-                            let location = token.span.clone(); // Clone span before using token
-                            let token_for_error = token.clone(); // Clone token for error reporting
-                            self.eat()?;
+                            let location = token.span.clone();
+                            let token_for_error = token.clone();
+                            self.eat()?; // consume '('
                             let mut args = Vec::new();
-                            while let Ok(t) = self.current_token() {
-                                if let TokenKind::RightParen = t.kind {
-                                    self.eat()?;
-                                    break;
-                                }
-                                args.push(self.parse_expr()?);
-                                if let Ok(t) = self.current_token()
-                                    && let TokenKind::Comma = t.kind
-                                {
-                                    self.eat()?;
+                            if self.current_token()?.kind != TokenKind::RightParen {
+                                loop {
+                                    // Use a binding power of 2 to stop parsing at a comma
+                                    args.push(self.parse_pratt_expr(2)?);
+                                    if self.current_token()?.kind == TokenKind::RightParen {
+                                        break;
+                                    }
+                                    self.expect_punct(TokenKind::Comma)?;
                                 }
                             }
+                            self.expect_punct(TokenKind::RightParen)?;
                             let name = match expr {
                                 Expr::Variable(name, _) => name,
                                 _ => return Err(ParserError::UnexpectedToken(token_for_error)),
@@ -890,7 +889,7 @@ impl Parser {
     /// Parses a function signature.
     fn parse_function_signature(
         &mut self,
-    ) -> Result<(Type, String, Vec<Parameter>, bool), ParserError> {
+    ) -> Result<(Type, String, Vec<Parameter>, bool, bool), ParserError> {
         let mut is_inline = false;
         // Check for inline keyword before return type
         if let Ok(token) = self.current_token() {
@@ -905,9 +904,17 @@ impl Parser {
             self.eat()?;
             self.expect_punct(TokenKind::LeftParen)?;
             let mut params = Vec::new();
+            let mut is_variadic = false;
             while let Ok(t) = self.current_token() {
                 if let TokenKind::RightParen = t.kind {
                     self.eat()?;
+                    break;
+                }
+                if let TokenKind::Ellipsis = t.kind {
+                    self.eat()?;
+                    is_variadic = true;
+                    // Expect a closing parenthesis after ...
+                    self.expect_punct(TokenKind::RightParen)?;
                     break;
                 }
                 let ty = self.parse_type()?;
@@ -945,7 +952,7 @@ impl Parser {
                     self.eat()?;
                 }
             }
-            Ok((ty, id, params, is_inline))
+            Ok((ty, id, params, is_inline, is_variadic))
         } else {
             Err(ParserError::UnexpectedToken(token))
         }
@@ -953,7 +960,8 @@ impl Parser {
 
     /// Parses a function.
     fn parse_function(&mut self) -> Result<Function, ParserError> {
-        let (return_type, name, params, is_inline) = self.parse_function_signature()?;
+        let (return_type, name, params, is_inline, is_variadic) =
+            self.parse_function_signature()?;
         self.expect_punct(TokenKind::LeftBrace)?;
         let mut stmts = Vec::new();
         while let Ok(t) = self.current_token() {
@@ -969,6 +977,7 @@ impl Parser {
             params,
             body: stmts,
             is_inline,
+            is_variadic,
         })
     }
 
@@ -979,11 +988,11 @@ impl Parser {
     /// A `Result` containing the parsed `Program`, or a `ParserError` if parsing fails.
     fn parse_global(&mut self) -> Result<Stmt, ParserError> {
         let pos = self.position;
-        if let Ok((ty, id, params, _is_inline)) = self.parse_function_signature() {
+        if let Ok((ty, id, params, _is_inline, is_variadic)) = self.parse_function_signature() {
             let token = self.current_token()?;
             if let TokenKind::Semicolon = token.kind {
                 self.eat()?;
-                return Ok(Stmt::FunctionDeclaration(ty, id, params));
+                return Ok(Stmt::FunctionDeclaration(ty, id, params, is_variadic));
             } else {
                 self.position = pos;
                 return Err(ParserError::UnexpectedToken(token));

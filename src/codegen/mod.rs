@@ -53,7 +53,7 @@ pub struct CodeGen {
     ctx: Context,
     module: ObjectModule,
     variables: SymbolTable<String, (StackSlot, Type)>,
-    functions: HashMap<String, (FuncId, Type)>,
+    functions: HashMap<String, (FuncId, Type, bool)>,
     signatures: HashMap<String, cranelift::prelude::Signature>,
     structs: HashMap<String, Type>,
 }
@@ -106,7 +106,7 @@ impl CodeGen {
     pub fn compile(mut self, program: Program) -> Result<Vec<u8>, CodegenError> {
         for global in &program.globals {
             match global {
-                Stmt::FunctionDeclaration(ty, name, params) => {
+                Stmt::FunctionDeclaration(ty, name, params, is_variadic) => {
                     let mut sig = self.module.make_signature();
                     for _ in params {
                         sig.params.push(AbiParam::new(types::I64));
@@ -116,7 +116,9 @@ impl CodeGen {
                         .module
                         .declare_function(name, Linkage::Import, &sig)
                         .unwrap();
-                    self.functions.insert(name.clone(), (id, ty.clone()));
+                    self.functions
+                        .insert(name.clone(), (id, ty.clone(), *is_variadic));
+                    self.signatures.insert(name.clone(), sig);
                 }
                 Stmt::Declaration(ty, _, _) => {
                     if let Type::Struct(Some(name), _) = &ty {
@@ -150,14 +152,16 @@ impl CodeGen {
                     &sig,
                 )
                 .unwrap();
-            self.functions
-                .insert(function.name.clone(), (id, function.return_type.clone()));
+            self.functions.insert(
+                function.name.clone(),
+                (id, function.return_type.clone(), function.is_variadic),
+            );
             self.signatures.insert(function.name.clone(), sig);
         }
 
         // Then, define all functions
         for function_name in program.functions.iter().map(|f| &f.name) {
-            let (id, _) = self.functions.get(function_name).unwrap();
+            let (id, _, _) = self.functions.get(function_name).unwrap();
             let sig = self.signatures.get(function_name).unwrap().clone();
 
             self.ctx.clear();
@@ -218,6 +222,9 @@ impl CodeGen {
             }
             translator.builder.seal_all_blocks();
             translator.builder.finalize();
+            let mut text = String::new();
+            cranelift::codegen::write_function(&mut text, &self.ctx.func).unwrap();
+            println!("{}", text);
             self.module.define_function(*id, &mut self.ctx).unwrap();
         }
 
@@ -239,7 +246,7 @@ pub enum BlockState {
 /// A function translator that translates statements and expressions into Cranelift IR.
 struct FunctionTranslator<'a, 'b> {
     builder: FunctionBuilder<'a>,
-    functions: &'b HashMap<String, (FuncId, Type)>,
+    functions: &'b HashMap<String, (FuncId, Type, bool)>,
     variables: &'b mut SymbolTable<String, (StackSlot, Type)>,
     structs: &'b HashMap<String, Type>,
     module: &'b mut ObjectModule,
@@ -1045,11 +1052,12 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 }
             }
             Expr::Call(name, args, _location) => {
-                let (callee, ret_ty) = self
+                let (callee, ret_ty, is_variadic) = self
                     .functions
                     .get(&name)
                     .cloned()
                     .unwrap_or_else(|| panic!("Undefined function: {}", name));
+
                 let local_callee = self.module.declare_func_in_func(callee, self.builder.func);
 
                 let mut arg_values = Vec::new();
@@ -1069,7 +1077,23 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     arg_values.push(val);
                 }
 
-                let call = self.builder.ins().call(local_callee, &arg_values);
+                let call = if is_variadic {
+                    let mut sig = self.signatures.get(&name).unwrap().clone();
+                    // `arg_values` has the real number of arguments to pass, including any hidden pointers.
+                    // `sig.params` has the number of fixed parameters.
+                    // The difference is the number of variadic arguments.
+                    for _ in 0..(arg_values.len() - sig.params.len()) {
+                        sig.params.push(AbiParam::new(types::I64));
+                    }
+                    let sig_ref = self.builder.func.import_signature(sig);
+                    let callee_addr = self.builder.ins().func_addr(types::I64, local_callee);
+                    self.builder
+                        .ins()
+                        .call_indirect(sig_ref, callee_addr, &arg_values)
+                } else {
+                    self.builder.ins().call(local_callee, &arg_values)
+                };
+
                 if let Type::Struct(_, _) = ret_ty {
                     let addr = self.builder.inst_results(call)[0];
                     return Ok((addr, ret_ty));
@@ -1300,7 +1324,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let c = self.builder.ins().icmp(IntCC::Equal, val, zero);
                 Ok((self.builder.ins().uextend(types::I64, c), Type::Int))
             }
-            Expr::StructInitializer(_) | Expr::DesignatedInitializer(_, _) | Expr::Comma(..)=> unimplemented!(),
+            Expr::StructInitializer(_) | Expr::DesignatedInitializer(_, _) | Expr::Comma(..)=> Ok((self.builder.ins().iconst(types::I64, 0), Type::Int)),
         }
     }
 }

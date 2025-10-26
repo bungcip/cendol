@@ -5,6 +5,8 @@ pub enum Type {
     Int,
     /// The `char` type.
     Char,
+    /// The `short` type.
+    Short,
     /// The `float` type.
     Float,
     /// The `double` type.
@@ -13,6 +15,16 @@ pub enum Type {
     Long,
     /// The `long long` type.
     LongLong,
+    /// The `unsigned int` type.
+    UnsignedInt,
+    /// The `unsigned char` type.
+    UnsignedChar,
+    /// The `unsigned short` type.
+    UnsignedShort,
+    /// The `unsigned long` type.
+    UnsignedLong,
+    /// The `unsigned long long` type.
+    UnsignedLongLong,
     /// The `void` type.
     Void,
     /// The `_Bool` type.
@@ -33,6 +45,31 @@ impl Type {
     /// Returns `true` if the type is a pointer.
     pub fn is_pointer(&self) -> bool {
         matches!(self, Type::Pointer(_))
+    }
+
+    /// Returns `true` if the type is unsigned.
+    pub fn is_unsigned(&self) -> bool {
+        matches!(
+            self,
+            Type::UnsignedInt
+                | Type::UnsignedChar
+                | Type::UnsignedShort
+                | Type::UnsignedLong
+                | Type::UnsignedLongLong
+        )
+    }
+
+    /// Returns the rank of an integer type.
+    pub fn get_integer_rank(&self) -> i32 {
+        match self {
+            Type::Bool => 1,
+            Type::Char | Type::UnsignedChar => 2,
+            Type::Short | Type::UnsignedShort => 3,
+            Type::Int | Type::UnsignedInt => 4,
+            Type::Long | Type::UnsignedLong => 5,
+            Type::LongLong | Type::UnsignedLongLong => 6,
+            _ => 0,
+        }
     }
 }
 

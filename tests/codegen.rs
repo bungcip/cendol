@@ -569,4 +569,100 @@ mod tests {
         let exit_code = compile_and_run(input, "nested_struct").unwrap();
         assert_eq!(exit_code, 0);
     }
+
+    /// Test code generation for unsigned int
+    #[test]
+    fn test_unsigned_int() {
+        let input = r#"
+        int main() {
+            unsigned int x = 2;
+            return x;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "unsigned_int").unwrap();
+        assert_eq!(exit_code, 2);
+    }
+
+    /// Test code generation for short
+    #[test]
+    fn test_short() {
+        let input = r#"
+        int main() {
+            short x = 3;
+            return x;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "short").unwrap();
+        assert_eq!(exit_code, 3);
+    }
+
+    /// Test code generation for unsigned int division
+    #[test]
+    fn test_unsigned_int_division() {
+        let input = r#"
+        int main() {
+            unsigned int x = 10;
+            unsigned int y = 3;
+            return x / y;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "unsigned_int_division").unwrap();
+        assert_eq!(exit_code, 3);
+    }
+
+    /// Test code generation for unsigned int comparison
+    #[test]
+    fn test_unsigned_int_comparison() {
+        let input = r#"
+        int main() {
+            unsigned int x = 10;
+            unsigned int y = 3;
+            return x > y;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "unsigned_int_comparison").unwrap();
+        assert_eq!(exit_code, 1);
+    }
+
+    /// Test code generation for mixed-sign comparison
+    #[test]
+    fn test_mixed_sign_comparison() {
+        let input = r#"
+        int main() {
+            int x = -1;
+            unsigned int y = 1;
+            return x > y;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "mixed_sign_comparison").unwrap();
+        assert_eq!(exit_code, 1);
+    }
+
+    /// Test code generation for mixed-sign comparison with different integer ranks
+    #[test]
+    fn test_mixed_sign_comparison_different_ranks() {
+        let input = r#"
+        int main() {
+            long long x = -1;
+            unsigned int y = 1;
+            return x > y;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "mixed_sign_comparison_different_ranks").unwrap();
+        assert_eq!(exit_code, 0);
+    }
+
+    /// Test code generation for mixed-sign addition
+    #[test]
+    fn test_mixed_sign_addition() {
+        let input = r#"
+        int main() {
+            int x = -1;
+            unsigned int y = 1;
+            return x + y;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "mixed_sign_addition").unwrap();
+        assert_eq!(exit_code, 0);
+    }
 }

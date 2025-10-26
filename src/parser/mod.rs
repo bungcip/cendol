@@ -168,6 +168,49 @@ impl Parser {
     fn parse_type_specifier_kind(&mut self, k: KeywordKind) -> Result<Type, ParserError> {
         let token = self.current_token()?;
         match k {
+            KeywordKind::Unsigned => {
+                self.eat()?; // consume "unsigned"
+                let next_token = self.tokens.get(self.position).cloned();
+                if let Some(next) = next_token {
+                    if let TokenKind::Keyword(KeywordKind::Long) = next.kind {
+                        self.eat()?; // consume "long"
+                        let next2 = self.tokens.get(self.position).cloned();
+                        if let Some(n2) = next2 {
+                            if let TokenKind::Keyword(KeywordKind::Long) = n2.kind {
+                                self.eat()?; // consume second "long"
+                                Ok(Type::UnsignedLongLong)
+                            } else {
+                                Ok(Type::UnsignedLong)
+                            }
+                        } else {
+                            Ok(Type::UnsignedLong)
+                        }
+                    } else if let TokenKind::Keyword(KeywordKind::Int) = next.kind {
+                        self.eat()?; // consume "int"
+                        Ok(Type::UnsignedInt)
+                    } else if let TokenKind::Keyword(KeywordKind::Char) = next.kind {
+                        self.eat()?; // consume "char"
+                        Ok(Type::UnsignedChar)
+                    } else if let TokenKind::Keyword(KeywordKind::Short) = next.kind {
+                        self.eat()?; // consume "short"
+                        Ok(Type::UnsignedShort)
+                    } else {
+                        Ok(Type::UnsignedInt)
+                    }
+                } else {
+                    Ok(Type::UnsignedInt)
+                }
+            }
+            KeywordKind::Short => {
+                self.eat()?; // consume "short"
+                let next_token = self.tokens.get(self.position).cloned();
+                if let Some(next) = next_token {
+                    if let TokenKind::Keyword(KeywordKind::Int) = next.kind {
+                        self.eat()?; // consume "int"
+                    }
+                }
+                Ok(Type::Short)
+            }
             KeywordKind::Long => {
                 self.eat()?; // consume "long"
                 let next_token = self.tokens.get(self.position).cloned();

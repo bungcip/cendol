@@ -4,7 +4,7 @@ use crate::preprocessor::Preprocessor;
 use clap::Parser as ClapParser;
 
 /// Command-line arguments for the C-like compiler.
-#[derive(ClapParser)]
+#[derive(ClapParser, Default)]
 #[command(version, about, long_about = None)]
 pub struct Cli {
     /// The input C file
@@ -53,10 +53,11 @@ use std::process::Command;
 pub struct Compiler {
     preprocessor: Preprocessor,
     logger: Logger,
+    cli: Cli,
 }
 
 impl Compiler {
-    pub fn new(cli: &Cli) -> Self {
+    pub fn new(cli: Cli) -> Self {
         let logger = Logger::new(cli.verbose);
         let mut file_manager = FileManager::new();
 
@@ -74,37 +75,38 @@ impl Compiler {
         Self {
             preprocessor,
             logger,
+            cli,
         }
     }
 
-    pub fn compile(&mut self, cli: &Cli) -> Result<(), Report> {
+    pub fn compile(&mut self) -> Result<(), Report> {
         self.logger.log("Verbose output enabled");
 
-        if cli.wall {
+        if self.cli.wall {
             todo!("Enable all warnings");
         }
 
-        let input = fs::read_to_string(&cli.input_file).expect("Failed to read input file");
+        let input = fs::read_to_string(&self.cli.input_file).expect("Failed to read input file");
 
-        for def in &cli.define {
+        for def in &self.cli.define {
             if let Err(err) = self.preprocessor.define(def) {
                 let mut report = Report::new(err.to_string(), None, None);
-                report.verbose = cli.verbose;
+                report.verbose = self.cli.verbose;
                 return Err(report);
             }
         }
 
-        if cli.preprocess_only {
-            let output = match self.preprocessor.preprocess(&input, &cli.input_file) {
+        if self.cli.preprocess_only {
+            let output = match self.preprocessor.preprocess(&input, &self.cli.input_file) {
                 Ok(output) => output,
                 Err(err) => {
                     let mut report = Report::new(err.to_string(), None, None);
-                    report.verbose = cli.verbose;
+                    report.verbose = self.cli.verbose;
                     return Err(report);
                 }
             };
 
-            if let Some(output_file) = &cli.output_file {
+            if let Some(output_file) = &self.cli.output_file {
                 let formatted_output = self.format_tokens(&output);
                 fs::write(output_file, formatted_output).expect("Failed to write to output file");
             } else {
@@ -114,11 +116,11 @@ impl Compiler {
             return Ok(());
         }
 
-        let tokens = match self.preprocessor.preprocess(&input, &cli.input_file) {
+        let tokens = match self.preprocessor.preprocess(&input, &self.cli.input_file) {
             Ok(tokens) => tokens,
             Err(err) => {
                 let mut report = Report::new(err.to_string(), None, None);
-                report.verbose = cli.verbose;
+                report.verbose = self.cli.verbose;
                 return Err(report);
             }
         };
@@ -126,8 +128,8 @@ impl Compiler {
         let mut parser = match Parser::new(tokens) {
             Ok(parser) => parser,
             Err(err) => {
-                let mut report = Report::new(err.to_string(), Some(cli.input_file.clone()), None);
-                report.verbose = cli.verbose;
+                let mut report = Report::new(err.to_string(), Some(self.cli.input_file.clone()), None);
+                report.verbose = self.cli.verbose;
                 return Err(report);
             }
         };
@@ -152,18 +154,18 @@ impl Compiler {
                         .to_string();
                     (Some(path), Some(location))
                 } else {
-                    (Some(cli.input_file.clone()), None)
+                    (Some(self.cli.input_file.clone()), None)
                 };
 
                 let mut report = Report::new(msg, path, span);
-                report.verbose = cli.verbose;
+                report.verbose = self.cli.verbose;
                 return Err(report);
             }
         };
 
         // Perform semantic analysis
         let semantic_analyzer = SemanticAnalyzer::new();
-        match semantic_analyzer.analyze(ast.clone(), &cli.input_file) {
+        match semantic_analyzer.analyze(ast.clone(), &self.cli.input_file) {
             Ok(_) => {
                 self.logger.log("Semantic analysis passed");
             }
@@ -171,12 +173,12 @@ impl Compiler {
                 for (error, file, span) in errors {
                     let mut report_data =
                         Report::new(error.to_string(), Some(file.clone()), Some(span));
-                    report_data.verbose = cli.verbose;
+                    report_data.verbose = self.cli.verbose;
                     crate::error::report(&report_data);
                 }
                 return Err(Report::new(
                     "Semantic errors found".to_string(),
-                    Some(cli.input_file.clone()),
+                    Some(self.cli.input_file.clone()),
                     None,
                 ));
             }
@@ -186,14 +188,14 @@ impl Compiler {
         let object_bytes = match codegen.compile(ast) {
             Ok(bytes) => bytes,
             Err(err) => {
-                let mut report = Report::new(err.to_string(), Some(cli.input_file.clone()), None);
-                report.verbose = cli.verbose;
+                let mut report = Report::new(err.to_string(), Some(self.cli.input_file.clone()), None);
+                report.verbose = self.cli.verbose;
                 return Err(report);
             }
         };
 
-        let object_filename = if cli.compile_only {
-            cli.output_file.as_deref().unwrap_or("a.o").to_string()
+        let object_filename = if self.cli.compile_only {
+            self.cli.output_file.as_deref().unwrap_or("a.o").to_string()
         } else {
             "a.o".to_string()
         };
@@ -204,8 +206,8 @@ impl Compiler {
             .write_all(&object_bytes)
             .expect("Failed to write to object file");
 
-        if !cli.compile_only {
-            let output_filename = cli
+        if !self.cli.compile_only {
+            let output_filename = self.cli
                 .output_file
                 .clone()
                 .unwrap_or_else(|| "a.out".to_string());

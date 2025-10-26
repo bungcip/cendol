@@ -84,10 +84,14 @@ impl Parser {
         self.current_token().map(|t| t.kind)
     }
 
-    /// Consumes the current token.
-    fn eat(&mut self) -> Result<(), ParserError> {
+    /// Consumes the current token and return the last token. will error if current token is eof
+    fn eat(&mut self) -> Result<&Token, ParserError> {
+        let current = self
+            .tokens
+            .get(self.position)
+            .ok_or(ParserError::UnexpectedEof);
         self.position += 1;
-        Ok(())
+        current
     }
 
     /// consume the current token if same kind
@@ -204,10 +208,10 @@ impl Parser {
             KeywordKind::Short => {
                 self.eat()?; // consume "short"
                 let next_token = self.tokens.get(self.position).cloned();
-                if let Some(next) = next_token {
-                    if let TokenKind::Keyword(KeywordKind::Int) = next.kind {
-                        self.eat()?; // consume "int"
-                    }
+                if let Some(next) = next_token
+                    && let TokenKind::Keyword(KeywordKind::Int) = next.kind
+                {
+                    self.eat()?; // consume "int"
                 }
                 Ok(Type::Short)
             }
@@ -292,17 +296,16 @@ impl Parser {
     {
         self.eat()?;
         let name = self.maybe_name()?;
-        if let Ok(token) = self.current_token() {
-            if let TokenKind::LeftBrace = token.kind {
+        match self.current_kind()? {
+            TokenKind::LeftBrace => {
                 let members = self.parse_struct_or_union_members()?;
                 Ok(constructor(name, Some(members)))
-            } else if let Some(name) = name {
-                Ok(constructor(Some(name), None))
-            } else {
+            }
+            _ if name.is_some() => Ok(constructor(name, None)),
+            _ => {
+                let token = self.current_token()?;
                 Err(ParserError::UnexpectedToken(token))
             }
-        } else {
-            Err(ParserError::UnexpectedEof)
         }
     }
     /// Parses members for struct or union.
@@ -357,6 +360,7 @@ impl Parser {
         }
         Ok((ty, id))
     }
+
     /// Parses a declarator with optional initializer.
     fn parse_declarator(
         &mut self,
@@ -364,12 +368,17 @@ impl Parser {
         name_required: bool,
     ) -> Result<ast::Declarator, ParserError> {
         let (ty, name) = self.parse_declarator_suffix(base_type, name_required)?;
-        let initializer = self.maybe_start(&TokenKind::Equal, |p| Ok(Box::new(p.parse_expr()?)))?;
+        let initializer = self.parse_initializer_expr()?;
         Ok(ast::Declarator {
             ty,
             name,
             initializer,
         })
+    }
+
+    /// parse initializer expression
+    fn parse_initializer_expr(&mut self) -> Result<Option<Box<Expr>>, ParserError> {
+        self.maybe_start(&TokenKind::Equal, |p| Ok(Box::new(p.parse_expr()?)))
     }
 
     /// Parses a type. This function now orchestrates `parse_type_specifier` and `parse_declarator_suffix`.
@@ -779,7 +788,7 @@ impl Parser {
             }
             self.expect_punct(TokenKind::Semicolon)?;
             return Ok(Stmt::Declaration(base_type, declarators));
-        } else if let TokenKind::Keyword(k) = token.kind.clone() {
+        } else if let TokenKind::Keyword(k) = token.kind {
             if k == KeywordKind::Return {
                 self.eat()?;
                 let expr = self.parse_expr()?;
@@ -791,10 +800,9 @@ impl Parser {
                 let cond = self.parse_expr()?;
                 self.expect_punct(TokenKind::RightParen)?;
                 let then = self.parse_stmt()?;
-                let mut else_stmt = None;
-                if self.eat_token(&TokenKind::Keyword(KeywordKind::Else))? {
-                    else_stmt = Some(Box::new(self.parse_stmt()?));
-                }
+                let else_stmt = self.maybe_start(&TokenKind::Keyword(KeywordKind::Else), |p| {
+                    Ok(Box::new(p.parse_stmt()?))
+                })?;
                 return Ok(Stmt::If(Box::new(cond), Box::new(then), else_stmt));
             } else if k == KeywordKind::While {
                 self.eat()?;
@@ -810,8 +818,7 @@ impl Parser {
                 let init = self.maybe_end(&TokenKind::Semicolon, |p| {
                     let result = if let Ok(ty) = p.parse_type() {
                         let id = p.expect_name()?;
-                        let initializer =
-                            p.maybe_start(&TokenKind::Equal, |p| Ok(Box::new(p.parse_expr()?)))?;
+                        let initializer = p.parse_initializer_expr()?;
                         ForInit::Declaration(ty, id, initializer)
                     } else {
                         ForInit::Expr(p.parse_expr()?)
@@ -983,10 +990,7 @@ impl Parser {
         let mut declarators = Vec::new();
         loop {
             let (ty, name) = self.parse_declarator_suffix(base_type.clone(), true)?;
-
-            let initializer = self.maybe_start(&TokenKind::Equal, |p| {
-                Ok(Box::new(p.parse_expr()?))
-            })?;
+            let initializer = self.parse_initializer_expr()?;
             declarators.push(ast::Declarator {
                 ty,
                 name,
@@ -1004,7 +1008,8 @@ impl Parser {
     pub fn parse(&mut self) -> Result<Program, ParserError> {
         let mut globals = Vec::new();
         let mut functions = Vec::new();
-        while self.current_token().is_ok() && !matches!(self.current_token()?.kind, TokenKind::Eof)
+        while let Ok(token) = self.current_token()
+            && token.kind != TokenKind::Eof
         {
             let pos = self.position;
             if self.parse_global().is_ok() {

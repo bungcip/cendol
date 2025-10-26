@@ -17,3 +17,6 @@ pub mod parser;
 pub mod preprocessor;
 /// Contains the semantic analyzer.
 pub mod semantic;
+
+/// onlky for tests
+pub mod test_utils;

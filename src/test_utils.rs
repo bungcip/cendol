@@ -3,14 +3,16 @@
 //! This module provides common utilities and patterns used across different
 //! test modules to reduce code duplication and improve maintainability.
 
-use cendol::codegen::CodeGen;
-use cendol::common::{SourceLocation, SourceSpan};
-use cendol::file::{FileId, FileManager};
-use cendol::parser::Parser;
-use cendol::parser::ast::{Expr, Function, Program, Stmt, Type};
-use cendol::preprocessor::Preprocessor;
-use cendol::preprocessor::lexer::Lexer;
-use cendol::preprocessor::token::{KeywordKind, Token, TokenKind};
+use crate::codegen::CodeGen;
+use crate::common::{SourceLocation, SourceSpan};
+use crate::error::Report;
+use crate::file::{FileId, FileManager};
+use crate::parser::Parser;
+use crate::parser::ast::{Expr, Function, Program, Stmt, Type};
+use crate::preprocessor::Preprocessor;
+use crate::preprocessor::lexer::Lexer;
+use crate::preprocessor::token::{KeywordKind, Token, TokenKind};
+
 use std::fs;
 use std::io::Write;
 use std::process::Command;
@@ -45,22 +47,6 @@ pub fn create_test_location(file_id: u32, line: u32) -> SourceSpan {
     SourceSpan::new(FileId(file_id), location.clone(), location)
 }
 
-/// Compiles C code through the full pipeline (preprocessor -> parser -> codegen)
-pub fn compile_to_object_bytes(
-    input: &str,
-    filename: &str,
-) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let mut preprocessor = create_preprocessor();
-    let tokens = preprocessor.preprocess(input, filename)?;
-
-    // Parser now handles filtering internally
-    let mut parser = Parser::new(tokens)?;
-    let ast = parser.parse()?;
-    let codegen = CodeGen::new();
-    let object_bytes = codegen.compile(ast)?;
-    Ok(object_bytes)
-}
-
 /// Compiles and runs C code, returning the exit code
 pub fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Box<dyn std::error::Error>> {
     let mut preprocessor = create_preprocessor();
@@ -88,7 +74,7 @@ pub fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Box<dyn std:
     // Write object file
     let mut object_file = fs::File::create(&obj_filename)?;
     object_file.write_all(&object_bytes)?;
-    drop(object_file); // Explicitly close the file
+    drop(object_file);
 
     // Compile object file to executable
     let compile_status = Command::new(config::C_COMPILER)
@@ -111,6 +97,12 @@ pub fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Box<dyn std:
     let _ = fs::remove_file(&exe_filename);
 
     Ok(exit_code)
+}
+
+/// Compiles and runs C code from a file, returning the exit code
+pub fn compile_and_run_from_file(file_path: &str, test_name: &str) -> Result<i32, Box<dyn std::error::Error>> {
+    let input = fs::read_to_string(file_path)?;
+    compile_and_run(&input, test_name)
 }
 
 /// Compiles and runs C code, capturing stdout output
@@ -274,60 +266,6 @@ pub fn cleanup_test_files(test_name: &str) {
     let _ = fs::remove_file(&exe_filename);
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_create_simple_program_ast() {
-        let ast = create_simple_program_ast();
-        assert_eq!(ast.functions[0].name, "main");
-        assert_eq!(ast.functions[0].body.len(), 1);
-        if let Stmt::Return(_) = &ast.functions[0].body[0] {
-            // Expected return statement
-        } else {
-            panic!("Expected return statement");
-        }
-    }
-
-    #[test]
-    fn test_collect_tokens_from_lexer() {
-        let input = "int main";
-        let tokens = collect_tokens_from_lexer(input, "test.c");
-        assert_eq!(tokens.len(), 3);
-        assert!(matches!(
-            tokens[0].kind,
-            TokenKind::Keyword(KeywordKind::Int)
-        ));
-        assert!(matches!(tokens[1].kind, TokenKind::Whitespace(_)));
-        assert!(matches!(tokens[2].kind, TokenKind::Identifier(_)));
-    }
-
-    #[test]
-    fn test_get_token_kinds() {
-        let tokens = vec![
-            Token {
-                kind: TokenKind::Keyword(KeywordKind::Int),
-                span: create_test_location(0, 0),
-                hideset: std::collections::HashSet::new(),
-                expansion_locs: Vec::new(),
-            },
-            Token {
-                kind: TokenKind::Identifier("main".to_string()),
-                span: create_test_location(0, 0),
-                hideset: std::collections::HashSet::new(),
-                expansion_locs: Vec::new(),
-            },
-        ];
-        let kinds = get_token_kinds(&tokens);
-        assert_eq!(kinds.len(), 2);
-        assert!(matches!(kinds[0], TokenKind::Keyword(KeywordKind::Int)));
-        assert!(matches!(kinds[1], TokenKind::Identifier(_)));
-    }
-}
-
-use cendol::error::Report;
-
 /// Compiles C code and returns a report on error
 pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> {
     let mut preprocessor = create_preprocessor();
@@ -352,10 +290,10 @@ pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> 
         Ok(_) => Ok(()),
         Err(err) => {
             let (msg, location) = match err {
-                cendol::parser::error::ParserError::UnexpectedToken(tok) => {
+                crate::parser::error::ParserError::UnexpectedToken(tok) => {
                     ("Unexpected token".to_string(), Some(tok.span))
                 }
-                cendol::parser::error::ParserError::UnexpectedEof => {
+                crate::parser::error::ParserError::UnexpectedEof => {
                     ("Unexpected EOF".to_string(), None)
                 }
             };

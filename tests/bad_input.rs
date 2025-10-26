@@ -1,5 +1,4 @@
-mod common;
-use crate::common::compile_and_get_error;
+use cendol::test_utils::compile_and_get_error;
 use insta::assert_yaml_snapshot;
 
 #[test]

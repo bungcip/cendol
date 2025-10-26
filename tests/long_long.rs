@@ -1,5 +1,4 @@
-mod common;
-use common::compile_and_run;
+use cendol::test_utils::compile_and_run;
 
 #[test]
 fn test_long_long_declaration() {

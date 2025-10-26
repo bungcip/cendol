@@ -7,15 +7,11 @@ use cendol::file::FileManager;
 use cendol::preprocessor::Preprocessor;
 use cendol::preprocessor::token::Token;
 use cendol::preprocessor::token::TokenKind;
+use cendol::test_utils::{create_preprocessor};
 
 /// Test configuration constants
 mod config {
     pub const TEST_FILENAME: &str = "<input>";
-}
-
-/// Creates a new preprocessor instance with a file manager
-fn create_preprocessor() -> Preprocessor {
-    Preprocessor::new(FileManager::new())
 }
 
 /// Helper function to preprocess input and return tokens
@@ -54,68 +50,6 @@ fn get_token_kinds(tokens: &[Token]) -> Vec<String> {
         .collect()
 }
 
-/// Helper function to verify token sequence matches expected content
-fn assert_tokens_match(tokens: &[Token], expected: &[&str]) {
-    let actual: Vec<String> = get_token_kinds(tokens);
-    let expected: Vec<String> = expected.iter().map(|s| s.to_string()).collect();
-    assert_eq!(actual, expected, "Token content mismatch");
-}
-
-/// Helper function to verify token sequence contains expected tokens in order
-fn assert_tokens_contain(tokens: &[Token], expected: &[&str]) {
-    let actual: Vec<String> = get_token_kinds(tokens);
-    for (i, expected_token) in expected.iter().enumerate() {
-        if i < actual.len() {
-            assert_eq!(
-                actual[i], *expected_token,
-                "Token at position {} doesn't match",
-                i
-            );
-        } else {
-            panic!(
-                "Expected token '{}' at position {}, but only {} tokens found",
-                expected_token,
-                i,
-                actual.len()
-            );
-        }
-    }
-}
-
-/// Helper function to verify specific token types and values
-fn assert_token_types(tokens: &[Token], expected_types: &[(&str, &str)]) {
-    for (i, (expected_kind, expected_value)) in expected_types.iter().enumerate() {
-        if i >= tokens.len() {
-            panic!(
-                "Expected token at position {}, but only {} tokens found",
-                i,
-                tokens.len()
-            );
-        }
-
-        let actual_kind = match &tokens[i].kind {
-            TokenKind::Identifier(_) => "identifier",
-            TokenKind::Number(_) => "number",
-            TokenKind::String(_) => "string",
-            TokenKind::Char(_) => "char",
-            TokenKind::Keyword(_) => "keyword",
-            _ => "other",
-        };
-
-        assert_eq!(
-            actual_kind, *expected_kind,
-            "Token kind at position {} doesn't match",
-            i
-        );
-
-        let actual_value = format!("{}", tokens[i].kind);
-        assert_eq!(
-            actual_value, *expected_value,
-            "Token value at position {} doesn't match",
-            i
-        );
-    }
-}
 
 /// Test function-like macro expansion
 #[test]

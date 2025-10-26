@@ -121,13 +121,12 @@ impl<'a> Lexer<'a> {
                     num.push(self.input.next().unwrap());
                     self.consume_char(c);
                     // Handle LL or UU
-                    if let Some(&c) = self.input.peek() {
-                        if ((c == 'L' || c == 'l') && num.ends_with('L') || num.ends_with('l'))
-                            || ((c == 'U' || c == 'u') && num.ends_with('U') || num.ends_with('u'))
-                        {
-                            num.push(self.input.next().unwrap());
-                            self.consume_char(c);
-                        }
+                    if let Some(&c) = self.input.peek()
+                        && (((c == 'L' || c == 'l') && num.ends_with('L') || num.ends_with('l'))
+                            || ((c == 'U' || c == 'u') && num.ends_with('U') || num.ends_with('u')))
+                    {
+                        num.push(self.input.next().unwrap());
+                        self.consume_char(c);
                     }
                 }
                 self.at_start_of_line = false;

@@ -23,6 +23,6 @@ fn main() {
 /// A `Result` which is `Ok` on success or an `Error` on failure.
 fn run() -> Result<(), Report> {
     let cli = Cli::parse();
-    let mut compiler = Compiler::new(&cli);
-    compiler.compile(&cli)
+    let mut compiler = Compiler::new(cli);
+    compiler.compile()
 }

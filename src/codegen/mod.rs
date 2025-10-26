@@ -1105,14 +1105,18 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         let member_ty = member_ty.unwrap();
                         let member_addr = self.builder.ins().iadd_imm(ptr, offset as i64);
 
-                        if let Type::Struct(_, _) | Type::Union(_, _) | Type::Array(_, _) = member_ty
+                        if let Type::Struct(_, _) | Type::Union(_, _) | Type::Array(_, _) =
+                            member_ty
                         {
                             Ok((member_addr, member_ty))
                         } else {
                             Ok((
-                                self.builder
-                                    .ins()
-                                    .load(types::I64, MemFlags::new(), member_addr, 0),
+                                self.builder.ins().load(
+                                    types::I64,
+                                    MemFlags::new(),
+                                    member_addr,
+                                    0,
+                                ),
                                 member_ty,
                             ))
                         }

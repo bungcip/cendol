@@ -50,12 +50,12 @@ impl Report {
     /// # Returns
     ///
     /// A new `Report` instance.
-    pub fn new(msg: String, path: Option<String>, span: Option<SourceSpan>) -> Self {
+    pub fn new(msg: String, path: Option<String>, span: Option<SourceSpan>, verbose: bool) -> Self {
         Self {
             msg,
             path,
             span,
-            verbose: false,
+            verbose,
         }
     }
 }

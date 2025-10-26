@@ -86,22 +86,30 @@ impl Compiler {
             todo!("Enable all warnings");
         }
 
-        let input = fs::read_to_string(&self.cli.input_file).expect("Failed to read input file");
+        let (input, filename) = if self.cli.input_file == "-" {
+            (
+                std::io::read_to_string(std::io::stdin()).expect("Failed to read from stdin"),
+                "<stdin>",
+            )
+        } else {
+            (
+                fs::read_to_string(&self.cli.input_file).expect("Failed to read input file"),
+                self.cli.input_file.as_str(),
+            )
+        };
 
         for def in &self.cli.define {
             if let Err(err) = self.preprocessor.define(def) {
-                let mut report = Report::new(err.to_string(), None, None);
-                report.verbose = self.cli.verbose;
+                let report = Report::new(err.to_string(), None, None, self.cli.verbose);
                 return Err(report);
             }
         }
 
         if self.cli.preprocess_only {
-            let output = match self.preprocessor.preprocess(&input, &self.cli.input_file) {
+            let output = match self.preprocessor.preprocess(&input, filename) {
                 Ok(output) => output,
                 Err(err) => {
-                    let mut report = Report::new(err.to_string(), None, None);
-                    report.verbose = self.cli.verbose;
+                    let report = Report::new(err.to_string(), None, None, self.cli.verbose);
                     return Err(report);
                 }
             };
@@ -116,11 +124,10 @@ impl Compiler {
             return Ok(());
         }
 
-        let tokens = match self.preprocessor.preprocess(&input, &self.cli.input_file) {
+        let tokens = match self.preprocessor.preprocess(&input, filename) {
             Ok(tokens) => tokens,
             Err(err) => {
-                let mut report = Report::new(err.to_string(), None, None);
-                report.verbose = self.cli.verbose;
+                let report = Report::new(err.to_string(), None, None, self.cli.verbose);
                 return Err(report);
             }
         };
@@ -128,8 +135,7 @@ impl Compiler {
         let mut parser = match Parser::new(tokens) {
             Ok(parser) => parser,
             Err(err) => {
-                let mut report = Report::new(err.to_string(), Some(self.cli.input_file.clone()), None);
-                report.verbose = self.cli.verbose;
+                let report = Report::new(err.to_string(), None, None, self.cli.verbose);
                 return Err(report);
             }
         };
@@ -154,32 +160,35 @@ impl Compiler {
                         .to_string();
                     (Some(path), Some(location))
                 } else {
-                    (Some(self.cli.input_file.clone()), None)
+                    (Some(filename.to_string()), None)
                 };
 
-                let mut report = Report::new(msg, path, span);
-                report.verbose = self.cli.verbose;
+                let report = Report::new(msg, path, span, self.cli.verbose);
                 return Err(report);
             }
         };
 
         // Perform semantic analysis
         let semantic_analyzer = SemanticAnalyzer::new();
-        match semantic_analyzer.analyze(ast.clone(), &self.cli.input_file) {
+        match semantic_analyzer.analyze(ast.clone(), filename) {
             Ok(_) => {
                 self.logger.log("Semantic analysis passed");
             }
             Err(errors) => {
                 for (error, file, span) in errors {
-                    let mut report_data =
-                        Report::new(error.to_string(), Some(file.clone()), Some(span));
-                    report_data.verbose = self.cli.verbose;
+                    let report_data = Report::new(
+                        error.to_string(),
+                        Some(file.clone()),
+                        Some(span),
+                        self.cli.verbose,
+                    );
                     crate::error::report(&report_data);
                 }
                 return Err(Report::new(
                     "Semantic errors found".to_string(),
-                    Some(self.cli.input_file.clone()),
+                    Some(filename.to_string()),
                     None,
+                    self.cli.verbose,
                 ));
             }
         }
@@ -188,7 +197,12 @@ impl Compiler {
         let object_bytes = match codegen.compile(ast) {
             Ok(bytes) => bytes,
             Err(err) => {
-                let mut report = Report::new(err.to_string(), Some(self.cli.input_file.clone()), None);
+                let mut report = Report::new(
+                    err.to_string(),
+                    Some(filename.to_string()),
+                    None,
+                    self.cli.verbose,
+                );
                 report.verbose = self.cli.verbose;
                 return Err(report);
             }
@@ -207,7 +221,8 @@ impl Compiler {
             .expect("Failed to write to object file");
 
         if !self.cli.compile_only {
-            let output_filename = self.cli
+            let output_filename = self
+                .cli
                 .output_file
                 .clone()
                 .unwrap_or_else(|| "a.out".to_string());

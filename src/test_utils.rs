@@ -271,7 +271,7 @@ pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> 
     let mut preprocessor = create_preprocessor();
     let tokens = match preprocessor.preprocess(input, filename) {
         Ok(tokens) => tokens,
-        Err(err) => return Err(Report::new(err.to_string(), None, None)),
+        Err(err) => return Err(Report::new(err.to_string(), None, None, false)),
     };
 
     // Parser now handles filtering internally
@@ -283,6 +283,7 @@ pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> 
                 err.to_string(),
                 Some(filename.to_string()),
                 None,
+                false,
             ));
         }
     };
@@ -311,7 +312,7 @@ pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> 
                 (Some(filename.to_string()), None)
             };
 
-            Err(Report::new(msg, path, span))
+            Err(Report::new(msg, path, span, false))
         }
     }
 }

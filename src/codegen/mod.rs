@@ -287,12 +287,13 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     fn get_type_alignment(&self, ty: &Type) -> u32 {
         let real_ty = self.get_real_type(ty).unwrap();
         match &real_ty {
-            Type::Int => 8,
-            Type::Char => 1,
+            Type::Int | Type::UnsignedInt => 8,
+            Type::Char | Type::UnsignedChar => 1,
+            Type::Short | Type::UnsignedShort => 2,
             Type::Float => 4,
             Type::Double => 8,
-            Type::Long => 8,
-            Type::LongLong => 8,
+            Type::Long | Type::UnsignedLong => 8,
+            Type::LongLong | Type::UnsignedLongLong => 8,
             Type::Void => 1,
             Type::Bool => 1,
             Type::Pointer(_) => 8,
@@ -315,12 +316,13 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     fn get_type_size(&self, ty: &Type) -> u32 {
         let real_ty = self.get_real_type(ty).unwrap();
         match &real_ty {
-            Type::Int => 8,
-            Type::Char => 1,
+            Type::Int | Type::UnsignedInt => 8,
+            Type::Char | Type::UnsignedChar => 1,
+            Type::Short | Type::UnsignedShort => 2,
             Type::Float => 4,
             Type::Double => 8,
-            Type::Long => 8,
-            Type::LongLong => 8,
+            Type::Long | Type::UnsignedLong => 8,
+            Type::LongLong | Type::UnsignedLongLong => 8,
             Type::Void => 0,
             Type::Bool => 1,
             Type::Pointer(_) => 8,
@@ -693,6 +695,79 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         Ok(())
     }
 
+    fn integer_promotion(&self, ty: &Type) -> Type {
+        match ty {
+            Type::Char | Type::Short | Type::Bool | Type::UnsignedChar | Type::UnsignedShort => {
+                Type::Int
+            }
+            _ => ty.clone(),
+        }
+    }
+
+    fn usual_arithmetic_conversions(&mut self, left_ty: &Type, right_ty: &Type) -> Type {
+        let left_ty = self.integer_promotion(left_ty);
+        let right_ty = self.integer_promotion(right_ty);
+
+        if left_ty == right_ty {
+            return left_ty;
+        }
+
+        if left_ty.is_unsigned() == right_ty.is_unsigned() {
+            if left_ty.get_integer_rank() > right_ty.get_integer_rank() {
+                return left_ty;
+            } else {
+                return right_ty;
+            }
+        }
+
+        let unsigned_ty;
+        let signed_ty;
+        if left_ty.is_unsigned() {
+            unsigned_ty = left_ty;
+            signed_ty = right_ty;
+        } else {
+            unsigned_ty = right_ty;
+            signed_ty = left_ty;
+        }
+
+        if unsigned_ty.get_integer_rank() >= signed_ty.get_integer_rank() {
+            return unsigned_ty;
+        }
+
+        if self.get_type_size(&signed_ty) >= self.get_type_size(&unsigned_ty) {
+            return signed_ty;
+        }
+
+        match signed_ty {
+            Type::Int => Type::UnsignedInt,
+            Type::Long => Type::UnsignedLong,
+            Type::LongLong => Type::UnsignedLongLong,
+            _ => unsigned_ty,
+        }
+    }
+
+    fn load_variable(&mut self, slot: StackSlot, ty: &Type) -> Value {
+        match ty {
+            Type::Char | Type::Bool => {
+                let val = self.builder.ins().stack_load(types::I8, slot, 0);
+                self.builder.ins().sextend(types::I64, val)
+            }
+            Type::UnsignedChar => {
+                let val = self.builder.ins().stack_load(types::I8, slot, 0);
+                self.builder.ins().uextend(types::I64, val)
+            }
+            Type::Short => {
+                let val = self.builder.ins().stack_load(types::I16, slot, 0);
+                self.builder.ins().sextend(types::I64, val)
+            }
+            Type::UnsignedShort => {
+                let val = self.builder.ins().stack_load(types::I16, slot, 0);
+                self.builder.ins().uextend(types::I64, val)
+            }
+            _ => self.builder.ins().stack_load(types::I64, slot, 0),
+        }
+    }
+
     fn translate_expr(&mut self, expr: Expr) -> Result<(Value, Type), CodegenError> {
         match expr {
             Expr::Number(n) => Ok((self.builder.ins().iconst(types::I64, n), Type::Int)),
@@ -726,13 +801,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
                     return Ok((addr, Type::Pointer(elem_ty.clone())));
                 }
-                let loaded_val = match ty {
-                    Type::Char | Type::Bool => {
-                        let val = self.builder.ins().stack_load(types::I8, slot, 0);
-                        self.builder.ins().sextend(types::I64, val)
-                    }
-                    _ => self.builder.ins().stack_load(types::I64, slot, 0),
-                };
+                let loaded_val = self.load_variable(slot, &ty);
                 Ok((loaded_val, ty))
             }
             Expr::Assign(lhs, rhs) => {
@@ -813,6 +882,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             Expr::Add(lhs, rhs) => {
                 let (lhs_val, lhs_ty) = self.translate_expr(*lhs)?;
                 let (rhs_val, rhs_ty) = self.translate_expr(*rhs)?;
+                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
                 let result_val = match (&lhs_ty, &rhs_ty) {
                     (Type::Pointer(base_ty), Type::Int) => {
                         let size = self.get_type_size(base_ty);
@@ -826,12 +896,17 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     }
                     _ => self.builder.ins().iadd(lhs_val, rhs_val),
                 };
-                let result_ty = if lhs_ty.is_pointer() { lhs_ty } else { rhs_ty };
+                let result_ty = if lhs_ty.is_pointer() {
+                    lhs_ty
+                } else {
+                    common_ty
+                };
                 Ok((result_val, result_ty))
             }
             Expr::Sub(lhs, rhs) => {
                 let (lhs_val, lhs_ty) = self.translate_expr(*lhs)?;
                 let (rhs_val, rhs_ty) = self.translate_expr(*rhs)?;
+                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
                 let result_val = match (&lhs_ty, &rhs_ty) {
                     (Type::Pointer(base_ty), Type::Int) => {
                         let size = self.get_type_size(base_ty);
@@ -848,24 +923,37 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let result_ty = match (&lhs_ty, &rhs_ty) {
                     (Type::Pointer(_), Type::Pointer(_)) => Type::Int,
                     (Type::Pointer(_), Type::Int) => lhs_ty,
-                    _ => lhs_ty,
+                    _ => common_ty,
                 };
                 Ok((result_val, result_ty))
             }
             Expr::Mul(lhs, rhs) => {
-                let (lhs, _) = self.translate_expr(*lhs)?;
-                let (rhs, _) = self.translate_expr(*rhs)?;
-                Ok((self.builder.ins().imul(lhs, rhs), Type::Int))
+                let (lhs, lhs_ty) = self.translate_expr(*lhs)?;
+                let (rhs, rhs_ty) = self.translate_expr(*rhs)?;
+                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                Ok((self.builder.ins().imul(lhs, rhs), common_ty))
             }
             Expr::Div(lhs, rhs) => {
-                let (lhs, _) = self.translate_expr(*lhs)?;
-                let (rhs, _) = self.translate_expr(*rhs)?;
-                Ok((self.builder.ins().sdiv(lhs, rhs), Type::Int))
+                let (lhs, lhs_ty) = self.translate_expr(*lhs)?;
+                let (rhs, rhs_ty) = self.translate_expr(*rhs)?;
+                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let result = if common_ty.is_unsigned() {
+                    self.builder.ins().udiv(lhs, rhs)
+                } else {
+                    self.builder.ins().sdiv(lhs, rhs)
+                };
+                Ok((result, common_ty))
             }
             Expr::Mod(lhs, rhs) => {
-                let (lhs, _) = self.translate_expr(*lhs)?;
-                let (rhs, _) = self.translate_expr(*rhs)?;
-                Ok((self.builder.ins().srem(lhs, rhs), Type::Int))
+                let (lhs, lhs_ty) = self.translate_expr(*lhs)?;
+                let (rhs, rhs_ty) = self.translate_expr(*rhs)?;
+                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let result = if common_ty.is_unsigned() {
+                    self.builder.ins().urem(lhs, rhs)
+                } else {
+                    self.builder.ins().srem(lhs, rhs)
+                };
+                Ok((result, common_ty))
             }
             Expr::Equal(lhs, rhs) => {
                 let (lhs, _) = self.translate_expr(*lhs)?;
@@ -880,33 +968,51 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 Ok((self.builder.ins().uextend(types::I64, c), Type::Int))
             }
             Expr::LessThan(lhs, rhs) => {
-                let (lhs, _) = self.translate_expr(*lhs)?;
-                let (rhs, _) = self.translate_expr(*rhs)?;
-                let c = self.builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs);
+                let (lhs, lhs_ty) = self.translate_expr(*lhs)?;
+                let (rhs, rhs_ty) = self.translate_expr(*rhs)?;
+                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let cc = if common_ty.is_unsigned() {
+                    IntCC::UnsignedLessThan
+                } else {
+                    IntCC::SignedLessThan
+                };
+                let c = self.builder.ins().icmp(cc, lhs, rhs);
                 Ok((self.builder.ins().uextend(types::I64, c), Type::Int))
             }
             Expr::GreaterThan(lhs, rhs) => {
-                let (lhs, _) = self.translate_expr(*lhs)?;
-                let (rhs, _) = self.translate_expr(*rhs)?;
-                let c = self.builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs);
+                let (lhs, lhs_ty) = self.translate_expr(*lhs)?;
+                let (rhs, rhs_ty) = self.translate_expr(*rhs)?;
+                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let cc = if common_ty.is_unsigned() {
+                    IntCC::UnsignedGreaterThan
+                } else {
+                    IntCC::SignedGreaterThan
+                };
+                let c = self.builder.ins().icmp(cc, lhs, rhs);
                 Ok((self.builder.ins().uextend(types::I64, c), Type::Int))
             }
             Expr::LessThanOrEqual(lhs, rhs) => {
-                let (lhs, _) = self.translate_expr(*lhs)?;
-                let (rhs, _) = self.translate_expr(*rhs)?;
-                let c = self
-                    .builder
-                    .ins()
-                    .icmp(IntCC::SignedLessThanOrEqual, lhs, rhs);
+                let (lhs, lhs_ty) = self.translate_expr(*lhs)?;
+                let (rhs, rhs_ty) = self.translate_expr(*rhs)?;
+                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let cc = if common_ty.is_unsigned() {
+                    IntCC::UnsignedLessThanOrEqual
+                } else {
+                    IntCC::SignedLessThanOrEqual
+                };
+                let c = self.builder.ins().icmp(cc, lhs, rhs);
                 Ok((self.builder.ins().uextend(types::I64, c), Type::Int))
             }
             Expr::GreaterThanOrEqual(lhs, rhs) => {
-                let (lhs, _) = self.translate_expr(*lhs)?;
-                let (rhs, _) = self.translate_expr(*rhs)?;
-                let c = self
-                    .builder
-                    .ins()
-                    .icmp(IntCC::SignedGreaterThanOrEqual, lhs, rhs);
+                let (lhs, lhs_ty) = self.translate_expr(*lhs)?;
+                let (rhs, rhs_ty) = self.translate_expr(*rhs)?;
+                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let cc = if common_ty.is_unsigned() {
+                    IntCC::UnsignedGreaterThanOrEqual
+                } else {
+                    IntCC::SignedGreaterThanOrEqual
+                };
+                let c = self.builder.ins().icmp(cc, lhs, rhs);
                 Ok((self.builder.ins().uextend(types::I64, c), Type::Int))
             }
             Expr::Neg(expr) => {
@@ -1153,7 +1259,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             Expr::Cast(ty, expr) => {
                 let (val, _) = self.translate_expr(*expr)?;
                 let cast_val = match *ty {
-                    Type::Char => self.builder.ins().ireduce(types::I8, val),
+                    Type::Char | Type::UnsignedChar => self.builder.ins().ireduce(types::I8, val),
+                    Type::Short | Type::UnsignedShort => {
+                        self.builder.ins().ireduce(types::I16, val)
+                    }
                     Type::Bool => self.builder.ins().ireduce(types::I8, val),
                     _ => val, // Other types are already I64
                 };
@@ -1161,7 +1270,12 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 // The ABI requires function arguments and return values to be I64,
                 // so we extend smaller types back to I64 after casting.
                 let extended_val = match *ty {
-                    Type::Char | Type::Bool => self.builder.ins().sextend(types::I64, cast_val),
+                    Type::Char | Type::Bool | Type::Short => {
+                        self.builder.ins().sextend(types::I64, cast_val)
+                    }
+                    Type::UnsignedChar | Type::UnsignedShort => {
+                        self.builder.ins().uextend(types::I64, cast_val)
+                    }
                     _ => cast_val,
                 };
 
@@ -1237,13 +1351,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             Expr::Increment(expr) => {
                 if let Expr::Variable(name, _) = *expr {
                     let (slot, ty) = self.variables.get(&name).unwrap();
-                    let loaded_val = match ty {
-                        Type::Char | Type::Bool => {
-                            let val = self.builder.ins().stack_load(types::I8, slot, 0);
-                            self.builder.ins().sextend(types::I64, val)
-                        }
-                        _ => self.builder.ins().stack_load(types::I64, slot, 0),
-                    };
+                    let loaded_val = self.load_variable(slot, &ty);
                     let one = self.builder.ins().iconst(types::I64, 1);
                     let new_val = self.builder.ins().iadd(loaded_val, one);
                     self.builder.ins().stack_store(new_val, slot, 0);
@@ -1255,13 +1363,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             Expr::Decrement(expr) => {
                 if let Expr::Variable(name, _) = *expr {
                     let (slot, ty) = self.variables.get(&name).unwrap();
-                    let loaded_val = match ty {
-                        Type::Char | Type::Bool => {
-                            let val = self.builder.ins().stack_load(types::I8, slot, 0);
-                            self.builder.ins().sextend(types::I64, val)
-                        }
-                        _ => self.builder.ins().stack_load(types::I64, slot, 0),
-                    };
+                    let loaded_val = self.load_variable(slot, &ty);
                     let one = self.builder.ins().iconst(types::I64, 1);
                     let new_val = self.builder.ins().isub(loaded_val, one);
                     self.builder.ins().stack_store(new_val, slot, 0);
@@ -1273,13 +1375,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             Expr::PostIncrement(expr) => {
                 if let Expr::Variable(name, _) = *expr {
                     let (slot, ty) = self.variables.get(&name).unwrap();
-                    let loaded_val = match ty {
-                        Type::Char | Type::Bool => {
-                            let val = self.builder.ins().stack_load(types::I8, slot, 0);
-                            self.builder.ins().sextend(types::I64, val)
-                        }
-                        _ => self.builder.ins().stack_load(types::I64, slot, 0),
-                    };
+                    let loaded_val = self.load_variable(slot, &ty);
                     let one = self.builder.ins().iconst(types::I64, 1);
                     let new_val = self.builder.ins().iadd(loaded_val, one);
                     self.builder.ins().stack_store(new_val, slot, 0);
@@ -1291,13 +1387,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             Expr::PostDecrement(expr) => {
                 if let Expr::Variable(name, _) = *expr {
                     let (slot, ty) = self.variables.get(&name).unwrap();
-                    let loaded_val = match ty {
-                        Type::Char | Type::Bool => {
-                            let val = self.builder.ins().stack_load(types::I8, slot, 0);
-                            self.builder.ins().sextend(types::I64, val)
-                        }
-                        _ => self.builder.ins().stack_load(types::I64, slot, 0),
-                    };
+                    let loaded_val = self.load_variable(slot, &ty);
                     let one = self.builder.ins().iconst(types::I64, 1);
                     let new_val = self.builder.ins().isub(loaded_val, one);
                     self.builder.ins().stack_store(new_val, slot, 0);

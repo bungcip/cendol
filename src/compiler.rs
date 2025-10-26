@@ -49,17 +49,20 @@ use crate::semantic::SemanticAnalyzer;
 use std::fs;
 use std::io::Write;
 use std::process::Command;
+use std::path::PathBuf;
 
 pub struct Compiler {
     preprocessor: Preprocessor,
     logger: Logger,
     cli: Cli,
+    working_dir: PathBuf,
 }
 
 impl Compiler {
-    pub fn new(cli: Cli) -> Self {
+    pub fn new(cli: Cli, working_dir: Option<PathBuf>) -> Self {
         let logger = Logger::new(cli.verbose);
         let mut file_manager = FileManager::new();
+        let working_dir = working_dir.unwrap_or_else(|| std::env::current_dir().unwrap());
 
         file_manager.add_include_path("/usr/include");
         file_manager.add_include_path("/usr/include/x86_64-linux-gnu");
@@ -76,6 +79,7 @@ impl Compiler {
             preprocessor,
             logger,
             cli,
+            working_dir,
         }
     }
 
@@ -169,7 +173,7 @@ impl Compiler {
         };
 
         // Perform semantic analysis
-        let semantic_analyzer = SemanticAnalyzer::new();
+        let semantic_analyzer = SemanticAnalyzer::with_builtins();
         match semantic_analyzer.analyze(ast.clone(), filename) {
             Ok(_) => {
                 self.logger.log("Semantic analysis passed");
@@ -214,8 +218,8 @@ impl Compiler {
             "a.o".to_string()
         };
 
-        let mut object_file =
-            fs::File::create(&object_filename).expect("Failed to create object file");
+        let mut object_file = fs::File::create(self.working_dir.join(&object_filename))
+            .expect("Failed to create object file");
         object_file
             .write_all(&object_bytes)
             .expect("Failed to write to object file");
@@ -227,6 +231,7 @@ impl Compiler {
                 .clone()
                 .unwrap_or_else(|| "a.out".to_string());
             Command::new("cc")
+                .current_dir(&self.working_dir)
                 .arg(&object_filename)
                 .arg("-o")
                 .arg(&output_filename)

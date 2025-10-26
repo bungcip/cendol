@@ -283,7 +283,6 @@ mod tests {
     #[test]
     fn test_variadic_function() {
         let input = r#"
-        int variadic_func(int a, ...);
         int main() {
             return variadic_func(42, 1, 2, 3);
         }
@@ -346,7 +345,7 @@ mod tests {
     #[test]
     fn test_string_literal() {
         let input = r#"
-        int strlen(char *);
+        unsigned long strlen(const char *);
 
         int
         main()

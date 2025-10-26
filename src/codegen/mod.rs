@@ -234,9 +234,9 @@ impl CodeGen {
             }
             translator.builder.seal_all_blocks();
             translator.builder.finalize();
-            let mut text = String::new();
-            cranelift::codegen::write_function(&mut text, &self.ctx.func).unwrap();
-            println!("{}", text);
+            // let mut text = String::new();
+            // cranelift::codegen::write_function(&mut text, &self.ctx.func).unwrap();
+            // println!("{}", text);
             self.module.define_function(*id, &mut self.ctx).unwrap();
         }
 

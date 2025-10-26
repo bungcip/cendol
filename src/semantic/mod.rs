@@ -30,13 +30,16 @@ impl Default for SemanticAnalyzer {
 impl SemanticAnalyzer {
     /// Creates a new `SemanticAnalyzer`.
     pub fn new() -> Self {
-        let mut analyzer = SemanticAnalyzer {
+        SemanticAnalyzer {
             symbol_table: HashMap::new(),
             current_function: None,
             errors: Vec::new(),
-        };
+        }
+    }
 
-        // Add built-in functions
+    /// Creates a new `SemanticAnalyzer` with built-in functions.
+    pub fn with_builtins() -> Self {
+        let mut analyzer = Self::new();
         analyzer.add_builtin_functions();
         analyzer
     }
@@ -49,7 +52,6 @@ impl SemanticAnalyzer {
             ("malloc", Type::Pointer(Box::new(Type::Void))),
             ("free", Type::Void),
             ("scanf", Type::Int),
-            ("strlen", Type::Int),
             ("strcmp", Type::Int),
             ("memcpy", Type::Pointer(Box::new(Type::Void))),
         ];

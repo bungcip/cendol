@@ -19,8 +19,10 @@ target-lexicon = "0.13.3"
 ariadne = "0.4.1"
 clap = { version = "4.5.49", features = ["derive"] }
 serde = { version = "1.0.203", features = ["derive"] }
+tempfile = "3.23"
 
 [dev-dependencies]
 insta = { version = "1.39.0", features = ["yaml"] }
 assert_cmd = "2.0.14"
 predicates = "3.1.0"
+tempfile = "3.23"

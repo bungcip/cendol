@@ -3,8 +3,8 @@
 //! This module provides common utilities and patterns used across different
 //! test modules to reduce code duplication and improve maintainability.
 
-use crate::codegen::CodeGen;
 use crate::common::{SourceLocation, SourceSpan};
+use crate::compiler::{Cli, Compiler};
 use crate::error::Report;
 use crate::file::{FileId, FileManager};
 use crate::parser::Parser;
@@ -14,8 +14,8 @@ use crate::preprocessor::lexer::Lexer;
 use crate::preprocessor::token::{KeywordKind, Token, TokenKind};
 
 use std::fs;
-use std::io::Write;
 use std::process::Command;
+use tempfile::tempdir;
 
 /// Test configuration constants
 pub mod config {
@@ -49,53 +49,58 @@ pub fn create_test_location(file_id: u32, line: u32) -> SourceSpan {
 
 /// Compiles and runs C code, returning the exit code
 pub fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Box<dyn std::error::Error>> {
-    let mut preprocessor = create_preprocessor();
-    let tokens = preprocessor.preprocess(input, &format!("{}.c", test_name))?;
+    let temp_dir = tempdir()?;
+    let temp_dir_path = temp_dir.path().to_str().ok_or("Failed to get temporary directory path")?.to_string();
 
-    // Parser now handles filtering internally
-    let mut parser = Parser::new(tokens)?;
-    let ast = parser.parse()?;
-    let codegen = CodeGen::new();
-    let object_bytes = codegen.compile(ast)?;
+    let obj_filename = format!("{}.o", test_name);
+    let exe_filename = format!("./{}.out", test_name);
 
-    let obj_filename = format!(
-        "{}{}{}",
-        config::TEST_FILE_PREFIX,
-        test_name,
-        config::OBJ_EXTENSION
+    eprintln!("[DEBUG] Test: {}, Temp Dir: {}, Object file: {}, Executable file: {}", test_name, temp_dir_path, obj_filename, exe_filename);
+
+    // Create a temporary file for the input within the temporary directory
+    let input_file_path = temp_dir.path().join(format!("{}.c", test_name));
+    fs::write(&input_file_path, input)?;
+    let input_file_path_str = input_file_path.to_str().ok_or("Failed to get input file path string")?.to_string();
+    eprintln!("[DEBUG] Test: {}, Temporary input file: {}", test_name, input_file_path_str);
+
+    let mut compiler = Compiler::new(
+        Cli {
+            input_file: input_file_path_str.clone(),
+            output_file: Some(obj_filename.clone()), // Output to object file first
+            compile_only: true, // Compile only, do not link yet
+            ..Default::default()
+        },
+        Some(temp_dir.path().to_path_buf()),
     );
-    let exe_filename = format!(
-        "./{}{}{}",
-        config::TEST_FILE_PREFIX,
-        test_name,
-        config::EXE_EXTENSION
-    );
 
-    // Write object file
-    let mut object_file = fs::File::create(&obj_filename)?;
-    object_file.write_all(&object_bytes)?;
-    drop(object_file);
+    if let Err(err) = compiler.compile() {
+        return Err(Box::new(err));
+    }
 
-    // Compile object file to executable
-    let compile_status = Command::new(config::C_COMPILER)
+    // Link the object file to create the executable
+    let link_output = Command::new(config::C_COMPILER)
+        .current_dir(&temp_dir_path) // Execute in temporary directory
         .arg(&obj_filename)
         .arg("-o")
         .arg(&exe_filename)
         .arg(config::C_LIB_FLAG)
-        .status()?;
+        .output()?; // Use output() to ensure all streams are closed
 
-    if !compile_status.success() {
-        return Err(format!("Compilation failed for test: {}", test_name).into());
+    if !link_output.status.success() {
+        eprintln!("Linking STDOUT: {}", String::from_utf8_lossy(&link_output.stdout));
+        eprintln!("Linking STDERR: {}", String::from_utf8_lossy(&link_output.stderr));
+        return Err(format!("Linking failed for test: {}", test_name).into());
     }
 
     // Run executable and get exit code
-    let output = Command::new(&exe_filename).status()?;
-    let exit_code = output.code().unwrap_or(-1);
+    let exit_code = {
+        let child_output = Command::new(&exe_filename)
+            .current_dir(&temp_dir_path) // Execute in temporary directory
+            .output()?; // Use output() to ensure all streams are closed
+        child_output.status.code().unwrap_or(-1)
+    };
 
-    // Clean up generated files
-    let _ = fs::remove_file(&obj_filename);
-    let _ = fs::remove_file(&exe_filename);
-
+    // The temporary directory and its contents will be deleted when `temp_dir` goes out of scope.
     Ok(exit_code)
 }
 
@@ -110,52 +115,55 @@ pub fn compile_and_run_with_output(
     input: &str,
     test_name: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let mut preprocessor = create_preprocessor();
-    let tokens = preprocessor.preprocess(input, &format!("{}.c", test_name))?;
+    let temp_dir = tempdir()?;
+    let temp_dir_path = temp_dir.path().to_str().ok_or("Failed to get temporary directory path")?.to_string();
 
-    // Parser now handles filtering internally
-    let mut parser = Parser::new(tokens)?;
-    let ast = parser.parse()?;
-    let codegen = CodeGen::new();
-    let object_bytes = codegen.compile(ast)?;
+    let obj_filename = format!("{}.o", test_name);
+    let exe_filename = format!("./{}.out", test_name);
 
-    let obj_filename = format!(
-        "{}{}{}",
-        config::TEST_FILE_PREFIX,
-        test_name,
-        config::OBJ_EXTENSION
+    // Create a temporary file for the input within the temporary directory
+    let input_file_path = temp_dir.path().join(format!("{}.c", test_name));
+    fs::write(&input_file_path, input)?;
+    let input_file_path_str = input_file_path.to_str().ok_or("Failed to get input file path string")?.to_string();
+
+    let mut compiler = Compiler::new(
+        Cli {
+            input_file: input_file_path_str.clone(),
+            output_file: Some(obj_filename.clone()),
+            compile_only: true,
+            ..Default::default()
+        },
+        Some(temp_dir.path().to_path_buf()),
     );
-    let exe_filename = format!(
-        "./{}{}{}",
-        config::TEST_FILE_PREFIX,
-        test_name,
-        config::EXE_EXTENSION
-    );
 
-    // Write object file
-    let mut object_file = fs::File::create(&obj_filename)?;
-    object_file.write_all(&object_bytes)?;
-    drop(object_file);
+    if let Err(err) = compiler.compile() {
+        return Err(Box::new(err));
+    }
 
-    // Compile object file to executable
-    let compile_status = Command::new(config::C_COMPILER)
+    // Link the object file to create the executable
+    let link_output = Command::new(config::C_COMPILER)
+        .current_dir(&temp_dir_path)
         .arg(&obj_filename)
         .arg("-o")
         .arg(&exe_filename)
         .arg(config::C_LIB_FLAG)
-        .status()?;
+        .output()?;
 
-    if !compile_status.success() {
-        return Err(format!("Compilation failed for test: {}", test_name).into());
+    if !link_output.status.success() {
+        eprintln!("Linking STDOUT: {}", String::from_utf8_lossy(&link_output.stdout));
+        eprintln!("Linking STDERR: {}", String::from_utf8_lossy(&link_output.stderr));
+        return Err(format!("Linking failed for test: {}", test_name).into());
     }
 
     // Run executable and capture output
-    let output = Command::new(&exe_filename).output()?;
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stdout = {
+        let output = Command::new(&exe_filename)
+            .current_dir(&temp_dir_path)
+            .output()?;
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    };
 
-    // Clean up generated files
-    let _ = fs::remove_file(&obj_filename);
-    let _ = fs::remove_file(&exe_filename);
+    // The temporary directory and its contents will be deleted when `temp_dir` goes out of scope.
 
     Ok(stdout)
 }
@@ -245,25 +253,6 @@ pub fn assert_programs_equal(actual: &Program, expected: &Program) {
         actual.functions[0].body.len(),
         expected.functions[0].body.len()
     );
-}
-
-/// Cleanup helper for generated test files
-pub fn cleanup_test_files(test_name: &str) {
-    let obj_filename = format!(
-        "{}{}{}",
-        config::TEST_FILE_PREFIX,
-        test_name,
-        config::OBJ_EXTENSION
-    );
-    let exe_filename = format!(
-        "./{}{}{}",
-        config::TEST_FILE_PREFIX,
-        test_name,
-        config::EXE_EXTENSION
-    );
-
-    let _ = fs::remove_file(&obj_filename);
-    let _ = fs::remove_file(&exe_filename);
 }
 
 /// Compiles C code and returns a report on error

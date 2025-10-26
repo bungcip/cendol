@@ -38,6 +38,14 @@ pub struct Report {
     pub verbose: bool,
 }
 
+impl std::fmt::Display for Report {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.msg)
+    }
+}
+
+impl std::error::Error for Report {}
+
 impl Report {
     /// Creates a new `Report`.
     ///

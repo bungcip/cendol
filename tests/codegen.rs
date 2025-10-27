@@ -4,11 +4,11 @@
 //! to executable binaries, ensuring that the generated code produces
 //! the expected results.
 
-use cendol::test_utils::{compile_and_run, compile_and_run_with_output, compile_and_run_from_file};
+use cendol::test_utils::{compile_and_run, compile_and_run_with_output};
 
 #[cfg(test)]
 mod tests {
-    use super::{compile_and_run, compile_and_run_with_output, compile_and_run_from_file};
+    use super::{compile_and_run, compile_and_run_with_output};
 
     /// Test basic code generation with a simple function
     #[test]

@@ -608,4 +608,44 @@ mod tests {
         let exit_code = compile_and_run(input, "char_literal").unwrap();
         assert_eq!(exit_code, 97);
     }
+
+    /// Test code generation for uninitialized global variables
+    #[test]
+    fn test_uninitialized_global() {
+        let input = r#"
+        int x;
+        int main() {
+            return x;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "uninitialized_global").unwrap();
+        assert_eq!(exit_code, 0);
+    }
+
+    /// Test code generation for initialized global variables
+    #[test]
+    fn test_initialized_global() {
+        let input = r#"
+        int x = 42;
+        int main() {
+            return x;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "initialized_global").unwrap();
+        assert_eq!(exit_code, 42);
+    }
+
+    /// Test code generation for assigning to a global variable
+    #[test]
+    fn test_assign_to_global() {
+        let input = r#"
+        int x = 10;
+        int main() {
+            x = 20;
+            return x;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "assign_to_global").unwrap();
+        assert_eq!(exit_code, 20);
+    }
 }

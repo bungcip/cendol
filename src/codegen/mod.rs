@@ -48,11 +48,14 @@ impl<K: std::hash::Hash + Eq + Clone, V: Clone> SymbolTable<K, V> {
 /// A code generator that translates an AST into machine code.
 use cranelift_module::FuncId;
 
+use cranelift_module::DataId;
+
 pub struct CodeGen {
     builder_context: FunctionBuilderContext,
     ctx: Context,
     module: ObjectModule,
     variables: SymbolTable<String, (StackSlot, Type)>,
+    global_variables: HashMap<String, (DataId, Type)>,
     functions: HashMap<String, (FuncId, Type, bool)>,
     signatures: HashMap<String, cranelift::prelude::Signature>,
     structs: HashMap<String, Type>,
@@ -89,6 +92,7 @@ impl CodeGen {
             ctx,
             module,
             variables: SymbolTable::new(),
+            global_variables: HashMap::new(),
             functions: HashMap::new(),
             signatures: HashMap::new(),
             structs: HashMap::new(),
@@ -133,6 +137,40 @@ impl CodeGen {
                             self.structs.insert(name.clone(), declarator.ty.clone());
                         } else if let Type::Union(Some(name), _) = &declarator.ty {
                             self.unions.insert(name.clone(), declarator.ty.clone());
+                        } else {
+                            // This is a global variable declaration.
+                            let id = self
+                                .module
+                                .declare_data(&declarator.name, Linkage::Export, true, false)
+                                .unwrap();
+
+                            self.global_variables
+                                .insert(declarator.name.clone(), (id, declarator.ty.clone()));
+
+                            let mut data_desc = cranelift_module::DataDescription::new();
+
+                            let size = FunctionTranslator::get_type_size_from_type(
+                                &declarator.ty,
+                                &self.structs,
+                                &self.unions,
+                            );
+
+                            let initial_value = if let Some(init) = &declarator.initializer {
+                                if let Initializer::Expr(expr) = init {
+                                    if let Expr::Number(num) = **expr {
+                                        num.to_le_bytes().to_vec()
+                                    } else {
+                                        return Err(CodegenError::InvalidStaticInitializer);
+                                    }
+                                } else {
+                                    return Err(CodegenError::InvalidStaticInitializer);
+                                }
+                            } else {
+                                vec![0; size as usize]
+                            };
+
+                            data_desc.define(initial_value.into_boxed_slice());
+                            self.module.define_data(id, &data_desc).unwrap();
                         }
                     }
                 }
@@ -187,6 +225,7 @@ impl CodeGen {
                 builder,
                 functions: &self.functions,
                 variables: &mut self.variables,
+                global_variables: &self.global_variables,
                 structs: &self.structs,
                 unions: &self.unions,
                 module: &mut self.module,
@@ -260,6 +299,7 @@ struct FunctionTranslator<'a, 'b> {
     builder: FunctionBuilder<'a>,
     functions: &'b HashMap<String, (FuncId, Type, bool)>,
     variables: &'b mut SymbolTable<String, (StackSlot, Type)>,
+    global_variables: &'b HashMap<String, (DataId, Type)>,
     structs: &'b HashMap<String, Type>,
     unions: &'b HashMap<String, Type>,
     module: &'b mut ObjectModule,
@@ -269,6 +309,100 @@ struct FunctionTranslator<'a, 'b> {
 }
 
 impl<'a, 'b> FunctionTranslator<'a, 'b> {
+    pub fn get_type_size_from_type(
+        ty: &Type,
+        structs: &HashMap<String, Type>,
+        unions: &HashMap<String, Type>,
+    ) -> u32 {
+        let real_ty = Self::get_real_type_from_type(ty, structs, unions).unwrap();
+        match &real_ty {
+            Type::Int | Type::UnsignedInt => 8,
+            Type::Char | Type::UnsignedChar => 1,
+            Type::Short | Type::UnsignedShort => 2,
+            Type::Float => 4,
+            Type::Double => 8,
+            Type::Long | Type::UnsignedLong => 8,
+            Type::LongLong | Type::UnsignedLongLong => 8,
+            Type::Void => 0,
+            Type::Bool => 1,
+            Type::Pointer(_) => 8,
+            Type::Struct(_, members) => {
+                let mut size = 0;
+                for member in members {
+                    let member_size = Self::get_type_size_from_type(&member.ty, structs, unions);
+                    let member_alignment =
+                        Self::get_type_alignment_from_type(&member.ty, structs, unions);
+                    size = (size + member_alignment - 1) & !(member_alignment - 1);
+                    size += member_size;
+                }
+                let struct_alignment = Self::get_type_alignment_from_type(ty, structs, unions);
+                (size + struct_alignment - 1) & !(struct_alignment - 1)
+            }
+            Type::Union(_, members) => {
+                let size = members
+                    .iter()
+                    .map(|m| Self::get_type_size_from_type(&m.ty, structs, unions))
+                    .max()
+                    .unwrap_or(0);
+                let union_alignment = Self::get_type_alignment_from_type(ty, structs, unions);
+                (size + union_alignment - 1) & !(union_alignment - 1)
+            }
+            Type::Array(elem_ty, size) => {
+                Self::get_type_size_from_type(elem_ty, structs, unions) * *size as u32
+            }
+            _ => unimplemented!(),
+        }
+    }
+
+    fn get_type_alignment_from_type(
+        ty: &Type,
+        structs: &HashMap<String, Type>,
+        unions: &HashMap<String, Type>,
+    ) -> u32 {
+        let real_ty = Self::get_real_type_from_type(ty, structs, unions).unwrap();
+        match &real_ty {
+            Type::Int | Type::UnsignedInt => 8,
+            Type::Char | Type::UnsignedChar => 1,
+            Type::Short | Type::UnsignedShort => 2,
+            Type::Float => 4,
+            Type::Double => 8,
+            Type::Long | Type::UnsignedLong => 8,
+            Type::LongLong | Type::UnsignedLongLong => 8,
+            Type::Void => 1,
+            Type::Bool => 1,
+            Type::Pointer(_) => 8,
+            Type::Struct(_, members) => members
+                .iter()
+                .map(|m| Self::get_type_alignment_from_type(&m.ty, structs, unions))
+                .max()
+                .unwrap_or(1),
+            Type::Union(_, members) => members
+                .iter()
+                .map(|m| Self::get_type_alignment_from_type(&m.ty, structs, unions))
+                .max()
+                .unwrap_or(1),
+            Type::Array(elem_ty, _) => Self::get_type_alignment_from_type(elem_ty, structs, unions),
+            _ => unimplemented!(),
+        }
+    }
+
+    fn get_real_type_from_type(
+        ty: &Type,
+        structs: &HashMap<String, Type>,
+        unions: &HashMap<String, Type>,
+    ) -> Result<Type, CodegenError> {
+        if let Type::Struct(Some(name), members) = ty
+            && members.is_empty()
+        {
+            return Ok(structs.get(name).unwrap().clone());
+        } else if let Type::Union(Some(name), members) = ty
+            && members.is_empty()
+        {
+            return Ok(unions.get(name).unwrap().clone());
+        }
+        Ok(ty.clone())
+    }
+
     /// Switches to a new block.
     fn switch_to_block(&mut self, block: Block) {
         self.builder.switch_to_block(block);
@@ -285,70 +419,12 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
     /// Returns the alignment of a given type in bytes.
     fn get_type_alignment(&self, ty: &Type) -> u32 {
-        let real_ty = self.get_real_type(ty).unwrap();
-        match &real_ty {
-            Type::Int | Type::UnsignedInt => 8,
-            Type::Char | Type::UnsignedChar => 1,
-            Type::Short | Type::UnsignedShort => 2,
-            Type::Float => 4,
-            Type::Double => 8,
-            Type::Long | Type::UnsignedLong => 8,
-            Type::LongLong | Type::UnsignedLongLong => 8,
-            Type::Void => 1,
-            Type::Bool => 1,
-            Type::Pointer(_) => 8,
-            Type::Struct(_, members) => members
-                .iter()
-                .map(|m| self.get_type_alignment(&m.ty))
-                .max()
-                .unwrap_or(1),
-            Type::Union(_, members) => members
-                .iter()
-                .map(|m| self.get_type_alignment(&m.ty))
-                .max()
-                .unwrap_or(1),
-            Type::Array(elem_ty, _) => self.get_type_alignment(elem_ty),
-            _ => unimplemented!(),
-        }
+        Self::get_type_alignment_from_type(ty, self.structs, self.unions)
     }
 
     /// Returns the size of a given type in bytes.
     fn get_type_size(&self, ty: &Type) -> u32 {
-        let real_ty = self.get_real_type(ty).unwrap();
-        match &real_ty {
-            Type::Int | Type::UnsignedInt => 8,
-            Type::Char | Type::UnsignedChar => 1,
-            Type::Short | Type::UnsignedShort => 2,
-            Type::Float => 4,
-            Type::Double => 8,
-            Type::Long | Type::UnsignedLong => 8,
-            Type::LongLong | Type::UnsignedLongLong => 8,
-            Type::Void => 0,
-            Type::Bool => 1,
-            Type::Pointer(_) => 8,
-            Type::Struct(_, members) => {
-                let mut size = 0;
-                for member in members {
-                    let member_size = self.get_type_size(&member.ty);
-                    let member_alignment = self.get_type_alignment(&member.ty);
-                    size = (size + member_alignment - 1) & !(member_alignment - 1);
-                    size += member_size;
-                }
-                let struct_alignment = self.get_type_alignment(ty);
-                (size + struct_alignment - 1) & !(struct_alignment - 1)
-            }
-            Type::Union(_, members) => {
-                let size = members
-                    .iter()
-                    .map(|m| self.get_type_size(&m.ty))
-                    .max()
-                    .unwrap_or(0);
-                let union_alignment = self.get_type_alignment(ty);
-                (size + union_alignment - 1) & !(union_alignment - 1)
-            }
-            Type::Array(elem_ty, size) => self.get_type_size(elem_ty) * *size as u32,
-            _ => unimplemented!(),
-        }
+        Self::get_type_size_from_type(ty, self.structs, self.unions)
     }
 
     /// Translates a statement into Cranelift IR.
@@ -577,24 +653,21 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
     /// Resolves the real type of a struct.
     fn get_real_type(&self, ty: &Type) -> Result<Type, CodegenError> {
-        if let Type::Struct(Some(name), members) = ty
-            && members.is_empty()
-        {
-            return Ok(self.structs.get(name).unwrap().clone());
-        } else if let Type::Union(Some(name), members) = ty
-            && members.is_empty()
-        {
-            return Ok(self.unions.get(name).unwrap().clone());
-        }
-        Ok(ty.clone())
+        Self::get_real_type_from_type(ty, self.structs, self.unions)
     }
 
     /// Translates an expression into a Cranelift `Value`.
     fn translate_assignment(&mut self, lhs: Expr, rhs_val: Value) -> Result<(), CodegenError> {
         match lhs {
             Expr::Variable(name, _) => {
-                let (slot, _) = self.variables.get(&name).unwrap();
-                self.builder.ins().stack_store(rhs_val, slot, 0);
+                if let Some((slot, _)) = self.variables.get(&name) {
+                    self.builder.ins().stack_store(rhs_val, slot, 0);
+                } else {
+                    let (id, _) = self.global_variables.get(&name).unwrap();
+                    let local_id = self.module.declare_data_in_func(*id, self.builder.func);
+                    let addr = self.builder.ins().global_value(types::I64, local_id);
+                    self.builder.ins().store(MemFlags::new(), rhs_val, addr, 0);
+                }
             }
             Expr::Deref(ptr) => {
                 let (ptr, _) = self.translate_expr(*ptr)?;
@@ -721,20 +794,27 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 ))
             }
             Expr::Variable(name, _) => {
-                let (slot, ty) = self.variables.get(&name).unwrap();
-                if let Type::Struct(_, _) | Type::Union(_, _) = &ty {
-                    return Ok((
-                        self.builder.ins().stack_addr(types::I64, slot, 0),
-                        ty.clone(),
-                    ));
+                if let Some((slot, ty)) = self.variables.get(&name) {
+                    if let Type::Struct(_, _) | Type::Union(_, _) = &ty {
+                        return Ok((
+                            self.builder.ins().stack_addr(types::I64, slot, 0),
+                            ty.clone(),
+                        ));
+                    }
+                    if let Type::Array(elem_ty, _) = &ty {
+                        // Array decays to a pointer to its first element
+                        let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
+                        return Ok((addr, Type::Pointer(elem_ty.clone())));
+                    }
+                    let loaded_val = self.load_variable(slot, &ty);
+                    Ok((loaded_val, ty))
+                } else {
+                    // It's a global variable.
+                    let (id, ty) = self.global_variables.get(&name).unwrap();
+                    let local_id = self.module.declare_data_in_func(*id, self.builder.func);
+                    let addr = self.builder.ins().global_value(types::I64, local_id);
+                    Ok((self.builder.ins().load(types::I64, MemFlags::new(), addr, 0), ty.clone()))
                 }
-                if let Type::Array(elem_ty, _) = &ty {
-                    // Array decays to a pointer to its first element
-                    let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
-                    return Ok((addr, Type::Pointer(elem_ty.clone())));
-                }
-                let loaded_val = self.load_variable(slot, &ty);
-                Ok((loaded_val, ty))
             }
             Expr::Assign(lhs, rhs) => {
                 let (rhs_val, ty) = self.translate_expr(*rhs)?;

@@ -557,4 +557,21 @@ mod tests {
         "#;
         assert_eq!(compile_and_run(c_code, "short_circuit").unwrap(), 1);
     }
+
+    /// Test code generation for goto and labels
+    #[test]
+    #[ignore]
+    fn test_goto() {
+        let input = r#"
+        int main() {
+            int x = 0;
+            goto end;
+            x = 1;
+        end:
+            return x;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "goto").unwrap();
+        assert_eq!(exit_code, 0);
+    }
 }

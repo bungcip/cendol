@@ -854,10 +854,9 @@ impl Parser {
                 return Ok(Stmt::Default(Box::new(stmt)));
             } else if k == KeywordKind::Goto {
                 self.eat()?;
-                if let Some(id) = self.maybe_name()? {
-                    self.expect_punct(TokenKind::Semicolon)?;
-                    return Ok(Stmt::Goto(id));
-                }
+                let id = self.expect_name()?;
+                self.expect_punct(TokenKind::Semicolon)?;
+                return Ok(Stmt::Goto(id));
             } else if k == KeywordKind::Break {
                 return self.parse_simple_statement(Stmt::Break);
             } else if k == KeywordKind::Continue {
@@ -884,6 +883,17 @@ impl Parser {
                 self.expect_punct(TokenKind::Semicolon)?;
                 return Ok(Stmt::Empty);
             }
+        }
+
+        // Check for a label
+        let pos = self.position;
+        if let Ok(TokenKind::Identifier(id)) = self.current_kind() {
+            self.eat()?;
+            if self.eat_token(&TokenKind::Colon)? {
+                let stmt = self.parse_stmt()?;
+                return Ok(Stmt::Label(id, Box::new(stmt)));
+            }
+            self.position = pos;
         }
 
         if self.eat_token(&TokenKind::Semicolon)? {

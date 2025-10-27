@@ -642,6 +642,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             Stmt::Switch(_, _) => todo!(),
             Stmt::Case(_, _) => todo!(),
             Stmt::Default(_) => todo!(),
+            Stmt::Label(_, _) => todo!(),
+            Stmt::Goto(_) => todo!(),
             _ => unimplemented!(),
         }
     }

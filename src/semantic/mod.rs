@@ -17,6 +17,7 @@ struct Symbol {
 /// A semantic analyzer that checks for semantic errors in the AST.
 pub struct SemanticAnalyzer {
     symbol_table: HashMap<String, Symbol>,
+    pub enum_constants: HashMap<String, i64>,
     current_function: Option<String>,
     errors: Vec<(SemanticError, String, SourceSpan)>, // (error, file, span)
 }
@@ -32,6 +33,7 @@ impl SemanticAnalyzer {
     pub fn new() -> Self {
         SemanticAnalyzer {
             symbol_table: HashMap::new(),
+            enum_constants: HashMap::new(),
             current_function: None,
             errors: Vec::new(),
         }
@@ -82,7 +84,7 @@ impl SemanticAnalyzer {
         mut self,
         program: Program,
         filename: &str,
-    ) -> Result<(), Vec<(SemanticError, String, SourceSpan)>> {
+    ) -> Result<Self, Vec<(SemanticError, String, SourceSpan)>> {
         // First pass: collect all function definitions and global declarations
         self.collect_symbols(&program, filename);
 
@@ -90,7 +92,7 @@ impl SemanticAnalyzer {
         self.check_program(program, filename);
 
         if self.errors.is_empty() {
-            Ok(())
+            Ok(self)
         } else {
             Err(self.errors)
         }
@@ -124,7 +126,40 @@ impl SemanticAnalyzer {
                         );
                     }
                 }
-                Stmt::Declaration(_, declarators) => {
+                Stmt::Declaration(ty, declarators) => {
+                    if let Type::Enum(_name, members) = ty {
+                        if !members.is_empty() {
+                            let mut next_value = 0;
+                            for (name, value, span) in members {
+                                let val = if let Some(expr) = value {
+                                    if let Expr::Number(num) = **expr {
+                                        num
+                                    } else {
+                                        self.errors.push((
+                                            SemanticError::InvalidEnumInitializer(name.clone()),
+                                            filename.to_string(),
+                                            span.clone(),
+                                        ));
+                                        -1 // Dummy value
+                                    }
+                                } else {
+                                    next_value
+                                };
+
+                                if self.enum_constants.contains_key(name) {
+                                    self.errors.push((
+                                        SemanticError::VariableRedeclaration(name.clone()),
+                                        filename.to_string(),
+                                        span.clone(),
+                                    ));
+                                } else {
+                                    self.enum_constants.insert(name.clone(), val);
+                                }
+                                next_value = val + 1;
+                            }
+                        }
+                    }
+
                     for declarator in declarators {
                         if let Some(existing) = self.symbol_table.get(&declarator.name) {
                             if !existing.is_function {
@@ -341,7 +376,8 @@ impl SemanticAnalyzer {
     fn check_expression(&mut self, expr: Expr, filename: &str) {
         match expr {
             Expr::Variable(name, location) => {
-                if !self.symbol_table.contains_key(&name) {
+                if !self.symbol_table.contains_key(&name) && !self.enum_constants.contains_key(&name)
+                {
                     self.errors.push((
                         SemanticError::UndefinedVariable(name.clone()),
                         filename.to_string(),

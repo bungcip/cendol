@@ -22,4 +22,8 @@ pub enum SemanticError {
     /// Type mismatch in expression.
     #[error("Type mismatch in expression")]
     TypeMismatch,
+
+    /// An invalid enum initializer was used.
+    #[error("Invalid enum initializer for `{0}`")]
+    InvalidEnumInitializer(String),
 }

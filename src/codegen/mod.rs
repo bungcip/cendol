@@ -60,6 +60,7 @@ pub struct CodeGen {
     signatures: HashMap<String, cranelift::prelude::Signature>,
     structs: HashMap<String, Type>,
     unions: HashMap<String, Type>,
+    pub enum_constants: HashMap<String, i64>,
 }
 
 impl Default for CodeGen {
@@ -97,6 +98,7 @@ impl CodeGen {
             signatures: HashMap::new(),
             structs: HashMap::new(),
             unions: HashMap::new(),
+            enum_constants: HashMap::new(),
         }
     }
 
@@ -228,6 +230,7 @@ impl CodeGen {
                 global_variables: &self.global_variables,
                 structs: &self.structs,
                 unions: &self.unions,
+                enum_constants: &self.enum_constants,
                 module: &mut self.module,
                 loop_context: Vec::new(),
                 current_block_state: BlockState::Empty,
@@ -302,6 +305,7 @@ struct FunctionTranslator<'a, 'b> {
     global_variables: &'b HashMap<String, (DataId, Type)>,
     structs: &'b HashMap<String, Type>,
     unions: &'b HashMap<String, Type>,
+    enum_constants: &'b HashMap<String, i64>,
     module: &'b mut ObjectModule,
     loop_context: Vec<(Block, Block)>,
     current_block_state: BlockState,
@@ -837,6 +841,9 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 ))
             }
             Expr::Variable(name, _) => {
+                if let Some(val) = self.enum_constants.get(&name) {
+                    return Ok((self.builder.ins().iconst(types::I64, *val), Type::Int));
+                }
                 if let Some((slot, ty)) = self.variables.get(&name) {
                     if let Type::Struct(_, _) | Type::Union(_, _) = &ty {
                         return Ok((

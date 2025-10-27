@@ -547,4 +547,22 @@ mod tests {
         let exit_code = compile_and_run_from_file(file_path, "test_from_file").unwrap();
         assert_eq!(exit_code, 0);
     }
+
+    #[test]
+    fn test_short_circuit() {
+        let c_code = r#"
+            int main() {
+                int x = 0;
+                int y = 1;
+
+                if (x && (y = 0)) {
+                    return 1;
+                }
+                if (y || (x = 1)) {
+                }
+                return y;
+            }
+        "#;
+        assert_eq!(compile_and_run(c_code, "short_circuit").unwrap(), 1);
+    }
 }

@@ -481,7 +481,7 @@ impl SemanticAnalyzer {
                 self.check_initializer(&initializer, filename);
             }
             // Literals don't need checking
-            Expr::Number(_) | Expr::String(_) | Expr::Char(_) => {}
+            Expr::Number(_) | Expr::FloatNumber(_) | Expr::String(_) | Expr::Char(_) => {}
             Expr::Increment(expr)
             | Expr::Decrement(expr)
             | Expr::PostIncrement(expr)

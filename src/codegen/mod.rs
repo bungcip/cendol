@@ -671,6 +671,99 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         Ok(())
     }
 
+    fn translate_comparison(
+        &mut self,
+        lhs: Expr,
+        rhs: Expr,
+        int_cc: IntCC,
+        float_cc: FloatCC,
+    ) -> Result<(Value, Type), CodegenError> {
+        let (lhs_val, lhs_ty) = self.translate_expr(lhs)?;
+        let (rhs_val, rhs_ty) = self.translate_expr(rhs)?;
+        let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+
+        if common_ty.is_float() {
+            let lhs_val = if !lhs_ty.is_float() {
+                self.builder.ins().fcvt_from_sint(types::F64, lhs_val)
+            } else {
+                lhs_val
+            };
+            let rhs_val = if !rhs_ty.is_float() {
+                self.builder.ins().fcvt_from_sint(types::F64, rhs_val)
+            } else {
+                rhs_val
+            };
+            let c = self.builder.ins().fcmp(float_cc, lhs_val, rhs_val);
+            Ok((self.builder.ins().uextend(types::I64, c), Type::Int))
+        } else {
+            let c = self.builder.ins().icmp(int_cc, lhs_val, rhs_val);
+            Ok((self.builder.ins().uextend(types::I64, c), Type::Int))
+        }
+    }
+
+    fn translate_binary_op<F_int, F_float>(
+        &mut self,
+        lhs: Expr,
+        rhs: Expr,
+        int_op: F_int,
+        float_op: F_float,
+    ) -> Result<(Value, Type), CodegenError>
+    where
+        F_int: Fn(&mut FunctionBuilder, Value, Value) -> Value,
+        F_float: Fn(&mut FunctionBuilder, Value, Value) -> Value,
+    {
+        let (lhs_val, lhs_ty) = self.translate_expr(lhs)?;
+        let (rhs_val, rhs_ty) = self.translate_expr(rhs)?;
+        let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+
+        if common_ty.is_float() {
+            let lhs_val = if !lhs_ty.is_float() {
+                self.builder.ins().fcvt_from_sint(types::F64, lhs_val)
+            } else {
+                lhs_val
+            };
+            let rhs_val = if !rhs_ty.is_float() {
+                self.builder.ins().fcvt_from_sint(types::F64, rhs_val)
+            } else {
+                rhs_val
+            };
+            return Ok((float_op(&mut self.builder, lhs_val, rhs_val), common_ty));
+        }
+
+        // Pointer arithmetic for add
+        if let (Type::Pointer(base_ty), Type::Int) = (&lhs_ty, &rhs_ty) {
+            let size = self.get_type_size(base_ty);
+            let offset = self.builder.ins().imul_imm(rhs_val, size as i64);
+            let result_val = self.builder.ins().iadd(lhs_val, offset);
+            return Ok((result_val, lhs_ty));
+        }
+        if let (Type::Int, Type::Pointer(base_ty)) = (&lhs_ty, &rhs_ty) {
+            let size = self.get_type_size(base_ty);
+            let offset = self.builder.ins().imul_imm(lhs_val, size as i64);
+            let result_val = self.builder.ins().iadd(rhs_val, offset);
+            return Ok((result_val, rhs_ty));
+        }
+
+        // Pointer arithmetic for sub
+        if let (Type::Pointer(base_ty), Type::Int) = (&lhs_ty, &rhs_ty) {
+            let size = self.get_type_size(base_ty);
+            let offset = self.builder.ins().imul_imm(rhs_val, size as i64);
+            let result_val = self.builder.ins().isub(lhs_val, offset);
+            return Ok((result_val, lhs_ty));
+        }
+        if let (Type::Pointer(lhs_base), Type::Pointer(rhs_base)) = (&lhs_ty, &rhs_ty) {
+            if lhs_base == rhs_base {
+                let diff = self.builder.ins().isub(lhs_val, rhs_val);
+                let size = self.get_type_size(lhs_base);
+                let result_val = self.builder.ins().sdiv_imm(diff, size as i64);
+                return Ok((result_val, Type::Int));
+            }
+        }
+
+        let result_val = int_op(&mut self.builder, lhs_val, rhs_val);
+        Ok((result_val, common_ty))
+    }
+
     fn translate_lvalue(&mut self, expr: Expr) -> Result<(Value, Type), CodegenError> {
         match expr {
             Expr::Variable(name, _) => {
@@ -735,6 +828,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     }
 
     fn usual_arithmetic_conversions(&mut self, left_ty: &Type, right_ty: &Type) -> Type {
+        if left_ty.is_float() || right_ty.is_float() {
+            return Type::Double;
+        }
+
         let left_ty = self.integer_promotion(left_ty);
         let right_ty = self.integer_promotion(right_ty);
 
@@ -823,6 +920,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     fn translate_expr(&mut self, expr: Expr) -> Result<(Value, Type), CodegenError> {
         match expr {
             Expr::Number(n) => Ok((self.builder.ins().iconst(types::I64, n), Type::Int)),
+            Expr::FloatNumber(n) => Ok((self.builder.ins().f64const(n), Type::Double)),
             Expr::String(s) => {
                 let mut data = Vec::with_capacity(s.len() + 1);
                 data.extend_from_slice(s.as_bytes());
@@ -952,70 +1050,33 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.translate_assignment(addr, result_val)?;
                 Ok((result_val, lhs_ty))
             }
-            Expr::Add(lhs, rhs) => {
-                let (lhs_val, lhs_ty) = self.translate_expr(*lhs)?;
-                let (rhs_val, rhs_ty) = self.translate_expr(*rhs)?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
-                let result_val = match (&lhs_ty, &rhs_ty) {
-                    (Type::Pointer(base_ty), Type::Int) => {
-                        let size = self.get_type_size(base_ty);
-                        let offset = self.builder.ins().imul_imm(rhs_val, size as i64);
-                        self.builder.ins().iadd(lhs_val, offset)
-                    }
-                    (Type::Int, Type::Pointer(base_ty)) => {
-                        let size = self.get_type_size(base_ty);
-                        let offset = self.builder.ins().imul_imm(lhs_val, size as i64);
-                        self.builder.ins().iadd(rhs_val, offset)
-                    }
-                    _ => self.builder.ins().iadd(lhs_val, rhs_val),
-                };
-                let result_ty = if lhs_ty.is_pointer() {
-                    lhs_ty
-                } else {
-                    common_ty
-                };
-                Ok((result_val, result_ty))
-            }
-            Expr::Sub(lhs, rhs) => {
-                let (lhs_val, lhs_ty) = self.translate_expr(*lhs)?;
-                let (rhs_val, rhs_ty) = self.translate_expr(*rhs)?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
-                let result_val = match (&lhs_ty, &rhs_ty) {
-                    (Type::Pointer(base_ty), Type::Int) => {
-                        let size = self.get_type_size(base_ty);
-                        let offset = self.builder.ins().imul_imm(rhs_val, size as i64);
-                        self.builder.ins().isub(lhs_val, offset)
-                    }
-                    (Type::Pointer(lhs_base), Type::Pointer(rhs_base)) if lhs_base == rhs_base => {
-                        let diff = self.builder.ins().isub(lhs_val, rhs_val);
-                        let size = self.get_type_size(lhs_base);
-                        self.builder.ins().sdiv_imm(diff, size as i64)
-                    }
-                    _ => self.builder.ins().isub(lhs_val, rhs_val),
-                };
-                let result_ty = match (&lhs_ty, &rhs_ty) {
-                    (Type::Pointer(_), Type::Pointer(_)) => Type::Int,
-                    (Type::Pointer(_), Type::Int) => lhs_ty,
-                    _ => common_ty,
-                };
-                Ok((result_val, result_ty))
-            }
-            Expr::Mul(lhs, rhs) => {
-                let (lhs, lhs_ty) = self.translate_expr(*lhs)?;
-                let (rhs, rhs_ty) = self.translate_expr(*rhs)?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
-                Ok((self.builder.ins().imul(lhs, rhs), common_ty))
-            }
+            Expr::Add(lhs, rhs) => self.translate_binary_op(*lhs, *rhs, |b, l, r| b.ins().iadd(l, r), |b, l, r| b.ins().fadd(l, r)),
+            Expr::Sub(lhs, rhs) => self.translate_binary_op(*lhs, *rhs, |b, l, r| b.ins().isub(l, r), |b, l, r| b.ins().fsub(l, r)),
+            Expr::Mul(lhs, rhs) => self.translate_binary_op(*lhs, *rhs, |b, l, r| b.ins().imul(l, r), |b, l, r| b.ins().fmul(l, r)),
             Expr::Div(lhs, rhs) => {
-                let (lhs, lhs_ty) = self.translate_expr(*lhs)?;
-                let (rhs, rhs_ty) = self.translate_expr(*rhs)?;
+                let (lhs_val, lhs_ty) = self.translate_expr(*lhs)?;
+                let (rhs_val, rhs_ty) = self.translate_expr(*rhs)?;
                 let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
-                let result = if common_ty.is_unsigned() {
-                    self.builder.ins().udiv(lhs, rhs)
+                if common_ty.is_float() {
+                    let lhs_val = if !lhs_ty.is_float() {
+                        self.builder.ins().fcvt_from_sint(types::F64, lhs_val)
+                    } else {
+                        lhs_val
+                    };
+                    let rhs_val = if !rhs_ty.is_float() {
+                        self.builder.ins().fcvt_from_sint(types::F64, rhs_val)
+                    } else {
+                        rhs_val
+                    };
+                    Ok((self.builder.ins().fdiv(lhs_val, rhs_val), common_ty))
                 } else {
-                    self.builder.ins().sdiv(lhs, rhs)
-                };
-                Ok((result, common_ty))
+                    let result = if common_ty.is_unsigned() {
+                        self.builder.ins().udiv(lhs_val, rhs_val)
+                    } else {
+                        self.builder.ins().sdiv(lhs_val, rhs_val)
+                    };
+                    Ok((result, common_ty))
+                }
             }
             Expr::Mod(lhs, rhs) => {
                 let (lhs, lhs_ty) = self.translate_expr(*lhs)?;
@@ -1028,64 +1089,54 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 };
                 Ok((result, common_ty))
             }
-            Expr::Equal(lhs, rhs) => {
-                let (lhs, _) = self.translate_expr(*lhs)?;
-                let (rhs, _) = self.translate_expr(*rhs)?;
-                let c = self.builder.ins().icmp(IntCC::Equal, lhs, rhs);
-                Ok((self.builder.ins().uextend(types::I64, c), Type::Int))
-            }
-            Expr::NotEqual(lhs, rhs) => {
-                let (lhs, _) = self.translate_expr(*lhs)?;
-                let (rhs, _) = self.translate_expr(*rhs)?;
-                let c = self.builder.ins().icmp(IntCC::NotEqual, lhs, rhs);
-                Ok((self.builder.ins().uextend(types::I64, c), Type::Int))
-            }
+            Expr::Equal(lhs, rhs) => self.translate_comparison(*lhs, *rhs, IntCC::Equal, FloatCC::Equal),
+            Expr::NotEqual(lhs, rhs) => self.translate_comparison(*lhs, *rhs, IntCC::NotEqual, FloatCC::NotEqual),
             Expr::LessThan(lhs, rhs) => {
-                let (lhs, lhs_ty) = self.translate_expr(*lhs)?;
-                let (rhs, rhs_ty) = self.translate_expr(*rhs)?;
+                let (lhs_val, lhs_ty) = self.translate_expr(*lhs)?;
+                let (rhs_val, rhs_ty) = self.translate_expr(*rhs)?;
                 let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
                 let cc = if common_ty.is_unsigned() {
                     IntCC::UnsignedLessThan
                 } else {
                     IntCC::SignedLessThan
                 };
-                let c = self.builder.ins().icmp(cc, lhs, rhs);
+                let c = self.builder.ins().icmp(cc, lhs_val, rhs_val);
                 Ok((self.builder.ins().uextend(types::I64, c), Type::Int))
             }
             Expr::GreaterThan(lhs, rhs) => {
-                let (lhs, lhs_ty) = self.translate_expr(*lhs)?;
-                let (rhs, rhs_ty) = self.translate_expr(*rhs)?;
+                let (lhs_val, lhs_ty) = self.translate_expr(*lhs)?;
+                let (rhs_val, rhs_ty) = self.translate_expr(*rhs)?;
                 let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
                 let cc = if common_ty.is_unsigned() {
                     IntCC::UnsignedGreaterThan
                 } else {
                     IntCC::SignedGreaterThan
                 };
-                let c = self.builder.ins().icmp(cc, lhs, rhs);
+                let c = self.builder.ins().icmp(cc, lhs_val, rhs_val);
                 Ok((self.builder.ins().uextend(types::I64, c), Type::Int))
             }
             Expr::LessThanOrEqual(lhs, rhs) => {
-                let (lhs, lhs_ty) = self.translate_expr(*lhs)?;
-                let (rhs, rhs_ty) = self.translate_expr(*rhs)?;
+                let (lhs_val, lhs_ty) = self.translate_expr(*lhs)?;
+                let (rhs_val, rhs_ty) = self.translate_expr(*rhs)?;
                 let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
                 let cc = if common_ty.is_unsigned() {
                     IntCC::UnsignedLessThanOrEqual
                 } else {
                     IntCC::SignedLessThanOrEqual
                 };
-                let c = self.builder.ins().icmp(cc, lhs, rhs);
+                let c = self.builder.ins().icmp(cc, lhs_val, rhs_val);
                 Ok((self.builder.ins().uextend(types::I64, c), Type::Int))
             }
             Expr::GreaterThanOrEqual(lhs, rhs) => {
-                let (lhs, lhs_ty) = self.translate_expr(*lhs)?;
-                let (rhs, rhs_ty) = self.translate_expr(*rhs)?;
+                let (lhs_val, lhs_ty) = self.translate_expr(*lhs)?;
+                let (rhs_val, rhs_ty) = self.translate_expr(*rhs)?;
                 let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
                 let cc = if common_ty.is_unsigned() {
                     IntCC::UnsignedGreaterThanOrEqual
                 } else {
                     IntCC::SignedGreaterThanOrEqual
                 };
-                let c = self.builder.ins().icmp(cc, lhs, rhs);
+                let c = self.builder.ins().icmp(cc, lhs_val, rhs_val);
                 Ok((self.builder.ins().uextend(types::I64, c), Type::Int))
             }
             Expr::Neg(expr) => {
@@ -1334,7 +1385,12 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 }
             }
             Expr::Cast(ty, expr) => {
-                let (val, _) = self.translate_expr(*expr)?;
+                let (val, from_ty) = self.translate_expr(*expr)?;
+                if from_ty.is_float() {
+                    let cast_val = self.builder.ins().fcvt_to_sint(types::I64, val);
+                    return Ok((cast_val, *ty));
+                }
+
                 let cast_val = match *ty {
                     Type::Char | Type::UnsignedChar => self.builder.ins().ireduce(types::I8, val),
                     Type::Short | Type::UnsignedShort => {

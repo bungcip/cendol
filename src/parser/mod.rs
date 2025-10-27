@@ -11,6 +11,7 @@ pub mod error;
 pub mod token;
 
 /// A parser that converts a stream of tokens into an abstract syntax tree.
+#[derive(Clone)]
 pub struct Parser {
     tokens: Vec<Token>,
     position: usize,
@@ -650,9 +651,22 @@ impl Parser {
         match token.kind.clone() {
             TokenKind::Number(n) => {
                 self.eat()?;
-                // Strip suffixes like L, U, LL, UU
-                let num_str = n.trim_end_matches(['L', 'U', 'l', 'u']);
-                Ok(Expr::Number(num_str.parse().unwrap()))
+                if n.contains('.') || n.contains('e') || n.contains('E') {
+                    // It's a float
+                    let num_str = n.trim_end_matches(['f', 'F', 'd', 'D']);
+                    Ok(Expr::FloatNumber(num_str.parse().unwrap()))
+                } else {
+                    // It's an integer
+                    let num_str = n.trim_end_matches(['L', 'U', 'l', 'u']);
+                    let val = if num_str.starts_with("0x") || num_str.starts_with("0X") {
+                        i64::from_str_radix(&num_str[2..], 16).unwrap()
+                    } else if num_str.starts_with('0') && num_str.len() > 1 {
+                        i64::from_str_radix(&num_str[1..], 8).unwrap()
+                    } else {
+                        num_str.parse().unwrap()
+                    };
+                    Ok(Expr::Number(val))
+                }
             }
             TokenKind::String(s) => {
                 self.eat()?;
@@ -830,7 +844,11 @@ impl Parser {
                 stmts.push(self.parse_stmt()?);
             }
             return Ok(Stmt::Block(stmts));
-        } else if let Ok(base_type) = self.parse_type_specifier() {
+        }
+
+        let mut p = self.clone();
+        if p.parse_type().is_ok() {
+            let base_type = self.parse_type_specifier()?;
             if self.eat_token(&TokenKind::Semicolon)? {
                 return Ok(Stmt::Declaration(base_type, vec![]));
             }
@@ -845,7 +863,9 @@ impl Parser {
             }
             self.expect_punct(TokenKind::Semicolon)?;
             return Ok(Stmt::Declaration(base_type, declarators));
-        } else if let TokenKind::Keyword(k) = token.kind {
+        }
+
+        if let TokenKind::Keyword(k) = token.kind {
             if k == KeywordKind::Return {
                 self.eat()?;
                 let expr = self.parse_expr()?;

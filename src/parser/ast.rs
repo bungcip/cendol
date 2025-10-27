@@ -50,6 +50,11 @@ impl Type {
         matches!(self, Type::Pointer(_))
     }
 
+    /// Returns `true` if the type is a float or double.
+    pub fn is_float(&self) -> bool {
+        matches!(self, Type::Float | Type::Double)
+    }
+
     /// Returns `true` if the type is unsigned.
     pub fn is_unsigned(&self) -> bool {
         matches!(
@@ -141,6 +146,8 @@ pub enum Stmt {
 pub enum Expr {
     /// A number literal.
     Number(i64),
+    /// A float number literal.
+    FloatNumber(f64),
     /// A string literal.
     String(String),
     /// A character literal.

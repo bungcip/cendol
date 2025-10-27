@@ -1403,9 +1403,11 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     unimplemented!()
                 }
             }
-            Expr::Char(_) => {
-                // Literals are handled directly by the `translate_expr` function
-                unreachable!()
+            Expr::Char(c) => {
+                // Extract the character from the string literal (e.g., "'a'" -> 'a')
+                let character = c.chars().next().unwrap();
+                let val = self.builder.ins().iconst(types::I64, character as i64);
+                Ok((val, Type::Char))
             }
             Expr::LogicalAnd(lhs, rhs) => {
                 let (lhs_val, _) = self.translate_expr(*lhs)?;

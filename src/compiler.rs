@@ -174,10 +174,11 @@ impl Compiler {
 
         // Perform semantic analysis
         let semantic_analyzer = SemanticAnalyzer::with_builtins();
-        let semantic_analyzer = match semantic_analyzer.analyze(ast.clone(), filename) {
-            Ok(analyzer) => {
+        let enum_constants = semantic_analyzer.enum_constants.clone();
+        let typed_ast = match semantic_analyzer.analyze(ast.clone(), filename) {
+            Ok(typed_ast) => {
                 self.logger.log("Semantic analysis passed");
-                analyzer
+                typed_ast
             }
             Err(errors) => {
                 for (error, file, span) in errors {
@@ -198,9 +199,13 @@ impl Compiler {
             }
         };
 
+        // Use the new analyze_translation_unit function
+        use crate::semantic::{analyze_translation_unit};
+        let typed_ast = analyze_translation_unit(ast.clone());
+
         let mut codegen = CodeGen::new();
-        codegen.enum_constants = semantic_analyzer.enum_constants;
-        let object_bytes = match codegen.compile(ast) {
+        codegen.enum_constants = enum_constants;
+        let object_bytes = match codegen.compile(typed_ast) {
             Ok(bytes) => bytes,
             Err(err) => {
                 let mut report = Report::new(

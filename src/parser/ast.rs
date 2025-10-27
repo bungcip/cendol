@@ -74,6 +74,21 @@ impl Type {
             _ => 0,
         }
     }
+
+    /// Returns the arithmetic conversion rank for usual arithmetic conversions.
+    pub fn get_arithmetic_rank(&self) -> i32 {
+        match self {
+            Type::Bool => 1,
+            Type::Char | Type::UnsignedChar => 2,
+            Type::Short | Type::UnsignedShort => 3,
+            Type::Int | Type::UnsignedInt => 4,
+            Type::Long | Type::UnsignedLong => 5,
+            Type::LongLong | Type::UnsignedLongLong => 6,
+            Type::Float => 7,
+            Type::Double => 8,
+            _ => 0,
+        }
+    }
 }
 
 /// Represents the initializer of a `for` loop.
@@ -213,9 +228,9 @@ pub enum Expr {
     /// A sizeof type expression.
     SizeofType(Type),
     /// A pre-increment expression.
-    Increment(Box<Expr>),
+    PreIncrement(Box<Expr>),
     /// A pre-decrement expression.
-    Decrement(Box<Expr>),
+    PreDecrement(Box<Expr>),
     /// A post-increment expression.
     PostIncrement(Box<Expr>),
     /// A post-decrement expression.
@@ -228,8 +243,10 @@ pub enum Expr {
     Member(Box<Expr>, String),
     /// A pointer member access expression.
     PointerMember(Box<Expr>, String),
-    /// A type cast expression.
-    Cast(Box<Type>, Box<Expr>),
+    /// An explicit type cast expression.
+    ExplicitCast(Box<Type>, Box<Expr>),
+    /// An implicit type cast expression.
+    ImplicitCast(Box<Type>, Box<Expr>),
     /// A compound literal expression.
     CompoundLiteral(Box<Type>, Box<Initializer>),
     /// A comma expression.
@@ -287,4 +304,226 @@ pub struct Program {
     pub globals: Vec<Stmt>,
     /// The functions in the program.
     pub functions: Vec<Function>,
+}
+
+/// Represents a typed expression with type information.
+#[derive(Debug, PartialEq, Clone)]
+pub enum TypedExpr {
+    Number(i64, Type),
+    String(String, Type),
+    Char(String, Type),
+    Variable(String, crate::common::SourceSpan, Type),
+    Call(String, Vec<TypedExpr>, crate::common::SourceSpan, Type),
+    Assign(Box<TypedExpr>, Box<TypedExpr>, Type),
+    AssignAdd(Box<TypedExpr>, Box<TypedExpr>, Type),
+    AssignSub(Box<TypedExpr>, Box<TypedExpr>, Type),
+    AssignMul(Box<TypedExpr>, Box<TypedExpr>, Type),
+    AssignDiv(Box<TypedExpr>, Box<TypedExpr>, Type),
+    AssignMod(Box<TypedExpr>, Box<TypedExpr>, Type),
+    AssignLeftShift(Box<TypedExpr>, Box<TypedExpr>, Type),
+    AssignRightShift(Box<TypedExpr>, Box<TypedExpr>, Type),
+    AssignBitwiseAnd(Box<TypedExpr>, Box<TypedExpr>, Type),
+    AssignBitwiseXor(Box<TypedExpr>, Box<TypedExpr>, Type),
+    AssignBitwiseOr(Box<TypedExpr>, Box<TypedExpr>, Type),
+    Add(Box<TypedExpr>, Box<TypedExpr>, Type),
+    Sub(Box<TypedExpr>, Box<TypedExpr>, Type),
+    Mul(Box<TypedExpr>, Box<TypedExpr>, Type),
+    Div(Box<TypedExpr>, Box<TypedExpr>, Type),
+    Mod(Box<TypedExpr>, Box<TypedExpr>, Type),
+    Equal(Box<TypedExpr>, Box<TypedExpr>, Type),
+    NotEqual(Box<TypedExpr>, Box<TypedExpr>, Type),
+    LessThan(Box<TypedExpr>, Box<TypedExpr>, Type),
+    GreaterThan(Box<TypedExpr>, Box<TypedExpr>, Type),
+    LessThanOrEqual(Box<TypedExpr>, Box<TypedExpr>, Type),
+    GreaterThanOrEqual(Box<TypedExpr>, Box<TypedExpr>, Type),
+    LogicalAnd(Box<TypedExpr>, Box<TypedExpr>, Type),
+    LogicalOr(Box<TypedExpr>, Box<TypedExpr>, Type),
+    BitwiseOr(Box<TypedExpr>, Box<TypedExpr>, Type),
+    BitwiseXor(Box<TypedExpr>, Box<TypedExpr>, Type),
+    BitwiseAnd(Box<TypedExpr>, Box<TypedExpr>, Type),
+    LeftShift(Box<TypedExpr>, Box<TypedExpr>, Type),
+    RightShift(Box<TypedExpr>, Box<TypedExpr>, Type),
+    Comma(Box<TypedExpr>, Box<TypedExpr>, Type),
+    Neg(Box<TypedExpr>, Type),
+    LogicalNot(Box<TypedExpr>, Type),
+    BitwiseNot(Box<TypedExpr>, Type),
+    Sizeof(Box<TypedExpr>, Type),
+    Deref(Box<TypedExpr>, Type),
+    AddressOf(Box<TypedExpr>, Type),
+    SizeofType(Type, Type),
+    Ternary(Box<TypedExpr>, Box<TypedExpr>, Box<TypedExpr>, Type),
+    Member(Box<TypedExpr>, String, Type),
+    PointerMember(Box<TypedExpr>, String, Type),
+    InitializerList(Vec<(Vec<TypedDesignator>, Box<TypedInitializer>)>, Type),
+    ExplicitCast(Box<Type>, Box<TypedExpr>, Type),
+    ImplicitCast(Box<Type>, Box<TypedExpr>, Type),
+    CompoundLiteral(Box<Type>, Box<TypedInitializer>, Type),
+    PreIncrement(Box<TypedExpr>, Type),
+    PreDecrement(Box<TypedExpr>, Type),
+    PostIncrement(Box<TypedExpr>, Type),
+    PostDecrement(Box<TypedExpr>, Type),
+}
+
+impl TypedExpr {
+    pub fn ty(&self) -> &Type {
+        match self {
+            TypedExpr::Number(_, ty) => ty,
+            TypedExpr::String(_, ty) => ty,
+            TypedExpr::Char(_, ty) => ty,
+            TypedExpr::Variable(_, _, ty) => ty,
+            TypedExpr::Call(_, _, _, ty) => ty,
+            TypedExpr::Assign(_, _, ty) => ty,
+            TypedExpr::AssignAdd(_, _, ty) => ty,
+            TypedExpr::AssignSub(_, _, ty) => ty,
+            TypedExpr::AssignMul(_, _, ty) => ty,
+            TypedExpr::AssignDiv(_, _, ty) => ty,
+            TypedExpr::AssignMod(_, _, ty) => ty,
+            TypedExpr::AssignLeftShift(_, _, ty) => ty,
+            TypedExpr::AssignRightShift(_, _, ty) => ty,
+            TypedExpr::AssignBitwiseAnd(_, _, ty) => ty,
+            TypedExpr::AssignBitwiseXor(_, _, ty) => ty,
+            TypedExpr::AssignBitwiseOr(_, _, ty) => ty,
+            TypedExpr::Add(_, _, ty) => ty,
+            TypedExpr::Sub(_, _, ty) => ty,
+            TypedExpr::Mul(_, _, ty) => ty,
+            TypedExpr::Div(_, _, ty) => ty,
+            TypedExpr::Mod(_, _, ty) => ty,
+            TypedExpr::Equal(_, _, ty) => ty,
+            TypedExpr::NotEqual(_, _, ty) => ty,
+            TypedExpr::LessThan(_, _, ty) => ty,
+            TypedExpr::GreaterThan(_, _, ty) => ty,
+            TypedExpr::LessThanOrEqual(_, _, ty) => ty,
+            TypedExpr::GreaterThanOrEqual(_, _, ty) => ty,
+            TypedExpr::LogicalAnd(_, _, ty) => ty,
+            TypedExpr::LogicalOr(_, _, ty) => ty,
+            TypedExpr::BitwiseOr(_, _, ty) => ty,
+            TypedExpr::BitwiseXor(_, _, ty) => ty,
+            TypedExpr::BitwiseAnd(_, _, ty) => ty,
+            TypedExpr::LeftShift(_, _, ty) => ty,
+            TypedExpr::RightShift(_, _, ty) => ty,
+            TypedExpr::Comma(_, _, ty) => ty,
+            TypedExpr::Neg(_, ty) => ty,
+            TypedExpr::LogicalNot(_, ty) => ty,
+            TypedExpr::BitwiseNot(_, ty) => ty,
+            TypedExpr::Sizeof(_, ty) => ty,
+            TypedExpr::Deref(_, ty) => ty,
+            TypedExpr::AddressOf(_, ty) => ty,
+            TypedExpr::SizeofType(_, ty) => ty,
+            TypedExpr::Ternary(_, _, _, ty) => ty,
+            TypedExpr::Member(_, _, ty) => ty,
+            TypedExpr::PointerMember(_, _, ty) => ty,
+            TypedExpr::InitializerList(_, ty) => ty,
+            TypedExpr::ExplicitCast(_, _, ty) => ty,
+            TypedExpr::ImplicitCast(_, _, ty) => ty,
+            TypedExpr::CompoundLiteral(_, _, ty) => ty,
+            TypedExpr::PreIncrement(_, ty) => ty,
+            TypedExpr::PreDecrement(_, ty) => ty,
+            TypedExpr::PostIncrement(_, ty) => ty,
+            TypedExpr::PostDecrement(_, ty) => ty,
+        }
+    }
+}
+
+/// Represents a typed C designator for initializers.
+#[derive(Debug, PartialEq, Clone)]
+pub enum TypedDesignator {
+    /// An array designator, e.g., `[0]`.
+    Index(Box<TypedExpr>),
+    /// A struct/union member designator, e.g., `.foo`.
+    Member(String),
+}
+
+/// Represents a typed C initializer.
+#[derive(Debug, PartialEq, Clone)]
+pub enum TypedInitializer {
+    /// A single expression initializer.
+    Expr(Box<TypedExpr>),
+    /// An initializer list, e.g., `{ [0] = 1, .x = 2 }`.
+    List(Vec<(Vec<TypedDesignator>, Box<TypedInitializer>)>),
+}
+
+/// Represents a typed declarator, which includes the type modifiers (pointers, arrays) and the identifier.
+#[derive(Debug, PartialEq, Clone)]
+pub struct TypedDeclarator {
+    pub ty: Type,
+    pub name: String,
+    pub initializer: Option<TypedInitializer>,
+}
+
+/// Represents the typed initializer of a `for` loop.
+#[derive(Debug, PartialEq, Clone)]
+pub enum TypedForInit {
+    /// A variable declaration.
+    Declaration(Type, String, Option<TypedInitializer>),
+    /// An expression.
+    Expr(TypedExpr),
+}
+
+/// Represents a typed statement with type information where applicable.
+#[derive(Debug, PartialEq, Clone)]
+pub enum TypedStmt {
+    /// A `return` statement.
+    Return(TypedExpr),
+    /// An `if` statement.
+    If(TypedExpr, Box<TypedStmt>, Option<Box<TypedStmt>>),
+    /// A `while` loop.
+    While(TypedExpr, Box<TypedStmt>),
+    /// A `for` loop.
+    For(
+        Option<TypedForInit>,
+        Option<TypedExpr>,
+        Option<TypedExpr>,
+        Box<TypedStmt>,
+    ),
+    /// A block of statements.
+    Block(Vec<TypedStmt>),
+    /// A `switch` statement.
+    Switch(TypedExpr, Box<TypedStmt>),
+    /// A `case` statement.
+    Case(TypedExpr, Box<TypedStmt>),
+    /// A `default` statement in a `switch`.
+    Default(Box<TypedStmt>),
+    /// A labeled statement.
+    Label(String, Box<TypedStmt>),
+    /// A `goto` statement.
+    Goto(String),
+    /// A variable declaration.
+    Declaration(Type, Vec<TypedDeclarator>),
+    FunctionDeclaration(Type, String, Vec<Parameter>, bool),
+    /// A `break` statement.
+    Break,
+    /// A `continue` statement.
+    Continue,
+    /// A `do-while` loop.
+    DoWhile(Box<TypedStmt>, TypedExpr),
+    /// An empty statement.
+    Empty,
+    /// An expression statement.
+    Expr(TypedExpr),
+}
+
+/// Represents a typed function declaration with type information.
+#[derive(Debug, PartialEq, Clone)]
+pub struct TypedFunctionDecl {
+    /// The return type of the function.
+    pub return_type: Type,
+    /// The name of the function.
+    pub name: String,
+    /// The parameters of the function.
+    pub params: Vec<Parameter>,
+    /// The body of the function.
+    pub body: Vec<TypedStmt>,
+    /// Whether the function is declared as inline.
+    pub is_inline: bool,
+    /// Whether the function is variadic.
+    pub is_variadic: bool,
+}
+
+/// Represents a typed translation unit (program) with type information.
+#[derive(Debug, PartialEq, Clone)]
+pub struct TypedTranslationUnit {
+    /// The global variables.
+    pub globals: Vec<TypedStmt>,
+    /// The functions in the program.
+    pub functions: Vec<TypedFunctionDecl>,
 }

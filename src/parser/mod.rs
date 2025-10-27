@@ -541,11 +541,11 @@ impl Parser {
             match kind {
                 TokenKind::PlusPlus => {
                     let rhs = self.parse_pratt_expr(r_bp)?;
-                    Expr::Increment(Box::new(rhs))
+                    Expr::PreIncrement(Box::new(rhs))
                 }
                 TokenKind::MinusMinus => {
                     let rhs = self.parse_pratt_expr(r_bp)?;
-                    Expr::Decrement(Box::new(rhs))
+                    Expr::PreDecrement(Box::new(rhs))
                 }
                 TokenKind::Plus => self.parse_pratt_expr(r_bp)?,
                 TokenKind::Minus => {
@@ -755,7 +755,7 @@ impl Parser {
                     } else {
                         // Cast: (type)expr
                         let expr = self.parse_pratt_expr(15)?; // High precedence for cast's operand
-                        Ok(Expr::Cast(Box::new(param_ty), Box::new(expr)))
+                        Ok(Expr::ExplicitCast(Box::new(param_ty), Box::new(expr)))
                     }
                 } else {
                     // Grouped expression: (expr)

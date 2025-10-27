@@ -347,8 +347,8 @@ mod tests {
         assert!(matches!(stmts[12], Stmt::Expr(Expr::CompoundLiteral(..))));
 
         // unary expressions
-        assert!(matches!(stmts[13], Stmt::Expr(Expr::Increment(..))));
-        assert!(matches!(stmts[14], Stmt::Expr(Expr::Decrement(..))));
+        assert!(matches!(stmts[13], Stmt::Expr(Expr::PreIncrement(..))));
+        assert!(matches!(stmts[14], Stmt::Expr(Expr::PreDecrement(..))));
         assert!(matches!(stmts[15], Stmt::Expr(Expr::AddressOf(..))));
         assert!(matches!(stmts[16], Stmt::Expr(Expr::Deref(..))));
         assert!(matches!(stmts[17], Stmt::Expr(Expr::Variable(..)))); // +x is parsed as just x
@@ -359,7 +359,7 @@ mod tests {
         assert!(matches!(stmts[22], Stmt::Expr(Expr::SizeofType(..))));
 
         // cast expression
-        assert!(matches!(stmts[23], Stmt::Expr(Expr::Cast(..))));
+        assert!(matches!(stmts[23], Stmt::Expr(Expr::ExplicitCast(..))));
 
         // multiplicative expressions
         assert!(matches!(stmts[24], Stmt::Expr(Expr::Mul(..))));

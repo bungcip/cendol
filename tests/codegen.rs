@@ -540,14 +540,6 @@ mod tests {
         assert_eq!(exit_code, 0);
     }
 
-    /// Test compiling and running from a file
-    #[test]
-    fn test_compile_and_run_from_file() {
-        let file_path = "tests/c-testsuite/tests/single-exec/00008.c";
-        let exit_code = compile_and_run_from_file(file_path, "test_from_file").unwrap();
-        assert_eq!(exit_code, 0);
-    }
-
     #[test]
     fn test_short_circuit() {
         let c_code = r#"

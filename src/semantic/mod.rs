@@ -266,7 +266,40 @@ impl SemanticAnalyzer {
     /// Checks a statement for semantic errors.
     fn check_statement(&mut self, stmt: Stmt, filename: &str) {
         match stmt {
-            Stmt::Declaration(_, declarators) => {
+            Stmt::Declaration(ty, declarators) => {
+                if let Type::Enum(_name, members) = &ty {
+                    if !members.is_empty() {
+                        let mut next_value = 0;
+                        for (name, value, span) in members {
+                            let val = if let Some(expr) = value {
+                                if let Expr::Number(num) = **expr {
+                                    num
+                                } else {
+                                    self.errors.push((
+                                        SemanticError::InvalidEnumInitializer(name.clone()),
+                                        filename.to_string(),
+                                        span.clone(),
+                                    ));
+                                    -1 // Dummy value
+                                }
+                            } else {
+                                next_value
+                            };
+
+                            if self.enum_constants.contains_key(name) {
+                                self.errors.push((
+                                    SemanticError::VariableRedeclaration(name.clone()),
+                                    filename.to_string(),
+                                    span.clone(),
+                                ));
+                            } else {
+                                self.enum_constants.insert(name.clone(), val);
+                            }
+                            next_value = val + 1;
+                        }
+                    }
+                }
+
                 for declarator in declarators {
                     // Check for redeclaration in local scope
                     if let Some(existing) = self.symbol_table.get(&declarator.name) {

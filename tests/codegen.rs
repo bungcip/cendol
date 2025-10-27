@@ -734,4 +734,23 @@ mod tests {
         let exit_code = compile_and_run(input, "do_while_loop_break_continue").unwrap();
         assert_eq!(exit_code, 6);
     }
+
+    /// Test code generation for enums
+    #[test]
+    fn test_enum() {
+        let input = r#"
+        int main() {
+            enum { A, B, C };
+            enum { D, E, F } x;
+            x = F;
+            if (x != 2)
+                return 1;
+            if (sizeof(x) != 8)
+                return 1;
+            return 0;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "enum").unwrap();
+        assert_eq!(exit_code, 0);
+    }
 }

@@ -354,6 +354,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             Type::Array(elem_ty, size) => {
                 Self::get_type_size_from_type(elem_ty, structs, unions) * *size as u32
             }
+            Type::Enum(_, _) => 8,
             _ => unimplemented!(),
         }
     }
@@ -386,6 +387,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 .max()
                 .unwrap_or(1),
             Type::Array(elem_ty, _) => Self::get_type_alignment_from_type(elem_ty, structs, unions),
+            Type::Enum(_, _) => 8,
             _ => unimplemented!(),
         }
     }

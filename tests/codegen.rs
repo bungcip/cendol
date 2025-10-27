@@ -150,18 +150,44 @@ mod tests {
         assert_eq!(exit_code, 42);
     }
 
-    // /// Test code generation with designated initializers for structs
-    // #[test]
-    // fn test_designated_initializer() {
-    //     let input = r#"
-    //     int main() {
-    //         struct { int x; int y; } point = { .y = 10, .x = 20 };
-    //         return point.x;
-    //     }
-    //     "#;
-    //     let exit_code = compile_and_run(input, "designated_initializer").unwrap();
-    //     assert_eq!(exit_code, 20);
-    // }
+    /// Test code generation with designated initializers for structs
+    #[test]
+    fn test_designated_initializer() {
+        let input = r#"
+        int main() {
+            struct { int x; int y; } point = { .y = 10, .x = 20 };
+            return point.x;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "designated_initializer").unwrap();
+        assert_eq!(exit_code, 20);
+    }
+
+    /// Test code generation with nested designated initializers
+    #[test]
+    fn test_nested_designated_initializer() {
+        let input = r#"
+        int main() {
+            struct { struct { int x; } inner; } outer = { .inner = { .x = 30 } };
+            return outer.inner.x;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "nested_designated_initializer").unwrap();
+        assert_eq!(exit_code, 30);
+    }
+
+    /// Test code generation with designated initializers for arrays
+    #[test]
+    fn test_designated_initializer_array() {
+        let input = r#"
+        int main() {
+            int arr[5] = { [2] = 10, [4] = 20 };
+            return arr[2] + arr[4];
+        }
+        "#;
+        let exit_code = compile_and_run(input, "designated_initializer_array").unwrap();
+        assert_eq!(exit_code, 30);
+    }
 
     // /// Test code generation with struct padding
     // #[test]
@@ -222,19 +248,19 @@ mod tests {
         assert_eq!(exit_code, 1);
     }
 
-    // /// Test code generation for compound literals with structs
-    // #[test]
-    // fn test_compound_literal_struct() {
-    //     let input = r#"
-    //     struct Point { int x; int y; };
-    //     int main() {
-    //         struct Point p = (struct Point){ .x = 10, .y = 20 };
-    //         return p.x;
-    //     }
-    //     "#;
-    //     let exit_code = compile_and_run(input, "compound_literal_struct").unwrap();
-    //     assert_eq!(exit_code, 10);
-    // }
+    /// Test code generation for compound literals with structs
+    #[test]
+    fn test_compound_literal_struct() {
+        let input = r#"
+        struct Point { int x; int y; };
+        int main() {
+            struct Point p = (struct Point){ .x = 10, .y = 20 };
+            return p.x;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "compound_literal_struct").unwrap();
+        assert_eq!(exit_code, 10);
+    }
 
     // /// Test code generation for compound literals with arrays
     // #[test]

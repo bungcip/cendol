@@ -5,7 +5,7 @@
 
 use cendol::file::FileManager;
 use cendol::parser::Parser;
-use cendol::parser::ast::{Declarator, Expr, Function, Program, Stmt, Type};
+use cendol::parser::ast::{Declarator, Expr, Function, Initializer, Program, Stmt, Type};
 use cendol::preprocessor::Preprocessor;
 
 /// Test configuration constants
@@ -73,7 +73,7 @@ fn create_bool_program_ast() -> Program {
                     vec![Declarator {
                         ty: Type::Bool,
                         name: "a".to_string(),
-                        initializer: Some(Box::new(Expr::Number(1))),
+                        initializer: Some(Initializer::Expr(Box::new(Expr::Number(1)))),
                     }],
                 ),
                 Stmt::Return(Expr::Number(0)),

@@ -1,4 +1,6 @@
-use crate::parser::ast::{Expr, ForInit, Function, Parameter, Program, Stmt, Type};
+use crate::parser::ast::{
+    Designator, Expr, ForInit, Function, Initializer, Parameter, Program, Stmt, Type,
+};
 use crate::parser::error::ParserError;
 use crate::parser::token::{KeywordKind, Token, TokenKind};
 use crate::preprocessor;
@@ -377,8 +379,20 @@ impl Parser {
     }
 
     /// parse initializer expression
-    fn parse_initializer_expr(&mut self) -> Result<Option<Box<Expr>>, ParserError> {
-        self.maybe_start(&TokenKind::Equal, |p| Ok(Box::new(p.parse_expr()?)))
+    fn parse_initializer_expr(&mut self) -> Result<Option<Initializer>, ParserError> {
+        self.maybe_start(&TokenKind::Equal, |p| p.parse_initializer())
+    }
+
+    /// Parses a C initializer.
+    fn parse_initializer(&mut self) -> Result<Initializer, ParserError> {
+        if self.eat_token(&TokenKind::LeftBrace)? {
+            let list = self.parse_initializer_list()?;
+            self.expect_punct(TokenKind::RightBrace)?;
+            Ok(Initializer::List(list))
+        } else {
+            let expr = self.parse_pratt_expr(2)?; // Assignment precedence
+            Ok(Initializer::Expr(Box::new(expr)))
+        }
     }
 
     /// Parses a type. This function now orchestrates `parse_type_specifier` and `parse_declarator_suffix`.
@@ -717,8 +731,11 @@ impl Parser {
 
                     if let Ok(TokenKind::LeftBrace) = self.current_kind() {
                         // Compound Literal: (type){...}
-                        let initializers = self.parse_initializer_list()?;
-                        Ok(Expr::CompoundLiteral(Box::new(param_ty), initializers))
+                        let initializer = self.parse_initializer()?;
+                        Ok(Expr::CompoundLiteral(
+                            Box::new(param_ty),
+                            Box::new(initializer),
+                        ))
                     } else {
                         // Cast: (type)expr
                         let expr = self.parse_pratt_expr(15)?; // High precedence for cast's operand
@@ -733,34 +750,58 @@ impl Parser {
             }
             TokenKind::LeftBrace => {
                 let initializers = self.parse_initializer_list()?;
-                Ok(Expr::StructInitializer(initializers))
+                self.expect_punct(TokenKind::RightBrace)?;
+                Ok(Expr::InitializerList(initializers))
             }
             _ => Err(ParserError::UnexpectedToken(token.clone())),
         }
     }
 
-    fn parse_designator(&mut self) -> Result<Expr, ParserError> {
-        self.eat()?; // consume .
-        let id = self.expect_name()?;
-        self.expect_punct(TokenKind::Equal)?;
-        let expr = self.parse_expr()?;
-        Ok(Expr::DesignatedInitializer(id, Box::new(expr)))
+    fn parse_designator(&mut self) -> Result<Vec<Designator>, ParserError> {
+        let mut designators = Vec::new();
+        loop {
+            if self.eat_token(&TokenKind::Dot)? {
+                let member = self.expect_name()?;
+                designators.push(Designator::Member(member));
+            } else if self.eat_token(&TokenKind::LeftBracket)? {
+                let index = self.parse_expr()?;
+                self.expect_punct(TokenKind::RightBracket)?;
+                designators.push(Designator::Index(Box::new(index)));
+            } else {
+                break;
+            }
+        }
+        Ok(designators)
     }
 
     /// Parses an initializer list.
-    fn parse_initializer_list(&mut self) -> Result<Vec<Expr>, ParserError> {
-        self.parse_delimited_list(
-            TokenKind::LeftBrace,
-            TokenKind::RightBrace,
-            TokenKind::Comma,
-            |p| {
-                if p.current_kind()? == TokenKind::Dot {
-                    p.parse_designator()
-                } else {
-                    p.parse_expr()
-                }
-            },
-        )
+    fn parse_initializer_list(
+        &mut self,
+    ) -> Result<Vec<(Vec<Designator>, Box<Initializer>)>, ParserError> {
+        let mut initializers = Vec::new();
+        if self.eat_token(&TokenKind::RightBrace)? {
+            return Ok(initializers);
+        }
+
+        loop {
+            let designators = self.parse_designator()?;
+            let initializer = if !designators.is_empty() {
+                self.expect_punct(TokenKind::Equal)?;
+                self.parse_initializer()?
+            } else {
+                Initializer::Expr(Box::new(self.parse_expr()?))
+            };
+            initializers.push((designators, Box::new(initializer)));
+
+            if !self.eat_token(&TokenKind::Comma)? {
+                break;
+            }
+
+            if self.eat_token(&TokenKind::RightBrace)? {
+                break;
+            }
+        }
+        Ok(initializers)
     }
 
     /// Parses a statement.

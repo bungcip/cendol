@@ -1,5 +1,5 @@
-use crate::codegen::error::CodegenError;
-use crate::parser::ast::{Expr, ForInit, Program, Stmt, Type};
+use crate::codegen::error::{CodegenError, CodegenResult};
+use crate::parser::ast::{Designator, Initializer, Expr, ForInit, Program, Stmt, Type};
 use cranelift::prelude::*;
 use cranelift_codegen::Context;
 use cranelift_codegen::ir::types;
@@ -389,83 +389,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     ));
                     self.variables
                         .insert(declarator.name, (slot, declarator.ty.clone()));
-                    if let Some(init) = declarator.initializer {
-                        if let Expr::StructInitializer(initializers) = *init {
-                            let s = self.get_real_type(&declarator.ty)?;
-                            if let Type::Struct(_, members) = s {
-                                let mut offset = 0;
-                                for member in &members {
-                                    let val = self.builder.ins().iconst(types::I64, 0);
-                                    self.builder.ins().stack_store(val, slot, offset as i32);
-                                    offset += self.get_type_size(&member.ty);
-                                }
-
-                                let mut member_index = 0;
-                                for initializer in initializers {
-                                    if let Expr::DesignatedInitializer(name, expr) = initializer {
-                                        let mut offset = 0;
-                                        let mut found = false;
-                                        for (i, member) in members.iter().enumerate() {
-                                            let member_alignment =
-                                                self.get_type_alignment(&member.ty);
-                                            offset = (offset + member_alignment - 1)
-                                                & !(member_alignment - 1);
-                                            if member.name == name {
-                                                member_index = i;
-                                                found = true;
-                                                break;
-                                            }
-                                            offset += self.get_type_size(&member.ty);
-                                        }
-                                        if !found {
-                                            return Err(CodegenError::UnknownField(name));
-                                        }
-                                        let (val, _) = self.translate_expr(*expr)?;
-                                        self.builder.ins().stack_store(val, slot, offset as i32);
-                                    } else {
-                                        if member_index >= members.len() {
-                                            return Err(CodegenError::InitializerTooLong);
-                                        }
-                                        let mut offset = 0;
-                                        for member in members.iter().take(member_index) {
-                                            let member_alignment =
-                                                self.get_type_alignment(&member.ty);
-                                            offset = (offset + member_alignment - 1)
-                                                & !(member_alignment - 1);
-                                            offset += self.get_type_size(&member.ty);
-                                        }
-                                        let (val, _) = self.translate_expr(initializer)?;
-                                        self.builder.ins().stack_store(val, slot, offset as i32);
-                                    }
-                                    member_index += 1;
-                                }
-                            } else {
-                                return Err(CodegenError::NotAStruct);
-                            }
-                        } else {
-                            let (val, val_ty) = self.translate_expr(*init)?;
-                            if let Type::Struct(_, _) | Type::Union(_, _) = val_ty {
-                                let dest = self.builder.ins().stack_addr(types::I64, slot, 0);
-                                let src = val;
-                                let size = self.get_type_size(&val_ty);
-                                self.builder.emit_small_memory_copy(
-                                    self.module.target_config(),
-                                    dest,
-                                    src,
-                                    size as u64,
-                                    self.get_type_alignment(&val_ty) as u8,
-                                    self.get_type_alignment(&val_ty) as u8,
-                                    true,
-                                    MemFlags::new(),
-                                );
-                            } else {
-                                self.builder.ins().stack_store(val, slot, 0);
-                            }
-                        }
-                    } else {
-                        let val = self.builder.ins().iconst(types::I64, 0);
-                        self.builder.ins().stack_store(val, slot, 0);
-                    };
+                    if let Some(initializer) = declarator.initializer {
+                        let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
+                        self.translate_initializer(addr, &declarator.ty, &initializer)?;
+                    }
                 }
                 Ok(false)
             }
@@ -566,10 +493,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                                 size,
                                 0,
                             ));
-                            self.variables.insert(name, (slot, ty));
+                            self.variables.insert(name, (slot, ty.clone()));
                             if let Some(init) = initializer {
-                                let (val, _) = self.translate_expr(*init)?;
-                                self.builder.ins().stack_store(val, slot, 0);
+                                let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
+                                self.translate_initializer(addr, &ty, &init)?;
                             } else {
                                 let val = self.builder.ins().iconst(types::I64, 0);
                                 self.builder.ins().stack_store(val, slot, 0);
@@ -1288,72 +1215,16 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
                 Ok((extended_val, *ty))
             }
-            Expr::CompoundLiteral(mut ty, initializers) => {
-                // If the type is an array with an unspecified size, update it
-                if let Type::Array(_, ref mut size @ 0) = *ty {
-                    *size = initializers.len();
-                }
-
+            Expr::CompoundLiteral(ty, initializer) => {
                 let size = self.get_type_size(&ty);
                 let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
                     StackSlotKind::ExplicitSlot,
                     size,
                     0,
                 ));
-                let s = self.get_real_type(&ty)?;
-
-                match s {
-                    Type::Struct(_, members) => {
-                        let mut member_index = 0;
-                        for initializer in initializers {
-                            if let Expr::DesignatedInitializer(name, expr) = initializer {
-                                let mut offset = 0;
-                                let mut found = false;
-                                for (i, member) in members.iter().enumerate() {
-                                    let member_alignment = self.get_type_alignment(&member.ty);
-                                    offset =
-                                        (offset + member_alignment - 1) & !(member_alignment - 1);
-                                    if member.name == name {
-                                        member_index = i;
-                                        found = true;
-                                        break;
-                                    }
-                                    offset += self.get_type_size(&member.ty);
-                                }
-                                if !found {
-                                    return Err(CodegenError::UnknownField(name));
-                                }
-                                let (val, _) = self.translate_expr(*expr)?;
-                                self.builder.ins().stack_store(val, slot, offset as i32);
-                            } else {
-                                if member_index >= members.len() {
-                                    return Err(CodegenError::InitializerTooLong);
-                                }
-                                let mut offset = 0;
-                                for member in members.iter().take(member_index) {
-                                    let member_alignment = self.get_type_alignment(&member.ty);
-                                    offset =
-                                        (offset + member_alignment - 1) & !(member_alignment - 1);
-                                    offset += self.get_type_size(&member.ty);
-                                }
-                                let (val, _) = self.translate_expr(initializer)?;
-                                self.builder.ins().stack_store(val, slot, offset as i32);
-                            }
-                            member_index += 1;
-                        }
-                    }
-                    Type::Array(elem_ty, _) => {
-                        let elem_size = self.get_type_size(&elem_ty);
-                        for (i, initializer) in initializers.into_iter().enumerate() {
-                            let (val, _) = self.translate_expr(initializer)?;
-                            let offset = (i as u32 * elem_size) as i32;
-                            self.builder.ins().stack_store(val, slot, offset);
-                        }
-                    }
-                    _ => return Err(CodegenError::NotAStructOrArray),
-                }
-
-                Ok((self.builder.ins().stack_addr(types::I64, slot, 0), *ty))
+                let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
+                self.translate_initializer(addr, &ty, &initializer)?;
+                Ok((addr, *ty))
             }
             Expr::Increment(expr) => {
                 if let Expr::Variable(name, _) = *expr {
@@ -1512,9 +1383,145 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let c = self.builder.ins().icmp(IntCC::Equal, val, zero);
                 Ok((self.builder.ins().uextend(types::I64, c), Type::Int))
             }
-            Expr::StructInitializer(_) | Expr::DesignatedInitializer(_, _) | Expr::Comma(..) => {
+            Expr::InitializerList(_) | Expr::Comma(..) => {
+                // These expressions are handled in other parts of the code generator
+                // and should not be translated directly.
+                // For example, `InitializerList` is handled by `translate_initializer`.
+                // `Comma` is handled by the pratt parser.
                 Ok((self.builder.ins().iconst(types::I64, 0), Type::Int))
             }
         }
+    }
+
+    /// Translates an initializer into a series of memory writes.
+    fn translate_initializer(
+        &mut self,
+        base_addr: Value,
+        ty: &Type,
+        initializer: &Initializer,
+    ) -> CodegenResult<()> {
+        match initializer {
+            Initializer::Expr(expr) => {
+                let (val, val_ty) = self.translate_expr(*expr.clone())?;
+                if let Type::Struct(_, _) | Type::Union(_, _) = val_ty {
+                    let size = self.get_type_size(&val_ty);
+                    self.builder.emit_small_memory_copy(
+                        self.module.target_config(),
+                        base_addr,
+                        val,
+                        size as u64,
+                        self.get_type_alignment(&val_ty) as u8,
+                        self.get_type_alignment(&val_ty) as u8,
+                        true,
+                        MemFlags::new(),
+                    );
+                } else {
+                    self.builder.ins().store(MemFlags::new(), val, base_addr, 0);
+                }
+            }
+            Initializer::List(list) => {
+                let ty = self.get_real_type(ty)?;
+                match ty {
+                    Type::Struct(_, ref members) => {
+                        let mut member_index = 0;
+                        for (designators, initializer) in list {
+                            let (offset, member_ty) = if !designators.is_empty() {
+                                let mut current_offset = 0;
+                                let mut current_ty = ty.clone();
+                                for designator in designators {
+                                    match designator {
+                                        Designator::Member(name) => {
+                                            let s = self.get_real_type(&current_ty)?;
+                                            if let Type::Struct(_, members) = s {
+                                                let mut found = false;
+                                                for (i, member) in members.iter().enumerate() {
+                                                    let member_alignment =
+                                                        self.get_type_alignment(&member.ty);
+                                                    current_offset =
+                                                        (current_offset + member_alignment - 1)
+                                                            & !(member_alignment - 1);
+                                                    if member.name == *name {
+                                                        member_index = i;
+                                                        current_ty = member.ty.clone();
+                                                        found = true;
+                                                        break;
+                                                    }
+                                                    current_offset +=
+                                                        self.get_type_size(&member.ty);
+                                                }
+                                                if !found {
+                                                    return Err(CodegenError::UnknownField(
+                                                        name.clone(),
+                                                    ));
+                                                }
+                                            } else {
+                                                return Err(CodegenError::NotAStruct);
+                                            }
+                                        }
+                                        Designator::Index(expr) => {
+                                            let s = self.get_real_type(&current_ty)?;
+                                            if let Type::Array(elem_ty, _) = s {
+                                                let elem_size = self.get_type_size(&elem_ty);
+                                                if let Expr::Number(n) = **expr {
+                                                    current_offset += n as u32 * elem_size;
+                                                    current_ty = *elem_ty.clone();
+                                                } else {
+                                                    return Err(
+                                                        CodegenError::NonConstantArrayIndex,
+                                                    );
+                                                }
+                                            } else {
+                                                return Err(CodegenError::NotAnArray);
+                                            }
+                                        }
+                                    }
+                                }
+                                (current_offset, current_ty)
+                            } else {
+                                if member_index >= members.len() {
+                                    return Err(CodegenError::InitializerTooLong);
+                                }
+                                let mut offset = 0;
+                                for member in members.iter().take(member_index) {
+                                    let member_alignment = self.get_type_alignment(&member.ty);
+                                    offset = (offset + member_alignment - 1)
+                                        & !(member_alignment - 1);
+                                    offset += self.get_type_size(&member.ty);
+                                }
+                                (offset, members[member_index].ty.clone())
+                            };
+                            let member_addr =
+                                self.builder.ins().iadd_imm(base_addr, offset as i64);
+                            self.translate_initializer(member_addr, &member_ty, initializer)?;
+                            member_index += 1;
+                        }
+                    }
+                    Type::Array(elem_ty, _) => {
+                        let elem_size = self.get_type_size(&elem_ty);
+                        let mut index = 0;
+                        for (designators, initializer) in list {
+                            if !designators.is_empty() {
+                                if let Designator::Index(expr) = &designators[0] {
+                                    if let Expr::Number(n) = **expr {
+                                        index = n as u32;
+                                    } else {
+                                        return Err(CodegenError::NonConstantArrayIndex);
+                                    }
+                                } else {
+                                    return Err(CodegenError::NotAnArray);
+                                }
+                            }
+                            let offset = index * elem_size;
+                            let elem_addr =
+                                self.builder.ins().iadd_imm(base_addr, offset as i64);
+                            self.translate_initializer(elem_addr, &elem_ty, initializer)?;
+                            index += 1;
+                        }
+                    }
+                    _ => return Err(CodegenError::NotAStructOrArray),
+                }
+            }
+        }
+        Ok(())
     }
 }

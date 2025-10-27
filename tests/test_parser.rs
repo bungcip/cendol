@@ -342,11 +342,19 @@ mod tests {
         assert!(matches!(stmts[7], Stmt::Expr(Expr::Call(..))));
         assert!(matches!(stmts[8], Stmt::Expr(Expr::Member(..))));
         assert!(matches!(stmts[9], Stmt::Expr(Expr::PointerMember(..))));
-        assert!(matches!(stmts[10], Stmt::Expr(Expr::Increment(..))));
-        assert!(matches!(stmts[11], Stmt::Expr(Expr::Decrement(..))));
+        assert!(matches!(stmts[10], Stmt::Expr(Expr::PostIncrement(..))));
+        assert!(matches!(stmts[11], Stmt::Expr(Expr::PostDecrement(..))));
         assert!(matches!(stmts[12], Stmt::Expr(Expr::CompoundLiteral(..))));
 
-        // unary expressions continued
+        // unary expressions
+        assert!(matches!(stmts[13], Stmt::Expr(Expr::Increment(..))));
+        assert!(matches!(stmts[14], Stmt::Expr(Expr::Decrement(..))));
+        assert!(matches!(stmts[15], Stmt::Expr(Expr::AddressOf(..))));
+        assert!(matches!(stmts[16], Stmt::Expr(Expr::Deref(..))));
+        assert!(matches!(stmts[17], Stmt::Expr(Expr::Variable(..)))); // +x is parsed as just x
+        assert!(matches!(stmts[18], Stmt::Expr(Expr::Neg(..))));
+        assert!(matches!(stmts[19], Stmt::Expr(Expr::BitwiseNot(..))));
+        assert!(matches!(stmts[20], Stmt::Expr(Expr::LogicalNot(..))));
         assert!(matches!(stmts[21], Stmt::Expr(Expr::Sizeof(..))));
         assert!(matches!(stmts[22], Stmt::Expr(Expr::SizeofType(..))));
 

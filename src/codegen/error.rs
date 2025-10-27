@@ -38,4 +38,7 @@ pub enum CodegenError {
     /// An unknown type was encountered.
     #[error("Unknown type: {0}")]
     UnknownType(String),
+    /// An invalid l-value was used.
+    #[error("Invalid l-value")]
+    InvalidLValue,
 }

@@ -608,4 +608,66 @@ mod tests {
         let exit_code = compile_and_run(input, "char_literal").unwrap();
         assert_eq!(exit_code, 97);
     }
+
+    /// Test code generation for pre-increment on a pointer dereference
+    #[test]
+    fn test_pre_increment_pointer() {
+        let input = r#"
+        int main() {
+            int x = 10;
+            int *p = &x;
+            ++(*p);
+            return x;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "pre_increment_pointer").unwrap();
+        assert_eq!(exit_code, 11);
+    }
+
+    /// Test code generation for post-increment on a struct member
+    #[test]
+    fn test_post_increment_struct_member() {
+        let input = r#"
+        struct S { int x; };
+        int main() {
+            struct S s;
+            s.x = 20;
+            int y = s.x++;
+            return y;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "post_increment_struct_member").unwrap();
+        assert_eq!(exit_code, 20);
+    }
+
+    /// Test code generation for pre-decrement on a struct member
+    #[test]
+    fn test_pre_decrement_struct_member() {
+        let input = r#"
+        struct S { int x; };
+        int main() {
+            struct S s;
+            s.x = 30;
+            --s.x;
+            return s.x;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "pre_decrement_struct_member").unwrap();
+        assert_eq!(exit_code, 29);
+    }
+
+    /// Test code generation for post-decrement on a pointer dereference
+    #[test]
+    fn test_post_decrement_pointer() {
+        let input = r#"
+        int main() {
+            int x = 40;
+            int *p = &x;
+            int y = (*p)--;
+            return y + x;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "post_decrement_pointer").unwrap();
+        assert_eq!(exit_code, 79);
+    }
 }

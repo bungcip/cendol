@@ -590,41 +590,59 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     }
 
     /// Translates an expression into a Cranelift `Value`.
-    fn translate_assignment(&mut self, lhs: Expr, rhs_val: Value) -> Result<(), CodegenError> {
-        match lhs {
+    fn translate_assignment(&mut self, lhs: Value, rhs_val: Value) -> Result<(), CodegenError> {
+        self.builder
+            .ins()
+            .store(MemFlags::new(), rhs_val, lhs, 0);
+        Ok(())
+    }
+
+    fn translate_lvalue(&mut self, expr: Expr) -> Result<(Value, Type), CodegenError> {
+        match expr {
             Expr::Variable(name, _) => {
-                let (slot, _) = self.variables.get(&name).unwrap();
-                self.builder.ins().stack_store(rhs_val, slot, 0);
+                let (slot, ty) = self.variables.get(&name).unwrap();
+                let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
+                Ok((addr, ty))
             }
             Expr::Deref(ptr) => {
-                let (ptr, _) = self.translate_expr(*ptr)?;
-                self.builder.ins().store(MemFlags::new(), rhs_val, ptr, 0);
+                let (ptr, ty) = self.translate_expr(*ptr)?;
+                if let Type::Pointer(base_ty) = ty {
+                    Ok((ptr, *base_ty))
+                } else {
+                    Err(CodegenError::NotAPointer.into())
+                }
             }
             Expr::Member(expr, member) => {
                 let (ptr, ty) = self.translate_expr(*expr)?;
                 let s = self.get_real_type(&ty)?;
                 if let Type::Struct(_, members) = s {
                     let mut offset = 0;
+                    let mut member_ty = None;
                     for m in &members {
                         let member_alignment = self.get_type_alignment(&m.ty);
                         offset = (offset + member_alignment - 1) & !(member_alignment - 1);
-                        if m.name == *member {
+                        if m.name == member {
+                            member_ty = Some(m.ty.clone());
                             break;
                         }
                         offset += self.get_type_size(&m.ty);
                     }
-                    self.builder
-                        .ins()
-                        .store(MemFlags::new(), rhs_val, ptr, offset as i32);
-                } else if let Type::Union(_, _) = s {
-                    self.builder.ins().store(MemFlags::new(), rhs_val, ptr, 0);
+                    let member_ty = member_ty.unwrap();
+                    let member_addr = self.builder.ins().iadd_imm(ptr, offset as i64);
+                    Ok((member_addr, member_ty))
+                } else if let Type::Union(_, members) = s {
+                    let member_ty = members
+                        .iter()
+                        .find(|m| m.name == member)
+                        .map(|m| m.ty.clone())
+                        .unwrap();
+                    Ok((ptr, member_ty))
                 } else {
-                    return Err(CodegenError::NotAStruct);
+                    Err(CodegenError::NotAStruct.into())
                 }
             }
-            _ => unimplemented!(),
+            _ => Err(CodegenError::InvalidLValue.into()),
         }
-        Ok(())
     }
 
     fn integer_promotion(&self, ty: &Type) -> Type {
@@ -700,6 +718,28 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         }
     }
 
+    fn load_lvalue(&mut self, addr: Value, ty: &Type) -> Value {
+        match ty {
+            Type::Char | Type::Bool => {
+                let val = self.builder.ins().load(types::I8, MemFlags::new(), addr, 0);
+                self.builder.ins().sextend(types::I64, val)
+            }
+            Type::UnsignedChar => {
+                let val = self.builder.ins().load(types::I8, MemFlags::new(), addr, 0);
+                self.builder.ins().uextend(types::I64, val)
+            }
+            Type::Short => {
+                let val = self.builder.ins().load(types::I16, MemFlags::new(), addr, 0);
+                self.builder.ins().sextend(types::I64, val)
+            }
+            Type::UnsignedShort => {
+                let val = self.builder.ins().load(types::I16, MemFlags::new(), addr, 0);
+                self.builder.ins().uextend(types::I64, val)
+            }
+            _ => self.builder.ins().load(types::I64, MemFlags::new(), addr, 0),
+        }
+    }
+
     fn translate_expr(&mut self, expr: Expr) -> Result<(Value, Type), CodegenError> {
         match expr {
             Expr::Number(n) => Ok((self.builder.ins().iconst(types::I64, n), Type::Int)),
@@ -738,77 +778,88 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             Expr::Assign(lhs, rhs) => {
                 let (rhs_val, ty) = self.translate_expr(*rhs)?;
-                self.translate_assignment(*lhs, rhs_val)?;
+                let (addr, _) = self.translate_lvalue(*lhs)?;
+                self.translate_assignment(addr, rhs_val)?;
                 Ok((rhs_val, ty))
             }
             Expr::AssignAdd(lhs, rhs) => {
-                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
                 let (rhs_val, _) = self.translate_expr(*rhs)?;
                 let result_val = self.builder.ins().iadd(lhs_val, rhs_val);
-                self.translate_assignment(*lhs, result_val)?;
+                self.translate_assignment(addr, result_val)?;
                 Ok((result_val, lhs_ty))
             }
             Expr::AssignSub(lhs, rhs) => {
-                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
                 let (rhs_val, _) = self.translate_expr(*rhs)?;
                 let result_val = self.builder.ins().isub(lhs_val, rhs_val);
-                self.translate_assignment(*lhs, result_val)?;
+                self.translate_assignment(addr, result_val)?;
                 Ok((result_val, lhs_ty))
             }
             Expr::AssignMul(lhs, rhs) => {
-                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
                 let (rhs_val, _) = self.translate_expr(*rhs)?;
                 let result_val = self.builder.ins().imul(lhs_val, rhs_val);
-                self.translate_assignment(*lhs, result_val)?;
+                self.translate_assignment(addr, result_val)?;
                 Ok((result_val, lhs_ty))
             }
             Expr::AssignDiv(lhs, rhs) => {
-                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
                 let (rhs_val, _) = self.translate_expr(*rhs)?;
                 let result_val = self.builder.ins().sdiv(lhs_val, rhs_val);
-                self.translate_assignment(*lhs, result_val)?;
+                self.translate_assignment(addr, result_val)?;
                 Ok((result_val, lhs_ty))
             }
             Expr::AssignMod(lhs, rhs) => {
-                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
                 let (rhs_val, _) = self.translate_expr(*rhs)?;
                 let result_val = self.builder.ins().srem(lhs_val, rhs_val);
-                self.translate_assignment(*lhs, result_val)?;
+                self.translate_assignment(addr, result_val)?;
                 Ok((result_val, lhs_ty))
             }
             Expr::AssignBitwiseAnd(lhs, rhs) => {
-                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
                 let (rhs_val, _) = self.translate_expr(*rhs)?;
                 let result_val = self.builder.ins().band(lhs_val, rhs_val);
-                self.translate_assignment(*lhs, result_val)?;
+                self.translate_assignment(addr, result_val)?;
                 Ok((result_val, lhs_ty))
             }
             Expr::AssignBitwiseOr(lhs, rhs) => {
-                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
                 let (rhs_val, _) = self.translate_expr(*rhs)?;
                 let result_val = self.builder.ins().bor(lhs_val, rhs_val);
-                self.translate_assignment(*lhs, result_val)?;
+                self.translate_assignment(addr, result_val)?;
                 Ok((result_val, lhs_ty))
             }
             Expr::AssignBitwiseXor(lhs, rhs) => {
-                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
                 let (rhs_val, _) = self.translate_expr(*rhs)?;
                 let result_val = self.builder.ins().bxor(lhs_val, rhs_val);
-                self.translate_assignment(*lhs, result_val)?;
+                self.translate_assignment(addr, result_val)?;
                 Ok((result_val, lhs_ty))
             }
             Expr::AssignLeftShift(lhs, rhs) => {
-                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
                 let (rhs_val, _) = self.translate_expr(*rhs)?;
                 let result_val = self.builder.ins().ishl(lhs_val, rhs_val);
-                self.translate_assignment(*lhs, result_val)?;
+                self.translate_assignment(addr, result_val)?;
                 Ok((result_val, lhs_ty))
             }
             Expr::AssignRightShift(lhs, rhs) => {
-                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
                 let (rhs_val, _) = self.translate_expr(*rhs)?;
                 let result_val = self.builder.ins().sshr(lhs_val, rhs_val);
-                self.translate_assignment(*lhs, result_val)?;
+                self.translate_assignment(addr, result_val)?;
                 Ok((result_val, lhs_ty))
             }
             Expr::Add(lhs, rhs) => {
@@ -1229,52 +1280,36 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 Ok((addr, *ty))
             }
             Expr::Increment(expr) => {
-                if let Expr::Variable(name, _) = *expr {
-                    let (slot, ty) = self.variables.get(&name).unwrap();
-                    let loaded_val = self.load_variable(slot, &ty);
-                    let one = self.builder.ins().iconst(types::I64, 1);
-                    let new_val = self.builder.ins().iadd(loaded_val, one);
-                    self.builder.ins().stack_store(new_val, slot, 0);
-                    Ok((new_val, ty))
-                } else {
-                    unimplemented!()
-                }
+                let (addr, ty) = self.translate_lvalue(*expr)?;
+                let val = self.load_lvalue(addr, &ty);
+                let one = self.builder.ins().iconst(types::I64, 1);
+                let new_val = self.builder.ins().iadd(val, one);
+                self.translate_assignment(addr, new_val)?;
+                Ok((new_val, ty))
             }
             Expr::Decrement(expr) => {
-                if let Expr::Variable(name, _) = *expr {
-                    let (slot, ty) = self.variables.get(&name).unwrap();
-                    let loaded_val = self.load_variable(slot, &ty);
-                    let one = self.builder.ins().iconst(types::I64, 1);
-                    let new_val = self.builder.ins().isub(loaded_val, one);
-                    self.builder.ins().stack_store(new_val, slot, 0);
-                    Ok((new_val, ty))
-                } else {
-                    unimplemented!()
-                }
+                let (addr, ty) = self.translate_lvalue(*expr)?;
+                let val = self.load_lvalue(addr, &ty);
+                let one = self.builder.ins().iconst(types::I64, 1);
+                let new_val = self.builder.ins().isub(val, one);
+                self.translate_assignment(addr, new_val)?;
+                Ok((new_val, ty))
             }
             Expr::PostIncrement(expr) => {
-                if let Expr::Variable(name, _) = *expr {
-                    let (slot, ty) = self.variables.get(&name).unwrap();
-                    let loaded_val = self.load_variable(slot, &ty);
-                    let one = self.builder.ins().iconst(types::I64, 1);
-                    let new_val = self.builder.ins().iadd(loaded_val, one);
-                    self.builder.ins().stack_store(new_val, slot, 0);
-                    Ok((loaded_val, ty))
-                } else {
-                    unimplemented!()
-                }
+                let (addr, ty) = self.translate_lvalue(*expr)?;
+                let val = self.load_lvalue(addr, &ty);
+                let one = self.builder.ins().iconst(types::I64, 1);
+                let new_val = self.builder.ins().iadd(val, one);
+                self.translate_assignment(addr, new_val)?;
+                Ok((val, ty))
             }
             Expr::PostDecrement(expr) => {
-                if let Expr::Variable(name, _) = *expr {
-                    let (slot, ty) = self.variables.get(&name).unwrap();
-                    let loaded_val = self.load_variable(slot, &ty);
-                    let one = self.builder.ins().iconst(types::I64, 1);
-                    let new_val = self.builder.ins().isub(loaded_val, one);
-                    self.builder.ins().stack_store(new_val, slot, 0);
-                    Ok((loaded_val, ty))
-                } else {
-                    unimplemented!()
-                }
+                let (addr, ty) = self.translate_lvalue(*expr)?;
+                let val = self.load_lvalue(addr, &ty);
+                let one = self.builder.ins().iconst(types::I64, 1);
+                let new_val = self.builder.ins().isub(val, one);
+                self.translate_assignment(addr, new_val)?;
+                Ok((val, ty))
             }
             Expr::Char(c) => {
                 // Extract the character from the string literal (e.g., "'a'" -> 'a')

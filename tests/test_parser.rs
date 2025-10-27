@@ -149,6 +149,41 @@ mod tests {
         assert_eq!(ast.functions[0].body, expected.functions[0].body);
     }
 
+    /// Test parsing of switch statements
+    #[test]
+    fn test_switch_statement() {
+        let input = r#"
+            switch (x) {
+                case 1:
+                    y = 1;
+                    break;
+                case 2:
+                    y = 2;
+                    break;
+                default:
+                    y = 0;
+            }
+        "#;
+        let stmts = parse_c_body(input);
+        assert!(matches!(&stmts[0], Stmt::Switch(..)));
+
+        if let Stmt::Switch(cond, body) = &stmts[0] {
+            assert!(matches!(**cond, Expr::Variable(..)));
+            if let Stmt::Block(stmts) = &**body {
+                assert_eq!(stmts.len(), 5);
+                assert!(matches!(&stmts[0], Stmt::Case(..)));
+                assert!(matches!(&stmts[1], Stmt::Break));
+                assert!(matches!(&stmts[2], Stmt::Case(..)));
+                assert!(matches!(&stmts[3], Stmt::Break));
+                assert!(matches!(&stmts[4], Stmt::Default(..)));
+            } else {
+                panic!("Expected switch body to be a block");
+            }
+        } else {
+            panic!("Expected Stmt::Switch");
+        }
+    }
+
     /// Test parsing of multiple declarators in a single declaration
     #[test]
     fn test_multiple_declarators() {

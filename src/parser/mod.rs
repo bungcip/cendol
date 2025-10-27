@@ -264,24 +264,7 @@ impl Parser {
                     unreachable!()
                 }
             }),
-            KeywordKind::Enum => {
-                self.eat()?;
-                let _name = self.maybe_name()?;
-
-                self.expect_punct(TokenKind::LeftBrace)?;
-                let mut enumerators = Vec::new();
-                while self.eat_token(&TokenKind::RightBrace)? == false {
-                    if let Some(id) = self.maybe_name()? {
-                        enumerators.push(id);
-                    }
-                    // Handle optional assignment for enum values
-                    if self.eat_token(&TokenKind::Equal)? {
-                        self.parse_expr()?; // Consume the expression for the enum value
-                    }
-                    self.eat_token(&TokenKind::Comma)?;
-                }
-                Ok(Type::Enum(enumerators))
-            }
+            KeywordKind::Enum => self.parse_enum_specifier(),
             _ => Err(ParserError::UnexpectedToken(token)),
         }
     }
@@ -289,6 +272,47 @@ impl Parser {
     fn parse_simple_type(&mut self, ty: Type) -> Result<Type, ParserError> {
         self.eat()?;
         Ok(ty)
+    }
+
+    /// Parses an enum specifier.
+    fn parse_enum_specifier(&mut self) -> Result<Type, ParserError> {
+        self.eat()?; // consume 'enum'
+        let name = self.maybe_name()?;
+        if self.eat_token(&TokenKind::LeftBrace)? {
+            let mut enumerators = Vec::new();
+            if !self.eat_token(&TokenKind::RightBrace)? {
+                loop {
+                    enumerators.push(self.parse_enumerator()?);
+                    if !self.eat_token(&TokenKind::Comma)? {
+                        self.expect_punct(TokenKind::RightBrace)?;
+                        break;
+                    }
+                    if self.eat_token(&TokenKind::RightBrace)? {
+                        break;
+                    }
+                }
+            }
+            Ok(Type::Enum(name, enumerators))
+        } else if let Some(name) = name {
+            Ok(Type::Enum(Some(name), Vec::new()))
+        } else {
+            let token = self.current_token()?;
+            Err(ParserError::UnexpectedToken(token))
+        }
+    }
+
+    /// Parses a single enumerator.
+    fn parse_enumerator(
+        &mut self,
+    ) -> Result<(String, Option<Box<Expr>>, crate::common::SourceSpan), ParserError> {
+        let token = self.current_token()?;
+        let name = self.expect_name()?;
+        if self.eat_token(&TokenKind::Equal)? {
+            let expr = self.parse_pratt_expr(2)?; // Assignment precedence
+            Ok((name, Some(Box::new(expr)), token.span))
+        } else {
+            Ok((name, None, token.span))
+        }
     }
 
     /// Parses a struct or union type.
@@ -643,14 +667,6 @@ impl Parser {
                 let mut expr = Expr::Variable(name, token.span.clone());
                 while let Ok(token) = self.current_token() {
                     match token.kind {
-                        TokenKind::PlusPlus => {
-                            self.eat()?;
-                            expr = Expr::Increment(Box::new(expr));
-                        }
-                        TokenKind::MinusMinus => {
-                            self.eat()?;
-                            expr = Expr::Decrement(Box::new(expr));
-                        }
                         TokenKind::LeftParen => {
                             let location = token.span.clone();
                             let token_for_error = token.clone();

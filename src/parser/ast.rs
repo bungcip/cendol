@@ -38,7 +38,10 @@ pub enum Type {
     /// A union definition.
     Union(Option<String>, Vec<Parameter>),
     /// An enum definition.
-    Enum(Vec<String>),
+    Enum(
+        Option<String>,
+        Vec<(String, Option<Box<Expr>>, crate::common::SourceSpan)>,
+    ),
 }
 
 impl Type {

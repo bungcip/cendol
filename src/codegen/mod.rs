@@ -1405,16 +1405,76 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 unreachable!()
             }
             Expr::LogicalAnd(lhs, rhs) => {
-                let (lhs, _) = self.translate_expr(*lhs)?;
-                let (rhs, _) = self.translate_expr(*rhs)?;
-                let val = self.builder.ins().band(lhs, rhs);
-                Ok((val, Type::Int))
+                let (lhs_val, _) = self.translate_expr(*lhs)?;
+
+                let rhs_block = self.builder.create_block();
+                let true_block = self.builder.create_block();
+                let false_block = self.builder.create_block();
+                let merge_block = self.builder.create_block();
+
+                self.builder.append_block_param(merge_block, types::I64);
+
+                self.builder
+                    .ins()
+                    .brif(lhs_val, rhs_block, &[], false_block, &[]);
+
+                self.switch_to_block(rhs_block);
+                self.builder.seal_block(rhs_block);
+                let (rhs_val, _) = self.translate_expr(*rhs)?;
+                self.builder
+                    .ins()
+                    .brif(rhs_val, true_block, &[], false_block, &[]);
+
+                self.switch_to_block(true_block);
+                self.builder.seal_block(true_block);
+                let one = self.builder.ins().iconst(types::I64, 1);
+                self.builder.ins().jump(merge_block, &[one.into()]);
+
+                self.switch_to_block(false_block);
+                self.builder.seal_block(false_block);
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                self.builder.ins().jump(merge_block, &[zero.into()]);
+
+                self.switch_to_block(merge_block);
+                self.builder.seal_block(merge_block);
+
+                Ok((self.builder.block_params(merge_block)[0], Type::Int))
             }
             Expr::LogicalOr(lhs, rhs) => {
-                let (lhs, _) = self.translate_expr(*lhs)?;
-                let (rhs, _) = self.translate_expr(*rhs)?;
-                let val = self.builder.ins().bor(lhs, rhs);
-                Ok((val, Type::Int))
+                let (lhs_val, _) = self.translate_expr(*lhs)?;
+
+                let rhs_block = self.builder.create_block();
+                let true_block = self.builder.create_block();
+                let false_block = self.builder.create_block();
+                let merge_block = self.builder.create_block();
+
+                self.builder.append_block_param(merge_block, types::I64);
+
+                self.builder
+                    .ins()
+                    .brif(lhs_val, true_block, &[], rhs_block, &[]);
+
+                self.switch_to_block(rhs_block);
+                self.builder.seal_block(rhs_block);
+                let (rhs_val, _) = self.translate_expr(*rhs)?;
+                self.builder
+                    .ins()
+                    .brif(rhs_val, true_block, &[], false_block, &[]);
+
+                self.switch_to_block(true_block);
+                self.builder.seal_block(true_block);
+                let one = self.builder.ins().iconst(types::I64, 1);
+                self.builder.ins().jump(merge_block, &[one.into()]);
+
+                self.switch_to_block(false_block);
+                self.builder.seal_block(false_block);
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                self.builder.ins().jump(merge_block, &[zero.into()]);
+
+                self.switch_to_block(merge_block);
+                self.builder.seal_block(merge_block);
+
+                Ok((self.builder.block_params(merge_block)[0], Type::Int))
             }
             Expr::BitwiseOr(lhs, rhs) => {
                 let (lhs, _) = self.translate_expr(*lhs)?;

@@ -404,4 +404,16 @@ mod tests {
         // comma expression
         assert!(matches!(stmts[54], Stmt::Expr(Expr::Comma(..))));
     }
+
+    /// Test parsing of goto and label statements
+    #[test]
+    fn test_goto_and_label() {
+        let input = r#"
+            goto a;
+            a: x = 1;
+        "#;
+        let stmts = parse_c_body(input);
+        assert!(matches!(&stmts[0], Stmt::Goto(..)));
+        assert!(matches!(&stmts[1], Stmt::Label(..)));
+    }
 }

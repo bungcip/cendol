@@ -643,14 +643,6 @@ impl Parser {
                 let mut expr = Expr::Variable(name, token.span.clone());
                 while let Ok(token) = self.current_token() {
                     match token.kind {
-                        TokenKind::PlusPlus => {
-                            self.eat()?;
-                            expr = Expr::Increment(Box::new(expr));
-                        }
-                        TokenKind::MinusMinus => {
-                            self.eat()?;
-                            expr = Expr::Decrement(Box::new(expr));
-                        }
                         TokenKind::LeftParen => {
                             let location = token.span.clone();
                             let token_for_error = token.clone();

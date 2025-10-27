@@ -710,4 +710,28 @@ mod tests {
         let exit_code = compile_and_run(input, "post_decrement_pointer").unwrap();
         assert_eq!(exit_code, 79);
     }
+
+    /// Test code generation for do-while loops with break and continue
+    #[test]
+    fn test_do_while_loop_break_continue() {
+        let input = r#"
+        int main() {
+            int y = 0;
+            int x = 0;
+            do {
+                x = x + 1;
+                if (x % 2 == 0) {
+                    continue;
+                }
+                y = y + 1;
+                if (x > 10) {
+                    break;
+                }
+            } while (x < 20);
+            return y;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "do_while_loop_break_continue").unwrap();
+        assert_eq!(exit_code, 6);
+    }
 }

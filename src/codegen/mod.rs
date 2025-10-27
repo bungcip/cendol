@@ -628,7 +628,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.jump_to_block(header_block);
                 self.switch_to_block(header_block);
 
+                self.loop_context.push((cond_block, exit_block));
                 self.translate_stmt(*body)?;
+                self.loop_context.pop();
+
                 self.jump_to_block(cond_block);
 
                 self.switch_to_block(cond_block);

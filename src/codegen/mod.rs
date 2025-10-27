@@ -48,11 +48,14 @@ impl<K: std::hash::Hash + Eq + Clone, V: Clone> SymbolTable<K, V> {
 /// A code generator that translates an AST into machine code.
 use cranelift_module::FuncId;
 
+use cranelift_module::DataId;
+
 pub struct CodeGen {
     builder_context: FunctionBuilderContext,
     ctx: Context,
     module: ObjectModule,
     variables: SymbolTable<String, (StackSlot, Type)>,
+    global_variables: HashMap<String, (DataId, Type)>,
     functions: HashMap<String, (FuncId, Type, bool)>,
     signatures: HashMap<String, cranelift::prelude::Signature>,
     structs: HashMap<String, Type>,
@@ -89,6 +92,7 @@ impl CodeGen {
             ctx,
             module,
             variables: SymbolTable::new(),
+            global_variables: HashMap::new(),
             functions: HashMap::new(),
             signatures: HashMap::new(),
             structs: HashMap::new(),
@@ -133,6 +137,40 @@ impl CodeGen {
                             self.structs.insert(name.clone(), declarator.ty.clone());
                         } else if let Type::Union(Some(name), _) = &declarator.ty {
                             self.unions.insert(name.clone(), declarator.ty.clone());
+                        } else {
+                            // This is a global variable declaration.
+                            let id = self
+                                .module
+                                .declare_data(&declarator.name, Linkage::Export, true, false)
+                                .unwrap();
+
+                            self.global_variables
+                                .insert(declarator.name.clone(), (id, declarator.ty.clone()));
+
+                            let mut data_desc = cranelift_module::DataDescription::new();
+
+                            let size = FunctionTranslator::get_type_size_from_type(
+                                &declarator.ty,
+                                &self.structs,
+                                &self.unions,
+                            );
+
+                            let initial_value = if let Some(init) = &declarator.initializer {
+                                if let Initializer::Expr(expr) = init {
+                                    if let Expr::Number(num) = **expr {
+                                        num.to_le_bytes().to_vec()
+                                    } else {
+                                        return Err(CodegenError::InvalidStaticInitializer);
+                                    }
+                                } else {
+                                    return Err(CodegenError::InvalidStaticInitializer);
+                                }
+                            } else {
+                                vec![0; size as usize]
+                            };
+
+                            data_desc.define(initial_value.into_boxed_slice());
+                            self.module.define_data(id, &data_desc).unwrap();
                         }
                     }
                 }
@@ -187,6 +225,7 @@ impl CodeGen {
                 builder,
                 functions: &self.functions,
                 variables: &mut self.variables,
+                global_variables: &self.global_variables,
                 structs: &self.structs,
                 unions: &self.unions,
                 module: &mut self.module,
@@ -260,6 +299,7 @@ struct FunctionTranslator<'a, 'b> {
     builder: FunctionBuilder<'a>,
     functions: &'b HashMap<String, (FuncId, Type, bool)>,
     variables: &'b mut SymbolTable<String, (StackSlot, Type)>,
+    global_variables: &'b HashMap<String, (DataId, Type)>,
     structs: &'b HashMap<String, Type>,
     unions: &'b HashMap<String, Type>,
     module: &'b mut ObjectModule,
@@ -269,6 +309,100 @@ struct FunctionTranslator<'a, 'b> {
 }
 
 impl<'a, 'b> FunctionTranslator<'a, 'b> {
+    pub fn get_type_size_from_type(
+        ty: &Type,
+        structs: &HashMap<String, Type>,
+        unions: &HashMap<String, Type>,
+    ) -> u32 {
+        let real_ty = Self::get_real_type_from_type(ty, structs, unions).unwrap();
+        match &real_ty {
+            Type::Int | Type::UnsignedInt => 8,
+            Type::Char | Type::UnsignedChar => 1,
+            Type::Short | Type::UnsignedShort => 2,
+            Type::Float => 4,
+            Type::Double => 8,
+            Type::Long | Type::UnsignedLong => 8,
+            Type::LongLong | Type::UnsignedLongLong => 8,
+            Type::Void => 0,
+            Type::Bool => 1,
+            Type::Pointer(_) => 8,
+            Type::Struct(_, members) => {
+                let mut size = 0;
+                for member in members {
+                    let member_size = Self::get_type_size_from_type(&member.ty, structs, unions);
+                    let member_alignment =
+                        Self::get_type_alignment_from_type(&member.ty, structs, unions);
+                    size = (size + member_alignment - 1) & !(member_alignment - 1);
+                    size += member_size;
+                }
+                let struct_alignment = Self::get_type_alignment_from_type(ty, structs, unions);
+                (size + struct_alignment - 1) & !(struct_alignment - 1)
+            }
+            Type::Union(_, members) => {
+                let size = members
+                    .iter()
+                    .map(|m| Self::get_type_size_from_type(&m.ty, structs, unions))
+                    .max()
+                    .unwrap_or(0);
+                let union_alignment = Self::get_type_alignment_from_type(ty, structs, unions);
+                (size + union_alignment - 1) & !(union_alignment - 1)
+            }
+            Type::Array(elem_ty, size) => {
+                Self::get_type_size_from_type(elem_ty, structs, unions) * *size as u32
+            }
+            _ => unimplemented!(),
+        }
+    }
+
+    fn get_type_alignment_from_type(
+        ty: &Type,
+        structs: &HashMap<String, Type>,
+        unions: &HashMap<String, Type>,
+    ) -> u32 {
+        let real_ty = Self::get_real_type_from_type(ty, structs, unions).unwrap();
+        match &real_ty {
+            Type::Int | Type::UnsignedInt => 8,
+            Type::Char | Type::UnsignedChar => 1,
+            Type::Short | Type::UnsignedShort => 2,
+            Type::Float => 4,
+            Type::Double => 8,
+            Type::Long | Type::UnsignedLong => 8,
+            Type::LongLong | Type::UnsignedLongLong => 8,
+            Type::Void => 1,
+            Type::Bool => 1,
+            Type::Pointer(_) => 8,
+            Type::Struct(_, members) => members
+                .iter()
+                .map(|m| Self::get_type_alignment_from_type(&m.ty, structs, unions))
+                .max()
+                .unwrap_or(1),
+            Type::Union(_, members) => members
+                .iter()
+                .map(|m| Self::get_type_alignment_from_type(&m.ty, structs, unions))
+                .max()
+                .unwrap_or(1),
+            Type::Array(elem_ty, _) => Self::get_type_alignment_from_type(elem_ty, structs, unions),
+            _ => unimplemented!(),
+        }
+    }
+
+    fn get_real_type_from_type(
+        ty: &Type,
+        structs: &HashMap<String, Type>,
+        unions: &HashMap<String, Type>,
+    ) -> Result<Type, CodegenError> {
+        if let Type::Struct(Some(name), members) = ty
+            && members.is_empty()
+        {
+            return Ok(structs.get(name).unwrap().clone());
+        } else if let Type::Union(Some(name), members) = ty
+            && members.is_empty()
+        {
+            return Ok(unions.get(name).unwrap().clone());
+        }
+        Ok(ty.clone())
+    }
+
     /// Switches to a new block.
     fn switch_to_block(&mut self, block: Block) {
         self.builder.switch_to_block(block);
@@ -285,70 +419,12 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
     /// Returns the alignment of a given type in bytes.
     fn get_type_alignment(&self, ty: &Type) -> u32 {
-        let real_ty = self.get_real_type(ty).unwrap();
-        match &real_ty {
-            Type::Int | Type::UnsignedInt => 8,
-            Type::Char | Type::UnsignedChar => 1,
-            Type::Short | Type::UnsignedShort => 2,
-            Type::Float => 4,
-            Type::Double => 8,
-            Type::Long | Type::UnsignedLong => 8,
-            Type::LongLong | Type::UnsignedLongLong => 8,
-            Type::Void => 1,
-            Type::Bool => 1,
-            Type::Pointer(_) => 8,
-            Type::Struct(_, members) => members
-                .iter()
-                .map(|m| self.get_type_alignment(&m.ty))
-                .max()
-                .unwrap_or(1),
-            Type::Union(_, members) => members
-                .iter()
-                .map(|m| self.get_type_alignment(&m.ty))
-                .max()
-                .unwrap_or(1),
-            Type::Array(elem_ty, _) => self.get_type_alignment(elem_ty),
-            _ => unimplemented!(),
-        }
+        Self::get_type_alignment_from_type(ty, self.structs, self.unions)
     }
 
     /// Returns the size of a given type in bytes.
     fn get_type_size(&self, ty: &Type) -> u32 {
-        let real_ty = self.get_real_type(ty).unwrap();
-        match &real_ty {
-            Type::Int | Type::UnsignedInt => 8,
-            Type::Char | Type::UnsignedChar => 1,
-            Type::Short | Type::UnsignedShort => 2,
-            Type::Float => 4,
-            Type::Double => 8,
-            Type::Long | Type::UnsignedLong => 8,
-            Type::LongLong | Type::UnsignedLongLong => 8,
-            Type::Void => 0,
-            Type::Bool => 1,
-            Type::Pointer(_) => 8,
-            Type::Struct(_, members) => {
-                let mut size = 0;
-                for member in members {
-                    let member_size = self.get_type_size(&member.ty);
-                    let member_alignment = self.get_type_alignment(&member.ty);
-                    size = (size + member_alignment - 1) & !(member_alignment - 1);
-                    size += member_size;
-                }
-                let struct_alignment = self.get_type_alignment(ty);
-                (size + struct_alignment - 1) & !(struct_alignment - 1)
-            }
-            Type::Union(_, members) => {
-                let size = members
-                    .iter()
-                    .map(|m| self.get_type_size(&m.ty))
-                    .max()
-                    .unwrap_or(0);
-                let union_alignment = self.get_type_alignment(ty);
-                (size + union_alignment - 1) & !(union_alignment - 1)
-            }
-            Type::Array(elem_ty, size) => self.get_type_size(elem_ty) * *size as u32,
-            _ => unimplemented!(),
-        }
+        Self::get_type_size_from_type(ty, self.structs, self.unions)
     }
 
     /// Translates a statement into Cranelift IR.
@@ -577,54 +653,69 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
     /// Resolves the real type of a struct.
     fn get_real_type(&self, ty: &Type) -> Result<Type, CodegenError> {
-        if let Type::Struct(Some(name), members) = ty
-            && members.is_empty()
-        {
-            return Ok(self.structs.get(name).unwrap().clone());
-        } else if let Type::Union(Some(name), members) = ty
-            && members.is_empty()
-        {
-            return Ok(self.unions.get(name).unwrap().clone());
-        }
-        Ok(ty.clone())
+        Self::get_real_type_from_type(ty, self.structs, self.unions)
     }
 
     /// Translates an expression into a Cranelift `Value`.
-    fn translate_assignment(&mut self, lhs: Expr, rhs_val: Value) -> Result<(), CodegenError> {
-        match lhs {
+    fn translate_assignment(&mut self, lhs: Value, rhs_val: Value) -> Result<(), CodegenError> {
+        self.builder
+            .ins()
+            .store(MemFlags::new(), rhs_val, lhs, 0);
+        Ok(())
+    }
+
+    fn translate_lvalue(&mut self, expr: Expr) -> Result<(Value, Type), CodegenError> {
+        match expr {
             Expr::Variable(name, _) => {
-                let (slot, _) = self.variables.get(&name).unwrap();
-                self.builder.ins().stack_store(rhs_val, slot, 0);
+                if let Some((slot, ty)) = self.variables.get(&name) {
+                    let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
+                    Ok((addr, ty))
+                } else {
+                    let (id, ty) = self.global_variables.get(&name).unwrap();
+                    let local_id = self.module.declare_data_in_func(*id, self.builder.func);
+                    let addr = self.builder.ins().global_value(types::I64, local_id);
+                    Ok((addr, ty.clone()))
+                }
             }
             Expr::Deref(ptr) => {
-                let (ptr, _) = self.translate_expr(*ptr)?;
-                self.builder.ins().store(MemFlags::new(), rhs_val, ptr, 0);
+                let (ptr, ty) = self.translate_expr(*ptr)?;
+                if let Type::Pointer(base_ty) = ty {
+                    Ok((ptr, *base_ty))
+                } else {
+                    Err(CodegenError::NotAPointer.into())
+                }
             }
             Expr::Member(expr, member) => {
                 let (ptr, ty) = self.translate_expr(*expr)?;
                 let s = self.get_real_type(&ty)?;
                 if let Type::Struct(_, members) = s {
                     let mut offset = 0;
+                    let mut member_ty = None;
                     for m in &members {
                         let member_alignment = self.get_type_alignment(&m.ty);
                         offset = (offset + member_alignment - 1) & !(member_alignment - 1);
-                        if m.name == *member {
+                        if m.name == member {
+                            member_ty = Some(m.ty.clone());
                             break;
                         }
                         offset += self.get_type_size(&m.ty);
                     }
-                    self.builder
-                        .ins()
-                        .store(MemFlags::new(), rhs_val, ptr, offset as i32);
-                } else if let Type::Union(_, _) = s {
-                    self.builder.ins().store(MemFlags::new(), rhs_val, ptr, 0);
+                    let member_ty = member_ty.unwrap();
+                    let member_addr = self.builder.ins().iadd_imm(ptr, offset as i64);
+                    Ok((member_addr, member_ty))
+                } else if let Type::Union(_, members) = s {
+                    let member_ty = members
+                        .iter()
+                        .find(|m| m.name == member)
+                        .map(|m| m.ty.clone())
+                        .unwrap();
+                    Ok((ptr, member_ty))
                 } else {
-                    return Err(CodegenError::NotAStruct);
+                    Err(CodegenError::NotAStruct.into())
                 }
             }
-            _ => unimplemented!(),
+            _ => Err(CodegenError::InvalidLValue.into()),
         }
-        Ok(())
     }
 
     fn integer_promotion(&self, ty: &Type) -> Type {
@@ -700,6 +791,28 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         }
     }
 
+    fn load_lvalue(&mut self, addr: Value, ty: &Type) -> Value {
+        match ty {
+            Type::Char | Type::Bool => {
+                let val = self.builder.ins().load(types::I8, MemFlags::new(), addr, 0);
+                self.builder.ins().sextend(types::I64, val)
+            }
+            Type::UnsignedChar => {
+                let val = self.builder.ins().load(types::I8, MemFlags::new(), addr, 0);
+                self.builder.ins().uextend(types::I64, val)
+            }
+            Type::Short => {
+                let val = self.builder.ins().load(types::I16, MemFlags::new(), addr, 0);
+                self.builder.ins().sextend(types::I64, val)
+            }
+            Type::UnsignedShort => {
+                let val = self.builder.ins().load(types::I16, MemFlags::new(), addr, 0);
+                self.builder.ins().uextend(types::I64, val)
+            }
+            _ => self.builder.ins().load(types::I64, MemFlags::new(), addr, 0),
+        }
+    }
+
     fn translate_expr(&mut self, expr: Expr) -> Result<(Value, Type), CodegenError> {
         match expr {
             Expr::Number(n) => Ok((self.builder.ins().iconst(types::I64, n), Type::Int)),
@@ -721,94 +834,112 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 ))
             }
             Expr::Variable(name, _) => {
-                let (slot, ty) = self.variables.get(&name).unwrap();
-                if let Type::Struct(_, _) | Type::Union(_, _) = &ty {
-                    return Ok((
-                        self.builder.ins().stack_addr(types::I64, slot, 0),
-                        ty.clone(),
-                    ));
+                if let Some((slot, ty)) = self.variables.get(&name) {
+                    if let Type::Struct(_, _) | Type::Union(_, _) = &ty {
+                        return Ok((
+                            self.builder.ins().stack_addr(types::I64, slot, 0),
+                            ty.clone(),
+                        ));
+                    }
+                    if let Type::Array(elem_ty, _) = &ty {
+                        // Array decays to a pointer to its first element
+                        let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
+                        return Ok((addr, Type::Pointer(elem_ty.clone())));
+                    }
+                    let loaded_val = self.load_variable(slot, &ty);
+                    Ok((loaded_val, ty))
+                } else {
+                    // It's a global variable.
+                    let (id, ty) = self.global_variables.get(&name).unwrap();
+                    let local_id = self.module.declare_data_in_func(*id, self.builder.func);
+                    let addr = self.builder.ins().global_value(types::I64, local_id);
+                    Ok((self.builder.ins().load(types::I64, MemFlags::new(), addr, 0), ty.clone()))
                 }
-                if let Type::Array(elem_ty, _) = &ty {
-                    // Array decays to a pointer to its first element
-                    let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
-                    return Ok((addr, Type::Pointer(elem_ty.clone())));
-                }
-                let loaded_val = self.load_variable(slot, &ty);
-                Ok((loaded_val, ty))
             }
             Expr::Assign(lhs, rhs) => {
                 let (rhs_val, ty) = self.translate_expr(*rhs)?;
-                self.translate_assignment(*lhs, rhs_val)?;
+                let (addr, _) = self.translate_lvalue(*lhs)?;
+                self.translate_assignment(addr, rhs_val)?;
                 Ok((rhs_val, ty))
             }
             Expr::AssignAdd(lhs, rhs) => {
-                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
                 let (rhs_val, _) = self.translate_expr(*rhs)?;
                 let result_val = self.builder.ins().iadd(lhs_val, rhs_val);
-                self.translate_assignment(*lhs, result_val)?;
+                self.translate_assignment(addr, result_val)?;
                 Ok((result_val, lhs_ty))
             }
             Expr::AssignSub(lhs, rhs) => {
-                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
                 let (rhs_val, _) = self.translate_expr(*rhs)?;
                 let result_val = self.builder.ins().isub(lhs_val, rhs_val);
-                self.translate_assignment(*lhs, result_val)?;
+                self.translate_assignment(addr, result_val)?;
                 Ok((result_val, lhs_ty))
             }
             Expr::AssignMul(lhs, rhs) => {
-                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
                 let (rhs_val, _) = self.translate_expr(*rhs)?;
                 let result_val = self.builder.ins().imul(lhs_val, rhs_val);
-                self.translate_assignment(*lhs, result_val)?;
+                self.translate_assignment(addr, result_val)?;
                 Ok((result_val, lhs_ty))
             }
             Expr::AssignDiv(lhs, rhs) => {
-                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
                 let (rhs_val, _) = self.translate_expr(*rhs)?;
                 let result_val = self.builder.ins().sdiv(lhs_val, rhs_val);
-                self.translate_assignment(*lhs, result_val)?;
+                self.translate_assignment(addr, result_val)?;
                 Ok((result_val, lhs_ty))
             }
             Expr::AssignMod(lhs, rhs) => {
-                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
                 let (rhs_val, _) = self.translate_expr(*rhs)?;
                 let result_val = self.builder.ins().srem(lhs_val, rhs_val);
-                self.translate_assignment(*lhs, result_val)?;
+                self.translate_assignment(addr, result_val)?;
                 Ok((result_val, lhs_ty))
             }
             Expr::AssignBitwiseAnd(lhs, rhs) => {
-                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
                 let (rhs_val, _) = self.translate_expr(*rhs)?;
                 let result_val = self.builder.ins().band(lhs_val, rhs_val);
-                self.translate_assignment(*lhs, result_val)?;
+                self.translate_assignment(addr, result_val)?;
                 Ok((result_val, lhs_ty))
             }
             Expr::AssignBitwiseOr(lhs, rhs) => {
-                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
                 let (rhs_val, _) = self.translate_expr(*rhs)?;
                 let result_val = self.builder.ins().bor(lhs_val, rhs_val);
-                self.translate_assignment(*lhs, result_val)?;
+                self.translate_assignment(addr, result_val)?;
                 Ok((result_val, lhs_ty))
             }
             Expr::AssignBitwiseXor(lhs, rhs) => {
-                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
                 let (rhs_val, _) = self.translate_expr(*rhs)?;
                 let result_val = self.builder.ins().bxor(lhs_val, rhs_val);
-                self.translate_assignment(*lhs, result_val)?;
+                self.translate_assignment(addr, result_val)?;
                 Ok((result_val, lhs_ty))
             }
             Expr::AssignLeftShift(lhs, rhs) => {
-                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
                 let (rhs_val, _) = self.translate_expr(*rhs)?;
                 let result_val = self.builder.ins().ishl(lhs_val, rhs_val);
-                self.translate_assignment(*lhs, result_val)?;
+                self.translate_assignment(addr, result_val)?;
                 Ok((result_val, lhs_ty))
             }
             Expr::AssignRightShift(lhs, rhs) => {
-                let (lhs_val, lhs_ty) = self.translate_expr(*lhs.clone())?;
+                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
                 let (rhs_val, _) = self.translate_expr(*rhs)?;
                 let result_val = self.builder.ins().sshr(lhs_val, rhs_val);
-                self.translate_assignment(*lhs, result_val)?;
+                self.translate_assignment(addr, result_val)?;
                 Ok((result_val, lhs_ty))
             }
             Expr::Add(lhs, rhs) => {
@@ -1229,52 +1360,36 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 Ok((addr, *ty))
             }
             Expr::Increment(expr) => {
-                if let Expr::Variable(name, _) = *expr {
-                    let (slot, ty) = self.variables.get(&name).unwrap();
-                    let loaded_val = self.load_variable(slot, &ty);
-                    let one = self.builder.ins().iconst(types::I64, 1);
-                    let new_val = self.builder.ins().iadd(loaded_val, one);
-                    self.builder.ins().stack_store(new_val, slot, 0);
-                    Ok((new_val, ty))
-                } else {
-                    unimplemented!()
-                }
+                let (addr, ty) = self.translate_lvalue(*expr)?;
+                let val = self.load_lvalue(addr, &ty);
+                let one = self.builder.ins().iconst(types::I64, 1);
+                let new_val = self.builder.ins().iadd(val, one);
+                self.translate_assignment(addr, new_val)?;
+                Ok((new_val, ty))
             }
             Expr::Decrement(expr) => {
-                if let Expr::Variable(name, _) = *expr {
-                    let (slot, ty) = self.variables.get(&name).unwrap();
-                    let loaded_val = self.load_variable(slot, &ty);
-                    let one = self.builder.ins().iconst(types::I64, 1);
-                    let new_val = self.builder.ins().isub(loaded_val, one);
-                    self.builder.ins().stack_store(new_val, slot, 0);
-                    Ok((new_val, ty))
-                } else {
-                    unimplemented!()
-                }
+                let (addr, ty) = self.translate_lvalue(*expr)?;
+                let val = self.load_lvalue(addr, &ty);
+                let one = self.builder.ins().iconst(types::I64, 1);
+                let new_val = self.builder.ins().isub(val, one);
+                self.translate_assignment(addr, new_val)?;
+                Ok((new_val, ty))
             }
             Expr::PostIncrement(expr) => {
-                if let Expr::Variable(name, _) = *expr {
-                    let (slot, ty) = self.variables.get(&name).unwrap();
-                    let loaded_val = self.load_variable(slot, &ty);
-                    let one = self.builder.ins().iconst(types::I64, 1);
-                    let new_val = self.builder.ins().iadd(loaded_val, one);
-                    self.builder.ins().stack_store(new_val, slot, 0);
-                    Ok((loaded_val, ty))
-                } else {
-                    unimplemented!()
-                }
+                let (addr, ty) = self.translate_lvalue(*expr)?;
+                let val = self.load_lvalue(addr, &ty);
+                let one = self.builder.ins().iconst(types::I64, 1);
+                let new_val = self.builder.ins().iadd(val, one);
+                self.translate_assignment(addr, new_val)?;
+                Ok((val, ty))
             }
             Expr::PostDecrement(expr) => {
-                if let Expr::Variable(name, _) = *expr {
-                    let (slot, ty) = self.variables.get(&name).unwrap();
-                    let loaded_val = self.load_variable(slot, &ty);
-                    let one = self.builder.ins().iconst(types::I64, 1);
-                    let new_val = self.builder.ins().isub(loaded_val, one);
-                    self.builder.ins().stack_store(new_val, slot, 0);
-                    Ok((loaded_val, ty))
-                } else {
-                    unimplemented!()
-                }
+                let (addr, ty) = self.translate_lvalue(*expr)?;
+                let val = self.load_lvalue(addr, &ty);
+                let one = self.builder.ins().iconst(types::I64, 1);
+                let new_val = self.builder.ins().isub(val, one);
+                self.translate_assignment(addr, new_val)?;
+                Ok((val, ty))
             }
             Expr::Char(c) => {
                 // Extract the character from the string literal (e.g., "'a'" -> 'a')

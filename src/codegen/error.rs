@@ -38,4 +38,10 @@ pub enum CodegenError {
     /// An unknown type was encountered.
     #[error("Unknown type: {0}")]
     UnknownType(String),
+    /// A static initializer was invalid.
+    #[error("Invalid static initializer")]
+    InvalidStaticInitializer,
+    /// An invalid l-value was used.
+    #[error("Invalid l-value")]
+    InvalidLValue,
 }

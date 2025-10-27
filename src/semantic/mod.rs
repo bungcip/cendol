@@ -1,5 +1,5 @@
 use crate::common::{SourceLocation, SourceSpan};
-use crate::parser::ast::{Expr, Program, Stmt, Type};
+use crate::parser::ast::{Designator, Initializer, Expr, Program, Stmt, Type};
 use crate::semantic::error::SemanticError;
 use std::collections::HashMap;
 
@@ -258,8 +258,8 @@ impl SemanticAnalyzer {
                     }
 
                     // Check initializer expression
-                    if let Some(init_expr) = declarator.initializer {
-                        self.check_expression(*init_expr, filename);
+                    if let Some(initializer) = declarator.initializer {
+                        self.check_initializer(&initializer, filename);
                     }
                 }
             }
@@ -306,8 +306,8 @@ impl SemanticAnalyzer {
                                     },
                                 );
                             }
-                            if let Some(init_expr) = initializer {
-                                self.check_expression(*init_expr, filename);
+                            if let Some(initializer) = initializer {
+                                self.check_initializer(&initializer, filename);
                             }
                         }
                         crate::parser::ast::ForInit::Expr(expr) => {
@@ -433,21 +433,16 @@ impl SemanticAnalyzer {
             Expr::PointerMember(expr, _) => {
                 self.check_expression(*expr, filename);
             }
-            Expr::StructInitializer(exprs) => {
-                for expr in exprs {
-                    self.check_expression(expr, filename);
+            Expr::InitializerList(list) => {
+                for (_, initializer) in list {
+                    self.check_initializer(&initializer, filename);
                 }
-            }
-            Expr::DesignatedInitializer(_, expr) => {
-                self.check_expression(*expr, filename);
             }
             Expr::Cast(_, expr) => {
                 self.check_expression(*expr, filename);
             }
-            Expr::CompoundLiteral(_, exprs) => {
-                for expr in exprs {
-                    self.check_expression(expr, filename);
-                }
+            Expr::CompoundLiteral(_, initializer) => {
+                self.check_initializer(&initializer, filename);
             }
             // Literals don't need checking
             Expr::Number(_) | Expr::String(_) | Expr::Char(_) => {}
@@ -457,6 +452,43 @@ impl SemanticAnalyzer {
             | Expr::PostDecrement(expr) => {
                 // These are handled by the parser, but we'll check the expression anyway
                 self.check_expression(*expr, filename);
+            }
+        }
+    }
+
+    fn check_initializer(&mut self, initializer: &Initializer, filename: &str) {
+        match initializer {
+            Initializer::Expr(expr) => {
+                self.check_expression(*expr.clone(), filename);
+            }
+            Initializer::List(list) => {
+                for (_, initializer) in list {
+                    self.check_initializer(initializer, filename);
+                }
+            }
+        }
+    }
+
+    fn check_type(&mut self, ty: &Type, filename: &str) {
+        match ty {
+            Type::Pointer(base_ty) => {
+                self.check_type(base_ty, filename);
+            }
+            Type::Array(base_ty, _) => {
+                self.check_type(base_ty, filename);
+            }
+            Type::Struct(_, members) => {
+                for member in members {
+                    self.check_type(&member.ty, filename);
+                }
+            }
+            Type::Union(_, members) => {
+                for member in members {
+                    self.check_type(&member.ty, filename);
+                }
+            }
+            _ => {
+                // Primitive types don't need checking
             }
         }
     }

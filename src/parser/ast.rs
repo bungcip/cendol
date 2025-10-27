@@ -77,7 +77,7 @@ impl Type {
 #[derive(Debug, PartialEq, Clone)]
 pub enum ForInit {
     /// A variable declaration.
-    Declaration(Type, String, Option<Box<Expr>>),
+    Declaration(Type, String, Option<Initializer>),
     /// An expression.
     Expr(Expr),
 }
@@ -87,7 +87,7 @@ pub enum ForInit {
 pub struct Declarator {
     pub ty: Type,
     pub name: String,
-    pub initializer: Option<Box<Expr>>,
+    pub initializer: Option<Initializer>,
 }
 
 /// Represents a statement in the C language.
@@ -219,10 +219,8 @@ pub enum Expr {
     PostDecrement(Box<Expr>),
     /// A ternary conditional expression.
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
-    /// A struct initializer expression.
-    StructInitializer(Vec<Expr>),
-    /// A designated initializer expression.
-    DesignatedInitializer(String, Box<Expr>),
+    /// An initializer list expression.
+    InitializerList(Vec<(Vec<Designator>, Box<Initializer>)>),
     /// A member access expression.
     Member(Box<Expr>, String),
     /// A pointer member access expression.
@@ -230,9 +228,27 @@ pub enum Expr {
     /// A type cast expression.
     Cast(Box<Type>, Box<Expr>),
     /// A compound literal expression.
-    CompoundLiteral(Box<Type>, Vec<Expr>),
+    CompoundLiteral(Box<Type>, Box<Initializer>),
     /// A comma expression.
     Comma(Box<Expr>, Box<Expr>),
+}
+
+/// Represents a C designator for initializers.
+#[derive(Debug, PartialEq, Clone)]
+pub enum Designator {
+    /// An array designator, e.g., `[0]`.
+    Index(Box<Expr>),
+    /// A struct/union member designator, e.g., `.foo`.
+    Member(String),
+}
+
+/// Represents a C initializer.
+#[derive(Debug, PartialEq, Clone)]
+pub enum Initializer {
+    /// A single expression initializer.
+    Expr(Box<Expr>),
+    /// An initializer list, e.g., `{ [0] = 1, .x = 2 }`.
+    List(Vec<(Vec<Designator>, Box<Initializer>)>),
 }
 
 /// Represents a function parameter.

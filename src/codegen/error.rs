@@ -3,6 +3,8 @@ use thiserror::Error;
 use cranelift_codegen::CodegenError as CraneliftCodegenError;
 use cranelift_module::ModuleError as CraneliftModuleError;
 
+pub type CodegenResult<T> = Result<T, CodegenError>;
+
 /// An error that can occur during code generation.
 #[derive(Error, Debug)]
 pub enum CodegenError {
@@ -27,6 +29,12 @@ pub enum CodegenError {
     /// An initializer for a non-struct or non-array type was found.
     #[error("Initializer for non-struct or non-array type")]
     NotAStructOrArray,
+    /// An array index was not a constant expression.
+    #[error("Array index is not a constant expression")]
+    NonConstantArrayIndex,
+    /// A designator was used for a non-array type.
+    #[error("Designator for non-array type")]
+    NotAnArray,
     /// An unknown type was encountered.
     #[error("Unknown type: {0}")]
     UnknownType(String),

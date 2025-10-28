@@ -5,7 +5,7 @@
 
 use cendol::file::FileManager;
 use cendol::parser::Parser;
-use cendol::parser::ast::{Declarator, Expr, Function, Initializer, TranslationUnit, Stmt, Type};
+use cendol::parser::ast::{Declarator, Expr, Function, Initializer, Stmt, TranslationUnit, Type};
 use cendol::preprocessor::Preprocessor;
 
 /// Test configuration constants

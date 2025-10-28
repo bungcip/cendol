@@ -270,6 +270,7 @@ impl CodeGen {
                 loop_context: Vec::new(),
                 current_block_state: BlockState::Empty,
                 signatures: &self.signatures,
+                label_blocks: HashMap::new(),
                 current_function_name: function_name,
             };
             // Find the function body
@@ -412,6 +413,7 @@ struct FunctionTranslator<'a, 'b> {
     loop_context: Vec<(Block, Block)>,
     current_block_state: BlockState,
     signatures: &'b HashMap<String, Signature>,
+    label_blocks: HashMap<String, Block>,
     current_function_name: &'b str,
 }
 
@@ -802,8 +804,31 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             TypedStmt::Switch(_, _) => todo!(),
             TypedStmt::Case(_, _) => todo!(),
             TypedStmt::Default(_) => todo!(),
-            TypedStmt::Label(_, _) => todo!(),
-            TypedStmt::Goto(_) => todo!(),
+            TypedStmt::Label(name, body) => {
+                let block = if let Some(existing) = self.label_blocks.get(&name) {
+                    *existing
+                } else {
+                    let new_block = self.builder.create_block();
+                    self.label_blocks.insert(name.clone(), new_block);
+                    new_block
+                };
+                self.switch_to_block(dbg!(block));
+                self.translate_typed_stmt(*body)
+            }
+            TypedStmt::Goto(name) => {
+                let block = if let Some(existing) = self.label_blocks.get(&name) {
+                    *existing
+                } else {
+                    let new_block = self.builder.create_block();
+                    self.label_blocks.insert(name.clone(), new_block);
+                    new_block
+                };
+                if self.current_block_state != BlockState::Filled {
+                    self.builder.ins().jump(block, &[]);
+                    self.current_block_state = BlockState::Filled;
+                }
+                Ok(true)
+            }
             _ => unimplemented!(),
         }
     }

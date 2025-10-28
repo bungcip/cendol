@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 
 /// A unique identifier for a file.
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, serde::Serialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, Default, serde::Serialize)]
 pub struct FileId(pub u32);
 
 /// Manages files, providing a centralized way to access and read them.

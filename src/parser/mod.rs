@@ -1,6 +1,6 @@
 use crate::parser::ast::{
-    Designator, Expr, ForInit, Function, Initializer, InitializerList, Parameter, TranslationUnit, Stmt,
-    Type,
+    Designator, Expr, ForInit, Function, Initializer, InitializerList, Parameter, Stmt,
+    TranslationUnit, Type,
 };
 use crate::parser::error::ParserError;
 use crate::parser::token::{KeywordKind, Token, TokenKind};
@@ -665,11 +665,11 @@ impl Parser {
             }
             TokenKind::Identifier(name) => {
                 self.eat()?;
-                let mut expr = Expr::Variable(name, token.span.clone());
+                let mut expr = Expr::Variable(name, token.span);
                 while let Ok(token) = self.current_token() {
                     match token.kind {
                         TokenKind::LeftParen => {
-                            let location = token.span.clone();
+                            let location = token.span;
                             let token_for_error = token.clone();
                             self.eat()?; // consume '('
                             let mut args = Vec::new();
@@ -929,9 +929,10 @@ impl Parser {
                 return Ok(Stmt::Default(Box::new(stmt)));
             } else if k == KeywordKind::Goto {
                 self.eat()?;
+                let token = self.current_token()?;
                 let id = self.expect_name()?;
                 self.expect_punct(TokenKind::Semicolon)?;
-                return Ok(Stmt::Goto(id));
+                return Ok(Stmt::Goto(id, token.span));
             } else if k == KeywordKind::Break {
                 return self.parse_simple_statement(Stmt::Break);
             } else if k == KeywordKind::Continue {
@@ -963,10 +964,11 @@ impl Parser {
         // Check for a label
         let pos = self.position;
         if let Ok(TokenKind::Identifier(id)) = self.current_kind() {
+            let token = self.current_token()?;
             self.eat()?;
             if self.eat_token(&TokenKind::Colon)? {
                 let stmt = self.parse_stmt()?;
-                return Ok(Stmt::Label(id, Box::new(stmt)));
+                return Ok(Stmt::Label(id, Box::new(stmt), token.span));
             }
             self.position = pos;
         }

@@ -8,10 +8,10 @@ use crate::compiler::{Cli, Compiler};
 use crate::error::Report;
 use crate::file::{FileId, FileManager};
 use crate::parser::Parser;
-use crate::parser::ast::{Expr, Function, TranslationUnit, Stmt, Type};
+use crate::parser::ast::{Expr, Function, Stmt, TranslationUnit, Type};
 use crate::preprocessor::Preprocessor;
 use crate::preprocessor::lexer::Lexer;
-use crate::preprocessor::token::{KeywordKind, Token, TokenKind};
+use crate::preprocessor::token::{Token, TokenKind};
 
 use std::fs;
 use std::process::Command;
@@ -44,16 +44,16 @@ pub fn create_file_manager() -> FileManager {
 /// Creates a source location for testing
 pub fn create_test_location(file_id: u32, line: u32) -> SourceSpan {
     let location = SourceLocation::new(FileId(file_id), line, 1);
-    SourceSpan::new(FileId(file_id), location.clone(), location)
+    SourceSpan::new(FileId(file_id), location, location)
 }
 
 /// Compiles and runs C code, returning the exit code
-pub fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Box<dyn std::error::Error>> {
-    let temp_dir = tempdir()?;
+pub fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Report> {
+    let temp_dir = tempdir().unwrap();
     let temp_dir_path = temp_dir
         .path()
         .to_str()
-        .ok_or("Failed to get temporary directory path")?
+        .unwrap()
         .to_string();
 
     let obj_filename = format!("{}.o", test_name);
@@ -66,10 +66,10 @@ pub fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Box<dyn std:
 
     // Create a temporary file for the input within the temporary directory
     let input_file_path = temp_dir.path().join(format!("{}.c", test_name));
-    fs::write(&input_file_path, input)?;
+    fs::write(&input_file_path, input).unwrap();
     let input_file_path_str = input_file_path
         .to_str()
-        .ok_or("Failed to get input file path string")?
+        .unwrap()
         .to_string();
     eprintln!(
         "[DEBUG] Test: {}, Temporary input file: {}",
@@ -79,43 +79,41 @@ pub fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Box<dyn std:
     let mut compiler = Compiler::new(
         Cli {
             input_file: input_file_path_str.clone(),
-            output_file: Some(obj_filename.clone()), // Output to object file first
-            compile_only: true,                      // Compile only, do not link yet
+            output_file: Some(exe_filename.clone()), // Output to object file first
             ..Default::default()
         },
         Some(temp_dir.path().to_path_buf()),
     );
 
-    if let Err(err) = compiler.compile() {
-        return Err(Box::new(err));
-    }
+    compiler.compile()?;
 
-    // Link the object file to create the executable
-    let link_output = Command::new(config::C_COMPILER)
-        .current_dir(&temp_dir_path) // Execute in temporary directory
-        .arg(&obj_filename)
-        .arg("-o")
-        .arg(&exe_filename)
-        .arg(config::C_LIB_FLAG)
-        .output()?; // Use output() to ensure all streams are closed
+    // // Link the object file to create the executable
+    // let link_output = Command::new(config::C_COMPILER)
+    //     .current_dir(&temp_dir_path) // Execute in temporary directory
+    //     .arg(&obj_filename)
+    //     .arg("-o")
+    //     .arg(&exe_filename)
+    //     .arg(config::C_LIB_FLAG)
+    //     .output()?; // Use output() to ensure all streams are closed
 
-    if !link_output.status.success() {
-        eprintln!(
-            "Linking STDOUT: {}",
-            String::from_utf8_lossy(&link_output.stdout)
-        );
-        eprintln!(
-            "Linking STDERR: {}",
-            String::from_utf8_lossy(&link_output.stderr)
-        );
-        return Err(format!("Linking failed for test: {}", test_name).into());
-    }
+    // if !link_output.status.success() {
+    //     eprintln!(
+    //         "Linking STDOUT: {}",
+    //         String::from_utf8_lossy(&link_output.stdout)
+    //     );
+    //     eprintln!(
+    //         "Linking STDERR: {}",
+    //         String::from_utf8_lossy(&link_output.stderr)
+    //     );
+    //     return Err(format!("Linking failed for test: {}", test_name).into());
+    // }
 
     // Run executable and get exit code
     let exit_code = {
         let child_output = Command::new(&exe_filename)
             .current_dir(&temp_dir_path) // Execute in temporary directory
-            .output()?; // Use output() to ensure all streams are closed
+            .output()
+            .unwrap(); // Use output() to ensure all streams are closed
         child_output.status.code().unwrap_or(-1)
     };
 
@@ -127,8 +125,8 @@ pub fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Box<dyn std:
 pub fn compile_and_run_from_file(
     file_path: &str,
     test_name: &str,
-) -> Result<i32, Box<dyn std::error::Error>> {
-    let input = fs::read_to_string(file_path)?;
+) -> Result<i32, Report> {
+    let input = fs::read_to_string(file_path).unwrap();
     compile_and_run(&input, test_name)
 }
 
@@ -203,33 +201,6 @@ pub fn compile_and_run_with_output(
     Ok(stdout)
 }
 
-/// Creates a vector of tokens for manual testing
-pub fn create_test_tokens() -> Vec<Token> {
-    let mut file_manager = create_file_manager();
-    let file_id = file_manager.open("test.c").unwrap();
-    let loc = create_test_location(file_id.0, 0);
-
-    vec![
-        Token::new(TokenKind::Keyword(KeywordKind::Int), loc.clone()),
-        Token::new(TokenKind::Whitespace(" ".to_string()), loc.clone()),
-        Token::new(TokenKind::Identifier("main".to_string()), loc.clone()),
-        Token::new(TokenKind::LeftParen, loc.clone()),
-        Token::new(TokenKind::RightParen, loc.clone()),
-        Token::new(TokenKind::LeftBrace, loc.clone()),
-        Token::new(TokenKind::Keyword(KeywordKind::If), loc.clone()),
-        Token::new(TokenKind::LeftParen, loc.clone()),
-        Token::new(TokenKind::Number("1".to_string()), loc.clone()),
-        Token::new(TokenKind::RightParen, loc.clone()),
-        Token::new(TokenKind::Keyword(KeywordKind::Return), loc.clone()),
-        Token::new(TokenKind::Number("1".to_string()), loc.clone()),
-        Token::new(TokenKind::Semicolon, loc.clone()),
-        Token::new(TokenKind::Keyword(KeywordKind::Else), loc.clone()),
-        Token::new(TokenKind::Keyword(KeywordKind::Return), loc.clone()),
-        Token::new(TokenKind::Number("0".to_string()), loc.clone()),
-        Token::new(TokenKind::Semicolon, loc.clone()),
-        Token::new(TokenKind::RightBrace, loc.clone()),
-    ]
-}
 
 /// Creates a simple C program AST for testing
 pub fn create_simple_program_ast() -> TranslationUnit {
@@ -311,8 +282,8 @@ pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> 
             ));
         }
     };
-    match parser.parse() {
-        Ok(_) => Ok(()),
+    let ast = match parser.parse() {
+        Ok(ast) => ast,
         Err(err) => {
             let (msg, location) = match err {
                 crate::parser::error::ParserError::UnexpectedToken(tok) => {
@@ -336,7 +307,21 @@ pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> 
                 (Some(filename.to_string()), None)
             };
 
-            Err(Report::new(msg, path, span, false))
+            return Err(Report::new(msg, path, span, false));
+        }
+    };
+
+    // Now check semantic errors
+    let analyzer = crate::semantic::SemanticAnalyzer::with_builtins();
+    match analyzer.analyze(ast, filename) {
+        Ok(_) => Ok(()),
+        Err(errors) => {
+            // Return the first error
+            if let Some((error, file, span)) = errors.into_iter().next() {
+                Err(Report::new(error.to_string(), Some(file), Some(span), false))
+            } else {
+                Err(Report::new("Unknown semantic error".to_string(), Some(filename.to_string()), None, false))
+            }
         }
     }
 }

@@ -1,6 +1,6 @@
 use crate::common::{SourceLocation, SourceSpan};
 use crate::parser::ast::{
-    BinOp, Designator, Expr, ForInit, Initializer, TranslationUnit, Stmt, Type, TypedDeclarator,
+    BinOp, Designator, Expr, ForInit, Initializer, Stmt, TranslationUnit, Type, TypedDeclarator,
     TypedDesignator, TypedExpr, TypedForInit, TypedFunctionDecl, TypedInitializer, TypedStmt,
     TypedTranslationUnit,
 };
@@ -72,6 +72,7 @@ pub struct SemanticAnalyzer {
     symbol_table: SymbolTable,
     pub enum_constants: HashMap<String, i64>,
     current_function: Option<String>,
+    labels: HashMap<String, SourceSpan>,
     errors: Vec<(SemanticError, String, SourceSpan)>, // (error, file, span)
 }
 
@@ -88,6 +89,7 @@ impl SemanticAnalyzer {
             symbol_table: SymbolTable::new(),
             enum_constants: HashMap::new(),
             current_function: None,
+            labels: HashMap::new(),
             errors: Vec::new(),
         }
     }
@@ -192,7 +194,7 @@ impl SemanticAnalyzer {
                                     self.errors.push((
                                         SemanticError::InvalidEnumInitializer(name.clone()),
                                         filename.to_string(),
-                                        span.clone(),
+                                        *span,
                                     ));
                                     -1 // Dummy value
                                 }
@@ -204,7 +206,7 @@ impl SemanticAnalyzer {
                                 self.errors.push((
                                     SemanticError::VariableRedeclaration(name.clone()),
                                     filename.to_string(),
-                                    span.clone(),
+                                    *span,
                                 ));
                             } else {
                                 self.enum_constants.insert(name.clone(), val);
@@ -290,6 +292,54 @@ impl SemanticAnalyzer {
         }
     }
 
+    /// Collects all labels defined in a function's statements.
+    fn collect_labels(&mut self, stmts: &[Stmt], filename: &str) {
+        for stmt in stmts {
+            match stmt {
+                Stmt::Label(name, body, span) => {
+                    if self.labels.contains_key(name) {
+                        self.errors.push((
+                            SemanticError::VariableRedeclaration(name.clone()),
+                            filename.to_string(),
+                            *span,
+                        ));
+                    } else {
+                        self.labels.insert(name.clone(), *span);
+                    }
+                    self.collect_labels(&[*body.clone()], filename);
+                }
+                Stmt::Block(stmts) => {
+                    self.collect_labels(stmts, filename);
+                }
+                Stmt::If(_, then, otherwise) => {
+                    self.collect_labels(&[*then.clone()], filename);
+                    if let Some(otherwise) = otherwise {
+                        self.collect_labels(&[*otherwise.clone()], filename);
+                    }
+                }
+                Stmt::While(_, body) => {
+                    self.collect_labels(&[*body.clone()], filename);
+                }
+                Stmt::For(_, _, _, body) => {
+                    self.collect_labels(&[*body.clone()], filename);
+                }
+                Stmt::DoWhile(body, _) => {
+                    self.collect_labels(&[*body.clone()], filename);
+                }
+                Stmt::Switch(_, body) => {
+                    self.collect_labels(&[*body.clone()], filename);
+                }
+                Stmt::Case(_, body) => {
+                    self.collect_labels(&[*body.clone()], filename);
+                }
+                Stmt::Default(body) => {
+                    self.collect_labels(&[*body.clone()], filename);
+                }
+                _ => {}
+            }
+        }
+    }
+
     /// Checks a function for semantic errors and returns a typed function declaration.
     fn check_function(
         &mut self,
@@ -298,6 +348,12 @@ impl SemanticAnalyzer {
     ) -> TypedFunctionDecl {
         // Push function scope
         self.symbol_table.push_scope();
+
+        // Clear labels for this function
+        self.labels.clear();
+
+        // First pass: collect all labels in the function
+        self.collect_labels(&function.body, filename);
 
         // Check parameters for redeclaration
         let mut param_names = std::collections::HashSet::new();
@@ -361,7 +417,7 @@ impl SemanticAnalyzer {
                                     self.errors.push((
                                         SemanticError::InvalidEnumInitializer(name.clone()),
                                         filename.to_string(),
-                                        span.clone(),
+                                        *span,
                                     ));
                                     -1 // Dummy value
                                 }
@@ -373,7 +429,7 @@ impl SemanticAnalyzer {
                                 self.errors.push((
                                     SemanticError::VariableRedeclaration(name.clone()),
                                     filename.to_string(),
-                                    span.clone(),
+                                    *span,
                                 ));
                             } else {
                                 self.enum_constants.insert(name.clone(), val);
@@ -533,11 +589,20 @@ impl SemanticAnalyzer {
                 let typed_body = Box::new(self.check_statement(*body, filename));
                 TypedStmt::Default(typed_body)
             }
-            Stmt::Label(label, body) => {
+            Stmt::Label(label, body, _) => {
                 let typed_body = Box::new(self.check_statement(*body, filename));
                 TypedStmt::Label(label, typed_body)
             }
-            Stmt::Goto(label) => TypedStmt::Goto(label),
+            Stmt::Goto(label, span) => {
+                if !self.labels.contains_key(&label) {
+                    self.errors.push((
+                        SemanticError::UndefinedLabel(label.clone()),
+                        filename.to_string(),
+                        span,
+                    ));
+                }
+                TypedStmt::Goto(label)
+            }
             Stmt::FunctionDeclaration(ty, name, params, is_variadic) => {
                 TypedStmt::FunctionDeclaration(ty, name, params, is_variadic)
             }
@@ -916,7 +981,7 @@ impl SemanticAnalyzer {
                     self.errors.push((
                         SemanticError::UndefinedVariable(name.clone()),
                         filename.to_string(),
-                        location.clone(),
+                        location,
                     ));
                 }
                 let ty = self
@@ -935,7 +1000,7 @@ impl SemanticAnalyzer {
                     self.errors.push((
                         SemanticError::UndefinedFunction(name.clone()),
                         filename.to_string(),
-                        location.clone(),
+                        location,
                     ));
                 }
                 let return_ty = self

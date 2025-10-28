@@ -34,4 +34,8 @@ pub enum SemanticError {
     /// Attempted to dereference a non-pointer type.
     #[error("Cannot dereference non-pointer type `{0:?}`")]
     NotAPointer(crate::parser::ast::Type),
+
+    /// An undefined label was referenced in a goto statement.
+    #[error("Undefined label `{0}`")]
+    UndefinedLabel(String),
 }

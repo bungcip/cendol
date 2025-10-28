@@ -100,19 +100,19 @@ impl Preprocessor {
         let dummy_loc = SourceLocation::new(FileId(0), 0, 0);
         final_tokens.push(Token::new(
             TokenKind::Directive(DirectiveKind::Line),
-            SourceSpan::new(FileId(0), dummy_loc.clone(), dummy_loc.clone()),
+            SourceSpan::new(FileId(0), dummy_loc, dummy_loc),
         ));
         final_tokens.push(Token::new(
             TokenKind::Number(current_line.to_string()),
-            SourceSpan::new(FileId(0), dummy_loc.clone(), dummy_loc.clone()),
+            SourceSpan::new(FileId(0), dummy_loc, dummy_loc),
         ));
         final_tokens.push(Token::new(
             TokenKind::String(current_file.to_string()),
-            SourceSpan::new(FileId(0), dummy_loc.clone(), dummy_loc.clone()),
+            SourceSpan::new(FileId(0), dummy_loc, dummy_loc),
         ));
         final_tokens.push(Token::new(
             TokenKind::Newline,
-            SourceSpan::new(FileId(0), dummy_loc.clone(), dummy_loc.clone()),
+            SourceSpan::new(FileId(0), dummy_loc, dummy_loc),
         ));
 
         while !self.file_stack.is_empty() {
@@ -127,22 +127,22 @@ impl Preprocessor {
                     current_line = token.span.start.line;
                     if let Some(path) = self.file_manager.get_path(token.span.start.file) {
                         current_file = path.to_str().unwrap();
-                        let loc = token.span.start.clone();
+                        let loc = token.span.start;
                         final_tokens.push(Token::new(
                             TokenKind::Directive(DirectiveKind::Line),
-                            SourceSpan::new(loc.file, loc.clone(), loc.clone()),
+                            SourceSpan::new(loc.file, loc, loc),
                         ));
                         final_tokens.push(Token::new(
                             TokenKind::Number(current_line.to_string()),
-                            SourceSpan::new(loc.file, loc.clone(), loc.clone()),
+                            SourceSpan::new(loc.file, loc, loc),
                         ));
                         final_tokens.push(Token::new(
                             TokenKind::String(current_file.to_string()),
-                            SourceSpan::new(loc.file, loc.clone(), loc.clone()),
+                            SourceSpan::new(loc.file, loc, loc),
                         ));
                         final_tokens.push(Token::new(
                             TokenKind::Newline,
-                            SourceSpan::new(loc.file, loc.clone(), loc.clone()),
+                            SourceSpan::new(loc.file, loc, loc),
                         ));
                     }
                 }
@@ -497,8 +497,7 @@ impl Preprocessor {
                 {
                     if name == "__LINE__" {
                         let line = tokens[i].span.start.line;
-                        tokens[i] =
-                            Token::new(TokenKind::Number(line.to_string()), tokens[i].span.clone());
+                        tokens[i] = Token::new(TokenKind::Number(line.to_string()), tokens[i].span);
                         expanded = true;
                     } else if name == "__FILE__" {
                         let file = self
@@ -508,15 +507,15 @@ impl Preprocessor {
                             .to_str()
                             .unwrap()
                             .to_string();
-                        tokens[i] = Token::new(TokenKind::String(file), tokens[i].span.clone());
+                        tokens[i] = Token::new(TokenKind::String(file), tokens[i].span);
                         expanded = true;
                     } else if name == "__DATE__" {
                         let date = Local::now().format("%b %-d %Y").to_string();
-                        tokens[i] = Token::new(TokenKind::String(date), tokens[i].span.clone());
+                        tokens[i] = Token::new(TokenKind::String(date), tokens[i].span);
                         expanded = true;
                     } else if name == "__TIME__" {
                         let time = Local::now().format("%H:%M:%S").to_string();
-                        tokens[i] = Token::new(TokenKind::String(time), tokens[i].span.clone());
+                        tokens[i] = Token::new(TokenKind::String(time), tokens[i].span);
                         expanded = true;
                     } else if let Some(macro_def) = self.macros.get(name).cloned() {
                         let (start, end, expanded_tokens) =
@@ -697,8 +696,8 @@ impl Preprocessor {
                             TokenKind::String(quoted),
                             SourceSpan::new(
                                 token.span.start.file,
-                                token.span.start.clone(),
-                                token.span.start.clone(),
+                                token.span.start,
+                                token.span.start,
                             ),
                         ));
                     }
@@ -752,11 +751,8 @@ impl Preprocessor {
                 let mut new_token = lexer.next_token()?;
                 if !matches!(new_token.kind, TokenKind::Eof) {
                     let mut new_hideset = lhs.hideset.clone();
-                    new_token.span = SourceSpan::new(
-                        lhs.span.start.file,
-                        lhs.span.start.clone(),
-                        lhs.span.start.clone(),
-                    );
+                    new_token.span =
+                        SourceSpan::new(lhs.span.start.file, lhs.span.start, lhs.span.start);
                     for t in &rhs_tokens {
                         new_hideset.extend(t.hideset.clone());
                     }
@@ -788,8 +784,8 @@ impl Preprocessor {
                                     TokenKind::Comma,
                                     SourceSpan::new(
                                         token.span.start.file,
-                                        token.span.start.clone(),
-                                        token.span.start.clone(),
+                                        token.span.start,
+                                        token.span.start,
                                     ),
                                 ));
                             }
@@ -867,8 +863,8 @@ impl Preprocessor {
                             TokenKind::Whitespace(" ".to_string()),
                             SourceSpan::new(
                                 token.span.start.file,
-                                token.span.start.clone(),
-                                token.span.start.clone(),
+                                token.span.start,
+                                token.span.start,
                             ),
                         ));
                         last_was_whitespace = true;
@@ -878,11 +874,7 @@ impl Preprocessor {
                     // Preserve newlines - add as newline token
                     result.push(Token::new(
                         TokenKind::Newline,
-                        SourceSpan::new(
-                            token.span.start.file,
-                            token.span.start.clone(),
-                            token.span.start.clone(),
-                        ),
+                        SourceSpan::new(token.span.start.file, token.span.start, token.span.start),
                     ));
                     last_was_whitespace = false;
                 }

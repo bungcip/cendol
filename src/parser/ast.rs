@@ -139,9 +139,9 @@ pub enum Stmt {
     /// A `default` statement in a `switch`.
     Default(Box<Stmt>),
     /// A labeled statement.
-    Label(String, Box<Stmt>),
+    Label(String, Box<Stmt>, crate::common::SourceSpan),
     /// A `goto` statement.
-    Goto(String),
+    Goto(String, crate::common::SourceSpan),
     /// A variable declaration.
     Declaration(Type, Vec<Declarator>, bool),
     FunctionDeclaration(Type, String, Vec<Parameter>, bool),

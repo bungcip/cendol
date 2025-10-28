@@ -44,4 +44,10 @@ pub enum CodegenError {
     /// An invalid l-value was used.
     #[error("Invalid l-value")]
     InvalidLValue,
+    /// A break statement was used outside a loop.
+    #[error("Break outside loop")]
+    BreakOutsideLoop,
+    /// A continue statement was used outside a loop.
+    #[error("Continue outside loop")]
+    ContinueOutsideLoop,
 }

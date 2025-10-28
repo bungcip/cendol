@@ -60,6 +60,7 @@ pub struct CodeGen {
     module: ObjectModule,
     variables: SymbolTable<String, (Option<Variable>, Option<StackSlot>, Type)>,
     global_variables: HashMap<String, (DataId, Type)>,
+    static_local_variables: HashMap<String, (DataId, Type)>,
     functions: HashMap<String, (FuncId, Type, bool)>,
     signatures: HashMap<String, cranelift::prelude::Signature>,
     structs: HashMap<String, Type>,
@@ -98,6 +99,7 @@ impl CodeGen {
             module,
             variables: SymbolTable::new(),
             global_variables: HashMap::new(),
+            static_local_variables: HashMap::new(),
             functions: HashMap::new(),
             signatures: HashMap::new(),
             structs: HashMap::new(),
@@ -132,7 +134,7 @@ impl CodeGen {
                         .insert(name.clone(), (id, ty.clone(), *is_variadic));
                     self.signatures.insert(name.clone(), sig);
                 }
-                TypedStmt::Declaration(base_ty, declarators) => {
+                TypedStmt::Declaration(base_ty, declarators, _is_static) => {
                     if let Type::Struct(Some(name), _) = &base_ty {
                         self.structs.insert(name.clone(), base_ty.clone());
                     } else if let Type::Union(Some(name), _) = &base_ty {
@@ -216,7 +218,7 @@ impl CodeGen {
 
         // Collect enum constants from global declarations
         for global in &typed_unit.globals {
-            if let TypedStmt::Declaration(ty, _) = global
+            if let TypedStmt::Declaration(ty, _, _) = global
                 && let Type::Enum(_name, members) = ty
                 && !members.is_empty()
             {
@@ -260,6 +262,7 @@ impl CodeGen {
                 functions: &self.functions,
                 variables: &mut self.variables,
                 global_variables: &self.global_variables,
+                static_local_variables: &mut self.static_local_variables,
                 structs: &self.structs,
                 unions: &self.unions,
                 enum_constants: &self.enum_constants,
@@ -267,6 +270,7 @@ impl CodeGen {
                 loop_context: Vec::new(),
                 current_block_state: BlockState::Empty,
                 signatures: &self.signatures,
+                current_function_name: function_name,
             };
             // Find the function body
             let function = typed_unit
@@ -328,7 +332,7 @@ impl CodeGen {
     ) -> Result<(), CodegenError> {
         for stmt in stmts {
             match stmt {
-                TypedStmt::Declaration(ty, _) => {
+                TypedStmt::Declaration(ty, _, _) => {
                     if let Type::Enum(_name, members) = ty
                         && !members.is_empty()
                     {
@@ -400,6 +404,7 @@ struct FunctionTranslator<'a, 'b> {
     functions: &'b HashMap<String, (FuncId, Type, bool)>,
     variables: &'b mut SymbolTable<String, (Option<Variable>, Option<StackSlot>, Type)>,
     global_variables: &'b HashMap<String, (DataId, Type)>,
+    static_local_variables: &'b mut HashMap<String, (DataId, Type)>,
     structs: &'b HashMap<String, Type>,
     unions: &'b HashMap<String, Type>,
     enum_constants: &'b HashMap<String, i64>,
@@ -407,6 +412,7 @@ struct FunctionTranslator<'a, 'b> {
     loop_context: Vec<(Block, Block)>,
     current_block_state: BlockState,
     signatures: &'b HashMap<String, Signature>,
+    current_function_name: &'b str,
 }
 
 impl<'a, 'b> FunctionTranslator<'a, 'b> {
@@ -558,28 +564,61 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.current_block_state = BlockState::Filled;
                 Ok(true)
             }
-            TypedStmt::Declaration(_, declarators) => {
+            TypedStmt::Declaration(_, declarators, is_static) => {
                 for declarator in declarators {
-                    let ty = &declarator.ty;
-                    let size = self.get_type_size(ty);
-                    let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-                        StackSlotKind::ExplicitSlot,
-                        size,
-                        0,
-                    ));
-                    self.variables
-                        .insert(declarator.name.clone(), (None, Some(slot), ty.clone()));
-                    if let Some(initializer) = &declarator.initializer {
-                        let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
-                        self.translate_initializer(addr, ty, initializer)?;
+                    if is_static {
+                        let mangled_name =
+                            format!("{}.{}", self.current_function_name, declarator.name);
+                        let id = self
+                            .module
+                            .declare_data(&mangled_name, Linkage::Local, true, false)
+                            .unwrap();
+                        self.static_local_variables.insert(
+                            declarator.name.clone(),
+                            (id, declarator.ty.clone()),
+                        );
+
+                        let mut data_desc = cranelift_module::DataDescription::new();
+
+                        let size = self.get_type_size(&declarator.ty);
+                        let initial_value = if let Some(init) = &declarator.initializer {
+                            if let TypedInitializer::Expr(expr) = init {
+                                if let TypedExpr::Number(num, _) = **expr {
+                                    num.to_le_bytes().to_vec()
+                                } else {
+                                    return Err(CodegenError::InvalidStaticInitializer);
+                                }
+                            } else {
+                                return Err(CodegenError::InvalidStaticInitializer);
+                            }
+                        } else {
+                            vec![0; size as usize]
+                        };
+
+                        data_desc.define(initial_value.into_boxed_slice());
+                        self.module.define_data(id, &data_desc).unwrap();
                     } else {
-                        // Initialize to zero for scalars
-                        if !matches!(
-                            ty,
-                            Type::Struct(_, _) | Type::Union(_, _) | Type::Array(_, _)
-                        ) {
-                            let zero = self.builder.ins().iconst(types::I64, 0);
-                            self.builder.ins().stack_store(zero, slot, 0);
+                        let ty = &declarator.ty;
+                        let size = self.get_type_size(ty);
+                        let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+                            StackSlotKind::ExplicitSlot,
+                            size,
+                            0,
+                        ));
+                        self.variables
+                            .insert(declarator.name.clone(), (None, Some(slot), ty.clone()));
+                        if let Some(initializer) = &declarator.initializer {
+                            let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
+                            self.translate_initializer(addr, ty, initializer)?;
+                        } else {
+                            // Initialize to zero for scalars
+                            if !matches!(
+                                ty,
+                                Type::Struct(_, _) | Type::Union(_, _) | Type::Array(_, _)
+                            ) {
+                                let zero = self.builder.ins().iconst(types::I64, 0);
+                                self.builder.ins().stack_store(zero, slot, 0);
+                            }
                         }
                     }
                 }
@@ -792,6 +831,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     } else {
                         Err(CodegenError::InvalidLValue)
                     }
+                } else if let Some((id, _)) = self.static_local_variables.get(&name) {
+                    let local_id = self.module.declare_data_in_func(*id, self.builder.func);
+                    let addr = self.builder.ins().global_value(types::I64, local_id);
+                    Ok((addr, ty.clone()))
                 } else {
                     let (id, _) = self.global_variables.get(&name).unwrap();
                     let local_id = self.module.declare_data_in_func(*id, self.builder.func);
@@ -1627,6 +1670,15 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     } else {
                         Err(CodegenError::InvalidLValue)
                     }
+                } else if let Some((id, _)) = self.static_local_variables.get(&name) {
+                    let local_id = self.module.declare_data_in_func(*id, self.builder.func);
+                    let addr = self.builder.ins().global_value(types::I64, local_id);
+                    Ok((
+                        self.builder
+                            .ins()
+                            .load(types::I64, MemFlags::new(), addr, 0),
+                        ty,
+                    ))
                 } else {
                     let (id, _) = self.global_variables.get(&name).unwrap();
                     let local_id = self.module.declare_data_in_func(*id, self.builder.func);

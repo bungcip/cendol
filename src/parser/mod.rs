@@ -845,15 +845,32 @@ impl Parser {
 
         if self.is_type_name() && self.peek()? != TokenKind::LeftParen {
             let base_type = self.parse_type_specifier()?;
+        } else if self.eat_token(&TokenKind::Keyword(KeywordKind::Static))? {
+            let base_type = self.parse_type_specifier()?;
             if self.eat_token(&TokenKind::Semicolon)? {
-                return Ok(Stmt::Declaration(base_type, vec![]));
+                return Ok(Stmt::Declaration(base_type, vec![], true));
             }
             let mut declarators = Vec::new();
             loop {
                 let declarator = self.parse_declarator(base_type.clone(), true)?;
                 declarators.push(declarator);
 
-                if self.eat_token(&TokenKind::Comma)? == false {
+                if !self.eat_token(&TokenKind::Comma)? {
+                    break;
+                }
+            }
+            self.expect_punct(TokenKind::Semicolon)?;
+            return Ok(Stmt::Declaration(base_type, declarators, true));
+        } else if let Ok(base_type) = self.parse_type_specifier() {
+            if self.eat_token(&TokenKind::Semicolon)? {
+                return Ok(Stmt::Declaration(base_type, vec![], false));
+            }
+            let mut declarators = Vec::new();
+            loop {
+                let declarator = self.parse_declarator(base_type.clone(), true)?;
+                declarators.push(declarator);
+
+                if !self.eat_token(&TokenKind::Comma)? {
                     break;
                 }
             }
@@ -862,6 +879,8 @@ impl Parser {
         }
 
         if let TokenKind::Keyword(k) = token.kind {
+            return Ok(Stmt::Declaration(base_type, declarators, false));
+        } else if let TokenKind::Keyword(k) = token.kind {
             if k == KeywordKind::Return {
                 self.eat()?;
                 let expr = self.parse_expr()?;
@@ -889,6 +908,9 @@ impl Parser {
                 self.expect_punct(TokenKind::LeftParen)?;
 
                 let init = self.maybe_end(&TokenKind::Semicolon, |p| {
+                    if p.eat_token(&TokenKind::Keyword(KeywordKind::Static))? {
+                        return Err(ParserError::UnexpectedToken(p.current_token()?));
+                    }
                     let result = if let Ok(ty) = p.parse_type() {
                         let id = p.expect_name()?;
                         let initializer = p.parse_initializer_expr()?;
@@ -1066,9 +1088,10 @@ impl Parser {
             return Ok(Stmt::Empty);
         }
 
+        let is_static = self.eat_token(&TokenKind::Keyword(KeywordKind::Static))?;
         let base_type = self.parse_type_specifier()?;
         if self.eat_token(&TokenKind::Semicolon)? {
-            return Ok(Stmt::Declaration(base_type, vec![]));
+            return Ok(Stmt::Declaration(base_type, vec![], is_static));
         }
         let mut declarators = Vec::new();
         loop {
@@ -1085,7 +1108,7 @@ impl Parser {
             }
         }
         self.expect_punct(TokenKind::Semicolon)?;
-        Ok(Stmt::Declaration(base_type, declarators))
+        Ok(Stmt::Declaration(base_type, declarators, is_static))
     }
 
     pub fn parse(&mut self) -> Result<TranslationUnit, ParserError> {

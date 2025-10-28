@@ -767,4 +767,40 @@ mod tests {
         let exit_code = compile_and_run(input, "deref_compound_literal_array").unwrap();
         assert_eq!(exit_code, 10);
     }
+
+    /// Test code generation for static local variables
+    #[test]
+    fn test_static_local() {
+        let input = r#"
+        int foo() {
+            static int x = 0;
+            return ++x;
+        }
+        int main() {
+            foo();
+            foo();
+            return foo();
+        }
+        "#;
+        let exit_code = compile_and_run(input, "static_local").unwrap();
+        assert_eq!(exit_code, 3);
+    }
+
+    /// Test code generation for uninitialized static local variables
+    #[test]
+    fn test_uninitialized_static_local() {
+        let input = r#"
+        int foo() {
+            static int x;
+            return ++x;
+        }
+        int main() {
+            foo();
+            foo();
+            return foo();
+        }
+        "#;
+        let exit_code = compile_and_run(input, "uninitialized_static_local").unwrap();
+        assert_eq!(exit_code, 3);
+    }
 }

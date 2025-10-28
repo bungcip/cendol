@@ -143,7 +143,7 @@ pub enum Stmt {
     /// A `goto` statement.
     Goto(String),
     /// A variable declaration.
-    Declaration(Type, Vec<Declarator>),
+    Declaration(Type, Vec<Declarator>, bool),
     FunctionDeclaration(Type, String, Vec<Parameter>, bool),
     /// A `break` statement.
     Break,
@@ -663,7 +663,7 @@ pub enum TypedStmt {
     /// A `goto` statement.
     Goto(String),
     /// A variable declaration.
-    Declaration(Type, Vec<TypedDeclarator>),
+    Declaration(Type, Vec<TypedDeclarator>, bool),
     FunctionDeclaration(Type, String, Vec<Parameter>, bool),
     /// A `break` statement.
     Break,

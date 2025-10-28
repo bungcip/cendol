@@ -1186,14 +1186,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             TypedExpr::Deref(expr, ty) => {
                 let (ptr, _) = self.translate_typed_expr(*expr)?;
-                if let Type::Pointer(base_ty) = ty {
-                    Ok((
-                        self.builder.ins().load(types::I64, MemFlags::new(), ptr, 0),
-                        *base_ty,
-                    ))
-                } else {
-                    unimplemented!()
-                }
+                Ok((
+                    self.builder.ins().load(types::I64, MemFlags::new(), ptr, 0),
+                    ty,
+                ))
             }
             TypedExpr::LogicalAnd(lhs, rhs, ty) => {
                 let (lhs_val, _) = self.translate_typed_expr(*lhs)?;
@@ -1627,21 +1623,30 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     ) -> CodegenResult<()> {
         match initializer {
             TypedInitializer::Expr(expr) => {
-                let (val, val_ty) = self.translate_typed_expr(*expr.clone())?;
-                if let Type::Struct(_, _) | Type::Union(_, _) = val_ty {
-                    let size = self.get_type_size(&val_ty);
-                    self.builder.emit_small_memory_copy(
-                        self.module.target_config(),
-                        base_addr,
-                        val,
-                        size as u64,
-                        self.get_type_alignment(&val_ty) as u8,
-                        self.get_type_alignment(&val_ty) as u8,
-                        true,
-                        MemFlags::new(),
-                    );
+                if let TypedExpr::Comma(lhs, rhs, _) = *expr.clone() {
+                    self.translate_initializer(base_addr, ty, &TypedInitializer::Expr(lhs))?;
+                    if let Type::Array(elem_ty, _) = ty {
+                        let elem_size = self.get_type_size(elem_ty);
+                        let next_addr = self.builder.ins().iadd_imm(base_addr, elem_size as i64);
+                        self.translate_initializer(next_addr, ty, &TypedInitializer::Expr(rhs))?;
+                    }
                 } else {
-                    self.builder.ins().store(MemFlags::new(), val, base_addr, 0);
+                    let (val, val_ty) = self.translate_typed_expr(*expr.clone())?;
+                    if let Type::Struct(_, _) | Type::Union(_, _) = val_ty {
+                        let size = self.get_type_size(&val_ty);
+                        self.builder.emit_small_memory_copy(
+                            self.module.target_config(),
+                            base_addr,
+                            val,
+                            size as u64,
+                            self.get_type_alignment(&val_ty) as u8,
+                            self.get_type_alignment(&val_ty) as u8,
+                            true,
+                            MemFlags::new(),
+                        );
+                    } else {
+                        self.builder.ins().store(MemFlags::new(), val, base_addr, 0);
+                    }
                 }
             }
             TypedInitializer::List(list) => {

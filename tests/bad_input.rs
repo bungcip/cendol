@@ -9,9 +9,6 @@ fn test_unexpected_token() {
 
 #[test]
 fn test_type_mismatch() {
-    let err = compile_and_get_error(
-        "int main() { int a = \"hello\"; }",
-        "type_mismatch.c",
-    );
+    let err = compile_and_get_error("int main() { int a = \"hello\"; }", "type_mismatch.c");
     assert_yaml_snapshot!("type_mismatch", err.unwrap());
 }

@@ -602,7 +602,7 @@ mod tests {
         let exit_code = compile_and_run(input, "goto").unwrap();
         assert_eq!(exit_code, 0);
     }
-  
+
     /// Test code generation for character literals
     #[test]
     fn test_char_literal() {

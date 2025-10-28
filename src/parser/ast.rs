@@ -1,3 +1,9 @@
+/// Type alias for initializer lists.
+pub type InitializerList = Vec<(Vec<Designator>, Box<Initializer>)>;
+
+/// Type alias for typed initializer lists.
+pub type TypedInitializerList = Vec<(Vec<TypedDesignator>, Box<TypedInitializer>)>;
+
 /// Represents a type in the C language.
 #[derive(Debug, PartialEq, Clone)]
 pub enum Type {
@@ -272,7 +278,7 @@ pub enum Expr {
     /// A ternary conditional expression.
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
     /// An initializer list expression.
-    InitializerList(Vec<(Vec<Designator>, Box<Initializer>)>),
+    InitializerList(InitializerList),
     /// A member access expression.
     Member(Box<Expr>, String),
     /// A pointer member access expression.
@@ -340,7 +346,7 @@ pub enum Initializer {
     /// A single expression initializer.
     Expr(Box<Expr>),
     /// An initializer list, e.g., `{ [0] = 1, .x = 2 }`.
-    List(Vec<(Vec<Designator>, Box<Initializer>)>),
+    List(InitializerList),
 }
 
 /// Represents a function parameter.
@@ -426,7 +432,7 @@ pub enum TypedExpr {
     Ternary(Box<TypedExpr>, Box<TypedExpr>, Box<TypedExpr>, Type),
     Member(Box<TypedExpr>, String, Type),
     PointerMember(Box<TypedExpr>, String, Type),
-    InitializerList(Vec<(Vec<TypedDesignator>, Box<TypedInitializer>)>, Type),
+    InitializerList(TypedInitializerList, Type),
     ExplicitCast(Box<Type>, Box<TypedExpr>, Type),
     ImplicitCast(Box<Type>, Box<TypedExpr>, Type),
     CompoundLiteral(Box<Type>, Box<TypedInitializer>, Type),
@@ -549,7 +555,7 @@ pub enum TypedInitializer {
     /// A single expression initializer.
     Expr(Box<TypedExpr>),
     /// An initializer list, e.g., `{ [0] = 1, .x = 2 }`.
-    List(Vec<(Vec<TypedDesignator>, Box<TypedInitializer>)>),
+    List(TypedInitializerList),
 }
 
 /// Represents a typed declarator, which includes the type modifiers (pointers, arrays) and the identifier.
@@ -580,9 +586,9 @@ pub enum TypedStmt {
     While(TypedExpr, Box<TypedStmt>),
     /// A `for` loop.
     For(
-        Option<TypedForInit>,
-        Option<TypedExpr>,
-        Option<TypedExpr>,
+        Box<Option<TypedForInit>>,
+        Box<Option<TypedExpr>>,
+        Box<Option<TypedExpr>>,
         Box<TypedStmt>,
     ),
     /// A block of statements.

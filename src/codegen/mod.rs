@@ -1,12 +1,15 @@
 use crate::codegen::error::{CodegenError, CodegenResult};
-use crate::parser::ast::{BinOp, Expr,Type, TypedTranslationUnit, TypedStmt, TypedExpr, TypedInitializer, TypedDesignator, TypedForInit};
+use crate::parser::ast::{
+    BinOp, Expr, Type, TypedDesignator, TypedExpr, TypedForInit, TypedInitializer, TypedStmt,
+    TypedTranslationUnit,
+};
 use cranelift::prelude::*;
-use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_codegen::ir::Function;
 use cranelift_codegen::ir::types;
 use cranelift_codegen::ir::{AbiParam, InstBuilder, Value};
 use cranelift_codegen::ir::{StackSlot, StackSlotData, StackSlotKind};
 use cranelift_codegen::settings;
+use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_module::{Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::collections::HashMap;
@@ -123,7 +126,7 @@ impl CodeGen {
                     sig.returns.push(AbiParam::new(types::I64));
                     let id = self
                         .module
-                        .declare_function(&name, Linkage::Import, &sig)
+                        .declare_function(name, Linkage::Import, &sig)
                         .unwrap();
                     self.functions
                         .insert(name.clone(), (id, ty.clone(), *is_variadic));
@@ -213,24 +216,23 @@ impl CodeGen {
 
         // Collect enum constants from global declarations
         for global in &typed_unit.globals {
-            if let TypedStmt::Declaration(ty, _) = global {
-                if let Type::Enum(_name, members) = ty {
-                    if !members.is_empty() {
-                        let mut next_value = 0;
-                        for (name, value, _span) in members {
-                            let val = if let Some(expr) = value {
-                                if let Expr::Number(num) = **expr {
-                                    num
-                                } else {
-                                    -1 // Dummy value
-                                }
-                            } else {
-                                next_value
-                            };
-                            self.enum_constants.insert(name.clone(), val);
-                            next_value = val + 1;
+            if let TypedStmt::Declaration(ty, _) = global
+                && let Type::Enum(_name, members) = ty
+                && !members.is_empty()
+            {
+                let mut next_value = 0;
+                for (name, value, _span) in members {
+                    let val = if let Some(expr) = value {
+                        if let Expr::Number(num) = **expr {
+                            num
+                        } else {
+                            -1 // Dummy value
                         }
-                    }
+                    } else {
+                        next_value
+                    };
+                    self.enum_constants.insert(name.clone(), val);
+                    next_value = val + 1;
                 }
             }
         }
@@ -248,7 +250,8 @@ impl CodeGen {
             self.func = Function::new();
             self.func.signature = sig;
 
-            let mut builder = cranelift_frontend::FunctionBuilder::new(&mut self.func, &mut self.ctx);
+            let mut builder =
+                cranelift_frontend::FunctionBuilder::new(&mut self.func, &mut self.ctx);
             let entry_block = builder.create_block();
             builder.append_block_params_for_function_params(entry_block);
             builder.switch_to_block(entry_block);
@@ -320,26 +323,29 @@ impl CodeGen {
         Ok(object_bytes)
     }
 
-    fn collect_enum_constants_from_stmts(&mut self, stmts: &[TypedStmt]) -> Result<(), CodegenError> {
+    fn collect_enum_constants_from_stmts(
+        &mut self,
+        stmts: &[TypedStmt],
+    ) -> Result<(), CodegenError> {
         for stmt in stmts {
             match stmt {
                 TypedStmt::Declaration(ty, _) => {
-                    if let Type::Enum(_name, members) = ty {
-                        if !members.is_empty() {
-                            let mut next_value = 0;
-                            for (name, value, _span) in members {
-                                let val = if let Some(expr) = value {
-                                    if let Expr::Number(num) = **expr {
-                                        num
-                                    } else {
-                                        -1 // Dummy value
-                                    }
+                    if let Type::Enum(_name, members) = ty
+                        && !members.is_empty()
+                    {
+                        let mut next_value = 0;
+                        for (name, value, _span) in members {
+                            let val = if let Some(expr) = value {
+                                if let Expr::Number(num) = **expr {
+                                    num
                                 } else {
-                                    next_value
-                                };
-                                self.enum_constants.insert(name.clone(), val);
-                                next_value = val + 1;
-                            }
+                                    -1 // Dummy value
+                                }
+                            } else {
+                                next_value
+                            };
+                            self.enum_constants.insert(name.clone(), val);
+                            next_value = val + 1;
                         }
                     }
                 }
@@ -567,7 +573,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         self.translate_initializer(addr, ty, initializer)?;
                     } else {
                         // Initialize to zero for scalars
-                        if !matches!(ty, Type::Struct(_, _) | Type::Union(_, _) | Type::Array(_, _)) {
+                        if !matches!(
+                            ty,
+                            Type::Struct(_, _) | Type::Union(_, _) | Type::Array(_, _)
+                        ) {
                             let zero = self.builder.ins().iconst(types::I64, 0);
                             self.builder.ins().stack_store(zero, slot, 0);
                         }
@@ -663,7 +672,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let exit_block = self.builder.create_block();
 
                 self.variables.enter_scope();
-                if let Some(init) = init {
+                if let Some(init) = *init {
                     match init {
                         TypedForInit::Declaration(ty, name, initializer) => {
                             let size = self.get_type_size(&ty);
@@ -672,15 +681,17 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                                 size,
                                 0,
                             ));
-                            self.variables.insert(name.clone(), (None, Some(slot), ty.clone()));
+                            self.variables
+                                .insert(name.clone(), (None, Some(slot), ty.clone()));
                             if let Some(init) = initializer {
                                 let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
                                 self.translate_initializer(addr, &ty, &init)?;
-                            } else {
-                                if !matches!(ty, Type::Struct(_, _) | Type::Union(_, _) | Type::Array(_, _)) {
-                                    let val = self.builder.ins().iconst(types::I64, 0);
-                                    self.builder.ins().stack_store(val, slot, 0);
-                                }
+                            } else if !matches!(
+                                ty,
+                                Type::Struct(_, _) | Type::Union(_, _) | Type::Array(_, _)
+                            ) {
+                                let val = self.builder.ins().iconst(types::I64, 0);
+                                self.builder.ins().stack_store(val, slot, 0);
                             };
                         }
                         TypedForInit::Expr(expr) => {
@@ -692,7 +703,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.jump_to_block(header_block);
                 self.switch_to_block(header_block);
 
-                if let Some(cond) = cond {
+                if let Some(cond) = *cond {
                     let (cond_val, _) = self.translate_typed_expr(cond)?;
                     self.builder
                         .ins()
@@ -709,7 +720,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.jump_to_block(inc_block);
                 self.switch_to_block(inc_block);
 
-                if let Some(inc) = inc {
+                if let Some(inc) = *inc {
                     self.translate_typed_expr(inc)?;
                 }
 
@@ -766,9 +777,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
     /// Translates an expression into a Cranelift `Value`.
     fn translate_assignment(&mut self, lhs: Value, rhs_val: Value) -> Result<(), CodegenError> {
-        self.builder
-            .ins()
-            .store(MemFlags::new(), rhs_val, lhs, 0);
+        self.builder.ins().store(MemFlags::new(), rhs_val, lhs, 0);
         Ok(())
     }
 
@@ -819,10 +828,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         .unwrap();
                     Ok((ptr, member_ty))
                 } else {
-                    Err(CodegenError::NotAStruct.into())
+                    Err(CodegenError::NotAStruct)
                 }
             }
-            _ => Err(CodegenError::InvalidLValue.into()),
+            _ => Err(CodegenError::InvalidLValue),
         }
     }
 
@@ -910,14 +919,23 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.builder.ins().uextend(types::I64, val)
             }
             Type::Short => {
-                let val = self.builder.ins().load(types::I16, MemFlags::new(), addr, 0);
+                let val = self
+                    .builder
+                    .ins()
+                    .load(types::I16, MemFlags::new(), addr, 0);
                 self.builder.ins().sextend(types::I64, val)
             }
             Type::UnsignedShort => {
-                let val = self.builder.ins().load(types::I16, MemFlags::new(), addr, 0);
+                let val = self
+                    .builder
+                    .ins()
+                    .load(types::I16, MemFlags::new(), addr, 0);
                 self.builder.ins().uextend(types::I64, val)
             }
-            _ => self.builder.ins().load(types::I64, MemFlags::new(), addr, 0),
+            _ => self
+                .builder
+                .ins()
+                .load(types::I64, MemFlags::new(), addr, 0),
         }
     }
 
@@ -1258,10 +1276,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 data_desc.define(data.into_boxed_slice());
                 self.module.define_data(id, &data_desc).unwrap();
                 let local_id = self.module.declare_data_in_func(id, self.builder.func);
-                Ok((
-                    self.builder.ins().global_value(types::I64, local_id),
-                    ty,
-                ))
+                Ok((self.builder.ins().global_value(types::I64, local_id), ty))
             }
             TypedExpr::Char(c, ty) => {
                 let character = c.chars().next().unwrap();
@@ -1562,10 +1577,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 if let Some((_var_opt, slot_opt, _)) = self.variables.get(&name) {
                     if let Some(slot) = slot_opt {
                         if let Type::Struct(_, _) | Type::Union(_, _) = &ty {
-                            return Ok((
-                                self.builder.ins().stack_addr(types::I64, slot, 0),
-                                ty,
-                            ));
+                            return Ok((self.builder.ins().stack_addr(types::I64, slot, 0), ty));
                         }
                         if let Type::Array(elem_ty, _) = &ty {
                             let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
@@ -1580,7 +1592,12 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     let (id, _) = self.global_variables.get(&name).unwrap();
                     let local_id = self.module.declare_data_in_func(*id, self.builder.func);
                     let addr = self.builder.ins().global_value(types::I64, local_id);
-                    Ok((self.builder.ins().load(types::I64, MemFlags::new(), addr, 0), ty))
+                    Ok((
+                        self.builder
+                            .ins()
+                            .load(types::I64, MemFlags::new(), addr, 0),
+                        ty,
+                    ))
                 }
             }
             TypedExpr::Call(name, args, _, ty) => {
@@ -1733,14 +1750,13 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                                 let mut offset = 0;
                                 for member in members.iter().take(member_index) {
                                     let member_alignment = self.get_type_alignment(&member.ty);
-                                    offset = (offset + member_alignment - 1)
-                                        & !(member_alignment - 1);
+                                    offset =
+                                        (offset + member_alignment - 1) & !(member_alignment - 1);
                                     offset += self.get_type_size(&member.ty);
                                 }
                                 (offset, members[member_index].ty.clone())
                             };
-                            let member_addr =
-                                self.builder.ins().iadd_imm(base_addr, offset as i64);
+                            let member_addr = self.builder.ins().iadd_imm(base_addr, offset as i64);
                             self.translate_initializer(member_addr, &member_ty, initializer)?;
                             member_index += 1;
                         }
@@ -1763,8 +1779,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                                 index
                             };
                             let offset = current_index * elem_size;
-                            let elem_addr =
-                                self.builder.ins().iadd_imm(base_addr, offset as i64);
+                            let elem_addr = self.builder.ins().iadd_imm(base_addr, offset as i64);
                             self.translate_initializer(elem_addr, &elem_ty, initializer)?;
                             index = current_index + 1;
                         }

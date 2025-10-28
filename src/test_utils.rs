@@ -50,24 +50,37 @@ pub fn create_test_location(file_id: u32, line: u32) -> SourceSpan {
 /// Compiles and runs C code, returning the exit code
 pub fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Box<dyn std::error::Error>> {
     let temp_dir = tempdir()?;
-    let temp_dir_path = temp_dir.path().to_str().ok_or("Failed to get temporary directory path")?.to_string();
+    let temp_dir_path = temp_dir
+        .path()
+        .to_str()
+        .ok_or("Failed to get temporary directory path")?
+        .to_string();
 
     let obj_filename = format!("{}.o", test_name);
     let exe_filename = format!("./{}.out", test_name);
 
-    eprintln!("[DEBUG] Test: {}, Temp Dir: {}, Object file: {}, Executable file: {}", test_name, temp_dir_path, obj_filename, exe_filename);
+    eprintln!(
+        "[DEBUG] Test: {}, Temp Dir: {}, Object file: {}, Executable file: {}",
+        test_name, temp_dir_path, obj_filename, exe_filename
+    );
 
     // Create a temporary file for the input within the temporary directory
     let input_file_path = temp_dir.path().join(format!("{}.c", test_name));
     fs::write(&input_file_path, input)?;
-    let input_file_path_str = input_file_path.to_str().ok_or("Failed to get input file path string")?.to_string();
-    eprintln!("[DEBUG] Test: {}, Temporary input file: {}", test_name, input_file_path_str);
+    let input_file_path_str = input_file_path
+        .to_str()
+        .ok_or("Failed to get input file path string")?
+        .to_string();
+    eprintln!(
+        "[DEBUG] Test: {}, Temporary input file: {}",
+        test_name, input_file_path_str
+    );
 
     let mut compiler = Compiler::new(
         Cli {
             input_file: input_file_path_str.clone(),
             output_file: Some(obj_filename.clone()), // Output to object file first
-            compile_only: true, // Compile only, do not link yet
+            compile_only: true,                      // Compile only, do not link yet
             ..Default::default()
         },
         Some(temp_dir.path().to_path_buf()),
@@ -87,8 +100,14 @@ pub fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Box<dyn std:
         .output()?; // Use output() to ensure all streams are closed
 
     if !link_output.status.success() {
-        eprintln!("Linking STDOUT: {}", String::from_utf8_lossy(&link_output.stdout));
-        eprintln!("Linking STDERR: {}", String::from_utf8_lossy(&link_output.stderr));
+        eprintln!(
+            "Linking STDOUT: {}",
+            String::from_utf8_lossy(&link_output.stdout)
+        );
+        eprintln!(
+            "Linking STDERR: {}",
+            String::from_utf8_lossy(&link_output.stderr)
+        );
         return Err(format!("Linking failed for test: {}", test_name).into());
     }
 
@@ -105,7 +124,10 @@ pub fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Box<dyn std:
 }
 
 /// Compiles and runs C code from a file, returning the exit code
-pub fn compile_and_run_from_file(file_path: &str, test_name: &str) -> Result<i32, Box<dyn std::error::Error>> {
+pub fn compile_and_run_from_file(
+    file_path: &str,
+    test_name: &str,
+) -> Result<i32, Box<dyn std::error::Error>> {
     let input = fs::read_to_string(file_path)?;
     compile_and_run(&input, test_name)
 }
@@ -116,7 +138,11 @@ pub fn compile_and_run_with_output(
     test_name: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let temp_dir = tempdir()?;
-    let temp_dir_path = temp_dir.path().to_str().ok_or("Failed to get temporary directory path")?.to_string();
+    let temp_dir_path = temp_dir
+        .path()
+        .to_str()
+        .ok_or("Failed to get temporary directory path")?
+        .to_string();
 
     let obj_filename = format!("{}.o", test_name);
     let exe_filename = format!("./{}.out", test_name);
@@ -124,7 +150,10 @@ pub fn compile_and_run_with_output(
     // Create a temporary file for the input within the temporary directory
     let input_file_path = temp_dir.path().join(format!("{}.c", test_name));
     fs::write(&input_file_path, input)?;
-    let input_file_path_str = input_file_path.to_str().ok_or("Failed to get input file path string")?.to_string();
+    let input_file_path_str = input_file_path
+        .to_str()
+        .ok_or("Failed to get input file path string")?
+        .to_string();
 
     let mut compiler = Compiler::new(
         Cli {
@@ -150,8 +179,14 @@ pub fn compile_and_run_with_output(
         .output()?;
 
     if !link_output.status.success() {
-        eprintln!("Linking STDOUT: {}", String::from_utf8_lossy(&link_output.stdout));
-        eprintln!("Linking STDERR: {}", String::from_utf8_lossy(&link_output.stderr));
+        eprintln!(
+            "Linking STDOUT: {}",
+            String::from_utf8_lossy(&link_output.stdout)
+        );
+        eprintln!(
+            "Linking STDERR: {}",
+            String::from_utf8_lossy(&link_output.stderr)
+        );
         return Err(format!("Linking failed for test: {}", test_name).into());
     }
 

@@ -1,5 +1,6 @@
 use crate::parser::ast::{
-    Designator, Expr, ForInit, Function, Initializer, Parameter, Program, Stmt, Type,
+    Designator, Expr, ForInit, Function, Initializer, InitializerList, Parameter, Program, Stmt,
+    Type,
 };
 use crate::parser::error::ParserError;
 use crate::parser::token::{KeywordKind, Token, TokenKind};
@@ -791,9 +792,7 @@ impl Parser {
     }
 
     /// Parses an initializer list.
-    fn parse_initializer_list(
-        &mut self,
-    ) -> Result<Vec<(Vec<Designator>, Box<Initializer>)>, ParserError> {
+    fn parse_initializer_list(&mut self) -> Result<InitializerList, ParserError> {
         let mut initializers = Vec::new();
         if self.eat_token(&TokenKind::RightBrace)? {
             return Ok(initializers);

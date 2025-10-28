@@ -48,8 +48,8 @@ use crate::preprocessor::token::{DirectiveKind, Token, TokenKind};
 use crate::semantic::SemanticAnalyzer;
 use std::fs;
 use std::io::Write;
-use std::process::Command;
 use std::path::PathBuf;
+use std::process::Command;
 
 pub struct Compiler {
     preprocessor: Preprocessor,

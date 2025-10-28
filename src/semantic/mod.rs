@@ -1,5 +1,9 @@
 use crate::common::{SourceLocation, SourceSpan};
-use crate::parser::ast::{BinOp, Designator, ForInit, Initializer, Expr, Program, Stmt, Type, TypedExpr, TypedStmt, TypedFunctionDecl, TypedTranslationUnit, TypedDesignator, TypedInitializer, TypedDeclarator, TypedForInit};
+use crate::parser::ast::{
+    BinOp, Designator, Expr, ForInit, Initializer, Program, Stmt, Type, TypedDeclarator,
+    TypedDesignator, TypedExpr, TypedForInit, TypedFunctionDecl, TypedInitializer, TypedStmt,
+    TypedTranslationUnit,
+};
 use crate::semantic::error::SemanticError;
 use std::collections::HashMap;
 
@@ -176,36 +180,36 @@ impl SemanticAnalyzer {
                     }
                 }
                 Stmt::Declaration(ty, declarators) => {
-                    if let Type::Enum(_name, members) = ty {
-                        if !members.is_empty() {
-                            let mut next_value = 0;
-                            for (name, value, span) in members {
-                                let val = if let Some(expr) = value {
-                                    if let Expr::Number(num) = **expr {
-                                        num
-                                    } else {
-                                        self.errors.push((
-                                            SemanticError::InvalidEnumInitializer(name.clone()),
-                                            filename.to_string(),
-                                            span.clone(),
-                                        ));
-                                        -1 // Dummy value
-                                    }
+                    if let Type::Enum(_name, members) = ty
+                        && !members.is_empty()
+                    {
+                        let mut next_value = 0;
+                        for (name, value, span) in members {
+                            let val = if let Some(expr) = value {
+                                if let Expr::Number(num) = **expr {
+                                    num
                                 } else {
-                                    next_value
-                                };
-
-                                if self.enum_constants.contains_key(name) {
                                     self.errors.push((
-                                        SemanticError::VariableRedeclaration(name.clone()),
+                                        SemanticError::InvalidEnumInitializer(name.clone()),
                                         filename.to_string(),
                                         span.clone(),
                                     ));
-                                } else {
-                                    self.enum_constants.insert(name.clone(), val);
+                                    -1 // Dummy value
                                 }
-                                next_value = val + 1;
+                            } else {
+                                next_value
+                            };
+
+                            if self.enum_constants.contains_key(name) {
+                                self.errors.push((
+                                    SemanticError::VariableRedeclaration(name.clone()),
+                                    filename.to_string(),
+                                    span.clone(),
+                                ));
+                            } else {
+                                self.enum_constants.insert(name.clone(), val);
                             }
+                            next_value = val + 1;
                         }
                     }
 
@@ -287,7 +291,11 @@ impl SemanticAnalyzer {
     }
 
     /// Checks a function for semantic errors and returns a typed function declaration.
-    fn check_function(&mut self, function: crate::parser::ast::Function, filename: &str) -> TypedFunctionDecl {
+    fn check_function(
+        &mut self,
+        function: crate::parser::ast::Function,
+        filename: &str,
+    ) -> TypedFunctionDecl {
         // Push function scope
         self.symbol_table.push_scope();
 
@@ -378,20 +386,19 @@ impl SemanticAnalyzer {
                 let mut typed_declarators = Vec::new();
                 for declarator in declarators {
                     // Check for redeclaration only in local scope
-                    if self.current_function.is_some() {
-                        if let Some(existing) = self.symbol_table.lookup(&declarator.name) {
-                            if !existing.is_function {
-                                self.errors.push((
-                                    SemanticError::VariableRedeclaration(declarator.name.clone()),
-                                    filename.to_string(),
-                                    SourceSpan::new(
-                                        crate::file::FileId(0),
-                                        SourceLocation::new(crate::file::FileId(0), 0, 0),
-                                        SourceLocation::new(crate::file::FileId(0), 0, 0),
-                                    ),
-                                ));
-                            }
-                        }
+                    if self.current_function.is_some()
+                        && let Some(existing) = self.symbol_table.lookup(&declarator.name)
+                        && !existing.is_function
+                    {
+                        self.errors.push((
+                            SemanticError::VariableRedeclaration(declarator.name.clone()),
+                            filename.to_string(),
+                            SourceSpan::new(
+                                crate::file::FileId(0),
+                                SourceLocation::new(crate::file::FileId(0), 0, 0),
+                                SourceLocation::new(crate::file::FileId(0), 0, 0),
+                            ),
+                        ));
                     }
 
                     // Insert symbol if not already present
@@ -407,7 +414,9 @@ impl SemanticAnalyzer {
                     }
 
                     // Check initializer expression
-                    let typed_initializer = declarator.initializer.map(|init| self.convert_initializer_to_typed(init, filename));
+                    let typed_initializer = declarator
+                        .initializer
+                        .map(|init| self.convert_initializer_to_typed(init, filename));
 
                     typed_declarators.push(TypedDeclarator {
                         ty: declarator.ty,
@@ -428,7 +437,8 @@ impl SemanticAnalyzer {
             Stmt::If(cond, then, otherwise) => {
                 let typed_cond = self.check_expression(*cond, filename);
                 let typed_then = Box::new(self.check_statement(*then, filename));
-                let typed_otherwise = otherwise.map(|o| Box::new(self.check_statement(*o, filename)));
+                let typed_otherwise =
+                    otherwise.map(|o| Box::new(self.check_statement(*o, filename)));
                 TypedStmt::If(typed_cond, typed_then, typed_otherwise)
             }
             Stmt::While(cond, body) => {
@@ -461,7 +471,8 @@ impl SemanticAnalyzer {
                                 },
                             );
                         }
-                        let typed_initializer = initializer.map(|init| self.convert_initializer_to_typed(init, filename));
+                        let typed_initializer = initializer
+                            .map(|init| self.convert_initializer_to_typed(init, filename));
                         TypedForInit::Declaration(ty, name, typed_initializer)
                     }
                     ForInit::Expr(expr) => {
@@ -474,11 +485,19 @@ impl SemanticAnalyzer {
                 let typed_inc = inc.map(|i| self.check_expression(*i, filename));
                 let typed_body = Box::new(self.check_statement(*body, filename));
 
-                TypedStmt::For(typed_init, typed_cond, typed_inc, typed_body)
+                TypedStmt::For(
+                    Box::new(typed_init),
+                    Box::new(typed_cond),
+                    Box::new(typed_inc),
+                    typed_body,
+                )
             }
             Stmt::Block(stmts) => {
                 self.symbol_table.push_scope();
-                let typed_stmts = stmts.into_iter().map(|s| self.check_statement(s, filename)).collect();
+                let typed_stmts = stmts
+                    .into_iter()
+                    .map(|s| self.check_statement(s, filename))
+                    .collect();
                 self.symbol_table.pop_scope();
                 TypedStmt::Block(typed_stmts)
             }
@@ -529,8 +548,24 @@ impl SemanticAnalyzer {
         match op {
             BinOp::Assign => {
                 if lhs_typed.ty() != rhs_typed.ty() {
-                    let is_lhs_numeric = matches!(lhs_typed.ty(), Type::Int | Type::Char | Type::Short | Type::Long | Type::LongLong | Type::Enum(_, _));
-                    let is_rhs_numeric = matches!(rhs_typed.ty(), Type::Int | Type::Char | Type::Short | Type::Long | Type::LongLong | Type::Enum(_, _));
+                    let is_lhs_numeric = matches!(
+                        lhs_typed.ty(),
+                        Type::Int
+                            | Type::Char
+                            | Type::Short
+                            | Type::Long
+                            | Type::LongLong
+                            | Type::Enum(_, _)
+                    );
+                    let is_rhs_numeric = matches!(
+                        rhs_typed.ty(),
+                        Type::Int
+                            | Type::Char
+                            | Type::Short
+                            | Type::Long
+                            | Type::LongLong
+                            | Type::Enum(_, _)
+                    );
 
                     if !is_lhs_numeric || !is_rhs_numeric {
                         self.errors.push((
@@ -752,11 +787,7 @@ impl SemanticAnalyzer {
                 } else {
                     rhs_typed
                 };
-                TypedExpr::Mul(
-                    Box::new(lhs_cast),
-                    Box::new(rhs_cast),
-                    lhs_conv_ty.clone(),
-                )
+                TypedExpr::Mul(Box::new(lhs_cast), Box::new(rhs_cast), lhs_conv_ty.clone())
             }
             BinOp::Div => {
                 let (lhs_conv_ty, rhs_conv_ty) =
@@ -779,11 +810,7 @@ impl SemanticAnalyzer {
                 } else {
                     rhs_typed
                 };
-                TypedExpr::Div(
-                    Box::new(lhs_cast),
-                    Box::new(rhs_cast),
-                    lhs_conv_ty.clone(),
-                )
+                TypedExpr::Div(Box::new(lhs_cast), Box::new(rhs_cast), lhs_conv_ty.clone())
             }
             BinOp::Mod => {
                 let (lhs_conv_ty, rhs_conv_ty) =
@@ -806,15 +833,9 @@ impl SemanticAnalyzer {
                 } else {
                     rhs_typed
                 };
-                TypedExpr::Mod(
-                    Box::new(lhs_cast),
-                    Box::new(rhs_cast),
-                    lhs_conv_ty.clone(),
-                )
+                TypedExpr::Mod(Box::new(lhs_cast), Box::new(rhs_cast), lhs_conv_ty.clone())
             }
-            BinOp::Equal => {
-                TypedExpr::Equal(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
-            }
+            BinOp::Equal => TypedExpr::Equal(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int),
             BinOp::NotEqual => {
                 TypedExpr::NotEqual(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
             }
@@ -871,7 +892,9 @@ impl SemanticAnalyzer {
 
         match expr {
             Expr::Variable(name, location) => {
-                if !self.symbol_table.contains_key(&name) && !self.enum_constants.contains_key(&name) {
+                if !self.symbol_table.contains_key(&name)
+                    && !self.enum_constants.contains_key(&name)
+                {
                     self.errors.push((
                         SemanticError::UndefinedVariable(name.clone()),
                         filename.to_string(),
@@ -983,9 +1006,9 @@ impl SemanticAnalyzer {
                         let typed_designators = designators
                             .into_iter()
                             .map(|d| match d {
-                                Designator::Index(expr) => {
-                                    TypedDesignator::Index(Box::new(self.check_expression(*expr, filename)))
-                                }
+                                Designator::Index(expr) => TypedDesignator::Index(Box::new(
+                                    self.check_expression(*expr, filename),
+                                )),
                                 Designator::Member(name) => TypedDesignator::Member(name),
                             })
                             .collect();
@@ -1032,21 +1055,34 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn convert_initializer_to_typed(&mut self, initializer: Initializer, filename: &str) -> TypedInitializer {
+    fn convert_initializer_to_typed(
+        &mut self,
+        initializer: Initializer,
+        filename: &str,
+    ) -> TypedInitializer {
         match initializer {
             Initializer::Expr(expr) => {
                 let typed_expr = self.check_expression(*expr, filename);
                 TypedInitializer::Expr(Box::new(typed_expr))
             }
             Initializer::List(list) => {
-                let typed_list = list.into_iter().map(|(designators, initializer)| {
-                    let typed_designators = designators.into_iter().map(|d| match d {
-                        Designator::Index(expr) => TypedDesignator::Index(Box::new(self.check_expression(*expr, filename))),
-                        Designator::Member(name) => TypedDesignator::Member(name),
-                    }).collect();
-                    let typed_initializer = self.convert_initializer_to_typed(*initializer, filename);
-                    (typed_designators, Box::new(typed_initializer))
-                }).collect();
+                let typed_list = list
+                    .into_iter()
+                    .map(|(designators, initializer)| {
+                        let typed_designators = designators
+                            .into_iter()
+                            .map(|d| match d {
+                                Designator::Index(expr) => TypedDesignator::Index(Box::new(
+                                    self.check_expression(*expr, filename),
+                                )),
+                                Designator::Member(name) => TypedDesignator::Member(name),
+                            })
+                            .collect();
+                        let typed_initializer =
+                            self.convert_initializer_to_typed(*initializer, filename);
+                        (typed_designators, Box::new(typed_initializer))
+                    })
+                    .collect();
                 TypedInitializer::List(typed_list)
             }
         }

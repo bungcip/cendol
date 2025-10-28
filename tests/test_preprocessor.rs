@@ -7,7 +7,7 @@ use cendol::file::FileManager;
 use cendol::preprocessor::Preprocessor;
 use cendol::preprocessor::token::Token;
 use cendol::preprocessor::token::TokenKind;
-use cendol::test_utils::{create_preprocessor};
+use cendol::test_utils::create_preprocessor;
 
 /// Test configuration constants
 mod config {
@@ -49,7 +49,6 @@ fn get_token_kinds(tokens: &[Token]) -> Vec<String> {
         .map(|token| format!("{}", token.kind))
         .collect()
 }
-
 
 /// Test function-like macro expansion
 #[test]

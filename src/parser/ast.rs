@@ -231,6 +231,8 @@ impl AssignOp {
 pub enum Expr {
     /// A number literal.
     Number(i64),
+    /// A float number literal.
+    FloatNumber(f64),
     /// A string literal.
     String(String),
     /// A character literal.
@@ -433,6 +435,7 @@ pub struct TranslationUnit {
 #[derive(Debug, PartialEq, Clone)]
 pub enum TypedExpr {
     Number(i64, Type),
+    FloatNumber(f64, Type),
     String(String, Type),
     Char(String, Type),
     Variable(String, crate::common::SourceSpan, Type),
@@ -539,6 +542,7 @@ impl TypedExpr {
     pub fn ty(&self) -> &Type {
         match self {
             TypedExpr::Number(_, ty) => ty,
+            TypedExpr::FloatNumber(_, ty) => ty,
             TypedExpr::String(_, ty) => ty,
             TypedExpr::Char(_, ty) => ty,
             TypedExpr::Variable(_, _, ty) => ty,

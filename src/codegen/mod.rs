@@ -550,6 +550,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         MemFlags::new(),
                     );
                     self.builder.ins().return_(&[dest]);
+                } else if ty == Type::Float || ty == Type::Double {
+                    self.builder.ins().return_(&[value]);
                 } else {
                     self.builder.ins().return_(&[value]);
                 }
@@ -903,6 +905,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let val = self.builder.ins().stack_load(types::I16, slot, 0);
                 self.builder.ins().uextend(types::I64, val)
             }
+            Type::Float => self.builder.ins().stack_load(types::F32, slot, 0),
+            Type::Double => self.builder.ins().stack_load(types::F64, slot, 0),
             _ => self.builder.ins().stack_load(types::I64, slot, 0),
         }
     }
@@ -931,6 +935,14 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     .load(types::I16, MemFlags::new(), addr, 0);
                 self.builder.ins().uextend(types::I64, val)
             }
+            Type::Float => self
+                .builder
+                .ins()
+                .load(types::F32, MemFlags::new(), addr, 0),
+            Type::Double => self
+                .builder
+                .ins()
+                .load(types::F64, MemFlags::new(), addr, 0),
             _ => self
                 .builder
                 .ins()
@@ -951,10 +963,34 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         let lhs_val = self.load_lvalue(addr, &lhs_ty);
         let result_val = match op {
             AssignOp::Assign => rhs_val,
-            AssignOp::Add => self.builder.ins().iadd(lhs_val, rhs_val),
-            AssignOp::Sub => self.builder.ins().isub(lhs_val, rhs_val),
-            AssignOp::Mul => self.builder.ins().imul(lhs_val, rhs_val),
-            AssignOp::Div => self.builder.ins().sdiv(lhs_val, rhs_val),
+            AssignOp::Add => {
+                if lhs_ty == Type::Float || lhs_ty == Type::Double {
+                    self.builder.ins().fadd(lhs_val, rhs_val)
+                } else {
+                    self.builder.ins().iadd(lhs_val, rhs_val)
+                }
+            }
+            AssignOp::Sub => {
+                if lhs_ty == Type::Float || lhs_ty == Type::Double {
+                    self.builder.ins().fsub(lhs_val, rhs_val)
+                } else {
+                    self.builder.ins().isub(lhs_val, rhs_val)
+                }
+            }
+            AssignOp::Mul => {
+                if lhs_ty == Type::Float || lhs_ty == Type::Double {
+                    self.builder.ins().fmul(lhs_val, rhs_val)
+                } else {
+                    self.builder.ins().imul(lhs_val, rhs_val)
+                }
+            }
+            AssignOp::Div => {
+                if lhs_ty == Type::Float || lhs_ty == Type::Double {
+                    self.builder.ins().fdiv(lhs_val, rhs_val)
+                } else {
+                    self.builder.ins().sdiv(lhs_val, rhs_val)
+                }
+            }
             AssignOp::Mod => self.builder.ins().srem(lhs_val, rhs_val),
             AssignOp::BitwiseAnd => self.builder.ins().band(lhs_val, rhs_val),
             AssignOp::BitwiseOr => self.builder.ins().bor(lhs_val, rhs_val),
@@ -1003,6 +1039,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         let offset = self.builder.ins().imul_imm(lhs_val, size as i64);
                         self.builder.ins().iadd(rhs_val, offset)
                     }
+                    (Type::Float, Type::Float) => self.builder.ins().fadd(lhs_val, rhs_val),
+                    (Type::Double, Type::Double) => self.builder.ins().fadd(lhs_val, rhs_val),
                     _ => self.builder.ins().iadd(lhs_val, rhs_val),
                 };
                 let _result_ty = if lhs_ty.is_pointer() {
@@ -1027,6 +1065,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         let size = self.get_type_size(lhs_base);
                         self.builder.ins().sdiv_imm(diff, size as i64)
                     }
+                    (Type::Float, Type::Float) => self.builder.ins().fsub(lhs_val, rhs_val),
+                    (Type::Double, Type::Double) => self.builder.ins().fsub(lhs_val, rhs_val),
                     _ => self.builder.ins().isub(lhs_val, rhs_val),
                 };
                 let result_ty = match (&lhs_ty, &rhs_ty) {
@@ -1039,14 +1079,21 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             BinOp::Mul => {
                 let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
                 let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
-                let _common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
-                Ok((self.builder.ins().imul(lhs, rhs), ty.clone()))
+                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let result = if common_ty == Type::Float || common_ty == Type::Double {
+                    self.builder.ins().fmul(lhs, rhs)
+                } else {
+                    self.builder.ins().imul(lhs, rhs)
+                };
+                Ok((result, ty.clone()))
             }
             BinOp::Div => {
                 let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
                 let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
                 let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
-                let result = if common_ty.is_unsigned() {
+                let result = if common_ty == Type::Float || common_ty == Type::Double {
+                    self.builder.ins().fdiv(lhs, rhs)
+                } else if common_ty.is_unsigned() {
                     self.builder.ins().udiv(lhs, rhs)
                 } else {
                     self.builder.ins().sdiv(lhs, rhs)
@@ -1065,63 +1112,93 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 Ok((result, ty.clone()))
             }
             BinOp::Equal => {
-                let (lhs, _) = self.translate_typed_expr(lhs.clone())?;
-                let (rhs, _) = self.translate_typed_expr(rhs.clone())?;
-                let c = self.builder.ins().icmp(IntCC::Equal, lhs, rhs);
+                let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
+                let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
+                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let c = if common_ty == Type::Float || common_ty == Type::Double {
+                    self.builder.ins().fcmp(FloatCC::Equal, lhs, rhs)
+                } else {
+                    self.builder.ins().icmp(IntCC::Equal, lhs, rhs)
+                };
                 Ok((self.builder.ins().uextend(types::I64, c), ty.clone()))
             }
             BinOp::NotEqual => {
-                let (lhs, _) = self.translate_typed_expr(lhs.clone())?;
-                let (rhs, _) = self.translate_typed_expr(rhs.clone())?;
-                let c = self.builder.ins().icmp(IntCC::NotEqual, lhs, rhs);
+                let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
+                let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
+                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let c = if common_ty == Type::Float || common_ty == Type::Double {
+                    self.builder.ins().fcmp(FloatCC::NotEqual, lhs, rhs)
+                } else {
+                    self.builder.ins().icmp(IntCC::NotEqual, lhs, rhs)
+                };
                 Ok((self.builder.ins().uextend(types::I64, c), ty.clone()))
             }
             BinOp::LessThan => {
                 let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
                 let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
                 let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
-                let cc = if common_ty.is_unsigned() {
-                    IntCC::UnsignedLessThan
+                let c = if common_ty == Type::Float || common_ty == Type::Double {
+                    self.builder.ins().fcmp(FloatCC::LessThan, lhs, rhs)
                 } else {
-                    IntCC::SignedLessThan
+                    let cc = if common_ty.is_unsigned() {
+                        IntCC::UnsignedLessThan
+                    } else {
+                        IntCC::SignedLessThan
+                    };
+                    self.builder.ins().icmp(cc, lhs, rhs)
                 };
-                let c = self.builder.ins().icmp(cc, lhs, rhs);
                 Ok((self.builder.ins().uextend(types::I64, c), ty.clone()))
             }
             BinOp::GreaterThan => {
                 let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
                 let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
                 let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
-                let cc = if common_ty.is_unsigned() {
-                    IntCC::UnsignedGreaterThan
+                let c = if common_ty == Type::Float || common_ty == Type::Double {
+                    self.builder.ins().fcmp(FloatCC::GreaterThan, lhs, rhs)
                 } else {
-                    IntCC::SignedGreaterThan
+                    let cc = if common_ty.is_unsigned() {
+                        IntCC::UnsignedGreaterThan
+                    } else {
+                        IntCC::SignedGreaterThan
+                    };
+                    self.builder.ins().icmp(cc, lhs, rhs)
                 };
-                let c = self.builder.ins().icmp(cc, lhs, rhs);
                 Ok((self.builder.ins().uextend(types::I64, c), ty.clone()))
             }
             BinOp::LessThanOrEqual => {
                 let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
                 let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
                 let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
-                let cc = if common_ty.is_unsigned() {
-                    IntCC::UnsignedLessThanOrEqual
+                let c = if common_ty == Type::Float || common_ty == Type::Double {
+                    self.builder
+                        .ins()
+                        .fcmp(FloatCC::LessThanOrEqual, lhs, rhs)
                 } else {
-                    IntCC::SignedLessThanOrEqual
+                    let cc = if common_ty.is_unsigned() {
+                        IntCC::UnsignedLessThanOrEqual
+                    } else {
+                        IntCC::SignedLessThanOrEqual
+                    };
+                    self.builder.ins().icmp(cc, lhs, rhs)
                 };
-                let c = self.builder.ins().icmp(cc, lhs, rhs);
                 Ok((self.builder.ins().uextend(types::I64, c), ty.clone()))
             }
             BinOp::GreaterThanOrEqual => {
                 let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
                 let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
                 let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
-                let cc = if common_ty.is_unsigned() {
-                    IntCC::UnsignedGreaterThanOrEqual
+                let c = if common_ty == Type::Float || common_ty == Type::Double {
+                    self.builder
+                        .ins()
+                        .fcmp(FloatCC::GreaterThanOrEqual, lhs, rhs)
                 } else {
-                    IntCC::SignedGreaterThanOrEqual
+                    let cc = if common_ty.is_unsigned() {
+                        IntCC::UnsignedGreaterThanOrEqual
+                    } else {
+                        IntCC::SignedGreaterThanOrEqual
+                    };
+                    self.builder.ins().icmp(cc, lhs, rhs)
                 };
-                let c = self.builder.ins().icmp(cc, lhs, rhs);
                 Ok((self.builder.ins().uextend(types::I64, c), ty.clone()))
             }
             BinOp::LogicalAnd => {
@@ -1223,6 +1300,9 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
         match expr {
             TypedExpr::Number(n, ty) => Ok((self.builder.ins().iconst(types::I64, n), ty)),
+            TypedExpr::FloatNumber(n, ty) => {
+                Ok((self.builder.ins().f64const(n), ty))
+            }
             TypedExpr::String(s, ty) => {
                 let mut data = Vec::with_capacity(s.len() + 1);
                 data.extend_from_slice(s.as_bytes());
@@ -1639,6 +1719,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                             true,
                             MemFlags::new(),
                         );
+                    } else if val_ty == Type::Float || val_ty == Type::Double {
+                        self.builder.ins().store(MemFlags::new(), val, base_addr, 0);
                     } else {
                         self.builder.ins().store(MemFlags::new(), val, base_addr, 0);
                     }

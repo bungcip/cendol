@@ -103,20 +103,34 @@ impl<'a> Lexer<'a> {
                     ))
                 }
             }
-            _ if c.is_ascii_digit() => {
+            _ if c.is_ascii_digit() || (c == '.' && self.input.peek().map_or(false, |c| c.is_ascii_digit())) => {
                 let mut num = String::from(c);
                 self.consume_char(c);
+                let mut has_dot = c == '.';
                 while let Some(&c) = self.input.peek() {
                     if c.is_ascii_digit() {
                         num.push(self.input.next().unwrap());
                         self.consume_char(c);
+                    } else if c == '.' && !has_dot {
+                        num.push(self.input.next().unwrap());
+                        self.consume_char(c);
+                        has_dot = true;
+                    } else if c == 'e' || c == 'E' {
+                        num.push(self.input.next().unwrap());
+                        self.consume_char(c);
+                        if let Some(&c) = self.input.peek() {
+                            if c == '+' || c == '-' {
+                                num.push(self.input.next().unwrap());
+                                self.consume_char(c);
+                            }
+                        }
                     } else {
                         break;
                     }
                 }
-                // Handle suffixes for long and unsigned
+                // Handle suffixes for long and unsigned and float
                 if let Some(&c) = self.input.peek()
-                    && (c == 'L' || c == 'U' || c == 'l' || c == 'u')
+                    && (c == 'L' || c == 'U' || c == 'l' || c == 'u' || c == 'f' || c == 'F')
                 {
                     num.push(self.input.next().unwrap());
                     self.consume_char(c);

@@ -111,7 +111,7 @@ mod tests {
         create_bool_program_ast, create_control_flow_program_ast, create_simple_program_ast,
         parse_c_code,
     };
-    use cendol::parser::ast::{Declarator, Expr, Stmt, Type};
+    use cendol::parser::ast::{Declarator, Expr, Initializer, Stmt, Type};
 
     /// Test parsing of simple C programs
     #[test]
@@ -423,5 +423,40 @@ mod tests {
         let stmts = parse_c_body(input);
         assert!(matches!(&stmts[0], Stmt::Goto(..)));
         assert!(matches!(&stmts[1], Stmt::Label(..)));
+    }
+
+    /// Test parsing of floating-point literals
+    #[test]
+    fn test_float_literals() {
+        let input = r#"
+            float a = 1.0;
+            double b = 2.0f;
+            float c = 3e-10;
+        "#;
+        let stmts = parse_c_body(input);
+        assert!(matches!(&stmts[0], Stmt::Declaration(..)));
+        if let Stmt::Declaration(_, declarators) = &stmts[0] {
+            if let Some(Initializer::Expr(expr)) = &declarators[0].initializer {
+                assert!(matches!(**expr, Expr::FloatNumber(..)));
+            } else {
+                panic!("Expected an initializer");
+            }
+        }
+        assert!(matches!(&stmts[1], Stmt::Declaration(..)));
+        if let Stmt::Declaration(_, declarators) = &stmts[1] {
+            if let Some(Initializer::Expr(expr)) = &declarators[0].initializer {
+                assert!(matches!(**expr, Expr::FloatNumber(..)));
+            } else {
+                panic!("Expected an initializer");
+            }
+        }
+        assert!(matches!(&stmts[2], Stmt::Declaration(..)));
+        if let Stmt::Declaration(_, declarators) = &stmts[2] {
+            if let Some(Initializer::Expr(expr)) = &declarators[0].initializer {
+                assert!(matches!(**expr, Expr::FloatNumber(..)));
+            } else {
+                panic!("Expected an initializer");
+            }
+        }
     }
 }

@@ -1,0 +1,17 @@
+---
+source: tests/bad_input.rs
+expression: err.unwrap_err()
+---
+msg: "Invalid initializer: cannot initialize variable of type `int` with value of type `char*`"
+path: invalid_variable_initialization.c
+span:
+  file: 0
+  start:
+    file: 0
+    line: 3
+    column: 13
+  end:
+    file: 0
+    line: 3
+    column: 19
+verbose: false

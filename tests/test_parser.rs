@@ -52,7 +52,7 @@ fn create_simple_program_ast() -> Program {
             return_type: Type::Int,
             name: "main".to_string(),
             params: vec![],
-            body: vec![Stmt::Return(Expr::Number(0))],
+            body: vec![Stmt::Return(Expr::Number(0, Default::default()))],
             is_inline: false,
             is_variadic: false,
         }],
@@ -73,10 +73,13 @@ fn create_bool_program_ast() -> Program {
                     vec![Declarator {
                         ty: Type::Bool,
                         name: "a".to_string(),
-                        initializer: Some(Initializer::Expr(Box::new(Expr::Number(1)))),
+                        initializer: Some(Initializer::Expr(Box::new(Expr::Number(
+                            1,
+                            Default::default(),
+                        )))),
                     }],
                 ),
-                Stmt::Return(Expr::Number(0)),
+                Stmt::Return(Expr::Number(0, Default::default())),
             ],
             is_inline: false,
             is_variadic: false,
@@ -93,9 +96,9 @@ fn create_control_flow_program_ast() -> Program {
             name: "main".to_string(),
             params: vec![],
             body: vec![Stmt::If(
-                Box::new(Expr::Number(1)),
-                Box::new(Stmt::Return(Expr::Number(1))),
-                Some(Box::new(Stmt::Return(Expr::Number(0)))),
+                Box::new(Expr::Number(1, Default::default())),
+                Box::new(Stmt::Return(Expr::Number(1, Default::default()))),
+                Some(Box::new(Stmt::Return(Expr::Number(0, Default::default())))),
             )],
             is_inline: false,
             is_variadic: false,
@@ -210,7 +213,7 @@ mod tests {
                     },
                 ],
             ),
-            Stmt::Return(Expr::Number(0)),
+            Stmt::Return(Expr::Number(0, Default::default())),
         ];
         assert_eq!(ast.functions[0].body, expected_body);
     }
@@ -331,9 +334,9 @@ mod tests {
 
         // primary expressions
         assert!(matches!(stmts[0], Stmt::Expr(Expr::Variable(_, _))));
-        assert!(matches!(stmts[1], Stmt::Expr(Expr::Number(_))));
-        assert!(matches!(stmts[2], Stmt::Expr(Expr::Char(_))));
-        assert!(matches!(stmts[3], Stmt::Expr(Expr::String(_))));
+        assert!(matches!(stmts[1], Stmt::Expr(Expr::Number(..))));
+        assert!(matches!(stmts[2], Stmt::Expr(Expr::Char(..))));
+        assert!(matches!(stmts[3], Stmt::Expr(Expr::String(..))));
         assert!(matches!(stmts[4], Stmt::Expr(Expr::Add(..)))); // currenty don't have Paren expr
 
         // postfix expressions

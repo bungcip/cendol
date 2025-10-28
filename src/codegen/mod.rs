@@ -1,5 +1,5 @@
 use crate::codegen::error::{CodegenError, CodegenResult};
-use crate::parser::ast::{Expr,Type, TypedTranslationUnit, TypedStmt, TypedExpr, TypedFunctionDecl, TypedInitializer, TypedDeclarator, TypedDesignator, TypedForInit};
+use crate::parser::ast::{Expr,Type, TypedTranslationUnit, TypedStmt, TypedExpr, TypedInitializer, TypedDesignator, TypedForInit};
 use cranelift::prelude::*;
 use cranelift_codegen::Context;
 use cranelift_codegen::ir::types;
@@ -159,7 +159,7 @@ impl CodeGen {
 
                             let initial_value = if let Some(init) = &declarator.initializer {
                                 if let TypedInitializer::Expr(expr) = init {
-                                    if let TypedExpr::Number(num, _) = **expr {
+                                if let TypedExpr::Number(num, _, _) = **expr {
                                         num.to_le_bytes().to_vec()
                                     } else {
                                         return Err(CodegenError::InvalidStaticInitializer);
@@ -218,7 +218,7 @@ impl CodeGen {
                         let mut next_value = 0;
                         for (name, value, _span) in members {
                             let val = if let Some(expr) = value {
-                                if let Expr::Number(num) = **expr {
+                                if let Expr::Number(num, _) = **expr {
                                     num
                                 } else {
                                     -1 // Dummy value
@@ -325,7 +325,7 @@ impl CodeGen {
                             let mut next_value = 0;
                             for (name, value, _span) in members {
                                 let val = if let Some(expr) = value {
-                                    if let Expr::Number(num) = **expr {
+                                if let Expr::Number(num, _) = **expr {
                                         num
                                     } else {
                                         -1 // Dummy value
@@ -776,7 +776,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let (ptr, _) = self.translate_typed_expr(*ptr)?;
                 Ok((ptr, ty))
             }
-            TypedExpr::Member(expr, member, ty) => {
+            TypedExpr::Member(expr, member, _ty) => {
                 let (ptr, expr_ty) = self.translate_typed_expr(*expr)?;
                 let s = self.get_real_type(&expr_ty)?;
                 if let Type::Struct(_, members) = s {
@@ -906,8 +906,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
     fn translate_typed_expr(&mut self, expr: TypedExpr) -> Result<(Value, Type), CodegenError> {
         match expr {
-            TypedExpr::Number(n, ty) => Ok((self.builder.ins().iconst(types::I64, n), ty)),
-            TypedExpr::String(s, ty) => {
+            TypedExpr::Number(n, _, ty) => Ok((self.builder.ins().iconst(types::I64, n), ty)),
+            TypedExpr::String(s, _, ty) => {
                 let mut data = Vec::with_capacity(s.len() + 1);
                 data.extend_from_slice(s.as_bytes());
                 data.push(0);
@@ -924,13 +924,13 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     ty,
                 ))
             }
-            TypedExpr::Char(c, ty) => {
+            TypedExpr::Char(c, _, ty) => {
                 // Extract the character from the string literal (e.g., "'a'" -> 'a')
                 let character = c.chars().next().unwrap();
                 let val = self.builder.ins().iconst(types::I64, character as i64);
                 Ok((val, ty))
             }
-            TypedExpr::PointerMember(expr, member, ty) => {
+            TypedExpr::PointerMember(expr, member, _ty) => {
                 let (ptr, ptr_ty) = self.translate_typed_expr(*expr)?;
                 if let Type::Pointer(base_ty) = ptr_ty {
                     let s = self.get_real_type(&base_ty)?;
@@ -981,16 +981,16 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     Err(CodegenError::NotAPointer)
                 }
             }
-            TypedExpr::Comma(lhs, rhs, ty) => {
+            TypedExpr::Comma(lhs, rhs, _ty) => {
                 self.translate_typed_expr(*lhs)?;
                 self.translate_typed_expr(*rhs)
             }
-            TypedExpr::ImplicitCast(ty, expr, result_ty) => {
+            TypedExpr::ImplicitCast(_ty, expr, result_ty) => {
                 // For implicit casts, we just translate the expression and return the target type
                 let (val, _) = self.translate_typed_expr(*expr)?;
                 Ok((val, result_ty))
             }
-            TypedExpr::Member(expr, member, ty) => {
+            TypedExpr::Member(expr, member, _ty) => {
                 let (ptr, ty) = self.translate_typed_expr(*expr)?;
                 let s = self.get_real_type(&ty)?;
                 if let Type::Struct(_, members) = s {
@@ -1100,7 +1100,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.translate_assignment(addr, new_val)?;
                 Ok((val, ty))
             }
-            TypedExpr::Ternary(cond, then_expr, else_expr, ty) => {
+            TypedExpr::Ternary(cond, then_expr, else_expr, _ty) => {
                 let (condition_value, _) = self.translate_typed_expr(*cond)?;
 
                 let then_block = self.builder.create_block();
@@ -1133,7 +1133,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 Ok((self.builder.block_params(merge_block)[0], ty))
             }
             TypedExpr::AddressOf(expr, ty) => {
-                if let TypedExpr::Variable(name, _, var_ty) = *expr {
+                if let TypedExpr::Variable(name, _, _var_ty) = *expr {
                     let (slot, _) = self.variables.get(&name).unwrap();
                     let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
                     Ok((addr, ty))
@@ -1447,14 +1447,14 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     }
                     _ => self.builder.ins().iadd(lhs_val, rhs_val),
                 };
-                let result_ty = if lhs_ty.is_pointer() {
+                let _result_ty = if lhs_ty.is_pointer() {
                     lhs_ty
                 } else {
                     common_ty
                 };
                 Ok((result_val, ty))
             }
-            TypedExpr::Sub(lhs, rhs, ty) => {
+            TypedExpr::Sub(lhs, rhs, _ty) => {
                 let (lhs_val, lhs_ty) = self.translate_typed_expr(*lhs)?;
                 let (rhs_val, rhs_ty) = self.translate_typed_expr(*rhs)?;
                 let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
@@ -1481,7 +1481,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             TypedExpr::Mul(lhs, rhs, ty) => {
                 let (lhs, lhs_ty) = self.translate_typed_expr(*lhs)?;
                 let (rhs, rhs_ty) = self.translate_typed_expr(*rhs)?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let _common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
                 Ok((self.builder.ins().imul(lhs, rhs), ty))
             }
             TypedExpr::Div(lhs, rhs, ty) => {
@@ -1687,7 +1687,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                                             let s = self.get_real_type(&current_ty)?;
                                             if let Type::Array(elem_ty, _) = s {
                                                 let elem_size = self.get_type_size(&elem_ty);
-                                                if let TypedExpr::Number(n, _) = **expr {
+                                                if let TypedExpr::Number(n, _, _) = **expr {
                                                     current_offset += n as u32 * elem_size;
                                                     current_ty = *elem_ty.clone();
                                                 } else {
@@ -1727,7 +1727,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         for (designators, initializer) in list {
                             let current_index = if !designators.is_empty() {
                                 if let TypedDesignator::Index(expr) = &designators[0] {
-                                    if let TypedExpr::Number(n, _) = **expr {
+                                    if let TypedExpr::Number(n, _, _) = **expr {
                                         n as u32
                                     } else {
                                         return Err(CodegenError::NonConstantArrayIndex);

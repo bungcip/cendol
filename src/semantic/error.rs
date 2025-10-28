@@ -20,8 +20,12 @@ pub enum SemanticError {
     FunctionRedeclaration(String),
 
     /// Type mismatch in expression.
-    #[error("Type mismatch in expression")]
-    TypeMismatch,
+    #[error("Type mismatch: expected `{0}` but found `{1}`")]
+    TypeMismatch(String, String),
+
+    /// Invalid initializer for a variable.
+    #[error("Invalid initializer: cannot initialize variable of type `{0}` with value of type `{1}`")]
+    InvalidInitializer(String, String),
 
     /// An invalid enum initializer was used.
     #[error("Invalid enum initializer for `{0}`")]

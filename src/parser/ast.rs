@@ -91,6 +91,55 @@ impl Type {
     }
 }
 
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type::Int => write!(f, "int"),
+            Type::Char => write!(f, "char"),
+            Type::Short => write!(f, "short"),
+            Type::Float => write!(f, "float"),
+            Type::Double => write!(f, "double"),
+            Type::Long => write!(f, "long"),
+            Type::LongLong => write!(f, "long long"),
+            Type::UnsignedInt => write!(f, "unsigned int"),
+            Type::UnsignedChar => write!(f, "unsigned char"),
+            Type::UnsignedShort => write!(f, "unsigned short"),
+            Type::UnsignedLong => write!(f, "unsigned long"),
+            Type::UnsignedLongLong => write!(f, "unsigned long long"),
+            Type::Void => write!(f, "void"),
+            Type::Bool => write!(f, "_Bool"),
+            Type::Pointer(t) => write!(f, "{}*", t),
+            Type::Array(t, s) => write!(f, "{}[{}]", t, s),
+            Type::Struct(Some(name), _) => write!(f, "struct {}", name),
+            Type::Struct(None, _) => write!(f, "struct {{ ... }}"),
+            Type::Union(Some(name), _) => write!(f, "union {}", name),
+            Type::Union(None, _) => write!(f, "union {{ ... }}"),
+            Type::Enum(Some(name), _) => write!(f, "enum {}", name),
+            Type::Enum(None, _) => write!(f, "enum {{ ... }}"),
+        }
+    }
+}
+
+impl Type {
+    pub fn is_compatible_with(&self, other: &Type) -> bool {
+        // A simplified compatibility check.
+        // Rule 1: Types are compatible if they are identical.
+        if self == other {
+            return true;
+        }
+
+        // Rule 2: Allow initialization of any integer type from a `Type::Int` expression
+        // (which is what integer literals are typed as). This is a simplification
+        // of C's integer promotion/conversion rules.
+        if self.get_integer_rank() > 0 && *other == Type::Int {
+            return true;
+        }
+
+        // Incompatible by default.
+        false
+    }
+}
+
 /// Represents the initializer of a `for` loop.
 #[derive(Debug, PartialEq, Clone)]
 pub enum ForInit {
@@ -155,11 +204,11 @@ pub enum Stmt {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Expr {
     /// A number literal.
-    Number(i64),
+    Number(i64, crate::common::SourceSpan),
     /// A string literal.
-    String(String),
+    String(String, crate::common::SourceSpan),
     /// A character literal.
-    Char(String),
+    Char(String, crate::common::SourceSpan),
     /// A variable.
     Variable(String, crate::common::SourceSpan),
     /// An assignment expression.
@@ -309,9 +358,9 @@ pub struct Program {
 /// Represents a typed expression with type information.
 #[derive(Debug, PartialEq, Clone)]
 pub enum TypedExpr {
-    Number(i64, Type),
-    String(String, Type),
-    Char(String, Type),
+    Number(i64, crate::common::SourceSpan, Type),
+    String(String, crate::common::SourceSpan, Type),
+    Char(String, crate::common::SourceSpan, Type),
     Variable(String, crate::common::SourceSpan, Type),
     Call(String, Vec<TypedExpr>, crate::common::SourceSpan, Type),
     Assign(Box<TypedExpr>, Box<TypedExpr>, Type),
@@ -367,9 +416,9 @@ pub enum TypedExpr {
 impl TypedExpr {
     pub fn ty(&self) -> &Type {
         match self {
-            TypedExpr::Number(_, ty) => ty,
-            TypedExpr::String(_, ty) => ty,
-            TypedExpr::Char(_, ty) => ty,
+            TypedExpr::Number(_, _, ty) => ty,
+            TypedExpr::String(_, _, ty) => ty,
+            TypedExpr::Char(_, _, ty) => ty,
             TypedExpr::Variable(_, _, ty) => ty,
             TypedExpr::Call(_, _, _, ty) => ty,
             TypedExpr::Assign(_, _, ty) => ty,
@@ -422,6 +471,64 @@ impl TypedExpr {
             TypedExpr::PostDecrement(_, ty) => ty,
         }
     }
+
+    pub fn span(&self) -> &crate::common::SourceSpan {
+        match self {
+            TypedExpr::Number(_, span, _) => span,
+            TypedExpr::String(_, span, _) => span,
+            TypedExpr::Char(_, span, _) => span,
+            TypedExpr::Variable(_, span, _) => span,
+            TypedExpr::Call(_, _, span, _) => span,
+            TypedExpr::Assign(lhs, _, _) => lhs.span(),
+            TypedExpr::AssignAdd(lhs, _, _) => lhs.span(),
+            TypedExpr::AssignSub(lhs, _, _) => lhs.span(),
+            TypedExpr::AssignMul(lhs, _, _) => lhs.span(),
+            TypedExpr::AssignDiv(lhs, _, _) => lhs.span(),
+            TypedExpr::AssignMod(lhs, _, _) => lhs.span(),
+            TypedExpr::AssignLeftShift(lhs, _, _) => lhs.span(),
+            TypedExpr::AssignRightShift(lhs, _, _) => lhs.span(),
+            TypedExpr::AssignBitwiseAnd(lhs, _, _) => lhs.span(),
+            TypedExpr::AssignBitwiseXor(lhs, _, _) => lhs.span(),
+            TypedExpr::AssignBitwiseOr(lhs, _, _) => lhs.span(),
+            TypedExpr::Add(lhs, _, _) => lhs.span(),
+            TypedExpr::Sub(lhs, _, _) => lhs.span(),
+            TypedExpr::Mul(lhs, _, _) => lhs.span(),
+            TypedExpr::Div(lhs, _, _) => lhs.span(),
+            TypedExpr::Mod(lhs, _, _) => lhs.span(),
+            TypedExpr::Equal(lhs, _, _) => lhs.span(),
+            TypedExpr::NotEqual(lhs, _, _) => lhs.span(),
+            TypedExpr::LessThan(lhs, _, _) => lhs.span(),
+            TypedExpr::GreaterThan(lhs, _, _) => lhs.span(),
+            TypedExpr::LessThanOrEqual(lhs, _, _) => lhs.span(),
+            TypedExpr::GreaterThanOrEqual(lhs, _, _) => lhs.span(),
+            TypedExpr::LogicalAnd(lhs, _, _) => lhs.span(),
+            TypedExpr::LogicalOr(lhs, _, _) => lhs.span(),
+            TypedExpr::BitwiseOr(lhs, _, _) => lhs.span(),
+            TypedExpr::BitwiseXor(lhs, _, _) => lhs.span(),
+            TypedExpr::BitwiseAnd(lhs, _, _) => lhs.span(),
+            TypedExpr::LeftShift(lhs, _, _) => lhs.span(),
+            TypedExpr::RightShift(lhs, _, _) => lhs.span(),
+            TypedExpr::Comma(lhs, _, _) => lhs.span(),
+            TypedExpr::Neg(expr, _) => expr.span(),
+            TypedExpr::LogicalNot(expr, _) => expr.span(),
+            TypedExpr::BitwiseNot(expr, _) => expr.span(),
+            TypedExpr::Sizeof(expr, _) => expr.span(),
+            TypedExpr::Deref(expr, _) => expr.span(),
+            TypedExpr::AddressOf(expr, _) => expr.span(),
+            TypedExpr::SizeofType(_, _) => todo!(),
+            TypedExpr::Ternary(cond, _, _, _) => cond.span(),
+            TypedExpr::Member(expr, _, _) => expr.span(),
+            TypedExpr::PointerMember(expr, _, _) => expr.span(),
+            TypedExpr::InitializerList(_, _) => todo!(),
+            TypedExpr::ExplicitCast(_, expr, _) => expr.span(),
+            TypedExpr::ImplicitCast(_, expr, _) => expr.span(),
+            TypedExpr::CompoundLiteral(_, _, _) => todo!(),
+            TypedExpr::PreIncrement(expr, _) => expr.span(),
+            TypedExpr::PreDecrement(expr, _) => expr.span(),
+            TypedExpr::PostIncrement(expr, _) => expr.span(),
+            TypedExpr::PostDecrement(expr, _) => expr.span(),
+        }
+    }
 }
 
 /// Represents a typed C designator for initializers.
@@ -441,6 +548,7 @@ pub enum TypedInitializer {
     /// An initializer list, e.g., `{ [0] = 1, .x = 2 }`.
     List(Vec<(Vec<TypedDesignator>, Box<TypedInitializer>)>),
 }
+
 
 /// Represents a typed declarator, which includes the type modifiers (pointers, arrays) and the identifier.
 #[derive(Debug, PartialEq, Clone)]

@@ -11,6 +11,7 @@ use crate::parser::Parser;
 use crate::parser::ast::{Expr, Function, Program, Stmt, Type};
 use crate::preprocessor::Preprocessor;
 use crate::preprocessor::lexer::Lexer;
+use crate::semantic::SemanticAnalyzer;
 use crate::preprocessor::token::{KeywordKind, Token, TokenKind};
 
 use std::fs;
@@ -204,7 +205,10 @@ pub fn create_simple_program_ast() -> Program {
             return_type: Type::Int,
             name: "main".to_string(),
             params: vec![],
-            body: vec![Stmt::Return(Expr::Number(0))],
+            body: vec![Stmt::Return(Expr::Number(
+                0,
+                crate::common::SourceSpan::default(),
+            ))],
             is_inline: false,
             is_variadic: false,
         }],
@@ -276,8 +280,9 @@ pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> 
             ));
         }
     };
-    match parser.parse() {
-        Ok(_) => Ok(()),
+
+    let ast = match parser.parse() {
+        Ok(ast) => ast,
         Err(err) => {
             let (msg, location) = match err {
                 crate::parser::error::ParserError::UnexpectedToken(tok) => {
@@ -301,7 +306,21 @@ pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> 
                 (Some(filename.to_string()), None)
             };
 
-            Err(Report::new(msg, path, span, false))
+            return Err(Report::new(msg, path, span, false));
+        }
+    };
+
+    let semantic_analyzer = SemanticAnalyzer::with_builtins();
+    match semantic_analyzer.analyze(ast, filename) {
+        Ok(_) => Ok(()),
+        Err(errors) => {
+            let (error, file, span) = errors.into_iter().next().unwrap();
+            Err(Report::new(
+                error.to_string(),
+                Some(file),
+                Some(span),
+                false,
+            ))
         }
     }
 }

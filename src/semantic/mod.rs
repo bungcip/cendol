@@ -181,7 +181,7 @@ impl SemanticAnalyzer {
                             let mut next_value = 0;
                             for (name, value, span) in members {
                                 let val = if let Some(expr) = value {
-                                    if let Expr::Number(num) = **expr {
+                                if let Expr::Number(num, _) = **expr {
                                         num
                                     } else {
                                         self.errors.push((
@@ -347,7 +347,7 @@ impl SemanticAnalyzer {
                         let mut next_value = 0;
                         for (name, value, span) in members {
                             let val = if let Some(expr) = value {
-                                if let Expr::Number(num) = **expr {
+                                if let Expr::Number(num, _) = **expr {
                                     num
                                 } else {
                                     self.errors.push((
@@ -407,7 +407,22 @@ impl SemanticAnalyzer {
                     }
 
                     // Check initializer expression
-                    let typed_initializer = declarator.initializer.map(|init| self.convert_initializer_to_typed(init, filename));
+                    let typed_initializer = declarator.initializer.map(|init| {
+                        let typed_init = self.convert_initializer_to_typed(init, filename);
+                        if let TypedInitializer::Expr(typed_expr) = &typed_init {
+                            if !declarator.ty.is_compatible_with(typed_expr.ty()) {
+                                self.errors.push((
+                                    SemanticError::InvalidInitializer(
+                                        declarator.ty.to_string(),
+                                        typed_expr.ty().to_string(),
+                                    ),
+                                    filename.to_string(),
+                                    typed_expr.span().clone(),
+                                ));
+                            }
+                        }
+                        typed_init
+                    });
 
                     typed_declarators.push(TypedDeclarator {
                         ty: declarator.ty,
@@ -763,9 +778,11 @@ impl SemanticAnalyzer {
                 TypedExpr::CompoundLiteral(Box::new(*ty.clone()), Box::new(typed_initializer), *ty.clone())
             }
             // Literals don't need checking
-            Expr::Number(n) => TypedExpr::Number(n, dummy_ty),
-            Expr::String(s) => TypedExpr::String(s, dummy_ty),
-            Expr::Char(c) => TypedExpr::Char(c, dummy_ty),
+            Expr::Number(n, span) => TypedExpr::Number(n, span, Type::Int),
+            Expr::String(s, span) => {
+                TypedExpr::String(s, span, Type::Pointer(Box::new(Type::Char)))
+            }
+            Expr::Char(c, span) => TypedExpr::Char(c, span, Type::Char),
             Expr::PreIncrement(expr) => {
                 let typed_expr = self.check_expression(*expr, filename);
                 TypedExpr::PreIncrement(Box::new(typed_expr), dummy_ty)
@@ -785,6 +802,7 @@ impl SemanticAnalyzer {
         }
     }
 
+    #[allow(dead_code)]
     fn check_initializer(&mut self, initializer: &Initializer, filename: &str) {
         match initializer {
             Initializer::Expr(expr) => {
@@ -1187,9 +1205,9 @@ pub fn analyze_expr(expr: Expr, symtab: &SymbolTable) -> TypedExpr {
             let promoted_ty = integer_promote(&ty);
             TypedExpr::Variable(name, span, promoted_ty)
         }
-        Expr::Number(n) => TypedExpr::Number(n, Type::Int),
-        Expr::String(s) => TypedExpr::String(s, Type::Pointer(Box::new(Type::Char))),
-        Expr::Char(c) => TypedExpr::Char(c, Type::Char),
+        Expr::Number(n, span) => TypedExpr::Number(n, span, Type::Int),
+        Expr::String(s, span) => TypedExpr::String(s, span, Type::Pointer(Box::new(Type::Char))),
+        Expr::Char(c, span) => TypedExpr::Char(c, span, Type::Char),
         Expr::Call(name, args, span) => {
             // Look up function return type
             let return_ty = symtab
@@ -1218,7 +1236,7 @@ pub fn analyze_expr(expr: Expr, symtab: &SymbolTable) -> TypedExpr {
             let lhs_typed = analyze_expr(*lhs, symtab);
             let rhs_typed = analyze_expr(*rhs, symtab);
             // Apply usual arithmetic conversions for compound assignments
-            let (lhs_conv_ty, rhs_conv_ty) = apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
+            let (_lhs_conv_ty, rhs_conv_ty) = apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
             let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
                 TypedExpr::ImplicitCast(Box::new(rhs_conv_ty.clone()), Box::new(rhs_typed), rhs_conv_ty.clone())
             } else {
@@ -1229,7 +1247,7 @@ pub fn analyze_expr(expr: Expr, symtab: &SymbolTable) -> TypedExpr {
         Expr::AssignSub(lhs, rhs) => {
             let lhs_typed = analyze_expr(*lhs, symtab);
             let rhs_typed = analyze_expr(*rhs, symtab);
-            let (lhs_conv_ty, rhs_conv_ty) = apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
+            let (_lhs_conv_ty, rhs_conv_ty) = apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
             let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
                 TypedExpr::ImplicitCast(Box::new(rhs_conv_ty.clone()), Box::new(rhs_typed), rhs_conv_ty.clone())
             } else {
@@ -1240,7 +1258,7 @@ pub fn analyze_expr(expr: Expr, symtab: &SymbolTable) -> TypedExpr {
         Expr::AssignMul(lhs, rhs) => {
             let lhs_typed = analyze_expr(*lhs, symtab);
             let rhs_typed = analyze_expr(*rhs, symtab);
-            let (lhs_conv_ty, rhs_conv_ty) = apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
+            let (_lhs_conv_ty, rhs_conv_ty) = apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
             let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
                 TypedExpr::ImplicitCast(Box::new(rhs_conv_ty.clone()), Box::new(rhs_typed), rhs_conv_ty.clone())
             } else {
@@ -1251,7 +1269,7 @@ pub fn analyze_expr(expr: Expr, symtab: &SymbolTable) -> TypedExpr {
         Expr::AssignDiv(lhs, rhs) => {
             let lhs_typed = analyze_expr(*lhs, symtab);
             let rhs_typed = analyze_expr(*rhs, symtab);
-            let (lhs_conv_ty, rhs_conv_ty) = apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
+            let (_lhs_conv_ty, rhs_conv_ty) = apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
             let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
                 TypedExpr::ImplicitCast(Box::new(rhs_conv_ty.clone()), Box::new(rhs_typed), rhs_conv_ty.clone())
             } else {
@@ -1262,7 +1280,7 @@ pub fn analyze_expr(expr: Expr, symtab: &SymbolTable) -> TypedExpr {
         Expr::AssignMod(lhs, rhs) => {
             let lhs_typed = analyze_expr(*lhs, symtab);
             let rhs_typed = analyze_expr(*rhs, symtab);
-            let (lhs_conv_ty, rhs_conv_ty) = apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
+            let (_lhs_conv_ty, rhs_conv_ty) = apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
             let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
                 TypedExpr::ImplicitCast(Box::new(rhs_conv_ty.clone()), Box::new(rhs_typed), rhs_conv_ty.clone())
             } else {

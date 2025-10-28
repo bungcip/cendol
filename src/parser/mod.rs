@@ -374,7 +374,7 @@ impl Parser {
                 ty = Type::Array(Box::new(ty), 0); // Unsized array
             } else {
                 let size_expr = self.parse_expr()?;
-                let size = if let Expr::Number(n) = size_expr {
+                let size = if let Expr::Number(n, _) = size_expr {
                     n as usize
                 } else {
                     let token = self.current_token()?;
@@ -652,15 +652,15 @@ impl Parser {
                 self.eat()?;
                 // Strip suffixes like L, U, LL, UU
                 let num_str = n.trim_end_matches(['L', 'U', 'l', 'u']);
-                Ok(Expr::Number(num_str.parse().unwrap()))
+                Ok(Expr::Number(num_str.parse().unwrap(), token.span))
             }
             TokenKind::String(s) => {
                 self.eat()?;
-                Ok(Expr::String(s))
+                Ok(Expr::String(s, token.span))
             }
             TokenKind::Char(s) => {
                 self.eat()?;
-                Ok(Expr::Char(s))
+                Ok(Expr::Char(s, token.span))
             }
             TokenKind::Identifier(name) => {
                 self.eat()?;

@@ -573,10 +573,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                             .module
                             .declare_data(&mangled_name, Linkage::Local, true, false)
                             .unwrap();
-                        self.static_local_variables.insert(
-                            declarator.name.clone(),
-                            (id, declarator.ty.clone()),
-                        );
+                        self.static_local_variables
+                            .insert(declarator.name.clone(), (id, declarator.ty.clone()));
 
                         let mut data_desc = cranelift_module::DataDescription::new();
 

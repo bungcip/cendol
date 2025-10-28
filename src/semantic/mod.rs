@@ -474,22 +474,19 @@ impl SemanticAnalyzer {
                         .initializer
                         .map(|init| self.convert_initializer_to_typed(init, filename));
 
-                    if is_static {
-                        if let Some(ref init) = typed_initializer {
-                            if !is_const_expr(init) {
-                                self.errors.push((
-                                    SemanticError::InvalidStaticInitializer(
-                                        declarator.name.clone(),
-                                    ),
-                                    filename.to_string(),
-                                    SourceSpan::new(
-                                        crate::file::FileId(0),
-                                        SourceLocation::new(crate::file::FileId(0), 0, 0),
-                                        SourceLocation::new(crate::file::FileId(0), 0, 0),
-                                    ),
-                                ));
-                            }
-                        }
+                    if is_static
+                        && let Some(ref init) = typed_initializer
+                        && !is_const_expr(init)
+                    {
+                        self.errors.push((
+                            SemanticError::InvalidStaticInitializer(declarator.name.clone()),
+                            filename.to_string(),
+                            SourceSpan::new(
+                                crate::file::FileId(0),
+                                SourceLocation::new(crate::file::FileId(0), 0, 0),
+                                SourceLocation::new(crate::file::FileId(0), 0, 0),
+                            ),
+                        ));
                     }
 
                     typed_declarators.push(TypedDeclarator {

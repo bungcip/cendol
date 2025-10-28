@@ -179,7 +179,7 @@ impl SemanticAnalyzer {
                         );
                     }
                 }
-                Stmt::Declaration(ty, declarators) => {
+                Stmt::Declaration(ty, declarators, _is_static) => {
                     if let Type::Enum(_name, members) = ty
                         && !members.is_empty()
                     {
@@ -347,7 +347,7 @@ impl SemanticAnalyzer {
     /// Checks a statement for semantic errors and returns a typed statement.
     fn check_statement(&mut self, stmt: Stmt, filename: &str) -> TypedStmt {
         match stmt {
-            Stmt::Declaration(ty, declarators) => {
+            Stmt::Declaration(ty, declarators, is_static) => {
                 if let Type::Enum(_name, members) = &ty {
                     // Only process enum constants for local enums (inside functions)
                     // Global enums are already processed in collect_symbols
@@ -418,13 +418,31 @@ impl SemanticAnalyzer {
                         .initializer
                         .map(|init| self.convert_initializer_to_typed(init, filename));
 
+                    if is_static {
+                        if let Some(ref init) = typed_initializer {
+                            if !is_const_expr(init) {
+                                self.errors.push((
+                                    SemanticError::InvalidStaticInitializer(
+                                        declarator.name.clone(),
+                                    ),
+                                    filename.to_string(),
+                                    SourceSpan::new(
+                                        crate::file::FileId(0),
+                                        SourceLocation::new(crate::file::FileId(0), 0, 0),
+                                        SourceLocation::new(crate::file::FileId(0), 0, 0),
+                                    ),
+                                ));
+                            }
+                        }
+                    }
+
                     typed_declarators.push(TypedDeclarator {
                         ty: declarator.ty,
                         name: declarator.name,
                         initializer: typed_initializer,
                     });
                 }
-                TypedStmt::Declaration(ty, typed_declarators)
+                TypedStmt::Declaration(ty, typed_declarators, is_static)
             }
             Stmt::Expr(expr) => {
                 let typed_expr = self.check_expression(expr, filename);
@@ -1142,5 +1160,17 @@ impl SemanticAnalyzer {
                 _ => (Type::Int, Type::Int),
             }
         }
+    }
+}
+
+fn is_const_expr(initializer: &TypedInitializer) -> bool {
+    match initializer {
+        TypedInitializer::Expr(expr) => match **expr {
+            TypedExpr::Number(_, _) => true,
+            _ => false,
+        },
+        TypedInitializer::List(list) => list
+            .iter()
+            .all(|(_, initializer)| is_const_expr(initializer)),
     }
 }

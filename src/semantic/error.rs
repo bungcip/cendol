@@ -27,6 +27,10 @@ pub enum SemanticError {
     #[error("Invalid enum initializer for `{0}`")]
     InvalidEnumInitializer(String),
 
+    /// An invalid static initializer was used.
+    #[error("Invalid static initializer for `{0}`")]
+    InvalidStaticInitializer(String),
+
     /// Attempted to dereference a non-pointer type.
     #[error("Cannot dereference non-pointer type `{0:?}`")]
     NotAPointer(crate::parser::ast::Type),

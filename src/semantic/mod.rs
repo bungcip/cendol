@@ -1,5 +1,5 @@
 use crate::common::{SourceLocation, SourceSpan};
-use crate::parser::ast::{Designator, ForInit, Function, Initializer, Expr, Program, Stmt, Type, TypedExpr, TypedStmt, TypedFunctionDecl, TypedTranslationUnit, TypedDesignator, TypedInitializer, TypedDeclarator, TypedForInit};
+use crate::parser::ast::{BinOp, Designator, ForInit, Initializer, Expr, Program, Stmt, Type, TypedExpr, TypedStmt, TypedFunctionDecl, TypedTranslationUnit, TypedDesignator, TypedInitializer, TypedDeclarator, TypedForInit};
 use crate::semantic::error::SemanticError;
 use std::collections::HashMap;
 
@@ -530,26 +530,381 @@ impl SemanticAnalyzer {
         }
     }
 
+    /// Checks a binary expression for semantic errors and returns a typed expression.
+    fn check_binary_expression(
+        &mut self,
+        op: BinOp,
+        lhs: &Expr,
+        rhs: &Expr,
+        filename: &str,
+    ) -> TypedExpr {
+        let lhs_typed = self.check_expression(lhs.clone(), filename);
+        let rhs_typed = self.check_expression(rhs.clone(), filename);
+
+        match op {
+            BinOp::Assign => {
+                if lhs_typed.ty() != rhs_typed.ty() {
+                    let is_lhs_numeric = matches!(lhs_typed.ty(), Type::Int | Type::Char | Type::Short | Type::Long | Type::LongLong | Type::Enum(_, _));
+                    let is_rhs_numeric = matches!(rhs_typed.ty(), Type::Int | Type::Char | Type::Short | Type::Long | Type::LongLong | Type::Enum(_, _));
+
+                    if !is_lhs_numeric || !is_rhs_numeric {
+                        self.errors.push((
+                            SemanticError::TypeMismatch,
+                            filename.to_string(),
+                            SourceSpan::new(
+                                crate::file::FileId(0),
+                                SourceLocation::new(crate::file::FileId(0), 0, 0),
+                                SourceLocation::new(crate::file::FileId(0), 0, 0),
+                            ),
+                        ));
+                    }
+                }
+
+                let cast_rhs = if lhs_typed.ty() == rhs_typed.ty() {
+                    rhs_typed
+                } else {
+                    TypedExpr::ImplicitCast(
+                        Box::new(lhs_typed.ty().clone()),
+                        Box::new(rhs_typed),
+                        lhs_typed.ty().clone(),
+                    )
+                };
+                TypedExpr::Assign(
+                    Box::new(lhs_typed.clone()),
+                    Box::new(cast_rhs),
+                    lhs_typed.ty().clone(),
+                )
+            }
+            BinOp::AssignAdd => {
+                let (_lhs_conv_ty, rhs_conv_ty) =
+                    self.apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
+                let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
+                    TypedExpr::ImplicitCast(
+                        Box::new(rhs_conv_ty.clone()),
+                        Box::new(rhs_typed),
+                        rhs_conv_ty.clone(),
+                    )
+                } else {
+                    rhs_typed
+                };
+                TypedExpr::AssignAdd(
+                    Box::new(lhs_typed.clone()),
+                    Box::new(rhs_cast),
+                    lhs_typed.ty().clone(),
+                )
+            }
+            BinOp::AssignSub => {
+                let (_lhs_conv_ty, rhs_conv_ty) =
+                    self.apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
+                let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
+                    TypedExpr::ImplicitCast(
+                        Box::new(rhs_conv_ty.clone()),
+                        Box::new(rhs_typed),
+                        rhs_conv_ty.clone(),
+                    )
+                } else {
+                    rhs_typed
+                };
+                TypedExpr::AssignSub(
+                    Box::new(lhs_typed.clone()),
+                    Box::new(rhs_cast),
+                    lhs_typed.ty().clone(),
+                )
+            }
+            BinOp::AssignMul => {
+                let (_lhs_conv_ty, rhs_conv_ty) =
+                    self.apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
+                let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
+                    TypedExpr::ImplicitCast(
+                        Box::new(rhs_conv_ty.clone()),
+                        Box::new(rhs_typed),
+                        rhs_conv_ty.clone(),
+                    )
+                } else {
+                    rhs_typed
+                };
+                TypedExpr::AssignMul(
+                    Box::new(lhs_typed.clone()),
+                    Box::new(rhs_cast),
+                    lhs_typed.ty().clone(),
+                )
+            }
+            BinOp::AssignDiv => {
+                let (_lhs_conv_ty, rhs_conv_ty) =
+                    self.apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
+                let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
+                    TypedExpr::ImplicitCast(
+                        Box::new(rhs_conv_ty.clone()),
+                        Box::new(rhs_typed),
+                        rhs_conv_ty.clone(),
+                    )
+                } else {
+                    rhs_typed
+                };
+                TypedExpr::AssignDiv(
+                    Box::new(lhs_typed.clone()),
+                    Box::new(rhs_cast),
+                    lhs_typed.ty().clone(),
+                )
+            }
+            BinOp::AssignMod => {
+                let (_lhs_conv_ty, rhs_conv_ty) =
+                    self.apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
+                let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
+                    TypedExpr::ImplicitCast(
+                        Box::new(rhs_conv_ty.clone()),
+                        Box::new(rhs_typed),
+                        rhs_conv_ty.clone(),
+                    )
+                } else {
+                    rhs_typed
+                };
+                TypedExpr::AssignMod(
+                    Box::new(lhs_typed.clone()),
+                    Box::new(rhs_cast),
+                    lhs_typed.ty().clone(),
+                )
+            }
+            BinOp::AssignLeftShift => TypedExpr::AssignLeftShift(
+                Box::new(lhs_typed.clone()),
+                Box::new(rhs_typed),
+                lhs_typed.ty().clone(),
+            ),
+            BinOp::AssignRightShift => TypedExpr::AssignRightShift(
+                Box::new(lhs_typed.clone()),
+                Box::new(rhs_typed),
+                lhs_typed.ty().clone(),
+            ),
+            BinOp::AssignBitwiseAnd => TypedExpr::AssignBitwiseAnd(
+                Box::new(lhs_typed.clone()),
+                Box::new(rhs_typed),
+                lhs_typed.ty().clone(),
+            ),
+            BinOp::AssignBitwiseXor => TypedExpr::AssignBitwiseXor(
+                Box::new(lhs_typed.clone()),
+                Box::new(rhs_typed),
+                lhs_typed.ty().clone(),
+            ),
+            BinOp::AssignBitwiseOr => TypedExpr::AssignBitwiseOr(
+                Box::new(lhs_typed.clone()),
+                Box::new(rhs_typed),
+                lhs_typed.ty().clone(),
+            ),
+            BinOp::Add => {
+                let (lhs_conv_ty, rhs_conv_ty) =
+                    self.apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
+                let lhs_cast = if *lhs_typed.ty() != lhs_conv_ty {
+                    TypedExpr::ImplicitCast(
+                        Box::new(lhs_conv_ty.clone()),
+                        Box::new(lhs_typed),
+                        lhs_conv_ty.clone(),
+                    )
+                } else {
+                    lhs_typed
+                };
+                let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
+                    TypedExpr::ImplicitCast(
+                        Box::new(rhs_conv_ty.clone()),
+                        Box::new(rhs_typed),
+                        rhs_conv_ty.clone(),
+                    )
+                } else {
+                    rhs_typed
+                };
+                let result_ty = match (&lhs_conv_ty, &rhs_conv_ty) {
+                    (Type::Pointer(_), Type::Int) => lhs_conv_ty.clone(),
+                    (Type::Int, Type::Pointer(_)) => rhs_conv_ty.clone(),
+                    _ => lhs_conv_ty.clone(),
+                };
+                TypedExpr::Add(Box::new(lhs_cast), Box::new(rhs_cast), result_ty)
+            }
+            BinOp::Sub => {
+                let (lhs_conv_ty, rhs_conv_ty) =
+                    self.apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
+                let lhs_cast = if *lhs_typed.ty() != lhs_conv_ty {
+                    TypedExpr::ImplicitCast(
+                        Box::new(lhs_conv_ty.clone()),
+                        Box::new(lhs_typed),
+                        lhs_conv_ty.clone(),
+                    )
+                } else {
+                    lhs_typed
+                };
+                let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
+                    TypedExpr::ImplicitCast(
+                        Box::new(rhs_conv_ty.clone()),
+                        Box::new(rhs_typed),
+                        rhs_conv_ty.clone(),
+                    )
+                } else {
+                    rhs_typed
+                };
+                let result_ty = match (&lhs_conv_ty, &rhs_conv_ty) {
+                    (Type::Pointer(_), Type::Int) => lhs_conv_ty.clone(),
+                    (Type::Pointer(_), Type::Pointer(_)) => Type::Int,
+                    _ => lhs_conv_ty.clone(),
+                };
+                TypedExpr::Sub(Box::new(lhs_cast), Box::new(rhs_cast), result_ty)
+            }
+            BinOp::Mul => {
+                let (lhs_conv_ty, rhs_conv_ty) =
+                    self.apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
+                let lhs_cast = if *lhs_typed.ty() != lhs_conv_ty {
+                    TypedExpr::ImplicitCast(
+                        Box::new(lhs_conv_ty.clone()),
+                        Box::new(lhs_typed),
+                        lhs_conv_ty.clone(),
+                    )
+                } else {
+                    lhs_typed
+                };
+                let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
+                    TypedExpr::ImplicitCast(
+                        Box::new(rhs_conv_ty.clone()),
+                        Box::new(rhs_typed),
+                        rhs_conv_ty.clone(),
+                    )
+                } else {
+                    rhs_typed
+                };
+                TypedExpr::Mul(
+                    Box::new(lhs_cast),
+                    Box::new(rhs_cast),
+                    lhs_conv_ty.clone(),
+                )
+            }
+            BinOp::Div => {
+                let (lhs_conv_ty, rhs_conv_ty) =
+                    self.apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
+                let lhs_cast = if *lhs_typed.ty() != lhs_conv_ty {
+                    TypedExpr::ImplicitCast(
+                        Box::new(lhs_conv_ty.clone()),
+                        Box::new(lhs_typed),
+                        lhs_conv_ty.clone(),
+                    )
+                } else {
+                    lhs_typed
+                };
+                let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
+                    TypedExpr::ImplicitCast(
+                        Box::new(rhs_conv_ty.clone()),
+                        Box::new(rhs_typed),
+                        rhs_conv_ty.clone(),
+                    )
+                } else {
+                    rhs_typed
+                };
+                TypedExpr::Div(
+                    Box::new(lhs_cast),
+                    Box::new(rhs_cast),
+                    lhs_conv_ty.clone(),
+                )
+            }
+            BinOp::Mod => {
+                let (lhs_conv_ty, rhs_conv_ty) =
+                    self.apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
+                let lhs_cast = if *lhs_typed.ty() != lhs_conv_ty {
+                    TypedExpr::ImplicitCast(
+                        Box::new(lhs_conv_ty.clone()),
+                        Box::new(lhs_typed),
+                        lhs_conv_ty.clone(),
+                    )
+                } else {
+                    lhs_typed
+                };
+                let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
+                    TypedExpr::ImplicitCast(
+                        Box::new(rhs_conv_ty.clone()),
+                        Box::new(rhs_typed),
+                        rhs_conv_ty.clone(),
+                    )
+                } else {
+                    rhs_typed
+                };
+                TypedExpr::Mod(
+                    Box::new(lhs_cast),
+                    Box::new(rhs_cast),
+                    lhs_conv_ty.clone(),
+                )
+            }
+            BinOp::Equal => {
+                TypedExpr::Equal(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
+            }
+            BinOp::NotEqual => {
+                TypedExpr::NotEqual(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
+            }
+            BinOp::LessThan => {
+                TypedExpr::LessThan(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
+            }
+            BinOp::GreaterThan => {
+                TypedExpr::GreaterThan(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
+            }
+            BinOp::LessThanOrEqual => {
+                TypedExpr::LessThanOrEqual(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
+            }
+            BinOp::GreaterThanOrEqual => {
+                TypedExpr::GreaterThanOrEqual(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
+            }
+            BinOp::LogicalAnd => {
+                TypedExpr::LogicalAnd(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
+            }
+            BinOp::LogicalOr => {
+                TypedExpr::LogicalOr(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
+            }
+            BinOp::BitwiseOr => {
+                TypedExpr::BitwiseOr(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
+            }
+            BinOp::BitwiseXor => {
+                TypedExpr::BitwiseXor(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
+            }
+            BinOp::BitwiseAnd => {
+                TypedExpr::BitwiseAnd(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
+            }
+            BinOp::LeftShift => TypedExpr::LeftShift(
+                Box::new(lhs_typed.clone()),
+                Box::new(rhs_typed),
+                lhs_typed.ty().clone(),
+            ),
+            BinOp::RightShift => TypedExpr::RightShift(
+                Box::new(lhs_typed.clone()),
+                Box::new(rhs_typed),
+                lhs_typed.ty().clone(),
+            ),
+            BinOp::Comma => TypedExpr::Comma(
+                Box::new(lhs_typed),
+                Box::new(rhs_typed.clone()),
+                rhs_typed.ty().clone(),
+            ),
+        }
+    }
+
     /// Checks an expression for semantic errors and returns a typed expression.
     fn check_expression(&mut self, expr: Expr, filename: &str) -> TypedExpr {
-        // For now, we'll use a dummy type (Int) for all expressions. In a full implementation,
-        // this would perform proper type checking and inference.
-        let dummy_ty = Type::Int;
+        if let Some((op, lhs, rhs)) = expr.get_binary_expr() {
+            return self.check_binary_expression(op, lhs, rhs, filename);
+        }
 
         match expr {
             Expr::Variable(name, location) => {
-                if !self.symbol_table.contains_key(&name) && !self.enum_constants.contains_key(&name)
-                {
+                if !self.symbol_table.contains_key(&name) && !self.enum_constants.contains_key(&name) {
                     self.errors.push((
                         SemanticError::UndefinedVariable(name.clone()),
                         filename.to_string(),
                         location.clone(),
                     ));
                 }
-                TypedExpr::Variable(name, location, dummy_ty)
+                let ty = self
+                    .symbol_table
+                    .lookup(&name)
+                    .map(|s| s.ty.clone())
+                    .unwrap_or(Type::Int);
+                let promoted_ty = self.integer_promote(&ty);
+                TypedExpr::Variable(name, location, promoted_ty)
             }
+            Expr::Number(n) => TypedExpr::Number(n, Type::Int),
+            Expr::String(s) => TypedExpr::String(s, Type::Pointer(Box::new(Type::Char))),
+            Expr::Char(c) => TypedExpr::Char(c, Type::Char),
             Expr::Call(name, args, location) => {
-                // Check if function exists
                 if !self.symbol_table.contains_key(&name) {
                     self.errors.push((
                         SemanticError::UndefinedFunction(name.clone()),
@@ -557,213 +912,104 @@ impl SemanticAnalyzer {
                         location.clone(),
                     ));
                 }
-
-                // Check arguments
-                let typed_args: Vec<TypedExpr> = args.into_iter().map(|arg| self.check_expression(arg, filename)).collect();
-
-                TypedExpr::Call(name, typed_args, location, dummy_ty)
-            }
-            Expr::Assign(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::Assign(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::AssignAdd(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::AssignAdd(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::AssignSub(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::AssignSub(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::AssignMul(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::AssignMul(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::AssignDiv(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::AssignDiv(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::AssignMod(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::AssignMod(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::AssignLeftShift(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::AssignLeftShift(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::AssignRightShift(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::AssignRightShift(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::AssignBitwiseAnd(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::AssignBitwiseAnd(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::AssignBitwiseXor(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::AssignBitwiseXor(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::AssignBitwiseOr(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::AssignBitwiseOr(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::Add(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::Add(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::Sub(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::Sub(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::Mul(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::Mul(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::Div(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::Div(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::Mod(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::Mod(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::Equal(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::Equal(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::NotEqual(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::NotEqual(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::LessThan(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::LessThan(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::GreaterThan(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::GreaterThan(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::LessThanOrEqual(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::LessThanOrEqual(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::GreaterThanOrEqual(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::GreaterThanOrEqual(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::LogicalAnd(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::LogicalAnd(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::LogicalOr(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::LogicalOr(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::BitwiseOr(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::BitwiseOr(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::BitwiseXor(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::BitwiseXor(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::BitwiseAnd(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::BitwiseAnd(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::LeftShift(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::LeftShift(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::RightShift(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::RightShift(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
-            }
-            Expr::Comma(lhs, rhs) => {
-                let typed_lhs = self.check_expression(*lhs, filename);
-                let typed_rhs = self.check_expression(*rhs, filename);
-                TypedExpr::Comma(Box::new(typed_lhs), Box::new(typed_rhs), dummy_ty)
+                let return_ty = self
+                    .symbol_table
+                    .lookup(&name)
+                    .map(|s| s.ty.clone())
+                    .unwrap_or(Type::Int);
+                let typed_args = args
+                    .into_iter()
+                    .map(|arg| self.check_expression(arg, filename))
+                    .collect::<Vec<_>>();
+                TypedExpr::Call(name, typed_args, location, return_ty)
             }
             Expr::Neg(expr) => {
-                let typed_expr = self.check_expression(*expr, filename);
-                TypedExpr::Neg(Box::new(typed_expr), dummy_ty)
+                let typed = self.check_expression(*expr, filename);
+                TypedExpr::Neg(Box::new(typed.clone()), typed.ty().clone())
             }
             Expr::LogicalNot(expr) => {
-                let typed_expr = self.check_expression(*expr, filename);
-                TypedExpr::LogicalNot(Box::new(typed_expr), dummy_ty)
+                let typed = self.check_expression(*expr, filename);
+                TypedExpr::LogicalNot(Box::new(typed), Type::Int)
             }
             Expr::BitwiseNot(expr) => {
-                let typed_expr = self.check_expression(*expr, filename);
-                TypedExpr::BitwiseNot(Box::new(typed_expr), dummy_ty)
+                let typed = self.check_expression(*expr, filename);
+                TypedExpr::BitwiseNot(Box::new(typed.clone()), typed.ty().clone())
             }
             Expr::Sizeof(expr) => {
-                let typed_expr = self.check_expression(*expr, filename);
-                TypedExpr::Sizeof(Box::new(typed_expr), dummy_ty)
+                let _typed = self.check_expression(*expr, filename);
+                TypedExpr::Sizeof(Box::new(_typed), Type::Int)
             }
             Expr::Deref(expr) => {
-                let typed_expr = self.check_expression(*expr, filename);
-                TypedExpr::Deref(Box::new(typed_expr), dummy_ty)
+                let typed = self.check_expression(*expr, filename);
+                let result_ty = match typed.ty().clone() {
+                    Type::Pointer(base_ty) => *base_ty,
+                    Type::Array(elem_ty, _) => *elem_ty,
+                    other_ty => {
+                        self.errors.push((
+                            SemanticError::NotAPointer(other_ty),
+                            filename.to_string(),
+                            SourceSpan::new(
+                                crate::file::FileId(0),
+                                SourceLocation::new(crate::file::FileId(0), 0, 0),
+                                SourceLocation::new(crate::file::FileId(0), 0, 0),
+                            ),
+                        ));
+                        Type::Int
+                    }
+                };
+                TypedExpr::Deref(Box::new(typed), result_ty)
             }
             Expr::AddressOf(expr) => {
-                let typed_expr = self.check_expression(*expr, filename);
-                TypedExpr::AddressOf(Box::new(typed_expr), dummy_ty)
+                let typed = self.check_expression(*expr, filename);
+                TypedExpr::AddressOf(
+                    Box::new(typed.clone()),
+                    Type::Pointer(Box::new(typed.ty().clone())),
+                )
             }
-            Expr::SizeofType(ty) => {
-                TypedExpr::SizeofType(ty, dummy_ty)
-            }
+            Expr::SizeofType(ty) => TypedExpr::SizeofType(ty, Type::Int),
             Expr::Ternary(cond, then_expr, else_expr) => {
-                let typed_cond = self.check_expression(*cond, filename);
-                let typed_then = self.check_expression(*then_expr, filename);
-                let typed_else = self.check_expression(*else_expr, filename);
-                TypedExpr::Ternary(Box::new(typed_cond), Box::new(typed_then), Box::new(typed_else), dummy_ty)
+                let cond_typed = self.check_expression(*cond, filename);
+                let then_typed = self.check_expression(*then_expr, filename);
+                let else_typed = self.check_expression(*else_expr, filename);
+                let result_ty = if then_typed.ty() == else_typed.ty() {
+                    then_typed.ty().clone()
+                } else {
+                    Type::Int
+                };
+                TypedExpr::Ternary(
+                    Box::new(cond_typed),
+                    Box::new(then_typed),
+                    Box::new(else_typed),
+                    result_ty,
+                )
             }
             Expr::Member(expr, member) => {
-                let typed_expr = self.check_expression(*expr, filename);
-                TypedExpr::Member(Box::new(typed_expr), member, dummy_ty)
+                let typed = self.check_expression(*expr, filename);
+                TypedExpr::Member(Box::new(typed), member, Type::Int)
             }
             Expr::PointerMember(expr, member) => {
-                let typed_expr = self.check_expression(*expr, filename);
-                TypedExpr::PointerMember(Box::new(typed_expr), member, dummy_ty)
+                let typed = self.check_expression(*expr, filename);
+                TypedExpr::PointerMember(Box::new(typed), member, Type::Int)
             }
             Expr::InitializerList(list) => {
-                let typed_list = list.into_iter().map(|(designators, initializer)| {
-                    let typed_designators = designators.into_iter().map(|d| match d {
-                        Designator::Index(expr) => TypedDesignator::Index(Box::new(self.check_expression(*expr, filename))),
-                        Designator::Member(name) => TypedDesignator::Member(name),
-                    }).collect();
-                    let typed_initializer = self.convert_initializer_to_typed(*initializer, filename);
-                    (typed_designators, Box::new(typed_initializer))
-                }).collect();
-                TypedExpr::InitializerList(typed_list, dummy_ty)
+                let typed_list = list
+                    .into_iter()
+                    .map(|(designators, initializer)| {
+                        let typed_designators = designators
+                            .into_iter()
+                            .map(|d| match d {
+                                Designator::Index(expr) => {
+                                    TypedDesignator::Index(Box::new(self.check_expression(*expr, filename)))
+                                }
+                                Designator::Member(name) => TypedDesignator::Member(name),
+                            })
+                            .collect();
+                        let typed_initializer =
+                            self.convert_initializer_to_typed(*initializer, filename);
+                        (typed_designators, Box::new(typed_initializer))
+                    })
+                    .collect();
+                TypedExpr::InitializerList(typed_list, Type::Int)
             }
             Expr::ExplicitCast(ty, expr) => {
                 let typed_expr = self.check_expression(*expr, filename);
@@ -775,7 +1021,11 @@ impl SemanticAnalyzer {
             }
             Expr::CompoundLiteral(ty, initializer) => {
                 let typed_initializer = self.convert_initializer_to_typed(*initializer, filename);
-                TypedExpr::CompoundLiteral(Box::new(*ty.clone()), Box::new(typed_initializer), *ty.clone())
+                TypedExpr::CompoundLiteral(
+                    Box::new(*ty.clone()),
+                    Box::new(typed_initializer),
+                    *ty.clone(),
+                )
             }
             // Literals don't need checking
             Expr::Number(n, span) => TypedExpr::Number(n, span, Type::Int),
@@ -784,16 +1034,16 @@ impl SemanticAnalyzer {
             }
             Expr::Char(c, span) => TypedExpr::Char(c, span, Type::Char),
             Expr::PreIncrement(expr) => {
-                let typed_expr = self.check_expression(*expr, filename);
-                TypedExpr::PreIncrement(Box::new(typed_expr), dummy_ty)
+                let typed = self.check_expression(*expr, filename);
+                TypedExpr::PreIncrement(Box::new(typed.clone()), typed.ty().clone())
             }
             Expr::PreDecrement(expr) => {
-                let typed_expr = self.check_expression(*expr, filename);
-                TypedExpr::PreDecrement(Box::new(typed_expr), dummy_ty)
+                let typed = self.check_expression(*expr, filename);
+                TypedExpr::PreDecrement(Box::new(typed.clone()), typed.ty().clone())
             }
             Expr::PostIncrement(expr) => {
-                let typed_expr = self.check_expression(*expr, filename);
-                TypedExpr::PostIncrement(Box::new(typed_expr), dummy_ty)
+                let typed = self.check_expression(*expr, filename);
+                TypedExpr::PostIncrement(Box::new(typed.clone()), typed.ty().clone())
             }
             Expr::PostDecrement(expr) => {
                 let typed_expr = self.check_expression(*expr, filename);
@@ -849,19 +1099,6 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn check_typed_initializer(&mut self, initializer: &TypedInitializer, filename: &str) {
-        match initializer {
-            TypedInitializer::Expr(expr) => {
-                self.check_typed_expression((**expr).clone(), filename);
-            }
-            TypedInitializer::List(list) => {
-                for (_, initializer) in list {
-                    self.check_typed_initializer(initializer, filename);
-                }
-            }
-        }
-    }
-
     fn convert_initializer_to_typed(&mut self, initializer: Initializer, filename: &str) -> TypedInitializer {
         match initializer {
             Initializer::Expr(expr) => {
@@ -882,293 +1119,40 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn check_type(&mut self, ty: &Type, filename: &str) {
+    /// Performs integer promotions on a type.
+    fn integer_promote(&self, ty: &Type) -> Type {
         match ty {
-            Type::Pointer(base_ty) => {
-                self.check_type(base_ty, filename);
+            Type::Bool | Type::Char | Type::UnsignedChar | Type::Short | Type::UnsignedShort => {
+                Type::Int
             }
-            Type::Array(base_ty, _) => {
-                self.check_type(base_ty, filename);
-            }
-            Type::Struct(_, members) => {
-                for member in members {
-                    self.check_type(&member.ty, filename);
-                }
-            }
-            Type::Union(_, members) => {
-                for member in members {
-                    self.check_type(&member.ty, filename);
-                }
-            }
-            _ => {
-                // Primitive types don't need checking
-            }
-        }
-    }
-}
-
-/// Analyzes a translation unit and produces a typed translation unit with resolved types.
-pub fn analyze_translation_unit(unit: Program) -> TypedTranslationUnit {
-    let mut symtab = SymbolTable::new();
-
-    // Collect global symbols
-    for global in &unit.globals {
-        match global {
-            Stmt::Declaration(ty, declarators) => {
-                for declarator in declarators {
-                    symtab.insert(
-                        declarator.name.clone(),
-                        Symbol {
-                            ty: declarator.ty.clone(),
-                            is_function: false,
-                            defined_at: "global".to_string(),
-                        },
-                    );
-                }
-            }
-            Stmt::FunctionDeclaration(ty, name, _, _) => {
-                symtab.insert(
-                    name.clone(),
-                    Symbol {
-                        ty: ty.clone(),
-                        is_function: true,
-                        defined_at: "global".to_string(),
-                    },
-                );
-            }
-            _ => {}
+            _ => ty.clone(),
         }
     }
 
-    // Collect function symbols
-    for function in &unit.functions {
-        symtab.insert(
-            function.name.clone(),
-            Symbol {
-                ty: function.return_type.clone(),
-                is_function: true,
-                defined_at: "global".to_string(),
-            },
-        );
-    }
-
-    // Analyze functions
-    let typed_functions = unit
-        .functions
-        .into_iter()
-        .map(|f| analyze_function(f, &mut symtab))
-        .collect();
-
-    // Analyze global statements
-    let typed_globals = unit
-        .globals
-        .into_iter()
-        .map(|s| analyze_stmt(s, &mut symtab))
-        .collect();
-
-    TypedTranslationUnit {
-        globals: typed_globals,
-        functions: typed_functions,
-    }
-}
-
-/// Converts an initializer to a typed initializer using the analyze functions.
-fn convert_initializer_to_typed_analyze(initializer: Initializer, symtab: &SymbolTable) -> TypedInitializer {
-    match initializer {
-        Initializer::Expr(expr) => {
-            let typed_expr = analyze_expr(*expr, symtab);
-            TypedInitializer::Expr(Box::new(typed_expr))
+    /// Applies usual arithmetic conversions to two types.
+    fn apply_usual_arithmetic_conversions(&self, lhs_ty: &Type, rhs_ty: &Type) -> (Type, Type) {
+        // If both types are the same, no conversion needed
+        if lhs_ty == rhs_ty {
+            return (lhs_ty.clone(), rhs_ty.clone());
         }
-        Initializer::List(list) => {
-            let typed_list = list.into_iter().map(|(designators, initializer)| {
-                let typed_designators = designators.into_iter().map(|d| match d {
-                    Designator::Index(expr) => TypedDesignator::Index(Box::new(analyze_expr(*expr, symtab))),
-                    Designator::Member(name) => TypedDesignator::Member(name),
-                }).collect();
-                let typed_initializer = convert_initializer_to_typed_analyze(*initializer, symtab);
-                (typed_designators, Box::new(typed_initializer))
-            }).collect();
-            TypedInitializer::List(typed_list)
-        }
-    }
-}
 
-/// Analyzes a function and produces a typed function declaration.
-pub fn analyze_function(func: Function, symtab: &mut SymbolTable) -> TypedFunctionDecl {
-    // Push function scope
-    symtab.push_scope();
+        // If one is long double, convert both to long double
+        // But we don't have long double, so skip
 
-    // Add parameters to symbol table
-    for param in &func.params {
-        symtab.insert(
-            param.name.clone(),
-            Symbol {
-                ty: param.ty.clone(),
-                is_function: false,
-                defined_at: "parameter".to_string(),
-            },
-        );
-    }
+        // If one is double, convert both to double
+        if *lhs_ty == Type::Double || *rhs_ty == Type::Double {
+            return (Type::Double, Type::Double);
+        }
 
-    // Analyze function body
-    let typed_body = func
-        .body
-        .into_iter()
-        .map(|stmt| analyze_stmt(stmt, symtab))
-        .collect();
+        // If one is float, convert both to float
+        if *lhs_ty == Type::Float || *rhs_ty == Type::Float {
+            return (Type::Float, Type::Float);
+        }
 
-    // Pop function scope
-    symtab.pop_scope();
+        // Both are integer types, apply integer conversion rules
+        let lhs_rank = lhs_ty.get_arithmetic_rank();
+        let rhs_rank = rhs_ty.get_arithmetic_rank();
 
-    TypedFunctionDecl {
-        return_type: func.return_type,
-        name: func.name,
-        params: func.params,
-        body: typed_body,
-        is_inline: func.is_inline,
-        is_variadic: func.is_variadic,
-    }
-}
-
-/// Analyzes a statement and produces a typed statement.
-pub fn analyze_stmt(stmt: Stmt, symtab: &mut SymbolTable) -> TypedStmt {
-    match stmt {
-        Stmt::Declaration(ty, declarators) => {
-            // Add declarators to symbol table
-            let mut typed_declarators = Vec::new();
-            for declarator in declarators {
-                symtab.insert(
-                    declarator.name.clone(),
-                    Symbol {
-                        ty: declarator.ty.clone(),
-                        is_function: false,
-                        defined_at: "local".to_string(),
-                    },
-                );
-                let typed_initializer = declarator.initializer.map(|init| convert_initializer_to_typed_analyze(init, symtab));
-                typed_declarators.push(TypedDeclarator {
-                    ty: declarator.ty,
-                    name: declarator.name,
-                    initializer: typed_initializer,
-                });
-            }
-            TypedStmt::Declaration(ty, typed_declarators)
-        }
-        Stmt::Expr(expr) => {
-            let typed_expr = analyze_expr(expr, symtab);
-            TypedStmt::Expr(typed_expr)
-        }
-        Stmt::Return(expr) => {
-            let typed_expr = analyze_expr(expr, symtab);
-            TypedStmt::Return(typed_expr)
-        }
-        Stmt::If(cond, then, otherwise) => {
-            let typed_cond = analyze_expr(*cond, symtab);
-            let typed_then = Box::new(analyze_stmt(*then, symtab));
-            let typed_otherwise = otherwise.map(|o| Box::new(analyze_stmt(*o, symtab)));
-            TypedStmt::If(typed_cond, typed_then, typed_otherwise)
-        }
-        Stmt::While(cond, body) => {
-            let typed_cond = analyze_expr(*cond, symtab);
-            let typed_body = Box::new(analyze_stmt(*body, symtab));
-            TypedStmt::While(typed_cond, typed_body)
-        }
-        Stmt::For(init, cond, inc, body) => {
-            let typed_init = init.map(|i| match i {
-                ForInit::Declaration(ty, name, initializer) => {
-                    symtab.insert(
-                        name.clone(),
-                        Symbol {
-                            ty: ty.clone(),
-                            is_function: false,
-                            defined_at: "for".to_string(),
-                        },
-                    );
-                    let typed_initializer = initializer.map(|init| convert_initializer_to_typed_analyze(init, symtab));
-                    TypedForInit::Declaration(ty, name, typed_initializer)
-                }
-                ForInit::Expr(expr) => TypedForInit::Expr(analyze_expr(expr, symtab)),
-            });
-
-            let typed_cond = cond.map(|c| analyze_expr(*c, symtab));
-            let typed_inc = inc.map(|i| analyze_expr(*i, symtab));
-            let typed_body = Box::new(analyze_stmt(*body, symtab));
-
-            TypedStmt::For(typed_init, typed_cond, typed_inc, typed_body)
-        }
-        Stmt::Block(stmts) => {
-            symtab.push_scope();
-            let typed_stmts = stmts
-                .into_iter()
-                .map(|s| analyze_stmt(s, symtab))
-                .collect();
-            symtab.pop_scope();
-            TypedStmt::Block(typed_stmts)
-        }
-        Stmt::Switch(expr, body) => {
-            let typed_expr = analyze_expr(*expr, symtab);
-            let typed_body = Box::new(analyze_stmt(*body, symtab));
-            TypedStmt::Switch(typed_expr, typed_body)
-        }
-        Stmt::Case(expr, body) => {
-            let typed_expr = analyze_expr(*expr, symtab);
-            let typed_body = Box::new(analyze_stmt(*body, symtab));
-            TypedStmt::Case(typed_expr, typed_body)
-        }
-        Stmt::Default(body) => {
-            let typed_body = Box::new(analyze_stmt(*body, symtab));
-            TypedStmt::Default(typed_body)
-        }
-        Stmt::Label(label, body) => {
-            let typed_body = Box::new(analyze_stmt(*body, symtab));
-            TypedStmt::Label(label, typed_body)
-        }
-        Stmt::Goto(label) => TypedStmt::Goto(label),
-        Stmt::FunctionDeclaration(ty, name, params, is_variadic) => {
-            TypedStmt::FunctionDeclaration(ty, name, params, is_variadic)
-        }
-        Stmt::Break => TypedStmt::Break,
-        Stmt::Continue => TypedStmt::Continue,
-        Stmt::DoWhile(body, cond) => {
-            let typed_body = Box::new(analyze_stmt(*body, symtab));
-            let typed_cond = analyze_expr(*cond, symtab);
-            TypedStmt::DoWhile(typed_body, typed_cond)
-        }
-        Stmt::Empty => TypedStmt::Empty,
-    }
-}
-
-/// Performs integer promotions on a type.
-fn integer_promote(ty: &Type) -> Type {
-    match ty {
-        Type::Bool | Type::Char | Type::UnsignedChar | Type::Short | Type::UnsignedShort => Type::Int,
-        _ => ty.clone(),
-    }
-}
-
-/// Applies usual arithmetic conversions to two types.
-fn apply_usual_arithmetic_conversions(lhs_ty: &Type, rhs_ty: &Type) -> (Type, Type) {
-    // If both types are the same, no conversion needed
-    if lhs_ty == rhs_ty {
-        return (lhs_ty.clone(), rhs_ty.clone());
-    }
-
-    // If one is long double, convert both to long double
-    // But we don't have long double, so skip
-
-    // If one is double, convert both to double
-    if *lhs_ty == Type::Double || *rhs_ty == Type::Double {
-        return (Type::Double, Type::Double);
-    }
-
-    // If one is float, convert both to float
-    if *lhs_ty == Type::Float || *rhs_ty == Type::Float {
-        return (Type::Float, Type::Float);
-    }
-
-    // Both are integer types, apply integer conversion rules
-    let lhs_rank = lhs_ty.get_arithmetic_rank();
-    let rhs_rank = rhs_ty.get_arithmetic_rank();
 
     if lhs_rank > rhs_rank {
         (lhs_ty.clone(), lhs_ty.clone())

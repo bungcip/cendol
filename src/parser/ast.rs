@@ -202,6 +202,40 @@ pub enum Stmt {
 
 /// Represents an expression in the C language.
 #[derive(Debug, PartialEq, Clone)]
+pub enum BinOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Equal,
+    NotEqual,
+    LessThan,
+    GreaterThan,
+    LessThanOrEqual,
+    GreaterThanOrEqual,
+    LeftShift,
+    RightShift,
+    LogicalAnd,
+    LogicalOr,
+    BitwiseOr,
+    BitwiseXor,
+    BitwiseAnd,
+    Assign,
+    AssignAdd,
+    AssignSub,
+    AssignMul,
+    AssignDiv,
+    AssignMod,
+    AssignLeftShift,
+    AssignRightShift,
+    AssignBitwiseAnd,
+    AssignBitwiseXor,
+    AssignBitwiseOr,
+    Comma,
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum Expr {
     /// A number literal.
     Number(i64, crate::common::SourceSpan),
@@ -300,6 +334,44 @@ pub enum Expr {
     CompoundLiteral(Box<Type>, Box<Initializer>),
     /// A comma expression.
     Comma(Box<Expr>, Box<Expr>),
+}
+
+impl Expr {
+    pub fn get_binary_expr(&self) -> Option<(BinOp, &Expr, &Expr)> {
+        match self {
+            Expr::Add(lhs, rhs) => Some((BinOp::Add, lhs, rhs)),
+            Expr::Sub(lhs, rhs) => Some((BinOp::Sub, lhs, rhs)),
+            Expr::Mul(lhs, rhs) => Some((BinOp::Mul, lhs, rhs)),
+            Expr::Div(lhs, rhs) => Some((BinOp::Div, lhs, rhs)),
+            Expr::Mod(lhs, rhs) => Some((BinOp::Mod, lhs, rhs)),
+            Expr::Equal(lhs, rhs) => Some((BinOp::Equal, lhs, rhs)),
+            Expr::NotEqual(lhs, rhs) => Some((BinOp::NotEqual, lhs, rhs)),
+            Expr::LessThan(lhs, rhs) => Some((BinOp::LessThan, lhs, rhs)),
+            Expr::GreaterThan(lhs, rhs) => Some((BinOp::GreaterThan, lhs, rhs)),
+            Expr::LessThanOrEqual(lhs, rhs) => Some((BinOp::LessThanOrEqual, lhs, rhs)),
+            Expr::GreaterThanOrEqual(lhs, rhs) => Some((BinOp::GreaterThanOrEqual, lhs, rhs)),
+            Expr::LeftShift(lhs, rhs) => Some((BinOp::LeftShift, lhs, rhs)),
+            Expr::RightShift(lhs, rhs) => Some((BinOp::RightShift, lhs, rhs)),
+            Expr::LogicalAnd(lhs, rhs) => Some((BinOp::LogicalAnd, lhs, rhs)),
+            Expr::LogicalOr(lhs, rhs) => Some((BinOp::LogicalOr, lhs, rhs)),
+            Expr::BitwiseOr(lhs, rhs) => Some((BinOp::BitwiseOr, lhs, rhs)),
+            Expr::BitwiseXor(lhs, rhs) => Some((BinOp::BitwiseXor, lhs, rhs)),
+            Expr::BitwiseAnd(lhs, rhs) => Some((BinOp::BitwiseAnd, lhs, rhs)),
+            Expr::Assign(lhs, rhs) => Some((BinOp::Assign, lhs, rhs)),
+            Expr::AssignAdd(lhs, rhs) => Some((BinOp::AssignAdd, lhs, rhs)),
+            Expr::AssignSub(lhs, rhs) => Some((BinOp::AssignSub, lhs, rhs)),
+            Expr::AssignMul(lhs, rhs) => Some((BinOp::AssignMul, lhs, rhs)),
+            Expr::AssignDiv(lhs, rhs) => Some((BinOp::AssignDiv, lhs, rhs)),
+            Expr::AssignMod(lhs, rhs) => Some((BinOp::AssignMod, lhs, rhs)),
+            Expr::AssignLeftShift(lhs, rhs) => Some((BinOp::AssignLeftShift, lhs, rhs)),
+            Expr::AssignRightShift(lhs, rhs) => Some((BinOp::AssignRightShift, lhs, rhs)),
+            Expr::AssignBitwiseAnd(lhs, rhs) => Some((BinOp::AssignBitwiseAnd, lhs, rhs)),
+            Expr::AssignBitwiseXor(lhs, rhs) => Some((BinOp::AssignBitwiseXor, lhs, rhs)),
+            Expr::AssignBitwiseOr(lhs, rhs) => Some((BinOp::AssignBitwiseOr, lhs, rhs)),
+            Expr::Comma(lhs, rhs) => Some((BinOp::Comma, lhs, rhs)),
+            _ => None,
+        }
+    }
 }
 
 /// Represents a C designator for initializers.
@@ -414,6 +486,44 @@ pub enum TypedExpr {
 }
 
 impl TypedExpr {
+    pub fn get_binary_expr(&self) -> Option<(BinOp, &TypedExpr, &TypedExpr)> {
+        match self {
+            TypedExpr::Add(lhs, rhs, _) => Some((BinOp::Add, lhs, rhs)),
+            TypedExpr::Sub(lhs, rhs, _) => Some((BinOp::Sub, lhs, rhs)),
+            TypedExpr::Mul(lhs, rhs, _) => Some((BinOp::Mul, lhs, rhs)),
+            TypedExpr::Div(lhs, rhs, _) => Some((BinOp::Div, lhs, rhs)),
+            TypedExpr::Mod(lhs, rhs, _) => Some((BinOp::Mod, lhs, rhs)),
+            TypedExpr::Equal(lhs, rhs, _) => Some((BinOp::Equal, lhs, rhs)),
+            TypedExpr::NotEqual(lhs, rhs, _) => Some((BinOp::NotEqual, lhs, rhs)),
+            TypedExpr::LessThan(lhs, rhs, _) => Some((BinOp::LessThan, lhs, rhs)),
+            TypedExpr::GreaterThan(lhs, rhs, _) => Some((BinOp::GreaterThan, lhs, rhs)),
+            TypedExpr::LessThanOrEqual(lhs, rhs, _) => Some((BinOp::LessThanOrEqual, lhs, rhs)),
+            TypedExpr::GreaterThanOrEqual(lhs, rhs, _) => {
+                Some((BinOp::GreaterThanOrEqual, lhs, rhs))
+            }
+            TypedExpr::LeftShift(lhs, rhs, _) => Some((BinOp::LeftShift, lhs, rhs)),
+            TypedExpr::RightShift(lhs, rhs, _) => Some((BinOp::RightShift, lhs, rhs)),
+            TypedExpr::LogicalAnd(lhs, rhs, _) => Some((BinOp::LogicalAnd, lhs, rhs)),
+            TypedExpr::LogicalOr(lhs, rhs, _) => Some((BinOp::LogicalOr, lhs, rhs)),
+            TypedExpr::BitwiseOr(lhs, rhs, _) => Some((BinOp::BitwiseOr, lhs, rhs)),
+            TypedExpr::BitwiseXor(lhs, rhs, _) => Some((BinOp::BitwiseXor, lhs, rhs)),
+            TypedExpr::BitwiseAnd(lhs, rhs, _) => Some((BinOp::BitwiseAnd, lhs, rhs)),
+            TypedExpr::Assign(lhs, rhs, _) => Some((BinOp::Assign, lhs, rhs)),
+            TypedExpr::AssignAdd(lhs, rhs, _) => Some((BinOp::AssignAdd, lhs, rhs)),
+            TypedExpr::AssignSub(lhs, rhs, _) => Some((BinOp::AssignSub, lhs, rhs)),
+            TypedExpr::AssignMul(lhs, rhs, _) => Some((BinOp::AssignMul, lhs, rhs)),
+            TypedExpr::AssignDiv(lhs, rhs, _) => Some((BinOp::AssignDiv, lhs, rhs)),
+            TypedExpr::AssignMod(lhs, rhs, _) => Some((BinOp::AssignMod, lhs, rhs)),
+            TypedExpr::AssignLeftShift(lhs, rhs, _) => Some((BinOp::AssignLeftShift, lhs, rhs)),
+            TypedExpr::AssignRightShift(lhs, rhs, _) => Some((BinOp::AssignRightShift, lhs, rhs)),
+            TypedExpr::AssignBitwiseAnd(lhs, rhs, _) => Some((BinOp::AssignBitwiseAnd, lhs, rhs)),
+            TypedExpr::AssignBitwiseXor(lhs, rhs, _) => Some((BinOp::AssignBitwiseXor, lhs, rhs)),
+            TypedExpr::AssignBitwiseOr(lhs, rhs, _) => Some((BinOp::AssignBitwiseOr, lhs, rhs)),
+            TypedExpr::Comma(lhs, rhs, _) => Some((BinOp::Comma, lhs, rhs)),
+            _ => None,
+        }
+    }
+
     pub fn ty(&self) -> &Type {
         match self {
             TypedExpr::Number(_, _, ty) => ty,

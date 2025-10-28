@@ -234,6 +234,23 @@ impl AssignOp {
     }
 }
 
+/// Represents logical operators.
+#[derive(Debug, PartialEq, Clone)]
+pub enum LogicalOp {
+    And,
+    Or,
+}
+
+impl LogicalOp {
+    /// Converts a LogicalOp to the corresponding BinOp.
+    pub fn to_binop(&self) -> BinOp {
+        match self {
+            LogicalOp::And => BinOp::LogicalAnd,
+            LogicalOp::Or => BinOp::LogicalOr,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum Expr {
     /// A number literal.
@@ -338,9 +355,19 @@ pub enum Expr {
 }
 
 impl Expr {
+    pub fn get_logical_expr(&self) -> Option<(LogicalOp, &Expr, &Expr)> {
+        match self {
+            Expr::LogicalAnd(lhs, rhs) => Some((LogicalOp::And, lhs, rhs)),
+            Expr::LogicalOr(lhs, rhs) => Some((LogicalOp::Or, lhs, rhs)),
+            _ => None,
+        }
+    }
+
     pub fn get_binary_expr(&self) -> Option<(BinOp, &Expr, &Expr)> {
         if let Some((assign_op, lhs, rhs)) = self.get_assign_expr() {
             Some((assign_op.to_binop(), lhs, rhs))
+        } else if let Some((logical_op, lhs, rhs)) = self.get_logical_expr() {
+            Some((logical_op.to_binop(), lhs, rhs))
         } else {
             match self {
                 Expr::Add(lhs, rhs) => Some((BinOp::Add, lhs, rhs)),
@@ -356,8 +383,6 @@ impl Expr {
                 Expr::GreaterThanOrEqual(lhs, rhs) => Some((BinOp::GreaterThanOrEqual, lhs, rhs)),
                 Expr::LeftShift(lhs, rhs) => Some((BinOp::LeftShift, lhs, rhs)),
                 Expr::RightShift(lhs, rhs) => Some((BinOp::RightShift, lhs, rhs)),
-                Expr::LogicalAnd(lhs, rhs) => Some((BinOp::LogicalAnd, lhs, rhs)),
-                Expr::LogicalOr(lhs, rhs) => Some((BinOp::LogicalOr, lhs, rhs)),
                 Expr::BitwiseOr(lhs, rhs) => Some((BinOp::BitwiseOr, lhs, rhs)),
                 Expr::BitwiseXor(lhs, rhs) => Some((BinOp::BitwiseXor, lhs, rhs)),
                 Expr::BitwiseAnd(lhs, rhs) => Some((BinOp::BitwiseAnd, lhs, rhs)),
@@ -498,9 +523,19 @@ pub enum TypedExpr {
 }
 
 impl TypedExpr {
+    pub fn get_logical_expr(&self) -> Option<(LogicalOp, &TypedExpr, &TypedExpr)> {
+        match self {
+            TypedExpr::LogicalAnd(lhs, rhs, _) => Some((LogicalOp::And, lhs, rhs)),
+            TypedExpr::LogicalOr(lhs, rhs, _) => Some((LogicalOp::Or, lhs, rhs)),
+            _ => None,
+        }
+    }
+
     pub fn get_binary_expr(&self) -> Option<(BinOp, &TypedExpr, &TypedExpr)> {
         if let Some((assign_op, lhs, rhs)) = self.get_assign_expr() {
             Some((assign_op.to_binop(), lhs, rhs))
+        } else if let Some((logical_op, lhs, rhs)) = self.get_logical_expr() {
+            Some((logical_op.to_binop(), lhs, rhs))
         } else {
             match self {
                 TypedExpr::Add(lhs, rhs, _) => Some((BinOp::Add, lhs, rhs)),
@@ -518,8 +553,6 @@ impl TypedExpr {
                 }
                 TypedExpr::LeftShift(lhs, rhs, _) => Some((BinOp::LeftShift, lhs, rhs)),
                 TypedExpr::RightShift(lhs, rhs, _) => Some((BinOp::RightShift, lhs, rhs)),
-                TypedExpr::LogicalAnd(lhs, rhs, _) => Some((BinOp::LogicalAnd, lhs, rhs)),
-                TypedExpr::LogicalOr(lhs, rhs, _) => Some((BinOp::LogicalOr, lhs, rhs)),
                 TypedExpr::BitwiseOr(lhs, rhs, _) => Some((BinOp::BitwiseOr, lhs, rhs)),
                 TypedExpr::BitwiseXor(lhs, rhs, _) => Some((BinOp::BitwiseXor, lhs, rhs)),
                 TypedExpr::BitwiseAnd(lhs, rhs, _) => Some((BinOp::BitwiseAnd, lhs, rhs)),

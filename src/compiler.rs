@@ -199,10 +199,6 @@ impl Compiler {
             }
         };
 
-        // Use the new analyze_translation_unit function
-        use crate::semantic::{analyze_translation_unit};
-        let typed_ast = analyze_translation_unit(ast.clone());
-
         let mut codegen = CodeGen::new();
         codegen.enum_constants = enum_constants;
         let object_bytes = match codegen.compile(typed_ast) {

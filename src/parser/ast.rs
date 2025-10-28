@@ -192,6 +192,41 @@ pub enum BinOp {
     Comma,
 }
 
+/// Represents assignment operators.
+#[derive(Debug, PartialEq, Clone)]
+pub enum AssignOp {
+    Assign,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    LeftShift,
+    RightShift,
+    BitwiseAnd,
+    BitwiseXor,
+    BitwiseOr,
+}
+
+impl AssignOp {
+    /// Converts an AssignOp to the corresponding BinOp.
+    pub fn to_binop(&self) -> BinOp {
+        match self {
+            AssignOp::Assign => BinOp::Assign,
+            AssignOp::Add => BinOp::AssignAdd,
+            AssignOp::Sub => BinOp::AssignSub,
+            AssignOp::Mul => BinOp::AssignMul,
+            AssignOp::Div => BinOp::AssignDiv,
+            AssignOp::Mod => BinOp::AssignMod,
+            AssignOp::LeftShift => BinOp::AssignLeftShift,
+            AssignOp::RightShift => BinOp::AssignRightShift,
+            AssignOp::BitwiseAnd => BinOp::AssignBitwiseAnd,
+            AssignOp::BitwiseXor => BinOp::AssignBitwiseXor,
+            AssignOp::BitwiseOr => BinOp::AssignBitwiseOr,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum Expr {
     /// A number literal.
@@ -295,37 +330,47 @@ pub enum Expr {
 
 impl Expr {
     pub fn get_binary_expr(&self) -> Option<(BinOp, &Expr, &Expr)> {
+        if let Some((assign_op, lhs, rhs)) = self.get_assign_expr() {
+            Some((assign_op.to_binop(), lhs, rhs))
+        } else {
+            match self {
+                Expr::Add(lhs, rhs) => Some((BinOp::Add, lhs, rhs)),
+                Expr::Sub(lhs, rhs) => Some((BinOp::Sub, lhs, rhs)),
+                Expr::Mul(lhs, rhs) => Some((BinOp::Mul, lhs, rhs)),
+                Expr::Div(lhs, rhs) => Some((BinOp::Div, lhs, rhs)),
+                Expr::Mod(lhs, rhs) => Some((BinOp::Mod, lhs, rhs)),
+                Expr::Equal(lhs, rhs) => Some((BinOp::Equal, lhs, rhs)),
+                Expr::NotEqual(lhs, rhs) => Some((BinOp::NotEqual, lhs, rhs)),
+                Expr::LessThan(lhs, rhs) => Some((BinOp::LessThan, lhs, rhs)),
+                Expr::GreaterThan(lhs, rhs) => Some((BinOp::GreaterThan, lhs, rhs)),
+                Expr::LessThanOrEqual(lhs, rhs) => Some((BinOp::LessThanOrEqual, lhs, rhs)),
+                Expr::GreaterThanOrEqual(lhs, rhs) => Some((BinOp::GreaterThanOrEqual, lhs, rhs)),
+                Expr::LeftShift(lhs, rhs) => Some((BinOp::LeftShift, lhs, rhs)),
+                Expr::RightShift(lhs, rhs) => Some((BinOp::RightShift, lhs, rhs)),
+                Expr::LogicalAnd(lhs, rhs) => Some((BinOp::LogicalAnd, lhs, rhs)),
+                Expr::LogicalOr(lhs, rhs) => Some((BinOp::LogicalOr, lhs, rhs)),
+                Expr::BitwiseOr(lhs, rhs) => Some((BinOp::BitwiseOr, lhs, rhs)),
+                Expr::BitwiseXor(lhs, rhs) => Some((BinOp::BitwiseXor, lhs, rhs)),
+                Expr::BitwiseAnd(lhs, rhs) => Some((BinOp::BitwiseAnd, lhs, rhs)),
+                Expr::Comma(lhs, rhs) => Some((BinOp::Comma, lhs, rhs)),
+                _ => None,
+            }
+        }
+    }
+
+    pub fn get_assign_expr(&self) -> Option<(AssignOp, &Expr, &Expr)> {
         match self {
-            Expr::Add(lhs, rhs) => Some((BinOp::Add, lhs, rhs)),
-            Expr::Sub(lhs, rhs) => Some((BinOp::Sub, lhs, rhs)),
-            Expr::Mul(lhs, rhs) => Some((BinOp::Mul, lhs, rhs)),
-            Expr::Div(lhs, rhs) => Some((BinOp::Div, lhs, rhs)),
-            Expr::Mod(lhs, rhs) => Some((BinOp::Mod, lhs, rhs)),
-            Expr::Equal(lhs, rhs) => Some((BinOp::Equal, lhs, rhs)),
-            Expr::NotEqual(lhs, rhs) => Some((BinOp::NotEqual, lhs, rhs)),
-            Expr::LessThan(lhs, rhs) => Some((BinOp::LessThan, lhs, rhs)),
-            Expr::GreaterThan(lhs, rhs) => Some((BinOp::GreaterThan, lhs, rhs)),
-            Expr::LessThanOrEqual(lhs, rhs) => Some((BinOp::LessThanOrEqual, lhs, rhs)),
-            Expr::GreaterThanOrEqual(lhs, rhs) => Some((BinOp::GreaterThanOrEqual, lhs, rhs)),
-            Expr::LeftShift(lhs, rhs) => Some((BinOp::LeftShift, lhs, rhs)),
-            Expr::RightShift(lhs, rhs) => Some((BinOp::RightShift, lhs, rhs)),
-            Expr::LogicalAnd(lhs, rhs) => Some((BinOp::LogicalAnd, lhs, rhs)),
-            Expr::LogicalOr(lhs, rhs) => Some((BinOp::LogicalOr, lhs, rhs)),
-            Expr::BitwiseOr(lhs, rhs) => Some((BinOp::BitwiseOr, lhs, rhs)),
-            Expr::BitwiseXor(lhs, rhs) => Some((BinOp::BitwiseXor, lhs, rhs)),
-            Expr::BitwiseAnd(lhs, rhs) => Some((BinOp::BitwiseAnd, lhs, rhs)),
-            Expr::Assign(lhs, rhs) => Some((BinOp::Assign, lhs, rhs)),
-            Expr::AssignAdd(lhs, rhs) => Some((BinOp::AssignAdd, lhs, rhs)),
-            Expr::AssignSub(lhs, rhs) => Some((BinOp::AssignSub, lhs, rhs)),
-            Expr::AssignMul(lhs, rhs) => Some((BinOp::AssignMul, lhs, rhs)),
-            Expr::AssignDiv(lhs, rhs) => Some((BinOp::AssignDiv, lhs, rhs)),
-            Expr::AssignMod(lhs, rhs) => Some((BinOp::AssignMod, lhs, rhs)),
-            Expr::AssignLeftShift(lhs, rhs) => Some((BinOp::AssignLeftShift, lhs, rhs)),
-            Expr::AssignRightShift(lhs, rhs) => Some((BinOp::AssignRightShift, lhs, rhs)),
-            Expr::AssignBitwiseAnd(lhs, rhs) => Some((BinOp::AssignBitwiseAnd, lhs, rhs)),
-            Expr::AssignBitwiseXor(lhs, rhs) => Some((BinOp::AssignBitwiseXor, lhs, rhs)),
-            Expr::AssignBitwiseOr(lhs, rhs) => Some((BinOp::AssignBitwiseOr, lhs, rhs)),
-            Expr::Comma(lhs, rhs) => Some((BinOp::Comma, lhs, rhs)),
+            Expr::Assign(lhs, rhs) => Some((AssignOp::Assign, lhs, rhs)),
+            Expr::AssignAdd(lhs, rhs) => Some((AssignOp::Add, lhs, rhs)),
+            Expr::AssignSub(lhs, rhs) => Some((AssignOp::Sub, lhs, rhs)),
+            Expr::AssignMul(lhs, rhs) => Some((AssignOp::Mul, lhs, rhs)),
+            Expr::AssignDiv(lhs, rhs) => Some((AssignOp::Div, lhs, rhs)),
+            Expr::AssignMod(lhs, rhs) => Some((AssignOp::Mod, lhs, rhs)),
+            Expr::AssignLeftShift(lhs, rhs) => Some((AssignOp::LeftShift, lhs, rhs)),
+            Expr::AssignRightShift(lhs, rhs) => Some((AssignOp::RightShift, lhs, rhs)),
+            Expr::AssignBitwiseAnd(lhs, rhs) => Some((AssignOp::BitwiseAnd, lhs, rhs)),
+            Expr::AssignBitwiseXor(lhs, rhs) => Some((AssignOp::BitwiseXor, lhs, rhs)),
+            Expr::AssignBitwiseOr(lhs, rhs) => Some((AssignOp::BitwiseOr, lhs, rhs)),
             _ => None,
         }
     }
@@ -444,39 +489,49 @@ pub enum TypedExpr {
 
 impl TypedExpr {
     pub fn get_binary_expr(&self) -> Option<(BinOp, &TypedExpr, &TypedExpr)> {
-        match self {
-            TypedExpr::Add(lhs, rhs, _) => Some((BinOp::Add, lhs, rhs)),
-            TypedExpr::Sub(lhs, rhs, _) => Some((BinOp::Sub, lhs, rhs)),
-            TypedExpr::Mul(lhs, rhs, _) => Some((BinOp::Mul, lhs, rhs)),
-            TypedExpr::Div(lhs, rhs, _) => Some((BinOp::Div, lhs, rhs)),
-            TypedExpr::Mod(lhs, rhs, _) => Some((BinOp::Mod, lhs, rhs)),
-            TypedExpr::Equal(lhs, rhs, _) => Some((BinOp::Equal, lhs, rhs)),
-            TypedExpr::NotEqual(lhs, rhs, _) => Some((BinOp::NotEqual, lhs, rhs)),
-            TypedExpr::LessThan(lhs, rhs, _) => Some((BinOp::LessThan, lhs, rhs)),
-            TypedExpr::GreaterThan(lhs, rhs, _) => Some((BinOp::GreaterThan, lhs, rhs)),
-            TypedExpr::LessThanOrEqual(lhs, rhs, _) => Some((BinOp::LessThanOrEqual, lhs, rhs)),
-            TypedExpr::GreaterThanOrEqual(lhs, rhs, _) => {
-                Some((BinOp::GreaterThanOrEqual, lhs, rhs))
+        if let Some((assign_op, lhs, rhs)) = self.get_assign_expr() {
+            Some((assign_op.to_binop(), lhs, rhs))
+        } else {
+            match self {
+                TypedExpr::Add(lhs, rhs, _) => Some((BinOp::Add, lhs, rhs)),
+                TypedExpr::Sub(lhs, rhs, _) => Some((BinOp::Sub, lhs, rhs)),
+                TypedExpr::Mul(lhs, rhs, _) => Some((BinOp::Mul, lhs, rhs)),
+                TypedExpr::Div(lhs, rhs, _) => Some((BinOp::Div, lhs, rhs)),
+                TypedExpr::Mod(lhs, rhs, _) => Some((BinOp::Mod, lhs, rhs)),
+                TypedExpr::Equal(lhs, rhs, _) => Some((BinOp::Equal, lhs, rhs)),
+                TypedExpr::NotEqual(lhs, rhs, _) => Some((BinOp::NotEqual, lhs, rhs)),
+                TypedExpr::LessThan(lhs, rhs, _) => Some((BinOp::LessThan, lhs, rhs)),
+                TypedExpr::GreaterThan(lhs, rhs, _) => Some((BinOp::GreaterThan, lhs, rhs)),
+                TypedExpr::LessThanOrEqual(lhs, rhs, _) => Some((BinOp::LessThanOrEqual, lhs, rhs)),
+                TypedExpr::GreaterThanOrEqual(lhs, rhs, _) => {
+                    Some((BinOp::GreaterThanOrEqual, lhs, rhs))
+                }
+                TypedExpr::LeftShift(lhs, rhs, _) => Some((BinOp::LeftShift, lhs, rhs)),
+                TypedExpr::RightShift(lhs, rhs, _) => Some((BinOp::RightShift, lhs, rhs)),
+                TypedExpr::LogicalAnd(lhs, rhs, _) => Some((BinOp::LogicalAnd, lhs, rhs)),
+                TypedExpr::LogicalOr(lhs, rhs, _) => Some((BinOp::LogicalOr, lhs, rhs)),
+                TypedExpr::BitwiseOr(lhs, rhs, _) => Some((BinOp::BitwiseOr, lhs, rhs)),
+                TypedExpr::BitwiseXor(lhs, rhs, _) => Some((BinOp::BitwiseXor, lhs, rhs)),
+                TypedExpr::BitwiseAnd(lhs, rhs, _) => Some((BinOp::BitwiseAnd, lhs, rhs)),
+                TypedExpr::Comma(lhs, rhs, _) => Some((BinOp::Comma, lhs, rhs)),
+                _ => None,
             }
-            TypedExpr::LeftShift(lhs, rhs, _) => Some((BinOp::LeftShift, lhs, rhs)),
-            TypedExpr::RightShift(lhs, rhs, _) => Some((BinOp::RightShift, lhs, rhs)),
-            TypedExpr::LogicalAnd(lhs, rhs, _) => Some((BinOp::LogicalAnd, lhs, rhs)),
-            TypedExpr::LogicalOr(lhs, rhs, _) => Some((BinOp::LogicalOr, lhs, rhs)),
-            TypedExpr::BitwiseOr(lhs, rhs, _) => Some((BinOp::BitwiseOr, lhs, rhs)),
-            TypedExpr::BitwiseXor(lhs, rhs, _) => Some((BinOp::BitwiseXor, lhs, rhs)),
-            TypedExpr::BitwiseAnd(lhs, rhs, _) => Some((BinOp::BitwiseAnd, lhs, rhs)),
-            TypedExpr::Assign(lhs, rhs, _) => Some((BinOp::Assign, lhs, rhs)),
-            TypedExpr::AssignAdd(lhs, rhs, _) => Some((BinOp::AssignAdd, lhs, rhs)),
-            TypedExpr::AssignSub(lhs, rhs, _) => Some((BinOp::AssignSub, lhs, rhs)),
-            TypedExpr::AssignMul(lhs, rhs, _) => Some((BinOp::AssignMul, lhs, rhs)),
-            TypedExpr::AssignDiv(lhs, rhs, _) => Some((BinOp::AssignDiv, lhs, rhs)),
-            TypedExpr::AssignMod(lhs, rhs, _) => Some((BinOp::AssignMod, lhs, rhs)),
-            TypedExpr::AssignLeftShift(lhs, rhs, _) => Some((BinOp::AssignLeftShift, lhs, rhs)),
-            TypedExpr::AssignRightShift(lhs, rhs, _) => Some((BinOp::AssignRightShift, lhs, rhs)),
-            TypedExpr::AssignBitwiseAnd(lhs, rhs, _) => Some((BinOp::AssignBitwiseAnd, lhs, rhs)),
-            TypedExpr::AssignBitwiseXor(lhs, rhs, _) => Some((BinOp::AssignBitwiseXor, lhs, rhs)),
-            TypedExpr::AssignBitwiseOr(lhs, rhs, _) => Some((BinOp::AssignBitwiseOr, lhs, rhs)),
-            TypedExpr::Comma(lhs, rhs, _) => Some((BinOp::Comma, lhs, rhs)),
+        }
+    }
+
+    pub fn get_assign_expr(&self) -> Option<(AssignOp, &TypedExpr, &TypedExpr)> {
+        match self {
+            TypedExpr::Assign(lhs, rhs, _) => Some((AssignOp::Assign, lhs, rhs)),
+            TypedExpr::AssignAdd(lhs, rhs, _) => Some((AssignOp::Add, lhs, rhs)),
+            TypedExpr::AssignSub(lhs, rhs, _) => Some((AssignOp::Sub, lhs, rhs)),
+            TypedExpr::AssignMul(lhs, rhs, _) => Some((AssignOp::Mul, lhs, rhs)),
+            TypedExpr::AssignDiv(lhs, rhs, _) => Some((AssignOp::Div, lhs, rhs)),
+            TypedExpr::AssignMod(lhs, rhs, _) => Some((AssignOp::Mod, lhs, rhs)),
+            TypedExpr::AssignLeftShift(lhs, rhs, _) => Some((AssignOp::LeftShift, lhs, rhs)),
+            TypedExpr::AssignRightShift(lhs, rhs, _) => Some((AssignOp::RightShift, lhs, rhs)),
+            TypedExpr::AssignBitwiseAnd(lhs, rhs, _) => Some((AssignOp::BitwiseAnd, lhs, rhs)),
+            TypedExpr::AssignBitwiseXor(lhs, rhs, _) => Some((AssignOp::BitwiseXor, lhs, rhs)),
+            TypedExpr::AssignBitwiseOr(lhs, rhs, _) => Some((AssignOp::BitwiseOr, lhs, rhs)),
             _ => None,
         }
     }

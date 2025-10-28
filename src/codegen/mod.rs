@@ -1,7 +1,7 @@
 use crate::codegen::error::{CodegenError, CodegenResult};
 use crate::parser::ast::{
-    BinOp, Expr, Type, TypedDesignator, TypedExpr, TypedForInit, TypedInitializer, TypedStmt,
-    TypedTranslationUnit,
+    AssignOp, BinOp, Expr, Type, TypedDesignator, TypedExpr, TypedForInit, TypedInitializer,
+    TypedStmt, TypedTranslationUnit,
 };
 use cranelift::prelude::*;
 use cranelift_codegen::ir::Function;
@@ -939,6 +939,34 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         }
     }
 
+    fn translate_assign_expr(
+        &mut self,
+        op: AssignOp,
+        lhs: &TypedExpr,
+        rhs: &TypedExpr,
+        ty: &Type,
+    ) -> Result<(Value, Type), CodegenError> {
+        let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
+        let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
+
+        let lhs_val = self.load_lvalue(addr, &lhs_ty);
+        let result_val = match op {
+            AssignOp::Assign => rhs_val,
+            AssignOp::Add => self.builder.ins().iadd(lhs_val, rhs_val),
+            AssignOp::Sub => self.builder.ins().isub(lhs_val, rhs_val),
+            AssignOp::Mul => self.builder.ins().imul(lhs_val, rhs_val),
+            AssignOp::Div => self.builder.ins().sdiv(lhs_val, rhs_val),
+            AssignOp::Mod => self.builder.ins().srem(lhs_val, rhs_val),
+            AssignOp::BitwiseAnd => self.builder.ins().band(lhs_val, rhs_val),
+            AssignOp::BitwiseOr => self.builder.ins().bor(lhs_val, rhs_val),
+            AssignOp::BitwiseXor => self.builder.ins().bxor(lhs_val, rhs_val),
+            AssignOp::LeftShift => self.builder.ins().ishl(lhs_val, rhs_val),
+            AssignOp::RightShift => self.builder.ins().sshr(lhs_val, rhs_val),
+        };
+        self.translate_assignment(addr, result_val)?;
+        Ok((result_val, ty.clone()))
+    }
+
     fn translate_binary_op(
         &mut self,
         op: BinOp,
@@ -946,92 +974,20 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         rhs: &TypedExpr,
         ty: &Type,
     ) -> Result<(Value, Type), CodegenError> {
+        // Assignment operators are now handled by translate_assign_expr
         match op {
-            BinOp::Assign => {
-                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
-                let (addr, _) = self.translate_lvalue(lhs.clone())?;
-                self.translate_assignment(addr, rhs_val)?;
-                Ok((rhs_val, ty.clone()))
-            }
-            BinOp::AssignAdd => {
-                let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
-                let lhs_val = self.load_lvalue(addr, &lhs_ty);
-                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
-                let result_val = self.builder.ins().iadd(lhs_val, rhs_val);
-                self.translate_assignment(addr, result_val)?;
-                Ok((result_val, ty.clone()))
-            }
-            BinOp::AssignSub => {
-                let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
-                let lhs_val = self.load_lvalue(addr, &lhs_ty);
-                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
-                let result_val = self.builder.ins().isub(lhs_val, rhs_val);
-                self.translate_assignment(addr, result_val)?;
-                Ok((result_val, ty.clone()))
-            }
-            BinOp::AssignMul => {
-                let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
-                let lhs_val = self.load_lvalue(addr, &lhs_ty);
-                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
-                let result_val = self.builder.ins().imul(lhs_val, rhs_val);
-                self.translate_assignment(addr, result_val)?;
-                Ok((result_val, ty.clone()))
-            }
-            BinOp::AssignDiv => {
-                let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
-                let lhs_val = self.load_lvalue(addr, &lhs_ty);
-                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
-                let result_val = self.builder.ins().sdiv(lhs_val, rhs_val);
-                self.translate_assignment(addr, result_val)?;
-                Ok((result_val, ty.clone()))
-            }
-            BinOp::AssignMod => {
-                let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
-                let lhs_val = self.load_lvalue(addr, &lhs_ty);
-                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
-                let result_val = self.builder.ins().srem(lhs_val, rhs_val);
-                self.translate_assignment(addr, result_val)?;
-                Ok((result_val, ty.clone()))
-            }
-            BinOp::AssignBitwiseAnd => {
-                let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
-                let lhs_val = self.load_lvalue(addr, &lhs_ty);
-                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
-                let result_val = self.builder.ins().band(lhs_val, rhs_val);
-                self.translate_assignment(addr, result_val)?;
-                Ok((result_val, ty.clone()))
-            }
-            BinOp::AssignBitwiseOr => {
-                let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
-                let lhs_val = self.load_lvalue(addr, &lhs_ty);
-                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
-                let result_val = self.builder.ins().bor(lhs_val, rhs_val);
-                self.translate_assignment(addr, result_val)?;
-                Ok((result_val, ty.clone()))
-            }
-            BinOp::AssignBitwiseXor => {
-                let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
-                let lhs_val = self.load_lvalue(addr, &lhs_ty);
-                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
-                let result_val = self.builder.ins().bxor(lhs_val, rhs_val);
-                self.translate_assignment(addr, result_val)?;
-                Ok((result_val, ty.clone()))
-            }
-            BinOp::AssignLeftShift => {
-                let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
-                let lhs_val = self.load_lvalue(addr, &lhs_ty);
-                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
-                let result_val = self.builder.ins().ishl(lhs_val, rhs_val);
-                self.translate_assignment(addr, result_val)?;
-                Ok((result_val, ty.clone()))
-            }
-            BinOp::AssignRightShift => {
-                let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
-                let lhs_val = self.load_lvalue(addr, &lhs_ty);
-                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
-                let result_val = self.builder.ins().sshr(lhs_val, rhs_val);
-                self.translate_assignment(addr, result_val)?;
-                Ok((result_val, ty.clone()))
+            BinOp::Assign
+            | BinOp::AssignAdd
+            | BinOp::AssignSub
+            | BinOp::AssignMul
+            | BinOp::AssignDiv
+            | BinOp::AssignMod
+            | BinOp::AssignBitwiseAnd
+            | BinOp::AssignBitwiseOr
+            | BinOp::AssignBitwiseXor
+            | BinOp::AssignLeftShift
+            | BinOp::AssignRightShift => {
+                unreachable!("Assignment operators should be handled by translate_assign_expr")
             }
             BinOp::Add => {
                 let (lhs_val, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
@@ -1258,6 +1214,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     }
 
     fn translate_typed_expr(&mut self, expr: TypedExpr) -> Result<(Value, Type), CodegenError> {
+        if let Some((assign_op, lhs, rhs)) = expr.get_assign_expr() {
+            return self.translate_assign_expr(assign_op, lhs, rhs, expr.ty());
+        }
+
         if let Some((op, lhs, rhs)) = expr.get_binary_expr() {
             return self.translate_binary_op(op, lhs, rhs, expr.ty());
         }

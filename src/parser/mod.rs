@@ -87,6 +87,14 @@ impl Parser {
         self.current_token().map(|t| t.kind)
     }
 
+    fn peek(&self) -> Result<TokenKind, ParserError> {
+        self.tokens
+            .get(self.position + 1)
+            .cloned()
+            .map(|t| t.kind)
+            .ok_or(ParserError::UnexpectedEof)
+    }
+
     /// Consumes the current token and return the last token. will error if current token is eof
     fn eat(&mut self) -> Result<&Token, ParserError> {
         let current = self
@@ -651,9 +659,13 @@ impl Parser {
         match token.kind.clone() {
             TokenKind::Number(n) => {
                 self.eat()?;
-                // Strip suffixes like L, U, LL, UU
-                let num_str = n.trim_end_matches(['L', 'U', 'l', 'u']);
-                Ok(Expr::Number(num_str.parse().unwrap()))
+                if n.contains('.') || n.contains('e') || n.contains('E') {
+                    let num_str = n.trim_end_matches(['f', 'F', 'l', 'L']);
+                    Ok(Expr::FloatNumber(num_str.parse().unwrap()))
+                } else {
+                    let num_str = n.trim_end_matches(['L', 'U', 'l', 'u']);
+                    Ok(Expr::Number(num_str.parse().unwrap()))
+                }
             }
             TokenKind::String(s) => {
                 self.eat()?;
@@ -845,7 +857,10 @@ impl Parser {
             }
             self.expect_punct(TokenKind::Semicolon)?;
             return Ok(Stmt::Declaration(base_type, declarators, true));
-        } else if let Ok(base_type) = self.parse_type_specifier() {
+        }
+
+        if self.is_type_name() && self.peek()? != TokenKind::LeftParen {
+            let base_type = self.parse_type_specifier()?;
             if self.eat_token(&TokenKind::Semicolon)? {
                 return Ok(Stmt::Declaration(base_type, vec![], false));
             }
@@ -860,7 +875,9 @@ impl Parser {
             }
             self.expect_punct(TokenKind::Semicolon)?;
             return Ok(Stmt::Declaration(base_type, declarators, false));
-        } else if let TokenKind::Keyword(k) = token.kind {
+        }
+
+        if let TokenKind::Keyword(k) = token.kind {
             if k == KeywordKind::Return {
                 self.eat()?;
                 let expr = self.parse_expr()?;

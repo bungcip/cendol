@@ -1,3 +1,5 @@
+use crate::common::SourceSpan;
+
 /// Type alias for initializer lists.
 pub type InitializerList = Vec<(Vec<Designator>, Box<Initializer>)>;
 
@@ -79,6 +81,11 @@ impl Type {
             Type::LongLong | Type::UnsignedLongLong => 6,
             _ => 0,
         }
+    }
+
+    /// Returns `true` if the type is a floating-point type.
+    pub fn is_floating(&self) -> bool {
+        matches!(self, Type::Float | Type::Double)
     }
 
     /// Returns the arithmetic conversion rank for usual arithmetic conversions.
@@ -231,6 +238,8 @@ impl AssignOp {
 pub enum Expr {
     /// A number literal.
     Number(i64),
+    /// A float number literal.
+    FloatNumber(f64),
     /// A string literal.
     String(String),
     /// A character literal.
@@ -433,10 +442,11 @@ pub struct TranslationUnit {
 #[derive(Debug, PartialEq, Clone)]
 pub enum TypedExpr {
     Number(i64, Type),
+    FloatNumber(f64, Type),
     String(String, Type),
     Char(String, Type),
-    Variable(String, crate::common::SourceSpan, Type),
-    Call(String, Vec<TypedExpr>, crate::common::SourceSpan, Type),
+    Variable(String, SourceSpan, Type),
+    Call(String, Vec<TypedExpr>, SourceSpan, Type),
     Assign(Box<TypedExpr>, Box<TypedExpr>, Type),
     AssignAdd(Box<TypedExpr>, Box<TypedExpr>, Type),
     AssignSub(Box<TypedExpr>, Box<TypedExpr>, Type),
@@ -539,6 +549,7 @@ impl TypedExpr {
     pub fn ty(&self) -> &Type {
         match self {
             TypedExpr::Number(_, ty) => ty,
+            TypedExpr::FloatNumber(_, ty) => ty,
             TypedExpr::String(_, ty) => ty,
             TypedExpr::Char(_, ty) => ty,
             TypedExpr::Variable(_, _, ty) => ty,

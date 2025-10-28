@@ -635,6 +635,8 @@ impl SemanticAnalyzer {
                             | Type::Short
                             | Type::Long
                             | Type::LongLong
+                            | Type::Float
+                            | Type::Double
                             | Type::Enum(_, _)
                     );
                     let is_rhs_numeric = matches!(
@@ -644,6 +646,8 @@ impl SemanticAnalyzer {
                             | Type::Short
                             | Type::Long
                             | Type::LongLong
+                            | Type::Float
+                            | Type::Double
                             | Type::Enum(_, _)
                     );
 
@@ -990,6 +994,7 @@ impl SemanticAnalyzer {
                 TypedExpr::Variable(name, location, promoted_ty)
             }
             Expr::Number(n) => TypedExpr::Number(n, Type::Int),
+            Expr::FloatNumber(n) => TypedExpr::FloatNumber(n, Type::Double),
             Expr::String(s) => TypedExpr::String(s, Type::Pointer(Box::new(Type::Char))),
             Expr::Char(c) => TypedExpr::Char(c, Type::Char),
             Expr::Call(name, args, location) => {

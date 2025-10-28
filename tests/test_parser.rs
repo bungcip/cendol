@@ -75,6 +75,7 @@ fn create_bool_program_ast() -> TranslationUnit {
                         name: "a".to_string(),
                         initializer: Some(Initializer::Expr(Box::new(Expr::Number(1)))),
                     }],
+                    false,
                 ),
                 Stmt::Return(Expr::Number(0)),
             ],
@@ -209,6 +210,7 @@ mod tests {
                         initializer: None,
                     },
                 ],
+                false,
             ),
             Stmt::Return(Expr::Number(0)),
         ];

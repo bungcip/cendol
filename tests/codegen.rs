@@ -755,4 +755,16 @@ mod tests {
         let exit_code = compile_and_run(input, "enum").unwrap();
         assert_eq!(exit_code, 0);
     }
+
+    /// Test code generation for dereferencing a compound literal array
+    #[test]
+    fn test_deref_compound_literal_array() {
+        let input = r#"
+        int main() {
+            return *((int[2]){10, 20});
+        }
+        "#;
+        let exit_code = compile_and_run(input, "deref_compound_literal_array").unwrap();
+        assert_eq!(exit_code, 10);
+    }
 }

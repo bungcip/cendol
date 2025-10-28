@@ -567,6 +567,26 @@ impl SemanticAnalyzer {
             Expr::Assign(lhs, rhs) => {
                 let lhs_typed = self.check_expression(*lhs, filename);
                 let rhs_typed = self.check_expression(*rhs, filename);
+
+                // Type check the assignment
+                if lhs_typed.ty() != rhs_typed.ty() {
+                    let is_lhs_numeric = matches!(lhs_typed.ty(), Type::Int | Type::Char | Type::Short | Type::Long | Type::LongLong | Type::Enum(_, _));
+                    let is_rhs_numeric = matches!(rhs_typed.ty(), Type::Int | Type::Char | Type::Short | Type::Long | Type::LongLong | Type::Enum(_, _));
+
+                    if !is_lhs_numeric || !is_rhs_numeric {
+                        self.errors.push((
+                            SemanticError::TypeMismatch,
+                            filename.to_string(),
+                            // FIXME: We need to get span from the expression
+                            SourceSpan::new(
+                                crate::file::FileId(0),
+                                SourceLocation::new(crate::file::FileId(0), 0, 0),
+                                SourceLocation::new(crate::file::FileId(0), 0, 0),
+                            ),
+                        ));
+                    }
+                }
+
                 // Insert implicit cast if types don't match
                 let cast_rhs = if lhs_typed.ty() == rhs_typed.ty() {
                     rhs_typed
@@ -982,11 +1002,24 @@ impl SemanticAnalyzer {
             }
             Expr::Deref(expr) => {
                 let typed = self.check_expression(*expr, filename);
-                let result_ty = match typed.ty() {
-                    Type::Pointer(base_ty) => base_ty.clone(),
-                    _ => Box::new(Type::Int), // Fallback
+                let result_ty = match typed.ty().clone() {
+                    Type::Pointer(base_ty) => *base_ty,
+                    Type::Array(elem_ty, _) => *elem_ty,
+                    other_ty => {
+                        self.errors.push((
+                            SemanticError::NotAPointer(other_ty),
+                            filename.to_string(),
+                            // FIXME: We need to get span from the expression
+                            SourceSpan::new(
+                                crate::file::FileId(0),
+                                SourceLocation::new(crate::file::FileId(0), 0, 0),
+                                SourceLocation::new(crate::file::FileId(0), 0, 0),
+                            ),
+                        ));
+                        Type::Int // Fallback
+                    }
                 };
-                TypedExpr::Deref(Box::new(typed), *result_ty)
+                TypedExpr::Deref(Box::new(typed), result_ty)
             }
             Expr::AddressOf(expr) => {
                 let typed = self.check_expression(*expr, filename);

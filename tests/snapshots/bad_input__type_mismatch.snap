@@ -1,0 +1,5 @@
+---
+source: tests/bad_input.rs
+expression: err.unwrap()
+---
+~

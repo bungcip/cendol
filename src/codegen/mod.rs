@@ -1,5 +1,5 @@
 use crate::codegen::error::{CodegenError, CodegenResult};
-use crate::parser::ast::{Expr,Type, TypedTranslationUnit, TypedStmt, TypedExpr, TypedFunctionDecl, TypedInitializer, TypedDeclarator, TypedDesignator, TypedForInit};
+use crate::parser::ast::{BinOp, Expr,Type, TypedTranslationUnit, TypedStmt, TypedExpr, TypedInitializer, TypedDesignator, TypedForInit};
 use cranelift::prelude::*;
 use cranelift_codegen::Context;
 use cranelift_codegen::ir::types;
@@ -776,7 +776,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let (ptr, _) = self.translate_typed_expr(*ptr)?;
                 Ok((ptr, ty))
             }
-            TypedExpr::Member(expr, member, ty) => {
+            TypedExpr::Member(expr, member, _ty) => {
                 let (ptr, expr_ty) = self.translate_typed_expr(*expr)?;
                 let s = self.get_real_type(&expr_ty)?;
                 if let Type::Struct(_, members) = s {
@@ -904,7 +904,329 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         }
     }
 
+    fn translate_binary_op(
+        &mut self,
+        op: BinOp,
+        lhs: &TypedExpr,
+        rhs: &TypedExpr,
+        ty: &Type,
+    ) -> Result<(Value, Type), CodegenError> {
+        match op {
+            BinOp::Assign => {
+                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
+                let (addr, _) = self.translate_lvalue(lhs.clone())?;
+                self.translate_assignment(addr, rhs_val)?;
+                Ok((rhs_val, ty.clone()))
+            }
+            BinOp::AssignAdd => {
+                let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
+                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
+                let result_val = self.builder.ins().iadd(lhs_val, rhs_val);
+                self.translate_assignment(addr, result_val)?;
+                Ok((result_val, ty.clone()))
+            }
+            BinOp::AssignSub => {
+                let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
+                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
+                let result_val = self.builder.ins().isub(lhs_val, rhs_val);
+                self.translate_assignment(addr, result_val)?;
+                Ok((result_val, ty.clone()))
+            }
+            BinOp::AssignMul => {
+                let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
+                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
+                let result_val = self.builder.ins().imul(lhs_val, rhs_val);
+                self.translate_assignment(addr, result_val)?;
+                Ok((result_val, ty.clone()))
+            }
+            BinOp::AssignDiv => {
+                let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
+                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
+                let result_val = self.builder.ins().sdiv(lhs_val, rhs_val);
+                self.translate_assignment(addr, result_val)?;
+                Ok((result_val, ty.clone()))
+            }
+            BinOp::AssignMod => {
+                let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
+                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
+                let result_val = self.builder.ins().srem(lhs_val, rhs_val);
+                self.translate_assignment(addr, result_val)?;
+                Ok((result_val, ty.clone()))
+            }
+            BinOp::AssignBitwiseAnd => {
+                let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
+                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
+                let result_val = self.builder.ins().band(lhs_val, rhs_val);
+                self.translate_assignment(addr, result_val)?;
+                Ok((result_val, ty.clone()))
+            }
+            BinOp::AssignBitwiseOr => {
+                let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
+                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
+                let result_val = self.builder.ins().bor(lhs_val, rhs_val);
+                self.translate_assignment(addr, result_val)?;
+                Ok((result_val, ty.clone()))
+            }
+            BinOp::AssignBitwiseXor => {
+                let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
+                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
+                let result_val = self.builder.ins().bxor(lhs_val, rhs_val);
+                self.translate_assignment(addr, result_val)?;
+                Ok((result_val, ty.clone()))
+            }
+            BinOp::AssignLeftShift => {
+                let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
+                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
+                let result_val = self.builder.ins().ishl(lhs_val, rhs_val);
+                self.translate_assignment(addr, result_val)?;
+                Ok((result_val, ty.clone()))
+            }
+            BinOp::AssignRightShift => {
+                let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
+                let lhs_val = self.load_lvalue(addr, &lhs_ty);
+                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
+                let result_val = self.builder.ins().sshr(lhs_val, rhs_val);
+                self.translate_assignment(addr, result_val)?;
+                Ok((result_val, ty.clone()))
+            }
+            BinOp::Add => {
+                let (lhs_val, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
+                let (rhs_val, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
+                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let result_val = match (&lhs_ty, &rhs_ty) {
+                    (Type::Pointer(base_ty), Type::Int) => {
+                        let size = self.get_type_size(base_ty);
+                        let offset = self.builder.ins().imul_imm(rhs_val, size as i64);
+                        self.builder.ins().iadd(lhs_val, offset)
+                    }
+                    (Type::Int, Type::Pointer(base_ty)) => {
+                        let size = self.get_type_size(base_ty);
+                        let offset = self.builder.ins().imul_imm(lhs_val, size as i64);
+                        self.builder.ins().iadd(rhs_val, offset)
+                    }
+                    _ => self.builder.ins().iadd(lhs_val, rhs_val),
+                };
+                let _result_ty = if lhs_ty.is_pointer() {
+                    lhs_ty
+                } else {
+                    common_ty
+                };
+                Ok((result_val, ty.clone()))
+            }
+            BinOp::Sub => {
+                let (lhs_val, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
+                let (rhs_val, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
+                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let result_val = match (&lhs_ty, &rhs_ty) {
+                    (Type::Pointer(base_ty), Type::Int) => {
+                        let size = self.get_type_size(base_ty);
+                        let offset = self.builder.ins().imul_imm(rhs_val, size as i64);
+                        self.builder.ins().isub(lhs_val, offset)
+                    }
+                    (Type::Pointer(lhs_base), Type::Pointer(rhs_base)) if lhs_base == rhs_base => {
+                        let diff = self.builder.ins().isub(lhs_val, rhs_val);
+                        let size = self.get_type_size(lhs_base);
+                        self.builder.ins().sdiv_imm(diff, size as i64)
+                    }
+                    _ => self.builder.ins().isub(lhs_val, rhs_val),
+                };
+                let result_ty = match (&lhs_ty, &rhs_ty) {
+                    (Type::Pointer(_), Type::Pointer(_)) => Type::Int,
+                    (Type::Pointer(_), Type::Int) => lhs_ty,
+                    _ => common_ty,
+                };
+                Ok((result_val, result_ty))
+            }
+            BinOp::Mul => {
+                let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
+                let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
+                let _common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                Ok((self.builder.ins().imul(lhs, rhs), ty.clone()))
+            }
+            BinOp::Div => {
+                let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
+                let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
+                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let result = if common_ty.is_unsigned() {
+                    self.builder.ins().udiv(lhs, rhs)
+                } else {
+                    self.builder.ins().sdiv(lhs, rhs)
+                };
+                Ok((result, ty.clone()))
+            }
+            BinOp::Mod => {
+                let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
+                let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
+                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let result = if common_ty.is_unsigned() {
+                    self.builder.ins().urem(lhs, rhs)
+                } else {
+                    self.builder.ins().srem(lhs, rhs)
+                };
+                Ok((result, ty.clone()))
+            }
+            BinOp::Equal => {
+                let (lhs, _) = self.translate_typed_expr(lhs.clone())?;
+                let (rhs, _) = self.translate_typed_expr(rhs.clone())?;
+                let c = self.builder.ins().icmp(IntCC::Equal, lhs, rhs);
+                Ok((self.builder.ins().uextend(types::I64, c), ty.clone()))
+            }
+            BinOp::NotEqual => {
+                let (lhs, _) = self.translate_typed_expr(lhs.clone())?;
+                let (rhs, _) = self.translate_typed_expr(rhs.clone())?;
+                let c = self.builder.ins().icmp(IntCC::NotEqual, lhs, rhs);
+                Ok((self.builder.ins().uextend(types::I64, c), ty.clone()))
+            }
+            BinOp::LessThan => {
+                let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
+                let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
+                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let cc = if common_ty.is_unsigned() {
+                    IntCC::UnsignedLessThan
+                } else {
+                    IntCC::SignedLessThan
+                };
+                let c = self.builder.ins().icmp(cc, lhs, rhs);
+                Ok((self.builder.ins().uextend(types::I64, c), ty.clone()))
+            }
+            BinOp::GreaterThan => {
+                let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
+                let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
+                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let cc = if common_ty.is_unsigned() {
+                    IntCC::UnsignedGreaterThan
+                } else {
+                    IntCC::SignedGreaterThan
+                };
+                let c = self.builder.ins().icmp(cc, lhs, rhs);
+                Ok((self.builder.ins().uextend(types::I64, c), ty.clone()))
+            }
+            BinOp::LessThanOrEqual => {
+                let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
+                let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
+                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let cc = if common_ty.is_unsigned() {
+                    IntCC::UnsignedLessThanOrEqual
+                } else {
+                    IntCC::SignedLessThanOrEqual
+                };
+                let c = self.builder.ins().icmp(cc, lhs, rhs);
+                Ok((self.builder.ins().uextend(types::I64, c), ty.clone()))
+            }
+            BinOp::GreaterThanOrEqual => {
+                let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
+                let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
+                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let cc = if common_ty.is_unsigned() {
+                    IntCC::UnsignedGreaterThanOrEqual
+                } else {
+                    IntCC::SignedGreaterThanOrEqual
+                };
+                let c = self.builder.ins().icmp(cc, lhs, rhs);
+                Ok((self.builder.ins().uextend(types::I64, c), ty.clone()))
+            }
+            BinOp::LogicalAnd => {
+                let (lhs_val, _) = self.translate_typed_expr(lhs.clone())?;
+                let rhs_block = self.builder.create_block();
+                let true_block = self.builder.create_block();
+                let false_block = self.builder.create_block();
+                let merge_block = self.builder.create_block();
+                self.builder.append_block_param(merge_block, types::I64);
+                self.builder
+                    .ins()
+                    .brif(lhs_val, rhs_block, &[], false_block, &[]);
+                self.switch_to_block(rhs_block);
+                self.builder.seal_block(rhs_block);
+                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
+                self.builder
+                    .ins()
+                    .brif(rhs_val, true_block, &[], false_block, &[]);
+                self.switch_to_block(true_block);
+                self.builder.seal_block(true_block);
+                let one = self.builder.ins().iconst(types::I64, 1);
+                self.builder.ins().jump(merge_block, &[one.into()]);
+                self.switch_to_block(false_block);
+                self.builder.seal_block(false_block);
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                self.builder.ins().jump(merge_block, &[zero.into()]);
+                self.switch_to_block(merge_block);
+                self.builder.seal_block(merge_block);
+                Ok((self.builder.block_params(merge_block)[0], ty.clone()))
+            }
+            BinOp::LogicalOr => {
+                let (lhs_val, _) = self.translate_typed_expr(lhs.clone())?;
+                let rhs_block = self.builder.create_block();
+                let true_block = self.builder.create_block();
+                let false_block = self.builder.create_block();
+                let merge_block = self.builder.create_block();
+                self.builder.append_block_param(merge_block, types::I64);
+                self.builder
+                    .ins()
+                    .brif(lhs_val, true_block, &[], rhs_block, &[]);
+                self.switch_to_block(rhs_block);
+                self.builder.seal_block(rhs_block);
+                let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
+                self.builder
+                    .ins()
+                    .brif(rhs_val, true_block, &[], false_block, &[]);
+                self.switch_to_block(true_block);
+                self.builder.seal_block(true_block);
+                let one = self.builder.ins().iconst(types::I64, 1);
+                self.builder.ins().jump(merge_block, &[one.into()]);
+                self.switch_to_block(false_block);
+                self.builder.seal_block(false_block);
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                self.builder.ins().jump(merge_block, &[zero.into()]);
+                self.switch_to_block(merge_block);
+                self.builder.seal_block(merge_block);
+                Ok((self.builder.block_params(merge_block)[0], ty.clone()))
+            }
+            BinOp::BitwiseOr => {
+                let (lhs, _) = self.translate_typed_expr(lhs.clone())?;
+                let (rhs, _) = self.translate_typed_expr(rhs.clone())?;
+                Ok((self.builder.ins().bor(lhs, rhs), ty.clone()))
+            }
+            BinOp::BitwiseXor => {
+                let (lhs, _) = self.translate_typed_expr(lhs.clone())?;
+                let (rhs, _) = self.translate_typed_expr(rhs.clone())?;
+                Ok((self.builder.ins().bxor(lhs, rhs), ty.clone()))
+            }
+            BinOp::BitwiseAnd => {
+                let (lhs, _) = self.translate_typed_expr(lhs.clone())?;
+                let (rhs, _) = self.translate_typed_expr(rhs.clone())?;
+                Ok((self.builder.ins().band(lhs, rhs), ty.clone()))
+            }
+            BinOp::LeftShift => {
+                let (lhs, _) = self.translate_typed_expr(lhs.clone())?;
+                let (rhs, _) = self.translate_typed_expr(rhs.clone())?;
+                Ok((self.builder.ins().ishl(lhs, rhs), ty.clone()))
+            }
+            BinOp::RightShift => {
+                let (lhs, _) = self.translate_typed_expr(lhs.clone())?;
+                let (rhs, _) = self.translate_typed_expr(rhs.clone())?;
+                Ok((self.builder.ins().sshr(lhs, rhs), ty.clone()))
+            }
+            BinOp::Comma => {
+                self.translate_typed_expr(lhs.clone())?;
+                self.translate_typed_expr(rhs.clone())
+            }
+        }
+    }
+
     fn translate_typed_expr(&mut self, expr: TypedExpr) -> Result<(Value, Type), CodegenError> {
+        if let Some((op, lhs, rhs)) = expr.get_binary_expr() {
+            return self.translate_binary_op(op, lhs, rhs, expr.ty());
+        }
+
         match expr {
             TypedExpr::Number(n, ty) => Ok((self.builder.ins().iconst(types::I64, n), ty)),
             TypedExpr::String(s, ty) => {
@@ -925,12 +1247,11 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 ))
             }
             TypedExpr::Char(c, ty) => {
-                // Extract the character from the string literal (e.g., "'a'" -> 'a')
                 let character = c.chars().next().unwrap();
                 let val = self.builder.ins().iconst(types::I64, character as i64);
                 Ok((val, ty))
             }
-            TypedExpr::PointerMember(expr, member, ty) => {
+            TypedExpr::PointerMember(expr, member, _ty) => {
                 let (ptr, ptr_ty) = self.translate_typed_expr(*expr)?;
                 if let Type::Pointer(base_ty) = ptr_ty {
                     let s = self.get_real_type(&base_ty)?;
@@ -981,16 +1302,11 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     Err(CodegenError::NotAPointer)
                 }
             }
-            TypedExpr::Comma(lhs, rhs, ty) => {
-                self.translate_typed_expr(*lhs)?;
-                self.translate_typed_expr(*rhs)
-            }
-            TypedExpr::ImplicitCast(ty, expr, result_ty) => {
-                // For implicit casts, we just translate the expression and return the target type
+            TypedExpr::ImplicitCast(_ty, expr, result_ty) => {
                 let (val, _) = self.translate_typed_expr(*expr)?;
                 Ok((val, result_ty))
             }
-            TypedExpr::Member(expr, member, ty) => {
+            TypedExpr::Member(expr, member, _ty) => {
                 let (ptr, ty) = self.translate_typed_expr(*expr)?;
                 let s = self.get_real_type(&ty)?;
                 if let Type::Struct(_, members) = s {
@@ -1040,11 +1356,9 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         self.builder.ins().ireduce(types::I16, val)
                     }
                     Type::Bool => self.builder.ins().ireduce(types::I8, val),
-                    _ => val, // Other types are already I64
+                    _ => val,
                 };
 
-                // The ABI requires function arguments and return values to be I64,
-                // so we extend smaller types back to I64 after casting.
                 let extended_val = match *ty {
                     Type::Char | Type::Bool | Type::Short => {
                         self.builder.ins().sextend(types::I64, cast_val)
@@ -1100,7 +1414,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.translate_assignment(addr, new_val)?;
                 Ok((val, ty))
             }
-            TypedExpr::Ternary(cond, then_expr, else_expr, ty) => {
+            TypedExpr::Ternary(cond, then_expr, else_expr, _ty) => {
                 let (condition_value, _) = self.translate_typed_expr(*cond)?;
 
                 let then_block = self.builder.create_block();
@@ -1133,12 +1447,11 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 Ok((self.builder.block_params(merge_block)[0], ty))
             }
             TypedExpr::AddressOf(expr, ty) => {
-                if let TypedExpr::Variable(name, _, var_ty) = *expr {
+                if let TypedExpr::Variable(name, _, _var_ty) = *expr {
                     let (slot, _) = self.variables.get(&name).unwrap();
                     let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
                     Ok((addr, ty))
                 } else if let TypedExpr::Deref(ptr_expr, _) = *expr {
-                    // Taking the address of a dereference is a no-op
                     self.translate_typed_expr(*ptr_expr)
                 } else if let TypedExpr::Member(struct_expr, member_name, _) = *expr {
                     let (base_ptr, base_ty) = self.translate_typed_expr(*struct_expr)?;
@@ -1166,7 +1479,6 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                                 .find(|m| m.name == member_name)
                                 .map(|m| m.ty.clone())
                                 .unwrap();
-                            // Offset is always 0 for unions
                             Ok((base_ptr, Type::Pointer(Box::new(member_ty))))
                         }
                         _ => Err(CodegenError::NotAStruct),
@@ -1191,105 +1503,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     ty,
                 ))
             }
-            TypedExpr::LogicalAnd(lhs, rhs, ty) => {
-                let (lhs_val, _) = self.translate_typed_expr(*lhs)?;
-
-                let rhs_block = self.builder.create_block();
-                let true_block = self.builder.create_block();
-                let false_block = self.builder.create_block();
-                let merge_block = self.builder.create_block();
-
-                self.builder.append_block_param(merge_block, types::I64);
-
-                self.builder
-                    .ins()
-                    .brif(lhs_val, rhs_block, &[], false_block, &[]);
-
-                self.switch_to_block(rhs_block);
-                self.builder.seal_block(rhs_block);
-                let (rhs_val, _) = self.translate_typed_expr(*rhs)?;
-                self.builder
-                    .ins()
-                    .brif(rhs_val, true_block, &[], false_block, &[]);
-
-                self.switch_to_block(true_block);
-                self.builder.seal_block(true_block);
-                let one = self.builder.ins().iconst(types::I64, 1);
-                self.builder.ins().jump(merge_block, &[one.into()]);
-
-                self.switch_to_block(false_block);
-                self.builder.seal_block(false_block);
-                let zero = self.builder.ins().iconst(types::I64, 0);
-                self.builder.ins().jump(merge_block, &[zero.into()]);
-
-                self.switch_to_block(merge_block);
-                self.builder.seal_block(merge_block);
-
-                Ok((self.builder.block_params(merge_block)[0], ty))
-            }
-            TypedExpr::LogicalOr(lhs, rhs, ty) => {
-                let (lhs_val, _) = self.translate_typed_expr(*lhs)?;
-
-                let rhs_block = self.builder.create_block();
-                let true_block = self.builder.create_block();
-                let false_block = self.builder.create_block();
-                let merge_block = self.builder.create_block();
-
-                self.builder.append_block_param(merge_block, types::I64);
-
-                self.builder
-                    .ins()
-                    .brif(lhs_val, true_block, &[], rhs_block, &[]);
-
-                self.switch_to_block(rhs_block);
-                self.builder.seal_block(rhs_block);
-                let (rhs_val, _) = self.translate_typed_expr(*rhs)?;
-                self.builder
-                    .ins()
-                    .brif(rhs_val, true_block, &[], false_block, &[]);
-
-                self.switch_to_block(true_block);
-                self.builder.seal_block(true_block);
-                let one = self.builder.ins().iconst(types::I64, 1);
-                self.builder.ins().jump(merge_block, &[one.into()]);
-
-                self.switch_to_block(false_block);
-                self.builder.seal_block(false_block);
-                let zero = self.builder.ins().iconst(types::I64, 0);
-                self.builder.ins().jump(merge_block, &[zero.into()]);
-
-                self.switch_to_block(merge_block);
-                self.builder.seal_block(merge_block);
-
-                Ok((self.builder.block_params(merge_block)[0], ty))
-            }
-            TypedExpr::BitwiseOr(lhs, rhs, ty) => {
-                let (lhs, _) = self.translate_typed_expr(*lhs)?;
-                let (rhs, _) = self.translate_typed_expr(*rhs)?;
-                Ok((self.builder.ins().bor(lhs, rhs), ty))
-            }
-            TypedExpr::BitwiseXor(lhs, rhs, ty) => {
-                let (lhs, _) = self.translate_typed_expr(*lhs)?;
-                let (rhs, _) = self.translate_typed_expr(*rhs)?;
-                Ok((self.builder.ins().bxor(lhs, rhs), ty))
-            }
-            TypedExpr::BitwiseAnd(lhs, rhs, ty) => {
-                let (lhs, _) = self.translate_typed_expr(*lhs)?;
-                let (rhs, _) = self.translate_typed_expr(*rhs)?;
-                Ok((self.builder.ins().band(lhs, rhs), ty))
-            }
-            TypedExpr::LeftShift(lhs, rhs, ty) => {
-                let (lhs, _) = self.translate_typed_expr(*lhs)?;
-                let (rhs, _) = self.translate_typed_expr(*rhs)?;
-                Ok((self.builder.ins().ishl(lhs, rhs), ty))
-            }
-            TypedExpr::RightShift(lhs, rhs, ty) => {
-                let (lhs, _) = self.translate_typed_expr(*lhs)?;
-                let (rhs, _) = self.translate_typed_expr(*rhs)?;
-                Ok((self.builder.ins().sshr(lhs, rhs), ty))
-            }
             TypedExpr::InitializerList(list, ty) => {
-                // Handle initializer list for arrays
                 let size = self.get_type_size(&ty);
                 let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
                     StackSlotKind::ExplicitSlot,
@@ -1326,241 +1540,17 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         ));
                     }
                     if let Type::Array(elem_ty, _) = &ty {
-                        // Array decays to a pointer to its first element
                         let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
                         return Ok((addr, Type::Pointer(elem_ty.clone())));
                     }
                     let loaded_val = self.load_variable(slot, &ty);
                     Ok((loaded_val, ty))
                 } else {
-                    // It's a global variable.
                     let (id, _) = self.global_variables.get(&name).unwrap();
                     let local_id = self.module.declare_data_in_func(*id, self.builder.func);
                     let addr = self.builder.ins().global_value(types::I64, local_id);
                     Ok((self.builder.ins().load(types::I64, MemFlags::new(), addr, 0), ty))
                 }
-            }
-            TypedExpr::Assign(lhs, rhs, ty) => {
-                let (rhs_val, _) = self.translate_typed_expr(*rhs)?;
-                let (addr, _) = self.translate_lvalue(*lhs)?;
-                self.translate_assignment(addr, rhs_val)?;
-                Ok((rhs_val, ty))
-            }
-            TypedExpr::AssignAdd(lhs, rhs, ty) => {
-                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
-                let lhs_val = self.load_lvalue(addr, &lhs_ty);
-                let (rhs_val, _) = self.translate_typed_expr(*rhs)?;
-                let result_val = self.builder.ins().iadd(lhs_val, rhs_val);
-                self.translate_assignment(addr, result_val)?;
-                Ok((result_val, ty))
-            }
-            TypedExpr::AssignSub(lhs, rhs, ty) => {
-                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
-                let lhs_val = self.load_lvalue(addr, &lhs_ty);
-                let (rhs_val, _) = self.translate_typed_expr(*rhs)?;
-                let result_val = self.builder.ins().isub(lhs_val, rhs_val);
-                self.translate_assignment(addr, result_val)?;
-                Ok((result_val, ty))
-            }
-            TypedExpr::AssignMul(lhs, rhs, ty) => {
-                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
-                let lhs_val = self.load_lvalue(addr, &lhs_ty);
-                let (rhs_val, _) = self.translate_typed_expr(*rhs)?;
-                let result_val = self.builder.ins().imul(lhs_val, rhs_val);
-                self.translate_assignment(addr, result_val)?;
-                Ok((result_val, ty))
-            }
-            TypedExpr::AssignDiv(lhs, rhs, ty) => {
-                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
-                let lhs_val = self.load_lvalue(addr, &lhs_ty);
-                let (rhs_val, _) = self.translate_typed_expr(*rhs)?;
-                let result_val = self.builder.ins().sdiv(lhs_val, rhs_val);
-                self.translate_assignment(addr, result_val)?;
-                Ok((result_val, ty))
-            }
-            TypedExpr::AssignMod(lhs, rhs, ty) => {
-                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
-                let lhs_val = self.load_lvalue(addr, &lhs_ty);
-                let (rhs_val, _) = self.translate_typed_expr(*rhs)?;
-                let result_val = self.builder.ins().srem(lhs_val, rhs_val);
-                self.translate_assignment(addr, result_val)?;
-                Ok((result_val, ty))
-            }
-            TypedExpr::AssignBitwiseAnd(lhs, rhs, ty) => {
-                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
-                let lhs_val = self.load_lvalue(addr, &lhs_ty);
-                let (rhs_val, _) = self.translate_typed_expr(*rhs)?;
-                let result_val = self.builder.ins().band(lhs_val, rhs_val);
-                self.translate_assignment(addr, result_val)?;
-                Ok((result_val, ty))
-            }
-            TypedExpr::AssignBitwiseOr(lhs, rhs, ty) => {
-                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
-                let lhs_val = self.load_lvalue(addr, &lhs_ty);
-                let (rhs_val, _) = self.translate_typed_expr(*rhs)?;
-                let result_val = self.builder.ins().bor(lhs_val, rhs_val);
-                self.translate_assignment(addr, result_val)?;
-                Ok((result_val, ty))
-            }
-            TypedExpr::AssignBitwiseXor(lhs, rhs, ty) => {
-                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
-                let lhs_val = self.load_lvalue(addr, &lhs_ty);
-                let (rhs_val, _) = self.translate_typed_expr(*rhs)?;
-                let result_val = self.builder.ins().bxor(lhs_val, rhs_val);
-                self.translate_assignment(addr, result_val)?;
-                Ok((result_val, ty))
-            }
-            TypedExpr::AssignLeftShift(lhs, rhs, ty) => {
-                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
-                let lhs_val = self.load_lvalue(addr, &lhs_ty);
-                let (rhs_val, _) = self.translate_typed_expr(*rhs)?;
-                let result_val = self.builder.ins().ishl(lhs_val, rhs_val);
-                self.translate_assignment(addr, result_val)?;
-                Ok((result_val, ty))
-            }
-            TypedExpr::AssignRightShift(lhs, rhs, ty) => {
-                let (addr, lhs_ty) = self.translate_lvalue(*lhs)?;
-                let lhs_val = self.load_lvalue(addr, &lhs_ty);
-                let (rhs_val, _) = self.translate_typed_expr(*rhs)?;
-                let result_val = self.builder.ins().sshr(lhs_val, rhs_val);
-                self.translate_assignment(addr, result_val)?;
-                Ok((result_val, ty))
-            }
-            TypedExpr::Add(lhs, rhs, ty) => {
-                let (lhs_val, lhs_ty) = self.translate_typed_expr(*lhs)?;
-                let (rhs_val, rhs_ty) = self.translate_typed_expr(*rhs)?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
-                let result_val = match (&lhs_ty, &rhs_ty) {
-                    (Type::Pointer(base_ty), Type::Int) => {
-                        let size = self.get_type_size(base_ty);
-                        let offset = self.builder.ins().imul_imm(rhs_val, size as i64);
-                        self.builder.ins().iadd(lhs_val, offset)
-                    }
-                    (Type::Int, Type::Pointer(base_ty)) => {
-                        let size = self.get_type_size(base_ty);
-                        let offset = self.builder.ins().imul_imm(lhs_val, size as i64);
-                        self.builder.ins().iadd(rhs_val, offset)
-                    }
-                    _ => self.builder.ins().iadd(lhs_val, rhs_val),
-                };
-                let result_ty = if lhs_ty.is_pointer() {
-                    lhs_ty
-                } else {
-                    common_ty
-                };
-                Ok((result_val, ty))
-            }
-            TypedExpr::Sub(lhs, rhs, ty) => {
-                let (lhs_val, lhs_ty) = self.translate_typed_expr(*lhs)?;
-                let (rhs_val, rhs_ty) = self.translate_typed_expr(*rhs)?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
-                let result_val = match (&lhs_ty, &rhs_ty) {
-                    (Type::Pointer(base_ty), Type::Int) => {
-                        let size = self.get_type_size(base_ty);
-                        let offset = self.builder.ins().imul_imm(rhs_val, size as i64);
-                        self.builder.ins().isub(lhs_val, offset)
-                    }
-                    (Type::Pointer(lhs_base), Type::Pointer(rhs_base)) if lhs_base == rhs_base => {
-                        let diff = self.builder.ins().isub(lhs_val, rhs_val);
-                        let size = self.get_type_size(lhs_base);
-                        self.builder.ins().sdiv_imm(diff, size as i64)
-                    }
-                    _ => self.builder.ins().isub(lhs_val, rhs_val),
-                };
-                let result_ty = match (&lhs_ty, &rhs_ty) {
-                    (Type::Pointer(_), Type::Pointer(_)) => Type::Int,
-                    (Type::Pointer(_), Type::Int) => lhs_ty,
-                    _ => common_ty,
-                };
-                Ok((result_val, result_ty))
-            }
-            TypedExpr::Mul(lhs, rhs, ty) => {
-                let (lhs, lhs_ty) = self.translate_typed_expr(*lhs)?;
-                let (rhs, rhs_ty) = self.translate_typed_expr(*rhs)?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
-                Ok((self.builder.ins().imul(lhs, rhs), ty))
-            }
-            TypedExpr::Div(lhs, rhs, ty) => {
-                let (lhs, lhs_ty) = self.translate_typed_expr(*lhs)?;
-                let (rhs, rhs_ty) = self.translate_typed_expr(*rhs)?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
-                let result = if common_ty.is_unsigned() {
-                    self.builder.ins().udiv(lhs, rhs)
-                } else {
-                    self.builder.ins().sdiv(lhs, rhs)
-                };
-                Ok((result, ty))
-            }
-            TypedExpr::Mod(lhs, rhs, ty) => {
-                let (lhs, lhs_ty) = self.translate_typed_expr(*lhs)?;
-                let (rhs, rhs_ty) = self.translate_typed_expr(*rhs)?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
-                let result = if common_ty.is_unsigned() {
-                    self.builder.ins().urem(lhs, rhs)
-                } else {
-                    self.builder.ins().srem(lhs, rhs)
-                };
-                Ok((result, ty))
-            }
-            TypedExpr::Equal(lhs, rhs, ty) => {
-                let (lhs, _) = self.translate_typed_expr(*lhs)?;
-                let (rhs, _) = self.translate_typed_expr(*rhs)?;
-                let c = self.builder.ins().icmp(IntCC::Equal, lhs, rhs);
-                Ok((self.builder.ins().uextend(types::I64, c), ty))
-            }
-            TypedExpr::NotEqual(lhs, rhs, ty) => {
-                let (lhs, _) = self.translate_typed_expr(*lhs)?;
-                let (rhs, _) = self.translate_typed_expr(*rhs)?;
-                let c = self.builder.ins().icmp(IntCC::NotEqual, lhs, rhs);
-                Ok((self.builder.ins().uextend(types::I64, c), ty))
-            }
-            TypedExpr::LessThan(lhs, rhs, ty) => {
-                let (lhs, lhs_ty) = self.translate_typed_expr(*lhs)?;
-                let (rhs, rhs_ty) = self.translate_typed_expr(*rhs)?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
-                let cc = if common_ty.is_unsigned() {
-                    IntCC::UnsignedLessThan
-                } else {
-                    IntCC::SignedLessThan
-                };
-                let c = self.builder.ins().icmp(cc, lhs, rhs);
-                Ok((self.builder.ins().uextend(types::I64, c), ty))
-            }
-            TypedExpr::GreaterThan(lhs, rhs, ty) => {
-                let (lhs, lhs_ty) = self.translate_typed_expr(*lhs)?;
-                let (rhs, rhs_ty) = self.translate_typed_expr(*rhs)?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
-                let cc = if common_ty.is_unsigned() {
-                    IntCC::UnsignedGreaterThan
-                } else {
-                    IntCC::SignedGreaterThan
-                };
-                let c = self.builder.ins().icmp(cc, lhs, rhs);
-                Ok((self.builder.ins().uextend(types::I64, c), ty))
-            }
-            TypedExpr::LessThanOrEqual(lhs, rhs, ty) => {
-                let (lhs, lhs_ty) = self.translate_typed_expr(*lhs)?;
-                let (rhs, rhs_ty) = self.translate_typed_expr(*rhs)?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
-                let cc = if common_ty.is_unsigned() {
-                    IntCC::UnsignedLessThanOrEqual
-                } else {
-                    IntCC::SignedLessThanOrEqual
-                };
-                let c = self.builder.ins().icmp(cc, lhs, rhs);
-                Ok((self.builder.ins().uextend(types::I64, c), ty))
-            }
-            TypedExpr::GreaterThanOrEqual(lhs, rhs, ty) => {
-                let (lhs, lhs_ty) = self.translate_typed_expr(*lhs)?;
-                let (rhs, rhs_ty) = self.translate_typed_expr(*rhs)?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
-                let cc = if common_ty.is_unsigned() {
-                    IntCC::UnsignedGreaterThanOrEqual
-                } else {
-                    IntCC::SignedGreaterThanOrEqual
-                };
-                let c = self.builder.ins().icmp(cc, lhs, rhs);
-                Ok((self.builder.ins().uextend(types::I64, c), ty))
             }
             TypedExpr::Call(name, args, _, ty) => {
                 let (callee, ret_ty, is_variadic) = self
@@ -1590,9 +1580,6 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
                 let call = if is_variadic {
                     let mut sig = self.signatures.get(&name).unwrap().clone();
-                    // `arg_values` has the real number of arguments to pass, including any hidden pointers.
-                    // `sig.params` has the number of fixed parameters.
-                    // The difference is the number of variadic arguments.
                     for _ in 0..(arg_values.len() - sig.params.len()) {
                         sig.params.push(AbiParam::new(types::I64));
                     }
@@ -1611,6 +1598,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 }
                 Ok((self.builder.inst_results(call)[0], ty))
             }
+            _ => todo!(),
         }
     }
 

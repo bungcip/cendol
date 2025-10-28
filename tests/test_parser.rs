@@ -5,7 +5,7 @@
 
 use cendol::file::FileManager;
 use cendol::parser::Parser;
-use cendol::parser::ast::{Declarator, Expr, Function, Initializer, Program, Stmt, Type};
+use cendol::parser::ast::{Declarator, Expr, Function, Initializer, TranslationUnit, Stmt, Type};
 use cendol::preprocessor::Preprocessor;
 
 /// Test configuration constants
@@ -14,7 +14,7 @@ mod config {
 }
 
 /// Helper function to parse C code and return the AST
-fn parse_c_code(input: &str) -> Result<Program, Box<dyn std::error::Error>> {
+fn parse_c_code(input: &str) -> Result<TranslationUnit, Box<dyn std::error::Error>> {
     let mut preprocessor = Preprocessor::new(FileManager::new());
     let tokens = preprocessor.preprocess(input, config::TEST_FILENAME)?;
     let mut parser = Parser::new(tokens)?;
@@ -45,8 +45,8 @@ fn parse_c_body(input: &str) -> Vec<Stmt> {
 }
 
 /// Creates a simple C program AST for testing
-fn create_simple_program_ast() -> Program {
-    Program {
+fn create_simple_program_ast() -> TranslationUnit {
+    TranslationUnit {
         globals: vec![],
         functions: vec![Function {
             return_type: Type::Int,
@@ -60,8 +60,8 @@ fn create_simple_program_ast() -> Program {
 }
 
 /// Creates a program AST with a _Bool variable declaration
-fn create_bool_program_ast() -> Program {
-    Program {
+fn create_bool_program_ast() -> TranslationUnit {
+    TranslationUnit {
         globals: vec![],
         functions: vec![Function {
             return_type: Type::Int,
@@ -85,8 +85,8 @@ fn create_bool_program_ast() -> Program {
 }
 
 /// Creates a program AST with if-else control flow
-fn create_control_flow_program_ast() -> Program {
-    Program {
+fn create_control_flow_program_ast() -> TranslationUnit {
+    TranslationUnit {
         globals: vec![],
         functions: vec![Function {
             return_type: Type::Int,

@@ -8,7 +8,7 @@ use crate::compiler::{Cli, Compiler};
 use crate::error::Report;
 use crate::file::{FileId, FileManager};
 use crate::parser::Parser;
-use crate::parser::ast::{Expr, Function, Program, Stmt, Type};
+use crate::parser::ast::{Expr, Function, TranslationUnit, Stmt, Type};
 use crate::preprocessor::Preprocessor;
 use crate::preprocessor::lexer::Lexer;
 use crate::preprocessor::token::{KeywordKind, Token, TokenKind};
@@ -232,8 +232,8 @@ pub fn create_test_tokens() -> Vec<Token> {
 }
 
 /// Creates a simple C program AST for testing
-pub fn create_simple_program_ast() -> Program {
-    Program {
+pub fn create_simple_program_ast() -> TranslationUnit {
+    TranslationUnit {
         globals: vec![],
         functions: vec![Function {
             return_type: Type::Int,
@@ -276,7 +276,7 @@ pub fn assert_tokens_equal(actual: &[Token], expected: &[TokenKind]) {
 }
 
 /// Asserts that two AST programs are equal
-pub fn assert_programs_equal(actual: &Program, expected: &Program) {
+pub fn assert_programs_equal(actual: &TranslationUnit, expected: &TranslationUnit) {
     assert_eq!(actual.globals.len(), expected.globals.len());
     assert_eq!(actual.functions.len(), expected.functions.len());
     assert_eq!(actual.functions[0].name, expected.functions[0].name);

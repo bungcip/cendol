@@ -422,7 +422,7 @@ pub struct Function {
 
 /// Represents a program.
 #[derive(Debug, PartialEq, Clone)]
-pub struct Program {
+pub struct TranslationUnit {
     /// The global variables.
     pub globals: Vec<Stmt>,
     /// The functions in the program.

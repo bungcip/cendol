@@ -250,8 +250,7 @@ impl CodeGen {
             self.func = Function::new();
             self.func.signature = sig;
 
-            let mut builder =
-                cranelift_frontend::FunctionBuilder::new(&mut self.func, &mut self.ctx);
+            let mut builder = FunctionBuilder::new(&mut self.func, &mut self.ctx);
             let entry_block = builder.create_block();
             builder.append_block_params_for_function_params(entry_block);
             builder.switch_to_block(entry_block);

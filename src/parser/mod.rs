@@ -1,5 +1,5 @@
 use crate::parser::ast::{
-    Designator, Expr, ForInit, Function, Initializer, InitializerList, Parameter, Program, Stmt,
+    Designator, Expr, ForInit, Function, Initializer, InitializerList, Parameter, TranslationUnit, Stmt,
     Type,
 };
 use crate::parser::error::ParserError;
@@ -1071,7 +1071,7 @@ impl Parser {
         Ok(Stmt::Declaration(base_type, declarators))
     }
 
-    pub fn parse(&mut self) -> Result<Program, ParserError> {
+    pub fn parse(&mut self) -> Result<TranslationUnit, ParserError> {
         let mut globals = Vec::new();
         let mut functions = Vec::new();
         while let Ok(token) = self.current_token()
@@ -1086,7 +1086,7 @@ impl Parser {
                 functions.push(self.parse_function()?);
             }
         }
-        Ok(Program { globals, functions })
+        Ok(TranslationUnit { globals, functions })
     }
 
     /// parse a option action when start token is found

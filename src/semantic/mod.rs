@@ -1,6 +1,6 @@
 use crate::common::{SourceLocation, SourceSpan};
 use crate::parser::ast::{
-    BinOp, Designator, Expr, ForInit, Initializer, Program, Stmt, Type, TypedDeclarator,
+    BinOp, Designator, Expr, ForInit, Initializer, TranslationUnit, Stmt, Type, TypedDeclarator,
     TypedDesignator, TypedExpr, TypedForInit, TypedFunctionDecl, TypedInitializer, TypedStmt,
     TypedTranslationUnit,
 };
@@ -135,7 +135,7 @@ impl SemanticAnalyzer {
     /// A `Result` which is `Ok` with the typed translation unit if no semantic errors were found, or `Err` with a vector of errors.
     pub fn analyze(
         mut self,
-        program: Program,
+        program: TranslationUnit,
         filename: &str,
     ) -> Result<TypedTranslationUnit, Vec<(SemanticError, String, SourceSpan)>> {
         // First pass: collect all function definitions and global declarations
@@ -152,7 +152,7 @@ impl SemanticAnalyzer {
     }
 
     /// First pass: collect all symbols (functions and global variables).
-    fn collect_symbols(&mut self, program: &Program, filename: &str) {
+    fn collect_symbols(&mut self, program: &TranslationUnit, filename: &str) {
         for global in &program.globals {
             match global {
                 Stmt::FunctionDeclaration(ty, name, _params, _) => {
@@ -272,7 +272,7 @@ impl SemanticAnalyzer {
     }
 
     /// Second pass: check all statements and expressions for semantic correctness and build typed AST.
-    fn check_program(&mut self, program: Program, filename: &str) -> TypedTranslationUnit {
+    fn check_program(&mut self, program: TranslationUnit, filename: &str) -> TypedTranslationUnit {
         let mut typed_functions = Vec::new();
         for function in program.functions {
             self.current_function = Some(function.name.clone());

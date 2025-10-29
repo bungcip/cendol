@@ -1,0 +1,17 @@
+---
+source: tests/bad_input.rs
+expression: err.unwrap_err()
+---
+msg: "Undefined function `undeclared_function` called"
+path: undeclared_function.c
+span:
+  file: 0
+  start:
+    file: 0
+    line: 1
+    column: 14
+  end:
+    file: 0
+    line: 1
+    column: 33
+verbose: false

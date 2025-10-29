@@ -30,3 +30,30 @@ fn test_assignment_to_const() {
     );
     assert_yaml_snapshot!("assignment_to_const", err.unwrap_err());
 }
+
+#[test]
+fn test_duplicate_variable_declaration() {
+    let err = compile_and_get_error(
+        "int main() { int x = 10; int x = 20; return x; }",
+        "duplicate_variable_declaration.c",
+    );
+    assert_yaml_snapshot!("duplicate_variable_declaration", err.unwrap_err());
+}
+
+#[test]
+fn test_dereference_non_pointer() {
+    let err = compile_and_get_error(
+        "int main() { int x = 10; *x; return 0; }",
+        "dereference_non_pointer.c",
+    );
+    assert_yaml_snapshot!("dereference_non_pointer", err.unwrap_err());
+}
+
+#[test]
+fn test_undeclared_function() {
+    let err = compile_and_get_error(
+        "int main() { undeclared_function(); return 0; }",
+        "undeclared_function.c",
+    );
+    assert_yaml_snapshot!("undeclared_function", err.unwrap_err());
+}

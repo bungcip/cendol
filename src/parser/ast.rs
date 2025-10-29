@@ -88,6 +88,21 @@ impl Type {
         matches!(self, Type::Float | Type::Double)
     }
 
+    /// Returns `true` if the type is numeric.
+    pub fn is_numeric(&self) -> bool {
+        matches!(
+            self,
+            Type::Int
+                | Type::Char
+                | Type::Short
+                | Type::Long
+                | Type::LongLong
+                | Type::Float
+                | Type::Double
+                | Type::Enum(_, _)
+        )
+    }
+
     /// Returns the arithmetic conversion rank for usual arithmetic conversions.
     pub fn get_arithmetic_rank(&self) -> i32 {
         match self {
@@ -635,6 +650,14 @@ impl TypedExpr {
             TypedExpr::PreDecrement(_, ty) => ty,
             TypedExpr::PostIncrement(_, ty) => ty,
             TypedExpr::PostDecrement(_, ty) => ty,
+        }
+    }
+
+    pub fn implicit_cast(self, to_ty: Type) -> TypedExpr {
+        if self.ty() == &to_ty {
+            self
+        } else {
+            TypedExpr::ImplicitCast(Box::new(to_ty.clone()), Box::new(self), to_ty)
         }
     }
 }

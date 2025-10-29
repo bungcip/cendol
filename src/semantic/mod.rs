@@ -6,7 +6,8 @@ use crate::parser::ast::{
 };
 use crate::semantic::error::SemanticError;
 use std::collections::HashMap;
-
+mod expressions;
+use expressions::TypedExpression;
 pub mod error;
 
 /// Represents a symbol in the symbol table.
@@ -624,34 +625,17 @@ impl SemanticAnalyzer {
     ) -> TypedExpr {
         let lhs_typed = self.check_expression(lhs.clone(), filename);
         let rhs_typed = self.check_expression(rhs.clone(), filename);
+        let lhs_ty_clone = lhs_typed.clone();
+        let lhs_ty = lhs_ty_clone.ty();
+        let rhs_ty_clone = rhs_typed.clone();
+        let rhs_ty = rhs_ty_clone.ty();
 
-        match op {
+        let (lhs_final, rhs_final, result_ty) = match op {
             BinOp::Assign => {
-                if lhs_typed.ty() != rhs_typed.ty() {
-                    let is_lhs_numeric = matches!(
-                        lhs_typed.ty(),
-                        Type::Int
-                            | Type::Char
-                            | Type::Short
-                            | Type::Long
-                            | Type::LongLong
-                            | Type::Float
-                            | Type::Double
-                            | Type::Enum(_, _)
-                    );
-                    let is_rhs_numeric = matches!(
-                        rhs_typed.ty(),
-                        Type::Int
-                            | Type::Char
-                            | Type::Short
-                            | Type::Long
-                            | Type::LongLong
-                            | Type::Float
-                            | Type::Double
-                            | Type::Enum(_, _)
-                    );
-
-                    if !is_lhs_numeric || !is_rhs_numeric {
+                if !lhs_ty.is_numeric() || !rhs_ty.is_numeric() {
+                    if !(*lhs_ty == Type::Pointer(Box::new(Type::Char))
+                        && *rhs_ty == Type::Pointer(Box::new(Type::Char)))
+                    {
                         self.errors.push((
                             SemanticError::TypeMismatch,
                             filename.to_string(),
@@ -663,309 +647,44 @@ impl SemanticAnalyzer {
                         ));
                     }
                 }
-
-                let cast_rhs = if lhs_typed.ty() == rhs_typed.ty() {
-                    rhs_typed
-                } else {
-                    TypedExpr::ImplicitCast(
-                        Box::new(lhs_typed.ty().clone()),
-                        Box::new(rhs_typed),
-                        lhs_typed.ty().clone(),
-                    )
-                };
-                TypedExpr::Assign(
-                    Box::new(lhs_typed.clone()),
-                    Box::new(cast_rhs),
-                    lhs_typed.ty().clone(),
-                )
+                let rhs_cast = rhs_typed.implicit_cast(lhs_ty.clone());
+                (lhs_typed, rhs_cast, lhs_ty.clone())
             }
-            BinOp::AssignAdd => {
-                let (_lhs_conv_ty, rhs_conv_ty) =
-                    self.apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
-                let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
-                    TypedExpr::ImplicitCast(
-                        Box::new(rhs_conv_ty.clone()),
-                        Box::new(rhs_typed),
-                        rhs_conv_ty.clone(),
-                    )
-                } else {
-                    rhs_typed
-                };
-                TypedExpr::AssignAdd(
-                    Box::new(lhs_typed.clone()),
-                    Box::new(rhs_cast),
-                    lhs_typed.ty().clone(),
-                )
-            }
-            BinOp::AssignSub => {
-                let (_lhs_conv_ty, rhs_conv_ty) =
-                    self.apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
-                let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
-                    TypedExpr::ImplicitCast(
-                        Box::new(rhs_conv_ty.clone()),
-                        Box::new(rhs_typed),
-                        rhs_conv_ty.clone(),
-                    )
-                } else {
-                    rhs_typed
-                };
-                TypedExpr::AssignSub(
-                    Box::new(lhs_typed.clone()),
-                    Box::new(rhs_cast),
-                    lhs_typed.ty().clone(),
-                )
-            }
-            BinOp::AssignMul => {
-                let (_lhs_conv_ty, rhs_conv_ty) =
-                    self.apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
-                let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
-                    TypedExpr::ImplicitCast(
-                        Box::new(rhs_conv_ty.clone()),
-                        Box::new(rhs_typed),
-                        rhs_conv_ty.clone(),
-                    )
-                } else {
-                    rhs_typed
-                };
-                TypedExpr::AssignMul(
-                    Box::new(lhs_typed.clone()),
-                    Box::new(rhs_cast),
-                    lhs_typed.ty().clone(),
-                )
-            }
-            BinOp::AssignDiv => {
-                let (_lhs_conv_ty, rhs_conv_ty) =
-                    self.apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
-                let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
-                    TypedExpr::ImplicitCast(
-                        Box::new(rhs_conv_ty.clone()),
-                        Box::new(rhs_typed),
-                        rhs_conv_ty.clone(),
-                    )
-                } else {
-                    rhs_typed
-                };
-                TypedExpr::AssignDiv(
-                    Box::new(lhs_typed.clone()),
-                    Box::new(rhs_cast),
-                    lhs_typed.ty().clone(),
-                )
-            }
-            BinOp::AssignMod => {
-                let (_lhs_conv_ty, rhs_conv_ty) =
-                    self.apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
-                let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
-                    TypedExpr::ImplicitCast(
-                        Box::new(rhs_conv_ty.clone()),
-                        Box::new(rhs_typed),
-                        rhs_conv_ty.clone(),
-                    )
-                } else {
-                    rhs_typed
-                };
-                TypedExpr::AssignMod(
-                    Box::new(lhs_typed.clone()),
-                    Box::new(rhs_cast),
-                    lhs_typed.ty().clone(),
-                )
-            }
-            BinOp::AssignLeftShift => TypedExpr::AssignLeftShift(
-                Box::new(lhs_typed.clone()),
-                Box::new(rhs_typed),
-                lhs_typed.ty().clone(),
-            ),
-            BinOp::AssignRightShift => TypedExpr::AssignRightShift(
-                Box::new(lhs_typed.clone()),
-                Box::new(rhs_typed),
-                lhs_typed.ty().clone(),
-            ),
-            BinOp::AssignBitwiseAnd => TypedExpr::AssignBitwiseAnd(
-                Box::new(lhs_typed.clone()),
-                Box::new(rhs_typed),
-                lhs_typed.ty().clone(),
-            ),
-            BinOp::AssignBitwiseXor => TypedExpr::AssignBitwiseXor(
-                Box::new(lhs_typed.clone()),
-                Box::new(rhs_typed),
-                lhs_typed.ty().clone(),
-            ),
-            BinOp::AssignBitwiseOr => TypedExpr::AssignBitwiseOr(
-                Box::new(lhs_typed.clone()),
-                Box::new(rhs_typed),
-                lhs_typed.ty().clone(),
-            ),
-            BinOp::Add => {
+            BinOp::AssignAdd | BinOp::AssignSub | BinOp::AssignMul | BinOp::AssignDiv
+            | BinOp::AssignMod => {
                 let (lhs_conv_ty, rhs_conv_ty) =
-                    self.apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
-                let lhs_cast = if *lhs_typed.ty() != lhs_conv_ty {
-                    TypedExpr::ImplicitCast(
-                        Box::new(lhs_conv_ty.clone()),
-                        Box::new(lhs_typed),
-                        lhs_conv_ty.clone(),
-                    )
-                } else {
-                    lhs_typed
-                };
-                let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
-                    TypedExpr::ImplicitCast(
-                        Box::new(rhs_conv_ty.clone()),
-                        Box::new(rhs_typed),
-                        rhs_conv_ty.clone(),
-                    )
-                } else {
-                    rhs_typed
-                };
-                let result_ty = match (&lhs_conv_ty, &rhs_conv_ty) {
-                    (Type::Pointer(_), Type::Int) => lhs_conv_ty.clone(),
-                    (Type::Int, Type::Pointer(_)) => rhs_conv_ty.clone(),
-                    _ => lhs_conv_ty.clone(),
-                };
-                TypedExpr::Add(Box::new(lhs_cast), Box::new(rhs_cast), result_ty)
+                    self.apply_usual_arithmetic_conversions(lhs_ty, rhs_ty);
+                let lhs_cast = lhs_typed.clone().implicit_cast(lhs_conv_ty);
+                let rhs_cast = rhs_typed.implicit_cast(rhs_conv_ty);
+                (lhs_cast, rhs_cast, lhs_ty.clone())
             }
-            BinOp::Sub => {
+            BinOp::AssignLeftShift | BinOp::AssignRightShift | BinOp::AssignBitwiseAnd
+            | BinOp::AssignBitwiseXor | BinOp::AssignBitwiseOr => {
+                (lhs_typed, rhs_typed, lhs_ty.clone())
+            }
+            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
                 let (lhs_conv_ty, rhs_conv_ty) =
-                    self.apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
-                let lhs_cast = if *lhs_typed.ty() != lhs_conv_ty {
-                    TypedExpr::ImplicitCast(
-                        Box::new(lhs_conv_ty.clone()),
-                        Box::new(lhs_typed),
-                        lhs_conv_ty.clone(),
-                    )
-                } else {
-                    lhs_typed
-                };
-                let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
-                    TypedExpr::ImplicitCast(
-                        Box::new(rhs_conv_ty.clone()),
-                        Box::new(rhs_typed),
-                        rhs_conv_ty.clone(),
-                    )
-                } else {
-                    rhs_typed
-                };
-                let result_ty = match (&lhs_conv_ty, &rhs_conv_ty) {
-                    (Type::Pointer(_), Type::Int) => lhs_conv_ty.clone(),
+                    self.apply_usual_arithmetic_conversions(lhs_ty, rhs_ty);
+                let lhs_cast = lhs_typed.implicit_cast(lhs_conv_ty.clone());
+                let rhs_cast = rhs_typed.implicit_cast(rhs_conv_ty.clone());
+                let result_ty = match (lhs_conv_ty, rhs_conv_ty) {
+                    (Type::Pointer(_), Type::Int) => lhs_cast.ty().clone(),
+                    (Type::Int, Type::Pointer(_)) => rhs_cast.ty().clone(),
                     (Type::Pointer(_), Type::Pointer(_)) => Type::Int,
-                    _ => lhs_conv_ty.clone(),
+                    (ty, _) => ty,
                 };
-                TypedExpr::Sub(Box::new(lhs_cast), Box::new(rhs_cast), result_ty)
+                (lhs_cast, rhs_cast, result_ty)
             }
-            BinOp::Mul => {
-                let (lhs_conv_ty, rhs_conv_ty) =
-                    self.apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
-                let lhs_cast = if *lhs_typed.ty() != lhs_conv_ty {
-                    TypedExpr::ImplicitCast(
-                        Box::new(lhs_conv_ty.clone()),
-                        Box::new(lhs_typed),
-                        lhs_conv_ty.clone(),
-                    )
-                } else {
-                    lhs_typed
-                };
-                let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
-                    TypedExpr::ImplicitCast(
-                        Box::new(rhs_conv_ty.clone()),
-                        Box::new(rhs_typed),
-                        rhs_conv_ty.clone(),
-                    )
-                } else {
-                    rhs_typed
-                };
-                TypedExpr::Mul(Box::new(lhs_cast), Box::new(rhs_cast), lhs_conv_ty.clone())
+            BinOp::Equal | BinOp::NotEqual | BinOp::LessThan | BinOp::GreaterThan
+            | BinOp::LessThanOrEqual | BinOp::GreaterThanOrEqual | BinOp::LogicalAnd
+            | BinOp::LogicalOr | BinOp::BitwiseOr | BinOp::BitwiseXor | BinOp::BitwiseAnd => {
+                (lhs_typed, rhs_typed, Type::Int)
             }
-            BinOp::Div => {
-                let (lhs_conv_ty, rhs_conv_ty) =
-                    self.apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
-                let lhs_cast = if *lhs_typed.ty() != lhs_conv_ty {
-                    TypedExpr::ImplicitCast(
-                        Box::new(lhs_conv_ty.clone()),
-                        Box::new(lhs_typed),
-                        lhs_conv_ty.clone(),
-                    )
-                } else {
-                    lhs_typed
-                };
-                let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
-                    TypedExpr::ImplicitCast(
-                        Box::new(rhs_conv_ty.clone()),
-                        Box::new(rhs_typed),
-                        rhs_conv_ty.clone(),
-                    )
-                } else {
-                    rhs_typed
-                };
-                TypedExpr::Div(Box::new(lhs_cast), Box::new(rhs_cast), lhs_conv_ty.clone())
-            }
-            BinOp::Mod => {
-                let (lhs_conv_ty, rhs_conv_ty) =
-                    self.apply_usual_arithmetic_conversions(lhs_typed.ty(), rhs_typed.ty());
-                let lhs_cast = if *lhs_typed.ty() != lhs_conv_ty {
-                    TypedExpr::ImplicitCast(
-                        Box::new(lhs_conv_ty.clone()),
-                        Box::new(lhs_typed),
-                        lhs_conv_ty.clone(),
-                    )
-                } else {
-                    lhs_typed
-                };
-                let rhs_cast = if *rhs_typed.ty() != rhs_conv_ty {
-                    TypedExpr::ImplicitCast(
-                        Box::new(rhs_conv_ty.clone()),
-                        Box::new(rhs_typed),
-                        rhs_conv_ty.clone(),
-                    )
-                } else {
-                    rhs_typed
-                };
-                TypedExpr::Mod(Box::new(lhs_cast), Box::new(rhs_cast), lhs_conv_ty.clone())
-            }
-            BinOp::Equal => TypedExpr::Equal(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int),
-            BinOp::NotEqual => {
-                TypedExpr::NotEqual(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
-            }
-            BinOp::LessThan => {
-                TypedExpr::LessThan(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
-            }
-            BinOp::GreaterThan => {
-                TypedExpr::GreaterThan(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
-            }
-            BinOp::LessThanOrEqual => {
-                TypedExpr::LessThanOrEqual(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
-            }
-            BinOp::GreaterThanOrEqual => {
-                TypedExpr::GreaterThanOrEqual(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
-            }
-            BinOp::LogicalAnd => {
-                TypedExpr::LogicalAnd(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
-            }
-            BinOp::LogicalOr => {
-                TypedExpr::LogicalOr(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
-            }
-            BinOp::BitwiseOr => {
-                TypedExpr::BitwiseOr(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
-            }
-            BinOp::BitwiseXor => {
-                TypedExpr::BitwiseXor(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
-            }
-            BinOp::BitwiseAnd => {
-                TypedExpr::BitwiseAnd(Box::new(lhs_typed), Box::new(rhs_typed), Type::Int)
-            }
-            BinOp::LeftShift => TypedExpr::LeftShift(
-                Box::new(lhs_typed.clone()),
-                Box::new(rhs_typed),
-                lhs_typed.ty().clone(),
-            ),
-            BinOp::RightShift => TypedExpr::RightShift(
-                Box::new(lhs_typed.clone()),
-                Box::new(rhs_typed),
-                lhs_typed.ty().clone(),
-            ),
-            BinOp::Comma => TypedExpr::Comma(
-                Box::new(lhs_typed),
-                Box::new(rhs_typed.clone()),
-                rhs_typed.ty().clone(),
-            ),
-        }
+            BinOp::LeftShift | BinOp::RightShift => (lhs_typed, rhs_typed, lhs_ty.clone()),
+            BinOp::Comma => (lhs_typed, rhs_typed, rhs_ty.clone()),
+        };
+
+        TypedExpression::new(op, lhs_final, rhs_final, result_ty).into()
     }
 
     /// Checks an expression for semantic errors and returns a typed expression.

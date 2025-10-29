@@ -457,7 +457,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 }
                 Ok(true)
             }
-            _ => unimplemented!(),
+            TypedStmt::FunctionDeclaration(_, _, _, _) => Ok(false),
         }
     }
 
@@ -1250,8 +1250,18 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         }
                         _ => Err(CodegenError::NotAStruct),
                     }
+                } else if let TypedExpr::CompoundLiteral(literal_ty, initializer, _) = *expr {
+                    let size = self.get_type_size(&literal_ty);
+                    let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+                        StackSlotKind::ExplicitSlot,
+                        size,
+                        0,
+                    ));
+                    let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
+                    self.translate_initializer(addr, &literal_ty, &initializer)?;
+                    Ok((addr, ty))
                 } else {
-                    unimplemented!()
+                    return Err(CodegenError::InvalidLValue);
                 }
             }
             TypedExpr::Sizeof(expr, ty) => {

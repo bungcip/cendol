@@ -632,6 +632,13 @@ impl SemanticAnalyzer {
 
         let (lhs_final, rhs_final, result_ty) = match op {
             BinOp::Assign => {
+                if let Type::Const(_) = lhs_ty {
+                    self.errors.push((
+                        SemanticError::AssignmentToConst,
+                        filename.to_string(),
+                        lhs_typed.span(),
+                    ));
+                }
                 if !lhs_ty.is_numeric() || !rhs_ty.is_numeric() {
                     if !(*lhs_ty == Type::Pointer(Box::new(Type::Char))
                         && *rhs_ty == Type::Pointer(Box::new(Type::Char)))
@@ -753,7 +760,7 @@ impl SemanticAnalyzer {
             }
             Expr::Deref(expr) => {
                 let typed = self.check_expression(*expr, filename);
-                let result_ty = match typed.ty().clone() {
+                let result_ty = match typed.ty().unwrap_const().clone() {
                     Type::Pointer(base_ty) => *base_ty,
                     Type::Array(elem_ty, _) => *elem_ty,
                     other_ty => {

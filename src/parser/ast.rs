@@ -50,24 +50,30 @@ pub enum Type {
         Option<String>,
         Vec<(String, Option<Box<Expr>>, crate::common::SourceSpan)>,
     ),
+    Const(Box<Type>),
 }
 
 impl Type {
     /// Returns `true` if the type is a pointer.
     pub fn is_pointer(&self) -> bool {
-        matches!(self, Type::Pointer(_))
+        match self {
+            Type::Pointer(_) => true,
+            Type::Const(ty) => ty.is_pointer(),
+            _ => false,
+        }
     }
 
     /// Returns `true` if the type is unsigned.
     pub fn is_unsigned(&self) -> bool {
-        matches!(
-            self,
+        match self {
             Type::UnsignedInt
-                | Type::UnsignedChar
-                | Type::UnsignedShort
-                | Type::UnsignedLong
-                | Type::UnsignedLongLong
-        )
+            | Type::UnsignedChar
+            | Type::UnsignedShort
+            | Type::UnsignedLong
+            | Type::UnsignedLongLong => true,
+            Type::Const(ty) => ty.is_unsigned(),
+            _ => false,
+        }
     }
 
     /// Returns the rank of an integer type.
@@ -79,28 +85,34 @@ impl Type {
             Type::Int | Type::UnsignedInt => 4,
             Type::Long | Type::UnsignedLong => 5,
             Type::LongLong | Type::UnsignedLongLong => 6,
+            Type::Const(ty) => ty.get_integer_rank(),
             _ => 0,
         }
     }
 
     /// Returns `true` if the type is a floating-point type.
     pub fn is_floating(&self) -> bool {
-        matches!(self, Type::Float | Type::Double)
+        match self {
+            Type::Float | Type::Double => true,
+            Type::Const(ty) => ty.is_floating(),
+            _ => false,
+        }
     }
 
     /// Returns `true` if the type is numeric.
     pub fn is_numeric(&self) -> bool {
-        matches!(
-            self,
+        match self {
             Type::Int
-                | Type::Char
-                | Type::Short
-                | Type::Long
-                | Type::LongLong
-                | Type::Float
-                | Type::Double
-                | Type::Enum(_, _)
-        )
+            | Type::Char
+            | Type::Short
+            | Type::Long
+            | Type::LongLong
+            | Type::Float
+            | Type::Double
+            | Type::Enum(_, _) => true,
+            Type::Const(ty) => ty.is_numeric(),
+            _ => false,
+        }
     }
 
     /// Returns the arithmetic conversion rank for usual arithmetic conversions.
@@ -114,7 +126,16 @@ impl Type {
             Type::LongLong | Type::UnsignedLongLong => 6,
             Type::Float => 7,
             Type::Double => 8,
+            Type::Const(ty) => ty.get_arithmetic_rank(),
             _ => 0,
+        }
+    }
+
+    /// Recursively unwraps `const` qualifiers from a type.
+    pub fn unwrap_const(&self) -> &Type {
+        match self {
+            Type::Const(ty) => ty.unwrap_const(),
+            _ => self,
         }
     }
 }
@@ -658,6 +679,18 @@ impl TypedExpr {
             self
         } else {
             TypedExpr::ImplicitCast(Box::new(to_ty.clone()), Box::new(self), to_ty)
+        }
+    }
+
+    pub fn span(&self) -> SourceSpan {
+        match self {
+            TypedExpr::Variable(_, span, _) => *span,
+            TypedExpr::Call(_, _, span, _) => *span,
+            _ => SourceSpan::new(
+                crate::file::FileId(0),
+                crate::common::SourceLocation::new(crate::file::FileId(0), 0, 0),
+                crate::common::SourceLocation::new(crate::file::FileId(0), 0, 0),
+            ),
         }
     }
 }

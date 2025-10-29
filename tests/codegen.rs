@@ -803,4 +803,31 @@ mod tests {
         let exit_code = compile_and_run(input, "uninitialized_static_local").unwrap();
         assert_eq!(exit_code, 3);
     }
+
+    /// Test code generation for const global variables
+    #[test]
+    fn test_const_global() {
+        let input = r#"
+        const int x = 42;
+        int main() {
+            return x;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "const_global").unwrap();
+        assert_eq!(exit_code, 42);
+    }
+
+    /// Test code generation for const pointers
+    #[test]
+    fn test_const_pointer() {
+        let input = r#"
+        int main() {
+            int x = 10;
+            int * const p = &x;
+            return *p;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "const_pointer").unwrap();
+        assert_eq!(exit_code, 10);
+    }
 }

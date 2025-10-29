@@ -21,3 +21,12 @@ fn test_undefined_label() {
     );
     assert_yaml_snapshot!("undefined_label", err.unwrap_err());
 }
+
+#[test]
+fn test_assignment_to_const() {
+    let err = compile_and_get_error(
+        "int main() { const int x = 10; x = 20; return x; }",
+        "assignment_to_const.c",
+    );
+    assert_yaml_snapshot!("assignment_to_const", err.unwrap_err());
+}

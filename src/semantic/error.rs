@@ -38,4 +38,8 @@ pub enum SemanticError {
     /// An undefined label was referenced in a goto statement.
     #[error("Undefined label `{0}`")]
     UndefinedLabel(String),
+
+    /// Assignment to a const-qualified variable.
+    #[error("Assignment to const-qualified variable")]
+    AssignmentToConst,
 }

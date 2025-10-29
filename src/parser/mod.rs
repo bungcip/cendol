@@ -168,7 +168,8 @@ impl Parser {
         if let TokenKind::Keyword(k) = token.kind.clone() {
             if k == KeywordKind::Const {
                 self.eat()?;
-                return self.parse_type_specifier();
+                let ty = self.parse_type_specifier()?;
+                return Ok(Type::Const(Box::new(ty)));
             }
             self.parse_type_specifier_kind(k)
         } else if let Some(ty) = self.typedefs.get(&token.to_string()).cloned() {
@@ -369,6 +370,9 @@ impl Parser {
         // Parse pointers
         while self.eat_token(&TokenKind::Star)? {
             ty = Type::Pointer(Box::new(ty));
+            while self.eat_token(&TokenKind::Keyword(KeywordKind::Const))? {
+                ty = Type::Const(Box::new(ty));
+            }
         }
 
         let id = if name_required {

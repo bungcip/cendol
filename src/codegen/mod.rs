@@ -141,9 +141,10 @@ impl CodeGen {
                             self.unions.insert(name.clone(), declarator.ty.clone());
                         } else {
                             // This is a global variable declaration.
+                            let is_const = matches!(declarator.ty, Type::Const(_));
                             let id = self
                                 .module
-                                .declare_data(&declarator.name, Linkage::Export, true, false)
+                                .declare_data(&declarator.name, Linkage::Export, !is_const, false)
                                 .unwrap();
 
                             self.global_variables

@@ -51,6 +51,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     ) -> u32 {
         let real_ty = Self::get_real_type_from_type(ty, structs, unions).unwrap();
         match &real_ty {
+            Type::Const(inner) => Self::get_type_size_from_type(inner, structs, unions),
             Type::Int | Type::UnsignedInt => 8,
             Type::Char | Type::UnsignedChar => 1,
             Type::Short | Type::UnsignedShort => 2,
@@ -96,6 +97,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     ) -> u32 {
         let real_ty = Self::get_real_type_from_type(ty, structs, unions).unwrap();
         match &real_ty {
+            Type::Const(inner) => Self::get_type_alignment_from_type(inner, structs, unions),
             Type::Int | Type::UnsignedInt => 8,
             Type::Char | Type::UnsignedChar => 1,
             Type::Short | Type::UnsignedShort => 2,

@@ -352,8 +352,12 @@ impl Parser {
             TokenKind::Semicolon,
             |p| {
                 let base_ty = p.parse_type_specifier()?;
-                let (ty, name) = p.parse_declarator_suffix(base_ty, true)?;
-                Ok(Parameter { ty, name })
+                let (ty, name, id_token) = p.parse_declarator_suffix(base_ty, true)?;
+                Ok(Parameter {
+                    ty,
+                    name,
+                    span: id_token.span,
+                })
             },
         )
     }
@@ -364,7 +368,7 @@ impl Parser {
         &mut self,
         base_type: Type,
         name_required: bool,
-    ) -> Result<(Type, String), ParserError> {
+    ) -> Result<(Type, String, Token), ParserError> {
         let mut ty = base_type;
 
         // Parse pointers
@@ -375,10 +379,24 @@ impl Parser {
             }
         }
 
-        let id = if name_required {
-            self.expect_name()?
+        let id_token = self.current_token()?;
+        let (id, final_token) = if let TokenKind::Identifier(name) = id_token.kind.clone() {
+            self.eat()?;
+            (name, id_token)
         } else {
-            self.maybe_name()?.unwrap_or_default()
+            if name_required {
+                return Err(ParserError::UnexpectedToken(id_token));
+            }
+            // For abstract declarators, there's no identifier.
+            // We'll pass back the token we're at, but the caller must be careful.
+            // Let's create a default token to signify no identifier.
+            (
+                String::new(),
+                Token {
+                    span: Default::default(),
+                    kind: TokenKind::Eof,
+                },
+            )
         };
 
         // Parse array dimensions
@@ -397,7 +415,7 @@ impl Parser {
                 ty = Type::Array(Box::new(ty), size);
             }
         }
-        Ok((ty, id))
+        Ok((ty, id, final_token))
     }
 
     /// Parses a declarator with optional initializer.
@@ -406,12 +424,13 @@ impl Parser {
         base_type: Type,
         name_required: bool,
     ) -> Result<ast::Declarator, ParserError> {
-        let (ty, name) = self.parse_declarator_suffix(base_type, name_required)?;
+        let (ty, name, id_token) = self.parse_declarator_suffix(base_type, name_required)?;
         let initializer = self.parse_initializer_expr()?;
         Ok(ast::Declarator {
             ty,
             name,
             initializer,
+            span: id_token.span,
         })
     }
 
@@ -442,7 +461,7 @@ impl Parser {
         let original_pos = self.position;
         if let Ok(kind) = self.current_kind()
             && matches!(kind, TokenKind::Star | TokenKind::LeftBracket)
-            && let Ok((ty, _)) = self.parse_declarator_suffix(base_type.clone(), false)
+            && let Ok((ty, _, _)) = self.parse_declarator_suffix(base_type.clone(), false)
         {
             return Ok(ty);
         }
@@ -685,7 +704,11 @@ impl Parser {
                 while let Ok(token) = self.current_token() {
                     match token.kind {
                         TokenKind::LeftParen => {
-                            let location = token.span;
+                            let location = if let Expr::Variable(_, span) = expr {
+                                span
+                            } else {
+                                token.span
+                            };
                             let token_for_error = token.clone();
                             self.eat()?; // consume '('
                             let mut args = Vec::new();
@@ -971,7 +994,7 @@ impl Parser {
                 self.eat()?;
                 let base_ty = self.parse_type_specifier()?;
                 loop {
-                    let (ty, name) = self.parse_declarator_suffix(base_ty.clone(), true)?;
+                    let (ty, name, _) = self.parse_declarator_suffix(base_ty.clone(), true)?;
                     self.typedefs.insert(name, ty);
                     if !self.eat_token(&TokenKind::Comma)? {
                         break;
@@ -1033,6 +1056,7 @@ impl Parser {
             params.push(Parameter {
                 ty: declarator.ty,
                 name: declarator.name,
+                span: declarator.span,
             });
 
             self.eat_token(&TokenKind::Comma)?;
@@ -1081,7 +1105,7 @@ impl Parser {
         if self.eat_token(&TokenKind::Keyword(KeywordKind::Typedef))? {
             let base_ty = self.parse_type_specifier()?;
             loop {
-                let (ty, name) = self.parse_declarator_suffix(base_ty.clone(), true)?;
+                let (ty, name, _) = self.parse_declarator_suffix(base_ty.clone(), true)?;
                 self.typedefs.insert(name, ty);
                 if !self.eat_token(&TokenKind::Comma)? {
                     break;
@@ -1098,12 +1122,13 @@ impl Parser {
         }
         let mut declarators = Vec::new();
         loop {
-            let (ty, name) = self.parse_declarator_suffix(base_type.clone(), true)?;
+            let (ty, name, id_token) = self.parse_declarator_suffix(base_type.clone(), true)?;
             let initializer = self.parse_initializer_expr()?;
             declarators.push(ast::Declarator {
                 ty,
                 name,
                 initializer,
+                span: id_token.span,
             });
 
             if self.eat_token(&TokenKind::Comma)? == false {

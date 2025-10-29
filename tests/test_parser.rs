@@ -5,7 +5,7 @@
 
 use cendol::file::FileManager;
 use cendol::parser::Parser;
-use cendol::parser::ast::{Declarator, Expr, Function, Initializer, Stmt, TranslationUnit, Type};
+use cendol::parser::ast::{Expr, Function, Stmt, TranslationUnit, Type};
 use cendol::preprocessor::Preprocessor;
 
 /// Test configuration constants
@@ -59,32 +59,6 @@ fn create_simple_program_ast() -> TranslationUnit {
     }
 }
 
-/// Creates a program AST with a _Bool variable declaration
-fn create_bool_program_ast() -> TranslationUnit {
-    TranslationUnit {
-        globals: vec![],
-        functions: vec![Function {
-            return_type: Type::Int,
-            name: "main".to_string(),
-            params: vec![],
-            body: vec![
-                Stmt::Declaration(
-                    Type::Bool,
-                    vec![Declarator {
-                        ty: Type::Bool,
-                        name: "a".to_string(),
-                        initializer: Some(Initializer::Expr(Box::new(Expr::Number(1)))),
-                    }],
-                    false,
-                ),
-                Stmt::Return(Expr::Number(0)),
-            ],
-            is_inline: false,
-            is_variadic: false,
-        }],
-    }
-}
-
 /// Creates a program AST with if-else control flow
 fn create_control_flow_program_ast() -> TranslationUnit {
     TranslationUnit {
@@ -109,8 +83,7 @@ mod tests {
     use crate::parse_c_body;
 
     use super::{
-        create_bool_program_ast, create_control_flow_program_ast, create_simple_program_ast,
-        parse_c_code,
+        create_control_flow_program_ast, create_simple_program_ast, parse_c_code,
     };
     use cendol::parser::ast::{Declarator, Expr, Initializer, Stmt, Type};
 
@@ -145,9 +118,19 @@ mod tests {
     fn test_bool_declaration() {
         let input = "int main() { _Bool a = 1; return 0; }";
         let ast = parse_c_code(input).unwrap();
-        let expected = create_bool_program_ast();
-        assert_eq!(ast.functions[0].name, expected.functions[0].name);
-        assert_eq!(ast.functions[0].body, expected.functions[0].body);
+        assert!(matches!(
+            &ast.functions[0].body[0],
+            Stmt::Declaration(Type::Bool, declarators, false) if matches!(
+                &declarators[0],
+                Declarator {
+                    ty: Type::Bool,
+                    name,
+                    initializer: Some(Initializer::Expr(expr)),
+                    ..
+                } if name == "a" && matches!(**expr, Expr::Number(1))
+            )
+        ));
+        assert!(matches!(&ast.functions[0].body[1], Stmt::Return(Expr::Number(0))));
     }
 
     /// Test parsing of switch statements
@@ -190,31 +173,24 @@ mod tests {
     fn test_multiple_declarators() {
         let input = "int main() { int x, *p, **pp; return 0; }";
         let ast = parse_c_code(input).unwrap();
-        let expected_body = vec![
-            Stmt::Declaration(
-                Type::Int,
-                vec![
-                    Declarator {
-                        ty: Type::Int,
-                        name: "x".to_string(),
-                        initializer: None,
-                    },
-                    Declarator {
-                        ty: Type::Pointer(Box::new(Type::Int)),
-                        name: "p".to_string(),
-                        initializer: None,
-                    },
-                    Declarator {
-                        ty: Type::Pointer(Box::new(Type::Pointer(Box::new(Type::Int)))),
-                        name: "pp".to_string(),
-                        initializer: None,
-                    },
-                ],
-                false,
-            ),
-            Stmt::Return(Expr::Number(0)),
-        ];
-        assert_eq!(ast.functions[0].body, expected_body);
+        assert!(matches!(
+            &ast.functions[0].body[0],
+            Stmt::Declaration(Type::Int, declarators, false) if declarators.len() == 3 &&
+                matches!(
+                    &declarators[0],
+                    Declarator { ty: Type::Int, name, .. } if name == "x"
+                ) &&
+                matches!(
+                    &declarators[1],
+                    Declarator { ty: Type::Pointer(inner), name, .. } if name == "p" && **inner == Type::Int
+                ) &&
+                matches!(
+                    &declarators[2],
+                    Declarator { ty: Type::Pointer(inner1), name, .. } if name == "pp" &&
+                        matches!(&**inner1, Type::Pointer(inner2) if **inner2 == Type::Int)
+                )
+        ));
+        assert!(matches!(&ast.functions[0].body[1], Stmt::Return(Expr::Number(0))));
     }
 
     // /// Test parsing of designated initializers for structs

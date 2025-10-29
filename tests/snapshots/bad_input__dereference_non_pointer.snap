@@ -1,0 +1,17 @@
+---
+source: tests/bad_input.rs
+expression: err.unwrap_err()
+---
+msg: "Cannot dereference non-pointer type `Int`"
+path: dereference_non_pointer.c
+span:
+  file: 0
+  start:
+    file: 0
+    line: 1
+    column: 27
+  end:
+    file: 0
+    line: 1
+    column: 28
+verbose: false

@@ -155,6 +155,7 @@ pub struct Declarator {
     pub ty: Type,
     pub name: String,
     pub initializer: Option<Initializer>,
+    pub span: SourceSpan,
 }
 
 /// Represents a statement in the C language.
@@ -471,6 +472,8 @@ pub struct Parameter {
     pub ty: Type,
     /// The name of the parameter.
     pub name: String,
+    /// The span of the parameter.
+    pub span: SourceSpan,
 }
 
 /// Represents a function definition.

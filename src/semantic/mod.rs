@@ -224,11 +224,7 @@ impl SemanticAnalyzer {
                                 self.errors.push((
                                     SemanticError::VariableRedeclaration(declarator.name.clone()),
                                     filename.to_string(),
-                                    SourceSpan::new(
-                                        crate::file::FileId(0),
-                                        SourceLocation::new(crate::file::FileId(0), 0, 0),
-                                        SourceLocation::new(crate::file::FileId(0), 0, 0),
-                                    ),
+                                    declarator.span,
                                 ));
                             }
                         } else {
@@ -363,11 +359,7 @@ impl SemanticAnalyzer {
                 self.errors.push((
                     SemanticError::VariableRedeclaration(param.name.clone()),
                     filename.to_string(),
-                    SourceSpan::new(
-                        crate::file::FileId(0),
-                        SourceLocation::new(crate::file::FileId(0), 0, 0),
-                        SourceLocation::new(crate::file::FileId(0), 0, 0),
-                    ),
+                    param.span,
                 ));
             }
             // Add parameters to local symbol table
@@ -450,11 +442,7 @@ impl SemanticAnalyzer {
                         self.errors.push((
                             SemanticError::VariableRedeclaration(declarator.name.clone()),
                             filename.to_string(),
-                            SourceSpan::new(
-                                crate::file::FileId(0),
-                                SourceLocation::new(crate::file::FileId(0), 0, 0),
-                                SourceLocation::new(crate::file::FileId(0), 0, 0),
-                            ),
+                            declarator.span,
                         ));
                     }
 
@@ -767,11 +755,7 @@ impl SemanticAnalyzer {
                         self.errors.push((
                             SemanticError::NotAPointer(other_ty),
                             filename.to_string(),
-                            SourceSpan::new(
-                                crate::file::FileId(0),
-                                SourceLocation::new(crate::file::FileId(0), 0, 0),
-                                SourceLocation::new(crate::file::FileId(0), 0, 0),
-                            ),
+                            typed.span(),
                         ));
                         Type::Int
                     }

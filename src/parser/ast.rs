@@ -222,17 +222,6 @@ pub enum BinOp {
     BitwiseOr,
     BitwiseXor,
     BitwiseAnd,
-    Assign,
-    AssignAdd,
-    AssignSub,
-    AssignMul,
-    AssignDiv,
-    AssignMod,
-    AssignLeftShift,
-    AssignRightShift,
-    AssignBitwiseAnd,
-    AssignBitwiseXor,
-    AssignBitwiseOr,
     Comma,
 }
 
@@ -250,25 +239,6 @@ pub enum AssignOp {
     BitwiseAnd,
     BitwiseXor,
     BitwiseOr,
-}
-
-impl AssignOp {
-    /// Converts an AssignOp to the corresponding BinOp.
-    pub fn to_binop(&self) -> BinOp {
-        match self {
-            AssignOp::Assign => BinOp::Assign,
-            AssignOp::Add => BinOp::AssignAdd,
-            AssignOp::Sub => BinOp::AssignSub,
-            AssignOp::Mul => BinOp::AssignMul,
-            AssignOp::Div => BinOp::AssignDiv,
-            AssignOp::Mod => BinOp::AssignMod,
-            AssignOp::LeftShift => BinOp::AssignLeftShift,
-            AssignOp::RightShift => BinOp::AssignRightShift,
-            AssignOp::BitwiseAnd => BinOp::AssignBitwiseAnd,
-            AssignOp::BitwiseXor => BinOp::AssignBitwiseXor,
-            AssignOp::BitwiseOr => BinOp::AssignBitwiseOr,
-        }
-    }
 }
 
 /// Represents logical operators.
@@ -405,9 +375,7 @@ impl Expr {
     }
 
     pub fn get_binary_expr(&self) -> Option<(BinOp, &Expr, &Expr)> {
-        if let Some((assign_op, lhs, rhs)) = self.get_assign_expr() {
-            Some((assign_op.to_binop(), lhs, rhs))
-        } else if let Some((logical_op, lhs, rhs)) = self.get_logical_expr() {
+        if let Some((logical_op, lhs, rhs)) = self.get_logical_expr() {
             Some((logical_op.to_binop(), lhs, rhs))
         } else {
             match self {
@@ -577,9 +545,7 @@ impl TypedExpr {
     }
 
     pub fn get_binary_expr(&self) -> Option<(BinOp, &TypedExpr, &TypedExpr)> {
-        if let Some((assign_op, lhs, rhs)) = self.get_assign_expr() {
-            Some((assign_op.to_binop(), lhs, rhs))
-        } else if let Some((logical_op, lhs, rhs)) = self.get_logical_expr() {
+        if let Some((logical_op, lhs, rhs)) = self.get_logical_expr() {
             Some((logical_op.to_binop(), lhs, rhs))
         } else {
             match self {

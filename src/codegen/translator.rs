@@ -499,11 +499,6 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     }
 
     /// Translates an expression into a Cranelift `Value`.
-    fn translate_assignment(&mut self, lhs: Value, rhs_val: Value) -> Result<(), CodegenError> {
-        self.builder.ins().store(MemFlags::new(), rhs_val, lhs, 0);
-        Ok(())
-    }
-
     fn translate_lvalue(&mut self, expr: TypedExpr) -> Result<(Value, Type), CodegenError> {
         match expr {
             TypedExpr::Variable(name, _, ty) => {
@@ -720,7 +715,9 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             AssignOp::LeftShift => self.builder.ins().ishl(lhs_val, rhs_val),
             AssignOp::RightShift => self.builder.ins().sshr(lhs_val, rhs_val),
         };
-        self.translate_assignment(addr, result_val)?;
+        self.builder
+            .ins()
+            .store(MemFlags::new(), result_val, addr, 0);
         Ok((result_val, ty.clone()))
     }
 
@@ -733,19 +730,6 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     ) -> Result<(Value, Type), CodegenError> {
         // Assignment operators are now handled by translate_assign_expr
         match op {
-            BinOp::Assign
-            | BinOp::AssignAdd
-            | BinOp::AssignSub
-            | BinOp::AssignMul
-            | BinOp::AssignDiv
-            | BinOp::AssignMod
-            | BinOp::AssignBitwiseAnd
-            | BinOp::AssignBitwiseOr
-            | BinOp::AssignBitwiseXor
-            | BinOp::AssignLeftShift
-            | BinOp::AssignRightShift => {
-                unreachable!("Assignment operators should be handled by translate_assign_expr")
-            }
             BinOp::Add => {
                 let (lhs_val, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
                 let (rhs_val, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
@@ -1242,7 +1226,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let val = self.load_lvalue(addr, &ty);
                 let one = self.builder.ins().iconst(types::I64, 1);
                 let new_val = self.builder.ins().iadd(val, one);
-                self.translate_assignment(addr, new_val)?;
+                self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
                 Ok((new_val, ty))
             }
             TypedExpr::PreDecrement(expr, ty) => {
@@ -1250,7 +1234,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let val = self.load_lvalue(addr, &ty);
                 let one = self.builder.ins().iconst(types::I64, 1);
                 let new_val = self.builder.ins().isub(val, one);
-                self.translate_assignment(addr, new_val)?;
+                self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
                 Ok((new_val, ty))
             }
             TypedExpr::PostIncrement(expr, ty) => {
@@ -1258,7 +1242,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let val = self.load_lvalue(addr, &ty);
                 let one = self.builder.ins().iconst(types::I64, 1);
                 let new_val = self.builder.ins().iadd(val, one);
-                self.translate_assignment(addr, new_val)?;
+                self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
                 Ok((val, ty))
             }
             TypedExpr::PostDecrement(expr, ty) => {
@@ -1266,7 +1250,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let val = self.load_lvalue(addr, &ty);
                 let one = self.builder.ins().iconst(types::I64, 1);
                 let new_val = self.builder.ins().isub(val, one);
-                self.translate_assignment(addr, new_val)?;
+                self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
                 Ok((val, ty))
             }
             TypedExpr::Ternary(cond, then_expr, else_expr, _ty) => {

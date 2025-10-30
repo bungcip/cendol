@@ -47,7 +47,7 @@ pub enum SemanticError {
     #[error("Member access on non-struct/union type `{0:?}`")]
     NotAStructOrUnion(crate::parser::ast::Type),
 
-    /// An undefined member was referenced.
+    /// An undefined member was accessed.
     #[error("Undefined member `{0}`")]
     UndefinedMember(String),
 }

@@ -75,8 +75,8 @@ use crate::parser::ast::Parameter;
 pub struct SemanticAnalyzer {
     symbol_table: SymbolTable,
     pub enum_constants: HashMap<String, i64>,
-    struct_definitions: HashMap<String, Vec<Parameter>>,
-    union_definitions: HashMap<String, Vec<Parameter>>,
+    struct_definitions: HashMap<String, Type>,
+    union_definitions: HashMap<String, Type>,
     current_function: Option<String>,
     labels: HashMap<String, SourceSpan>,
     errors: Vec<(SemanticError, String, SourceSpan)>, // (error, file, span)
@@ -223,7 +223,17 @@ impl SemanticAnalyzer {
                             }
                             next_value = val + 1;
                         }
+                    } else if let Type::Struct(Some(name), members) = ty {
+                        if !members.is_empty() {
+                            self.struct_definitions
+                                .insert(name.clone(), ty.clone());
+                        }
+                    } else if let Type::Union(Some(name), members) = ty {
+                        if !members.is_empty() {
+                            self.union_definitions.insert(name.clone(), ty.clone());
+                        }
                     }
+
 
                     for declarator in declarators {
                         // Global variables can be redeclared (tentative definitions)
@@ -245,17 +255,6 @@ impl SemanticAnalyzer {
                                     defined_at: filename.to_string(),
                                 },
                             );
-                        }
-                    }
-                }
-                Stmt::Declaration(ty, _, _) => {
-                    if let Type::Struct(Some(name), members) = ty {
-                        if !members.is_empty() {
-                            self.struct_definitions.insert(name.clone(), members.clone());
-                        }
-                    } else if let Type::Union(Some(name), members) = ty {
-                        if !members.is_empty() {
-                            self.union_definitions.insert(name.clone(), members.clone());
                         }
                     }
                 }
@@ -429,14 +428,49 @@ impl SemanticAnalyzer {
     fn check_statement(&mut self, stmt: Stmt, filename: &str) -> TypedStmt {
         match stmt {
             Stmt::Declaration(ty, declarators, is_static) => {
-                if let Type::Struct(Some(name), members) = &ty {
-                    if !members.is_empty() {
-                        self.struct_definitions.insert(name.clone(), members.clone());
+                let mut base_ty = ty.clone();
+                match &mut base_ty {
+                    Type::Struct(Some(name), members) => {
+                        if !members.is_empty() {
+                            for member in members.iter_mut() {
+                                if let Type::Struct(Some(s_name), s_members) = &member.ty {
+                                    if s_members.is_empty() {
+                                        if let Some(def) = self.struct_definitions.get(s_name) {
+                                            member.ty = def.clone();
+                                        }
+                                    }
+                                } else if let Type::Union(Some(u_name), u_members) = &member.ty {
+                                    if u_members.is_empty() {
+                                        if let Some(def) = self.union_definitions.get(u_name) {
+                                            member.ty = def.clone();
+                                        }
+                                    }
+                                }
+                            }
+                            self.struct_definitions.insert(name.clone(), base_ty.clone());
+                        }
                     }
-                } else if let Type::Union(Some(name), members) = &ty {
-                    if !members.is_empty() {
-                        self.union_definitions.insert(name.clone(), members.clone());
+                    Type::Union(Some(name), members) => {
+                        if !members.is_empty() {
+                            for member in members.iter_mut() {
+                                if let Type::Struct(Some(s_name), s_members) = &member.ty {
+                                    if s_members.is_empty() {
+                                        if let Some(def) = self.struct_definitions.get(s_name) {
+                                            member.ty = def.clone();
+                                        }
+                                    }
+                                } else if let Type::Union(Some(u_name), u_members) = &member.ty {
+                                    if u_members.is_empty() {
+                                        if let Some(def) = self.union_definitions.get(u_name) {
+                                            member.ty = def.clone();
+                                        }
+                                    }
+                                }
+                            }
+                            self.union_definitions.insert(name.clone(), base_ty.clone());
+                        }
                     }
+                    _ => {}
                 }
                 if let Type::Enum(_name, members) = &ty {
                     // Only process enum constants for local enums (inside functions)
@@ -489,22 +523,10 @@ impl SemanticAnalyzer {
 
                     // Insert symbol if not already present
                     if self.symbol_table.lookup(&declarator.name).is_none() {
-                        let ty = match declarator.ty.clone() {
-                            Type::Struct(Some(name), members) if members.is_empty() => {
-                                let members = self.struct_definitions.get(&name).cloned().unwrap_or_default();
-                                Type::Struct(Some(name), members)
-                            }
-                            Type::Union(Some(name), members) if members.is_empty() => {
-                                let members = self.union_definitions.get(&name).cloned().unwrap_or_default();
-                                Type::Union(Some(name), members)
-                            }
-                            ty => ty,
-                        };
-
                         self.symbol_table.insert(
                             declarator.name.clone(),
                             Symbol {
-                                ty,
+                                ty: declarator.ty.clone(),
                                 is_function: false,
                                 defined_at: filename.to_string(),
                             },
@@ -537,7 +559,7 @@ impl SemanticAnalyzer {
                         initializer: typed_initializer,
                     });
                 }
-                TypedStmt::Declaration(ty, typed_declarators, is_static)
+                TypedStmt::Declaration(base_ty, typed_declarators, is_static)
             }
             Stmt::Expr(expr) => {
                 let typed_expr = self.check_expression(expr, filename);
@@ -790,6 +812,17 @@ impl SemanticAnalyzer {
                     .lookup(&name)
                     .map(|s| s.ty.clone())
                     .unwrap_or(Type::Int);
+
+                let ty = match ty {
+                    Type::Struct(Some(s_name), members) if members.is_empty() => {
+                        self.struct_definitions.get(&s_name).cloned().unwrap_or(Type::Struct(Some(s_name), vec![]))
+                    }
+                    Type::Union(Some(u_name), members) if members.is_empty() => {
+                        self.union_definitions.get(&u_name).cloned().unwrap_or(Type::Union(Some(u_name), vec![]))
+                    }
+                    _ => ty,
+                };
+
                 let promoted_ty = self.integer_promote(&ty);
                 TypedExpr::Variable(name, location, promoted_ty)
             }
@@ -885,6 +918,20 @@ impl SemanticAnalyzer {
             Expr::Member(expr, member) => {
                 let typed = self.check_expression(*expr, filename);
                 let members = match typed.ty().clone() {
+                    Type::Struct(Some(name), members) if members.is_empty() => {
+                        if let Some(Type::Struct(_, def)) = self.struct_definitions.get(&name) {
+                            Some(def.clone())
+                        } else {
+                            None
+                        }
+                    }
+                    Type::Union(Some(name), members) if members.is_empty() => {
+                        if let Some(Type::Union(_, def)) = self.union_definitions.get(&name) {
+                            Some(def.clone())
+                        } else {
+                            None
+                        }
+                    }
                     Type::Struct(_, members) => Some(members),
                     Type::Union(_, members) => Some(members),
                     other => {
@@ -917,6 +964,20 @@ impl SemanticAnalyzer {
                 let typed = self.check_expression(*expr, filename);
                 let members = match typed.ty().clone() {
                     Type::Pointer(inner) => match *inner {
+                        Type::Struct(Some(name), members) if members.is_empty() => {
+                           if let Some(Type::Struct(_, def)) = self.struct_definitions.get(&name) {
+                                Some(def.clone())
+                           } else {
+                                 None
+                           }
+                        }
+                        Type::Union(Some(name), members) if members.is_empty() => {
+                            if let Some(Type::Union(_, def)) = self.union_definitions.get(&name) {
+                                Some(def.clone())
+                            } else {
+                                None
+                            }
+                        }
                         Type::Struct(_, members) => Some(members),
                         Type::Union(_, members) => Some(members),
                         other => {

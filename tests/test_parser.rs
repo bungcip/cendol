@@ -252,6 +252,7 @@ mod tests {
             !x;
             sizeof x;
             sizeof(int);
+            _Alignof(int);
 
             // cast
             (int)x;
@@ -335,60 +336,61 @@ mod tests {
         assert!(matches!(stmts[20], Stmt::Expr(Expr::LogicalNot(..))));
         assert!(matches!(stmts[21], Stmt::Expr(Expr::Sizeof(..))));
         assert!(matches!(stmts[22], Stmt::Expr(Expr::SizeofType(..))));
+        assert!(matches!(stmts[23], Stmt::Expr(Expr::AlignofType(..))));
 
         // cast expression
-        assert!(matches!(stmts[23], Stmt::Expr(Expr::ExplicitCast(..))));
+        assert!(matches!(stmts[24], Stmt::Expr(Expr::ExplicitCast(..))));
 
         // multiplicative expressions
-        assert!(matches!(stmts[24], Stmt::Expr(Expr::Mul(..))));
-        assert!(matches!(stmts[25], Stmt::Expr(Expr::Div(..))));
-        assert!(matches!(stmts[26], Stmt::Expr(Expr::Mod(..))));
+        assert!(matches!(stmts[25], Stmt::Expr(Expr::Mul(..))));
+        assert!(matches!(stmts[26], Stmt::Expr(Expr::Div(..))));
+        assert!(matches!(stmts[27], Stmt::Expr(Expr::Mod(..))));
 
         // additive expressions
-        assert!(matches!(stmts[27], Stmt::Expr(Expr::Add(..))));
-        assert!(matches!(stmts[28], Stmt::Expr(Expr::Sub(..))));
+        assert!(matches!(stmts[28], Stmt::Expr(Expr::Add(..))));
+        assert!(matches!(stmts[29], Stmt::Expr(Expr::Sub(..))));
 
         // relational expressions
-        assert!(matches!(stmts[29], Stmt::Expr(Expr::LeftShift(..))));
-        assert!(matches!(stmts[30], Stmt::Expr(Expr::RightShift(..))));
-        assert!(matches!(stmts[31], Stmt::Expr(Expr::LessThan(..))));
-        assert!(matches!(stmts[32], Stmt::Expr(Expr::GreaterThan(..))));
-        assert!(matches!(stmts[33], Stmt::Expr(Expr::LessThanOrEqual(..))));
+        assert!(matches!(stmts[30], Stmt::Expr(Expr::LeftShift(..))));
+        assert!(matches!(stmts[31], Stmt::Expr(Expr::RightShift(..))));
+        assert!(matches!(stmts[32], Stmt::Expr(Expr::LessThan(..))));
+        assert!(matches!(stmts[33], Stmt::Expr(Expr::GreaterThan(..))));
+        assert!(matches!(stmts[34], Stmt::Expr(Expr::LessThanOrEqual(..))));
         assert!(matches!(
-            stmts[34],
+            stmts[35],
             Stmt::Expr(Expr::GreaterThanOrEqual(..))
         ));
 
         // equality expressions
-        assert!(matches!(stmts[35], Stmt::Expr(Expr::Equal(..))));
-        assert!(matches!(stmts[36], Stmt::Expr(Expr::NotEqual(..))));
+        assert!(matches!(stmts[36], Stmt::Expr(Expr::Equal(..))));
+        assert!(matches!(stmts[37], Stmt::Expr(Expr::NotEqual(..))));
 
         // bitwise expressions
-        assert!(matches!(stmts[37], Stmt::Expr(Expr::BitwiseAnd(..))));
-        assert!(matches!(stmts[38], Stmt::Expr(Expr::BitwiseXor(..))));
-        assert!(matches!(stmts[39], Stmt::Expr(Expr::BitwiseOr(..))));
+        assert!(matches!(stmts[38], Stmt::Expr(Expr::BitwiseAnd(..))));
+        assert!(matches!(stmts[39], Stmt::Expr(Expr::BitwiseXor(..))));
+        assert!(matches!(stmts[40], Stmt::Expr(Expr::BitwiseOr(..))));
 
         // logical expressions
-        assert!(matches!(stmts[40], Stmt::Expr(Expr::LogicalAnd(..))));
-        assert!(matches!(stmts[41], Stmt::Expr(Expr::LogicalOr(..))));
+        assert!(matches!(stmts[41], Stmt::Expr(Expr::LogicalAnd(..))));
+        assert!(matches!(stmts[42], Stmt::Expr(Expr::LogicalOr(..))));
 
         // conditional expression
-        assert!(matches!(stmts[42], Stmt::Expr(Expr::Ternary(..))));
+        assert!(matches!(stmts[43], Stmt::Expr(Expr::Ternary(..))));
         // assignment expressions
-        assert!(matches!(stmts[43], Stmt::Expr(Expr::Assign(..))));
-        assert!(matches!(stmts[44], Stmt::Expr(Expr::AssignMul(..))));
-        assert!(matches!(stmts[45], Stmt::Expr(Expr::AssignDiv(..))));
-        assert!(matches!(stmts[46], Stmt::Expr(Expr::AssignMod(..))));
-        assert!(matches!(stmts[47], Stmt::Expr(Expr::AssignAdd(..))));
-        assert!(matches!(stmts[48], Stmt::Expr(Expr::AssignSub(..))));
-        assert!(matches!(stmts[49], Stmt::Expr(Expr::AssignLeftShift(..))));
-        assert!(matches!(stmts[50], Stmt::Expr(Expr::AssignRightShift(..))));
-        assert!(matches!(stmts[51], Stmt::Expr(Expr::AssignBitwiseAnd(..))));
-        assert!(matches!(stmts[52], Stmt::Expr(Expr::AssignBitwiseXor(..))));
-        assert!(matches!(stmts[53], Stmt::Expr(Expr::AssignBitwiseOr(..))));
+        assert!(matches!(stmts[44], Stmt::Expr(Expr::Assign(..))));
+        assert!(matches!(stmts[45], Stmt::Expr(Expr::AssignMul(..))));
+        assert!(matches!(stmts[46], Stmt::Expr(Expr::AssignDiv(..))));
+        assert!(matches!(stmts[47], Stmt::Expr(Expr::AssignMod(..))));
+        assert!(matches!(stmts[48], Stmt::Expr(Expr::AssignAdd(..))));
+        assert!(matches!(stmts[49], Stmt::Expr(Expr::AssignSub(..))));
+        assert!(matches!(stmts[50], Stmt::Expr(Expr::AssignLeftShift(..))));
+        assert!(matches!(stmts[51], Stmt::Expr(Expr::AssignRightShift(..))));
+        assert!(matches!(stmts[52], Stmt::Expr(Expr::AssignBitwiseAnd(..))));
+        assert!(matches!(stmts[53], Stmt::Expr(Expr::AssignBitwiseXor(..))));
+        assert!(matches!(stmts[54], Stmt::Expr(Expr::AssignBitwiseOr(..))));
 
         // comma expression
-        assert!(matches!(stmts[54], Stmt::Expr(Expr::Comma(..))));
+        assert!(matches!(stmts[55], Stmt::Expr(Expr::Comma(..))));
     }
 
     /// Test parsing of goto and label statements

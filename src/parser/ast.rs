@@ -365,6 +365,10 @@ pub enum Expr {
     Sizeof(Box<Expr>),
     /// A sizeof type expression.
     SizeofType(Type),
+    /// An alignof expression.
+    Alignof(Box<Expr>),
+    /// An alignof type expression.
+    AlignofType(Type),
     /// A pre-increment expression.
     PreIncrement(Box<Expr>),
     /// A pre-decrement expression.
@@ -548,6 +552,8 @@ pub enum TypedExpr {
     Deref(Box<TypedExpr>, Type),
     AddressOf(Box<TypedExpr>, Type),
     SizeofType(Type, Type),
+    Alignof(Box<TypedExpr>, Type),
+    AlignofType(Type, Type),
     Ternary(Box<TypedExpr>, Box<TypedExpr>, Box<TypedExpr>, Type),
     Member(Box<TypedExpr>, String, Type),
     PointerMember(Box<TypedExpr>, String, Type),
@@ -663,6 +669,8 @@ impl TypedExpr {
             TypedExpr::Deref(_, ty) => ty,
             TypedExpr::AddressOf(_, ty) => ty,
             TypedExpr::SizeofType(_, ty) => ty,
+            TypedExpr::Alignof(_, ty) => ty,
+            TypedExpr::AlignofType(_, ty) => ty,
             TypedExpr::Ternary(_, _, _, ty) => ty,
             TypedExpr::Member(_, _, ty) => ty,
             TypedExpr::PointerMember(_, _, ty) => ty,

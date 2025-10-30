@@ -482,6 +482,7 @@ impl Parser {
             }
             TokenKind::Bang | TokenKind::Tilde => Some(((), 15)),
             TokenKind::Keyword(KeywordKind::Sizeof) => Some(((), 15)),
+            TokenKind::Keyword(KeywordKind::Alignof) => Some(((), 15)),
             _ => None,
         }
     }
@@ -606,6 +607,22 @@ impl Parser {
                     } else {
                         let expr = self.parse_pratt_expr(r_bp)?;
                         Expr::Sizeof(Box::new(expr))
+                    }
+                }
+                TokenKind::Keyword(KeywordKind::Alignof) => {
+                    if self.eat_token(&TokenKind::LeftParen)? {
+                        let expr = if self.is_type_name() {
+                            let ty = self.parse_type()?;
+                            Expr::AlignofType(ty)
+                        } else {
+                            let expr = self.parse_expr()?;
+                            Expr::Alignof(Box::new(expr))
+                        };
+                        self.expect_punct(TokenKind::RightParen)?;
+                        expr
+                    } else {
+                        let expr = self.parse_pratt_expr(r_bp)?;
+                        Expr::Alignof(Box::new(expr))
                     }
                 }
                 _ => unreachable!(),

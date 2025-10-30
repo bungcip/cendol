@@ -183,7 +183,7 @@ pub fn compile_and_run_with_output(
         let output = Command::new(&exe_filename)
             .current_dir(&temp_dir_path)
             .output()?;
-        String::from_utf8_lossy(&output.stdout).trim().to_string()
+        String::from_utf8_lossy(&output.stdout).to_string()
     };
 
     // The temporary directory and its contents will be deleted when `temp_dir` goes out of scope.

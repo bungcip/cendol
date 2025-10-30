@@ -829,4 +829,17 @@ mod tests {
         let exit_code = compile_and_run(input, "const_pointer").unwrap();
         assert_eq!(exit_code, 10);
     }
+
+    /// Test code generation for variadic function calls with floating-point arguments
+    #[test]
+    fn test_variadic_function_call_with_floats() {
+        let input = r#"
+        int main() {
+            printf("Hello, %s! %d, %f\n", "world", 123, 456.789);
+            return 0;
+        }
+        "#;
+        let output = compile_and_run_with_output(input, "variadic_floats").unwrap();
+        assert_eq!(output.trim(), "Hello, world! 123, 456.789000");
+    }
 }

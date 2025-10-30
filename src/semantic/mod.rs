@@ -68,6 +68,8 @@ impl SymbolTable {
     }
 }
 
+use std::collections::HashSet;
+
 /// A semantic analyzer that checks for semantic errors in the AST.
 pub struct SemanticAnalyzer {
     symbol_table: SymbolTable,
@@ -75,6 +77,7 @@ pub struct SemanticAnalyzer {
     current_function: Option<String>,
     labels: HashMap<String, SourceSpan>,
     errors: Vec<(SemanticError, String, SourceSpan)>, // (error, file, span)
+    used_builtins: HashSet<String>,
 }
 
 impl Default for SemanticAnalyzer {
@@ -92,6 +95,7 @@ impl SemanticAnalyzer {
             current_function: None,
             labels: HashMap::new(),
             errors: Vec::new(),
+            used_builtins: HashSet::new(),
         }
     }
 
@@ -281,6 +285,18 @@ impl SemanticAnalyzer {
         let mut typed_globals = Vec::new();
         for global in program.globals {
             typed_globals.push(self.check_statement(global, filename));
+        }
+
+        // Add built-in function declarations to the typed AST
+        for name in &self.used_builtins {
+            if let Some(symbol) = self.symbol_table.lookup(name) {
+                typed_globals.push(TypedStmt::FunctionDeclaration(
+                    symbol.ty.clone(),
+                    name.clone(),
+                    vec![], // Built-ins don't have specified params in this context
+                    true,   // Assume built-ins can be variadic
+                ));
+            }
         }
 
         TypedTranslationUnit {
@@ -745,13 +761,18 @@ impl SemanticAnalyzer {
             Expr::String(s) => TypedExpr::String(s, Type::Pointer(Box::new(Type::Char))),
             Expr::Char(c) => TypedExpr::Char(c, Type::Char),
             Expr::Call(name, args, location) => {
-                if !self.symbol_table.contains_key(&name) {
+                if let Some(symbol) = self.symbol_table.lookup(&name) {
+                    if symbol.defined_at == "built-in" {
+                        self.used_builtins.insert(name.clone());
+                    }
+                } else {
                     self.errors.push((
                         SemanticError::UndefinedFunction(name.clone()),
                         filename.to_string(),
                         location,
                     ));
                 }
+
                 let return_ty = self
                     .symbol_table
                     .lookup(&name)

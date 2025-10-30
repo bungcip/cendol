@@ -463,7 +463,7 @@ impl SemanticAnalyzer {
                         .initializer
                         .map(|init| self.convert_initializer_to_typed(init, filename));
 
-                    if is_static
+                    if (is_static || self.current_function.is_none())
                         && let Some(ref init) = typed_initializer
                         && !is_const_expr(init)
                     {
@@ -671,8 +671,11 @@ impl SemanticAnalyzer {
                 (lhs_cast, rhs_cast, result_ty)
             }
             BinOp::Equal | BinOp::NotEqual | BinOp::LessThan | BinOp::GreaterThan
-            | BinOp::LessThanOrEqual | BinOp::GreaterThanOrEqual | BinOp::LogicalAnd
-            | BinOp::LogicalOr | BinOp::BitwiseOr | BinOp::BitwiseXor | BinOp::BitwiseAnd => {
+            | BinOp::LessThanOrEqual | BinOp::GreaterThanOrEqual => {
+                (lhs_typed, rhs_typed, Type::Bool)
+            }
+            BinOp::LogicalAnd | BinOp::LogicalOr => (lhs_typed, rhs_typed, Type::Bool),
+            BinOp::BitwiseOr | BinOp::BitwiseXor | BinOp::BitwiseAnd => {
                 (lhs_typed, rhs_typed, Type::Int)
             }
             BinOp::LeftShift | BinOp::RightShift => (lhs_typed, rhs_typed, lhs_ty.clone()),
@@ -736,7 +739,7 @@ impl SemanticAnalyzer {
             }
             Expr::LogicalNot(expr) => {
                 let typed = self.check_expression(*expr, filename);
-                TypedExpr::LogicalNot(Box::new(typed), Type::Int)
+                TypedExpr::LogicalNot(Box::new(typed), Type::Bool)
             }
             Expr::BitwiseNot(expr) => {
                 let typed = self.check_expression(*expr, filename);

@@ -57,3 +57,9 @@ fn test_undeclared_function() {
     );
     assert_yaml_snapshot!("undeclared_function", err.unwrap_err());
 }
+
+#[test]
+fn test_assignment_to_non_lvalue() {
+    let err = compile_and_get_error("int main() { 10 = 20; return 0; }", "assignment_to_non_lvalue.c");
+    assert_yaml_snapshot!("assignment_to_non_lvalue", err.unwrap_err());
+}

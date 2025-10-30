@@ -20,17 +20,6 @@ impl From<TypedExpression> for TypedExpr {
         let ty = expr.ty;
 
         match expr.op {
-            BinOp::Assign => TypedExpr::Assign(lhs, rhs, ty),
-            BinOp::AssignAdd => TypedExpr::AssignAdd(lhs, rhs, ty),
-            BinOp::AssignSub => TypedExpr::AssignSub(lhs, rhs, ty),
-            BinOp::AssignMul => TypedExpr::AssignMul(lhs, rhs, ty),
-            BinOp::AssignDiv => TypedExpr::AssignDiv(lhs, rhs, ty),
-            BinOp::AssignMod => TypedExpr::AssignMod(lhs, rhs, ty),
-            BinOp::AssignLeftShift => TypedExpr::AssignLeftShift(lhs, rhs, ty),
-            BinOp::AssignRightShift => TypedExpr::AssignRightShift(lhs, rhs, ty),
-            BinOp::AssignBitwiseAnd => TypedExpr::AssignBitwiseAnd(lhs, rhs, ty),
-            BinOp::AssignBitwiseXor => TypedExpr::AssignBitwiseXor(lhs, rhs, ty),
-            BinOp::AssignBitwiseOr => TypedExpr::AssignBitwiseOr(lhs, rhs, ty),
             BinOp::Add => TypedExpr::Add(lhs, rhs, ty),
             BinOp::Sub => TypedExpr::Sub(lhs, rhs, ty),
             BinOp::Mul => TypedExpr::Mul(lhs, rhs, ty),

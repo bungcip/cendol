@@ -746,6 +746,10 @@ impl SemanticAnalyzer {
                 let _typed = self.check_expression(*expr, filename);
                 TypedExpr::Sizeof(Box::new(_typed), Type::Int)
             }
+            Expr::Alignof(expr) => {
+                let _typed = self.check_expression(*expr, filename);
+                TypedExpr::Alignof(Box::new(_typed), Type::Int)
+            }
             Expr::Deref(expr) => {
                 let typed = self.check_expression(*expr, filename);
                 let result_ty = match typed.ty().unwrap_const().clone() {
@@ -770,6 +774,7 @@ impl SemanticAnalyzer {
                 )
             }
             Expr::SizeofType(ty) => TypedExpr::SizeofType(ty, Type::Int),
+            Expr::AlignofType(ty) => TypedExpr::AlignofType(ty, Type::Int),
             Expr::Ternary(cond, then_expr, else_expr) => {
                 let cond_typed = self.check_expression(*cond, filename);
                 let then_typed = self.check_expression(*then_expr, filename);

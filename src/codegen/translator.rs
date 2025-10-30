@@ -1273,6 +1273,15 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let size = self.get_type_size(&ty) as i64;
                 Ok((self.builder.ins().iconst(types::I64, size), result_ty))
             }
+            TypedExpr::Alignof(expr, ty) => {
+                let (_, expr_ty) = self.translate_typed_expr(*expr)?;
+                let align = self.get_type_alignment(&expr_ty) as i64;
+                Ok((self.builder.ins().iconst(types::I64, align), ty))
+            }
+            TypedExpr::AlignofType(ty, result_ty) => {
+                let align = self.get_type_alignment(&ty) as i64;
+                Ok((self.builder.ins().iconst(types::I64, align), result_ty))
+            }
             TypedExpr::Deref(expr, ty) => {
                 let (ptr, _) = self.translate_typed_expr(*expr)?;
                 Ok((

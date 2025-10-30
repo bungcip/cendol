@@ -611,16 +611,22 @@ impl SemanticAnalyzer {
         rhs: &Expr,
         filename: &str,
     ) -> TypedExpr {
-        let lhs_typed = self.check_expression(lhs.clone(), filename);
-        let rhs_typed = self.check_expression(rhs.clone(), filename);
-        let lhs_ty_clone = lhs_typed.clone();
-        let lhs_ty = lhs_ty_clone.ty();
-        let rhs_ty_clone = rhs_typed.clone();
-        let rhs_ty = rhs_ty_clone.ty();
+        let mut lhs_typed = self.check_expression(lhs.clone(), filename);
+        if let Type::Array(elem_ty, _) = lhs_typed.ty().clone() {
+            lhs_typed = lhs_typed.implicit_cast(Type::Pointer(elem_ty));
+        }
+
+        let mut rhs_typed = self.check_expression(rhs.clone(), filename);
+        if let Type::Array(elem_ty, _) = rhs_typed.ty().clone() {
+            rhs_typed = rhs_typed.implicit_cast(Type::Pointer(elem_ty));
+        }
+
+        let lhs_ty = lhs_typed.ty().clone();
+        let rhs_ty = rhs_typed.ty().clone();
 
         let (lhs_final, rhs_final, result_ty) = match op {
             BinOp::Assign => {
-                if let Type::Const(_) = lhs_ty {
+                if let Type::Const(_) = &lhs_ty {
                     self.errors.push((
                         SemanticError::AssignmentToConst,
                         filename.to_string(),
@@ -628,8 +634,8 @@ impl SemanticAnalyzer {
                     ));
                 }
                 if !lhs_ty.is_numeric() || !rhs_ty.is_numeric() {
-                    if !(*lhs_ty == Type::Pointer(Box::new(Type::Char))
-                        && *rhs_ty == Type::Pointer(Box::new(Type::Char)))
+                    if !(lhs_ty == Type::Pointer(Box::new(Type::Char))
+                        && rhs_ty == Type::Pointer(Box::new(Type::Char)))
                     {
                         self.errors.push((
                             SemanticError::TypeMismatch,
@@ -648,7 +654,7 @@ impl SemanticAnalyzer {
             BinOp::AssignAdd | BinOp::AssignSub | BinOp::AssignMul | BinOp::AssignDiv
             | BinOp::AssignMod => {
                 let (lhs_conv_ty, rhs_conv_ty) =
-                    self.apply_usual_arithmetic_conversions(lhs_ty, rhs_ty);
+                    self.apply_usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
                 let lhs_cast = lhs_typed.clone().implicit_cast(lhs_conv_ty);
                 let rhs_cast = rhs_typed.implicit_cast(rhs_conv_ty);
                 (lhs_cast, rhs_cast, lhs_ty.clone())
@@ -657,18 +663,42 @@ impl SemanticAnalyzer {
             | BinOp::AssignBitwiseXor | BinOp::AssignBitwiseOr => {
                 (lhs_typed, rhs_typed, lhs_ty.clone())
             }
-            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
+            BinOp::Add | BinOp::Sub => {
+                if lhs_ty.is_pointer() || rhs_ty.is_pointer() {
+                    // Pointer arithmetic
+                    let result_ty = match (lhs_ty.unwrap_const(), rhs_ty.unwrap_const()) {
+                        (Type::Pointer(_), Type::Pointer(_)) if op == BinOp::Sub => Type::Int,
+                        (Type::Pointer(..), ty) if ty.get_integer_rank() > 0 => lhs_ty.clone(),
+                        (ty, Type::Pointer(..)) if ty.get_integer_rank() > 0 && op == BinOp::Add => {
+                            rhs_ty.clone()
+                        }
+                        _ => {
+                            self.errors.push((
+                                SemanticError::TypeMismatch,
+                                filename.to_string(),
+                                SourceSpan::default(), // Consider improving span info
+                            ));
+                            Type::Int // dummy type
+                        }
+                    };
+                    (lhs_typed, rhs_typed, result_ty)
+                } else {
+                    // Standard arithmetic
+                    let (lhs_conv_ty, rhs_conv_ty) =
+                        self.apply_usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                    let lhs_cast = lhs_typed.implicit_cast(lhs_conv_ty.clone());
+                    let rhs_cast = rhs_typed.implicit_cast(rhs_conv_ty.clone());
+                    (lhs_cast, rhs_cast, lhs_conv_ty)
+                }
+            }
+            BinOp::Mul | BinOp::Div | BinOp::Mod => {
                 let (lhs_conv_ty, rhs_conv_ty) =
-                    self.apply_usual_arithmetic_conversions(lhs_ty, rhs_ty);
-                let lhs_cast = lhs_typed.implicit_cast(lhs_conv_ty.clone());
-                let rhs_cast = rhs_typed.implicit_cast(rhs_conv_ty.clone());
-                let result_ty = match (lhs_conv_ty, rhs_conv_ty) {
-                    (Type::Pointer(_), Type::Int) => lhs_cast.ty().clone(),
-                    (Type::Int, Type::Pointer(_)) => rhs_cast.ty().clone(),
-                    (Type::Pointer(_), Type::Pointer(_)) => Type::Int,
-                    (ty, _) => ty,
-                };
-                (lhs_cast, rhs_cast, result_ty)
+                    self.apply_usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let (lhs_cast, rhs_cast) = (
+                    lhs_typed.implicit_cast(lhs_conv_ty.clone()),
+                    rhs_typed.implicit_cast(rhs_conv_ty.clone()),
+                );
+                (lhs_cast, rhs_cast, lhs_conv_ty)
             }
             BinOp::Equal | BinOp::NotEqual | BinOp::LessThan | BinOp::GreaterThan
             | BinOp::LessThanOrEqual | BinOp::GreaterThanOrEqual => {

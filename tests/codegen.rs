@@ -278,7 +278,6 @@ mod tests {
 
     /// Test code generation for pointer subtraction
     #[test]
-    #[ignore = "pointer subtraction currently gives wrong result"]
     fn test_pointer_subtraction() {
         let input = r#"
         int main() {

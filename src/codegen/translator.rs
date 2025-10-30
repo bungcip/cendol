@@ -17,6 +17,37 @@ use cranelift_module::DataId;
 use cranelift_module::Linkage;
 use cranelift_object::ObjectModule;
 
+fn unescape(s: &str) -> Vec<u8> {
+    let mut unescaped = Vec::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            if let Some(next) = chars.next() {
+                match next {
+                    'n' => unescaped.push(b'\n'),
+                    't' => unescaped.push(b'\t'),
+                    'r' => unescaped.push(b'\r'),
+                    '\\' => unescaped.push(b'\\'),
+                    '"' => unescaped.push(b'"'),
+                    '\'' => unescaped.push(b'\''),
+                    '0' => unescaped.push(b'\0'),
+                    _ => {
+                        // Not a valid escape sequence, treat as literal backslash and character
+                        unescaped.push(b'\\');
+                        unescaped.push(next as u8);
+                    }
+                }
+            } else {
+                // Trailing backslash
+                unescaped.push(b'\\');
+            }
+        } else {
+            unescaped.push(c as u8);
+        }
+    }
+    unescaped
+}
+
 /// The state of the current block.
 #[derive(PartialEq, PartialOrd)]
 pub enum BlockState {
@@ -41,6 +72,7 @@ pub(crate) struct FunctionTranslator<'a, 'b> {
     pub(crate) signatures: &'b HashMap<String, Signature>,
     pub(crate) label_blocks: HashMap<String, Block>,
     pub(crate) current_function_name: &'b str,
+    pub(crate) anonymous_string_count: &'b mut usize,
 }
 
 impl<'a, 'b> FunctionTranslator<'a, 'b> {
@@ -990,16 +1022,23 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             TypedExpr::Number(n, ty) => Ok((self.builder.ins().iconst(types::I64, n), ty)),
             TypedExpr::FloatNumber(n, ty) => Ok((self.builder.ins().f64const(n), ty)),
             TypedExpr::String(s, ty) => {
-                let mut data = Vec::with_capacity(s.len() + 1);
-                data.extend_from_slice(s.as_bytes());
-                data.push(0);
+                let unescaped = unescape(&s);
+                let mut data = Vec::with_capacity(unescaped.len() + 1);
+                data.extend_from_slice(&unescaped);
+                data.push(0); // Null terminator
+
+                // Create a unique name for the string literal to avoid collisions
+                let name = format!(".L.str{}", self.anonymous_string_count);
+                *self.anonymous_string_count += 1;
+
                 let id = self
                     .module
-                    .declare_data(&s, Linkage::Local, false, false)
+                    .declare_data(&name, Linkage::Local, false, false)
                     .unwrap();
                 let mut data_desc = cranelift_module::DataDescription::new();
                 data_desc.define(data.into_boxed_slice());
                 self.module.define_data(id, &data_desc).unwrap();
+
                 let local_id = self.module.declare_data_in_func(id, self.builder.func);
                 Ok((self.builder.ins().global_value(types::I64, local_id), ty))
             }
@@ -1060,14 +1099,62 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 }
             }
             TypedExpr::ImplicitCast(ty, expr, result_ty) => {
-                let (val, _) = self.translate_typed_expr(*expr)?;
+                let (val, expr_ty) = self.translate_typed_expr(*expr)?;
                 if *ty == Type::Bool {
                     let zero = self.builder.ins().iconst(types::I64, 0);
                     let is_not_zero = self.builder.ins().icmp(IntCC::NotEqual, val, zero);
                     let bool_as_i64 = self.builder.ins().uextend(types::I64, is_not_zero);
                     return Ok((bool_as_i64, result_ty));
                 }
-                Ok((val, result_ty))
+
+                let cast_val = if ty.is_floating() && expr_ty.is_floating() {
+                    // float <-> double
+                    if *ty == Type::Double && expr_ty.unwrap_const() == &Type::Float {
+                        self.builder.ins().fpromote(types::F64, val)
+                    } else if *ty == Type::Float && expr_ty.unwrap_const() == &Type::Double {
+                        self.builder.ins().fdemote(types::F32, val)
+                    } else {
+                        val
+                    }
+                } else if ty.is_floating() && !expr_ty.is_floating() {
+                    // int -> float
+                    let target_ty = if *ty == Type::Float {
+                        types::F32
+                    } else {
+                        types::F64
+                    };
+                    if expr_ty.is_unsigned() {
+                        self.builder.ins().fcvt_from_uint(target_ty, val)
+                    } else {
+                        self.builder.ins().fcvt_from_sint(target_ty, val)
+                    }
+                } else if !ty.is_floating() && expr_ty.is_floating() {
+                    // float -> int
+                    let target_ty = match ty.unwrap_const() {
+                        Type::Char | Type::UnsignedChar | Type::Bool => types::I8,
+                        Type::Short | Type::UnsignedShort => types::I16,
+                        _ => types::I64,
+                    };
+                    let converted = if ty.is_unsigned() {
+                        self.builder.ins().fcvt_to_uint_sat(target_ty, val)
+                    } else {
+                        self.builder.ins().fcvt_to_sint_sat(target_ty, val)
+                    };
+
+                    if target_ty != types::I64 {
+                        if ty.is_unsigned() {
+                            self.builder.ins().uextend(types::I64, converted)
+                        } else {
+                            self.builder.ins().sextend(types::I64, converted)
+                        }
+                    } else {
+                        converted
+                    }
+                } else {
+                    val
+                };
+
+                Ok((cast_val, result_ty))
             }
             TypedExpr::Member(expr, member, _ty) => {
                 let (ptr, ty) = self.translate_typed_expr(*expr)?;
@@ -1385,15 +1472,20 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     arg_values.push(ptr);
                 }
 
-                for arg in args {
-                    let (val, _) = self.translate_typed_expr(arg)?;
+                for arg in &args {
+                    let (val, _) = self.translate_typed_expr(arg.clone())?;
                     arg_values.push(val);
                 }
 
                 let call = if is_variadic {
                     let mut sig = self.signatures.get(&name).unwrap().clone();
-                    for _ in 0..(arg_values.len() - sig.params.len()) {
-                        sig.params.push(AbiParam::new(types::I64));
+                    for arg in &args[sig.params.len()..] {
+                        let abi_param = match arg.ty() {
+                            Type::Float => AbiParam::new(types::F32),
+                            Type::Double => AbiParam::new(types::F64),
+                            _ => AbiParam::new(types::I64),
+                        };
+                        sig.params.push(abi_param);
                     }
                     let sig_ref = self.builder.func.import_signature(sig);
                     let callee_addr = self.builder.ins().func_addr(types::I64, local_callee);

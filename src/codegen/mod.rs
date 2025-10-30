@@ -62,6 +62,7 @@ pub struct CodeGen {
     structs: HashMap<String, Type>,
     unions: HashMap<String, Type>,
     pub enum_constants: HashMap<String, i64>,
+    anonymous_string_count: usize,
 }
 
 impl Default for CodeGen {
@@ -99,6 +100,7 @@ impl CodeGen {
             structs: HashMap::new(),
             unions: HashMap::new(),
             enum_constants: HashMap::new(),
+            anonymous_string_count: 0,
         }
     }
 
@@ -116,8 +118,13 @@ impl CodeGen {
             match global {
                 TypedStmt::FunctionDeclaration(ty, name, params, is_variadic) => {
                     let mut sig = self.module.make_signature();
-                    for _ in params {
-                        sig.params.push(AbiParam::new(types::I64));
+                    for param in params {
+                        let abi_param = match param.ty {
+                            Type::Float => AbiParam::new(types::F32),
+                            Type::Double => AbiParam::new(types::F64),
+                            _ => AbiParam::new(types::I64),
+                        };
+                        sig.params.push(abi_param);
                     }
                     sig.returns.push(AbiParam::new(types::I64));
                     let id = self
@@ -187,8 +194,13 @@ impl CodeGen {
             if let Type::Struct(_, _) = function.return_type {
                 sig.params.push(AbiParam::new(types::I64));
             }
-            for _ in &function.params {
-                sig.params.push(AbiParam::new(types::I64));
+            for param in &function.params {
+                let abi_param = match param.ty {
+                    Type::Float => AbiParam::new(types::F32),
+                    Type::Double => AbiParam::new(types::F64),
+                    _ => AbiParam::new(types::I64),
+                };
+                sig.params.push(abi_param);
             }
             sig.returns.push(AbiParam::new(types::I64));
 
@@ -266,6 +278,7 @@ impl CodeGen {
                 signatures: &self.signatures,
                 label_blocks: HashMap::new(),
                 current_function_name: &function_def.name,
+                anonymous_string_count: &mut self.anonymous_string_count,
             };
 
             // Add parameters to variables and store block params

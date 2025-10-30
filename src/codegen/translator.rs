@@ -1059,8 +1059,14 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     Err(CodegenError::NotAPointer)
                 }
             }
-            TypedExpr::ImplicitCast(_ty, expr, result_ty) => {
+            TypedExpr::ImplicitCast(ty, expr, result_ty) => {
                 let (val, _) = self.translate_typed_expr(*expr)?;
+                if *ty == Type::Bool {
+                    let zero = self.builder.ins().iconst(types::I64, 0);
+                    let is_not_zero = self.builder.ins().icmp(IntCC::NotEqual, val, zero);
+                    let bool_as_i64 = self.builder.ins().uextend(types::I64, is_not_zero);
+                    return Ok((bool_as_i64, result_ty));
+                }
                 Ok((val, result_ty))
             }
             TypedExpr::Member(expr, member, _ty) => {
@@ -1107,17 +1113,22 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             TypedExpr::ExplicitCast(ty, expr, result_ty) => {
                 let (val, _) = self.translate_typed_expr(*expr)?;
+                if *ty == Type::Bool {
+                    let zero = self.builder.ins().iconst(types::I64, 0);
+                    let is_not_zero = self.builder.ins().icmp(IntCC::NotEqual, val, zero);
+                    let bool_as_i64 = self.builder.ins().uextend(types::I64, is_not_zero);
+                    return Ok((bool_as_i64, result_ty));
+                }
                 let cast_val = match *ty {
                     Type::Char | Type::UnsignedChar => self.builder.ins().ireduce(types::I8, val),
                     Type::Short | Type::UnsignedShort => {
                         self.builder.ins().ireduce(types::I16, val)
                     }
-                    Type::Bool => self.builder.ins().ireduce(types::I8, val),
                     _ => val,
                 };
 
                 let extended_val = match *ty {
-                    Type::Char | Type::Bool | Type::Short => {
+                    Type::Char | Type::Short => {
                         self.builder.ins().sextend(types::I64, cast_val)
                     }
                     Type::UnsignedChar | Type::UnsignedShort => {

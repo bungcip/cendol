@@ -57,3 +57,21 @@ fn test_undeclared_function() {
     );
     assert_yaml_snapshot!("undeclared_function", err.unwrap_err());
 }
+
+#[test]
+fn test_not_a_struct_or_union() {
+    let err = compile_and_get_error(
+        "int main() { int x = 10; x.y; return 0; }",
+        "not_a_struct_or_union.c",
+    );
+    assert_yaml_snapshot!("not_a_struct_or_union", err.unwrap_err());
+}
+
+#[test]
+fn test_undefined_member() {
+    let err = compile_and_get_error(
+        "struct Point { int x; }; int main() { struct Point p; p.y; return 0; }",
+        "undefined_member.c",
+    );
+    assert_yaml_snapshot!("undefined_member", err.unwrap_err());
+}

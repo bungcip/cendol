@@ -1,0 +1,17 @@
+---
+source: tests/bad_input.rs
+expression: err.unwrap_err()
+---
+msg: "Undefined member `y`"
+path: undefined_member.c
+span:
+  file: 0
+  start:
+    file: 0
+    line: 1
+    column: 55
+  end:
+    file: 0
+    line: 1
+    column: 56
+verbose: false

@@ -1,0 +1,17 @@
+---
+source: tests/bad_input.rs
+expression: err.unwrap_err()
+---
+msg: "Member access on non-struct/union type `Int`"
+path: not_a_struct_or_union.c
+span:
+  file: 0
+  start:
+    file: 0
+    line: 1
+    column: 26
+  end:
+    file: 0
+    line: 1
+    column: 27
+verbose: false

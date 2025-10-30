@@ -70,10 +70,13 @@ impl SymbolTable {
 
 use std::collections::HashSet;
 
+use crate::parser::ast::Parameter;
 /// A semantic analyzer that checks for semantic errors in the AST.
 pub struct SemanticAnalyzer {
     symbol_table: SymbolTable,
     pub enum_constants: HashMap<String, i64>,
+    struct_definitions: HashMap<String, Vec<Parameter>>,
+    union_definitions: HashMap<String, Vec<Parameter>>,
     current_function: Option<String>,
     labels: HashMap<String, SourceSpan>,
     errors: Vec<(SemanticError, String, SourceSpan)>, // (error, file, span)
@@ -92,6 +95,8 @@ impl SemanticAnalyzer {
         SemanticAnalyzer {
             symbol_table: SymbolTable::new(),
             enum_constants: HashMap::new(),
+            struct_definitions: HashMap::new(),
+            union_definitions: HashMap::new(),
             current_function: None,
             labels: HashMap::new(),
             errors: Vec::new(),
@@ -240,6 +245,17 @@ impl SemanticAnalyzer {
                                     defined_at: filename.to_string(),
                                 },
                             );
+                        }
+                    }
+                }
+                Stmt::Declaration(ty, _, _) => {
+                    if let Type::Struct(Some(name), members) = ty {
+                        if !members.is_empty() {
+                            self.struct_definitions.insert(name.clone(), members.clone());
+                        }
+                    } else if let Type::Union(Some(name), members) = ty {
+                        if !members.is_empty() {
+                            self.union_definitions.insert(name.clone(), members.clone());
                         }
                     }
                 }
@@ -413,6 +429,15 @@ impl SemanticAnalyzer {
     fn check_statement(&mut self, stmt: Stmt, filename: &str) -> TypedStmt {
         match stmt {
             Stmt::Declaration(ty, declarators, is_static) => {
+                if let Type::Struct(Some(name), members) = &ty {
+                    if !members.is_empty() {
+                        self.struct_definitions.insert(name.clone(), members.clone());
+                    }
+                } else if let Type::Union(Some(name), members) = &ty {
+                    if !members.is_empty() {
+                        self.union_definitions.insert(name.clone(), members.clone());
+                    }
+                }
                 if let Type::Enum(_name, members) = &ty {
                     // Only process enum constants for local enums (inside functions)
                     // Global enums are already processed in collect_symbols
@@ -464,10 +489,22 @@ impl SemanticAnalyzer {
 
                     // Insert symbol if not already present
                     if self.symbol_table.lookup(&declarator.name).is_none() {
+                        let ty = match declarator.ty.clone() {
+                            Type::Struct(Some(name), members) if members.is_empty() => {
+                                let members = self.struct_definitions.get(&name).cloned().unwrap_or_default();
+                                Type::Struct(Some(name), members)
+                            }
+                            Type::Union(Some(name), members) if members.is_empty() => {
+                                let members = self.union_definitions.get(&name).cloned().unwrap_or_default();
+                                Type::Union(Some(name), members)
+                            }
+                            ty => ty,
+                        };
+
                         self.symbol_table.insert(
                             declarator.name.clone(),
                             Symbol {
-                                ty: declarator.ty.clone(),
+                                ty,
                                 is_function: false,
                                 defined_at: filename.to_string(),
                             },
@@ -847,11 +884,75 @@ impl SemanticAnalyzer {
             }
             Expr::Member(expr, member) => {
                 let typed = self.check_expression(*expr, filename);
-                TypedExpr::Member(Box::new(typed), member, Type::Int)
+                let members = match typed.ty().clone() {
+                    Type::Struct(_, members) => Some(members),
+                    Type::Union(_, members) => Some(members),
+                    other => {
+                        self.errors.push((
+                            SemanticError::NotAStructOrUnion(other),
+                            filename.to_string(),
+                            typed.span(),
+                        ));
+                        None
+                    }
+                };
+
+                let member_ty = members
+                    .and_then(|m| {
+                        m.iter()
+                            .find(|p| p.name == member)
+                            .map(|p| p.ty.clone())
+                    })
+                    .unwrap_or_else(|| {
+                        self.errors.push((
+                            SemanticError::UndefinedMember(member.clone()),
+                            filename.to_string(),
+                            typed.span(),
+                        ));
+                        Type::Int
+                    });
+                TypedExpr::Member(Box::new(typed), member, member_ty)
             }
             Expr::PointerMember(expr, member) => {
                 let typed = self.check_expression(*expr, filename);
-                TypedExpr::PointerMember(Box::new(typed), member, Type::Int)
+                let members = match typed.ty().clone() {
+                    Type::Pointer(inner) => match *inner {
+                        Type::Struct(_, members) => Some(members),
+                        Type::Union(_, members) => Some(members),
+                        other => {
+                            self.errors.push((
+                                SemanticError::NotAStructOrUnion(other),
+                                filename.to_string(),
+                                typed.span(),
+                            ));
+                            None
+                        }
+                    },
+                    other => {
+                        self.errors.push((
+                            SemanticError::NotAPointer(other),
+                            filename.to_string(),
+                            typed.span(),
+                        ));
+                        None
+                    }
+                };
+
+                let member_ty = members
+                    .and_then(|m| {
+                        m.iter()
+                            .find(|p| p.name == member)
+                            .map(|p| p.ty.clone())
+                    })
+                    .unwrap_or_else(|| {
+                        self.errors.push((
+                            SemanticError::UndefinedMember(member.clone()),
+                            filename.to_string(),
+                            typed.span(),
+                        ));
+                        Type::Int
+                    });
+                TypedExpr::PointerMember(Box::new(typed), member, member_ty)
             }
             Expr::InitializerList(list) => {
                 let typed_list = list

@@ -6,6 +6,8 @@
 
 use cendol::test_utils::{compile_and_run, compile_and_run_with_output};
 
+mod struct_access;
+
 #[cfg(test)]
 mod tests {
     use super::{compile_and_run, compile_and_run_with_output};

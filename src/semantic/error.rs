@@ -42,4 +42,12 @@ pub enum SemanticError {
     /// Assignment to a const-qualified variable.
     #[error("Assignment to const-qualified variable")]
     AssignmentToConst,
+
+    /// Member access on a non-struct/union type.
+    #[error("Member access on non-struct/union type `{0:?}`")]
+    NotAStructOrUnion(crate::parser::ast::Type),
+
+    /// An undefined member was referenced.
+    #[error("Undefined member `{0}`")]
+    UndefinedMember(String),
 }

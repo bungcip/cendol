@@ -1229,15 +1229,15 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
                 Ok((extended_val, result_ty))
             }
-            TypedExpr::CompoundLiteral(ty, initializer, result_ty) => {
-                let size = self.get_type_size(&ty);
+            TypedExpr::CompoundLiteral(_ty, initializer, result_ty) => {
+                let size = self.get_type_size(&result_ty);
                 let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
                     StackSlotKind::ExplicitSlot,
                     size,
                     0,
                 ));
                 let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
-                self.translate_initializer(addr, &ty, &initializer)?;
+                self.translate_initializer(addr, &result_ty, &initializer)?;
                 Ok((addr, result_ty))
             }
             TypedExpr::PreIncrement(expr, ty) => {

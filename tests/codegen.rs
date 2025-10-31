@@ -184,7 +184,6 @@ mod tests {
 
     /// Test code generation with designated initializers for arrays
     #[test]
-    #[ignore = "designated initializer for arrays not yet supported"]
     fn test_designated_initializer_array() {
         let input = r#"
         int main() {
@@ -269,18 +268,18 @@ mod tests {
         assert_eq!(exit_code, 10);
     }
 
-    // /// Test code generation for compound literals with arrays
-    // #[test]
-    // fn test_compound_literal_array() {
-    //     let input = r#"
-    //     int main() {
-    //         int *p = (int[]){ 1, 2, 3 };
-    //         return p[1];
-    //     }
-    //     "#;
-    //     let exit_code = compile_and_run(input, "compound_literal_array").unwrap();
-    //     assert_eq!(exit_code, 2);
-    // }
+    /// Test code generation for compound literals with arrays
+    #[test]
+    fn test_compound_literal_array() {
+        let input = r#"
+        int main() {
+            int *p = (int[]){ 1, 2, 3 };
+            return p[1];
+        }
+        "#;
+        let exit_code = compile_and_run(input, "compound_literal_array").unwrap();
+        assert_eq!(exit_code, 2);
+    }
 
     /// Test code generation for pointer subtraction
     #[test]

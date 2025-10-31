@@ -1191,11 +1191,13 @@ impl SemanticAnalyzer {
             }
             Expr::CompoundLiteral(ty, initializer) => {
                 let typed_initializer = self.convert_initializer_to_typed(*initializer, filename);
-                TypedExpr::CompoundLiteral(
-                    Box::new(*ty.clone()),
-                    Box::new(typed_initializer),
-                    *ty.clone(),
-                )
+                let mut final_ty = *ty.clone();
+                if let Type::Array(elem_ty, 0) = &final_ty {
+                    if let TypedInitializer::List(list) = &typed_initializer {
+                        final_ty = Type::Array(elem_ty.clone(), list.len());
+                    }
+                }
+                TypedExpr::CompoundLiteral(ty, Box::new(typed_initializer), final_ty)
             }
             Expr::PreIncrement(expr) => {
                 let typed = self.check_expression(*expr, filename);

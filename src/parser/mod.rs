@@ -860,7 +860,8 @@ impl Parser {
                 self.expect_punct(TokenKind::Equal)?;
                 self.parse_initializer()?
             } else {
-                Initializer::Expr(Box::new(self.parse_expr()?))
+                // Use a binding power of 2 to stop parsing at a comma
+                Initializer::Expr(Box::new(self.parse_pratt_expr(2)?))
             };
             initializers.push((designators, Box::new(initializer)));
 

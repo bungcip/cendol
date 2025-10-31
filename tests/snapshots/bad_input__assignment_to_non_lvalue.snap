@@ -1,0 +1,18 @@
+---
+source: tests/bad_input.rs
+expression: err.unwrap_err()
+---
+msg: Assignment to non-lvalue expression
+path: assignment_to_non_lvalue.c
+span:
+  file: 0
+  start:
+    file: 0
+    line: 0
+    column: 0
+  end:
+    file: 0
+    line: 0
+    column: 0
+verbose: false
+kind: Error

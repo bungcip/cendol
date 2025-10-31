@@ -708,6 +708,14 @@ impl SemanticAnalyzer {
 
         let (lhs_final, rhs_final, result_ty) = match op {
             BinOp::Assign => {
+                if !is_lvalue(lhs) {
+                    self.errors.push((
+                        SemanticError::NotAnLvalue,
+                        filename.to_string(),
+                        lhs_typed.span(),
+                    ));
+                }
+
                 if let Type::Const(_) = &lhs_ty {
                     self.errors.push((
                         SemanticError::AssignmentToConst,
@@ -1177,5 +1185,15 @@ fn is_const_expr(initializer: &TypedInitializer) -> bool {
         TypedInitializer::List(list) => list
             .iter()
             .all(|(_, initializer)| is_const_expr(initializer)),
+    }
+}
+
+fn is_lvalue(expr: &Expr) -> bool {
+    match expr {
+        Expr::Variable(_, _) => true,
+        Expr::Member(expr, _) => is_lvalue(expr),
+        Expr::PointerMember(expr, _) => is_lvalue(expr),
+        Expr::Deref(expr) => is_lvalue(expr),
+        _ => false,
     }
 }

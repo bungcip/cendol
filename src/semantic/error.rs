@@ -50,4 +50,8 @@ pub enum SemanticError {
     /// An undefined member was accessed.
     #[error("Undefined member `{0}`")]
     UndefinedMember(String),
+
+    /// Assignment to a non-lvalue expression.
+    #[error("Assignment to non-lvalue expression")]
+    NotAnLvalue,
 }

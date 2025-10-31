@@ -16,7 +16,8 @@ pub mod error;
 struct Symbol {
     ty: Type,
     is_function: bool,
-    defined_at: String, // For better error messages
+    span: SourceSpan,
+    is_builtin: bool,
 }
 
 /// A scoped symbol table using a stack of hash maps for nested scopes.
@@ -79,7 +80,9 @@ pub struct SemanticAnalyzer {
     current_function: Option<String>,
     labels: HashMap<String, SourceSpan>,
     errors: Vec<(SemanticError, String, SourceSpan)>, // (error, file, span)
+    warnings: Vec<(SemanticError, String, SourceSpan)>, // (warning, file, span)
     used_builtins: HashSet<String>,
+    used_variables: HashSet<String>,
 }
 
 impl Default for SemanticAnalyzer {
@@ -99,7 +102,9 @@ impl SemanticAnalyzer {
             current_function: None,
             labels: HashMap::new(),
             errors: Vec::new(),
+            warnings: Vec::new(),
             used_builtins: HashSet::new(),
+            used_variables: HashSet::new(),
         }
     }
 
@@ -128,7 +133,8 @@ impl SemanticAnalyzer {
                 Symbol {
                     ty: return_type,
                     is_function: true,
-                    defined_at: "built-in".to_string(),
+                    span: SourceSpan::default(),
+                    is_builtin: true,
                 },
             );
         }
@@ -148,7 +154,14 @@ impl SemanticAnalyzer {
         mut self,
         program: TranslationUnit,
         filename: &str,
-    ) -> Result<(TypedTranslationUnit, Self), Vec<(SemanticError, String, SourceSpan)>> {
+    ) -> Result<
+        (
+            TypedTranslationUnit,
+            Vec<(SemanticError, String, SourceSpan)>,
+            Self,
+        ),
+        Vec<(SemanticError, String, SourceSpan)>,
+    > {
         // First pass: collect all function definitions and global declarations
         self.collect_symbols(&program, filename);
 
@@ -156,7 +169,7 @@ impl SemanticAnalyzer {
         let typed_program = self.check_program(program, filename);
 
         if self.errors.is_empty() {
-            Ok((typed_program, self))
+            Ok((typed_program, self.warnings.clone(), self))
         } else {
             Err(self.errors)
         }
@@ -185,7 +198,8 @@ impl SemanticAnalyzer {
                             Symbol {
                                 ty: ty.clone(),
                                 is_function: true,
-                                defined_at: filename.to_string(),
+                                span: SourceSpan::default(),
+                                is_builtin: false,
                             },
                         );
                     }
@@ -251,7 +265,8 @@ impl SemanticAnalyzer {
                                 Symbol {
                                     ty: declarator.ty.clone(),
                                     is_function: false,
-                                    defined_at: filename.to_string(),
+                                    span: declarator.span,
+                                    is_builtin: false,
                                 },
                             );
                         }
@@ -281,7 +296,8 @@ impl SemanticAnalyzer {
                     Symbol {
                         ty: function.return_type.clone(),
                         is_function: true,
-                        defined_at: filename.to_string(),
+                        span: SourceSpan::default(),
+                        is_builtin: false,
                     },
                 );
             }
@@ -398,7 +414,8 @@ impl SemanticAnalyzer {
                 Symbol {
                     ty: param.ty.clone(),
                     is_function: false,
-                    defined_at: format!("{} (parameter)", filename),
+                    span: param.span,
+                    is_builtin: false,
                 },
             );
         }
@@ -409,9 +426,21 @@ impl SemanticAnalyzer {
             typed_body.push(self.check_statement(stmt, filename));
         }
 
+        // Check for unused variables
+        for (name, symbol) in self.symbol_table.scopes.last().unwrap() {
+            if !self.used_variables.contains(name) {
+                self.warnings.push((
+                    SemanticError::UnusedVariable(name.clone()),
+                    filename.to_string(),
+                    symbol.span,
+                ));
+            }
+        }
+
         // Pop function scope
         self.symbol_table.pop_scope();
         self.current_function = None;
+        self.used_variables.clear();
 
         TypedFunctionDecl {
             return_type: function.return_type,
@@ -527,7 +556,8 @@ impl SemanticAnalyzer {
                             Symbol {
                                 ty: declarator.ty.clone(),
                                 is_function: false,
-                                defined_at: filename.to_string(),
+                                span: declarator.span,
+                                is_builtin: false,
                             },
                         );
                     }
@@ -601,7 +631,8 @@ impl SemanticAnalyzer {
                                 Symbol {
                                     ty: ty.clone(),
                                     is_function: false,
-                                    defined_at: filename.to_string(),
+                                    span: SourceSpan::default(),
+                                    is_builtin: false,
                                 },
                             );
                         }
@@ -844,6 +875,7 @@ impl SemanticAnalyzer {
 
         match expr {
             Expr::Variable(name, location) => {
+                self.used_variables.insert(name.clone());
                 if !self.symbol_table.contains_key(&name)
                     && !self.enum_constants.contains_key(&name)
                 {
@@ -878,7 +910,7 @@ impl SemanticAnalyzer {
             Expr::Char(c) => TypedExpr::Char(c, Type::Char),
             Expr::Call(name, args, location) => {
                 if let Some(symbol) = self.symbol_table.lookup(&name) {
-                    if symbol.defined_at == "built-in" {
+                    if symbol.is_builtin {
                         self.used_builtins.insert(name.clone());
                     }
                 } else {

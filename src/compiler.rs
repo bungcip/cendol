@@ -86,10 +86,6 @@ impl Compiler {
     pub fn compile(&mut self) -> Result<(), Report> {
         self.logger.log("Verbose output enabled");
 
-        if self.cli.wall {
-            todo!("Enable all warnings");
-        }
-
         let (input, filename) = if self.cli.input_file == "-" {
             (
                 std::io::read_to_string(std::io::stdin()).expect("Failed to read from stdin"),
@@ -104,7 +100,7 @@ impl Compiler {
 
         for def in &self.cli.define {
             if let Err(err) = self.preprocessor.define(def) {
-                let report = Report::new(err.to_string(), None, None, self.cli.verbose);
+                let report = Report::new(err.to_string(), None, None, self.cli.verbose, false);
                 return Err(report);
             }
         }
@@ -113,7 +109,7 @@ impl Compiler {
             let output = match self.preprocessor.preprocess(&input, filename) {
                 Ok(output) => output,
                 Err(err) => {
-                    let report = Report::new(err.to_string(), None, None, self.cli.verbose);
+                    let report = Report::new(err.to_string(), None, None, self.cli.verbose, false);
                     return Err(report);
                 }
             };
@@ -131,7 +127,7 @@ impl Compiler {
         let tokens = match self.preprocessor.preprocess(&input, filename) {
             Ok(tokens) => tokens,
             Err(err) => {
-                let report = Report::new(err.to_string(), None, None, self.cli.verbose);
+                let report = Report::new(err.to_string(), None, None, self.cli.verbose, false);
                 return Err(report);
             }
         };
@@ -139,7 +135,7 @@ impl Compiler {
         let mut parser = match Parser::new(tokens) {
             Ok(parser) => parser,
             Err(err) => {
-                let report = Report::new(err.to_string(), None, None, self.cli.verbose);
+                let report = Report::new(err.to_string(), None, None, self.cli.verbose, false);
                 return Err(report);
             }
         };
@@ -167,18 +163,19 @@ impl Compiler {
                     (Some(filename.to_string()), None)
                 };
 
-                let report = Report::new(msg, path, span, self.cli.verbose);
+                let report = Report::new(msg, path, span, self.cli.verbose, false);
                 return Err(report);
             }
         };
 
         // Perform semantic analysis
         let semantic_analyzer = SemanticAnalyzer::with_builtins();
-        let (typed_ast, semantic_analyzer) = match semantic_analyzer.analyze(ast.clone(), filename) {
-            Ok((typed_ast, semantic_analyzer)) => {
-                self.logger.log("Semantic analysis passed");
-                (typed_ast, semantic_analyzer)
-            }
+        let (typed_ast, warnings, semantic_analyzer) =
+            match semantic_analyzer.analyze(ast.clone(), filename) {
+                Ok((typed_ast, warnings, semantic_analyzer)) => {
+                    self.logger.log("Semantic analysis passed");
+                    (typed_ast, warnings, semantic_analyzer)
+                }
             Err(errors) => {
                 for (error, file, span) in errors {
                     let report_data = Report::new(
@@ -186,6 +183,7 @@ impl Compiler {
                         Some(file.clone()),
                         Some(span),
                         self.cli.verbose,
+                        false,
                     );
                     crate::error::report(&report_data);
                 }
@@ -194,9 +192,31 @@ impl Compiler {
                     Some(filename.to_string()),
                     None,
                     self.cli.verbose,
+                    false,
                 ));
             }
         };
+
+        for (warning, file, span) in &warnings {
+            let report_data = Report::new(
+                warning.to_string(),
+                Some(file.clone()),
+                Some(*span),
+                self.cli.verbose,
+                true,
+            );
+            crate::error::report(&report_data);
+        }
+
+        if self.cli.wall && !warnings.is_empty() {
+            return Err(Report::new(
+                "Warnings treated as errors".to_string(),
+                Some(filename.to_string()),
+                None,
+                self.cli.verbose,
+                false,
+            ));
+        }
 
         let mut codegen = CodeGen::new();
         codegen.enum_constants = semantic_analyzer.enum_constants;
@@ -208,6 +228,7 @@ impl Compiler {
                     Some(filename.to_string()),
                     None,
                     self.cli.verbose,
+                    false,
                 );
                 report.verbose = self.cli.verbose;
                 return Err(report);

@@ -36,6 +36,8 @@ pub struct Report {
     pub span: Option<SourceSpan>,
     /// Whether to print verbose output.
     pub verbose: bool,
+    /// Whether the report is a warning.
+    pub is_warning: bool,
 }
 
 impl std::fmt::Display for Report {
@@ -58,12 +60,19 @@ impl Report {
     /// # Returns
     ///
     /// A new `Report` instance.
-    pub fn new(msg: String, path: Option<String>, span: Option<SourceSpan>, verbose: bool) -> Self {
+    pub fn new(
+        msg: String,
+        path: Option<String>,
+        span: Option<SourceSpan>,
+        verbose: bool,
+        is_warning: bool,
+    ) -> Self {
         Self {
             msg,
             path,
             span,
             verbose,
+            is_warning,
         }
     }
 }
@@ -75,7 +84,13 @@ impl Report {
 /// * `report` - The report to print.
 pub fn report(report: &Report) {
     let path = report.path.clone().unwrap_or_else(|| "input".to_string());
-    let msg = report.msg.clone();
+    let mut msg = report.msg.clone();
+    let kind = if report.is_warning {
+        msg = format!("warning: {}", msg);
+        ReportKind::Warning
+    } else {
+        ReportKind::Error
+    };
 
     if let Some(span) = &report.span {
         let source = std::fs::read_to_string(&path).unwrap_or_else(|_| "".to_string());
@@ -102,7 +117,7 @@ pub fn report(report: &Report) {
                 - 1
         };
 
-        AriadneReport::<'static, Span>::build(ReportKind::Error, path.clone(), start_offset)
+        AriadneReport::<'static, Span>::build(kind, path.clone(), start_offset)
             .with_code(3)
             .with_message(&msg)
             .with_label(
@@ -114,7 +129,7 @@ pub fn report(report: &Report) {
             .eprint((path.clone(), Source::from(source)))
             .unwrap();
     } else {
-        AriadneReport::<'static, Span>::build(ReportKind::Error, path.clone(), 0)
+        AriadneReport::<'static, Span>::build(kind, path.clone(), 0)
             .with_code(3)
             .with_message(msg)
             .with_label(

@@ -1,5 +1,18 @@
 ---
 source: tests/bad_input.rs
-expression: err.unwrap()
+expression: err.unwrap_err()
 ---
-~
+msg: "Unused variable `a`"
+path: type_mismatch.c
+span:
+  file: 0
+  start:
+    file: 0
+    line: 1
+    column: 18
+  end:
+    file: 0
+    line: 1
+    column: 19
+verbose: false
+is_warning: true

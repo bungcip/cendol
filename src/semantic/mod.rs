@@ -329,6 +329,31 @@ impl SemanticAnalyzer {
             }
         }
 
+        // Add built-in function declarations to the typed AST if they are used and not declared.
+        let declared_functions: std::collections::HashSet<_> = typed_globals
+            .iter()
+            .filter_map(|stmt| {
+                if let TypedStmt::FunctionDeclaration(_, name, _, _) = stmt {
+                    Some(name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for name in &self.used_builtins {
+            if !declared_functions.contains(name) {
+                if let Some(symbol) = self.symbol_table.lookup(name) {
+                    typed_globals.push(TypedStmt::FunctionDeclaration(
+                        symbol.ty.clone(),
+                        name.clone(),
+                        vec![],
+                        true, // Assume variadic
+                    ));
+                }
+            }
+        }
+
         TypedTranslationUnit {
             globals: typed_globals,
             functions: typed_functions,

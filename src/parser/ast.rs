@@ -49,7 +49,7 @@ pub enum Type {
     /// An enum definition.
     Enum(
         Option<StringId>,
-        Vec<(StringId, Option<Box<Expr>>, crate::common::SourceSpan)>,
+        Vec<(StringId, Option<Box<Expr>>, SourceSpan)>,
     ),
     Const(Box<Type>),
 }
@@ -163,14 +163,14 @@ pub struct Declarator {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Stmt {
     /// A `return` statement.
-    Return(Expr),
+    Return(Box<Expr>),
     /// An `if` statement.
     If(Box<Expr>, Box<Stmt>, Option<Box<Stmt>>),
     /// A `while` loop.
     While(Box<Expr>, Box<Stmt>),
     /// A `for` loop.
     For(
-        Option<ForInit>,
+        Option<Box<ForInit>>,
         Option<Box<Expr>>,
         Option<Box<Expr>>,
         Box<Stmt>,
@@ -184,13 +184,13 @@ pub enum Stmt {
     /// A `default` statement in a `switch`.
     Default(Box<Stmt>),
     /// A labeled statement.
-    Label(StringId, Box<Stmt>, crate::common::SourceSpan),
+    Label(StringId, Box<Stmt>, SourceSpan),
     /// A `goto` statement.
-    Goto(StringId, crate::common::SourceSpan),
+    Goto(StringId, SourceSpan),
     /// A variable declaration.
-    Declaration(Type, Vec<Declarator>, bool),
+    Declaration(Box<Type>, Vec<Declarator>, bool),
     FunctionDeclaration {
-        ty: Type,
+        ty: Box<Type>,
         name: StringId,
         params: Vec<Parameter>,
         is_variadic: bool,
@@ -206,7 +206,7 @@ pub enum Stmt {
     /// An empty statement.
     Empty,
     /// An expression statement.
-    Expr(Expr),
+    Expr(Box<Expr>),
     /// A `_Static_assert` declaration.
     StaticAssert(Box<Expr>, StringId),
 }

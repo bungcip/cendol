@@ -899,7 +899,7 @@ impl Parser {
         } else if self.eat_token(&TokenKind::Keyword(KeywordKind::Static))? {
             let base_type = self.parse_type_specifier()?;
             if self.eat_token(&TokenKind::Semicolon)? {
-                return Ok(Stmt::Declaration(base_type, vec![], true));
+                return Ok(Stmt::Declaration(Box::new(base_type), vec![], true));
             }
             let mut declarators = Vec::new();
             loop {
@@ -911,13 +911,13 @@ impl Parser {
                 }
             }
             self.expect_punct(TokenKind::Semicolon)?;
-            return Ok(Stmt::Declaration(base_type, declarators, true));
+            return Ok(Stmt::Declaration(Box::new(base_type), declarators, true));
         }
 
         if self.is_type_name() && self.peek()? != TokenKind::LeftParen {
             let base_type = self.parse_type_specifier()?;
             if self.eat_token(&TokenKind::Semicolon)? {
-                return Ok(Stmt::Declaration(base_type, vec![], false));
+                return Ok(Stmt::Declaration(Box::new(base_type), vec![], false));
             }
             let mut declarators = Vec::new();
             loop {
@@ -929,7 +929,7 @@ impl Parser {
                 }
             }
             self.expect_punct(TokenKind::Semicolon)?;
-            return Ok(Stmt::Declaration(base_type, declarators, false));
+            return Ok(Stmt::Declaration(Box::new(base_type), declarators, false));
         }
 
         if let TokenKind::Keyword(k) = token.kind {
@@ -937,7 +937,7 @@ impl Parser {
                 self.eat()?;
                 let expr = self.parse_expr()?;
                 self.expect_punct(TokenKind::Semicolon)?;
-                return Ok(Stmt::Return(expr));
+                return Ok(Stmt::Return(Box::new(expr)));
             } else if k == KeywordKind::If {
                 self.eat()?;
                 self.expect_punct(TokenKind::LeftParen)?;
@@ -971,7 +971,7 @@ impl Parser {
                         ForInit::Expr(p.parse_expr()?)
                     };
 
-                    Ok(result)
+                    Ok(Box::new(result))
                 })?;
 
                 let cond =
@@ -1051,7 +1051,7 @@ impl Parser {
 
         let expr = self.parse_expr()?;
         self.expect_punct(TokenKind::Semicolon)?;
-        Ok(Stmt::Expr(expr))
+        Ok(Stmt::Expr(Box::new(expr)))
     }
     /// Parses a simple statement like Break or Continue.
     fn parse_simple_statement(&mut self, stmt: Stmt) -> Result<Stmt, ParserError> {
@@ -1134,7 +1134,7 @@ impl Parser {
         {
             if self.eat_token(&TokenKind::Semicolon)? {
                 return Ok(Stmt::FunctionDeclaration {
-                    ty,
+                    ty: Box::new(ty),
                     name,
                     params,
                     is_variadic,
@@ -1165,7 +1165,7 @@ impl Parser {
         let is_static = self.eat_token(&TokenKind::Keyword(KeywordKind::Static))?;
         let base_type = self.parse_type_specifier()?;
         if self.eat_token(&TokenKind::Semicolon)? {
-            return Ok(Stmt::Declaration(base_type, vec![], is_static));
+            return Ok(Stmt::Declaration(Box::new(base_type), vec![], is_static));
         }
         let mut declarators = Vec::new();
         loop {
@@ -1183,7 +1183,11 @@ impl Parser {
             }
         }
         self.expect_punct(TokenKind::Semicolon)?;
-        Ok(Stmt::Declaration(base_type, declarators, is_static))
+        Ok(Stmt::Declaration(
+            Box::new(base_type),
+            declarators,
+            is_static,
+        ))
     }
 
     pub fn parse(&mut self) -> Result<TranslationUnit, ParserError> {

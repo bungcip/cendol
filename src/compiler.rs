@@ -176,26 +176,26 @@ impl Compiler {
                     self.logger.log("Semantic analysis passed");
                     (typed_ast, warnings, semantic_analyzer)
                 }
-            Err(errors) => {
-                for (error, file, span) in errors {
-                    let report_data = Report::new(
-                        error.to_string(),
-                        Some(file.clone()),
-                        Some(span),
+                Err(errors) => {
+                    for (error, file, span) in errors {
+                        let report_data = Report::new(
+                            error.to_string(),
+                            Some(file.clone()),
+                            Some(span),
+                            self.cli.verbose,
+                            false,
+                        );
+                        crate::error::report(&report_data);
+                    }
+                    return Err(Report::new(
+                        "Semantic errors found".to_string(),
+                        Some(filename.to_string()),
+                        None,
                         self.cli.verbose,
                         false,
-                    );
-                    crate::error::report(&report_data);
+                    ));
                 }
-                return Err(Report::new(
-                    "Semantic errors found".to_string(),
-                    Some(filename.to_string()),
-                    None,
-                    self.cli.verbose,
-                    false,
-                ));
-            }
-        };
+            };
 
         for (warning, file, span) in &warnings {
             let report_data = Report::new(

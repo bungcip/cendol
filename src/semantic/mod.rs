@@ -1,4 +1,4 @@
-use crate::common::{SourceLocation, SourceSpan};
+use crate::common::SourceSpan;
 use crate::parser::ast::{
     AssignOp, BinOp, Designator, Expr, ForInit, Initializer, Stmt, TranslationUnit, Type,
     TypedDeclarator, TypedDesignator, TypedExpr, TypedForInit, TypedFunctionDecl, TypedInitializer,
@@ -235,7 +235,7 @@ impl SemanticAnalyzer {
                         self.symbol_table.insert(
                             name.clone(),
                             Symbol {
-                                ty: ty.clone(),
+                                ty: *ty.clone(),
                                 is_function: true,
                                 span: SourceSpan::default(),
                                 is_builtin: false,
@@ -244,7 +244,7 @@ impl SemanticAnalyzer {
                     }
                 }
                 Stmt::Declaration(ty, declarators, _is_static) => {
-                    if let Type::Enum(_name, members) = ty
+                    if let Type::Enum(_name, members) = &**ty
                         && !members.is_empty()
                     {
                         let mut next_value = 0;
@@ -264,7 +264,7 @@ impl SemanticAnalyzer {
                                 next_value
                             };
 
-                            if self.enum_constants.contains_key(name) {
+                            if self.enum_constants.contains_key(&name) {
                                 self.errors.push((
                                     SemanticError::VariableRedeclaration(name.clone()),
                                     filename.to_string(),
@@ -275,13 +275,13 @@ impl SemanticAnalyzer {
                             }
                             next_value = val + 1;
                         }
-                    } else if let Type::Struct(Some(name), members) = ty {
-                        if !members.is_empty() || !self.struct_definitions.contains_key(name) {
-                            self.struct_definitions.insert(name.clone(), ty.clone());
+                    } else if let Type::Struct(Some(name), members) = &**ty {
+                        if !members.is_empty() || !self.struct_definitions.contains_key(&name) {
+                            self.struct_definitions.insert(name.clone(), *ty.clone());
                         }
-                    } else if let Type::Union(Some(name), members) = ty {
-                        if !members.is_empty() || !self.union_definitions.contains_key(name) {
-                            self.union_definitions.insert(name.clone(), ty.clone());
+                    } else if let Type::Union(Some(name), members) = &**ty {
+                        if !members.is_empty() || !self.union_definitions.contains_key(&name) {
+                            self.union_definitions.insert(name.clone(), *ty.clone());
                         }
                     }
 
@@ -520,7 +520,7 @@ impl SemanticAnalyzer {
         match stmt {
             Stmt::Declaration(ty, declarators, is_static) => {
                 let mut base_ty = ty.clone();
-                match &mut base_ty {
+                match &mut *base_ty {
                     Type::Struct(Some(name), members) => {
                         if !members.is_empty() {
                             for member in members.iter_mut() {
@@ -539,7 +539,7 @@ impl SemanticAnalyzer {
                                 }
                             }
                             self.struct_definitions
-                                .insert(name.clone(), base_ty.clone());
+                                .insert(name.clone(), *base_ty.clone());
                         }
                     }
                     Type::Union(Some(name), members) => {
@@ -559,25 +559,26 @@ impl SemanticAnalyzer {
                             }
                         }
                         if !members.is_empty() || !self.union_definitions.contains_key(name) {
-                            self.union_definitions.insert(name.clone(), base_ty.clone());
+                            self.union_definitions
+                                .insert(name.clone(), *base_ty.clone());
                         }
                     }
                     _ => {}
                 }
-                if let Type::Enum(_name, members) = &ty {
+                if let Type::Enum(_name, members) = *ty {
                     // Only process enum constants for local enums (inside functions)
                     // Global enums are already processed in collect_symbols
                     if self.current_function.is_some() {
                         let mut next_value = 0;
                         for (name, value, span) in members {
                             let val = if let Some(expr) = value {
-                                if let Expr::Number(num) = **expr {
+                                if let Expr::Number(num) = *expr {
                                     num
                                 } else {
                                     self.errors.push((
                                         SemanticError::InvalidEnumInitializer(name.clone()),
                                         filename.to_string(),
-                                        *span,
+                                        span,
                                     ));
                                     -1 // Dummy value
                                 }
@@ -585,11 +586,11 @@ impl SemanticAnalyzer {
                                 next_value
                             };
 
-                            if self.enum_constants.contains_key(name) {
+                            if self.enum_constants.contains_key(&name) {
                                 self.errors.push((
-                                    SemanticError::VariableRedeclaration(name.clone()),
+                                    SemanticError::VariableRedeclaration(name),
                                     filename.to_string(),
-                                    *span,
+                                    span,
                                 ));
                             } else {
                                 self.enum_constants.insert(name.clone(), val);
@@ -649,14 +650,14 @@ impl SemanticAnalyzer {
                         initializer: typed_initializer,
                     });
                 }
-                TypedStmt::Declaration(base_ty, typed_declarators, is_static)
+                TypedStmt::Declaration(*base_ty, typed_declarators, is_static)
             }
             Stmt::Expr(expr) => {
-                let typed_expr = self.check_expression(expr, filename);
+                let typed_expr = self.check_expression(*expr, filename);
                 TypedStmt::Expr(typed_expr)
             }
             Stmt::Return(expr) => {
-                let typed_expr = self.check_expression(expr, filename);
+                let typed_expr = self.check_expression(*expr, filename);
                 TypedStmt::Return(typed_expr)
             }
             Stmt::If(cond, then, otherwise) => {
@@ -672,7 +673,7 @@ impl SemanticAnalyzer {
                 TypedStmt::While(typed_cond, typed_body)
             }
             Stmt::For(init, cond, inc, body) => {
-                let typed_init = init.map(|i| match i {
+                let typed_init = init.map(|i| match *i {
                     ForInit::Declaration(ty, name, initializer) => {
                         if let Some(existing) = self.symbol_table.lookup(&name) {
                             if !existing.is_function {
@@ -759,7 +760,7 @@ impl SemanticAnalyzer {
                 is_inline,
                 is_noreturn,
             } => TypedStmt::FunctionDeclaration {
-                ty,
+                ty: *ty,
                 name,
                 params,
                 is_variadic,

@@ -52,7 +52,7 @@ fn create_simple_program_ast() -> TranslationUnit {
             return_type: Type::Int,
             name: "main".into(),
             params: vec![],
-            body: vec![Stmt::Return(Expr::Number(0))],
+            body: vec![Stmt::Return(Box::new(Expr::Number(0)))],
             is_inline: false,
             is_variadic: false,
             is_noreturn: false,
@@ -70,8 +70,8 @@ fn create_control_flow_program_ast() -> TranslationUnit {
             params: vec![],
             body: vec![Stmt::If(
                 Box::new(Expr::Number(1)),
-                Box::new(Stmt::Return(Expr::Number(1))),
-                Some(Box::new(Stmt::Return(Expr::Number(0)))),
+                Box::new(Stmt::Return(Box::new(Expr::Number(1)))),
+                Some(Box::new(Stmt::Return(Box::new(Expr::Number(0))))),
             )],
             is_inline: false,
             is_variadic: false,
@@ -118,22 +118,27 @@ mod tests {
     fn test_bool_declaration() {
         let input = "int main() { _Bool a = 1; return 0; }";
         let ast = parse_c_code(input).unwrap();
-        assert!(matches!(
-            &ast.functions[0].body[0],
-            Stmt::Declaration(Type::Bool, declarators, false) if matches!(
-                &declarators[0],
-                Declarator {
-                    ty: Type::Bool,
-                    name,
-                    initializer: Some(Initializer::Expr(expr)),
-                    ..
-                } if name.as_str() == "a" && matches!(**expr, Expr::Number(1))
-            )
-        ));
-        assert!(matches!(
-            &ast.functions[0].body[1],
-            Stmt::Return(Expr::Number(0))
-        ));
+        let body = &ast.functions[0].body;
+
+        if let Stmt::Declaration(ty, declarators, false) = &body[0] {
+            let declarator = &declarators[0];
+            assert_eq!(declarator.name.as_str(), "a");
+            assert_eq!(**ty, Type::Bool);
+
+            if let Some(Initializer::Expr(expr)) = &declarator.initializer {
+                assert!(matches!(**expr, Expr::Number(1)));
+            } else {
+                panic!("Expected an initializer");
+            }
+        } else {
+            panic!("Expected a declaration statement");
+        }
+
+        if let Stmt::Return(expr) = &body[1] {
+            assert!(matches!(**expr, Expr::Number(0)));
+        } else {
+            panic!("Expected a return statement");
+        }
     }
 
     /// Test parsing of switch statements
@@ -176,27 +181,44 @@ mod tests {
     fn test_multiple_declarators() {
         let input = "int main() { int x, *p, **pp; return 0; }";
         let ast = parse_c_code(input).unwrap();
-        assert!(matches!(
-            &ast.functions[0].body[0],
-            Stmt::Declaration(Type::Int, declarators, false) if declarators.len() == 3 &&
-                matches!(
-                    &declarators[0],
-                    Declarator { ty: Type::Int, name, .. } if name.as_str() == "x"
-                ) &&
-                matches!(
-                    &declarators[1],
-                    Declarator { ty: Type::Pointer(inner), name, .. } if name.as_str() == "p" && **inner == Type::Int
-                ) &&
-                matches!(
-                    &declarators[2],
-                    Declarator { ty: Type::Pointer(inner1), name, .. } if name.as_str() == "pp" &&
-                        matches!(&**inner1, Type::Pointer(inner2) if **inner2 == Type::Int)
-                )
-        ));
-        assert!(matches!(
-            &ast.functions[0].body[1],
-            Stmt::Return(Expr::Number(0))
-        ));
+        let body = &ast.functions[0].body;
+
+        if let Stmt::Declaration(ty, declarators, false) = &body[0] {
+            assert_eq!(declarators.len(), 3);
+            assert_eq!(**ty, Type::Int);
+
+            // Check first declarator: int x
+            assert_eq!(declarators[0].name.as_str(), "x");
+            assert_eq!(declarators[0].ty, Type::Int);
+
+            // Check second declarator: int *p
+            assert_eq!(declarators[1].name.as_str(), "p");
+            if let Type::Pointer(inner) = &declarators[1].ty {
+                assert_eq!(**inner, Type::Int);
+            } else {
+                panic!("Expected pointer type");
+            }
+
+            // Check third declarator: int **pp
+            assert_eq!(declarators[2].name.as_str(), "pp");
+            if let Type::Pointer(inner1) = &declarators[2].ty {
+                if let Type::Pointer(inner2) = &**inner1 {
+                    assert_eq!(**inner2, Type::Int);
+                } else {
+                    panic!("Expected pointer to pointer");
+                }
+            } else {
+                panic!("Expected pointer type");
+            }
+        } else {
+            panic!("Expected a declaration statement");
+        }
+
+        if let Stmt::Return(expr) = &body[1] {
+            assert!(matches!(**expr, Expr::Number(0)));
+        } else {
+            panic!("Expected a return statement");
+        }
     }
 
     // /// Test parsing of designated initializers for structs
@@ -315,88 +337,132 @@ mod tests {
         let stmts = parse_c_body(input);
 
         // primary expressions
-        assert!(matches!(stmts[0], Stmt::Expr(Expr::Variable(_, _))));
-        assert!(matches!(stmts[1], Stmt::Expr(Expr::Number(_))));
-        assert!(matches!(stmts[2], Stmt::Expr(Expr::Char(_))));
-        assert!(matches!(stmts[3], Stmt::Expr(Expr::String(_))));
-        assert!(matches!(stmts[4], Stmt::Expr(Expr::Add(..)))); // currenty don't have Paren expr
+        assert!(matches!(stmts[0], Stmt::Expr(ref expr) if matches!(**expr, Expr::Variable(_, _))));
+        assert!(matches!(stmts[1], Stmt::Expr(ref expr) if matches!(**expr, Expr::Number(_))));
+        assert!(matches!(stmts[2], Stmt::Expr(ref expr) if matches!(**expr, Expr::Char(_))));
+        assert!(matches!(stmts[3], Stmt::Expr(ref expr) if matches!(**expr, Expr::String(_))));
+        assert!(matches!(stmts[4], Stmt::Expr(ref expr) if matches!(**expr, Expr::Add(..)))); // currenty don't have Paren expr
 
         // postfix expressions
-        assert!(matches!(stmts[5], Stmt::Expr(Expr::Deref(..))));
-        assert!(matches!(stmts[6], Stmt::Expr(Expr::Call(..))));
-        assert!(matches!(stmts[7], Stmt::Expr(Expr::Call(..))));
-        assert!(matches!(stmts[8], Stmt::Expr(Expr::Member(..))));
-        assert!(matches!(stmts[9], Stmt::Expr(Expr::PointerMember(..))));
-        assert!(matches!(stmts[10], Stmt::Expr(Expr::PostIncrement(..))));
-        assert!(matches!(stmts[11], Stmt::Expr(Expr::PostDecrement(..))));
-        assert!(matches!(stmts[12], Stmt::Expr(Expr::CompoundLiteral(..))));
+        assert!(matches!(stmts[5], Stmt::Expr(ref expr) if matches!(**expr, Expr::Deref(..))));
+        assert!(matches!(stmts[6], Stmt::Expr(ref expr) if matches!(**expr, Expr::Call(..))));
+        assert!(matches!(stmts[7], Stmt::Expr(ref expr) if matches!(**expr, Expr::Call(..))));
+        assert!(matches!(stmts[8], Stmt::Expr(ref expr) if matches!(**expr, Expr::Member(..))));
+        assert!(
+            matches!(stmts[9], Stmt::Expr(ref expr) if matches!(**expr, Expr::PointerMember(..)))
+        );
+        assert!(
+            matches!(stmts[10], Stmt::Expr(ref expr) if matches!(**expr, Expr::PostIncrement(..)))
+        );
+        assert!(
+            matches!(stmts[11], Stmt::Expr(ref expr) if matches!(**expr, Expr::PostDecrement(..)))
+        );
+        assert!(
+            matches!(stmts[12], Stmt::Expr(ref expr) if matches!(**expr, Expr::CompoundLiteral(..)))
+        );
 
         // unary expressions
-        assert!(matches!(stmts[13], Stmt::Expr(Expr::PreIncrement(..))));
-        assert!(matches!(stmts[14], Stmt::Expr(Expr::PreDecrement(..))));
-        assert!(matches!(stmts[15], Stmt::Expr(Expr::AddressOf(..))));
-        assert!(matches!(stmts[16], Stmt::Expr(Expr::Deref(..))));
-        assert!(matches!(stmts[17], Stmt::Expr(Expr::Variable(..)))); // +x is parsed as just x
-        assert!(matches!(stmts[18], Stmt::Expr(Expr::Neg(..))));
-        assert!(matches!(stmts[19], Stmt::Expr(Expr::BitwiseNot(..))));
-        assert!(matches!(stmts[20], Stmt::Expr(Expr::LogicalNot(..))));
-        assert!(matches!(stmts[21], Stmt::Expr(Expr::Sizeof(..))));
-        assert!(matches!(stmts[22], Stmt::Expr(Expr::SizeofType(..))));
-        assert!(matches!(stmts[23], Stmt::Expr(Expr::AlignofType(..))));
+        assert!(
+            matches!(stmts[13], Stmt::Expr(ref expr) if matches!(**expr, Expr::PreIncrement(..)))
+        );
+        assert!(
+            matches!(stmts[14], Stmt::Expr(ref expr) if matches!(**expr, Expr::PreDecrement(..)))
+        );
+        assert!(matches!(stmts[15], Stmt::Expr(ref expr) if matches!(**expr, Expr::AddressOf(..))));
+        assert!(matches!(stmts[16], Stmt::Expr(ref expr) if matches!(**expr, Expr::Deref(..))));
+        assert!(matches!(stmts[17], Stmt::Expr(ref expr) if matches!(**expr, Expr::Variable(..)))); // +x is parsed as just x
+        assert!(matches!(stmts[18], Stmt::Expr(ref expr) if matches!(**expr, Expr::Neg(..))));
+        assert!(
+            matches!(stmts[19], Stmt::Expr(ref expr) if matches!(**expr, Expr::BitwiseNot(..)))
+        );
+        assert!(
+            matches!(stmts[20], Stmt::Expr(ref expr) if matches!(**expr, Expr::LogicalNot(..)))
+        );
+        assert!(matches!(stmts[21], Stmt::Expr(ref expr) if matches!(**expr, Expr::Sizeof(..))));
+        assert!(
+            matches!(stmts[22], Stmt::Expr(ref expr) if matches!(**expr, Expr::SizeofType(..)))
+        );
+        assert!(
+            matches!(stmts[23], Stmt::Expr(ref expr) if matches!(**expr, Expr::AlignofType(..)))
+        );
 
         // cast expression
-        assert!(matches!(stmts[24], Stmt::Expr(Expr::ExplicitCast(..))));
+        assert!(
+            matches!(stmts[24], Stmt::Expr(ref expr) if matches!(**expr, Expr::ExplicitCast(..)))
+        );
 
         // multiplicative expressions
-        assert!(matches!(stmts[25], Stmt::Expr(Expr::Mul(..))));
-        assert!(matches!(stmts[26], Stmt::Expr(Expr::Div(..))));
-        assert!(matches!(stmts[27], Stmt::Expr(Expr::Mod(..))));
+        assert!(matches!(stmts[25], Stmt::Expr(ref expr) if matches!(**expr, Expr::Mul(..))));
+        assert!(matches!(stmts[26], Stmt::Expr(ref expr) if matches!(**expr, Expr::Div(..))));
+        assert!(matches!(stmts[27], Stmt::Expr(ref expr) if matches!(**expr, Expr::Mod(..))));
 
         // additive expressions
-        assert!(matches!(stmts[28], Stmt::Expr(Expr::Add(..))));
-        assert!(matches!(stmts[29], Stmt::Expr(Expr::Sub(..))));
+        assert!(matches!(stmts[28], Stmt::Expr(ref expr) if matches!(**expr, Expr::Add(..))));
+        assert!(matches!(stmts[29], Stmt::Expr(ref expr) if matches!(**expr, Expr::Sub(..))));
 
         // relational expressions
-        assert!(matches!(stmts[30], Stmt::Expr(Expr::LeftShift(..))));
-        assert!(matches!(stmts[31], Stmt::Expr(Expr::RightShift(..))));
-        assert!(matches!(stmts[32], Stmt::Expr(Expr::LessThan(..))));
-        assert!(matches!(stmts[33], Stmt::Expr(Expr::GreaterThan(..))));
-        assert!(matches!(stmts[34], Stmt::Expr(Expr::LessThanOrEqual(..))));
+        assert!(matches!(stmts[30], Stmt::Expr(ref expr) if matches!(**expr, Expr::LeftShift(..))));
+        assert!(
+            matches!(stmts[31], Stmt::Expr(ref expr) if matches!(**expr, Expr::RightShift(..)))
+        );
+        assert!(matches!(stmts[32], Stmt::Expr(ref expr) if matches!(**expr, Expr::LessThan(..))));
+        assert!(
+            matches!(stmts[33], Stmt::Expr(ref expr) if matches!(**expr, Expr::GreaterThan(..)))
+        );
+        assert!(
+            matches!(stmts[34], Stmt::Expr(ref expr) if matches!(**expr, Expr::LessThanOrEqual(..)))
+        );
         assert!(matches!(
             stmts[35],
-            Stmt::Expr(Expr::GreaterThanOrEqual(..))
+            Stmt::Expr(ref expr) if matches!(**expr, Expr::GreaterThanOrEqual(..))
         ));
 
         // equality expressions
-        assert!(matches!(stmts[36], Stmt::Expr(Expr::Equal(..))));
-        assert!(matches!(stmts[37], Stmt::Expr(Expr::NotEqual(..))));
+        assert!(matches!(stmts[36], Stmt::Expr(ref expr) if matches!(**expr, Expr::Equal(..))));
+        assert!(matches!(stmts[37], Stmt::Expr(ref expr) if matches!(**expr, Expr::NotEqual(..))));
 
         // bitwise expressions
-        assert!(matches!(stmts[38], Stmt::Expr(Expr::BitwiseAnd(..))));
-        assert!(matches!(stmts[39], Stmt::Expr(Expr::BitwiseXor(..))));
-        assert!(matches!(stmts[40], Stmt::Expr(Expr::BitwiseOr(..))));
+        assert!(
+            matches!(stmts[38], Stmt::Expr(ref expr) if matches!(**expr, Expr::BitwiseAnd(..)))
+        );
+        assert!(
+            matches!(stmts[39], Stmt::Expr(ref expr) if matches!(**expr, Expr::BitwiseXor(..)))
+        );
+        assert!(matches!(stmts[40], Stmt::Expr(ref expr) if matches!(**expr, Expr::BitwiseOr(..))));
 
         // logical expressions
-        assert!(matches!(stmts[41], Stmt::Expr(Expr::LogicalAnd(..))));
-        assert!(matches!(stmts[42], Stmt::Expr(Expr::LogicalOr(..))));
+        assert!(
+            matches!(stmts[41], Stmt::Expr(ref expr) if matches!(**expr, Expr::LogicalAnd(..)))
+        );
+        assert!(matches!(stmts[42], Stmt::Expr(ref expr) if matches!(**expr, Expr::LogicalOr(..))));
 
         // conditional expression
-        assert!(matches!(stmts[43], Stmt::Expr(Expr::Ternary(..))));
+        assert!(matches!(stmts[43], Stmt::Expr(ref expr) if matches!(**expr, Expr::Ternary(..))));
         // assignment expressions
-        assert!(matches!(stmts[44], Stmt::Expr(Expr::Assign(..))));
-        assert!(matches!(stmts[45], Stmt::Expr(Expr::AssignMul(..))));
-        assert!(matches!(stmts[46], Stmt::Expr(Expr::AssignDiv(..))));
-        assert!(matches!(stmts[47], Stmt::Expr(Expr::AssignMod(..))));
-        assert!(matches!(stmts[48], Stmt::Expr(Expr::AssignAdd(..))));
-        assert!(matches!(stmts[49], Stmt::Expr(Expr::AssignSub(..))));
-        assert!(matches!(stmts[50], Stmt::Expr(Expr::AssignLeftShift(..))));
-        assert!(matches!(stmts[51], Stmt::Expr(Expr::AssignRightShift(..))));
-        assert!(matches!(stmts[52], Stmt::Expr(Expr::AssignBitwiseAnd(..))));
-        assert!(matches!(stmts[53], Stmt::Expr(Expr::AssignBitwiseXor(..))));
-        assert!(matches!(stmts[54], Stmt::Expr(Expr::AssignBitwiseOr(..))));
+        assert!(matches!(stmts[44], Stmt::Expr(ref expr) if matches!(**expr, Expr::Assign(..))));
+        assert!(matches!(stmts[45], Stmt::Expr(ref expr) if matches!(**expr, Expr::AssignMul(..))));
+        assert!(matches!(stmts[46], Stmt::Expr(ref expr) if matches!(**expr, Expr::AssignDiv(..))));
+        assert!(matches!(stmts[47], Stmt::Expr(ref expr) if matches!(**expr, Expr::AssignMod(..))));
+        assert!(matches!(stmts[48], Stmt::Expr(ref expr) if matches!(**expr, Expr::AssignAdd(..))));
+        assert!(matches!(stmts[49], Stmt::Expr(ref expr) if matches!(**expr, Expr::AssignSub(..))));
+        assert!(
+            matches!(stmts[50], Stmt::Expr(ref expr) if matches!(**expr, Expr::AssignLeftShift(..)))
+        );
+        assert!(
+            matches!(stmts[51], Stmt::Expr(ref expr) if matches!(**expr, Expr::AssignRightShift(..)))
+        );
+        assert!(
+            matches!(stmts[52], Stmt::Expr(ref expr) if matches!(**expr, Expr::AssignBitwiseAnd(..)))
+        );
+        assert!(
+            matches!(stmts[53], Stmt::Expr(ref expr) if matches!(**expr, Expr::AssignBitwiseXor(..)))
+        );
+        assert!(
+            matches!(stmts[54], Stmt::Expr(ref expr) if matches!(**expr, Expr::AssignBitwiseOr(..)))
+        );
 
         // comma expression
-        assert!(matches!(stmts[55], Stmt::Expr(Expr::Comma(..))));
+        assert!(matches!(stmts[55], Stmt::Expr(ref expr) if matches!(**expr, Expr::Comma(..))));
     }
 
     /// Test parsing of goto and label statements
@@ -453,7 +519,10 @@ mod tests {
         let ast = parse_c_code(input).unwrap();
         assert!(matches!(
             &ast.globals[0],
-            Stmt::FunctionDeclaration { is_noreturn: true, .. }
+            Stmt::FunctionDeclaration {
+                is_noreturn: true,
+                ..
+            }
         ));
     }
 }

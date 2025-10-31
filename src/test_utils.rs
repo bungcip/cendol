@@ -249,7 +249,7 @@ pub fn create_simple_program_ast() -> TranslationUnit {
             return_type: Type::Int,
             name: crate::parser::string_interner::StringInterner::intern("main"),
             params: vec![],
-            body: vec![Stmt::Return(Expr::Number(0))],
+            body: vec![Stmt::Return(Box::new(Expr::Number(0)))],
             is_inline: false,
             is_variadic: false,
             is_noreturn: false,

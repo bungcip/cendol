@@ -6,6 +6,7 @@ use crate::parser::ast::{
 };
 use crate::parser::string_interner::StringInterner;
 use crate::semantic::error::SemanticError;
+use thin_vec::ThinVec;
 use std::collections::HashMap;
 mod expressions;
 use expressions::TypedExpression;
@@ -356,7 +357,7 @@ impl SemanticAnalyzer {
                 typed_globals.push(TypedStmt::FunctionDeclaration {
                     ty: symbol.ty.clone(),
                     name: name.clone(),
-                    params: vec![], // Built-ins don't have specified params in this context
+                    params: ThinVec::new(), // Built-ins don't have specified params in this context
                     is_variadic: true, // Assume built-ins can be variadic
                     is_inline: false,
                     is_noreturn: false,
@@ -382,7 +383,7 @@ impl SemanticAnalyzer {
                     typed_globals.push(TypedStmt::FunctionDeclaration {
                         ty: symbol.ty.clone(),
                         name: name.clone(),
-                        params: vec![],
+                        params: ThinVec::new(),
                         is_variadic: true, // Assume variadic
                         is_inline: false,
                         is_noreturn: false,
@@ -392,8 +393,8 @@ impl SemanticAnalyzer {
         }
 
         TypedTranslationUnit {
-            globals: typed_globals,
-            functions: typed_functions,
+            globals: typed_globals.into(),
+            functions: typed_functions.into(),
         }
     }
 
@@ -483,7 +484,7 @@ impl SemanticAnalyzer {
         }
 
         // Check function body and build typed statements
-        let mut typed_body = Vec::new();
+        let mut typed_body = ThinVec::new();
         for stmt in function.body {
             typed_body.push(self.check_statement(stmt, filename));
         }
@@ -600,7 +601,7 @@ impl SemanticAnalyzer {
                     }
                 }
 
-                let mut typed_declarators = Vec::new();
+                let mut typed_declarators = ThinVec::new();
                 for declarator in declarators {
                     // Check for redeclaration only in local scope
                     if self.current_function.is_some()
@@ -650,7 +651,7 @@ impl SemanticAnalyzer {
                         initializer: typed_initializer,
                     });
                 }
-                TypedStmt::Declaration(*base_ty, typed_declarators, is_static)
+                TypedStmt::Declaration(*base_ty, typed_declarators.into(), is_static)
             }
             Stmt::Expr(expr) => {
                 let typed_expr = self.check_expression(*expr, filename);
@@ -972,12 +973,12 @@ impl SemanticAnalyzer {
                         .struct_definitions
                         .get(&s_name)
                         .cloned()
-                        .unwrap_or(Type::Struct(Some(s_name), vec![])),
+                        .unwrap_or(Type::Struct(Some(s_name), ThinVec::new())),
                     Type::Union(Some(u_name), members) if members.is_empty() => self
                         .union_definitions
                         .get(&u_name)
                         .cloned()
-                        .unwrap_or(Type::Union(Some(u_name), vec![])),
+                        .unwrap_or(Type::Union(Some(u_name), ThinVec::new())),
                     _ => ty,
                 };
 
@@ -1008,7 +1009,7 @@ impl SemanticAnalyzer {
                 let typed_args = args
                     .into_iter()
                     .map(|arg| self.check_expression(arg, filename))
-                    .collect::<Vec<_>>();
+                    .collect::<ThinVec<_>>();
                 TypedExpr::Call(name, typed_args, location, return_ty)
             }
             Expr::Neg(expr) => {

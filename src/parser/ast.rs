@@ -1,11 +1,12 @@
 use crate::common::SourceSpan;
 use crate::parser::string_interner::StringId;
+use thin_vec::ThinVec;
 
 /// Type alias for initializer lists.
-pub type InitializerList = Vec<(Vec<Designator>, Box<Initializer>)>;
+pub type InitializerList = ThinVec<(ThinVec<Designator>, Box<Initializer>)>;
 
 /// Type alias for typed initializer lists.
-pub type TypedInitializerList = Vec<(Vec<TypedDesignator>, Box<TypedInitializer>)>;
+pub type TypedInitializerList = ThinVec<(ThinVec<TypedDesignator>, Box<TypedInitializer>)>;
 
 /// Represents a type in the C language.
 #[derive(Debug, PartialEq, Clone)]
@@ -43,13 +44,13 @@ pub enum Type {
     /// An array of a specific size.
     Array(Box<Type>, usize),
     /// A struct definition.
-    Struct(Option<StringId>, Vec<Parameter>),
+    Struct(Option<StringId>, ThinVec<Parameter>),
     /// A union definition.
-    Union(Option<StringId>, Vec<Parameter>),
+    Union(Option<StringId>, ThinVec<Parameter>),
     /// An enum definition.
     Enum(
         Option<StringId>,
-        Vec<(StringId, Option<Box<Expr>>, SourceSpan)>,
+        ThinVec<(StringId, Option<Box<Expr>>, SourceSpan)>,
     ),
     Const(Box<Type>),
 }
@@ -176,7 +177,7 @@ pub enum Stmt {
         Box<Stmt>,
     ),
     /// A block of statements.
-    Block(Vec<Stmt>),
+    Block(ThinVec<Stmt>),
     /// A `switch` statement.
     Switch(Box<Expr>, Box<Stmt>),
     /// A `case` statement.
@@ -188,11 +189,11 @@ pub enum Stmt {
     /// A `goto` statement.
     Goto(StringId, SourceSpan),
     /// A variable declaration.
-    Declaration(Box<Type>, Vec<Declarator>, bool),
+    Declaration(Box<Type>, ThinVec<Declarator>, bool),
     FunctionDeclaration {
         ty: Box<Type>,
         name: StringId,
-        params: Vec<Parameter>,
+        params: ThinVec<Parameter>,
         is_variadic: bool,
         is_inline: bool,
         is_noreturn: bool,
@@ -279,7 +280,7 @@ pub enum Expr {
     /// A character literal.
     Char(StringId),
     /// A variable.
-    Variable(StringId, crate::common::SourceSpan),
+    Variable(StringId, SourceSpan),
     /// An assignment expression.
     Assign(Box<Expr>, Box<Expr>),
     /// A compound assignment expression (e.g., +=, -=, *=, /=, %=).
@@ -320,7 +321,7 @@ pub enum Expr {
     /// A right shift expression.
     RightShift(Box<Expr>, Box<Expr>),
     /// A function call.
-    Call(StringId, Vec<Expr>, crate::common::SourceSpan),
+    Call(StringId, ThinVec<Expr>, SourceSpan),
     /// A logical AND expression.
     LogicalAnd(Box<Expr>, Box<Expr>),
     /// A logical OR expression.
@@ -466,9 +467,9 @@ pub struct Function {
     /// The name of the function.
     pub name: StringId,
     /// The parameters of the function.
-    pub params: Vec<Parameter>,
+    pub params: ThinVec<Parameter>,
     /// The body of the function.
-    pub body: Vec<Stmt>,
+    pub body: ThinVec<Stmt>,
     /// Whether the function is declared as inline.
     pub is_inline: bool,
     /// Whether the function is variadic.
@@ -481,9 +482,9 @@ pub struct Function {
 #[derive(Debug, PartialEq, Clone)]
 pub struct TranslationUnit {
     /// The global variables.
-    pub globals: Vec<Stmt>,
+    pub globals: ThinVec<Stmt>,
     /// The functions in the program.
-    pub functions: Vec<Function>,
+    pub functions: ThinVec<Function>,
 }
 
 /// Represents a typed expression with type information.
@@ -494,7 +495,7 @@ pub enum TypedExpr {
     String(StringId, Type),
     Char(StringId, Type),
     Variable(StringId, SourceSpan, Type),
-    Call(StringId, Vec<TypedExpr>, SourceSpan, Type),
+    Call(StringId, ThinVec<TypedExpr>, SourceSpan, Type),
     Assign(Box<TypedExpr>, Box<TypedExpr>, Type),
     AssignAdd(Box<TypedExpr>, Box<TypedExpr>, Type),
     AssignSub(Box<TypedExpr>, Box<TypedExpr>, Type),
@@ -736,7 +737,7 @@ pub enum TypedStmt {
         Box<TypedStmt>,
     ),
     /// A block of statements.
-    Block(Vec<TypedStmt>),
+    Block(ThinVec<TypedStmt>),
     /// A `switch` statement.
     Switch(TypedExpr, Box<TypedStmt>),
     /// A `case` statement.
@@ -748,11 +749,11 @@ pub enum TypedStmt {
     /// A `goto` statement.
     Goto(StringId),
     /// A variable declaration.
-    Declaration(Type, Vec<TypedDeclarator>, bool),
+    Declaration(Type, ThinVec<TypedDeclarator>, bool),
     FunctionDeclaration {
         ty: Type,
         name: StringId,
-        params: Vec<Parameter>,
+        params: ThinVec<Parameter>,
         is_variadic: bool,
         is_inline: bool,
         is_noreturn: bool,
@@ -779,9 +780,9 @@ pub struct TypedFunctionDecl {
     /// The name of the function.
     pub name: StringId,
     /// The parameters of the function.
-    pub params: Vec<Parameter>,
+    pub params: ThinVec<Parameter>,
     /// The body of the function.
-    pub body: Vec<TypedStmt>,
+    pub body: ThinVec<TypedStmt>,
     /// Whether the function is declared as inline.
     pub is_inline: bool,
     /// Whether the function is variadic.
@@ -794,7 +795,7 @@ pub struct TypedFunctionDecl {
 #[derive(Debug, PartialEq, Clone, Default)]
 pub struct TypedTranslationUnit {
     /// The global variables.
-    pub globals: Vec<TypedStmt>,
+    pub globals: ThinVec<TypedStmt>,
     /// The functions in the program.
-    pub functions: Vec<TypedFunctionDecl>,
+    pub functions: ThinVec<TypedFunctionDecl>,
 }

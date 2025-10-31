@@ -1,8 +1,3 @@
-//! Shared test utilities for the cendol project
-//!
-//! This module provides common utilities and patterns used across different
-//! test modules to reduce code duplication and improve maintainability.
-
 use crate::common::{SourceLocation, SourceSpan};
 use crate::compiler::{Cli, Compiler};
 use crate::error::Report;
@@ -12,6 +7,7 @@ use crate::parser::ast::{Expr, Function, Stmt, TranslationUnit, Type};
 use crate::preprocessor::Preprocessor;
 use crate::preprocessor::lexer::Lexer;
 use crate::preprocessor::token::{Token, TokenKind};
+use thin_vec::ThinVec;
 
 use std::fs;
 use std::process::Command;
@@ -244,16 +240,16 @@ pub fn compile_and_run_with_output(
 /// Creates a simple C program AST for testing
 pub fn create_simple_program_ast() -> TranslationUnit {
     TranslationUnit {
-        globals: vec![],
-        functions: vec![Function {
+        globals: ThinVec::new(),
+        functions: ThinVec::from(vec![Function {
             return_type: Type::Int,
             name: crate::parser::string_interner::StringInterner::intern("main"),
-            params: vec![],
-            body: vec![Stmt::Return(Box::new(Expr::Number(0)))],
+            params: ThinVec::new(),
+            body: ThinVec::from(vec![Stmt::Return(Box::new(Expr::Number(0)))]),
             is_inline: false,
             is_variadic: false,
             is_noreturn: false,
-        }],
+        }]),
     }
 }
 

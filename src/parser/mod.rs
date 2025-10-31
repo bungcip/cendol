@@ -7,6 +7,7 @@ use crate::parser::error::ParserError;
 use crate::parser::string_interner::StringId;
 use crate::parser::token::{KeywordKind, Token, TokenKind};
 use crate::preprocessor;
+use thin_vec::ThinVec;
 use std::collections::HashMap;
 
 pub mod ast;
@@ -267,7 +268,7 @@ impl Parser {
                 if let Some(members) = members {
                     Type::Struct(name, members)
                 } else if let Some(name) = name {
-                    Type::Struct(Some(name), Vec::new())
+                    Type::Struct(Some(name), ThinVec::new())
                 } else {
                     unreachable!()
                 }
@@ -276,7 +277,7 @@ impl Parser {
                 if let Some(members) = members {
                     Type::Union(name, members)
                 } else if let Some(name) = name {
-                    Type::Union(Some(name), Vec::new())
+                    Type::Union(Some(name), ThinVec::new())
                 } else {
                     unreachable!()
                 }
@@ -296,7 +297,7 @@ impl Parser {
         self.eat()?; // consume 'enum'
         let name = self.maybe_name()?;
         if self.eat_token(&TokenKind::LeftBrace)? {
-            let mut enumerators = Vec::new();
+            let mut enumerators = ThinVec::new();
             if !self.eat_token(&TokenKind::RightBrace)? {
                 loop {
                     enumerators.push(self.parse_enumerator()?);
@@ -311,7 +312,7 @@ impl Parser {
             }
             Ok(Type::Enum(name, enumerators))
         } else if let Some(name) = name {
-            Ok(Type::Enum(Some(name), Vec::new()))
+            Ok(Type::Enum(Some(name), ThinVec::new()))
         } else {
             let token = self.current_token()?;
             Err(ParserError::UnexpectedToken(token))
@@ -335,7 +336,7 @@ impl Parser {
     /// Parses a struct or union type.
     fn parse_struct_or_union<F>(&mut self, constructor: F) -> Result<Type, ParserError>
     where
-        F: Fn(Option<StringId>, Option<Vec<Parameter>>) -> Type,
+        F: Fn(Option<StringId>, Option<ThinVec<Parameter>>) -> Type,
     {
         self.eat()?;
         let name = self.maybe_name()?;
@@ -352,7 +353,7 @@ impl Parser {
         }
     }
     /// Parses members for struct or union.
-    fn parse_struct_or_union_members(&mut self) -> Result<Vec<Parameter>, ParserError> {
+    fn parse_struct_or_union_members(&mut self) -> Result<ThinVec<Parameter>, ParserError> {
         self.parse_delimited_list(
             TokenKind::LeftBrace,
             TokenKind::RightBrace,
@@ -736,7 +737,7 @@ impl Parser {
                             };
                             let token_for_error = token.clone();
                             self.eat()?; // consume '('
-                            let mut args = Vec::new();
+                            let mut args = ThinVec::new();
                             if self.current_token()?.kind != TokenKind::RightParen {
                                 loop {
                                     // Use a binding power of 2 to stop parsing at a comma
@@ -838,8 +839,8 @@ impl Parser {
         }
     }
 
-    fn parse_designator(&mut self) -> Result<Vec<Designator>, ParserError> {
-        let mut designators = Vec::new();
+    fn parse_designator(&mut self) -> Result<ThinVec<Designator>, ParserError> {
+        let mut designators = ThinVec::new();
         loop {
             if self.eat_token(&TokenKind::Dot)? {
                 let member = self.expect_name()?;
@@ -857,7 +858,7 @@ impl Parser {
 
     /// Parses an initializer list.
     fn parse_initializer_list(&mut self) -> Result<InitializerList, ParserError> {
-        let mut initializers = Vec::new();
+        let mut initializers = ThinVec::new();
         if self.eat_token(&TokenKind::RightBrace)? {
             return Ok(initializers);
         }
@@ -892,7 +893,7 @@ impl Parser {
         let token = self.current_token()?;
         if let TokenKind::LeftBrace = token.kind.clone() {
             self.eat()?;
-            let mut stmts = Vec::new();
+            let mut stmts = ThinVec::new();
             while self.eat_token(&TokenKind::RightBrace)? == false {
                 stmts.push(self.parse_stmt()?);
             }
@@ -900,9 +901,9 @@ impl Parser {
         } else if self.eat_token(&TokenKind::Keyword(KeywordKind::Static))? {
             let base_type = self.parse_type_specifier()?;
             if self.eat_token(&TokenKind::Semicolon)? {
-                return Ok(Stmt::Declaration(Box::new(base_type), vec![], true));
+                return Ok(Stmt::Declaration(Box::new(base_type), ThinVec::new(), true));
             }
-            let mut declarators = Vec::new();
+            let mut declarators = ThinVec::new();
             loop {
                 let declarator = self.parse_declarator(base_type.clone(), true)?;
                 declarators.push(declarator);
@@ -918,9 +919,9 @@ impl Parser {
         if self.is_type_name() && self.peek()? != TokenKind::LeftParen {
             let base_type = self.parse_type_specifier()?;
             if self.eat_token(&TokenKind::Semicolon)? {
-                return Ok(Stmt::Declaration(Box::new(base_type), vec![], false));
+                return Ok(Stmt::Declaration(Box::new(base_type), ThinVec::new(), false));
             }
-            let mut declarators = Vec::new();
+            let mut declarators = ThinVec::new();
             loop {
                 let declarator = self.parse_declarator(base_type.clone(), true)?;
                 declarators.push(declarator);
@@ -1065,7 +1066,7 @@ impl Parser {
     fn parse_function_signature(
         &mut self,
         param_name_required: bool,
-    ) -> Result<(Type, StringId, Vec<Parameter>, bool, bool, bool), ParserError> {
+    ) -> Result<(Type, StringId, ThinVec<Parameter>, bool, bool, bool), ParserError> {
         let mut is_inline = false;
         let mut is_noreturn = false;
         loop {
@@ -1081,7 +1082,7 @@ impl Parser {
         let ty = self.parse_type()?;
         let id = self.expect_name()?;
         self.expect_punct(TokenKind::LeftParen)?;
-        let mut params = Vec::new();
+        let mut params = ThinVec::new();
         let mut is_variadic = false;
         while self.eat_token(&TokenKind::RightParen)? == false {
             if self.eat_token(&TokenKind::Ellipsis)? {
@@ -1108,7 +1109,7 @@ impl Parser {
         let (return_type, name, params, is_inline, is_variadic, is_noreturn) =
             self.parse_function_signature(false)?;
         self.expect_punct(TokenKind::LeftBrace)?;
-        let mut stmts = Vec::new();
+        let mut stmts = ThinVec::new();
         while self.eat_token(&TokenKind::RightBrace)? == false {
             stmts.push(self.parse_stmt()?);
         }
@@ -1166,9 +1167,9 @@ impl Parser {
         let is_static = self.eat_token(&TokenKind::Keyword(KeywordKind::Static))?;
         let base_type = self.parse_type_specifier()?;
         if self.eat_token(&TokenKind::Semicolon)? {
-            return Ok(Stmt::Declaration(Box::new(base_type), vec![], is_static));
+            return Ok(Stmt::Declaration(Box::new(base_type), ThinVec::new(), is_static));
         }
-        let mut declarators = Vec::new();
+        let mut declarators = ThinVec::new();
         loop {
             let (ty, name, id_token) = self.parse_declarator_suffix(base_type.clone(), true)?;
             let initializer = self.parse_initializer_expr()?;
@@ -1192,8 +1193,8 @@ impl Parser {
     }
 
     pub fn parse(&mut self) -> Result<TranslationUnit, ParserError> {
-        let mut globals = Vec::new();
-        let mut functions = Vec::new();
+        let mut globals = ThinVec::new();
+        let mut functions = ThinVec::new();
         while let Ok(token) = self.current_token()
             && token.kind != TokenKind::Eof
         {
@@ -1252,12 +1253,12 @@ impl Parser {
         end_token: TokenKind,
         separator: TokenKind,
         mut parse_item: F,
-    ) -> Result<Vec<T>, ParserError>
+    ) -> Result<ThinVec<T>, ParserError>
     where
         F: FnMut(&mut Self) -> Result<T, ParserError>,
     {
         self.expect_punct(start_token)?;
-        let mut items = Vec::new();
+        let mut items = ThinVec::new();
         if self.eat_token(&end_token)? {
             return Ok(items);
         }

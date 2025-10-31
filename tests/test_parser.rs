@@ -7,6 +7,7 @@ use cendol::file::FileManager;
 use cendol::parser::Parser;
 use cendol::parser::ast::{Expr, Function, Stmt, TranslationUnit, Type};
 use cendol::preprocessor::Preprocessor;
+use thin_vec::ThinVec;
 
 /// Test configuration constants
 mod config {
@@ -23,7 +24,7 @@ fn parse_c_code(input: &str) -> Result<TranslationUnit, Box<dyn std::error::Erro
 }
 
 /// helper function to parse C function body and return the statements
-fn parse_c_body(input: &str) -> Vec<Stmt> {
+fn parse_c_body(input: &str) -> ThinVec<Stmt> {
     let input = format!("
         int func1() {{ return 0; }}
         int func2(int a, int b, int c) {{ return 0; }}
@@ -47,36 +48,36 @@ fn parse_c_body(input: &str) -> Vec<Stmt> {
 /// Creates a simple C program AST for testing
 fn create_simple_program_ast() -> TranslationUnit {
     TranslationUnit {
-        globals: vec![],
-        functions: vec![Function {
+        globals: ThinVec::new(),
+        functions: ThinVec::from(vec![Function {
             return_type: Type::Int,
             name: "main".into(),
-            params: vec![],
-            body: vec![Stmt::Return(Box::new(Expr::Number(0)))],
+            params: ThinVec::new(),
+            body: ThinVec::from(vec![Stmt::Return(Box::new(Expr::Number(0)))]),
             is_inline: false,
             is_variadic: false,
             is_noreturn: false,
-        }],
+        }]),
     }
 }
 
 /// Creates a program AST with if-else control flow
 fn create_control_flow_program_ast() -> TranslationUnit {
     TranslationUnit {
-        globals: vec![],
-        functions: vec![Function {
+        globals: ThinVec::new(),
+        functions: ThinVec::from(vec![Function {
             return_type: Type::Int,
             name: "main".into(),
-            params: vec![],
-            body: vec![Stmt::If(
+            params: ThinVec::new(),
+            body: ThinVec::from(vec![Stmt::If(
                 Box::new(Expr::Number(1)),
                 Box::new(Stmt::Return(Box::new(Expr::Number(1)))),
                 Some(Box::new(Stmt::Return(Box::new(Expr::Number(0))))),
-            )],
+            )]),
             is_inline: false,
             is_variadic: false,
             is_noreturn: false,
-        }],
+        }]),
     }
 }
 

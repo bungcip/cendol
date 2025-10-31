@@ -149,7 +149,7 @@ impl SemanticAnalyzer {
         mut self,
         program: TranslationUnit,
         filename: &str,
-    ) -> Result<TypedTranslationUnit, Vec<(SemanticError, String, SourceSpan)>> {
+    ) -> Result<(TypedTranslationUnit, Self), Vec<(SemanticError, String, SourceSpan)>> {
         // First pass: collect all function definitions and global declarations
         self.collect_symbols(&program, filename);
 
@@ -157,7 +157,7 @@ impl SemanticAnalyzer {
         let typed_program = self.check_program(program, filename);
 
         if self.errors.is_empty() {
-            Ok(typed_program)
+            Ok((typed_program, self))
         } else {
             Err(self.errors)
         }
@@ -675,6 +675,25 @@ impl SemanticAnalyzer {
                 TypedStmt::DoWhile(typed_body, typed_cond)
             }
             Stmt::Empty => TypedStmt::Empty,
+            Stmt::StaticAssert(expr, message) => {
+                let typed_expr = self.check_expression(*expr, filename);
+                if !is_const_expr(&TypedInitializer::Expr(Box::new(typed_expr.clone()))) {
+                    self.errors.push((
+                        SemanticError::NotAConstantExpression,
+                        filename.to_string(),
+                        typed_expr.span(),
+                    ));
+                } else if let TypedExpr::Number(val, _) = typed_expr {
+                    if val == 0 {
+                        self.errors.push((
+                            SemanticError::StaticAssertFailed(message.clone()),
+                            filename.to_string(),
+                            typed_expr.span(),
+                        ));
+                    }
+                }
+                TypedStmt::StaticAssert(Box::new(typed_expr), message)
+            }
         }
     }
 

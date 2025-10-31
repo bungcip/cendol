@@ -199,6 +199,8 @@ pub enum Stmt {
     Empty,
     /// An expression statement.
     Expr(Expr),
+    /// A `_Static_assert` declaration.
+    StaticAssert(Box<Expr>, String),
 }
 
 /// Represents an expression in the C language.
@@ -748,6 +750,8 @@ pub enum TypedStmt {
     Empty,
     /// An expression statement.
     Expr(TypedExpr),
+    /// A `_Static_assert` declaration.
+    StaticAssert(Box<TypedExpr>, String),
 }
 
 /// Represents a typed function declaration with type information.

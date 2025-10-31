@@ -54,4 +54,12 @@ pub enum SemanticError {
     /// Assignment to a non-lvalue expression.
     #[error("Assignment to a non-lvalue expression")]
     NotAnLvalue,
+
+    /// A `_Static_assert` failed.
+    #[error("Static assert failed: {0}")]
+    StaticAssertFailed(String),
+
+    /// A non-constant expression was used where a constant expression was required.
+    #[error("Not a constant expression")]
+    NotAConstantExpression,
 }

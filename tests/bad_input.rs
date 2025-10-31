@@ -63,3 +63,12 @@ fn test_assignment_to_non_lvalue() {
     let err = compile_and_get_error("int main() { 10 = 20; return 0; }", "assignment_to_non_lvalue.c");
     assert_yaml_snapshot!("assignment_to_non_lvalue", err.unwrap_err());
 }
+
+#[test]
+fn test_static_assert_failed() {
+    let err = compile_and_get_error(
+        "int main() { _Static_assert(0, \"This should fail\"); return 0; }",
+        "static_assert_failed.c",
+    );
+    assert_yaml_snapshot!("static_assert_failed", err.unwrap_err());
+}

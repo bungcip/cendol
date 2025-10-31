@@ -174,11 +174,10 @@ impl Compiler {
 
         // Perform semantic analysis
         let semantic_analyzer = SemanticAnalyzer::with_builtins();
-        let enum_constants = semantic_analyzer.enum_constants.clone();
-        let typed_ast = match semantic_analyzer.analyze(ast.clone(), filename) {
-            Ok(typed_ast) => {
+        let (typed_ast, semantic_analyzer) = match semantic_analyzer.analyze(ast.clone(), filename) {
+            Ok((typed_ast, semantic_analyzer)) => {
                 self.logger.log("Semantic analysis passed");
-                typed_ast
+                (typed_ast, semantic_analyzer)
             }
             Err(errors) => {
                 for (error, file, span) in errors {
@@ -200,7 +199,7 @@ impl Compiler {
         };
 
         let mut codegen = CodeGen::new();
-        codegen.enum_constants = enum_constants;
+        codegen.enum_constants = semantic_analyzer.enum_constants;
         let object_bytes = match codegen.compile(typed_ast) {
             Ok(bytes) => bytes,
             Err(err) => {

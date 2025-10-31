@@ -877,6 +877,9 @@ impl Parser {
 
     /// Parses a statement.
     fn parse_stmt(&mut self) -> Result<Stmt, ParserError> {
+        if self.current_kind()? == TokenKind::Keyword(KeywordKind::StaticAssert) {
+            return self.parse_static_assert();
+        }
         let token = self.current_token()?;
         if let TokenKind::LeftBrace = token.kind.clone() {
             self.eat()?;
@@ -1237,5 +1240,23 @@ impl Parser {
             }
         }
         Ok(items)
+    }
+
+    /// Parses a `_Static_assert` declaration.
+    fn parse_static_assert(&mut self) -> Result<Stmt, ParserError> {
+        self.eat()?; // consume `_Static_assert`
+        self.expect_punct(TokenKind::LeftParen)?;
+        let expr = self.parse_expr()?;
+        self.expect_punct(TokenKind::Comma)?;
+        let token = self.current_token()?;
+        match token.kind.clone() {
+            TokenKind::String(s) => {
+                self.eat()?;
+                self.expect_punct(TokenKind::RightParen)?;
+                self.expect_punct(TokenKind::Semicolon)?;
+                Ok(Stmt::StaticAssert(Box::new(expr), s.clone()))
+            }
+            _ => Err(ParserError::UnexpectedToken(token.clone())),
+        }
     }
 }

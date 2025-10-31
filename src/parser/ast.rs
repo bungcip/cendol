@@ -188,7 +188,14 @@ pub enum Stmt {
     Goto(String, crate::common::SourceSpan),
     /// A variable declaration.
     Declaration(Type, Vec<Declarator>, bool),
-    FunctionDeclaration(Type, String, Vec<Parameter>, bool),
+    FunctionDeclaration {
+        ty: Type,
+        name: String,
+        params: Vec<Parameter>,
+        is_variadic: bool,
+        is_inline: bool,
+        is_noreturn: bool,
+    },
     /// A `break` statement.
     Break,
     /// A `continue` statement.
@@ -465,6 +472,8 @@ pub struct Function {
     pub is_inline: bool,
     /// Whether the function is variadic.
     pub is_variadic: bool,
+    /// Whether the function is declared as noreturn.
+    pub is_noreturn: bool,
 }
 
 /// Represents a program.
@@ -739,7 +748,14 @@ pub enum TypedStmt {
     Goto(String),
     /// A variable declaration.
     Declaration(Type, Vec<TypedDeclarator>, bool),
-    FunctionDeclaration(Type, String, Vec<Parameter>, bool),
+    FunctionDeclaration {
+        ty: Type,
+        name: String,
+        params: Vec<Parameter>,
+        is_variadic: bool,
+        is_inline: bool,
+        is_noreturn: bool,
+    },
     /// A `break` statement.
     Break,
     /// A `continue` statement.
@@ -769,6 +785,8 @@ pub struct TypedFunctionDecl {
     pub is_inline: bool,
     /// Whether the function is variadic.
     pub is_variadic: bool,
+    /// Whether the function is declared as noreturn.
+    pub is_noreturn: bool,
 }
 
 /// Represents a typed translation unit (program) with type information.

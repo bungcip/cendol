@@ -1056,9 +1056,19 @@ impl Parser {
     fn parse_function_signature(
         &mut self,
         param_name_required: bool,
-    ) -> Result<(Type, String, Vec<Parameter>, bool, bool), ParserError> {
-        // Check for inline keyword before return type
-        let is_inline = self.eat_token(&TokenKind::Keyword(KeywordKind::Inline))?;
+    ) -> Result<(Type, String, Vec<Parameter>, bool, bool, bool), ParserError> {
+        let mut is_inline = false;
+        let mut is_noreturn = false;
+        loop {
+            if self.eat_token(&TokenKind::Keyword(KeywordKind::Inline))? {
+                is_inline = true;
+            } else if self.eat_token(&TokenKind::Keyword(KeywordKind::_Noreturn))? {
+                is_noreturn = true;
+            } else {
+                break;
+            }
+        }
+
         let ty = self.parse_type()?;
         let id = self.expect_name()?;
         self.expect_punct(TokenKind::LeftParen)?;
@@ -1081,12 +1091,12 @@ impl Parser {
 
             self.eat_token(&TokenKind::Comma)?;
         }
-        Ok((ty, id, params, is_inline, is_variadic))
+        Ok((ty, id, params, is_inline, is_variadic, is_noreturn))
     }
 
     /// Parses a function.
     fn parse_function(&mut self) -> Result<Function, ParserError> {
-        let (return_type, name, params, is_inline, is_variadic) =
+        let (return_type, name, params, is_inline, is_variadic, is_noreturn) =
             self.parse_function_signature(false)?;
         self.expect_punct(TokenKind::LeftBrace)?;
         let mut stmts = Vec::new();
@@ -1100,6 +1110,7 @@ impl Parser {
             body: stmts,
             is_inline,
             is_variadic,
+            is_noreturn,
         })
     }
 
@@ -1110,10 +1121,18 @@ impl Parser {
     /// A `Result` containing the parsed `Program`, or a `ParserError` if parsing fails.
     fn parse_global(&mut self) -> Result<Stmt, ParserError> {
         let pos = self.position;
-        if let Ok((ty, id, params, _is_inline, is_variadic)) = self.parse_function_signature(false)
+        if let Ok((ty, name, params, is_inline, is_variadic, is_noreturn)) =
+            self.parse_function_signature(false)
         {
             if self.eat_token(&TokenKind::Semicolon)? {
-                return Ok(Stmt::FunctionDeclaration(ty, id, params, is_variadic));
+                return Ok(Stmt::FunctionDeclaration {
+                    ty,
+                    name,
+                    params,
+                    is_variadic,
+                    is_inline,
+                    is_noreturn,
+                });
             } else {
                 let token = self.current_token()?;
                 self.position = pos;

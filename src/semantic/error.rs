@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 /// An error that can occur during semantic analysis.
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum SemanticError {
     /// An undefined function was called.
     #[error("Undefined function `{0}` called")]
@@ -62,4 +62,15 @@ pub enum SemanticError {
     /// A non-constant expression was used where a constant expression was required.
     #[error("Not a constant expression")]
     NotAConstantExpression,
+
+    /// An unused variable was declared.
+    #[error("Unused variable `{0}`")]
+    UnusedVariable(String),
+}
+
+impl SemanticError {
+    /// Returns `true` if the error is a warning.
+    pub fn is_warning(&self) -> bool {
+        matches!(self, SemanticError::UnusedVariable(_))
+    }
 }

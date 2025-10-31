@@ -15,3 +15,4 @@ span:
     line: 1
     column: 34
 verbose: false
+is_warning: false

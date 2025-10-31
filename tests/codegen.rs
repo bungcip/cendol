@@ -841,4 +841,20 @@ mod tests {
         let output = compile_and_run_with_output(input, "variadic_floats").unwrap();
         assert_eq!(output.trim(), "Hello, world! 123, 456.789000");
     }
+
+    /// Test code generation for the _Alignof operator
+    #[test]
+    fn test_alignof() {
+        let input = r#"
+        int main() {
+            if (_Alignof(char) != 1) return 1;
+            if (_Alignof(int) != 8) return 2;
+            struct { char a; int b; } s;
+            if (_Alignof(s) != 8) return 3;
+            return 0;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "alignof").unwrap();
+        assert_eq!(exit_code, 0);
+    }
 }

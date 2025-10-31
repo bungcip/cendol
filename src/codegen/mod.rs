@@ -146,7 +146,13 @@ impl CodeGen {
     pub fn compile(mut self, typed_unit: TypedTranslationUnit) -> Result<Vec<u8>, CodegenError> {
         for global in &typed_unit.globals {
             match global {
-                TypedStmt::FunctionDeclaration(ty, name, params, is_variadic) => {
+                TypedStmt::FunctionDeclaration {
+                    ty,
+                    name,
+                    params,
+                    is_variadic,
+                    ..
+                } => {
                     let mut sig = self.module.make_signature();
                     for param in params {
                         let abi_param = match param.ty {

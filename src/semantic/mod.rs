@@ -179,7 +179,7 @@ impl SemanticAnalyzer {
     fn collect_symbols(&mut self, program: &TranslationUnit, filename: &str) {
         for global in &program.globals {
             match global {
-                Stmt::FunctionDeclaration(ty, name, _params, _) => {
+                Stmt::FunctionDeclaration { ty, name, .. } => {
                     if let Some(existing) = self.symbol_table.lookup(name) {
                         if existing.is_function {
                             self.errors.push((
@@ -320,12 +320,14 @@ impl SemanticAnalyzer {
         // Add built-in function declarations to the typed AST
         for name in &self.used_builtins {
             if let Some(symbol) = self.symbol_table.lookup(name) {
-                typed_globals.push(TypedStmt::FunctionDeclaration(
-                    symbol.ty.clone(),
-                    name.clone(),
-                    vec![], // Built-ins don't have specified params in this context
-                    true,   // Assume built-ins can be variadic
-                ));
+                typed_globals.push(TypedStmt::FunctionDeclaration {
+                    ty: symbol.ty.clone(),
+                    name: name.clone(),
+                    params: vec![], // Built-ins don't have specified params in this context
+                    is_variadic: true, // Assume built-ins can be variadic
+                    is_inline: false,
+                    is_noreturn: false,
+                });
             }
         }
 
@@ -333,7 +335,7 @@ impl SemanticAnalyzer {
         let declared_functions: std::collections::HashSet<_> = typed_globals
             .iter()
             .filter_map(|stmt| {
-                if let TypedStmt::FunctionDeclaration(_, name, _, _) = stmt {
+                if let TypedStmt::FunctionDeclaration { name, .. } = stmt {
                     Some(name.clone())
                 } else {
                     None
@@ -344,12 +346,14 @@ impl SemanticAnalyzer {
         for name in &self.used_builtins {
             if !declared_functions.contains(name) {
                 if let Some(symbol) = self.symbol_table.lookup(name) {
-                    typed_globals.push(TypedStmt::FunctionDeclaration(
-                        symbol.ty.clone(),
-                        name.clone(),
-                        vec![],
-                        true, // Assume variadic
-                    ));
+                    typed_globals.push(TypedStmt::FunctionDeclaration {
+                        ty: symbol.ty.clone(),
+                        name: name.clone(),
+                        params: vec![],
+                        is_variadic: true, // Assume variadic
+                        is_inline: false,
+                        is_noreturn: false,
+                    });
                 }
             }
         }
@@ -474,6 +478,7 @@ impl SemanticAnalyzer {
             body: typed_body,
             is_inline: function.is_inline,
             is_variadic: function.is_variadic,
+            is_noreturn: function.is_noreturn,
         }
     }
 
@@ -719,9 +724,21 @@ impl SemanticAnalyzer {
                 }
                 TypedStmt::Goto(label)
             }
-            Stmt::FunctionDeclaration(ty, name, params, is_variadic) => {
-                TypedStmt::FunctionDeclaration(ty, name, params, is_variadic)
-            }
+            Stmt::FunctionDeclaration {
+                ty,
+                name,
+                params,
+                is_variadic,
+                is_inline,
+                is_noreturn,
+            } => TypedStmt::FunctionDeclaration {
+                ty,
+                name,
+                params,
+                is_variadic,
+                is_inline,
+                is_noreturn,
+            },
             Stmt::Break => TypedStmt::Break,
             Stmt::Continue => TypedStmt::Continue,
             Stmt::DoWhile(body, cond) => {

@@ -252,6 +252,7 @@ pub fn create_simple_program_ast() -> TranslationUnit {
             body: vec![Stmt::Return(Expr::Number(0))],
             is_inline: false,
             is_variadic: false,
+            is_noreturn: false,
         }],
     }
 }

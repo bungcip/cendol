@@ -55,6 +55,7 @@ fn create_simple_program_ast() -> TranslationUnit {
             body: vec![Stmt::Return(Expr::Number(0))],
             is_inline: false,
             is_variadic: false,
+            is_noreturn: false,
         }],
     }
 }
@@ -74,6 +75,7 @@ fn create_control_flow_program_ast() -> TranslationUnit {
             )],
             is_inline: false,
             is_variadic: false,
+            is_noreturn: false,
         }],
     }
 }
@@ -438,5 +440,16 @@ mod tests {
                 panic!("Expected an initializer");
             }
         }
+    }
+
+    /// Test parsing of `_Noreturn` function specifier
+    #[test]
+    fn test_noreturn_function() {
+        let input = "_Noreturn void exit(int status);";
+        let ast = parse_c_code(input).unwrap();
+        assert!(matches!(
+            &ast.globals[0],
+            Stmt::FunctionDeclaration { is_noreturn: true, .. }
+        ));
     }
 }

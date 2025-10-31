@@ -134,6 +134,47 @@ impl SemanticAnalyzer {
         }
     }
 
+    fn resolve_type(&self, ty: &Type) -> Type {
+        match ty {
+            Type::Pointer(base) => Type::Pointer(Box::new(self.resolve_type(base))),
+            Type::Array(base, size) => Type::Array(Box::new(self.resolve_type(base)), *size),
+            Type::Const(base) => Type::Const(Box::new(self.resolve_type(base))),
+            Type::Struct(Some(name), members) if members.is_empty() => self
+                .struct_definitions
+                .get(name)
+                .cloned()
+                .unwrap_or_else(|| ty.clone()),
+            Type::Union(Some(name), members) if members.is_empty() => self
+                .union_definitions
+                .get(name)
+                .cloned()
+                .unwrap_or_else(|| ty.clone()),
+            Type::Struct(name, members) => {
+                let resolved_members = members
+                    .iter()
+                    .map(|p| {
+                        let mut new_p = p.clone();
+                        new_p.ty = self.resolve_type(&p.ty);
+                        new_p
+                    })
+                    .collect();
+                Type::Struct(name.clone(), resolved_members)
+            }
+            Type::Union(name, members) => {
+                let resolved_members = members
+                    .iter()
+                    .map(|p| {
+                        let mut new_p = p.clone();
+                        new_p.ty = self.resolve_type(&p.ty);
+                        new_p
+                    })
+                    .collect();
+                Type::Union(name.clone(), resolved_members)
+            }
+            _ => ty.clone(),
+        }
+    }
+
     /// Analyzes a program for semantic errors and returns a typed translation unit.
     ///
     /// # Arguments
@@ -223,12 +264,12 @@ impl SemanticAnalyzer {
                             next_value = val + 1;
                         }
                     } else if let Type::Struct(Some(name), members) = ty {
-                        if !members.is_empty() {
+                        if !members.is_empty() || !self.struct_definitions.contains_key(name) {
                             self.struct_definitions
                                 .insert(name.clone(), ty.clone());
                         }
                     } else if let Type::Union(Some(name), members) = ty {
-                        if !members.is_empty() {
+                        if !members.is_empty() || !self.union_definitions.contains_key(name) {
                             self.union_definitions.insert(name.clone(), ty.clone());
                         }
                     }
@@ -430,43 +471,45 @@ impl SemanticAnalyzer {
                 let mut base_ty = ty.clone();
                 match &mut base_ty {
                     Type::Struct(Some(name), members) => {
-                        if !members.is_empty() {
-                            for member in members.iter_mut() {
-                                if let Type::Struct(Some(s_name), s_members) = &member.ty {
-                                    if s_members.is_empty() {
-                                        if let Some(def) = self.struct_definitions.get(s_name) {
-                                            member.ty = def.clone();
-                                        }
+                        for member in members.iter_mut() {
+                            if let Type::Struct(Some(s_name), s_members) = &member.ty {
+                                if s_members.is_empty() {
+                                    if let Some(def) = self.struct_definitions.get(s_name) {
+                                        member.ty = def.clone();
                                     }
-                                } else if let Type::Union(Some(u_name), u_members) = &member.ty {
-                                    if u_members.is_empty() {
-                                        if let Some(def) = self.union_definitions.get(u_name) {
-                                            member.ty = def.clone();
-                                        }
+                                }
+                            } else if let Type::Union(Some(u_name), u_members) = &member.ty {
+                                if u_members.is_empty() {
+                                    if let Some(def) = self.union_definitions.get(u_name) {
+                                        member.ty = def.clone();
                                     }
                                 }
                             }
-                            self.struct_definitions.insert(name.clone(), base_ty.clone());
+                        }
+                        if !members.is_empty() || !self.struct_definitions.contains_key(name) {
+                            self.struct_definitions
+                                .insert(name.clone(), base_ty.clone());
                         }
                     }
                     Type::Union(Some(name), members) => {
-                        if !members.is_empty() {
-                            for member in members.iter_mut() {
-                                if let Type::Struct(Some(s_name), s_members) = &member.ty {
-                                    if s_members.is_empty() {
-                                        if let Some(def) = self.struct_definitions.get(s_name) {
-                                            member.ty = def.clone();
-                                        }
+                        for member in members.iter_mut() {
+                            if let Type::Struct(Some(s_name), s_members) = &member.ty {
+                                if s_members.is_empty() {
+                                    if let Some(def) = self.struct_definitions.get(s_name) {
+                                        member.ty = def.clone();
                                     }
-                                } else if let Type::Union(Some(u_name), u_members) = &member.ty {
-                                    if u_members.is_empty() {
-                                        if let Some(def) = self.union_definitions.get(u_name) {
-                                            member.ty = def.clone();
-                                        }
+                                }
+                            } else if let Type::Union(Some(u_name), u_members) = &member.ty {
+                                if u_members.is_empty() {
+                                    if let Some(def) = self.union_definitions.get(u_name) {
+                                        member.ty = def.clone();
                                     }
                                 }
                             }
-                            self.union_definitions.insert(name.clone(), base_ty.clone());
+                        }
+                        if !members.is_empty() || !self.union_definitions.contains_key(name) {
+                            self.union_definitions
+                                .insert(name.clone(), base_ty.clone());
                         }
                     }
                     _ => {}
@@ -474,7 +517,7 @@ impl SemanticAnalyzer {
                 if let Type::Enum(_name, members) = &ty {
                     // Only process enum constants for local enums (inside functions)
                     // Global enums are already processed in collect_symbols
-                    if self.current_function.is_some() && !members.is_empty() {
+                    if self.current_function.is_some() {
                         let mut next_value = 0;
                         for (name, value, span) in members {
                             let val = if let Some(expr) = value {
@@ -522,10 +565,11 @@ impl SemanticAnalyzer {
 
                     // Insert symbol if not already present
                     if self.symbol_table.lookup(&declarator.name).is_none() {
+                        let resolved_ty = self.resolve_type(&declarator.ty);
                         self.symbol_table.insert(
                             declarator.name.clone(),
                             Symbol {
-                                ty: declarator.ty.clone(),
+                                ty: resolved_ty,
                                 is_function: false,
                                 defined_at: filename.to_string(),
                             },
@@ -869,8 +913,7 @@ impl SemanticAnalyzer {
                     _ => ty,
                 };
 
-                let promoted_ty = self.integer_promote(&ty);
-                TypedExpr::Variable(name, location, promoted_ty)
+                TypedExpr::Variable(name, location, ty)
             }
             Expr::Number(n) => TypedExpr::Number(n, Type::Int),
             Expr::FloatNumber(n) => TypedExpr::FloatNumber(n, Type::Double),
@@ -963,21 +1006,8 @@ impl SemanticAnalyzer {
             }
             Expr::Member(expr, member) => {
                 let typed = self.check_expression(*expr, filename);
-                let members = match typed.ty().clone() {
-                    Type::Struct(Some(name), members) if members.is_empty() => {
-                        if let Some(Type::Struct(_, def)) = self.struct_definitions.get(&name) {
-                            Some(def.clone())
-                        } else {
-                            None
-                        }
-                    }
-                    Type::Union(Some(name), members) if members.is_empty() => {
-                        if let Some(Type::Union(_, def)) = self.union_definitions.get(&name) {
-                            Some(def.clone())
-                        } else {
-                            None
-                        }
-                    }
+                let resolved_ty = self.resolve_type(typed.ty());
+                let members = match resolved_ty {
                     Type::Struct(_, members) => Some(members),
                     Type::Union(_, members) => Some(members),
                     other => {
@@ -1007,39 +1037,33 @@ impl SemanticAnalyzer {
                 TypedExpr::Member(Box::new(typed), member, member_ty)
             }
             Expr::PointerMember(expr, member) => {
-                let typed = self.check_expression(*expr, filename);
-                let members = match typed.ty().clone() {
-                    Type::Pointer(inner) => match *inner {
-                        Type::Struct(Some(name), members) if members.is_empty() => {
-                           if let Some(Type::Struct(_, def)) = self.struct_definitions.get(&name) {
-                                Some(def.clone())
-                           } else {
-                                 None
-                           }
-                        }
-                        Type::Union(Some(name), members) if members.is_empty() => {
-                            if let Some(Type::Union(_, def)) = self.union_definitions.get(&name) {
-                                Some(def.clone())
-                            } else {
-                                None
-                            }
-                        }
-                        Type::Struct(_, members) => Some(members),
-                        Type::Union(_, members) => Some(members),
-                        other => {
-                            self.errors.push((
-                                SemanticError::NotAStructOrUnion(other),
-                                filename.to_string(),
-                                typed.span(),
-                            ));
-                            None
-                        }
-                    },
+                let typed_ptr = self.check_expression(*expr, filename);
+
+                // Dereference the pointer to get the struct/union
+                let inner_ty = if let Type::Pointer(inner) = typed_ptr.ty().clone().unwrap_const() {
+                    inner.clone()
+                } else {
+                    self.errors.push((
+                        SemanticError::NotAPointer(typed_ptr.ty().clone()),
+                        filename.to_string(),
+                        typed_ptr.span(),
+                    ));
+                    // Return a dummy expression to continue analysis
+                    return TypedExpr::Number(0, Type::Int);
+                };
+
+                let deref_expr = TypedExpr::Deref(Box::new(typed_ptr), *inner_ty);
+
+                // Now perform member access on the dereferenced expression
+                let resolved_ty = self.resolve_type(deref_expr.ty());
+                let members = match resolved_ty {
+                    Type::Struct(_, members) => Some(members),
+                    Type::Union(_, members) => Some(members),
                     other => {
                         self.errors.push((
-                            SemanticError::NotAPointer(other),
+                            SemanticError::NotAStructOrUnion(other),
                             filename.to_string(),
-                            typed.span(),
+                            deref_expr.span(),
                         ));
                         None
                     }
@@ -1055,11 +1079,13 @@ impl SemanticAnalyzer {
                         self.errors.push((
                             SemanticError::UndefinedMember(member.clone()),
                             filename.to_string(),
-                            typed.span(),
+                            deref_expr.span(),
                         ));
                         Type::Int
                     });
-                TypedExpr::PointerMember(Box::new(typed), member, member_ty)
+
+                // Return a Member expression, effectively de-sugaring p->y to (*p).y
+                TypedExpr::Member(Box::new(deref_expr), member, member_ty)
             }
             Expr::InitializerList(list) => {
                 let typed_list = list

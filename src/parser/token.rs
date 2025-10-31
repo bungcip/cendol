@@ -1,4 +1,5 @@
 pub use crate::common::{KeywordKind, SourceLocation, SourceSpan};
+use crate::parser::string_interner::{StringId, StringInterner};
 use std::fmt;
 
 /// Represents a token in the C language.
@@ -30,15 +31,15 @@ impl Token {
 #[derive(Debug, PartialEq, Clone)]
 pub enum TokenKind {
     /// An identifier.
-    Identifier(String),
+    Identifier(StringId),
     /// A keyword.
     Keyword(KeywordKind),
     /// A number literal.
-    Number(String),
+    Number(StringId),
     /// A string literal.
-    String(String),
+    String(StringId),
     /// A character literal.
-    Char(String),
+    Char(StringId),
     LeftParen,
     RightParen,
     LeftBrace,
@@ -92,12 +93,21 @@ use crate::preprocessor;
 
 impl From<preprocessor::token::Token> for Token {
     fn from(token: preprocessor::token::Token) -> Self {
+        // This is a legacy conversion that doesn't use string interning
+        // For backwards compatibility, we still use StringId but without interning
+        // In a real implementation, you would want to use the interner version
         let kind = match token.kind {
-            preprocessor::token::TokenKind::Identifier(s) => TokenKind::Identifier(s),
+            preprocessor::token::TokenKind::Identifier(s) => {
+                TokenKind::Identifier(StringInterner::intern(&s))
+            }
             preprocessor::token::TokenKind::Keyword(k) => TokenKind::Keyword(k),
-            preprocessor::token::TokenKind::Number(s) => TokenKind::Number(s),
-            preprocessor::token::TokenKind::String(s) => TokenKind::String(s),
-            preprocessor::token::TokenKind::Char(s) => TokenKind::Char(s),
+            preprocessor::token::TokenKind::Number(s) => {
+                TokenKind::Number(StringInterner::intern(&s))
+            }
+            preprocessor::token::TokenKind::String(s) => {
+                TokenKind::String(StringInterner::intern(&s))
+            }
+            preprocessor::token::TokenKind::Char(s) => TokenKind::Char(StringInterner::intern(&s)),
             preprocessor::token::TokenKind::LeftParen => TokenKind::LeftParen,
             preprocessor::token::TokenKind::RightParen => TokenKind::RightParen,
             preprocessor::token::TokenKind::LeftBrace => TokenKind::LeftBrace,
@@ -190,11 +200,11 @@ impl fmt::Display for Token {
 impl fmt::Display for TokenKind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            TokenKind::Identifier(s) => write!(f, "{}", s),
+            TokenKind::Identifier(s) => write!(f, "{:?}", s), // Debug format for Symbol
             TokenKind::Keyword(k) => write!(f, "{}", k),
-            TokenKind::Number(s) => write!(f, "{}", s),
-            TokenKind::String(s) => write!(f, "{}", s),
-            TokenKind::Char(s) => write!(f, "{}", s),
+            TokenKind::Number(s) => write!(f, "{:?}", s), // Debug format for Symbol
+            TokenKind::String(s) => write!(f, "{:?}", s), // Debug format for Symbol
+            TokenKind::Char(s) => write!(f, "{:?}", s),   // Debug format for Symbol
             TokenKind::LeftParen => write!(f, "("),
             TokenKind::RightParen => write!(f, ")"),
             TokenKind::LeftBrace => write!(f, "{{"), // Note: using {{ for braces in Rust

@@ -1,21 +1,24 @@
+use crate::common::SourceSpan;
 use crate::parser::ast::{
     Designator, Expr, ForInit, Function, Initializer, InitializerList, Parameter, Stmt,
     TranslationUnit, Type,
 };
 use crate::parser::error::ParserError;
+use crate::parser::string_interner::StringId;
 use crate::parser::token::{KeywordKind, Token, TokenKind};
 use crate::preprocessor;
 use std::collections::HashMap;
 
 pub mod ast;
 pub mod error;
+pub mod string_interner;
 pub mod token;
 
 /// A parser that converts a stream of tokens into an abstract syntax tree.
 pub struct Parser {
     tokens: Vec<Token>,
     position: usize,
-    typedefs: HashMap<String, Type>,
+    typedefs: HashMap<StringId, Type>,
 }
 
 impl Parser {
@@ -63,7 +66,7 @@ impl Parser {
                 }
                 _ => {}
             }
-            filtered_tokens.push(token.into());
+            filtered_tokens.push(Token::from(token));
         }
 
         let parser = Parser {
@@ -141,7 +144,7 @@ impl Parser {
     }
 
     /// Expects and consumes an optional identifier, returning its name if present.
-    fn maybe_name(&mut self) -> Result<Option<String>, ParserError> {
+    fn maybe_name(&mut self) -> Result<Option<StringId>, ParserError> {
         let token = self.current_token()?;
         if let TokenKind::Identifier(id) = token.kind {
             self.eat()?;
@@ -152,7 +155,7 @@ impl Parser {
     }
 
     /// Expects and consumes an identifier, returning its name.
-    fn expect_name(&mut self) -> Result<String, ParserError> {
+    fn expect_name(&mut self) -> Result<StringId, ParserError> {
         let token = self.current_token()?;
         if let TokenKind::Identifier(id) = token.kind {
             self.eat()?;
@@ -172,9 +175,13 @@ impl Parser {
                 return Ok(Type::Const(Box::new(ty)));
             }
             self.parse_type_specifier_kind(k)
-        } else if let Some(ty) = self.typedefs.get(&token.to_string()).cloned() {
-            self.eat()?;
-            Ok(ty)
+        } else if let TokenKind::Identifier(id) = token.kind.clone() {
+            if let Some(ty) = self.typedefs.get(&id).cloned() {
+                self.eat()?;
+                Ok(ty)
+            } else {
+                Err(ParserError::UnexpectedToken(token))
+            }
         } else {
             Err(ParserError::UnexpectedToken(token))
         }
@@ -314,7 +321,7 @@ impl Parser {
     /// Parses a single enumerator.
     fn parse_enumerator(
         &mut self,
-    ) -> Result<(String, Option<Box<Expr>>, crate::common::SourceSpan), ParserError> {
+    ) -> Result<(StringId, Option<Box<Expr>>, SourceSpan), ParserError> {
         let token = self.current_token()?;
         let name = self.expect_name()?;
         if self.eat_token(&TokenKind::Equal)? {
@@ -328,7 +335,7 @@ impl Parser {
     /// Parses a struct or union type.
     fn parse_struct_or_union<F>(&mut self, constructor: F) -> Result<Type, ParserError>
     where
-        F: Fn(Option<String>, Option<Vec<Parameter>>) -> Type,
+        F: Fn(Option<StringId>, Option<Vec<Parameter>>) -> Type,
     {
         self.eat()?;
         let name = self.maybe_name()?;
@@ -368,7 +375,7 @@ impl Parser {
         &mut self,
         base_type: Type,
         name_required: bool,
-    ) -> Result<(Type, String, Token), ParserError> {
+    ) -> Result<(Type, StringId, Token), ParserError> {
         let mut ty = base_type;
 
         // Parse pointers
@@ -391,7 +398,7 @@ impl Parser {
             // We'll pass back the token we're at, but the caller must be careful.
             // Let's create a default token to signify no identifier.
             (
-                String::new(),
+                crate::parser::string_interner::StringInterner::empty_id(), // Use empty string for default StringId
                 Token {
                     span: Default::default(),
                     kind: TokenKind::Eof,
@@ -699,12 +706,13 @@ impl Parser {
         match token.kind.clone() {
             TokenKind::Number(n) => {
                 self.eat()?;
-                if n.contains('.') || n.contains('e') || n.contains('E') {
-                    let num_str = n.trim_end_matches(['f', 'F', 'l', 'L']);
-                    Ok(Expr::FloatNumber(num_str.parse().unwrap()))
+                let num_str = n.as_str();
+                if num_str.contains('.') || num_str.contains('e') || num_str.contains('E') {
+                    let trimmed = num_str.trim_end_matches(['f', 'F', 'l', 'L']);
+                    Ok(Expr::FloatNumber(trimmed.parse().unwrap()))
                 } else {
-                    let num_str = n.trim_end_matches(['L', 'U', 'l', 'u']);
-                    Ok(Expr::Number(num_str.parse().unwrap()))
+                    let trimmed = num_str.trim_end_matches(['L', 'U', 'l', 'u']);
+                    Ok(Expr::Number(trimmed.parse().unwrap()))
                 }
             }
             TokenKind::String(s) => {
@@ -1056,7 +1064,7 @@ impl Parser {
     fn parse_function_signature(
         &mut self,
         param_name_required: bool,
-    ) -> Result<(Type, String, Vec<Parameter>, bool, bool, bool), ParserError> {
+    ) -> Result<(Type, StringId, Vec<Parameter>, bool, bool, bool), ParserError> {
         let mut is_inline = false;
         let mut is_noreturn = false;
         loop {

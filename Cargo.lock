@@ -180,6 +180,7 @@ dependencies = [
  "insta",
  "predicates",
  "serde",
+ "symbol_table",
  "target-lexicon",
  "tempfile",
  "thiserror",
@@ -465,6 +466,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbeam-utils"
+version = "0.8.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
+
+[[package]]
 name = "difflib"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -560,6 +567,8 @@ version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
 dependencies = [
+ "allocator-api2",
+ "equivalent",
  "foldhash",
 ]
 
@@ -908,6 +917,18 @@ name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
+
+[[package]]
+name = "symbol_table"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aabf1e4bbb0a27b4b9bf61d9f634f6ef9d897bc139454b111e1f0cd4bfbe5641"
+dependencies = [
+ "crossbeam-utils",
+ "foldhash",
+ "hashbrown 0.15.5",
+ "serde",
+]
 
 [[package]]
 name = "syn"

@@ -50,7 +50,7 @@ fn create_simple_program_ast() -> TranslationUnit {
         globals: vec![],
         functions: vec![Function {
             return_type: Type::Int,
-            name: "main".to_string(),
+            name: "main".into(),
             params: vec![],
             body: vec![Stmt::Return(Expr::Number(0))],
             is_inline: false,
@@ -66,7 +66,7 @@ fn create_control_flow_program_ast() -> TranslationUnit {
         globals: vec![],
         functions: vec![Function {
             return_type: Type::Int,
-            name: "main".to_string(),
+            name: "main".into(),
             params: vec![],
             body: vec![Stmt::If(
                 Box::new(Expr::Number(1)),
@@ -84,9 +84,7 @@ fn create_control_flow_program_ast() -> TranslationUnit {
 mod tests {
     use crate::parse_c_body;
 
-    use super::{
-        create_control_flow_program_ast, create_simple_program_ast, parse_c_code,
-    };
+    use super::{create_control_flow_program_ast, create_simple_program_ast, parse_c_code};
     use cendol::parser::ast::{Declarator, Expr, Initializer, Stmt, Type};
 
     /// Test parsing of simple C programs
@@ -129,10 +127,13 @@ mod tests {
                     name,
                     initializer: Some(Initializer::Expr(expr)),
                     ..
-                } if name == "a" && matches!(**expr, Expr::Number(1))
+                } if name.as_str() == "a" && matches!(**expr, Expr::Number(1))
             )
         ));
-        assert!(matches!(&ast.functions[0].body[1], Stmt::Return(Expr::Number(0))));
+        assert!(matches!(
+            &ast.functions[0].body[1],
+            Stmt::Return(Expr::Number(0))
+        ));
     }
 
     /// Test parsing of switch statements
@@ -180,19 +181,22 @@ mod tests {
             Stmt::Declaration(Type::Int, declarators, false) if declarators.len() == 3 &&
                 matches!(
                     &declarators[0],
-                    Declarator { ty: Type::Int, name, .. } if name == "x"
+                    Declarator { ty: Type::Int, name, .. } if name.as_str() == "x"
                 ) &&
                 matches!(
                     &declarators[1],
-                    Declarator { ty: Type::Pointer(inner), name, .. } if name == "p" && **inner == Type::Int
+                    Declarator { ty: Type::Pointer(inner), name, .. } if name.as_str() == "p" && **inner == Type::Int
                 ) &&
                 matches!(
                     &declarators[2],
-                    Declarator { ty: Type::Pointer(inner1), name, .. } if name == "pp" &&
+                    Declarator { ty: Type::Pointer(inner1), name, .. } if name.as_str() == "pp" &&
                         matches!(&**inner1, Type::Pointer(inner2) if **inner2 == Type::Int)
                 )
         ));
-        assert!(matches!(&ast.functions[0].body[1], Stmt::Return(Expr::Number(0))));
+        assert!(matches!(
+            &ast.functions[0].body[1],
+            Stmt::Return(Expr::Number(0))
+        ));
     }
 
     // /// Test parsing of designated initializers for structs

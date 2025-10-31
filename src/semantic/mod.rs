@@ -1,13 +1,15 @@
 use crate::common::{SourceLocation, SourceSpan};
 use crate::parser::ast::{
     AssignOp, BinOp, Designator, Expr, ForInit, Initializer, Stmt, TranslationUnit, Type,
-    TypedDeclarator, TypedDesignator, TypedExpr, TypedForInit, TypedFunctionDecl,
-    TypedInitializer, TypedStmt, TypedTranslationUnit,
+    TypedDeclarator, TypedDesignator, TypedExpr, TypedForInit, TypedFunctionDecl, TypedInitializer,
+    TypedStmt, TypedTranslationUnit,
 };
+use crate::parser::string_interner::StringInterner;
 use crate::semantic::error::SemanticError;
 use std::collections::HashMap;
 mod expressions;
 use expressions::TypedExpression;
+use symbol_table::GlobalSymbol as StringId;
 pub mod error;
 
 /// Represents a symbol in the symbol table.
@@ -23,7 +25,7 @@ struct Symbol {
 /// A scoped symbol table using a stack of hash maps for nested scopes.
 #[derive(Debug, Clone)]
 pub struct SymbolTable {
-    scopes: Vec<HashMap<String, Symbol>>,
+    scopes: Vec<HashMap<StringId, Symbol>>,
 }
 
 impl SymbolTable {
@@ -47,14 +49,14 @@ impl SymbolTable {
     }
 
     /// Inserts a symbol into the current (top) scope.
-    fn insert(&mut self, name: String, symbol: Symbol) {
+    fn insert(&mut self, name: StringId, symbol: Symbol) {
         if let Some(scope) = self.scopes.last_mut() {
             scope.insert(name, symbol);
         }
     }
 
     /// Looks up a symbol starting from the current scope and moving outwards.
-    fn lookup(&self, name: &str) -> Option<&Symbol> {
+    fn lookup(&self, name: &StringId) -> Option<&Symbol> {
         for scope in self.scopes.iter().rev() {
             if let Some(symbol) = scope.get(name) {
                 return Some(symbol);
@@ -64,7 +66,7 @@ impl SymbolTable {
     }
 
     /// Checks if a symbol exists in any scope.
-    fn contains_key(&self, name: &str) -> bool {
+    fn contains_key(&self, name: &StringId) -> bool {
         self.lookup(name).is_some()
     }
 }
@@ -74,15 +76,15 @@ use std::collections::HashSet;
 /// A semantic analyzer that checks for semantic errors in the AST.
 pub struct SemanticAnalyzer {
     symbol_table: SymbolTable,
-    pub enum_constants: HashMap<String, i64>,
-    struct_definitions: HashMap<String, Type>,
-    union_definitions: HashMap<String, Type>,
-    current_function: Option<String>,
-    labels: HashMap<String, SourceSpan>,
+    pub enum_constants: HashMap<StringId, i64>,
+    struct_definitions: HashMap<StringId, Type>,
+    union_definitions: HashMap<StringId, Type>,
+    current_function: Option<StringId>,
+    labels: HashMap<StringId, SourceSpan>,
     errors: Vec<(SemanticError, String, SourceSpan)>, // (error, file, span)
     warnings: Vec<(SemanticError, String, SourceSpan)>, // (warning, file, span)
-    used_builtins: HashSet<String>,
-    used_variables: HashSet<String>,
+    used_builtins: HashSet<StringId>,
+    used_variables: HashSet<StringId>,
 }
 
 impl Default for SemanticAnalyzer {
@@ -129,7 +131,7 @@ impl SemanticAnalyzer {
 
         for (name, return_type) in builtins {
             self.symbol_table.insert(
-                name.to_string(),
+                StringInterner::intern(name),
                 Symbol {
                     ty: return_type,
                     is_function: true,
@@ -226,11 +228,7 @@ impl SemanticAnalyzer {
                             self.errors.push((
                                 SemanticError::FunctionRedeclaration(name.clone()),
                                 filename.to_string(),
-                                SourceSpan::new(
-                                    crate::file::FileId(0),
-                                    SourceLocation::new(crate::file::FileId(0), 0, 0),
-                                    SourceLocation::new(crate::file::FileId(0), 0, 0),
-                                ),
+                                SourceSpan::default(),
                             ));
                         }
                     } else {
@@ -279,15 +277,13 @@ impl SemanticAnalyzer {
                         }
                     } else if let Type::Struct(Some(name), members) = ty {
                         if !members.is_empty() || !self.struct_definitions.contains_key(name) {
-                            self.struct_definitions
-                                .insert(name.clone(), ty.clone());
+                            self.struct_definitions.insert(name.clone(), ty.clone());
                         }
                     } else if let Type::Union(Some(name), members) = ty {
                         if !members.is_empty() || !self.union_definitions.contains_key(name) {
                             self.union_definitions.insert(name.clone(), ty.clone());
                         }
                     }
-
 
                     for declarator in declarators {
                         // Global variables can be redeclared (tentative definitions)
@@ -324,11 +320,7 @@ impl SemanticAnalyzer {
                     self.errors.push((
                         SemanticError::FunctionRedeclaration(function.name.clone()),
                         filename.to_string(),
-                        SourceSpan::new(
-                            crate::file::FileId(0),
-                            SourceLocation::new(crate::file::FileId(0), 0, 0),
-                            SourceLocation::new(crate::file::FileId(0), 0, 0),
-                        ),
+                        SourceSpan::default(),
                     ));
                 }
             } else {
@@ -500,7 +492,7 @@ impl SemanticAnalyzer {
         for (name, symbol) in self.symbol_table.scopes.last().unwrap() {
             if !self.used_variables.contains(name) {
                 self.warnings.push((
-                    SemanticError::UnusedVariable(name.clone()),
+                    SemanticError::UnusedVariable(name.to_string()),
                     filename.to_string(),
                     symbol.span,
                 ));
@@ -530,22 +522,22 @@ impl SemanticAnalyzer {
                 let mut base_ty = ty.clone();
                 match &mut base_ty {
                     Type::Struct(Some(name), members) => {
-                        for member in members.iter_mut() {
-                            if let Type::Struct(Some(s_name), s_members) = &member.ty {
-                                if s_members.is_empty() {
-                                    if let Some(def) = self.struct_definitions.get(s_name) {
-                                        member.ty = def.clone();
+                        if !members.is_empty() {
+                            for member in members.iter_mut() {
+                                if let Type::Struct(Some(s_name), s_members) = &member.ty {
+                                    if s_members.is_empty() {
+                                        if let Some(def) = self.struct_definitions.get(s_name) {
+                                            member.ty = def.clone();
+                                        }
                                     }
-                                }
-                            } else if let Type::Union(Some(u_name), u_members) = &member.ty {
-                                if u_members.is_empty() {
-                                    if let Some(def) = self.union_definitions.get(u_name) {
-                                        member.ty = def.clone();
+                                } else if let Type::Union(Some(u_name), u_members) = &member.ty {
+                                    if u_members.is_empty() {
+                                        if let Some(def) = self.union_definitions.get(u_name) {
+                                            member.ty = def.clone();
+                                        }
                                     }
                                 }
                             }
-                        }
-                        if !members.is_empty() || !self.struct_definitions.contains_key(name) {
                             self.struct_definitions
                                 .insert(name.clone(), base_ty.clone());
                         }
@@ -567,8 +559,7 @@ impl SemanticAnalyzer {
                             }
                         }
                         if !members.is_empty() || !self.union_definitions.contains_key(name) {
-                            self.union_definitions
-                                .insert(name.clone(), base_ty.clone());
+                            self.union_definitions.insert(name.clone(), base_ty.clone());
                         }
                     }
                     _ => {}
@@ -646,13 +637,9 @@ impl SemanticAnalyzer {
                         && !is_const_expr(init)
                     {
                         self.errors.push((
-                            SemanticError::InvalidStaticInitializer(declarator.name.clone()),
+                            SemanticError::InvalidStaticInitializer(declarator.name.to_string()),
                             filename.to_string(),
-                            SourceSpan::new(
-                                crate::file::FileId(0),
-                                SourceLocation::new(crate::file::FileId(0), 0, 0),
-                                SourceLocation::new(crate::file::FileId(0), 0, 0),
-                            ),
+                            SourceSpan::default(),
                         ));
                     }
 
@@ -692,11 +679,7 @@ impl SemanticAnalyzer {
                                 self.errors.push((
                                     SemanticError::FunctionRedeclaration(name.clone()),
                                     filename.to_string(),
-                                    SourceSpan::new(
-                                        crate::file::FileId(0),
-                                        SourceLocation::new(crate::file::FileId(0), 0, 0),
-                                        SourceLocation::new(crate::file::FileId(0), 0, 0),
-                                    ),
+                                    SourceSpan::default(),
                                 ));
                             }
                         } else {
@@ -841,7 +824,9 @@ impl SemanticAnalyzer {
                     let result_ty = match (lhs_ty.unwrap_const(), rhs_ty.unwrap_const()) {
                         (Type::Pointer(_), Type::Pointer(_)) if op == BinOp::Sub => Type::Int,
                         (Type::Pointer(..), ty) if ty.get_integer_rank() > 0 => lhs_ty.clone(),
-                        (ty, Type::Pointer(..)) if ty.get_integer_rank() > 0 && op == BinOp::Add => {
+                        (ty, Type::Pointer(..))
+                            if ty.get_integer_rank() > 0 && op == BinOp::Add =>
+                        {
                             rhs_ty.clone()
                         }
                         _ => {
@@ -872,10 +857,12 @@ impl SemanticAnalyzer {
                 );
                 (lhs_cast, rhs_cast, lhs_conv_ty)
             }
-            BinOp::Equal | BinOp::NotEqual | BinOp::LessThan | BinOp::GreaterThan
-            | BinOp::LessThanOrEqual | BinOp::GreaterThanOrEqual => {
-                (lhs_typed, rhs_typed, Type::Bool)
-            }
+            BinOp::Equal
+            | BinOp::NotEqual
+            | BinOp::LessThan
+            | BinOp::GreaterThan
+            | BinOp::LessThanOrEqual
+            | BinOp::GreaterThanOrEqual => (lhs_typed, rhs_typed, Type::Bool),
             BinOp::LogicalAnd | BinOp::LogicalOr => (lhs_typed, rhs_typed, Type::Bool),
             BinOp::BitwiseOr | BinOp::BitwiseXor | BinOp::BitwiseAnd => {
                 (lhs_typed, rhs_typed, Type::Int)
@@ -917,7 +904,9 @@ impl SemanticAnalyzer {
         let result_ty = lhs_typed.ty().clone();
 
         match op {
-            AssignOp::Assign => TypedExpr::Assign(Box::new(lhs_typed), Box::new(rhs_cast), result_ty),
+            AssignOp::Assign => {
+                TypedExpr::Assign(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
+            }
             AssignOp::Add => {
                 TypedExpr::AssignAdd(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
             }
@@ -978,12 +967,16 @@ impl SemanticAnalyzer {
                     .unwrap_or(Type::Int);
 
                 let ty = match ty {
-                    Type::Struct(Some(s_name), members) if members.is_empty() => {
-                        self.struct_definitions.get(&s_name).cloned().unwrap_or(Type::Struct(Some(s_name), vec![]))
-                    }
-                    Type::Union(Some(u_name), members) if members.is_empty() => {
-                        self.union_definitions.get(&u_name).cloned().unwrap_or(Type::Union(Some(u_name), vec![]))
-                    }
+                    Type::Struct(Some(s_name), members) if members.is_empty() => self
+                        .struct_definitions
+                        .get(&s_name)
+                        .cloned()
+                        .unwrap_or(Type::Struct(Some(s_name), vec![])),
+                    Type::Union(Some(u_name), members) if members.is_empty() => self
+                        .union_definitions
+                        .get(&u_name)
+                        .cloned()
+                        .unwrap_or(Type::Union(Some(u_name), vec![])),
                     _ => ty,
                 };
 
@@ -996,7 +989,7 @@ impl SemanticAnalyzer {
             Expr::Call(name, args, location) => {
                 if let Some(symbol) = self.symbol_table.lookup(&name) {
                     if symbol.is_builtin {
-                        self.used_builtins.insert(name.clone());
+                        self.used_builtins.insert(name);
                     }
                 } else {
                     self.errors.push((
@@ -1095,11 +1088,7 @@ impl SemanticAnalyzer {
                 };
 
                 let member_ty = members
-                    .and_then(|m| {
-                        m.iter()
-                            .find(|p| p.name == member)
-                            .map(|p| p.ty.clone())
-                    })
+                    .and_then(|m| m.iter().find(|p| p.name == member).map(|p| p.ty.clone()))
                     .unwrap_or_else(|| {
                         self.errors.push((
                             SemanticError::UndefinedMember(member.clone()),
@@ -1144,11 +1133,7 @@ impl SemanticAnalyzer {
                 };
 
                 let member_ty = members
-                    .and_then(|m| {
-                        m.iter()
-                            .find(|p| p.name == member)
-                            .map(|p| p.ty.clone())
-                    })
+                    .and_then(|m| m.iter().find(|p| p.name == member).map(|p| p.ty.clone()))
                     .unwrap_or_else(|| {
                         self.errors.push((
                             SemanticError::UndefinedMember(member.clone()),

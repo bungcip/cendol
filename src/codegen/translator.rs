@@ -2,6 +2,7 @@ use crate::codegen::error::{CodegenError, CodegenResult};
 use crate::parser::ast::{
     AssignOp, BinOp, Type, TypedDesignator, TypedExpr, TypedForInit, TypedInitializer, TypedStmt,
 };
+use crate::parser::string_interner::StringId;
 use cranelift::prelude::*;
 use cranelift_codegen::ir::types;
 use cranelift_codegen::ir::{InstBuilder, Value};
@@ -58,27 +59,28 @@ pub enum BlockState {
 /// A function translator that translates statements and expressions into Cranelift IR.
 pub(crate) struct FunctionTranslator<'a, 'b> {
     pub(crate) builder: FunctionBuilder<'a>,
-    pub(crate) functions: &'b HashMap<String, (FuncId, Type, bool)>,
-    pub(crate) variables: &'b mut SymbolTable<String, (Option<Variable>, Option<StackSlot>, Type)>,
-    pub(crate) global_variables: &'b HashMap<String, (DataId, Type)>,
-    pub(crate) static_local_variables: &'b mut HashMap<String, (DataId, Type)>,
-    pub(crate) structs: &'b HashMap<String, Type>,
-    pub(crate) unions: &'b HashMap<String, Type>,
-    pub(crate) enum_constants: &'b HashMap<String, i64>,
+    pub(crate) functions: &'b HashMap<StringId, (FuncId, Type, bool)>,
+    pub(crate) variables:
+        &'b mut SymbolTable<StringId, (Option<Variable>, Option<StackSlot>, Type)>,
+    pub(crate) global_variables: &'b HashMap<StringId, (DataId, Type)>,
+    pub(crate) static_local_variables: &'b mut HashMap<StringId, (DataId, Type)>,
+    pub(crate) structs: &'b HashMap<StringId, Type>,
+    pub(crate) unions: &'b HashMap<StringId, Type>,
+    pub(crate) enum_constants: &'b HashMap<StringId, i64>,
     pub(crate) module: &'b mut ObjectModule,
     pub(crate) loop_context: Vec<(Block, Block)>,
     pub(crate) current_block_state: BlockState,
-    pub(crate) signatures: &'b HashMap<String, Signature>,
-    pub(crate) label_blocks: HashMap<String, Block>,
-    pub(crate) current_function_name: &'b str,
+    pub(crate) signatures: &'b HashMap<StringId, Signature>,
+    pub(crate) label_blocks: HashMap<StringId, Block>,
+    pub(crate) current_function_name: StringId,
     pub(crate) anonymous_string_count: &'b mut usize,
 }
 
 impl<'a, 'b> FunctionTranslator<'a, 'b> {
     pub fn get_type_size_from_type(
         ty: &Type,
-        structs: &HashMap<String, Type>,
-        unions: &HashMap<String, Type>,
+        structs: &HashMap<StringId, Type>,
+        unions: &HashMap<StringId, Type>,
     ) -> u32 {
         let real_ty = Self::get_real_type_from_type(ty, structs, unions).unwrap();
         match &real_ty {
@@ -123,8 +125,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
     fn get_type_alignment_from_type(
         ty: &Type,
-        structs: &HashMap<String, Type>,
-        unions: &HashMap<String, Type>,
+        structs: &HashMap<StringId, Type>,
+        unions: &HashMap<StringId, Type>,
     ) -> u32 {
         let real_ty = Self::get_real_type_from_type(ty, structs, unions).unwrap();
         match &real_ty {
@@ -156,8 +158,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
     fn get_real_type_from_type(
         ty: &Type,
-        structs: &HashMap<String, Type>,
-        unions: &HashMap<String, Type>,
+        structs: &HashMap<StringId, Type>,
+        unions: &HashMap<StringId, Type>,
     ) -> Result<Type, CodegenError> {
         if let Type::Struct(Some(name), members) = ty
             && members.is_empty()
@@ -233,8 +235,11 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             TypedStmt::Declaration(_, declarators, is_static) => {
                 for declarator in declarators {
                     if is_static {
-                        let mangled_name =
-                            format!("{}.{}", self.current_function_name, declarator.name);
+                        let mangled_name = format!(
+                            "{}.{}",
+                            self.current_function_name.as_str(),
+                            declarator.name.as_str()
+                        );
                         let id = self
                             .module
                             .declare_data(&mangled_name, Linkage::Local, true, false)
@@ -1020,7 +1025,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             TypedExpr::Number(n, ty) => Ok((self.builder.ins().iconst(types::I64, n), ty)),
             TypedExpr::FloatNumber(n, ty) => Ok((self.builder.ins().f64const(n), ty)),
             TypedExpr::String(s, ty) => {
-                let unescaped = unescape(&s);
+                let string_value = s.as_str();
+                let unescaped = unescape(&string_value);
                 let mut data = Vec::with_capacity(unescaped.len() + 1);
                 data.extend_from_slice(&unescaped);
                 data.push(0); // Null terminator
@@ -1041,7 +1047,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 Ok((self.builder.ins().global_value(types::I64, local_id), ty))
             }
             TypedExpr::Char(c, ty) => {
-                let character = c.chars().next().unwrap();
+                let char_value = c.as_str();
+                let character = char_value.chars().next().unwrap();
                 let val = self.builder.ins().iconst(types::I64, character as i64);
                 Ok((val, ty))
             }
@@ -1213,9 +1220,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 };
 
                 let extended_val = match *ty {
-                    Type::Char | Type::Short => {
-                        self.builder.ins().sextend(types::I64, cast_val)
-                    }
+                    Type::Char | Type::Short => self.builder.ins().sextend(types::I64, cast_val),
                     Type::UnsignedChar | Type::UnsignedShort => {
                         self.builder.ins().uextend(types::I64, cast_val)
                     }
@@ -1454,7 +1459,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     .functions
                     .get(&name)
                     .cloned()
-                    .unwrap_or_else(|| panic!("Undefined function: {}", name));
+                    .unwrap_or_else(|| panic!("Undefined function: {}", name.as_str()));
 
                 let local_callee = self.module.declare_func_in_func(callee, self.builder.func);
 
@@ -1573,7 +1578,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                                                 }
                                                 if !found {
                                                     return Err(CodegenError::UnknownField(
-                                                        name.clone(),
+                                                        name.to_string(),
                                                     ));
                                                 }
                                             } else {

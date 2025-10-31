@@ -60,6 +60,7 @@ impl SourceSpan {
 
 /// Represents C keywords.
 #[derive(Debug, PartialEq, Clone, Copy)]
+#[repr(u8)]
 pub enum KeywordKind {
     Auto,
     Break,

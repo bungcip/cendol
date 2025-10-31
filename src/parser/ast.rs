@@ -1,4 +1,5 @@
 use crate::common::SourceSpan;
+use crate::parser::string_interner::StringId;
 
 /// Type alias for initializer lists.
 pub type InitializerList = Vec<(Vec<Designator>, Box<Initializer>)>;
@@ -42,13 +43,13 @@ pub enum Type {
     /// An array of a specific size.
     Array(Box<Type>, usize),
     /// A struct definition.
-    Struct(Option<String>, Vec<Parameter>),
+    Struct(Option<StringId>, Vec<Parameter>),
     /// A union definition.
-    Union(Option<String>, Vec<Parameter>),
+    Union(Option<StringId>, Vec<Parameter>),
     /// An enum definition.
     Enum(
-        Option<String>,
-        Vec<(String, Option<Box<Expr>>, crate::common::SourceSpan)>,
+        Option<StringId>,
+        Vec<(StringId, Option<Box<Expr>>, crate::common::SourceSpan)>,
     ),
     Const(Box<Type>),
 }
@@ -144,7 +145,7 @@ impl Type {
 #[derive(Debug, PartialEq, Clone)]
 pub enum ForInit {
     /// A variable declaration.
-    Declaration(Type, String, Option<Initializer>),
+    Declaration(Type, StringId, Option<Initializer>),
     /// An expression.
     Expr(Expr),
 }
@@ -153,7 +154,7 @@ pub enum ForInit {
 #[derive(Debug, PartialEq, Clone)]
 pub struct Declarator {
     pub ty: Type,
-    pub name: String,
+    pub name: StringId,
     pub initializer: Option<Initializer>,
     pub span: SourceSpan,
 }
@@ -183,14 +184,14 @@ pub enum Stmt {
     /// A `default` statement in a `switch`.
     Default(Box<Stmt>),
     /// A labeled statement.
-    Label(String, Box<Stmt>, crate::common::SourceSpan),
+    Label(StringId, Box<Stmt>, crate::common::SourceSpan),
     /// A `goto` statement.
-    Goto(String, crate::common::SourceSpan),
+    Goto(StringId, crate::common::SourceSpan),
     /// A variable declaration.
     Declaration(Type, Vec<Declarator>, bool),
     FunctionDeclaration {
         ty: Type,
-        name: String,
+        name: StringId,
         params: Vec<Parameter>,
         is_variadic: bool,
         is_inline: bool,
@@ -207,7 +208,7 @@ pub enum Stmt {
     /// An expression statement.
     Expr(Expr),
     /// A `_Static_assert` declaration.
-    StaticAssert(Box<Expr>, String),
+    StaticAssert(Box<Expr>, StringId),
 }
 
 /// Represents an expression in the C language.
@@ -274,11 +275,11 @@ pub enum Expr {
     /// A float number literal.
     FloatNumber(f64),
     /// A string literal.
-    String(String),
+    String(StringId),
     /// A character literal.
-    Char(String),
+    Char(StringId),
     /// A variable.
-    Variable(String, crate::common::SourceSpan),
+    Variable(StringId, crate::common::SourceSpan),
     /// An assignment expression.
     Assign(Box<Expr>, Box<Expr>),
     /// A compound assignment expression (e.g., +=, -=, *=, /=, %=).
@@ -319,7 +320,7 @@ pub enum Expr {
     /// A right shift expression.
     RightShift(Box<Expr>, Box<Expr>),
     /// A function call.
-    Call(String, Vec<Expr>, crate::common::SourceSpan),
+    Call(StringId, Vec<Expr>, crate::common::SourceSpan),
     /// A logical AND expression.
     LogicalAnd(Box<Expr>, Box<Expr>),
     /// A logical OR expression.
@@ -361,9 +362,9 @@ pub enum Expr {
     /// An initializer list expression.
     InitializerList(InitializerList),
     /// A member access expression.
-    Member(Box<Expr>, String),
+    Member(Box<Expr>, StringId),
     /// A pointer member access expression.
-    PointerMember(Box<Expr>, String),
+    PointerMember(Box<Expr>, StringId),
     /// An explicit type cast expression.
     ExplicitCast(Box<Type>, Box<Expr>),
     /// An implicit type cast expression.
@@ -434,7 +435,7 @@ pub enum Designator {
     /// An array designator, e.g., `[0]`.
     Index(Box<Expr>),
     /// A struct/union member designator, e.g., `.foo`.
-    Member(String),
+    Member(StringId),
 }
 
 /// Represents a C initializer.
@@ -452,7 +453,7 @@ pub struct Parameter {
     /// The type of the parameter.
     pub ty: Type,
     /// The name of the parameter.
-    pub name: String,
+    pub name: StringId,
     /// The span of the parameter.
     pub span: SourceSpan,
 }
@@ -463,7 +464,7 @@ pub struct Function {
     /// The return type of the function.
     pub return_type: Type,
     /// The name of the function.
-    pub name: String,
+    pub name: StringId,
     /// The parameters of the function.
     pub params: Vec<Parameter>,
     /// The body of the function.
@@ -490,10 +491,10 @@ pub struct TranslationUnit {
 pub enum TypedExpr {
     Number(i64, Type),
     FloatNumber(f64, Type),
-    String(String, Type),
-    Char(String, Type),
-    Variable(String, SourceSpan, Type),
-    Call(String, Vec<TypedExpr>, SourceSpan, Type),
+    String(StringId, Type),
+    Char(StringId, Type),
+    Variable(StringId, SourceSpan, Type),
+    Call(StringId, Vec<TypedExpr>, SourceSpan, Type),
     Assign(Box<TypedExpr>, Box<TypedExpr>, Type),
     AssignAdd(Box<TypedExpr>, Box<TypedExpr>, Type),
     AssignSub(Box<TypedExpr>, Box<TypedExpr>, Type),
@@ -534,8 +535,8 @@ pub enum TypedExpr {
     Alignof(Box<TypedExpr>, Type),
     AlignofType(Type, Type),
     Ternary(Box<TypedExpr>, Box<TypedExpr>, Box<TypedExpr>, Type),
-    Member(Box<TypedExpr>, String, Type),
-    PointerMember(Box<TypedExpr>, String, Type),
+    Member(Box<TypedExpr>, StringId, Type),
+    PointerMember(Box<TypedExpr>, StringId, Type),
     InitializerList(TypedInitializerList, Type),
     ExplicitCast(Box<Type>, Box<TypedExpr>, Type),
     ImplicitCast(Box<Type>, Box<TypedExpr>, Type),
@@ -689,7 +690,7 @@ pub enum TypedDesignator {
     /// An array designator, e.g., `[0]`.
     Index(Box<TypedExpr>),
     /// A struct/union member designator, e.g., `.foo`.
-    Member(String),
+    Member(StringId),
 }
 
 /// Represents a typed C initializer.
@@ -705,7 +706,7 @@ pub enum TypedInitializer {
 #[derive(Debug, PartialEq, Clone)]
 pub struct TypedDeclarator {
     pub ty: Type,
-    pub name: String,
+    pub name: StringId,
     pub initializer: Option<TypedInitializer>,
 }
 
@@ -713,7 +714,7 @@ pub struct TypedDeclarator {
 #[derive(Debug, PartialEq, Clone)]
 pub enum TypedForInit {
     /// A variable declaration.
-    Declaration(Type, String, Option<TypedInitializer>),
+    Declaration(Type, StringId, Option<TypedInitializer>),
     /// An expression.
     Expr(TypedExpr),
 }
@@ -743,14 +744,14 @@ pub enum TypedStmt {
     /// A `default` statement in a `switch`.
     Default(Box<TypedStmt>),
     /// A labeled statement.
-    Label(String, Box<TypedStmt>),
+    Label(StringId, Box<TypedStmt>),
     /// A `goto` statement.
-    Goto(String),
+    Goto(StringId),
     /// A variable declaration.
     Declaration(Type, Vec<TypedDeclarator>, bool),
     FunctionDeclaration {
         ty: Type,
-        name: String,
+        name: StringId,
         params: Vec<Parameter>,
         is_variadic: bool,
         is_inline: bool,
@@ -767,7 +768,7 @@ pub enum TypedStmt {
     /// An expression statement.
     Expr(TypedExpr),
     /// A `_Static_assert` declaration.
-    StaticAssert(Box<TypedExpr>, String),
+    StaticAssert(Box<TypedExpr>, StringId),
 }
 
 /// Represents a typed function declaration with type information.
@@ -776,7 +777,7 @@ pub struct TypedFunctionDecl {
     /// The return type of the function.
     pub return_type: Type,
     /// The name of the function.
-    pub name: String,
+    pub name: StringId,
     /// The parameters of the function.
     pub params: Vec<Parameter>,
     /// The body of the function.

@@ -247,7 +247,7 @@ pub fn create_simple_program_ast() -> TranslationUnit {
         globals: vec![],
         functions: vec![Function {
             return_type: Type::Int,
-            name: "main".to_string(),
+            name: crate::parser::string_interner::StringInterner::intern("main"),
             params: vec![],
             body: vec![Stmt::Return(Expr::Number(0))],
             is_inline: false,

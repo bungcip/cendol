@@ -1,15 +1,18 @@
 use crate::codegen::error::CodegenError;
-use crate::parser::ast::{Expr, Type, TypedExpr, TypedInitializer, TypedStmt, TypedTranslationUnit};
+use crate::parser::ast::{
+    Expr, Type, TypedExpr, TypedInitializer, TypedStmt, TypedTranslationUnit,
+};
+use crate::parser::string_interner::StringId;
 use cranelift::prelude::*;
 use cranelift_codegen::ir::Function;
-use cranelift_codegen::ir::{types, AbiParam};
+use cranelift_codegen::ir::{AbiParam, types};
 use cranelift_codegen::settings;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_module::{Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::collections::HashMap;
-use translator::{BlockState, FunctionTranslator};
 use std::collections::HashSet;
+use translator::{BlockState, FunctionTranslator};
 
 pub mod error;
 mod translator;
@@ -55,14 +58,14 @@ use cranelift_module::DataId;
 pub struct CodeGen {
     ctx: FunctionBuilderContext,
     module: ObjectModule,
-    variables: SymbolTable<String, (Option<Variable>, Option<StackSlot>, Type)>,
-    global_variables: HashMap<String, (DataId, Type)>,
-    static_local_variables: HashMap<String, (DataId, Type)>,
-    functions: HashMap<String, (FuncId, Type, bool)>,
-    signatures: HashMap<String, cranelift::prelude::Signature>,
-    structs: HashMap<String, Type>,
-    unions: HashMap<String, Type>,
-    pub enum_constants: HashMap<String, i64>,
+    variables: SymbolTable<StringId, (Option<Variable>, Option<StackSlot>, Type)>,
+    global_variables: HashMap<StringId, (DataId, Type)>,
+    static_local_variables: HashMap<StringId, (DataId, Type)>,
+    functions: HashMap<StringId, (FuncId, Type, bool)>,
+    signatures: HashMap<StringId, cranelift::prelude::Signature>,
+    structs: HashMap<StringId, Type>,
+    unions: HashMap<StringId, Type>,
+    pub enum_constants: HashMap<StringId, i64>,
     anonymous_string_count: usize,
 }
 
@@ -73,7 +76,7 @@ impl Default for CodeGen {
     }
 }
 
-fn collect_label_names(stmt: &TypedStmt, set: &mut HashSet<String>) {
+fn collect_label_names(stmt: &TypedStmt, set: &mut HashSet<StringId>) {
     match stmt {
         TypedStmt::Label(name, body) => {
             set.insert(name.clone());
@@ -86,7 +89,9 @@ fn collect_label_names(stmt: &TypedStmt, set: &mut HashSet<String>) {
         }
         TypedStmt::If(_, then_blk, else_opt) => {
             collect_label_names(then_blk, set);
-            if let Some(e) = else_opt { collect_label_names(e, set); }
+            if let Some(e) = else_opt {
+                collect_label_names(e, set);
+            }
         }
         TypedStmt::While(_, body) => collect_label_names(body, set),
         TypedStmt::DoWhile(body, _) => collect_label_names(body, set),
@@ -165,7 +170,7 @@ impl CodeGen {
                     sig.returns.push(AbiParam::new(types::I64));
                     let id = self
                         .module
-                        .declare_function(name, Linkage::Import, &sig)
+                        .declare_function(name.as_str(), Linkage::Import, &sig)
                         .unwrap();
                     self.functions
                         .insert(name.clone(), (id, ty.clone(), *is_variadic));
@@ -187,11 +192,16 @@ impl CodeGen {
                             let is_const = matches!(declarator.ty, Type::Const(_));
                             let id = self
                                 .module
-                                .declare_data(&declarator.name, Linkage::Export, !is_const, false)
+                                .declare_data(
+                                    declarator.name.as_str(),
+                                    Linkage::Export,
+                                    !is_const,
+                                    false,
+                                )
                                 .unwrap();
 
                             self.global_variables
-                                .insert(declarator.name.clone(), (id, declarator.ty.clone()));
+                                .insert(declarator.name, (id, declarator.ty.clone()));
 
                             let mut data_desc = cranelift_module::DataDescription::new();
 
@@ -243,8 +253,8 @@ impl CodeGen {
             let id = self
                 .module
                 .declare_function(
-                    &function.name,
-                    if function.name == "main" {
+                    function.name.as_str(),
+                    if function.name.as_str() == "main" {
                         Linkage::Export
                     } else {
                         Linkage::Local
@@ -313,7 +323,7 @@ impl CodeGen {
                 current_block_state: BlockState::Empty,
                 signatures: &self.signatures,
                 label_blocks: HashMap::new(),
-                current_function_name: &function_def.name,
+                current_function_name: function_def.name.clone(),
                 anonymous_string_count: &mut self.anonymous_string_count,
             };
 
@@ -321,13 +331,13 @@ impl CodeGen {
             let block_params = translator.builder.block_params(entry_block).to_vec();
             for (i, param) in function_def.params.iter().enumerate() {
                 let size = translator.get_type_size(&param.ty);
-                let slot = translator
-                    .builder
-                    .create_sized_stack_slot(cranelift::prelude::StackSlotData::new(
+                let slot = translator.builder.create_sized_stack_slot(
+                    cranelift::prelude::StackSlotData::new(
                         cranelift::prelude::StackSlotKind::ExplicitSlot,
                         size,
                         0,
-                    ));
+                    ),
+                );
                 translator
                     .variables
                     .insert(param.name.clone(), (None, Some(slot), param.ty.clone()));

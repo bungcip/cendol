@@ -4,11 +4,17 @@
 //! to executable binaries, ensuring that the generated code produces
 //! the expected results.
 
-use cendol::test_utils::{compile_and_run, compile_and_run_with_output};
+use cendol::test_utils::{
+    compile_and_assert_warning, compile_and_run, compile_and_run_with_output,
+    compile_with_args_and_assert_error,
+};
 
 #[cfg(test)]
 mod tests {
-    use super::{compile_and_run, compile_and_run_with_output};
+    use super::{
+        compile_and_assert_warning, compile_and_run, compile_and_run_with_output,
+        compile_with_args_and_assert_error,
+    };
 
     /// Test basic code generation with a simple function
     #[test]
@@ -856,5 +862,29 @@ mod tests {
         "#;
         let exit_code = compile_and_run(input, "alignof").unwrap();
         assert_eq!(exit_code, 0);
+    }
+
+    /// Test code generation with -Wall flag
+    #[test]
+    fn test_wall_flag() {
+        let input = r#"
+        int main() {
+            int x = 0;
+            return 0;
+        }
+        "#;
+        compile_with_args_and_assert_error(input, "wall_flag", vec!["-Wall".to_string()]).unwrap();
+    }
+
+    /// Test code generation with -Wall flag off
+    #[test]
+    fn test_wall_flag_off() {
+        let input = r#"
+        int main() {
+            int x = 0;
+            return 0;
+        }
+        "#;
+        compile_and_assert_warning(input, "wall_flag_off").unwrap();
     }
 }

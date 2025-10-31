@@ -114,6 +114,56 @@ pub fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Report> {
     Ok(exit_code)
 }
 
+/// Compiles C code and asserts that a warning is returned.
+pub fn compile_and_assert_warning(
+    input: &str,
+    test_name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = tempdir()?;
+    let input_file_path = temp_dir.path().join(format!("{}.c", test_name));
+    fs::write(&input_file_path, input)?;
+
+    let cli = Cli {
+        input_file: input_file_path.to_str().unwrap().to_string(),
+        ..Default::default()
+    };
+
+    let mut compiler = Compiler::new(cli, Some(temp_dir.path().to_path_buf()));
+    let result = compiler.compile();
+
+    assert!(result.is_ok());
+
+    Ok(())
+}
+
+/// Compiles C code with arguments and asserts that an error is returned.
+pub fn compile_with_args_and_assert_error(
+    input: &str,
+    test_name: &str,
+    args: Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = tempdir()?;
+    let input_file_path = temp_dir.path().join(format!("{}.c", test_name));
+    fs::write(&input_file_path, input)?;
+
+    let mut cli = Cli {
+        input_file: input_file_path.to_str().unwrap().to_string(),
+        ..Default::default()
+    };
+    for arg in args {
+        if arg == "-Wall" {
+            cli.wall = true;
+        }
+    }
+
+    let mut compiler = Compiler::new(cli, Some(temp_dir.path().to_path_buf()));
+    let result = compiler.compile();
+
+    assert!(result.is_err());
+
+    Ok(())
+}
+
 /// Compiles and runs C code from a file, returning the exit code
 pub fn compile_and_run_from_file(file_path: &str, test_name: &str) -> Result<i32, Report> {
     let input = fs::read_to_string(file_path).unwrap();
@@ -255,7 +305,7 @@ pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> 
     let mut preprocessor = create_preprocessor();
     let tokens = match preprocessor.preprocess(input, filename) {
         Ok(tokens) => tokens,
-        Err(err) => return Err(Report::new(err.to_string(), None, None, false)),
+        Err(err) => return Err(Report::new(err.to_string(), None, None, false, false)),
     };
 
     // Parser now handles filtering internally
@@ -267,6 +317,7 @@ pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> 
                 err.to_string(),
                 Some(filename.to_string()),
                 None,
+                false,
                 false,
             ));
         }
@@ -296,14 +347,27 @@ pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> 
                 (Some(filename.to_string()), None)
             };
 
-            return Err(Report::new(msg, path, span, false));
+            return Err(Report::new(msg, path, span, false, false));
         }
     };
 
     // Now check semantic errors
     let analyzer = crate::semantic::SemanticAnalyzer::with_builtins();
     match analyzer.analyze(ast, filename) {
-        Ok(_) => Ok(()),
+        Ok((_, warnings, _)) => {
+            if warnings.is_empty() {
+                Ok(())
+            } else {
+                let (warning, file, span) = warnings.into_iter().next().unwrap();
+                Err(Report::new(
+                    warning.to_string(),
+                    Some(file),
+                    Some(span),
+                    false,
+                    true,
+                ))
+            }
+        }
         Err(errors) => {
             // Return the first error
             if let Some((error, file, span)) = errors.into_iter().next() {
@@ -312,12 +376,14 @@ pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> 
                     Some(file),
                     Some(span),
                     false,
+                    error.is_warning(),
                 ))
             } else {
                 Err(Report::new(
                     "Unknown semantic error".to_string(),
                     Some(filename.to_string()),
                     None,
+                    false,
                     false,
                 ))
             }

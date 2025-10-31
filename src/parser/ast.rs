@@ -772,7 +772,7 @@ pub struct TypedFunctionDecl {
 }
 
 /// Represents a typed translation unit (program) with type information.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Default)]
 pub struct TypedTranslationUnit {
     /// The global variables.
     pub globals: Vec<TypedStmt>,

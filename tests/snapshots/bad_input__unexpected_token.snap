@@ -15,3 +15,4 @@ span:
     line: 1
     column: 26
 verbose: false
+kind: Error

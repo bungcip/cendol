@@ -70,7 +70,6 @@ impl SymbolTable {
 
 use std::collections::HashSet;
 
-use crate::parser::ast::Parameter;
 /// A semantic analyzer that checks for semantic errors in the AST.
 pub struct SemanticAnalyzer {
     symbol_table: SymbolTable,
@@ -80,6 +79,7 @@ pub struct SemanticAnalyzer {
     current_function: Option<String>,
     labels: HashMap<String, SourceSpan>,
     errors: Vec<(SemanticError, String, SourceSpan)>, // (error, file, span)
+    warnings: Vec<(SemanticError, String, SourceSpan)>, // (warning, file, span)
     used_builtins: HashSet<String>,
 }
 
@@ -100,6 +100,7 @@ impl SemanticAnalyzer {
             current_function: None,
             labels: HashMap::new(),
             errors: Vec::new(),
+            warnings: Vec::new(),
             used_builtins: HashSet::new(),
         }
     }
@@ -149,7 +150,13 @@ impl SemanticAnalyzer {
         mut self,
         program: TranslationUnit,
         filename: &str,
-    ) -> Result<TypedTranslationUnit, Vec<(SemanticError, String, SourceSpan)>> {
+    ) -> Result<
+        (
+            TypedTranslationUnit,
+            Vec<(SemanticError, String, SourceSpan)>,
+        ),
+        Vec<(SemanticError, String, SourceSpan)>,
+    > {
         // First pass: collect all function definitions and global declarations
         self.collect_symbols(&program, filename);
 
@@ -157,7 +164,7 @@ impl SemanticAnalyzer {
         let typed_program = self.check_program(program, filename);
 
         if self.errors.is_empty() {
-            Ok(typed_program)
+            Ok((typed_program, self.warnings))
         } else {
             Err(self.errors)
         }
@@ -1067,7 +1074,7 @@ impl SemanticAnalyzer {
                 let typed = self.check_expression(*expr, filename);
                 TypedExpr::PostDecrement(Box::new(typed.clone()), typed.ty().clone())
             }
-            _ => todo!("This expression is not supported yet"),
+            _ => unreachable!(),
         }
     }
 

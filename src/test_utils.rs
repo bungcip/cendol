@@ -5,7 +5,7 @@
 
 use crate::common::{SourceLocation, SourceSpan};
 use crate::compiler::{Cli, Compiler};
-use crate::error::Report;
+use crate::error::{Report, ReportKind};
 use crate::file::{FileId, FileManager};
 use crate::parser::Parser;
 use crate::parser::ast::{Expr, Function, Stmt, TranslationUnit, Type};
@@ -48,7 +48,7 @@ pub fn create_test_location(file_id: u32, line: u32) -> SourceSpan {
 }
 
 /// Compiles and runs C code, returning the exit code
-pub fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Report> {
+pub fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Box<dyn std::error::Error>> {
     let temp_dir = tempdir().unwrap();
     let temp_dir_path = temp_dir.path().to_str().unwrap().to_string();
 
@@ -78,7 +78,9 @@ pub fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Report> {
         Some(temp_dir.path().to_path_buf()),
     );
 
-    compiler.compile()?;
+    if let Err(err) = compiler.compile() {
+        return Err(Box::new(err.clone()));
+    }
 
     // // Link the object file to create the executable
     // let link_output = Command::new(config::C_COMPILER)
@@ -115,7 +117,7 @@ pub fn compile_and_run(input: &str, test_name: &str) -> Result<i32, Report> {
 }
 
 /// Compiles and runs C code from a file, returning the exit code
-pub fn compile_and_run_from_file(file_path: &str, test_name: &str) -> Result<i32, Report> {
+pub fn compile_and_run_from_file(file_path: &str, test_name: &str) -> Result<i32, Box<dyn std::error::Error>> {
     let input = fs::read_to_string(file_path).unwrap();
     compile_and_run(&input, test_name)
 }
@@ -154,7 +156,7 @@ pub fn compile_and_run_with_output(
     );
 
     if let Err(err) = compiler.compile() {
-        return Err(Box::new(err));
+        return Err(Box::new(err.clone()));
     }
 
     // Link the object file to create the executable
@@ -206,6 +208,104 @@ pub fn create_simple_program_ast() -> TranslationUnit {
     }
 }
 
+/// Compiles C code and returns a report on error
+pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> {
+    let mut preprocessor = create_preprocessor();
+    let tokens = match preprocessor.preprocess(input, filename) {
+        Ok(tokens) => tokens,
+        Err(err) => {
+            return Err(Report::new(
+                err.to_string(),
+                None,
+                None,
+                false,
+                ReportKind::Error,
+            ))
+        }
+    };
+
+    // Parser now handles filtering internally
+
+    let mut parser = match Parser::new(tokens) {
+        Ok(parser) => parser,
+        Err(err) => {
+            return Err(Report::new(
+                err.to_string(),
+                Some(filename.to_string()),
+                None,
+                false,
+                ReportKind::Error,
+            ));
+        }
+    };
+    let ast = match parser.parse() {
+        Ok(ast) => ast,
+        Err(err) => {
+            let (msg, location) = match err {
+                crate::parser::error::ParserError::UnexpectedToken(tok) => {
+                    ("Unexpected token".to_string(), Some(tok.span))
+                }
+                crate::parser::error::ParserError::UnexpectedEof => {
+                    ("Unexpected EOF".to_string(), None)
+                }
+            };
+
+            let (path, span) = if let Some(location) = location {
+                let path = preprocessor
+                    .file_manager()
+                    .get_path(location.start.file)
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_string();
+                (Some(path), Some(location))
+            } else {
+                (Some(filename.to_string()), None)
+            };
+
+            return Err(Report::new(msg, path, span, false, ReportKind::Error));
+        }
+    };
+
+    // Now check semantic errors
+    let analyzer = crate::semantic::SemanticAnalyzer::with_builtins();
+    match analyzer.analyze(ast, filename) {
+        Ok((_, warnings)) => {
+            if let Some((warning, file, span)) = warnings.into_iter().next() {
+                Err(Report::new(
+                    warning.to_string(),
+                    Some(file),
+                    Some(span),
+                    false,
+                    ReportKind::Warning,
+                ))
+            } else {
+                Ok(())
+            }
+        }
+        Err(errors) => {
+            // Return the first error
+            if let Some((error, file, span)) = errors.into_iter().next() {
+                Err(Report::new(
+                    error.to_string(),
+                    Some(file),
+                    Some(span),
+                    false,
+                    ReportKind::Error,
+                ))
+            } else {
+                Err(Report::new(
+                    "Unknown semantic error".to_string(),
+                    Some(filename.to_string()),
+                    None,
+                    false,
+                    ReportKind::Error,
+                ))
+            }
+        }
+    }
+}
+
 /// Helper function to collect all tokens from a lexer
 pub fn collect_tokens_from_lexer(input: &str, filename: &str) -> Vec<Token> {
     let mut file_manager = create_file_manager();
@@ -248,79 +348,4 @@ pub fn assert_programs_equal(actual: &TranslationUnit, expected: &TranslationUni
         actual.functions[0].body.len(),
         expected.functions[0].body.len()
     );
-}
-
-/// Compiles C code and returns a report on error
-pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> {
-    let mut preprocessor = create_preprocessor();
-    let tokens = match preprocessor.preprocess(input, filename) {
-        Ok(tokens) => tokens,
-        Err(err) => return Err(Report::new(err.to_string(), None, None, false)),
-    };
-
-    // Parser now handles filtering internally
-
-    let mut parser = match Parser::new(tokens) {
-        Ok(parser) => parser,
-        Err(err) => {
-            return Err(Report::new(
-                err.to_string(),
-                Some(filename.to_string()),
-                None,
-                false,
-            ));
-        }
-    };
-    let ast = match parser.parse() {
-        Ok(ast) => ast,
-        Err(err) => {
-            let (msg, location) = match err {
-                crate::parser::error::ParserError::UnexpectedToken(tok) => {
-                    ("Unexpected token".to_string(), Some(tok.span))
-                }
-                crate::parser::error::ParserError::UnexpectedEof => {
-                    ("Unexpected EOF".to_string(), None)
-                }
-            };
-
-            let (path, span) = if let Some(location) = location {
-                let path = preprocessor
-                    .file_manager()
-                    .get_path(location.start.file)
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .to_string();
-                (Some(path), Some(location))
-            } else {
-                (Some(filename.to_string()), None)
-            };
-
-            return Err(Report::new(msg, path, span, false));
-        }
-    };
-
-    // Now check semantic errors
-    let analyzer = crate::semantic::SemanticAnalyzer::with_builtins();
-    match analyzer.analyze(ast, filename) {
-        Ok(_) => Ok(()),
-        Err(errors) => {
-            // Return the first error
-            if let Some((error, file, span)) = errors.into_iter().next() {
-                Err(Report::new(
-                    error.to_string(),
-                    Some(file),
-                    Some(span),
-                    false,
-                ))
-            } else {
-                Err(Report::new(
-                    "Unknown semantic error".to_string(),
-                    Some(filename.to_string()),
-                    None,
-                    false,
-                ))
-            }
-        }
-    }
 }

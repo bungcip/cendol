@@ -1502,7 +1502,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 }
                 Ok((self.builder.inst_results(call)[0], ty))
             }
-            _ => todo!(),
+            _ => unreachable!(),
         }
     }
 

@@ -2,7 +2,8 @@ use crate::{
     codegen::error::CodegenError, parser::error::ParserError,
     preprocessor::error::PreprocessorError,
 };
-use ariadne::{Color, Fmt, Label, Report as AriadneReport, ReportKind, Source};
+use ariadne::{Color, Fmt, Label, Report as AriadneReport, Source};
+use serde::Serialize;
 use thiserror::Error;
 
 /// A custom span type for `ariadne`.
@@ -23,7 +24,15 @@ pub enum Error {
 }
 
 use crate::common::SourceSpan;
-use serde::Serialize;
+
+/// Represents the kind of a report.
+#[derive(Debug, Clone, Serialize)]
+pub enum ReportKind {
+    /// An error.
+    Error,
+    /// A warning.
+    Warning,
+}
 
 /// Represents a report of an error.
 #[derive(Debug, Clone, Serialize)]
@@ -36,6 +45,8 @@ pub struct Report {
     pub span: Option<SourceSpan>,
     /// Whether to print verbose output.
     pub verbose: bool,
+    /// The kind of report.
+    pub kind: ReportKind,
 }
 
 impl std::fmt::Display for Report {
@@ -58,12 +69,19 @@ impl Report {
     /// # Returns
     ///
     /// A new `Report` instance.
-    pub fn new(msg: String, path: Option<String>, span: Option<SourceSpan>, verbose: bool) -> Self {
+    pub fn new(
+        msg: String,
+        path: Option<String>,
+        span: Option<SourceSpan>,
+        verbose: bool,
+        kind: ReportKind,
+    ) -> Self {
         Self {
             msg,
             path,
             span,
             verbose,
+            kind,
         }
     }
 }
@@ -102,7 +120,12 @@ pub fn report(report: &Report) {
                 - 1
         };
 
-        AriadneReport::<'static, Span>::build(ReportKind::Error, path.clone(), start_offset)
+        let kind = match report.kind {
+            ReportKind::Error => ariadne::ReportKind::Error,
+            ReportKind::Warning => ariadne::ReportKind::Warning,
+        };
+
+        AriadneReport::<'static, Span>::build(kind, path.clone(), start_offset)
             .with_code(3)
             .with_message(&msg)
             .with_label(
@@ -114,7 +137,12 @@ pub fn report(report: &Report) {
             .eprint((path.clone(), Source::from(source)))
             .unwrap();
     } else {
-        AriadneReport::<'static, Span>::build(ReportKind::Error, path.clone(), 0)
+        let kind = match report.kind {
+            ReportKind::Error => ariadne::ReportKind::Error,
+            ReportKind::Warning => ariadne::ReportKind::Warning,
+        };
+
+        AriadneReport::<'static, Span>::build(kind, path.clone(), 0)
             .with_code(3)
             .with_message(msg)
             .with_label(

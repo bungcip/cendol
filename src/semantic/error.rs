@@ -52,6 +52,6 @@ pub enum SemanticError {
     UndefinedMember(String),
 
     /// Assignment to a non-lvalue expression.
-    #[error("Assignment to non-lvalue expression")]
+    #[error("Assignment to a non-lvalue expression")]
     NotAnLvalue,
 }

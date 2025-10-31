@@ -1,7 +1,6 @@
 use crate::codegen::error::{CodegenError, CodegenResult};
 use crate::parser::ast::{
-    AssignOp, BinOp, Type, TypedDesignator, TypedExpr, TypedForInit, TypedInitializer,
-    TypedStmt,
+    AssignOp, BinOp, Type, TypedDesignator, TypedExpr, TypedForInit, TypedInitializer, TypedStmt,
 };
 use cranelift::prelude::*;
 use cranelift_codegen::ir::types;
@@ -12,8 +11,8 @@ use cranelift_module::Module;
 use std::collections::HashMap;
 
 use super::SymbolTable;
-use cranelift_module::FuncId;
 use cranelift_module::DataId;
+use cranelift_module::FuncId;
 use cranelift_module::Linkage;
 use cranelift_object::ObjectModule;
 
@@ -198,6 +197,11 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
     /// Translates a typed statement into Cranelift IR.
     pub(crate) fn translate_typed_stmt(&mut self, stmt: TypedStmt) -> Result<bool, CodegenError> {
+        // If the current block is already terminated, only process labels to create their blocks
+        if self.current_block_state == BlockState::Filled && !matches!(stmt, TypedStmt::Label(..)) {
+            return Ok(true);
+        }
+
         match stmt {
             TypedStmt::Return(expr) => {
                 let (value, ty) = self.translate_typed_expr(expr)?;
@@ -288,9 +292,6 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.variables.enter_scope();
                 let mut terminated = false;
                 for stmt in stmts {
-                    if terminated {
-                        break;
-                    }
                     let term = self.translate_typed_stmt(stmt)?;
                     terminated = term;
                 }
@@ -465,28 +466,40 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             TypedStmt::Case(_, _) => todo!(),
             TypedStmt::Default(_) => todo!(),
             TypedStmt::Label(name, body) => {
-                let block = if let Some(existing) = self.label_blocks.get(&name) {
-                    *existing
-                } else {
-                    let new_block = self.builder.create_block();
-                    self.label_blocks.insert(name.clone(), new_block);
-                    new_block
-                };
-                self.switch_to_block(dbg!(block));
-                self.translate_typed_stmt(*body)
+                let block = *self
+                    .label_blocks
+                    .entry(name.clone())
+                    .or_insert_with(|| self.builder.create_block());
+
+                self.switch_to_block(block);
+
+                // Handle consecutive labels by making them share the same block
+                let mut current_body = body;
+                let mut labels_to_update = vec![name.clone()];
+                while let TypedStmt::Label(ref inner_name, ref inner_body) = *current_body {
+                    labels_to_update.push(inner_name.clone());
+                    current_body = inner_body.clone();
+                }
+
+                // Update all consecutive labels to point to the same block
+                for label_name in labels_to_update {
+                    self.label_blocks.insert(label_name, block);
+                }
+
+                let terminated = self.translate_typed_stmt(*current_body)?;
+                Ok(terminated)
             }
             TypedStmt::Goto(name) => {
-                let block = if let Some(existing) = self.label_blocks.get(&name) {
-                    *existing
-                } else {
-                    let new_block = self.builder.create_block();
-                    self.label_blocks.insert(name.clone(), new_block);
-                    new_block
-                };
+                let block = *self
+                    .label_blocks
+                    .entry(name.clone())
+                    .or_insert_with(|| self.builder.create_block());
+
                 if self.current_block_state != BlockState::Filled {
                     self.builder.ins().jump(block, &[]);
                     self.current_block_state = BlockState::Filled;
                 }
+
                 Ok(true)
             }
             TypedStmt::FunctionDeclaration(_, _, _, _) => Ok(false),
@@ -499,11 +512,6 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     }
 
     /// Translates an expression into a Cranelift `Value`.
-    fn translate_assignment(&mut self, lhs: Value, rhs_val: Value) -> Result<(), CodegenError> {
-        self.builder.ins().store(MemFlags::new(), rhs_val, lhs, 0);
-        Ok(())
-    }
-
     fn translate_lvalue(&mut self, expr: TypedExpr) -> Result<(Value, Type), CodegenError> {
         match expr {
             TypedExpr::Variable(name, _, ty) => {
@@ -720,7 +728,9 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             AssignOp::LeftShift => self.builder.ins().ishl(lhs_val, rhs_val),
             AssignOp::RightShift => self.builder.ins().sshr(lhs_val, rhs_val),
         };
-        self.translate_assignment(addr, result_val)?;
+        self.builder
+            .ins()
+            .store(MemFlags::new(), result_val, addr, 0);
         Ok((result_val, ty.clone()))
     }
 
@@ -733,19 +743,6 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     ) -> Result<(Value, Type), CodegenError> {
         // Assignment operators are now handled by translate_assign_expr
         match op {
-            BinOp::Assign
-            | BinOp::AssignAdd
-            | BinOp::AssignSub
-            | BinOp::AssignMul
-            | BinOp::AssignDiv
-            | BinOp::AssignMod
-            | BinOp::AssignBitwiseAnd
-            | BinOp::AssignBitwiseOr
-            | BinOp::AssignBitwiseXor
-            | BinOp::AssignLeftShift
-            | BinOp::AssignRightShift => {
-                unreachable!("Assignment operators should be handled by translate_assign_expr")
-            }
             BinOp::Add => {
                 let (lhs_val, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
                 let (rhs_val, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
@@ -1242,7 +1239,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let val = self.load_lvalue(addr, &ty);
                 let one = self.builder.ins().iconst(types::I64, 1);
                 let new_val = self.builder.ins().iadd(val, one);
-                self.translate_assignment(addr, new_val)?;
+                self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
                 Ok((new_val, ty))
             }
             TypedExpr::PreDecrement(expr, ty) => {
@@ -1250,7 +1247,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let val = self.load_lvalue(addr, &ty);
                 let one = self.builder.ins().iconst(types::I64, 1);
                 let new_val = self.builder.ins().isub(val, one);
-                self.translate_assignment(addr, new_val)?;
+                self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
                 Ok((new_val, ty))
             }
             TypedExpr::PostIncrement(expr, ty) => {
@@ -1258,7 +1255,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let val = self.load_lvalue(addr, &ty);
                 let one = self.builder.ins().iconst(types::I64, 1);
                 let new_val = self.builder.ins().iadd(val, one);
-                self.translate_assignment(addr, new_val)?;
+                self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
                 Ok((val, ty))
             }
             TypedExpr::PostDecrement(expr, ty) => {
@@ -1266,7 +1263,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let val = self.load_lvalue(addr, &ty);
                 let one = self.builder.ins().iconst(types::I64, 1);
                 let new_val = self.builder.ins().isub(val, one);
-                self.translate_assignment(addr, new_val)?;
+                self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
                 Ok((val, ty))
             }
             TypedExpr::Ternary(cond, then_expr, else_expr, _ty) => {

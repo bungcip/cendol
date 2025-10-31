@@ -1,8 +1,8 @@
 use crate::common::{SourceLocation, SourceSpan};
 use crate::parser::ast::{
-    BinOp, Designator, Expr, ForInit, Initializer, Stmt, TranslationUnit, Type, TypedDeclarator,
-    TypedDesignator, TypedExpr, TypedForInit, TypedFunctionDecl, TypedInitializer, TypedStmt,
-    TypedTranslationUnit,
+    AssignOp, BinOp, Designator, Expr, ForInit, Initializer, Stmt, TranslationUnit, Type,
+    TypedDeclarator, TypedDesignator, TypedExpr, TypedForInit, TypedFunctionDecl,
+    TypedInitializer, TypedStmt, TypedTranslationUnit,
 };
 use crate::semantic::error::SemanticError;
 use std::collections::HashMap;
@@ -805,10 +805,76 @@ impl SemanticAnalyzer {
         TypedExpression::new(op, lhs_final, rhs_final, result_ty).into()
     }
 
+    fn check_assignment_expression(
+        &mut self,
+        op: AssignOp,
+        lhs: &Expr,
+        rhs: &Expr,
+        filename: &str,
+    ) -> TypedExpr {
+        let lhs_typed = self.check_expression(lhs.clone(), filename);
+        let rhs_typed = self.check_expression(rhs.clone(), filename);
+
+        if !is_lvalue(&lhs_typed) {
+            self.errors.push((
+                SemanticError::NotAnLvalue,
+                filename.to_string(),
+                lhs_typed.span(),
+            ));
+        }
+
+        if let Type::Const(_) = &lhs_typed.ty() {
+            self.errors.push((
+                SemanticError::AssignmentToConst,
+                filename.to_string(),
+                lhs_typed.span(),
+            ));
+        }
+
+        let rhs_cast = rhs_typed.implicit_cast(lhs_typed.ty().clone());
+        let result_ty = lhs_typed.ty().clone();
+
+        match op {
+            AssignOp::Assign => TypedExpr::Assign(Box::new(lhs_typed), Box::new(rhs_cast), result_ty),
+            AssignOp::Add => {
+                TypedExpr::AssignAdd(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
+            }
+            AssignOp::Sub => {
+                TypedExpr::AssignSub(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
+            }
+            AssignOp::Mul => {
+                TypedExpr::AssignMul(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
+            }
+            AssignOp::Div => {
+                TypedExpr::AssignDiv(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
+            }
+            AssignOp::Mod => {
+                TypedExpr::AssignMod(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
+            }
+            AssignOp::LeftShift => {
+                TypedExpr::AssignLeftShift(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
+            }
+            AssignOp::RightShift => {
+                TypedExpr::AssignRightShift(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
+            }
+            AssignOp::BitwiseAnd => {
+                TypedExpr::AssignBitwiseAnd(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
+            }
+            AssignOp::BitwiseXor => {
+                TypedExpr::AssignBitwiseXor(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
+            }
+            AssignOp::BitwiseOr => {
+                TypedExpr::AssignBitwiseOr(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
+            }
+        }
+    }
+
     /// Checks an expression for semantic errors and returns a typed expression.
     fn check_expression(&mut self, expr: Expr, filename: &str) -> TypedExpr {
         if let Some((op, lhs, rhs)) = expr.get_binary_expr() {
             return self.check_binary_expression(op, lhs, rhs, filename);
+        } else if let Some((op, lhs, rhs)) = expr.get_assign_expr() {
+            return self.check_assignment_expression(op, lhs, rhs, filename);
         }
 
         match expr {

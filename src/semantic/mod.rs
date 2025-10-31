@@ -70,7 +70,6 @@ impl SymbolTable {
 
 use std::collections::HashSet;
 
-use crate::parser::ast::Parameter;
 /// A semantic analyzer that checks for semantic errors in the AST.
 pub struct SemanticAnalyzer {
     symbol_table: SymbolTable,

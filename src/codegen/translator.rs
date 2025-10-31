@@ -1,7 +1,6 @@
 use crate::codegen::error::{CodegenError, CodegenResult};
 use crate::parser::ast::{
-    AssignOp, BinOp, Type, TypedDesignator, TypedExpr, TypedForInit, TypedInitializer,
-    TypedStmt,
+    AssignOp, BinOp, Type, TypedDesignator, TypedExpr, TypedForInit, TypedInitializer, TypedStmt,
 };
 use cranelift::prelude::*;
 use cranelift_codegen::ir::types;
@@ -12,8 +11,8 @@ use cranelift_module::Module;
 use std::collections::HashMap;
 
 use super::SymbolTable;
-use cranelift_module::FuncId;
 use cranelift_module::DataId;
+use cranelift_module::FuncId;
 use cranelift_module::Linkage;
 use cranelift_object::ObjectModule;
 
@@ -198,6 +197,11 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
     /// Translates a typed statement into Cranelift IR.
     pub(crate) fn translate_typed_stmt(&mut self, stmt: TypedStmt) -> Result<bool, CodegenError> {
+        // If the current block is already terminated, only process labels to create their blocks
+        if self.current_block_state == BlockState::Filled && !matches!(stmt, TypedStmt::Label(..)) {
+            return Ok(true);
+        }
+
         match stmt {
             TypedStmt::Return(expr) => {
                 let (value, ty) = self.translate_typed_expr(expr)?;
@@ -288,9 +292,6 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.variables.enter_scope();
                 let mut terminated = false;
                 for stmt in stmts {
-                    if terminated {
-                        break;
-                    }
                     let term = self.translate_typed_stmt(stmt)?;
                     terminated = term;
                 }
@@ -465,28 +466,40 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             TypedStmt::Case(_, _) => todo!(),
             TypedStmt::Default(_) => todo!(),
             TypedStmt::Label(name, body) => {
-                let block = if let Some(existing) = self.label_blocks.get(&name) {
-                    *existing
-                } else {
-                    let new_block = self.builder.create_block();
-                    self.label_blocks.insert(name.clone(), new_block);
-                    new_block
-                };
-                self.switch_to_block(dbg!(block));
-                self.translate_typed_stmt(*body)
+                let block = *self
+                    .label_blocks
+                    .entry(name.clone())
+                    .or_insert_with(|| self.builder.create_block());
+
+                self.switch_to_block(block);
+
+                // Handle consecutive labels by making them share the same block
+                let mut current_body = body;
+                let mut labels_to_update = vec![name.clone()];
+                while let TypedStmt::Label(ref inner_name, ref inner_body) = *current_body {
+                    labels_to_update.push(inner_name.clone());
+                    current_body = inner_body.clone();
+                }
+
+                // Update all consecutive labels to point to the same block
+                for label_name in labels_to_update {
+                    self.label_blocks.insert(label_name, block);
+                }
+
+                let terminated = self.translate_typed_stmt(*current_body)?;
+                Ok(terminated)
             }
             TypedStmt::Goto(name) => {
-                let block = if let Some(existing) = self.label_blocks.get(&name) {
-                    *existing
-                } else {
-                    let new_block = self.builder.create_block();
-                    self.label_blocks.insert(name.clone(), new_block);
-                    new_block
-                };
+                let block = *self
+                    .label_blocks
+                    .entry(name.clone())
+                    .or_insert_with(|| self.builder.create_block());
+
                 if self.current_block_state != BlockState::Filled {
                     self.builder.ins().jump(block, &[]);
                     self.current_block_state = BlockState::Filled;
                 }
+
                 Ok(true)
             }
             TypedStmt::FunctionDeclaration(_, _, _, _) => Ok(false),

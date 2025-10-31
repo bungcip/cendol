@@ -587,7 +587,6 @@ mod tests {
 
     /// Test code generation for goto and labels
     #[test]
-    #[ignore]
     fn test_goto() {
         let input = r#"
         int main() {

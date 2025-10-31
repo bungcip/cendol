@@ -9,6 +9,7 @@ use cranelift_module::{Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::collections::HashMap;
 use translator::{BlockState, FunctionTranslator};
+use std::collections::HashSet;
 
 pub mod error;
 mod translator;
@@ -69,6 +70,35 @@ impl Default for CodeGen {
     /// Creates a new `CodeGen` with default settings.
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn collect_label_names(stmt: &TypedStmt, set: &mut HashSet<String>) {
+    match stmt {
+        TypedStmt::Label(name, body) => {
+            set.insert(name.clone());
+            collect_label_names(body, set);
+        }
+        TypedStmt::Block(stmts) => {
+            for s in stmts {
+                collect_label_names(s, set);
+            }
+        }
+        TypedStmt::If(_, then_blk, else_opt) => {
+            collect_label_names(then_blk, set);
+            if let Some(e) = else_opt { collect_label_names(e, set); }
+        }
+        TypedStmt::While(_, body) => collect_label_names(body, set),
+        TypedStmt::DoWhile(body, _) => collect_label_names(body, set),
+        TypedStmt::For(_init, _, _, body) => {
+            // If init contains nested stmts, handle accordingly. For now traverse body.
+            collect_label_names(body, set);
+        }
+        TypedStmt::Switch(_, body) => collect_label_names(body, set),
+        TypedStmt::Case(_, body) => collect_label_names(body, set),
+        TypedStmt::Default(body) => collect_label_names(body, set),
+        // Leaves that cannot contain nested stmt labels: Return, Goto, Declaration, Expr, Empty, Break, Continue
+        _ => {}
     }
 }
 
@@ -302,14 +332,37 @@ impl CodeGen {
                     .stack_store(block_params[i], slot, 0);
             }
 
+            // Predeclare label blocks
+            let mut label_names = HashSet::new();
+            for s in &function_def.body {
+                collect_label_names(s, &mut label_names);
+            }
+
+            for name in label_names {
+                let b = translator.builder.create_block();
+                translator.label_blocks.insert(name.clone(), b);
+                // eprintln!("predeclared label: {} -> {:?}", name, b);
+            }
+
             let mut terminated = false;
             for stmt in function_def.body {
                 if terminated {
-                    break;
+                    // Only process labels after termination
+                    if let TypedStmt::Label(..) = stmt {
+                        let _ = translator.translate_typed_stmt(stmt)?;
+                    }
+                    continue;
                 }
                 let term = translator.translate_typed_stmt(stmt)?;
                 terminated = term;
             }
+
+            // Seal all label blocks that were created but not yet sealed
+            // Note: seal_all_blocks() will handle sealing all blocks, including labels
+            // So we don't need to manually seal them here
+
+            // Seal the entry block as well
+            translator.builder.seal_block(entry_block);
 
             if !terminated {
                 let zero = translator.builder.ins().iconst(types::I64, 0);
@@ -317,6 +370,9 @@ impl CodeGen {
             }
             translator.builder.seal_all_blocks();
             translator.builder.finalize();
+
+            // eprintln!("FINAL IR:\n{}", func.display());
+
             let mut context = self.module.make_context();
             context.func = func;
             self.module.define_function(*id, &mut context).unwrap();

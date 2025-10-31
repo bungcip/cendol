@@ -1,0 +1,17 @@
+---
+source: tests/bad_input.rs
+expression: err.unwrap_err()
+---
+msg: Unexpected token
+path: static_assert_failed.c
+span:
+  file: 0
+  start:
+    file: 0
+    line: 1
+    column: 49
+  end:
+    file: 0
+    line: 1
+    column: 50
+verbose: false

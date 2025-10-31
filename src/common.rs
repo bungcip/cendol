@@ -100,6 +100,7 @@ pub enum KeywordKind {
     Complex,
     Imaginary,
     Alignof,
+    StaticAssert,
 }
 
 impl FromStr for KeywordKind {
@@ -154,6 +155,7 @@ impl FromStr for KeywordKind {
             "_Imaginary" => Ok(KeywordKind::Imaginary),
             "restrict" => Ok(KeywordKind::Restrict),
             "_Alignof" => Ok(KeywordKind::Alignof),
+            "_Static_assert" => Ok(KeywordKind::StaticAssert),
             _ => Err(()),
         }
     }
@@ -210,6 +212,7 @@ impl fmt::Display for KeywordKind {
             KeywordKind::Complex => write!(f, "_Complex"),
             KeywordKind::Imaginary => write!(f, "_Imaginary"),
             KeywordKind::Alignof => write!(f, "_Alignof"),
+            KeywordKind::StaticAssert => write!(f, "_Static_assert"),
         }
     }
 }

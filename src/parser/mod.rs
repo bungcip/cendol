@@ -87,14 +87,6 @@ impl Parser {
         self.current_token().map(|t| t.kind)
     }
 
-    fn peek(&self) -> Result<TokenKind, ParserError> {
-        self.tokens
-            .get(self.position + 1)
-            .cloned()
-            .map(|t| t.kind)
-            .ok_or(ParserError::UnexpectedEof)
-    }
-
     /// Consumes the current token and return the last token. will error if current token is eof
     fn eat(&mut self) -> Result<&Token, ParserError> {
         let current = self
@@ -877,6 +869,9 @@ impl Parser {
 
     /// Parses a statement.
     fn parse_stmt(&mut self) -> Result<Stmt, ParserError> {
+        if self.current_kind()? == TokenKind::Keyword(KeywordKind::StaticAssert) {
+            return self.parse_static_assert();
+        }
         let token = self.current_token()?;
         if let TokenKind::LeftBrace = token.kind.clone() {
             self.eat()?;
@@ -885,28 +880,13 @@ impl Parser {
                 stmts.push(self.parse_stmt()?);
             }
             return Ok(Stmt::Block(stmts));
-        } else if self.eat_token(&TokenKind::Keyword(KeywordKind::Static))? {
-            let base_type = self.parse_type_specifier()?;
-            if self.eat_token(&TokenKind::Semicolon)? {
-                return Ok(Stmt::Declaration(base_type, vec![], true));
-            }
-            let mut declarators = Vec::new();
-            loop {
-                let declarator = self.parse_declarator(base_type.clone(), true)?;
-                declarators.push(declarator);
-
-                if !self.eat_token(&TokenKind::Comma)? {
-                    break;
-                }
-            }
-            self.expect_punct(TokenKind::Semicolon)?;
-            return Ok(Stmt::Declaration(base_type, declarators, true));
         }
 
-        if self.is_type_name() && self.peek()? != TokenKind::LeftParen {
+        if self.is_type_name() {
+            let is_static = self.eat_token(&TokenKind::Keyword(KeywordKind::Static))?;
             let base_type = self.parse_type_specifier()?;
             if self.eat_token(&TokenKind::Semicolon)? {
-                return Ok(Stmt::Declaration(base_type, vec![], false));
+                return Ok(Stmt::Declaration(base_type, vec![], is_static));
             }
             let mut declarators = Vec::new();
             loop {
@@ -918,7 +898,7 @@ impl Parser {
                 }
             }
             self.expect_punct(TokenKind::Semicolon)?;
-            return Ok(Stmt::Declaration(base_type, declarators, false));
+            return Ok(Stmt::Declaration(base_type, declarators, is_static));
         }
 
         if let TokenKind::Keyword(k) = token.kind {
@@ -1237,5 +1217,23 @@ impl Parser {
             }
         }
         Ok(items)
+    }
+
+    /// Parses a `_Static_assert` declaration.
+    fn parse_static_assert(&mut self) -> Result<Stmt, ParserError> {
+        self.eat()?; // consume `_Static_assert`
+        self.expect_punct(TokenKind::LeftParen)?;
+        let expr = self.parse_expr()?;
+        self.expect_punct(TokenKind::Comma)?;
+        let token = self.current_token()?;
+        match token.kind.clone() {
+            TokenKind::String(s) => {
+                self.eat()?;
+                self.expect_punct(TokenKind::RightParen)?;
+                self.expect_punct(TokenKind::Semicolon)?;
+                Ok(Stmt::StaticAssert(Box::new(expr), s.clone()))
+            }
+            _ => Err(ParserError::UnexpectedToken(token.clone())),
+        }
     }
 }

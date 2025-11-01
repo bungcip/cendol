@@ -29,3 +29,43 @@ insta = { version = "1.39.0", features = ["yaml"] }
 assert_cmd = "2.0.14"
 predicates = "3.1.0"
 tempfile = "3.23"
+
+[[test]]
+name = "bad_input"
+path = "tests/bad_input.rs"
+
+[[test]]
+name = "codegen"
+path = "tests/codegen.rs"
+
+[[test]]
+name = "enum"
+path = "tests/enum.rs"
+
+[[test]]
+name = "for_loop"
+path = "tests/for_loop.rs"
+
+[[test]]
+name = "long_long"
+path = "tests/long_long.rs"
+
+[[test]]
+name = "switch"
+path = "tests/switch.rs"
+
+[[test]]
+name = "test_lexer"
+path = "tests/test_lexer.rs"
+
+[[test]]
+name = "test_parser"
+path = "tests/test_parser.rs"
+
+[[test]]
+name = "test_preprocessor"
+path = "tests/test_preprocessor.rs"
+
+[[test]]
+name = "verbose"
+path = "tests/verbose.rs"

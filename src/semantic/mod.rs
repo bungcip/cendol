@@ -93,6 +93,10 @@ pub struct SemanticAnalyzer {
     warnings: Vec<(SemanticError, String, SourceSpan)>, // (warning, file, span)
     used_builtins: HashSet<StringId>,
     used_variables: HashSet<StringId>,
+    in_loop: bool,
+    in_switch: bool,
+    case_labels: HashSet<i64>,
+    has_default: bool,
 }
 
 impl Default for SemanticAnalyzer {
@@ -115,6 +119,10 @@ impl SemanticAnalyzer {
             warnings: Vec::new(),
             used_builtins: HashSet::new(),
             used_variables: HashSet::new(),
+            in_loop: false,
+            in_switch: false,
+            case_labels: HashSet::new(),
+            has_default: false,
         }
     }
 
@@ -676,8 +684,11 @@ impl SemanticAnalyzer {
                 TypedStmt::If(typed_cond, typed_then, typed_otherwise)
             }
             Stmt::While(cond, body) => {
+                let prev_in_loop = self.in_loop;
+                self.in_loop = true;
                 let typed_cond = self.check_expression(*cond, filename);
                 let typed_body = Box::new(self.check_statement(*body, filename));
+                self.in_loop = prev_in_loop;
                 TypedStmt::While(typed_cond, typed_body)
             }
             Stmt::For(init, cond, inc, body) => {
@@ -712,9 +723,12 @@ impl SemanticAnalyzer {
                     }
                 });
 
+                let prev_in_loop = self.in_loop;
+                self.in_loop = true;
                 let typed_cond = cond.map(|c| self.check_expression(*c, filename));
                 let typed_inc = inc.map(|i| self.check_expression(*i, filename));
                 let typed_body = Box::new(self.check_statement(*body, filename));
+                self.in_loop = prev_in_loop;
 
                 TypedStmt::For(
                     Box::new(typed_init),
@@ -733,16 +747,75 @@ impl SemanticAnalyzer {
                 TypedStmt::Block(typed_stmts)
             }
             Stmt::Switch(expr, body) => {
+                let prev_in_switch = self.in_switch;
+                let prev_case_labels = self.case_labels.clone();
+                let prev_has_default = self.has_default;
+
+                self.in_switch = true;
+                self.case_labels.clear();
+                self.has_default = false;
+
                 let typed_expr = self.check_expression(*expr, filename);
+                if typed_expr.ty().get_integer_rank() == 0 {
+                    self.errors.push((
+                        SemanticError::SwitchConditionNotInteger,
+                        filename.to_string(),
+                        typed_expr.span(),
+                    ));
+                }
+
                 let typed_body = Box::new(self.check_statement(*body, filename));
+
+                self.in_switch = prev_in_switch;
+                self.case_labels = prev_case_labels;
+                self.has_default = prev_has_default;
+
                 TypedStmt::Switch(typed_expr, typed_body)
             }
             Stmt::Case(expr, body) => {
+                let span = (*expr).span();
+                if !self.in_switch {
+                    self.errors.push((
+                        SemanticError::CaseOutsideSwitch,
+                        filename.to_string(),
+                        span,
+                    ));
+                }
                 let typed_expr = self.check_expression(*expr, filename);
+                if let TypedExpr::Number(val, _) = typed_expr {
+                    if !self.case_labels.insert(val) {
+                        self.errors.push((
+                            SemanticError::DuplicateCaseLabel(val),
+                            filename.to_string(),
+                            typed_expr.span(),
+                        ));
+                    }
+                } else {
+                    self.errors.push((
+                        SemanticError::NotAConstantExpression,
+                        filename.to_string(),
+                        typed_expr.span(),
+                    ));
+                }
                 let typed_body = Box::new(self.check_statement(*body, filename));
                 TypedStmt::Case(typed_expr, typed_body)
             }
             Stmt::Default(body) => {
+                if !self.in_switch {
+                    self.errors.push((
+                        SemanticError::DefaultOutsideSwitch,
+                        filename.to_string(),
+                        (*body).span(),
+                    ));
+                }
+                if self.has_default {
+                    self.errors.push((
+                        SemanticError::DuplicateDefaultLabel,
+                        filename.to_string(),
+                        (*body).span(),
+                    ));
+                }
+                self.has_default = true;
                 let typed_body = Box::new(self.check_statement(*body, filename));
                 TypedStmt::Default(typed_body)
             }
@@ -775,11 +848,32 @@ impl SemanticAnalyzer {
                 is_inline,
                 is_noreturn,
             },
-            Stmt::Break => TypedStmt::Break,
-            Stmt::Continue => TypedStmt::Continue,
+            Stmt::Break => {
+                if !self.in_switch && !self.in_loop {
+                    self.errors.push((
+                        SemanticError::BreakOutsideLoopOrSwitch,
+                        filename.to_string(),
+                        SourceSpan::default(),
+                    ));
+                }
+                TypedStmt::Break
+            }
+            Stmt::Continue => {
+                if !self.in_loop {
+                    self.errors.push((
+                        SemanticError::ContinueOutsideLoop,
+                        filename.to_string(),
+                        SourceSpan::default(),
+                    ));
+                }
+                TypedStmt::Continue
+            }
             Stmt::DoWhile(body, cond) => {
+                let prev_in_loop = self.in_loop;
+                self.in_loop = true;
                 let typed_body = Box::new(self.check_statement(*body, filename));
                 let typed_cond = self.check_expression(*cond, filename);
+                self.in_loop = prev_in_loop;
                 TypedStmt::DoWhile(typed_body, typed_cond)
             }
             Stmt::Empty => TypedStmt::Empty,

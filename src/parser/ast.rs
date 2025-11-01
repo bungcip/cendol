@@ -85,6 +85,10 @@ impl Type {
         matches!(self, Type::Struct(..) | Type::Union(..))
     }
 
+    pub fn is_array(&self) -> bool {
+        matches!(self, Type::Array(..))
+    }
+
     pub fn is_aggregate(&self) -> bool {
         matches!(self, Type::Struct(..) | Type::Union(..) | Type::Array(..))
     }

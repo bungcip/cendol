@@ -899,4 +899,24 @@ mod tests {
         let exit_code = compile_and_run(input, "volatile").unwrap();
         assert_eq!(exit_code, 20);
     }
+
+    /// Test code generation for global structs
+    #[test]
+    fn test_global_struct() {
+        let input = r#"
+        typedef struct { int x; int y; } s;
+
+        s v;
+
+        int
+        main()
+        {
+            v.x = 1;
+            v.y = 2;
+            return 3 - v.x - v.y;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "global_struct").unwrap();
+        assert_eq!(exit_code, 0);
+    }
 }

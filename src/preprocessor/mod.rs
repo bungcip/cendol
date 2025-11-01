@@ -1,5 +1,4 @@
-use crate::common::SourceLocation;
-use crate::file::{FileId, FileManager};
+use crate::file::FileManager;
 use crate::preprocessor::error::PreprocessorError;
 use crate::preprocessor::lexer::Lexer;
 use crate::preprocessor::token::{DirectiveKind, IncludeKind, Token, TokenKind};
@@ -54,6 +53,8 @@ pub struct Preprocessor {
     conditional_stack: Vec<bool>,
     file_manager: FileManager,
     file_stack: Vec<FileState>,
+    current_line: u32,
+    current_file: String,
 }
 
 impl Preprocessor {
@@ -64,6 +65,8 @@ impl Preprocessor {
             conditional_stack: Vec::new(),
             file_manager,
             file_stack: Vec::new(),
+            current_line: 1,
+            current_file: String::new(),
         }
     }
 
@@ -93,24 +96,24 @@ impl Preprocessor {
         });
 
         let mut final_tokens = Vec::new();
-        let mut current_line = 1;
-        let mut current_file = filename;
+        self.current_line = 1;
+        self.current_file = filename.to_string();
 
         // Add initial line directive
-        let dummy_loc = SourceLocation::new(FileId(0), 0, 0);
-        final_tokens.push(Token::new(
-            TokenKind::Directive(DirectiveKind::Line),
-            dummy_loc.into(),
-        ));
-        final_tokens.push(Token::new(
-            TokenKind::Number(current_line.to_string()),
-            dummy_loc.into(),
-        ));
-        final_tokens.push(Token::new(
-            TokenKind::String(current_file.to_string()),
-            dummy_loc.into(),
-        ));
-        final_tokens.push(Token::new(TokenKind::Newline, dummy_loc.into()));
+        // let dummy_loc = SourceLocation::new(FileId(0), 0, 0);
+        // final_tokens.push(Token::new(
+        //     TokenKind::Directive(DirectiveKind::Line),
+        //     dummy_loc.into(),
+        // ));
+        // final_tokens.push(Token::new(
+        //     TokenKind::Number(current_line.to_string()),
+        //     dummy_loc.into(),
+        // ));
+        // final_tokens.push(Token::new(
+        //     TokenKind::String(current_file.to_string()),
+        //     dummy_loc.into(),
+        // ));
+        // final_tokens.push(Token::new(TokenKind::Newline, dummy_loc.into()));
 
         while !self.file_stack.is_empty() {
             let mut tokens = self.process_directives()?;
@@ -118,27 +121,8 @@ impl Preprocessor {
 
             // Update line number tracking for line directives
             for token in &tokens {
-                if token.span.start_line != current_line
-                    || token.span.file_id.0 != self.file_stack.len() as u32
-                {
-                    current_line = token.span.start_line;
-                    if let Some(path) = self.file_manager.get_path(token.span.file_id) {
-                        current_file = path.to_str().unwrap();
-                        let loc = token.span.start();
-                        final_tokens.push(Token::new(
-                            TokenKind::Directive(DirectiveKind::Line),
-                            loc.into(),
-                        ));
-                        final_tokens.push(Token::new(
-                            TokenKind::Number(current_line.to_string()),
-                            loc.into(),
-                        ));
-                        final_tokens.push(Token::new(
-                            TokenKind::String(current_file.to_string()),
-                            loc.into(),
-                        ));
-                        final_tokens.push(Token::new(TokenKind::Newline, loc.into()));
-                    }
+                if let TokenKind::Newline = token.kind {
+                    self.current_line += 1;
                 }
             }
 
@@ -168,7 +152,7 @@ impl Preprocessor {
                 "Macro name must not be empty".to_string(),
             ));
         }
-        let value = if parts.len() > 1 { parts[1] } else { "" };
+        let value = if parts.len() > 1 { parts[1] } else { "1" };
         let file_id = self.file_manager.open("<cmdline>")?;
         let mut lexer = Lexer::new(value, file_id);
         let mut tokens = Vec::new();
@@ -204,6 +188,7 @@ impl Preprocessor {
     /// Processes preprocessor directives.
     fn process_directives(&mut self) -> Result<Vec<Token>, PreprocessorError> {
         let mut final_tokens = Vec::new();
+        let mut pending_tokens = Vec::new();
         while !self.file_stack.is_empty() {
             let file_state = self.file_stack.last_mut().unwrap();
             if file_state.index >= file_state.tokens.len() {
@@ -220,6 +205,10 @@ impl Preprocessor {
             let in_true_branch = self.conditional_stack.iter().all(|&x| x);
 
             if let TokenKind::Directive(directive) = token.kind {
+                // Expand macros in pending tokens before processing directive
+                self.expand_all_macros(&mut pending_tokens)?;
+                final_tokens.append(&mut pending_tokens);
+
                 match directive {
                     DirectiveKind::If => {
                         let (condition, end) = {
@@ -329,10 +318,14 @@ impl Preprocessor {
                     }
                     DirectiveKind::Line => {
                         if in_true_branch {
-                            let (_line, _filename, end) = {
+                            let (line, filename, end) = {
                                 let file_state = self.file_stack.last().unwrap();
                                 parse_line_directive(file_state.index, &file_state.tokens)?
                             };
+                            self.current_line = line;
+                            if let Some(filename) = filename {
+                                self.current_file = filename;
+                            }
                             self.file_stack.last_mut().unwrap().index = end;
                         } else {
                             let file_state = self.file_stack.last_mut().unwrap();
@@ -382,9 +375,13 @@ impl Preprocessor {
             }
 
             if in_true_branch {
-                final_tokens.push(token);
+                pending_tokens.push(token);
             }
         }
+
+        // Expand macros in any remaining pending tokens
+        self.expand_all_macros(&mut pending_tokens)?;
+        final_tokens.extend(pending_tokens);
 
         if !self.conditional_stack.is_empty() {
             return Err(PreprocessorError::UnterminatedConditional);
@@ -490,18 +487,16 @@ impl Preprocessor {
                     && !tokens[i].hideset.contains(name)
                 {
                     if name == "__LINE__" {
-                        let line = tokens[i].span.start_line;
-                        tokens[i] = Token::new(TokenKind::Number(line.to_string()), tokens[i].span);
+                        tokens[i] = Token::new(
+                            TokenKind::Number(self.current_line.to_string()),
+                            tokens[i].span,
+                        );
                         expanded = true;
                     } else if name == "__FILE__" {
-                        let file = self
-                            .file_manager
-                            .get_path(tokens[i].span.file_id)
-                            .unwrap()
-                            .to_str()
-                            .unwrap()
-                            .to_string();
-                        tokens[i] = Token::new(TokenKind::String(file), tokens[i].span);
+                        tokens[i] = Token::new(
+                            TokenKind::String(format!("\"{}\"", self.current_file)),
+                            tokens[i].span,
+                        );
                         expanded = true;
                     } else if name == "__DATE__" {
                         let date = Local::now().format("%b %-d %Y").to_string();

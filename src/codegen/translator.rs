@@ -1447,15 +1447,19 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         ty,
                     ))
                 } else {
-                    let (id, _) = self.global_variables.get(&name).unwrap();
+                    let (id, ty) = self.global_variables.get(&name).unwrap();
                     let local_id = self.module.declare_data_in_func(*id, self.builder.func);
                     let addr = self.builder.ins().global_value(types::I64, local_id);
-                    Ok((
-                        self.builder
-                            .ins()
-                            .load(types::I64, MemFlags::new(), addr, 0),
-                        ty,
-                    ))
+                    if ty.is_aggregate() {
+                        Ok((addr, ty.clone()))
+                    } else {
+                        Ok((
+                            self.builder
+                                .ins()
+                                .load(types::I64, MemFlags::new(), addr, 0),
+                            ty.clone(),
+                        ))
+                    }
                 }
             }
             TypedExpr::Call(name, args, _, ty) => {

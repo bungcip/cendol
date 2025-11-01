@@ -1385,10 +1385,14 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             TypedExpr::Deref(expr, ty) => {
                 let (ptr, _) = self.translate_typed_expr(*expr)?;
-                Ok((
-                    self.builder.ins().load(types::I64, MemFlags::new(), ptr, 0),
-                    ty,
-                ))
+                if let Type::Struct(_, _) | Type::Union(_, _) | Type::Array(_, _) = &ty {
+                    Ok((ptr, ty))
+                } else {
+                    Ok((
+                        self.builder.ins().load(types::I64, MemFlags::new(), ptr, 0),
+                        ty,
+                    ))
+                }
             }
             TypedExpr::InitializerList(list, ty) => {
                 let size = self.get_type_size(&ty);

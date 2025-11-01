@@ -85,6 +85,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         let real_ty = Self::get_real_type_from_type(ty, structs, unions).unwrap();
         match &real_ty {
             Type::Const(inner) => Self::get_type_size_from_type(inner, structs, unions),
+            Type::Volatile(inner) => Self::get_type_size_from_type(inner, structs, unions),
             Type::Int | Type::UnsignedInt => 8,
             Type::Char | Type::UnsignedChar => 1,
             Type::Short | Type::UnsignedShort => 2,
@@ -131,6 +132,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         let real_ty = Self::get_real_type_from_type(ty, structs, unions).unwrap();
         match &real_ty {
             Type::Const(inner) => Self::get_type_alignment_from_type(inner, structs, unions),
+            Type::Volatile(inner) => Self::get_type_alignment_from_type(inner, structs, unions),
             Type::Int | Type::UnsignedInt => 8,
             Type::Char | Type::UnsignedChar => 1,
             Type::Short | Type::UnsignedShort => 2,
@@ -624,7 +626,11 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     }
 
     fn load_variable(&mut self, slot: StackSlot, ty: &Type) -> Value {
-        match ty {
+        let is_volatile = matches!(ty, Type::Volatile(_));
+        if is_volatile {
+            self.builder.ins().fence();
+        }
+        let value = match ty.unwrap_volatile() {
             Type::Char | Type::Bool => {
                 let val = self.builder.ins().stack_load(types::I8, slot, 0);
                 self.builder.ins().sextend(types::I64, val)
@@ -644,46 +650,44 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             Type::Float => self.builder.ins().stack_load(types::F32, slot, 0),
             Type::Double => self.builder.ins().stack_load(types::F64, slot, 0),
             _ => self.builder.ins().stack_load(types::I64, slot, 0),
+        };
+        if is_volatile {
+            self.builder.ins().fence();
         }
+        value
     }
 
     fn load_lvalue(&mut self, addr: Value, ty: &Type) -> Value {
-        match ty {
+        let is_volatile = matches!(ty, Type::Volatile(_));
+        if is_volatile {
+            self.builder.ins().fence();
+        }
+        let flags = MemFlags::new();
+        let value = match ty.unwrap_volatile() {
             Type::Char | Type::Bool => {
-                let val = self.builder.ins().load(types::I8, MemFlags::new(), addr, 0);
+                let val = self.builder.ins().load(types::I8, flags, addr, 0);
                 self.builder.ins().sextend(types::I64, val)
             }
             Type::UnsignedChar => {
-                let val = self.builder.ins().load(types::I8, MemFlags::new(), addr, 0);
+                let val = self.builder.ins().load(types::I8, flags, addr, 0);
                 self.builder.ins().uextend(types::I64, val)
             }
             Type::Short => {
-                let val = self
-                    .builder
-                    .ins()
-                    .load(types::I16, MemFlags::new(), addr, 0);
+                let val = self.builder.ins().load(types::I16, flags, addr, 0);
                 self.builder.ins().sextend(types::I64, val)
             }
             Type::UnsignedShort => {
-                let val = self
-                    .builder
-                    .ins()
-                    .load(types::I16, MemFlags::new(), addr, 0);
+                let val = self.builder.ins().load(types::I16, flags, addr, 0);
                 self.builder.ins().uextend(types::I64, val)
             }
-            Type::Float => self
-                .builder
-                .ins()
-                .load(types::F32, MemFlags::new(), addr, 0),
-            Type::Double => self
-                .builder
-                .ins()
-                .load(types::F64, MemFlags::new(), addr, 0),
-            _ => self
-                .builder
-                .ins()
-                .load(types::I64, MemFlags::new(), addr, 0),
+            Type::Float => self.builder.ins().load(types::F32, flags, addr, 0),
+            Type::Double => self.builder.ins().load(types::F64, flags, addr, 0),
+            _ => self.builder.ins().load(types::I64, flags, addr, 0),
+        };
+        if is_volatile {
+            self.builder.ins().fence();
         }
+        value
     }
 
     fn translate_assign_expr(
@@ -734,9 +738,16 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             AssignOp::LeftShift => self.builder.ins().ishl(lhs_val, rhs_val),
             AssignOp::RightShift => self.builder.ins().sshr(lhs_val, rhs_val),
         };
+        let is_volatile = matches!(lhs_ty, Type::Volatile(_));
+        if is_volatile {
+            self.builder.ins().fence();
+        }
         self.builder
             .ins()
             .store(MemFlags::new(), result_val, addr, 0);
+        if is_volatile {
+            self.builder.ins().fence();
+        }
         Ok((result_val, ty.clone()))
     }
 

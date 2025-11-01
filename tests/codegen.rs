@@ -886,4 +886,17 @@ mod tests {
         "#;
         compile_and_assert_warning(input, "wall_flag_off").unwrap();
     }
+    /// Test code generation for volatile variables
+    #[test]
+    fn test_volatile() {
+        let input = r#"
+        int main() {
+            volatile int x = 10;
+            x = 20;
+            return x;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "volatile").unwrap();
+        assert_eq!(exit_code, 20);
+    }
 }

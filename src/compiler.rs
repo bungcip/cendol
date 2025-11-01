@@ -45,7 +45,7 @@ use crate::logger::Logger;
 use crate::parser::Parser;
 use crate::parser::error::ParserError;
 use crate::preprocessor::token::{DirectiveKind, Token, TokenKind};
-use crate::semantic::SemanticAnalyzer;
+use crate::semantic::{SemaOutput, SemanticAnalyzer};
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -153,7 +153,7 @@ impl Compiler {
                     let path = self
                         .preprocessor
                         .file_manager()
-                        .get_path(location.start.file)
+                        .get_path(location.file_id)
                         .unwrap()
                         .to_str()
                         .unwrap()
@@ -170,11 +170,11 @@ impl Compiler {
 
         // Perform semantic analysis
         let semantic_analyzer = SemanticAnalyzer::with_builtins();
-        let (typed_ast, warnings, semantic_analyzer) =
-            match semantic_analyzer.analyze(ast.clone(), filename) {
-                Ok((typed_ast, warnings, semantic_analyzer)) => {
+        let SemaOutput(typed_ast, warnings, semantic_analyzer) =
+            match semantic_analyzer.analyze(ast, filename) {
+                Ok(output) => {
                     self.logger.log("Semantic analysis passed");
-                    (typed_ast, warnings, semantic_analyzer)
+                    output
                 }
                 Err(errors) => {
                     for (error, file, span) in errors {

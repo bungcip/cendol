@@ -104,7 +104,7 @@ impl<'a> Lexer<'a> {
                 }
             }
             _ if c.is_ascii_digit()
-                || (c == '.' && self.input.peek().map_or(false, |c| c.is_ascii_digit())) =>
+                || (c == '.' && self.input.peek().is_some_and(|c| c.is_ascii_digit())) =>
             {
                 let mut num = String::from(c);
                 self.consume_char(c);
@@ -120,11 +120,11 @@ impl<'a> Lexer<'a> {
                     } else if c == 'e' || c == 'E' {
                         num.push(self.input.next().unwrap());
                         self.consume_char(c);
-                        if let Some(&c) = self.input.peek() {
-                            if c == '+' || c == '-' {
-                                num.push(self.input.next().unwrap());
-                                self.consume_char(c);
-                            }
+                        if let Some(&c) = self.input.peek()
+                            && (c == '+' || c == '-')
+                        {
+                            num.push(self.input.next().unwrap());
+                            self.consume_char(c);
                         }
                     } else {
                         break;

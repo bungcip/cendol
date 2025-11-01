@@ -200,6 +200,22 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         Self::get_type_size_from_type(ty, self.structs, self.unions)
     }
 
+    /// Returns the amount to increment or decrement a pointer by.
+    fn get_increment_amount(&mut self, ty: &Type) -> i64 {
+        let mut current = ty;
+        loop {
+            match current {
+                Type::Const(inner) | Type::Volatile(inner) => {
+                    current = inner;
+                }
+                Type::Pointer(base_ty) => {
+                    return self.get_type_size(base_ty) as i64;
+                }
+                _ => return 1,
+            }
+        }
+    }
+
     /// Translates a typed statement into Cranelift IR.
     pub(crate) fn translate_typed_stmt(&mut self, stmt: TypedStmt) -> Result<bool, CodegenError> {
         // If the current block is already terminated, only process labels to create their blocks
@@ -210,7 +226,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         match stmt {
             TypedStmt::Return(expr) => {
                 let (value, ty) = self.translate_typed_expr(expr)?;
-                if let Type::Struct(_, _) | Type::Union(_, _) = ty {
+                if ty.is_record() {
                     let dest = self
                         .builder
                         .block_params(self.builder.current_block().unwrap())[0];
@@ -227,8 +243,6 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         MemFlags::new(),
                     );
                     self.builder.ins().return_(&[dest]);
-                } else if ty.is_floating() {
-                    self.builder.ins().return_(&[value]);
                 } else {
                     self.builder.ins().return_(&[value]);
                 }
@@ -248,7 +262,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                             .declare_data(&mangled_name, Linkage::Local, true, false)
                             .unwrap();
                         self.static_local_variables
-                            .insert(declarator.name.clone(), (id, declarator.ty.clone()));
+                            .insert(declarator.name, (id, declarator.ty.clone()));
 
                         let mut data_desc = cranelift_module::DataDescription::new();
 
@@ -278,16 +292,13 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                             0,
                         ));
                         self.variables
-                            .insert(declarator.name.clone(), (None, Some(slot), ty.clone()));
+                            .insert(declarator.name, (None, Some(slot), ty.clone()));
                         if let Some(initializer) = &declarator.initializer {
                             let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
                             self.translate_initializer(addr, ty, initializer)?;
                         } else {
                             // Initialize to zero for scalars
-                            if !matches!(
-                                ty,
-                                Type::Struct(_, _) | Type::Union(_, _) | Type::Array(_, _)
-                            ) {
+                            if ty.is_aggregate() == false {
                                 let zero = self.builder.ins().iconst(types::I64, 0);
                                 self.builder.ins().stack_store(zero, slot, 0);
                             }
@@ -390,15 +401,11 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                                 size,
                                 0,
                             ));
-                            self.variables
-                                .insert(name.clone(), (None, Some(slot), ty.clone()));
+                            self.variables.insert(name, (None, Some(slot), ty.clone()));
                             if let Some(init) = initializer {
                                 let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
                                 self.translate_initializer(addr, &ty, &init)?;
-                            } else if !matches!(
-                                ty,
-                                Type::Struct(_, _) | Type::Union(_, _) | Type::Array(_, _)
-                            ) {
+                            } else if ty.is_aggregate() {
                                 let val = self.builder.ins().iconst(types::I64, 0);
                                 self.builder.ins().stack_store(val, slot, 0);
                             };
@@ -476,16 +483,16 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             TypedStmt::Label(name, body) => {
                 let block = *self
                     .label_blocks
-                    .entry(name.clone())
+                    .entry(name)
                     .or_insert_with(|| self.builder.create_block());
 
                 self.switch_to_block(block);
 
                 // Handle consecutive labels by making them share the same block
                 let mut current_body = body;
-                let mut labels_to_update = vec![name.clone()];
+                let mut labels_to_update = vec![name];
                 while let TypedStmt::Label(ref inner_name, ref inner_body) = *current_body {
-                    labels_to_update.push(inner_name.clone());
+                    labels_to_update.push(*inner_name);
                     current_body = inner_body.clone();
                 }
 
@@ -500,7 +507,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             TypedStmt::Goto(name) => {
                 let block = *self
                     .label_blocks
-                    .entry(name.clone())
+                    .entry(name)
                     .or_insert_with(|| self.builder.create_block());
 
                 if self.current_block_state != BlockState::Filled {
@@ -1059,7 +1066,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             TypedExpr::FloatNumber(n, ty) => Ok((self.builder.ins().f64const(n), ty)),
             TypedExpr::String(s, ty) => {
                 let string_value = s.as_str();
-                let unescaped = unescape(&string_value);
+                let unescaped = unescape(string_value);
                 let mut data = Vec::with_capacity(unescaped.len() + 1);
                 data.extend_from_slice(&unescaped);
                 data.push(0); // Null terminator
@@ -1104,9 +1111,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         let member_ty = member_ty.unwrap();
                         let member_addr = self.builder.ins().iadd_imm(ptr, offset as i64);
 
-                        if let Type::Struct(_, _) | Type::Union(_, _) | Type::Array(_, _) =
-                            member_ty
-                        {
+                        if member_ty.is_aggregate() {
                             Ok((member_addr, member_ty))
                         } else {
                             Ok((
@@ -1212,7 +1217,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     let member_ty = member_ty.unwrap();
                     let member_addr = self.builder.ins().iadd_imm(ptr, offset as i64);
 
-                    if let Type::Struct(_, _) | Type::Union(_, _) | Type::Array(_, _) = member_ty {
+                    if member_ty.is_aggregate() {
                         Ok((member_addr, member_ty))
                     } else {
                         Ok((
@@ -1274,34 +1279,38 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 Ok((addr, result_ty))
             }
             TypedExpr::PreIncrement(expr, ty) => {
-                let (addr, _) = self.translate_lvalue(*expr)?;
-                let val = self.load_lvalue(addr, &ty);
-                let one = self.builder.ins().iconst(types::I64, 1);
-                let new_val = self.builder.ins().iadd(val, one);
+                let (addr, expr_ty) = self.translate_lvalue(*expr)?;
+                let val = self.load_lvalue(addr, &expr_ty);
+                let amount = self.get_increment_amount(&expr_ty);
+                let inc = self.builder.ins().iconst(types::I64, amount);
+                let new_val = self.builder.ins().iadd(val, inc);
                 self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
                 Ok((new_val, ty))
             }
             TypedExpr::PreDecrement(expr, ty) => {
-                let (addr, _) = self.translate_lvalue(*expr)?;
-                let val = self.load_lvalue(addr, &ty);
-                let one = self.builder.ins().iconst(types::I64, 1);
-                let new_val = self.builder.ins().isub(val, one);
+                let (addr, expr_ty) = self.translate_lvalue(*expr)?;
+                let val = self.load_lvalue(addr, &expr_ty);
+                let amount = self.get_increment_amount(&expr_ty);
+                let dec = self.builder.ins().iconst(types::I64, amount);
+                let new_val = self.builder.ins().isub(val, dec);
                 self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
                 Ok((new_val, ty))
             }
             TypedExpr::PostIncrement(expr, ty) => {
-                let (addr, _) = self.translate_lvalue(*expr)?;
-                let val = self.load_lvalue(addr, &ty);
-                let one = self.builder.ins().iconst(types::I64, 1);
-                let new_val = self.builder.ins().iadd(val, one);
+                let (addr, expr_ty) = self.translate_lvalue(*expr)?;
+                let val = self.load_lvalue(addr, &expr_ty);
+                let amount = self.get_increment_amount(&expr_ty);
+                let inc = self.builder.ins().iconst(types::I64, amount);
+                let new_val = self.builder.ins().iadd(val, inc);
                 self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
                 Ok((val, ty))
             }
             TypedExpr::PostDecrement(expr, ty) => {
-                let (addr, _) = self.translate_lvalue(*expr)?;
-                let val = self.load_lvalue(addr, &ty);
-                let one = self.builder.ins().iconst(types::I64, 1);
-                let new_val = self.builder.ins().isub(val, one);
+                let (addr, expr_ty) = self.translate_lvalue(*expr)?;
+                let val = self.load_lvalue(addr, &expr_ty);
+                let amount = self.get_increment_amount(&expr_ty);
+                let dec = self.builder.ins().iconst(types::I64, amount);
+                let new_val = self.builder.ins().isub(val, dec);
                 self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
                 Ok((val, ty))
             }
@@ -1361,7 +1370,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             TypedExpr::Deref(expr, ty) => {
                 let (ptr, _) = self.translate_typed_expr(*expr)?;
-                if let Type::Struct(_, _) | Type::Union(_, _) | Type::Array(_, _) = &ty {
+                if ty.is_aggregate() {
                     Ok((ptr, ty))
                 } else {
                     Ok((
@@ -1401,7 +1410,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 }
                 if let Some((_var_opt, slot_opt, _)) = self.variables.get(&name) {
                     if let Some(slot) = slot_opt {
-                        if let Type::Struct(_, _) | Type::Union(_, _) = &ty {
+                        if ty.is_record() {
                             return Ok((self.builder.ins().stack_addr(types::I64, slot, 0), ty));
                         }
                         if let Type::Array(elem_ty, _) = &ty {
@@ -1423,15 +1432,19 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         ty,
                     ))
                 } else {
-                    let (id, _) = self.global_variables.get(&name).unwrap();
+                    let (id, ty) = self.global_variables.get(&name).unwrap();
                     let local_id = self.module.declare_data_in_func(*id, self.builder.func);
                     let addr = self.builder.ins().global_value(types::I64, local_id);
-                    Ok((
-                        self.builder
-                            .ins()
-                            .load(types::I64, MemFlags::new(), addr, 0),
-                        ty,
-                    ))
+                    if ty.is_aggregate() {
+                        Ok((addr, ty.clone()))
+                    } else {
+                        Ok((
+                            self.builder
+                                .ins()
+                                .load(types::I64, MemFlags::new(), addr, 0),
+                            ty.clone(),
+                        ))
+                    }
                 }
             }
             TypedExpr::Call(name, args, _, ty) => {
@@ -1444,7 +1457,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let local_callee = self.module.declare_func_in_func(callee, self.builder.func);
 
                 let mut arg_values = Vec::new();
-                if let Type::Struct(_, _) | Type::Union(_, _) = ret_ty {
+                if ret_ty.is_record() {
                     let size = self.get_type_size(&ret_ty);
                     let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
                         StackSlotKind::ExplicitSlot,
@@ -1479,7 +1492,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     self.builder.ins().call(local_callee, &arg_values)
                 };
 
-                if let Type::Struct(_, _) | Type::Union(_, _) = ret_ty {
+                if ret_ty.is_record() {
                     let addr = self.builder.inst_results(call)[0];
                     return Ok((addr, ret_ty));
                 }
@@ -1507,7 +1520,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     }
                 } else {
                     let (val, val_ty) = self.translate_typed_expr(*expr.clone())?;
-                    if let Type::Struct(_, _) | Type::Union(_, _) = val_ty {
+                    if val_ty.is_record() {
                         let size = self.get_type_size(&val_ty);
                         self.builder.emit_small_memory_copy(
                             self.module.target_config(),
@@ -1519,8 +1532,6 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                             true,
                             MemFlags::new(),
                         );
-                    } else if val_ty.is_floating() {
-                        self.builder.ins().store(MemFlags::new(), val, base_addr, 0);
                     } else {
                         self.builder.ins().store(MemFlags::new(), val, base_addr, 0);
                     }

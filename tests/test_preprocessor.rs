@@ -332,29 +332,31 @@ fn test_ifndef_directive() {
 #[test]
 fn test_undef_directive() {
     let input = r#"
+#define MARTABAK 999
+MARTABAK
+#undef MARTABAK
+MARTABAK
+"#;
+    let tokens = preprocess_input(input).unwrap();
+    let tokens = get_clean_token(tokens);
+    let tokens = get_token_kinds(&tokens);
+    assert_eq!(tokens, ["999", "MARTABAK"]);
+}
+
+#[test]
+fn test_undef_directive_and_check_with_ifdef() {
+    let input = r#"
 #define FOO
 #undef FOO
 #ifdef FOO
     int a = 1;
 #endif
 "#;
-    let mut preprocessor = create_preprocessor();
-    let tokens = preprocessor.preprocess(input, "<input>").unwrap();
+    let tokens = preprocess_input(input).unwrap();
     let tokens = get_clean_token(tokens);
+    let tokens = get_token_kinds(&tokens);
 
-    // Should not include the code because FOO was undefined
-    // Expected: no tokens from the ifdef branch
-    println!(
-        "DEBUG: Undef directive tokens: {:?}",
-        get_token_kinds(&tokens)
-    );
-
-    // Verify that undef worked correctly - FOO should not be defined after undef
-    let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(
-        !token_strings.contains(&"int".to_string()) || !token_strings.contains(&"a".to_string()),
-        "Should not contain tokens from the ifdef branch after undef"
-    );
+    assert_eq!(tokens.len(), 0);
 }
 
 #[test]
@@ -395,54 +397,24 @@ fn test_include_directive() {
 }
 
 #[test]
-fn test_line_and_file_macros() {
-    let input = "__LINE__ __FILE__";
-    let mut preprocessor = create_preprocessor();
-    let tokens = preprocessor.preprocess(input, "<input>").unwrap();
-    let tokens = get_clean_token(tokens);
-
-    // Should expand __LINE__ to current line number and __FILE__ to filename
-    // The exact values depend on the implementation, but we should get some tokens
-    println!(
-        "DEBUG: Line and file macro tokens: {:?}",
-        get_token_kinds(&tokens)
-    );
-
-    // Verify that we got some tokens from the macro expansion
-    assert!(
-        tokens.len() > 0,
-        "Should have tokens from line/file macro expansion"
-    );
-}
-
-#[test]
 fn test_error_directive() {
     let input = r#"
 #error "This is an error"
 "#;
-    let mut preprocessor = create_preprocessor();
-    let result = preprocessor.preprocess(input, "<input>");
+    let result = preprocess_input(input);
     assert!(result.is_err());
 }
 #[test]
 fn test_line_directive() {
     let input = r#"
-#line 10 "foo.c"
+#line 10 "tuturu.c"
+__LINE__ __FILE__
 "#;
-    let mut preprocessor = create_preprocessor();
-    let tokens = preprocessor.preprocess(input, "<input>").unwrap();
+    let tokens = preprocess_input(input).unwrap();
     let tokens = get_clean_token(tokens);
+    let tokens = get_token_kinds(&tokens);
 
-    // The line directive should set the line number and filename
-    // We don't expect content tokens, but the directive should be processed
-    println!(
-        "DEBUG: Line directive tokens: {:?}",
-        get_token_kinds(&tokens)
-    );
-
-    // The line directive itself doesn't produce content tokens, so this should be empty or minimal
-    // If there are tokens, they should be related to the directive processing
-    assert!(tokens.len() > 0, "Line directive test passed");
+    assert_eq!(tokens, ["10", "\"tuturu.c\""]);
 }
 
 #[test]
@@ -585,11 +557,14 @@ fn test_empty_define_name() {
 
 #[test]
 fn test_define_without_value() {
-    let input = "A";
     let mut preprocessor = create_preprocessor();
     preprocessor.define("A").unwrap();
+
+    let input = "A";
     let tokens = preprocessor.preprocess(input, "<input>").unwrap();
-    assert_eq!(tokens.len(), 9); // 3 tokens expected
+    let tokens = get_clean_token(tokens);
+    let tokens = get_token_kinds(&tokens);
+    assert_eq!(tokens, ["1"]);
 }
 
 #[test]

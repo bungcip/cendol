@@ -5,14 +5,10 @@ expression: err.unwrap_err()
 msg: Unexpected token
 path: static_assert_failed.c
 span:
-  file: 0
-  start:
-    file: 0
-    line: 1
-    column: 49
-  end:
-    file: 0
-    line: 1
-    column: 50
+  file_id: 0
+  start_line: 1
+  start_column: 49
+  end_line: 1
+  end_column: 50
 verbose: false
 is_warning: false

@@ -899,4 +899,63 @@ mod tests {
         let exit_code = compile_and_run(input, "volatile").unwrap();
         assert_eq!(exit_code, 20);
     }
+
+    /// Test code generation for global structs
+    #[test]
+    fn test_global_struct() {
+        let input = r#"
+        typedef struct { int x; int y; } s;
+
+        s v;
+
+        int
+        main()
+        {
+            v.x = 1;
+            v.y = 2;
+            return 3 - v.x - v.y;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "global_struct").unwrap();
+        assert_eq!(exit_code, 0);
+    }
+
+    /// Test code generation for pointer increment and decrement operators
+    #[test]
+    fn test_pointer_increment_decrement() {
+        let input = r#"
+        int
+        main()
+        {
+            int arr[2];
+            int *p;
+
+            arr[0] = 2;
+            arr[1] = 3;
+            p = &arr[0];
+            if(*(p++) != 2)
+                return 1;
+            if(*(p++) != 3)
+                return 2;
+
+            p = &arr[1];
+            if(*(p--) != 3)
+                return 1;
+            if(*(p--) != 2)
+                return 2;
+
+            p = &arr[0];
+            if(*(++p) != 3)
+                return 1;
+
+            p = &arr[1];
+            if(*(--p) != 2)
+                return 1;
+
+            return 0;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "pointer_increment_decrement").unwrap();
+        assert_eq!(exit_code, 0);
+    }
 }

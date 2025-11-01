@@ -5,14 +5,10 @@ expression: err.unwrap_err()
 msg: "Redeclaration of variable `x`"
 path: duplicate_variable_declaration.c
 span:
-  file: 0
-  start:
-    file: 0
-    line: 1
-    column: 30
-  end:
-    file: 0
-    line: 1
-    column: 31
+  file_id: 0
+  start_line: 1
+  start_column: 30
+  end_line: 1
+  end_column: 31
 verbose: false
 is_warning: false

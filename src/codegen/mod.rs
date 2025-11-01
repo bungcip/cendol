@@ -79,7 +79,7 @@ impl Default for CodeGen {
 fn collect_label_names(stmt: &TypedStmt, set: &mut HashSet<StringId>) {
     match stmt {
         TypedStmt::Label(name, body) => {
-            set.insert(name.clone());
+            set.insert(*name);
             collect_label_names(body, set);
         }
         TypedStmt::Block(stmts) => {
@@ -172,21 +172,20 @@ impl CodeGen {
                         .module
                         .declare_function(name.as_str(), Linkage::Import, &sig)
                         .unwrap();
-                    self.functions
-                        .insert(name.clone(), (id, ty.clone(), *is_variadic));
-                    self.signatures.insert(name.clone(), sig);
+                    self.functions.insert(*name, (id, ty.clone(), *is_variadic));
+                    self.signatures.insert(*name, sig);
                 }
                 TypedStmt::Declaration(base_ty, declarators, _is_static) => {
                     if let Type::Struct(Some(name), _) = &base_ty {
-                        self.structs.insert(name.clone(), base_ty.clone());
+                        self.structs.insert(*name, base_ty.clone());
                     } else if let Type::Union(Some(name), _) = &base_ty {
-                        self.unions.insert(name.clone(), base_ty.clone());
+                        self.unions.insert(*name, base_ty.clone());
                     }
                     for declarator in declarators {
                         if let Type::Struct(Some(name), _) = &declarator.ty {
-                            self.structs.insert(name.clone(), declarator.ty.clone());
+                            self.structs.insert(*name, declarator.ty.clone());
                         } else if let Type::Union(Some(name), _) = &declarator.ty {
-                            self.unions.insert(name.clone(), declarator.ty.clone());
+                            self.unions.insert(*name, declarator.ty.clone());
                         } else {
                             // This is a global variable declaration.
                             let is_const = matches!(declarator.ty, Type::Const(_));
@@ -263,10 +262,10 @@ impl CodeGen {
                 )
                 .unwrap();
             self.functions.insert(
-                function.name.clone(),
+                function.name,
                 (id, function.return_type.clone(), function.is_variadic),
             );
-            self.signatures.insert(function.name.clone(), sig);
+            self.signatures.insert(function.name, sig);
         }
 
         // Collect enum constants from global declarations
@@ -286,7 +285,7 @@ impl CodeGen {
                     } else {
                         next_value
                     };
-                    self.enum_constants.insert(name.clone(), val);
+                    self.enum_constants.insert(*name, val);
                     next_value = val + 1;
                 }
             }
@@ -323,7 +322,7 @@ impl CodeGen {
                 current_block_state: BlockState::Empty,
                 signatures: &self.signatures,
                 label_blocks: HashMap::new(),
-                current_function_name: function_def.name.clone(),
+                current_function_name: function_def.name,
                 anonymous_string_count: &mut self.anonymous_string_count,
             };
 
@@ -340,7 +339,7 @@ impl CodeGen {
                 );
                 translator
                     .variables
-                    .insert(param.name.clone(), (None, Some(slot), param.ty.clone()));
+                    .insert(param.name, (None, Some(slot), param.ty.clone()));
                 // Store the block parameter into the stack slot
                 translator
                     .builder
@@ -356,7 +355,7 @@ impl CodeGen {
 
             for name in label_names {
                 let b = translator.builder.create_block();
-                translator.label_blocks.insert(name.clone(), b);
+                translator.label_blocks.insert(name, b);
                 // eprintln!("predeclared label: {} -> {:?}", name, b);
             }
 
@@ -420,7 +419,7 @@ impl CodeGen {
                             } else {
                                 next_value
                             };
-                            self.enum_constants.insert(name.clone(), val);
+                            self.enum_constants.insert(*name, val);
                             next_value = val + 1;
                         }
                     }

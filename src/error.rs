@@ -2,11 +2,20 @@ use crate::{
     codegen::error::CodegenError, parser::error::ParserError,
     preprocessor::error::PreprocessorError,
 };
-use ariadne::{Color, Fmt, Label, Report as AriadneReport, ReportKind, Source};
+use ariadne::{Color, Config, Fmt, Label, Report as AriadneReport, ReportKind, Source};
 use thiserror::Error;
 
 /// A custom span type for `ariadne`.
 pub type Span = (String, std::ops::Range<usize>);
+
+/// Returns `true` if colors should be used for the report.
+fn colors_enabled() -> bool {
+    use atty::Stream;
+
+    // Honor `NO_COLOR` environment variable.
+    // See: https://no-color.org/
+    std::env::var("NO_COLOR").is_err() && atty::is(Stream::Stderr)
+}
 
 /// The main error type for the application.
 #[derive(Debug, Error)]
@@ -92,6 +101,8 @@ pub fn report(report: &Report) {
         ReportKind::Error
     };
 
+    let config = Config::default().with_color(colors_enabled());
+
     if let Some(span) = &report.span {
         let source = std::fs::read_to_string(&path).unwrap_or_else(|_| "".to_string());
         let start_offset = if span.start_line == 0 || span.start_column == 0 {
@@ -120,6 +131,7 @@ pub fn report(report: &Report) {
         AriadneReport::<'static, Span>::build(kind, path.clone(), start_offset)
             .with_code(3)
             .with_message(&msg)
+            .with_config(config)
             .with_label(
                 Label::new((path.clone(), start_offset..end_offset))
                     .with_message(msg.fg(Color::Red))
@@ -132,6 +144,7 @@ pub fn report(report: &Report) {
         AriadneReport::<'static, Span>::build(kind, path.clone(), 0)
             .with_code(3)
             .with_message(msg)
+            .with_config(config)
             .with_label(
                 Label::new((path.clone(), 0..0))
                     .with_message("".fg(Color::Red))

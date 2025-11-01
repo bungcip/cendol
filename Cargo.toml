@@ -18,6 +18,7 @@ thiserror = "2.0.17"
 chrono = "0.4.38"
 target-lexicon = "0.13.3"
 ariadne = "0.4.1"
+atty = "0.2.14"
 clap = { version = "4.5.49", features = ["derive"] }
 serde = { version = "1.0.203", features = ["derive"] }
 tempfile = "3.23"

@@ -89,6 +89,26 @@ pub enum TokenKind {
     /// The end of the input.
     Eof,
 }
+
+impl TokenKind {
+    /// Returns `true` if the token is an assignment operator.
+    pub fn is_assignment(&self) -> bool {
+        matches!(
+            self,
+            TokenKind::Equal
+                | TokenKind::PlusEqual
+                | TokenKind::MinusEqual
+                | TokenKind::AsteriskEqual
+                | TokenKind::SlashEqual
+                | TokenKind::PercentEqual
+                | TokenKind::LessThanLessThanEqual
+                | TokenKind::GreaterThanGreaterThanEqual
+                | TokenKind::AmpersandEqual
+                | TokenKind::CaretEqual
+                | TokenKind::PipeEqual
+        )
+    }
+}
 use crate::preprocessor;
 
 impl From<preprocessor::token::Token> for Token {

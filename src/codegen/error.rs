@@ -41,9 +41,6 @@ pub enum CodegenError {
     /// A static initializer was invalid.
     #[error("Invalid static initializer")]
     InvalidStaticInitializer,
-    /// An invalid l-value was used.
-    #[error("Invalid l-value")]
-    InvalidLValue,
     /// A break statement was used outside a loop.
     #[error("Break outside loop")]
     BreakOutsideLoop,

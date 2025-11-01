@@ -7,8 +7,8 @@ use crate::parser::error::ParserError;
 use crate::parser::string_interner::StringId;
 use crate::parser::token::{KeywordKind, Token, TokenKind};
 use crate::preprocessor;
-use thin_vec::ThinVec;
 use std::collections::HashMap;
+use thin_vec::ThinVec;
 
 pub mod ast;
 pub mod error;
@@ -544,41 +544,54 @@ impl Parser {
         }
     }
     /// Creates a binary expression based on the operator token.
-    fn create_binary_expr(&self, lhs: Expr, rhs: Expr, op: TokenKind) -> Expr {
-        let lhs = Box::new(lhs);
-        let rhs = Box::new(rhs);
-        match op {
-            TokenKind::Comma => Expr::Comma(lhs, rhs),
-            TokenKind::Equal => Expr::Assign(lhs, rhs),
-            TokenKind::PlusEqual => Expr::AssignAdd(lhs, rhs),
-            TokenKind::MinusEqual => Expr::AssignSub(lhs, rhs),
-            TokenKind::AsteriskEqual => Expr::AssignMul(lhs, rhs),
-            TokenKind::SlashEqual => Expr::AssignDiv(lhs, rhs),
-            TokenKind::PercentEqual => Expr::AssignMod(lhs, rhs),
-            TokenKind::LessThanLessThanEqual => Expr::AssignLeftShift(lhs, rhs),
-            TokenKind::GreaterThanGreaterThanEqual => Expr::AssignRightShift(lhs, rhs),
-            TokenKind::AmpersandEqual => Expr::AssignBitwiseAnd(lhs, rhs),
-            TokenKind::CaretEqual => Expr::AssignBitwiseXor(lhs, rhs),
-            TokenKind::PipeEqual => Expr::AssignBitwiseOr(lhs, rhs),
-            TokenKind::Plus => Expr::Add(lhs, rhs),
-            TokenKind::Minus => Expr::Sub(lhs, rhs),
-            TokenKind::Star => Expr::Mul(lhs, rhs),
-            TokenKind::Slash => Expr::Div(lhs, rhs),
-            TokenKind::Percent => Expr::Mod(lhs, rhs),
-            TokenKind::EqualEqual => Expr::Equal(lhs, rhs),
-            TokenKind::BangEqual => Expr::NotEqual(lhs, rhs),
-            TokenKind::LessThan => Expr::LessThan(lhs, rhs),
-            TokenKind::GreaterThan => Expr::GreaterThan(lhs, rhs),
-            TokenKind::LessThanEqual => Expr::LessThanOrEqual(lhs, rhs),
-            TokenKind::GreaterThanEqual => Expr::GreaterThanOrEqual(lhs, rhs),
-            TokenKind::AmpersandAmpersand => Expr::LogicalAnd(lhs, rhs),
-            TokenKind::PipePipe => Expr::LogicalOr(lhs, rhs),
-            TokenKind::Pipe => Expr::BitwiseOr(lhs, rhs),
-            TokenKind::Caret => Expr::BitwiseXor(lhs, rhs),
-            TokenKind::Ampersand => Expr::BitwiseAnd(lhs, rhs),
-            TokenKind::LessThanLessThan => Expr::LeftShift(lhs, rhs),
-            TokenKind::GreaterThanGreaterThan => Expr::RightShift(lhs, rhs),
-            _ => unreachable!(),
+    fn create_binary_expr(
+        &self,
+        lhs: Expr,
+        rhs: Expr,
+        op: TokenKind,
+    ) -> Result<Expr, ParserError> {
+        if op.is_assignment() {
+            let lhs = Box::new(lhs);
+            let rhs = Box::new(rhs);
+            match op {
+                TokenKind::Equal => Ok(Expr::Assign(lhs, rhs)),
+                TokenKind::PlusEqual => Ok(Expr::AssignAdd(lhs, rhs)),
+                TokenKind::MinusEqual => Ok(Expr::AssignSub(lhs, rhs)),
+                TokenKind::AsteriskEqual => Ok(Expr::AssignMul(lhs, rhs)),
+                TokenKind::SlashEqual => Ok(Expr::AssignDiv(lhs, rhs)),
+                TokenKind::PercentEqual => Ok(Expr::AssignMod(lhs, rhs)),
+                TokenKind::LessThanLessThanEqual => Ok(Expr::AssignLeftShift(lhs, rhs)),
+                TokenKind::GreaterThanGreaterThanEqual => Ok(Expr::AssignRightShift(lhs, rhs)),
+                TokenKind::AmpersandEqual => Ok(Expr::AssignBitwiseAnd(lhs, rhs)),
+                TokenKind::CaretEqual => Ok(Expr::AssignBitwiseXor(lhs, rhs)),
+                TokenKind::PipeEqual => Ok(Expr::AssignBitwiseOr(lhs, rhs)),
+                _ => unreachable!(),
+            }
+        } else {
+            let lhs = Box::new(lhs);
+            let rhs = Box::new(rhs);
+            match op {
+                TokenKind::Comma => Ok(Expr::Comma(lhs, rhs)),
+                TokenKind::Plus => Ok(Expr::Add(lhs, rhs)),
+                TokenKind::Minus => Ok(Expr::Sub(lhs, rhs)),
+                TokenKind::Star => Ok(Expr::Mul(lhs, rhs)),
+                TokenKind::Slash => Ok(Expr::Div(lhs, rhs)),
+                TokenKind::Percent => Ok(Expr::Mod(lhs, rhs)),
+                TokenKind::EqualEqual => Ok(Expr::Equal(lhs, rhs)),
+                TokenKind::BangEqual => Ok(Expr::NotEqual(lhs, rhs)),
+                TokenKind::LessThan => Ok(Expr::LessThan(lhs, rhs)),
+                TokenKind::GreaterThan => Ok(Expr::GreaterThan(lhs, rhs)),
+                TokenKind::LessThanEqual => Ok(Expr::LessThanOrEqual(lhs, rhs)),
+                TokenKind::GreaterThanEqual => Ok(Expr::GreaterThanOrEqual(lhs, rhs)),
+                TokenKind::AmpersandAmpersand => Ok(Expr::LogicalAnd(lhs, rhs)),
+                TokenKind::PipePipe => Ok(Expr::LogicalOr(lhs, rhs)),
+                TokenKind::Pipe => Ok(Expr::BitwiseOr(lhs, rhs)),
+                TokenKind::Caret => Ok(Expr::BitwiseXor(lhs, rhs)),
+                TokenKind::Ampersand => Ok(Expr::BitwiseAnd(lhs, rhs)),
+                TokenKind::LessThanLessThan => Ok(Expr::LeftShift(lhs, rhs)),
+                TokenKind::GreaterThanGreaterThan => Ok(Expr::RightShift(lhs, rhs)),
+                _ => unreachable!(),
+            }
         }
     }
 
@@ -589,12 +602,12 @@ impl Parser {
             self.eat()?;
             match kind {
                 TokenKind::PlusPlus => {
-                    let rhs = self.parse_pratt_expr(r_bp)?;
-                    Expr::PreIncrement(Box::new(rhs))
+                    let expr = self.parse_pratt_expr(r_bp)?;
+                    Expr::PreIncrement(Box::new(expr))
                 }
                 TokenKind::MinusMinus => {
-                    let rhs = self.parse_pratt_expr(r_bp)?;
-                    Expr::PreDecrement(Box::new(rhs))
+                    let expr = self.parse_pratt_expr(r_bp)?;
+                    Expr::PreDecrement(Box::new(expr))
                 }
                 TokenKind::Plus => self.parse_pratt_expr(r_bp)?,
                 TokenKind::Minus => {
@@ -688,7 +701,7 @@ impl Parser {
                             return Err(ParserError::UnexpectedToken(token));
                         }
                     }
-                    _ => self.create_binary_expr(lhs, rhs, kind),
+                    _ => self.create_binary_expr(lhs, rhs, kind)?,
                 };
                 continue;
             }
@@ -782,7 +795,7 @@ impl Parser {
             }
             TokenKind::Ampersand => {
                 self.eat()?;
-                let expr = self.parse_primary()?;
+                let expr = self.parse_pratt_expr(15)?;
                 Ok(Expr::AddressOf(Box::new(expr)))
             }
             TokenKind::Minus => {
@@ -1175,7 +1188,11 @@ impl Parser {
         let is_static = self.eat_token(&TokenKind::Keyword(KeywordKind::Static))?;
         let base_type = self.parse_type_specifier()?;
         if self.eat_token(&TokenKind::Semicolon)? {
-            return Ok(Stmt::Declaration(Box::new(base_type), ThinVec::new(), is_static));
+            return Ok(Stmt::Declaration(
+                Box::new(base_type),
+                ThinVec::new(),
+                is_static,
+            ));
         }
         let mut declarators = ThinVec::new();
         loop {

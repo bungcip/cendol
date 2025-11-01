@@ -2,12 +2,12 @@ use crate::common::SourceSpan;
 use crate::parser::ast::{
     AssignOp, BinOp, Designator, Expr, ForInit, Initializer, Stmt, TranslationUnit, Type,
     TypedDeclarator, TypedDesignator, TypedExpr, TypedForInit, TypedFunctionDecl, TypedInitializer,
-    TypedStmt, TypedTranslationUnit,
+    TypedLValue, TypedStmt, TypedTranslationUnit,
 };
 use crate::parser::string_interner::StringInterner;
 use crate::semantic::error::SemanticError;
-use thin_vec::ThinVec;
 use std::collections::HashMap;
+use thin_vec::ThinVec;
 mod expressions;
 use expressions::TypedExpression;
 use symbol_table::GlobalSymbol as StringId;
@@ -116,6 +116,16 @@ impl SemanticAnalyzer {
         let mut analyzer = Self::new();
         analyzer.add_builtin_functions();
         analyzer
+    }
+
+    fn check_lvalue(&mut self, expr: TypedExpr) -> Result<TypedLValue, SemanticError> {
+        match expr {
+            TypedExpr::Variable(name, span, ty) => Ok(TypedLValue::Variable(name, span, ty)),
+            TypedExpr::Deref(expr, ty) => Ok(TypedLValue::Deref(expr, ty)),
+            TypedExpr::Member(expr, member, ty) => Ok(TypedLValue::Member(expr, member, ty)),
+            TypedExpr::String(s, ty) => Ok(TypedLValue::String(s, ty)),
+            _ => Err(SemanticError::NotAnLvalue),
+        }
     }
 
     /// Adds built-in functions to the symbol table.
@@ -359,7 +369,7 @@ impl SemanticAnalyzer {
                     ty: symbol.ty.clone(),
                     name: name.clone(),
                     params: ThinVec::new(), // Built-ins don't have specified params in this context
-                    is_variadic: true, // Assume built-ins can be variadic
+                    is_variadic: true,     // Assume built-ins can be variadic
                     is_inline: false,
                     is_noreturn: false,
                 });
@@ -887,58 +897,78 @@ impl SemanticAnalyzer {
         let lhs_typed = self.check_expression(lhs.clone(), filename);
         let rhs_typed = self.check_expression(rhs.clone(), filename);
 
-        if !is_lvalue(&lhs_typed) {
-            self.errors.push((
-                SemanticError::NotAnLvalue,
-                filename.to_string(),
-                lhs_typed.span(),
-            ));
-        }
+        let lhs_lvalue = match self.check_lvalue(lhs_typed.clone()) {
+            Ok(lvalue) => lvalue,
+            Err(err) => {
+                self.errors
+                    .push((err, filename.to_string(), lhs_typed.span()));
+                // Create a dummy l-value to continue analysis
+                TypedLValue::Variable(
+                    StringInterner::intern(""),
+                    SourceSpan::default(),
+                    Type::Int,
+                )
+            }
+        };
 
-        if let Type::Const(_) = &lhs_typed.ty().unwrap_volatile() {
+        let lhs_ty = lhs_lvalue.ty().clone();
+        let lhs_span = match &lhs_lvalue {
+            TypedLValue::Variable(_, span, _) => *span,
+            TypedLValue::Deref(expr, _) => expr.span(),
+            TypedLValue::Member(expr, _, _) => expr.span(),
+            TypedLValue::String(_, _) => SourceSpan::default(),
+        };
+
+        if !lhs_lvalue.is_modifiable() {
             self.errors.push((
                 SemanticError::AssignmentToConst,
                 filename.to_string(),
-                lhs_typed.span(),
+                lhs_span,
+            ));
+        } else if let Type::Const(_) = &lhs_ty.unwrap_volatile() {
+            self.errors.push((
+                SemanticError::AssignmentToConst,
+                filename.to_string(),
+                lhs_span,
             ));
         }
 
-        let rhs_cast = rhs_typed.implicit_cast(lhs_typed.ty().clone());
-        let result_ty = lhs_typed.ty().clone();
+        let rhs_cast = rhs_typed.implicit_cast(lhs_ty.clone());
+        let result_ty = lhs_ty;
 
         match op {
             AssignOp::Assign => {
-                TypedExpr::Assign(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
+                TypedExpr::Assign(Box::new(lhs_lvalue), Box::new(rhs_cast), result_ty)
             }
             AssignOp::Add => {
-                TypedExpr::AssignAdd(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
+                TypedExpr::AssignAdd(Box::new(lhs_lvalue), Box::new(rhs_cast), result_ty)
             }
             AssignOp::Sub => {
-                TypedExpr::AssignSub(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
+                TypedExpr::AssignSub(Box::new(lhs_lvalue), Box::new(rhs_cast), result_ty)
             }
             AssignOp::Mul => {
-                TypedExpr::AssignMul(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
+                TypedExpr::AssignMul(Box::new(lhs_lvalue), Box::new(rhs_cast), result_ty)
             }
             AssignOp::Div => {
-                TypedExpr::AssignDiv(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
+                TypedExpr::AssignDiv(Box::new(lhs_lvalue), Box::new(rhs_cast), result_ty)
             }
             AssignOp::Mod => {
-                TypedExpr::AssignMod(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
+                TypedExpr::AssignMod(Box::new(lhs_lvalue), Box::new(rhs_cast), result_ty)
             }
             AssignOp::LeftShift => {
-                TypedExpr::AssignLeftShift(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
+                TypedExpr::AssignLeftShift(Box::new(lhs_lvalue), Box::new(rhs_cast), result_ty)
             }
             AssignOp::RightShift => {
-                TypedExpr::AssignRightShift(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
+                TypedExpr::AssignRightShift(Box::new(lhs_lvalue), Box::new(rhs_cast), result_ty)
             }
             AssignOp::BitwiseAnd => {
-                TypedExpr::AssignBitwiseAnd(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
+                TypedExpr::AssignBitwiseAnd(Box::new(lhs_lvalue), Box::new(rhs_cast), result_ty)
             }
             AssignOp::BitwiseXor => {
-                TypedExpr::AssignBitwiseXor(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
+                TypedExpr::AssignBitwiseXor(Box::new(lhs_lvalue), Box::new(rhs_cast), result_ty)
             }
             AssignOp::BitwiseOr => {
-                TypedExpr::AssignBitwiseOr(Box::new(lhs_typed), Box::new(rhs_cast), result_ty)
+                TypedExpr::AssignBitwiseOr(Box::new(lhs_lvalue), Box::new(rhs_cast), result_ty)
             }
         }
     }
@@ -1050,11 +1080,22 @@ impl SemanticAnalyzer {
                 TypedExpr::Deref(Box::new(typed), result_ty)
             }
             Expr::AddressOf(expr) => {
-                let typed = self.check_expression(*expr, filename);
-                TypedExpr::AddressOf(
-                    Box::new(typed.clone()),
-                    Type::Pointer(Box::new(typed.ty().clone())),
-                )
+                let typed_expr = self.check_expression(*expr, filename);
+                let lvalue = match self.check_lvalue(typed_expr.clone()) {
+                    Ok(lvalue) => lvalue,
+                    Err(err) => {
+                        self.errors
+                            .push((err, filename.to_string(), typed_expr.span()));
+                        // Create a dummy l-value to continue analysis
+                        TypedLValue::Variable(
+                            StringInterner::intern(""),
+                            SourceSpan::default(),
+                            Type::Int,
+                        )
+                    }
+                };
+                let ty = lvalue.ty().clone();
+                TypedExpr::AddressOf(Box::new(lvalue), Type::Pointer(Box::new(ty)))
             }
             Expr::SizeofType(ty) => TypedExpr::SizeofType(ty, Type::Int),
             Expr::AlignofType(ty) => TypedExpr::AlignofType(ty, Type::Int),
@@ -1188,20 +1229,100 @@ impl SemanticAnalyzer {
                 TypedExpr::CompoundLiteral(ty, Box::new(typed_initializer), final_ty)
             }
             Expr::PreIncrement(expr) => {
-                let typed = self.check_expression(*expr, filename);
-                TypedExpr::PreIncrement(Box::new(typed.clone()), typed.ty().clone())
+                let typed_expr = self.check_expression(*expr, filename);
+                let lvalue = match self.check_lvalue(typed_expr.clone()) {
+                    Ok(lvalue) => lvalue,
+                    Err(err) => {
+                        self.errors
+                            .push((err, filename.to_string(), typed_expr.span()));
+                        TypedLValue::Variable(
+                            StringInterner::intern(""),
+                            SourceSpan::default(),
+                            Type::Int,
+                        )
+                    }
+                };
+                if !lvalue.is_modifiable() {
+                    self.errors.push((
+                        SemanticError::AssignmentToConst,
+                        filename.to_string(),
+                        typed_expr.span(),
+                    ));
+                }
+                let ty = lvalue.ty().clone();
+                TypedExpr::PreIncrement(Box::new(lvalue), ty)
             }
             Expr::PreDecrement(expr) => {
-                let typed = self.check_expression(*expr, filename);
-                TypedExpr::PreDecrement(Box::new(typed.clone()), typed.ty().clone())
+                let typed_expr = self.check_expression(*expr, filename);
+                let lvalue = match self.check_lvalue(typed_expr.clone()) {
+                    Ok(lvalue) => lvalue,
+                    Err(err) => {
+                        self.errors
+                            .push((err, filename.to_string(), typed_expr.span()));
+                        TypedLValue::Variable(
+                            StringInterner::intern(""),
+                            SourceSpan::default(),
+                            Type::Int,
+                        )
+                    }
+                };
+                if !lvalue.is_modifiable() {
+                    self.errors.push((
+                        SemanticError::AssignmentToConst,
+                        filename.to_string(),
+                        typed_expr.span(),
+                    ));
+                }
+                let ty = lvalue.ty().clone();
+                TypedExpr::PreDecrement(Box::new(lvalue), ty)
             }
             Expr::PostIncrement(expr) => {
-                let typed = self.check_expression(*expr, filename);
-                TypedExpr::PostIncrement(Box::new(typed.clone()), typed.ty().clone())
+                let typed_expr = self.check_expression(*expr, filename);
+                let lvalue = match self.check_lvalue(typed_expr.clone()) {
+                    Ok(lvalue) => lvalue,
+                    Err(err) => {
+                        self.errors
+                            .push((err, filename.to_string(), typed_expr.span()));
+                        TypedLValue::Variable(
+                            StringInterner::intern(""),
+                            SourceSpan::default(),
+                            Type::Int,
+                        )
+                    }
+                };
+                if !lvalue.is_modifiable() {
+                    self.errors.push((
+                        SemanticError::AssignmentToConst,
+                        filename.to_string(),
+                        typed_expr.span(),
+                    ));
+                }
+                let ty = lvalue.ty().clone();
+                TypedExpr::PostIncrement(Box::new(lvalue), ty)
             }
             Expr::PostDecrement(expr) => {
-                let typed = self.check_expression(*expr, filename);
-                TypedExpr::PostDecrement(Box::new(typed.clone()), typed.ty().clone())
+                let typed_expr = self.check_expression(*expr, filename);
+                let lvalue = match self.check_lvalue(typed_expr.clone()) {
+                    Ok(lvalue) => lvalue,
+                    Err(err) => {
+                        self.errors
+                            .push((err, filename.to_string(), typed_expr.span()));
+                        TypedLValue::Variable(
+                            StringInterner::intern(""),
+                            SourceSpan::default(),
+                            Type::Int,
+                        )
+                    }
+                };
+                if !lvalue.is_modifiable() {
+                    self.errors.push((
+                        SemanticError::AssignmentToConst,
+                        filename.to_string(),
+                        typed_expr.span(),
+                    ));
+                }
+                let ty = lvalue.ty().clone();
+                TypedExpr::PostDecrement(Box::new(lvalue), ty)
             }
             _ => todo!("This expression is not supported yet"),
         }
@@ -1241,6 +1362,7 @@ impl SemanticAnalyzer {
     }
 
     /// Performs integer promotions on a type.
+    #[allow(dead_code)]
     fn integer_promote(&self, ty: &Type) -> Type {
         match ty {
             Type::Bool | Type::Char | Type::UnsignedChar | Type::Short | Type::UnsignedShort => {
@@ -1307,14 +1429,4 @@ fn is_const_expr(initializer: &TypedInitializer) -> bool {
             .iter()
             .all(|(_, initializer)| is_const_expr(initializer)),
     }
-}
-
-fn is_lvalue(expr: &TypedExpr) -> bool {
-    matches!(
-        expr,
-        TypedExpr::Variable(_, _, _)
-            | TypedExpr::Deref(_, _)
-            | TypedExpr::Member(_, _, _)
-            | TypedExpr::PointerMember(_, _, _)
-    )
 }

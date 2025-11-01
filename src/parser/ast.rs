@@ -511,17 +511,17 @@ pub enum TypedExpr {
     Char(StringId, Type),
     Variable(StringId, SourceSpan, Type),
     Call(StringId, ThinVec<TypedExpr>, SourceSpan, Type),
-    Assign(Box<TypedExpr>, Box<TypedExpr>, Type),
-    AssignAdd(Box<TypedExpr>, Box<TypedExpr>, Type),
-    AssignSub(Box<TypedExpr>, Box<TypedExpr>, Type),
-    AssignMul(Box<TypedExpr>, Box<TypedExpr>, Type),
-    AssignDiv(Box<TypedExpr>, Box<TypedExpr>, Type),
-    AssignMod(Box<TypedExpr>, Box<TypedExpr>, Type),
-    AssignLeftShift(Box<TypedExpr>, Box<TypedExpr>, Type),
-    AssignRightShift(Box<TypedExpr>, Box<TypedExpr>, Type),
-    AssignBitwiseAnd(Box<TypedExpr>, Box<TypedExpr>, Type),
-    AssignBitwiseXor(Box<TypedExpr>, Box<TypedExpr>, Type),
-    AssignBitwiseOr(Box<TypedExpr>, Box<TypedExpr>, Type),
+    Assign(Box<TypedLValue>, Box<TypedExpr>, Type),
+    AssignAdd(Box<TypedLValue>, Box<TypedExpr>, Type),
+    AssignSub(Box<TypedLValue>, Box<TypedExpr>, Type),
+    AssignMul(Box<TypedLValue>, Box<TypedExpr>, Type),
+    AssignDiv(Box<TypedLValue>, Box<TypedExpr>, Type),
+    AssignMod(Box<TypedLValue>, Box<TypedExpr>, Type),
+    AssignLeftShift(Box<TypedLValue>, Box<TypedExpr>, Type),
+    AssignRightShift(Box<TypedLValue>, Box<TypedExpr>, Type),
+    AssignBitwiseAnd(Box<TypedLValue>, Box<TypedExpr>, Type),
+    AssignBitwiseXor(Box<TypedLValue>, Box<TypedExpr>, Type),
+    AssignBitwiseOr(Box<TypedLValue>, Box<TypedExpr>, Type),
     Add(Box<TypedExpr>, Box<TypedExpr>, Type),
     Sub(Box<TypedExpr>, Box<TypedExpr>, Type),
     Mul(Box<TypedExpr>, Box<TypedExpr>, Type),
@@ -546,7 +546,7 @@ pub enum TypedExpr {
     BitwiseNot(Box<TypedExpr>, Type),
     Sizeof(Box<TypedExpr>, Type),
     Deref(Box<TypedExpr>, Type),
-    AddressOf(Box<TypedExpr>, Type),
+    AddressOf(Box<TypedLValue>, Type),
     SizeofType(Type, Type),
     Alignof(Box<TypedExpr>, Type),
     AlignofType(Type, Type),
@@ -557,10 +557,41 @@ pub enum TypedExpr {
     ExplicitCast(Box<Type>, Box<TypedExpr>, Type),
     ImplicitCast(Box<Type>, Box<TypedExpr>, Type),
     CompoundLiteral(Box<Type>, Box<TypedInitializer>, Type),
-    PreIncrement(Box<TypedExpr>, Type),
-    PreDecrement(Box<TypedExpr>, Type),
-    PostIncrement(Box<TypedExpr>, Type),
-    PostDecrement(Box<TypedExpr>, Type),
+    PreIncrement(Box<TypedLValue>, Type),
+    PreDecrement(Box<TypedLValue>, Type),
+    PostIncrement(Box<TypedLValue>, Type),
+    PostDecrement(Box<TypedLValue>, Type),
+}
+
+/// Represents a typed LValue expression with type information.
+#[derive(Debug, PartialEq, Clone)]
+pub enum TypedLValue {
+    /// A variable identifier.
+    Variable(StringId, SourceSpan, Type),
+    /// A dereference of a pointer expression.
+    Deref(Box<TypedExpr>, Type),
+    /// A member access of a struct/union expression.
+    Member(Box<TypedExpr>, StringId, Type),
+    /// A string literal.
+    String(StringId, Type),
+}
+
+impl TypedLValue {
+    pub fn ty(&self) -> &Type {
+        match self {
+            TypedLValue::Variable(_, _, ty) => ty,
+            TypedLValue::Deref(_, ty) => ty,
+            TypedLValue::Member(_, _, ty) => ty,
+            TypedLValue::String(_, ty) => ty,
+        }
+    }
+
+    pub fn is_modifiable(&self) -> bool {
+        match self {
+            TypedLValue::String(_, _) => false,
+            _ => true,
+        }
+    }
 }
 
 impl TypedExpr {
@@ -601,7 +632,7 @@ impl TypedExpr {
         }
     }
 
-    pub fn get_assign_expr(&self) -> Option<(AssignOp, &TypedExpr, &TypedExpr)> {
+    pub fn get_assign_expr(&self) -> Option<(AssignOp, &TypedLValue, &TypedExpr)> {
         match self {
             TypedExpr::Assign(lhs, rhs, _) => Some((AssignOp::Assign, lhs, rhs)),
             TypedExpr::AssignAdd(lhs, rhs, _) => Some((AssignOp::Add, lhs, rhs)),

@@ -1,6 +1,7 @@
 use crate::codegen::error::{CodegenError, CodegenResult};
 use crate::parser::ast::{
-    AssignOp, BinOp, Type, TypedDesignator, TypedExpr, TypedForInit, TypedInitializer, TypedStmt,
+    AssignOp, BinOp, Type, TypedDesignator, TypedExpr, TypedForInit, TypedInitializer, TypedLValue,
+    TypedStmt,
 };
 use crate::parser::string_interner::StringId;
 use cranelift::prelude::*;
@@ -520,15 +521,15 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     }
 
     /// Translates an expression into a Cranelift `Value`.
-    fn translate_lvalue(&mut self, expr: TypedExpr) -> Result<(Value, Type), CodegenError> {
+    fn translate_lvalue(&mut self, expr: TypedLValue) -> Result<(Value, Type), CodegenError> {
         match expr {
-            TypedExpr::Variable(name, _, ty) => {
+            TypedLValue::Variable(name, _, ty) => {
                 if let Some((_var_opt, slot_opt, _)) = self.variables.get(&name) {
                     if let Some(slot) = slot_opt {
                         let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
                         Ok((addr, ty))
                     } else {
-                        Err(CodegenError::InvalidLValue)
+                        unreachable!("Cannot take address of SSA variable")
                     }
                 } else if let Some((id, _)) = self.static_local_variables.get(&name) {
                     let local_id = self.module.declare_data_in_func(*id, self.builder.func);
@@ -541,11 +542,11 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     Ok((addr, ty.clone()))
                 }
             }
-            TypedExpr::Deref(ptr, ty) => {
+            TypedLValue::Deref(ptr, ty) => {
                 let (ptr, _) = self.translate_typed_expr(*ptr)?;
                 Ok((ptr, ty))
             }
-            TypedExpr::Member(expr, member, _ty) => {
+            TypedLValue::Member(expr, member, _ty) => {
                 let (ptr, expr_ty) = self.translate_typed_expr(*expr)?;
                 let s = self.get_real_type(&expr_ty)?;
                 if let Type::Struct(_, members) = s {
@@ -571,10 +572,31 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         .unwrap();
                     Ok((ptr, member_ty))
                 } else {
-                    Err(CodegenError::NotAStruct)
+                    unreachable!("Not a struct or union")
                 }
             }
-            _ => Err(CodegenError::InvalidLValue),
+            TypedLValue::String(s, ty) => {
+                let string_value = s.as_str();
+                let unescaped = unescape(&string_value);
+                let mut data = Vec::with_capacity(unescaped.len() + 1);
+                data.extend_from_slice(&unescaped);
+                data.push(0); // Null terminator
+
+                // Create a unique name for the string literal to avoid collisions
+                let name = format!(".L.str{}", self.anonymous_string_count);
+                *self.anonymous_string_count += 1;
+
+                let id = self
+                    .module
+                    .declare_data(&name, Linkage::Local, false, false)
+                    .unwrap();
+                let mut data_desc = cranelift_module::DataDescription::new();
+                data_desc.define(data.into_boxed_slice());
+                self.module.define_data(id, &data_desc).unwrap();
+
+                let local_id = self.module.declare_data_in_func(id, self.builder.func);
+                Ok((self.builder.ins().global_value(types::I64, local_id), ty))
+            }
         }
     }
 
@@ -693,7 +715,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     fn translate_assign_expr(
         &mut self,
         op: AssignOp,
-        lhs: &TypedExpr,
+        lhs: &TypedLValue,
         rhs: &TypedExpr,
         ty: &Type,
     ) -> Result<(Value, Type), CodegenError> {
@@ -1315,66 +1337,9 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
                 Ok((self.builder.block_params(merge_block)[0], ty))
             }
-            TypedExpr::AddressOf(expr, ty) => {
-                if let TypedExpr::Variable(name, _, _var_ty) = *expr {
-                    if let Some((var_opt, slot_opt, _)) = self.variables.get(&name) {
-                        if let Some(slot) = slot_opt {
-                            let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
-                            Ok((addr, ty))
-                        } else if let Some(_var) = var_opt {
-                            // Can't take address of SSA variable
-                            Err(CodegenError::InvalidLValue)
-                        } else {
-                            Err(CodegenError::InvalidLValue)
-                        }
-                    } else {
-                        Err(CodegenError::InvalidLValue)
-                    }
-                } else if let TypedExpr::Deref(ptr_expr, _) = *expr {
-                    self.translate_typed_expr(*ptr_expr)
-                } else if let TypedExpr::Member(struct_expr, member_name, _) = *expr {
-                    let (base_ptr, base_ty) = self.translate_typed_expr(*struct_expr)?;
-                    let real_ty = self.get_real_type(&base_ty)?;
-
-                    match real_ty {
-                        Type::Struct(_, members) => {
-                            let mut offset = 0;
-                            let mut member_ty = None;
-                            for m in members {
-                                let member_alignment = self.get_type_alignment(&m.ty);
-                                offset = (offset + member_alignment - 1) & !(member_alignment - 1);
-                                if m.name == member_name {
-                                    member_ty = Some(m.ty.clone());
-                                    break;
-                                }
-                                offset += self.get_type_size(&m.ty);
-                            }
-                            let member_addr = self.builder.ins().iadd_imm(base_ptr, offset as i64);
-                            Ok((member_addr, Type::Pointer(Box::new(member_ty.unwrap()))))
-                        }
-                        Type::Union(_, members) => {
-                            let member_ty = members
-                                .iter()
-                                .find(|m| m.name == member_name)
-                                .map(|m| m.ty.clone())
-                                .unwrap();
-                            Ok((base_ptr, Type::Pointer(Box::new(member_ty))))
-                        }
-                        _ => Err(CodegenError::NotAStruct),
-                    }
-                } else if let TypedExpr::CompoundLiteral(literal_ty, initializer, _) = *expr {
-                    let size = self.get_type_size(&literal_ty);
-                    let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-                        StackSlotKind::ExplicitSlot,
-                        size,
-                        0,
-                    ));
-                    let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
-                    self.translate_initializer(addr, &literal_ty, &initializer)?;
-                    Ok((addr, ty))
-                } else {
-                    return Err(CodegenError::InvalidLValue);
-                }
+            TypedExpr::AddressOf(lvalue, ty) => {
+                let (addr, _) = self.translate_lvalue(*lvalue)?;
+                Ok((addr, ty))
             }
             TypedExpr::Sizeof(expr, ty) => {
                 let (_, expr_ty) = self.translate_typed_expr(*expr)?;
@@ -1446,7 +1411,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         let loaded_val = self.load_variable(slot, &ty);
                         Ok((loaded_val, ty))
                     } else {
-                        Err(CodegenError::InvalidLValue)
+                        unreachable!("Cannot take address of SSA variable")
                     }
                 } else if let Some((id, _)) = self.static_local_variables.get(&name) {
                     let local_id = self.module.declare_data_in_func(*id, self.builder.func);

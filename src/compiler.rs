@@ -100,7 +100,20 @@ impl Compiler {
 
         for def in &self.cli.define {
             if let Err(err) = self.preprocessor.define(def) {
-                let report = Report::new(err.to_string(), None, None, self.cli.verbose, false);
+                let (path, span) = if let Some(location) = err.span() {
+                    let path = self
+                        .preprocessor
+                        .file_manager()
+                        .get_path(location.file_id)
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .to_string();
+                    (Some(path), Some(location))
+                } else {
+                    (Some(filename.to_string()), None)
+                };
+                let report = Report::new(err.to_string(), path, span, self.cli.verbose, false);
                 return Err(report);
             }
         }
@@ -109,7 +122,20 @@ impl Compiler {
             let output = match self.preprocessor.preprocess(&input, filename) {
                 Ok(output) => output,
                 Err(err) => {
-                    let report = Report::new(err.to_string(), None, None, self.cli.verbose, false);
+                    let (path, span) = if let Some(location) = err.span() {
+                        let path = self
+                            .preprocessor
+                            .file_manager()
+                            .get_path(location.file_id)
+                            .unwrap()
+                            .to_str()
+                            .unwrap()
+                            .to_string();
+                        (Some(path), Some(location))
+                    } else {
+                        (Some(filename.to_string()), None)
+                    };
+                    let report = Report::new(err.to_string(), path, span, self.cli.verbose, false);
                     return Err(report);
                 }
             };
@@ -127,7 +153,20 @@ impl Compiler {
         let tokens = match self.preprocessor.preprocess(&input, filename) {
             Ok(tokens) => tokens,
             Err(err) => {
-                let report = Report::new(err.to_string(), None, None, self.cli.verbose, false);
+                let (path, span) = if let Some(location) = err.span() {
+                    let path = self
+                        .preprocessor
+                        .file_manager()
+                        .get_path(location.file_id)
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .to_string();
+                    (Some(path), Some(location))
+                } else {
+                    (Some(filename.to_string()), None)
+                };
+                let report = Report::new(err.to_string(), path, span, self.cli.verbose, false);
                 return Err(report);
             }
         };
@@ -146,7 +185,7 @@ impl Compiler {
                     ParserError::UnexpectedToken(tok) => {
                         ("Unexpected token".to_string(), Some(tok.span))
                     }
-                    ParserError::UnexpectedEof => ("Unexpected EOF".to_string(), None),
+                    ParserError::UnexpectedEof(span) => ("Unexpected EOF".to_string(), Some(span)),
                 };
 
                 let (path, span) = if let Some(location) = location {

@@ -9,5 +9,5 @@ pub enum ParserError {
     UnexpectedToken(Token),
     /// The end of the input was reached unexpectedly.
     #[error("Unexpected end of input")]
-    UnexpectedEof,
+    UnexpectedEof(crate::common::SourceSpan),
 }

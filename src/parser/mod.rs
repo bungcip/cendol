@@ -85,7 +85,7 @@ impl Parser {
         self.tokens
             .get(self.position)
             .cloned()
-            .ok_or(ParserError::UnexpectedEof)
+            .ok_or(ParserError::UnexpectedEof(SourceSpan::default()))
     }
 
     /// Returns the kind of the current token.
@@ -98,7 +98,7 @@ impl Parser {
             .get(self.position + 1)
             .cloned()
             .map(|t| t.kind)
-            .ok_or(ParserError::UnexpectedEof)
+            .ok_or(ParserError::UnexpectedEof(SourceSpan::default()))
     }
 
     /// Consumes the current token and return the last token. will error if current token is eof
@@ -106,7 +106,7 @@ impl Parser {
         let current = self
             .tokens
             .get(self.position)
-            .ok_or(ParserError::UnexpectedEof);
+            .ok_or(ParserError::UnexpectedEof(SourceSpan::default()));
         self.position += 1;
         current
     }
@@ -777,7 +777,8 @@ impl Parser {
                             self.eat()?;
                             let index = self.parse_expr()?;
                             self.expect_punct(TokenKind::RightBracket)?;
-                            expr = Expr::Deref(Box::new(Expr::Add(Box::new(expr), Box::new(index))));
+                            expr =
+                                Expr::Deref(Box::new(Expr::Add(Box::new(expr), Box::new(index))));
                         }
                         _ => break,
                     }

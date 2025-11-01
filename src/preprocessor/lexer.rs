@@ -492,7 +492,10 @@ impl<'a> Lexer<'a> {
                 self.at_start_of_line = false;
                 Ok(Token::new(TokenKind::RightBracket, self.current_span()))
             }
-            _ => Err(PreprocessorError::UnexpectedChar(c)),
+            _ => Err(PreprocessorError::UnexpectedChar(
+                c,
+                Some(self.current_span()),
+            )),
         }
     }
 
@@ -534,19 +537,31 @@ impl<'a> Lexer<'a> {
                         }
                     } else {
                         // If after skipping whitespace we don't find alphabetic character, it's invalid
-                        return Err(PreprocessorError::UnknownDirective("".to_string()));
+                        return Err(PreprocessorError::UnknownDirective(
+                            "".to_string(),
+                            Some(self.current_span()),
+                        ));
                     }
                 } else {
                     // End of input reached
-                    return Err(PreprocessorError::UnknownDirective("".to_string()));
+                    return Err(PreprocessorError::UnknownDirective(
+                        "".to_string(),
+                        Some(self.current_span()),
+                    ));
                 }
             } else {
                 // If the first character after # is not alphabetic or whitespace, it's not a valid directive
-                return Err(PreprocessorError::UnknownDirective("".to_string()));
+                return Err(PreprocessorError::UnknownDirective(
+                    "".to_string(),
+                    Some(self.current_span()),
+                ));
             }
         } else {
             // End of input reached
-            return Err(PreprocessorError::UnknownDirective("".to_string()));
+            return Err(PreprocessorError::UnknownDirective(
+                "".to_string(),
+                Some(self.current_span()),
+            ));
         }
 
         self.at_start_of_line = false;
@@ -566,10 +581,16 @@ impl<'a> Lexer<'a> {
             "pragma" => {
                 // Handle pragma by reading the rest of the line as a directive
                 // For now, treat it as an unknown directive to avoid parsing issues
-                return Err(PreprocessorError::UnknownDirective("pragma".to_string()));
+                return Err(PreprocessorError::UnknownDirective(
+                    "pragma".to_string(),
+                    Some(self.current_span()),
+                ));
             }
             _ => {
-                return Err(PreprocessorError::UnknownDirective(directive));
+                return Err(PreprocessorError::UnknownDirective(
+                    directive,
+                    Some(self.current_span()),
+                ));
             }
         };
         Ok(Token::new(TokenKind::Directive(kind), self.current_span()))

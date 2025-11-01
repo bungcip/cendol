@@ -1,6 +1,6 @@
 use crate::{
     codegen::error::CodegenError, parser::error::ParserError,
-    preprocessor::error::PreprocessorError,
+    preprocessor::error::PreprocessorError, semantic::error::SemanticError,
 };
 use ariadne::{Color, Config, Fmt, Label, Report as AriadneReport, ReportKind, Source};
 use thiserror::Error;
@@ -23,9 +23,15 @@ pub enum Error {
     /// An error from the preprocessor.
     #[error("{0}")]
     Preprocessor(#[from] PreprocessorError),
+
     /// An error from the parser.
     #[error("{0}")]
     Parser(#[from] ParserError),
+
+    /// An error from semantic analyzer
+    #[error("{0}")]
+    Semantic(#[from] SemanticError),
+
     /// An error from the code generator.
     #[error("{0}")]
     Codegen(#[from] CodegenError),

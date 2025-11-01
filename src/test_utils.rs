@@ -330,8 +330,8 @@ pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> 
                 crate::parser::error::ParserError::UnexpectedToken(tok) => {
                     ("Unexpected token".to_string(), Some(tok.span))
                 }
-                crate::parser::error::ParserError::UnexpectedEof => {
-                    ("Unexpected EOF".to_string(), None)
+                crate::parser::error::ParserError::UnexpectedEof(span) => {
+                    ("Unexpected EOF".to_string(), Some(span))
                 }
             };
 

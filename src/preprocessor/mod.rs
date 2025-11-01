@@ -143,13 +143,17 @@ impl Preprocessor {
     /// * `definition` - The macro definition string.
     pub fn define(&mut self, definition: &str) -> Result<(), PreprocessorError> {
         if definition.is_empty() {
-            return Err(PreprocessorError::Generic("Empty definition".to_string()));
+            return Err(PreprocessorError::Generic(
+                "Empty definition".to_string(),
+                None,
+            ));
         }
         let parts: Vec<&str> = definition.splitn(2, '=').collect();
         let name = parts[0].to_string();
         if name.is_empty() {
             return Err(PreprocessorError::Generic(
                 "Macro name must not be empty".to_string(),
+                None,
             ));
         }
         let value = if parts.len() > 1 { parts[1] } else { "1" };
@@ -172,7 +176,7 @@ impl Preprocessor {
         let file_id = self
             .file_manager
             .open(filename)
-            .map_err(|_| PreprocessorError::FileNotFound(filename.to_string()))?;
+            .map_err(|_| PreprocessorError::FileNotFound(filename.to_string(), None))?;
         let mut lexer = Lexer::new(input, file_id);
         let mut tokens = Vec::new();
         loop {
@@ -193,7 +197,7 @@ impl Preprocessor {
             let file_state = self.file_stack.last_mut().unwrap();
             if file_state.index >= file_state.tokens.len() {
                 if !self.conditional_stack.is_empty() {
-                    return Err(PreprocessorError::UnterminatedConditional);
+                    return Err(PreprocessorError::UnterminatedConditional(None));
                 }
                 self.file_stack.pop();
                 continue;
@@ -222,7 +226,7 @@ impl Preprocessor {
                     }
                     DirectiveKind::Elif => {
                         if self.conditional_stack.is_empty() {
-                            return Err(PreprocessorError::UnexpectedElif);
+                            return Err(PreprocessorError::UnexpectedElif(None));
                         }
                         let (mut condition, _end) = {
                             let file_state = self.file_stack.last().unwrap();
@@ -242,7 +246,7 @@ impl Preprocessor {
                     }
                     DirectiveKind::Else => {
                         if self.conditional_stack.is_empty() {
-                            return Err(PreprocessorError::UnexpectedElse);
+                            return Err(PreprocessorError::UnexpectedElse(None));
                         }
                         if let Some(last) = self.conditional_stack.last_mut() {
                             *last = !*last;
@@ -252,7 +256,7 @@ impl Preprocessor {
                     }
                     DirectiveKind::Endif => {
                         if self.conditional_stack.is_empty() {
-                            return Err(PreprocessorError::UnexpectedEndif);
+                            return Err(PreprocessorError::UnexpectedEndif(None));
                         }
                         self.conditional_stack.pop();
                         let file_state = self.file_stack.last_mut().unwrap();
@@ -313,7 +317,7 @@ impl Preprocessor {
                                 let file_state = self.file_stack.last().unwrap();
                                 parse_error_message(file_state.index, &file_state.tokens)?
                             };
-                            return Err(PreprocessorError::Generic(message));
+                            return Err(PreprocessorError::Generic(message, None));
                         }
                         let file_state = self.file_stack.last_mut().unwrap();
                         file_state.index = find_next_line(file_state.index, &file_state.tokens);
@@ -386,7 +390,7 @@ impl Preprocessor {
         final_tokens.extend(pending_tokens);
 
         if !self.conditional_stack.is_empty() {
-            return Err(PreprocessorError::UnterminatedConditional);
+            return Err(PreprocessorError::UnterminatedConditional(None));
         }
 
         Ok(final_tokens)
@@ -402,10 +406,13 @@ impl Preprocessor {
         let name = if let TokenKind::Identifier(name) = name_token.kind {
             name
         } else {
-            return Err(PreprocessorError::Generic(format!(
-                "Expected identifier after #define, but found {} at line {}, column {}",
-                name_token.kind, name_token.span.start_line, name_token.span.start_column
-            )));
+            return Err(PreprocessorError::Generic(
+                format!(
+                    "Expected identifier after #define, but found {} at line {}, column {}",
+                    name_token.kind, name_token.span.start_line, name_token.span.start_column
+                ),
+                Some(name_token.span),
+            ));
         };
 
         if !tokens.is_empty() && matches!(&tokens[0].kind, TokenKind::LeftParen) {
@@ -415,7 +422,7 @@ impl Preprocessor {
             loop {
                 self.consume_whitespace(tokens);
                 if tokens.is_empty() {
-                    return Err(PreprocessorError::UnexpectedEofInMacroParams);
+                    return Err(PreprocessorError::UnexpectedEofInMacroParams(None));
                 }
                 if let TokenKind::RightParen = &tokens[0].kind {
                     tokens.remove(0);
@@ -627,7 +634,7 @@ impl Preprocessor {
             }
             i += 1;
         }
-        Err(PreprocessorError::UnexpectedEofInMacroArgs)
+        Err(PreprocessorError::UnexpectedEofInMacroArgs(None))
     }
 
     /// Substitutes macro parameters with arguments.
@@ -690,12 +697,12 @@ impl Preprocessor {
                 }
             } else if let TokenKind::HashHash = &token.kind {
                 if result.is_empty() {
-                    return Err(PreprocessorError::HashHashAtStartOfMacro);
+                    return Err(PreprocessorError::HashHashAtStartOfMacro(None));
                 }
                 let mut lhs: Token = result.pop().unwrap();
                 while lhs.kind.is_whitespace() {
                     if result.is_empty() {
-                        return Err(PreprocessorError::HashHashAtStartOfMacro);
+                        return Err(PreprocessorError::HashHashAtStartOfMacro(None));
                     }
                     lhs = result.pop().unwrap();
                 }
@@ -723,7 +730,7 @@ impl Preprocessor {
                     i += 1;
                     res
                 } else {
-                    return Err(PreprocessorError::HashHashAtEndOfMacro);
+                    return Err(PreprocessorError::HashHashAtEndOfMacro(None));
                 };
 
                 let rhs_str = rhs_tokens
@@ -802,11 +809,11 @@ impl Preprocessor {
         let file_id = self
             .file_manager
             .open_include(filename, kind, includer)
-            .map_err(|_| PreprocessorError::FileNotFound(filename.to_string()))?;
+            .map_err(|_| PreprocessorError::FileNotFound(filename.to_string(), None))?;
         let content = self
             .file_manager
             .read(file_id)
-            .map_err(|_| PreprocessorError::FileNotFound(filename.to_string()))?;
+            .map_err(|_| PreprocessorError::FileNotFound(filename.to_string(), None))?;
         let mut lexer = Lexer::new(&content, file_id);
         let mut tokens = Vec::new();
         loop {
@@ -886,7 +893,7 @@ fn parse_include(
         }
     }
 
-    Err(PreprocessorError::InvalidInclude)
+    Err(PreprocessorError::InvalidInclude(None))
 }
 
 /// Parses a conditional expression.
@@ -932,6 +939,7 @@ fn eval(expr: &Expr, macros: &HashMap<String, Macro>) -> Result<i32, Preprocesso
                 TokenKind::Bang => Ok(if rhs == 0 { 1 } else { 0 }),
                 _ => Err(PreprocessorError::Generic(
                     "Invalid unary operator".to_string(),
+                    None,
                 )),
             }
         }
@@ -956,6 +964,7 @@ fn eval(expr: &Expr, macros: &HashMap<String, Macro>) -> Result<i32, Preprocesso
                 TokenKind::GreaterThanEqual => Ok(if lhs >= rhs { 1 } else { 0 }),
                 _ => Err(PreprocessorError::Generic(
                     "Invalid binary operator".to_string(),
+                    None,
                 )),
             }
         }
@@ -986,7 +995,7 @@ fn parse_identifier(
         }
         i += 1;
     }
-    Err(PreprocessorError::ExpectedIdentifierAfterDefine)
+    Err(PreprocessorError::ExpectedIdentifierAfterDefine(None))
 }
 
 /// Parses an error message.
@@ -1049,10 +1058,13 @@ fn parse_line_directive(
     let line = if let TokenKind::Number(s) = &tokens[i].kind {
         s.parse().unwrap()
     } else {
-        return Err(PreprocessorError::Generic(format!(
-            "Expected line number, but found {} at line {}, column {}",
-            tokens[i].kind, tokens[i].span.start_line, tokens[i].span.start_column
-        )));
+        return Err(PreprocessorError::Generic(
+            format!(
+                "Expected line number, but found {} at line {}, column {}",
+                tokens[i].kind, tokens[i].span.start_line, tokens[i].span.start_column
+            ),
+            Some(tokens[i].span),
+        ));
     };
     i += 1;
 
@@ -1107,21 +1119,27 @@ fn parse_expr_bp(tokens: &[Token], i: &mut usize, min_bp: u8) -> Result<Expr, Pr
                     let name = if let TokenKind::Identifier(name) = &tokens[*i].kind {
                         name.clone()
                     } else {
-                        return Err(PreprocessorError::Generic(format!(
-                            "Expected identifier, but found {} at line {}, column {}",
-                            tokens[*i].kind,
-                            tokens[*i].span.start_line,
-                            tokens[*i].span.start_column
-                        )));
+                        return Err(PreprocessorError::Generic(
+                            format!(
+                                "Expected identifier, but found {} at line {}, column {}",
+                                tokens[*i].kind,
+                                tokens[*i].span.start_line,
+                                tokens[*i].span.start_column
+                            ),
+                            Some(tokens[*i].span),
+                        ));
                     };
                     *i += 1;
                     if !matches!(tokens[*i].kind, TokenKind::RightParen) {
-                        return Err(PreprocessorError::Generic(format!(
-                            "Expected ')', but found {} at line {}, column {}",
-                            tokens[*i].kind,
-                            tokens[*i].span.start_line,
-                            tokens[*i].span.start_column
-                        )));
+                        return Err(PreprocessorError::Generic(
+                            format!(
+                                "Expected ')', but found {} at line {}, column {}",
+                                tokens[*i].kind,
+                                tokens[*i].span.start_line,
+                                tokens[*i].span.start_column
+                            ),
+                            Some(tokens[*i].span),
+                        ));
                     }
                     *i += 1;
                     name
@@ -1129,10 +1147,15 @@ fn parse_expr_bp(tokens: &[Token], i: &mut usize, min_bp: u8) -> Result<Expr, Pr
                     *i += 1;
                     name.clone()
                 } else {
-                    return Err(PreprocessorError::Generic(format!(
-                        "Expected identifier, but found {} at line {}, column {}",
-                        tokens[*i].kind, tokens[*i].span.start_line, tokens[*i].span.start_column
-                    )));
+                    return Err(PreprocessorError::Generic(
+                        format!(
+                            "Expected identifier, but found {} at line {}, column {}",
+                            tokens[*i].kind,
+                            tokens[*i].span.start_line,
+                            tokens[*i].span.start_column
+                        ),
+                        Some(tokens[*i].span),
+                    ));
                 };
                 Expr::Variable(name)
             } else {
@@ -1148,19 +1171,25 @@ fn parse_expr_bp(tokens: &[Token], i: &mut usize, min_bp: u8) -> Result<Expr, Pr
             *i += 1;
             let expr = parse_expr_bp(tokens, i, 0)?;
             if !matches!(tokens[*i].kind, TokenKind::RightParen) {
-                return Err(PreprocessorError::Generic(format!(
-                    "Expected ')', but found {} at line {}, column {}",
-                    tokens[*i].kind, tokens[*i].span.start_line, tokens[*i].span.start_column
-                )));
+                return Err(PreprocessorError::Generic(
+                    format!(
+                        "Expected ')', but found {} at line {}, column {}",
+                        tokens[*i].kind, tokens[*i].span.start_line, tokens[*i].span.start_column
+                    ),
+                    Some(tokens[*i].span),
+                ));
             }
             *i += 1;
             expr
         }
         _ => {
-            return Err(PreprocessorError::Generic(format!(
-                "Expected expression, but found {} at line {}, column {}",
-                tokens[*i].kind, tokens[*i].span.start_line, tokens[*i].span.start_column
-            )));
+            return Err(PreprocessorError::Generic(
+                format!(
+                    "Expected expression, but found {} at line {}, column {}",
+                    tokens[*i].kind, tokens[*i].span.start_line, tokens[*i].span.start_column
+                ),
+                Some(tokens[*i].span),
+            ));
         }
     };
 

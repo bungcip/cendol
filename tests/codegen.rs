@@ -62,19 +62,19 @@ mod tests {
         assert_eq!(exit_code, 24);
     }
 
-    // /// Test code generation with ternary in variable assignment
-    // #[test]
-    // fn test_ternary_assignment() {
-    //     let input = r#"
-    //     int main() {
-    //         int result;
-    //         result = 1 ? 100 : 200;
-    //         return result;
-    //     }
-    //     "#;
-    //     let exit_code = compile_and_run(input, "ternary_assignment").unwrap();
-    //     assert_eq!(exit_code, 100);
-    // }
+    /// Test code generation with ternary in variable assignment
+    #[test]
+    fn test_ternary_assignment() {
+        let input = r#"
+        int main() {
+            int result;
+            result = 1 ? 100 : 200;
+            return result;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "ternary_assignment").unwrap();
+        assert_eq!(exit_code, 100);
+    }
 
     /// Test code generation with ternary using variable condition
     #[test]

@@ -703,14 +703,14 @@ impl Parser {
                 continue;
             }
             if kind == TokenKind::Question {
-                let l_bp = 2;
+                let (l_bp, r_bp) = (5, 4);
                 if l_bp < min_bp {
                     break;
                 }
                 self.eat()?; // Consume '?'
                 let then_expr = self.parse_pratt_expr(0)?;
                 self.expect_punct(TokenKind::Colon)?;
-                let else_expr = self.parse_pratt_expr(l_bp - 1)?;
+                let else_expr = self.parse_pratt_expr(r_bp)?;
                 lhs = Expr::Ternary(Box::new(lhs), Box::new(then_expr), Box::new(else_expr));
                 continue;
             }

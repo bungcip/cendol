@@ -199,6 +199,22 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         Self::get_type_size_from_type(ty, self.structs, self.unions)
     }
 
+    /// Returns the amount to increment or decrement a pointer by.
+    fn get_increment_amount(&mut self, ty: &Type) -> i64 {
+        let mut current = ty;
+        loop {
+            match current {
+                Type::Const(inner) | Type::Volatile(inner) => {
+                    current = inner;
+                }
+                Type::Pointer(base_ty) => {
+                    return self.get_type_size(base_ty) as i64;
+                }
+                _ => return 1,
+            }
+        }
+    }
+
     /// Translates a typed statement into Cranelift IR.
     pub(crate) fn translate_typed_stmt(&mut self, stmt: TypedStmt) -> Result<bool, CodegenError> {
         // If the current block is already terminated, only process labels to create their blocks
@@ -1241,34 +1257,38 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 Ok((addr, result_ty))
             }
             TypedExpr::PreIncrement(expr, ty) => {
-                let (addr, _) = self.translate_lvalue(*expr)?;
-                let val = self.load_lvalue(addr, &ty);
-                let one = self.builder.ins().iconst(types::I64, 1);
-                let new_val = self.builder.ins().iadd(val, one);
+                let (addr, expr_ty) = self.translate_lvalue(*expr)?;
+                let val = self.load_lvalue(addr, &expr_ty);
+                let amount = self.get_increment_amount(&expr_ty);
+                let inc = self.builder.ins().iconst(types::I64, amount);
+                let new_val = self.builder.ins().iadd(val, inc);
                 self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
                 Ok((new_val, ty))
             }
             TypedExpr::PreDecrement(expr, ty) => {
-                let (addr, _) = self.translate_lvalue(*expr)?;
-                let val = self.load_lvalue(addr, &ty);
-                let one = self.builder.ins().iconst(types::I64, 1);
-                let new_val = self.builder.ins().isub(val, one);
+                let (addr, expr_ty) = self.translate_lvalue(*expr)?;
+                let val = self.load_lvalue(addr, &expr_ty);
+                let amount = self.get_increment_amount(&expr_ty);
+                let dec = self.builder.ins().iconst(types::I64, amount);
+                let new_val = self.builder.ins().isub(val, dec);
                 self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
                 Ok((new_val, ty))
             }
             TypedExpr::PostIncrement(expr, ty) => {
-                let (addr, _) = self.translate_lvalue(*expr)?;
-                let val = self.load_lvalue(addr, &ty);
-                let one = self.builder.ins().iconst(types::I64, 1);
-                let new_val = self.builder.ins().iadd(val, one);
+                let (addr, expr_ty) = self.translate_lvalue(*expr)?;
+                let val = self.load_lvalue(addr, &expr_ty);
+                let amount = self.get_increment_amount(&expr_ty);
+                let inc = self.builder.ins().iconst(types::I64, amount);
+                let new_val = self.builder.ins().iadd(val, inc);
                 self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
                 Ok((val, ty))
             }
             TypedExpr::PostDecrement(expr, ty) => {
-                let (addr, _) = self.translate_lvalue(*expr)?;
-                let val = self.load_lvalue(addr, &ty);
-                let one = self.builder.ins().iconst(types::I64, 1);
-                let new_val = self.builder.ins().isub(val, one);
+                let (addr, expr_ty) = self.translate_lvalue(*expr)?;
+                let val = self.load_lvalue(addr, &expr_ty);
+                let amount = self.get_increment_amount(&expr_ty);
+                let dec = self.builder.ins().iconst(types::I64, amount);
+                let new_val = self.builder.ins().isub(val, dec);
                 self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
                 Ok((val, ty))
             }

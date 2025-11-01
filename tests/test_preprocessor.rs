@@ -271,31 +271,30 @@ fn test_ifdef_directive() {
     let input = r#"
 #define FOO
 #ifdef FOO
-    int a = 1;
+    El Psy Kongroo
 #endif
 "#;
-    let mut preprocessor = create_preprocessor();
-    let tokens = preprocessor.preprocess(input, "<input>").unwrap();
+    let tokens = preprocess_input(input).unwrap();
     let tokens = get_clean_token(tokens);
+    let tokens = get_token_kinds(&tokens);
 
-    // Should include the code because FOO is defined
-    // Expected tokens: int, a, =, 1, ;
-    println!("DEBUG: Ifdef tokens: {:?}", get_token_kinds(&tokens));
+    assert_eq!(tokens, ["El", "Psy", "Kongroo"]);
+}
 
-    // Verify that ifdef worked correctly
-    let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(
-        token_strings.contains(&"int".to_string()),
-        "Should contain 'int' from ifdef branch"
-    );
-    assert!(
-        token_strings.contains(&"a".to_string()),
-        "Should contain 'a' from ifdef branch"
-    );
-    assert!(
-        token_strings.contains(&"1".to_string()),
-        "Should contain '1' from ifdef branch"
-    );
+#[test]
+fn test_if_directive_when_false() {
+    let input = r#"
+#define TERASI 0
+#if TERASI
+UDANG
+#endif
+REBUS
+"#;
+    let tokens = preprocess_input(input).unwrap();
+    let tokens = get_clean_token(tokens);
+    let tokens = get_token_kinds(&tokens);
+
+    assert_eq!(tokens, ["REBUS"]);
 }
 
 #[test]

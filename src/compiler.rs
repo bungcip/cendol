@@ -296,6 +296,10 @@ impl Compiler {
                 // Skip comments in output
                 i += 1;
                 continue;
+            } else if let TokenKind::String(s) = &token.kind {
+                result.push('"');
+                result.push_str(s);
+                result.push('"');
             } else {
                 result.push_str(&token.to_string());
             }

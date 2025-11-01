@@ -211,10 +211,11 @@ impl Preprocessor {
 
                 match directive {
                     DirectiveKind::If => {
-                        let (condition, end) = {
+                        let (mut condition, end) = {
                             let file_state = self.file_stack.last_mut().unwrap();
                             parse_conditional_expression(file_state.index, &file_state.tokens)?
                         };
+                        self.expand_all_macros(&mut condition)?;
                         let result = evaluate_expression(&condition, &self.macros)?;
                         self.conditional_stack.push(result);
                         self.file_stack.last_mut().unwrap().index = end;
@@ -223,10 +224,11 @@ impl Preprocessor {
                         if self.conditional_stack.is_empty() {
                             return Err(PreprocessorError::UnexpectedElif);
                         }
-                        let (condition, _end) = {
+                        let (mut condition, _end) = {
                             let file_state = self.file_stack.last().unwrap();
                             parse_conditional_expression(file_state.index, &file_state.tokens)?
                         };
+                        self.expand_all_macros(&mut condition)?;
                         if let Some(last) = self.conditional_stack.last_mut() {
                             if !*last {
                                 let result = evaluate_expression(&condition, &self.macros)?;

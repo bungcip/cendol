@@ -239,6 +239,51 @@ pub enum Stmt {
     StaticAssert(Box<Expr>, StringId),
 }
 
+impl Stmt {
+    pub fn span(&self) -> SourceSpan {
+        match self {
+            Stmt::Return(expr) => expr.span(),
+            Stmt::If(cond, _, _) => cond.span(),
+            Stmt::While(cond, _) => cond.span(),
+            Stmt::For(init, _, _, _) => {
+                if let Some(init) = init {
+                    match &**init {
+                        ForInit::Declaration(_, _, initializer) => {
+                            if let Some(initializer) = initializer {
+                                match initializer {
+                                    Initializer::Expr(expr) => expr.span(),
+                                    Initializer::List(_) => SourceSpan::default(),
+                                }
+                            } else {
+                                SourceSpan::default()
+                            }
+                        }
+                        ForInit::Expr(expr) => expr.span(),
+                    }
+                } else {
+                    SourceSpan::default()
+                }
+            }
+            Stmt::Block(stmts) => stmts.first().map_or(SourceSpan::default(), |s| s.span()),
+            Stmt::Switch(expr, _) => expr.span(),
+            Stmt::Case(expr, _) => expr.span(),
+            Stmt::Default(body) => body.span(),
+            Stmt::Label(_, _, span) => *span,
+            Stmt::Goto(_, span) => *span,
+            Stmt::Declaration(_, declarators, _) => {
+                declarators.first().map_or(SourceSpan::default(), |d| d.span)
+            }
+            Stmt::FunctionDeclaration { .. } => SourceSpan::default(),
+            Stmt::Break => SourceSpan::default(),
+            Stmt::Continue => SourceSpan::default(),
+            Stmt::DoWhile(body, _) => body.span(),
+            Stmt::Empty => SourceSpan::default(),
+            Stmt::Expr(expr) => expr.span(),
+            Stmt::StaticAssert(expr, _) => expr.span(),
+        }
+    }
+}
+
 /// Represents an expression in the C language.
 #[derive(Debug, PartialEq, Clone)]
 pub enum BinOp {
@@ -453,6 +498,60 @@ impl Expr {
             Expr::AssignBitwiseXor(lhs, rhs) => Some((AssignOp::BitwiseXor, lhs, rhs)),
             Expr::AssignBitwiseOr(lhs, rhs) => Some((AssignOp::BitwiseOr, lhs, rhs)),
             _ => None,
+        }
+    }
+
+    pub fn span(&self) -> SourceSpan {
+        match self {
+            Expr::Variable(_, span) => *span,
+            Expr::Call(_, _, span) => *span,
+            Expr::Assign(lhs, _)
+            | Expr::AssignAdd(lhs, _)
+            | Expr::AssignSub(lhs, _)
+            | Expr::AssignMul(lhs, _)
+            | Expr::AssignDiv(lhs, _)
+            | Expr::AssignMod(lhs, _)
+            | Expr::AssignLeftShift(lhs, _)
+            | Expr::AssignRightShift(lhs, _)
+            | Expr::AssignBitwiseAnd(lhs, _)
+            | Expr::AssignBitwiseXor(lhs, _)
+            | Expr::AssignBitwiseOr(lhs, _)
+            | Expr::Add(lhs, _)
+            | Expr::Sub(lhs, _)
+            | Expr::Mul(lhs, _)
+            | Expr::Div(lhs, _)
+            | Expr::Mod(lhs, _)
+            | Expr::Equal(lhs, _)
+            | Expr::NotEqual(lhs, _)
+            | Expr::LessThan(lhs, _)
+            | Expr::GreaterThan(lhs, _)
+            | Expr::LessThanOrEqual(lhs, _)
+            | Expr::GreaterThanOrEqual(lhs, _)
+            | Expr::LeftShift(lhs, _)
+            | Expr::RightShift(lhs, _)
+            | Expr::LogicalAnd(lhs, _)
+            | Expr::LogicalOr(lhs, _)
+            | Expr::BitwiseOr(lhs, _)
+            | Expr::BitwiseXor(lhs, _)
+            | Expr::BitwiseAnd(lhs, _)
+            | Expr::Comma(lhs, _) => lhs.span(),
+            Expr::LogicalNot(expr)
+            | Expr::Deref(expr)
+            | Expr::AddressOf(expr)
+            | Expr::Neg(expr)
+            | Expr::BitwiseNot(expr)
+            | Expr::Sizeof(expr)
+            | Expr::Alignof(expr)
+            | Expr::PreIncrement(expr)
+            | Expr::PreDecrement(expr)
+            | Expr::PostIncrement(expr)
+            | Expr::PostDecrement(expr) => expr.span(),
+            Expr::Ternary(cond, _, _) => cond.span(),
+            Expr::Member(expr, _) | Expr::PointerMember(expr, _) => expr.span(),
+            Expr::ExplicitCast(_, expr) | Expr::ImplicitCast(_, expr) => expr.span(),
+            // For literals and other complex types, a default span is returned for now.
+            // A more robust solution would involve storing spans in all Expr variants.
+            _ => SourceSpan::default(),
         }
     }
 }

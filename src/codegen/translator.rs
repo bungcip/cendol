@@ -460,9 +460,103 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
                 Ok(false)
             }
-            TypedStmt::Switch(_, _) => todo!(),
-            TypedStmt::Case(_, _) => todo!(),
-            TypedStmt::Default(_) => todo!(),
+            TypedStmt::Switch(cond, body) => {
+                let (cond_val, _) = self.translate_typed_expr(cond)?;
+                let exit_block = self.builder.create_block();
+                let mut case_blocks = HashMap::new();
+                let mut default_block = None;
+
+                // Pass 1: Collect cases and create blocks
+                if let TypedStmt::Block(stmts) = &*body {
+                    for stmt in stmts {
+                        match stmt {
+                            TypedStmt::Case(expr, _) => {
+                                if let TypedExpr::Number(val, _) = expr {
+                                    let block = self.builder.create_block();
+                                    case_blocks.insert(*val, block);
+                                }
+                            }
+                            TypedStmt::Default(_) => {
+                                if default_block.is_none() {
+                                    let block = self.builder.create_block();
+                                    default_block = Some(block);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
+                // Emit the switch instruction
+                let mut switch = cranelift_frontend::Switch::new();
+                for (val, block) in &case_blocks {
+                    switch.set_entry(*val as u128, *block);
+                }
+                let final_default_block = default_block.unwrap_or(exit_block);
+                switch.emit(&mut self.builder, cond_val, final_default_block);
+                self.current_block_state = BlockState::Filled;
+
+                // Pass 2: Translate the statement bodies
+                if let TypedStmt::Block(stmts) = *body {
+                    self.loop_context.push((exit_block, exit_block)); // for break
+                                                                       // The block before the switch's inner statements is terminated by the switch instruction.
+                    let mut current_block_is_terminated = true;
+
+                    for stmt in stmts {
+                        match stmt {
+                            TypedStmt::Case(expr, inner_stmt) => {
+                                let val = if let TypedExpr::Number(val, _) = expr {
+                                    val
+                                } else {
+                                    // This should be caught by the semantic analyzer
+                                    unreachable!("Case expression must be a constant integer")
+                                };
+                                let block = case_blocks[&val];
+
+                                if !current_block_is_terminated {
+                                    self.jump_to_block(block);
+                                }
+
+                                self.switch_to_block(block);
+                                self.builder.seal_block(block);
+
+                                current_block_is_terminated =
+                                    self.translate_typed_stmt(*inner_stmt)?;
+                            }
+                            TypedStmt::Default(inner_stmt) => {
+                                let block = default_block.unwrap();
+                                if !current_block_is_terminated {
+                                    self.jump_to_block(block);
+                                }
+
+                                self.switch_to_block(block);
+                                self.builder.seal_block(block);
+
+                                current_block_is_terminated =
+                                    self.translate_typed_stmt(*inner_stmt)?;
+                            }
+                            _ => {
+                                // This handles statements that are not directly inside a case/default
+                                // but are inside the switch block.
+                                if !current_block_is_terminated {
+                                    current_block_is_terminated = self.translate_typed_stmt(stmt)?;
+                                }
+                            }
+                        }
+                    }
+
+                    if !current_block_is_terminated {
+                        self.jump_to_block(exit_block);
+                    }
+                    self.loop_context.pop();
+                }
+
+                self.switch_to_block(exit_block);
+                self.builder.seal_block(exit_block);
+                Ok(false)
+            }
+            TypedStmt::Case(_, _) => Ok(false),
+            TypedStmt::Default(_) => Ok(false),
             TypedStmt::Label(name, body) => {
                 let block = *self
                     .label_blocks

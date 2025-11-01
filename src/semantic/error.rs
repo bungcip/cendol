@@ -67,6 +67,34 @@ pub enum SemanticError {
     /// An unused variable was declared.
     #[error("Unused variable `{0}`")]
     UnusedVariable(String),
+
+    /// A non-integer expression was used as the condition of a switch statement.
+    #[error("Switch condition is not an integer")]
+    SwitchConditionNotInteger,
+
+    /// A case label was used outside of a switch statement.
+    #[error("Case label outside of switch statement")]
+    CaseOutsideSwitch,
+
+    /// A default label was used outside of a switch statement.
+    #[error("Default label outside of switch statement")]
+    DefaultOutsideSwitch,
+
+    /// A duplicate case label was used in a switch statement.
+    #[error("Duplicate case label in switch statement with value `{0}`")]
+    DuplicateCaseLabel(i64),
+
+    /// A duplicate default label was used in a switch statement.
+    #[error("Duplicate default label in switch statement")]
+    DuplicateDefaultLabel,
+
+    /// A break statement was used outside of a loop or switch statement.
+    #[error("Break statement outside of loop or switch statement")]
+    BreakOutsideLoopOrSwitch,
+
+    /// A continue statement was used outside of a loop.
+    #[error("Continue statement outside of loop")]
+    ContinueOutsideLoop,
 }
 
 impl SemanticError {

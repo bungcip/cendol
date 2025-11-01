@@ -386,8 +386,6 @@ impl CodeGen {
             translator.builder.seal_all_blocks();
             translator.builder.finalize();
 
-            // eprintln!("FINAL IR:\n{}", func.display());
-
             let mut context = self.module.make_context();
             context.func = func;
             self.module.define_function(*id, &mut context).unwrap();

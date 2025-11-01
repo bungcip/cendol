@@ -53,6 +53,7 @@ pub enum Type {
         ThinVec<(StringId, Option<Box<Expr>>, SourceSpan)>,
     ),
     Const(Box<Type>),
+    Volatile(Box<Type>),
 }
 
 impl Type {
@@ -61,6 +62,7 @@ impl Type {
         match self {
             Type::Pointer(_) => true,
             Type::Const(ty) => ty.is_pointer(),
+            Type::Volatile(ty) => ty.is_pointer(),
             _ => false,
         }
     }
@@ -74,6 +76,7 @@ impl Type {
             | Type::UnsignedLong
             | Type::UnsignedLongLong => true,
             Type::Const(ty) => ty.is_unsigned(),
+            Type::Volatile(ty) => ty.is_unsigned(),
             _ => false,
         }
     }
@@ -88,6 +91,7 @@ impl Type {
             Type::Long | Type::UnsignedLong => 5,
             Type::LongLong | Type::UnsignedLongLong => 6,
             Type::Const(ty) => ty.get_integer_rank(),
+            Type::Volatile(ty) => ty.get_integer_rank(),
             _ => 0,
         }
     }
@@ -97,6 +101,7 @@ impl Type {
         match self {
             Type::Float | Type::Double => true,
             Type::Const(ty) => ty.is_floating(),
+            Type::Volatile(ty) => ty.is_floating(),
             _ => false,
         }
     }
@@ -113,6 +118,7 @@ impl Type {
             | Type::Double
             | Type::Enum(_, _) => true,
             Type::Const(ty) => ty.is_numeric(),
+            Type::Volatile(ty) => ty.is_numeric(),
             _ => false,
         }
     }
@@ -129,6 +135,7 @@ impl Type {
             Type::Float => 7,
             Type::Double => 8,
             Type::Const(ty) => ty.get_arithmetic_rank(),
+            Type::Volatile(ty) => ty.get_arithmetic_rank(),
             _ => 0,
         }
     }
@@ -137,6 +144,14 @@ impl Type {
     pub fn unwrap_const(&self) -> &Type {
         match self {
             Type::Const(ty) => ty.unwrap_const(),
+            _ => self,
+        }
+    }
+
+    /// Recursively unwraps `volatile` qualifiers from a type.
+    pub fn unwrap_volatile(&self) -> &Type {
+        match self {
+            Type::Volatile(ty) => ty.unwrap_volatile(),
             _ => self,
         }
     }

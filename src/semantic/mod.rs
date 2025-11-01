@@ -148,6 +148,7 @@ impl SemanticAnalyzer {
             Type::Pointer(base) => Type::Pointer(Box::new(self.resolve_type(base))),
             Type::Array(base, size) => Type::Array(Box::new(self.resolve_type(base)), *size),
             Type::Const(base) => Type::Const(Box::new(self.resolve_type(base))),
+            Type::Volatile(base) => Type::Volatile(Box::new(self.resolve_type(base))),
             Type::Struct(Some(name), members) if members.is_empty() => self
                 .struct_definitions
                 .get(name)
@@ -894,7 +895,7 @@ impl SemanticAnalyzer {
             ));
         }
 
-        if let Type::Const(_) = &lhs_typed.ty() {
+        if let Type::Const(_) = &lhs_typed.ty().unwrap_volatile() {
             self.errors.push((
                 SemanticError::AssignmentToConst,
                 filename.to_string(),

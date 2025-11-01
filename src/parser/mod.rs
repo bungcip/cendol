@@ -175,6 +175,11 @@ impl Parser {
                 let ty = self.parse_type_specifier()?;
                 return Ok(Type::Const(Box::new(ty)));
             }
+            if k == KeywordKind::Volatile {
+                self.eat()?;
+                let ty = self.parse_type_specifier()?;
+                return Ok(Type::Volatile(Box::new(ty)));
+            }
             self.parse_type_specifier_kind(k)
         } else if let TokenKind::Identifier(id) = token.kind.clone() {
             if let Some(ty) = self.typedefs.get(&id).cloned() {
@@ -384,6 +389,9 @@ impl Parser {
             ty = Type::Pointer(Box::new(ty));
             while self.eat_token(&TokenKind::Keyword(KeywordKind::Const))? {
                 ty = Type::Const(Box::new(ty));
+            }
+            while self.eat_token(&TokenKind::Keyword(KeywordKind::Volatile))? {
+                ty = Type::Volatile(Box::new(ty));
             }
         }
 

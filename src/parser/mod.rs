@@ -423,7 +423,7 @@ impl Parser {
                 ty = Type::Array(Box::new(ty), 0); // Unsized array
             } else {
                 let size_expr = self.parse_expr()?;
-                let size = if let Expr::Number(n) = size_expr {
+                let size = if let Expr::Number(n, _) = size_expr {
                     n as usize
                 } else {
                     let token = self.current_token()?;
@@ -546,12 +546,7 @@ impl Parser {
         }
     }
     /// Creates a binary expression based on the operator token.
-    fn create_binary_expr(
-        &self,
-        lhs: Expr,
-        rhs: Expr,
-        op: TokenKind,
-    ) -> Result<Expr, ParserError> {
+    fn create_binary_expr(&self, lhs: Expr, rhs: Expr, op: TokenKind) -> Result<Expr, ParserError> {
         if op.is_assignment() {
             let lhs = Box::new(lhs);
             let rhs = Box::new(rhs);
@@ -733,19 +728,19 @@ impl Parser {
                 let num_str = n.as_str();
                 if num_str.contains('.') || num_str.contains('e') || num_str.contains('E') {
                     let trimmed = num_str.trim_end_matches(['f', 'F', 'l', 'L']);
-                    Ok(Expr::FloatNumber(trimmed.parse().unwrap()))
+                    Ok(Expr::FloatNumber(trimmed.parse().unwrap(), token.span))
                 } else {
                     let trimmed = num_str.trim_end_matches(['L', 'U', 'l', 'u']);
-                    Ok(Expr::Number(trimmed.parse().unwrap()))
+                    Ok(Expr::Number(trimmed.parse().unwrap(), token.span))
                 }
             }
             TokenKind::String(s) => {
                 self.eat()?;
-                Ok(Expr::String(s))
+                Ok(Expr::String(s, token.span))
             }
             TokenKind::Char(s) => {
                 self.eat()?;
-                Ok(Expr::Char(s))
+                Ok(Expr::Char(s, token.span))
             }
             TokenKind::Identifier(name) => {
                 self.eat()?;

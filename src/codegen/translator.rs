@@ -269,7 +269,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         let size = self.get_type_size(&declarator.ty);
                         let initial_value = if let Some(init) = &declarator.initializer {
                             if let TypedInitializer::Expr(expr) = init {
-                                if let TypedExpr::Number(num, _) = **expr {
+                                if let TypedExpr::Number(num, _, _) = **expr {
                                     num.to_le_bytes().to_vec()
                                 } else {
                                     return Err(CodegenError::InvalidStaticInitializer);
@@ -487,11 +487,9 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 if let TypedStmt::Block(stmts) = &*body {
                     for stmt in stmts {
                         match stmt {
-                            TypedStmt::Case(expr, _) => {
-                                if let TypedExpr::Number(val, _) = expr {
-                                    let block = self.builder.create_block();
-                                    case_blocks.insert(*val, block);
-                                }
+                            TypedStmt::Case(TypedExpr::Number(val, ..), _) => {
+                                let block = self.builder.create_block();
+                                case_blocks.insert(*val, block);
                             }
                             TypedStmt::Default(_) => {
                                 if default_block.is_none() {
@@ -516,13 +514,13 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 // Pass 2: Translate the statement bodies
                 if let TypedStmt::Block(stmts) = *body {
                     self.loop_context.push((exit_block, exit_block)); // for break
-                                                                       // The block before the switch's inner statements is terminated by the switch instruction.
+                    // The block before the switch's inner statements is terminated by the switch instruction.
                     let mut current_block_is_terminated = true;
 
                     for stmt in stmts {
                         match stmt {
                             TypedStmt::Case(expr, inner_stmt) => {
-                                let val = if let TypedExpr::Number(val, _) = expr {
+                                let val = if let TypedExpr::Number(val, _, _) = expr {
                                     val
                                 } else {
                                     // This should be caught by the semantic analyzer
@@ -556,7 +554,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                                 // This handles statements that are not directly inside a case/default
                                 // but are inside the switch block.
                                 if !current_block_is_terminated {
-                                    current_block_is_terminated = self.translate_typed_stmt(stmt)?;
+                                    current_block_is_terminated =
+                                        self.translate_typed_stmt(stmt)?;
                                 }
                             }
                         }
@@ -643,11 +642,11 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     Ok((addr, ty.clone()))
                 }
             }
-            TypedLValue::Deref(ptr, ty) => {
+            TypedLValue::Deref(ptr, _, ty) => {
                 let (ptr, _) = self.translate_typed_expr(*ptr)?;
                 Ok((ptr, ty))
             }
-            TypedLValue::Member(expr, member, _ty) => {
+            TypedLValue::Member(expr, member, _, _ty) => {
                 let (ptr, expr_ty) = self.translate_typed_expr(*expr)?;
                 let s = self.get_real_type(&expr_ty)?;
                 if let Type::Struct(_, members) = s {
@@ -676,9 +675,9 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     unreachable!("Not a struct or union")
                 }
             }
-            TypedLValue::String(s, ty) => {
+            TypedLValue::String(s, _, ty) => {
                 let string_value = s.as_str();
-                let unescaped = unescape(&string_value);
+                let unescaped = unescape(string_value);
                 let mut data = Vec::with_capacity(unescaped.len() + 1);
                 data.extend_from_slice(&unescaped);
                 data.push(0); // Null terminator
@@ -1156,9 +1155,9 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         }
 
         match expr {
-            TypedExpr::Number(n, ty) => Ok((self.builder.ins().iconst(types::I64, n), ty)),
-            TypedExpr::FloatNumber(n, ty) => Ok((self.builder.ins().f64const(n), ty)),
-            TypedExpr::String(s, ty) => {
+            TypedExpr::Number(n, _, ty) => Ok((self.builder.ins().iconst(types::I64, n), ty)),
+            TypedExpr::FloatNumber(n, _, ty) => Ok((self.builder.ins().f64const(n), ty)),
+            TypedExpr::String(s, _, ty) => {
                 let string_value = s.as_str();
                 let unescaped = unescape(string_value);
                 let mut data = Vec::with_capacity(unescaped.len() + 1);
@@ -1180,13 +1179,13 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let local_id = self.module.declare_data_in_func(id, self.builder.func);
                 Ok((self.builder.ins().global_value(types::I64, local_id), ty))
             }
-            TypedExpr::Char(c, ty) => {
+            TypedExpr::Char(c, _, ty) => {
                 let char_value = c.as_str();
                 let character = char_value.chars().next().unwrap();
                 let val = self.builder.ins().iconst(types::I64, character as i64);
                 Ok((val, ty))
             }
-            TypedExpr::PointerMember(expr, member, _ty) => {
+            TypedExpr::PointerMember(expr, member, _, _ty) => {
                 let (ptr, ptr_ty) = self.translate_typed_expr(*expr)?;
                 if let Type::Pointer(base_ty) = ptr_ty {
                     let s = self.get_real_type(&base_ty)?;
@@ -1235,7 +1234,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     Err(CodegenError::NotAPointer)
                 }
             }
-            TypedExpr::ImplicitCast(ty, expr, result_ty) => {
+            TypedExpr::ImplicitCast(ty, expr, _, result_ty) => {
                 let (val, expr_ty) = self.translate_typed_expr(*expr)?;
                 if *ty == Type::Bool {
                     let zero = self.builder.ins().iconst(types::I64, 0);
@@ -1293,7 +1292,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
                 Ok((cast_val, result_ty))
             }
-            TypedExpr::Member(expr, member, _ty) => {
+            TypedExpr::Member(expr, member, _, _ty) => {
                 let (ptr, ty) = self.translate_typed_expr(*expr)?;
                 let s = self.get_real_type(&ty)?;
                 if let Type::Struct(_, members) = s {
@@ -1335,7 +1334,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     Err(CodegenError::NotAStruct)
                 }
             }
-            TypedExpr::ExplicitCast(ty, expr, result_ty) => {
+            TypedExpr::ExplicitCast(ty, expr, _, result_ty) => {
                 let (val, _) = self.translate_typed_expr(*expr)?;
                 if *ty == Type::Bool {
                     let zero = self.builder.ins().iconst(types::I64, 0);
@@ -1361,7 +1360,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
                 Ok((extended_val, result_ty))
             }
-            TypedExpr::CompoundLiteral(_ty, initializer, result_ty) => {
+            TypedExpr::CompoundLiteral(_ty, initializer, _, result_ty) => {
                 let size = self.get_type_size(&result_ty);
                 let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
                     StackSlotKind::ExplicitSlot,
@@ -1372,7 +1371,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.translate_initializer(addr, &result_ty, &initializer)?;
                 Ok((addr, result_ty))
             }
-            TypedExpr::PreIncrement(expr, ty) => {
+            TypedExpr::PreIncrement(expr, _, ty) => {
                 let (addr, expr_ty) = self.translate_lvalue(*expr)?;
                 let val = self.load_lvalue(addr, &expr_ty);
                 let amount = self.get_increment_amount(&expr_ty);
@@ -1381,7 +1380,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
                 Ok((new_val, ty))
             }
-            TypedExpr::PreDecrement(expr, ty) => {
+            TypedExpr::PreDecrement(expr, _, ty) => {
                 let (addr, expr_ty) = self.translate_lvalue(*expr)?;
                 let val = self.load_lvalue(addr, &expr_ty);
                 let amount = self.get_increment_amount(&expr_ty);
@@ -1390,7 +1389,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
                 Ok((new_val, ty))
             }
-            TypedExpr::PostIncrement(expr, ty) => {
+            TypedExpr::PostIncrement(expr, _, ty) => {
                 let (addr, expr_ty) = self.translate_lvalue(*expr)?;
                 let val = self.load_lvalue(addr, &expr_ty);
                 let amount = self.get_increment_amount(&expr_ty);
@@ -1399,7 +1398,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
                 Ok((val, ty))
             }
-            TypedExpr::PostDecrement(expr, ty) => {
+            TypedExpr::PostDecrement(expr, _, ty) => {
                 let (addr, expr_ty) = self.translate_lvalue(*expr)?;
                 let val = self.load_lvalue(addr, &expr_ty);
                 let amount = self.get_increment_amount(&expr_ty);
@@ -1408,7 +1407,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
                 Ok((val, ty))
             }
-            TypedExpr::Ternary(cond, then_expr, else_expr, _ty) => {
+            TypedExpr::Ternary(cond, then_expr, else_expr, _, _ty) => {
                 let (condition_value, _) = self.translate_typed_expr(*cond)?;
 
                 let then_block = self.builder.create_block();
@@ -1440,29 +1439,29 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
                 Ok((self.builder.block_params(merge_block)[0], ty))
             }
-            TypedExpr::AddressOf(lvalue, ty) => {
+            TypedExpr::AddressOf(lvalue, _, ty) => {
                 let (addr, _) = self.translate_lvalue(*lvalue)?;
                 Ok((addr, ty))
             }
-            TypedExpr::Sizeof(expr, ty) => {
+            TypedExpr::Sizeof(expr, _, ty) => {
                 let (_, expr_ty) = self.translate_typed_expr(*expr)?;
                 let size = self.get_type_size(&expr_ty) as i64;
                 Ok((self.builder.ins().iconst(types::I64, size), ty))
             }
-            TypedExpr::SizeofType(ty, result_ty) => {
+            TypedExpr::SizeofType(ty, _, result_ty) => {
                 let size = self.get_type_size(&ty) as i64;
                 Ok((self.builder.ins().iconst(types::I64, size), result_ty))
             }
-            TypedExpr::Alignof(expr, ty) => {
+            TypedExpr::Alignof(expr, _, ty) => {
                 let (_, expr_ty) = self.translate_typed_expr(*expr)?;
                 let align = self.get_type_alignment(&expr_ty) as i64;
                 Ok((self.builder.ins().iconst(types::I64, align), ty))
             }
-            TypedExpr::AlignofType(ty, result_ty) => {
+            TypedExpr::AlignofType(ty, _, result_ty) => {
                 let align = self.get_type_alignment(&ty) as i64;
                 Ok((self.builder.ins().iconst(types::I64, align), result_ty))
             }
-            TypedExpr::Deref(expr, ty) => {
+            TypedExpr::Deref(expr, _, ty) => {
                 let (ptr, _) = self.translate_typed_expr(*expr)?;
                 if ty.is_aggregate() {
                     Ok((ptr, ty))
@@ -1473,7 +1472,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     ))
                 }
             }
-            TypedExpr::InitializerList(list, ty) => {
+            TypedExpr::InitializerList(list, _, ty) => {
                 let size = self.get_type_size(&ty);
                 let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
                     StackSlotKind::ExplicitSlot,
@@ -1484,17 +1483,17 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.translate_initializer(addr, &ty, &TypedInitializer::List(list.clone()))?;
                 Ok((addr, ty))
             }
-            TypedExpr::LogicalNot(expr, ty) => {
+            TypedExpr::LogicalNot(expr, _, ty) => {
                 let (val, _) = self.translate_typed_expr(*expr)?;
                 let zero = self.builder.ins().iconst(types::I64, 0);
                 let c = self.builder.ins().icmp(IntCC::Equal, val, zero);
                 Ok((self.builder.ins().uextend(types::I64, c), ty))
             }
-            TypedExpr::Neg(expr, ty) => {
+            TypedExpr::Neg(expr, _, ty) => {
                 let (val, _) = self.translate_typed_expr(*expr)?;
                 Ok((self.builder.ins().ineg(val), ty))
             }
-            TypedExpr::BitwiseNot(expr, ty) => {
+            TypedExpr::BitwiseNot(expr, _, ty) => {
                 let (val, _) = self.translate_typed_expr(*expr)?;
                 Ok((self.builder.ins().bnot(val), ty))
             }
@@ -1605,7 +1604,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     ) -> CodegenResult<()> {
         match initializer {
             TypedInitializer::Expr(expr) => {
-                if let TypedExpr::Comma(lhs, rhs, _) = *expr.clone() {
+                if let TypedExpr::Comma(lhs, rhs, _, _) = *expr.clone() {
                     self.translate_initializer(base_addr, ty, &TypedInitializer::Expr(lhs))?;
                     if let Type::Array(elem_ty, _) = ty {
                         let elem_size = self.get_type_size(elem_ty);
@@ -1674,7 +1673,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                                             let s = self.get_real_type(&current_ty)?;
                                             if let Type::Array(elem_ty, _) = s {
                                                 let elem_size = self.get_type_size(&elem_ty);
-                                                if let TypedExpr::Number(n, _) = **expr {
+                                                if let TypedExpr::Number(n, _, _) = **expr {
                                                     current_offset += n as u32 * elem_size;
                                                     current_ty = *elem_ty.clone();
                                                 } else {
@@ -1713,7 +1712,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         for (designators, initializer) in list {
                             let current_index = if !designators.is_empty() {
                                 if let TypedDesignator::Index(expr) = &designators[0] {
-                                    if let TypedExpr::Number(n, _) = **expr {
+                                    if let TypedExpr::Number(n, _, _) = **expr {
                                         n as u32
                                     } else {
                                         return Err(CodegenError::NonConstantArrayIndex);

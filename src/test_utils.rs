@@ -246,7 +246,10 @@ pub fn create_simple_program_ast() -> TranslationUnit {
             return_type: Type::Int,
             name: crate::parser::string_interner::StringInterner::intern("main"),
             params: ThinVec::new(),
-            body: ThinVec::from(vec![Stmt::Return(Box::new(Expr::Number(0)))]),
+            body: ThinVec::from(vec![Stmt::Return(Box::new(Expr::Number(
+                0,
+                SourceSpan::default(),
+            )))]),
             is_inline: false,
             is_variadic: false,
             is_noreturn: false,

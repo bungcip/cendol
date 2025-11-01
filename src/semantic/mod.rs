@@ -136,9 +136,11 @@ impl SemanticAnalyzer {
     fn check_lvalue(&mut self, expr: TypedExpr) -> Result<TypedLValue, SemanticError> {
         match expr {
             TypedExpr::Variable(name, span, ty) => Ok(TypedLValue::Variable(name, span, ty)),
-            TypedExpr::Deref(expr, ty) => Ok(TypedLValue::Deref(expr, ty)),
-            TypedExpr::Member(expr, member, ty) => Ok(TypedLValue::Member(expr, member, ty)),
-            TypedExpr::String(s, ty) => Ok(TypedLValue::String(s, ty)),
+            TypedExpr::Deref(expr, span, ty) => Ok(TypedLValue::Deref(expr, span, ty)),
+            TypedExpr::Member(expr, member, span, ty) => {
+                Ok(TypedLValue::Member(expr, member, span, ty))
+            }
+            TypedExpr::String(s, span, ty) => Ok(TypedLValue::String(s, span, ty)),
             _ => Err(SemanticError::NotAnLvalue),
         }
     }
@@ -270,7 +272,7 @@ impl SemanticAnalyzer {
                         let mut next_value = 0;
                         for (name, value, span) in members {
                             let val = if let Some(expr) = value {
-                                if let Expr::Number(num) = **expr {
+                                if let Expr::Number(num, _) = **expr {
                                     num
                                 } else {
                                     self.errors.push((
@@ -377,7 +379,7 @@ impl SemanticAnalyzer {
                     ty: symbol.ty.clone(),
                     name: *name,
                     params: ThinVec::new(), // Built-ins don't have specified params in this context
-                    is_variadic: true,     // Assume built-ins can be variadic
+                    is_variadic: true,      // Assume built-ins can be variadic
                     is_inline: false,
                     is_noreturn: false,
                 });
@@ -588,7 +590,7 @@ impl SemanticAnalyzer {
                         let mut next_value = 0;
                         for (name, value, span) in members {
                             let val = if let Some(expr) = value {
-                                if let Expr::Number(num) = *expr {
+                                if let Expr::Number(num, _) = *expr {
                                     num
                                 } else {
                                     self.errors.push((
@@ -782,7 +784,7 @@ impl SemanticAnalyzer {
                     ));
                 }
                 let typed_expr = self.check_expression(*expr, filename);
-                if let TypedExpr::Number(val, _) = typed_expr {
+                if let TypedExpr::Number(val, _, _) = typed_expr {
                     if !self.case_labels.insert(val) {
                         self.errors.push((
                             SemanticError::DuplicateCaseLabel(val),
@@ -885,7 +887,7 @@ impl SemanticAnalyzer {
                         filename.to_string(),
                         typed_expr.span(),
                     ));
-                } else if let TypedExpr::Number(val, _) = typed_expr
+                } else if let TypedExpr::Number(val, _, _) = typed_expr
                     && val == 0
                 {
                     self.errors.push((
@@ -993,20 +995,16 @@ impl SemanticAnalyzer {
                 self.errors
                     .push((err, filename.to_string(), lhs_typed.span()));
                 // Create a dummy l-value to continue analysis
-                TypedLValue::Variable(
-                    StringInterner::intern(""),
-                    SourceSpan::default(),
-                    Type::Int,
-                )
+                TypedLValue::Variable(StringInterner::intern(""), SourceSpan::default(), Type::Int)
             }
         };
 
         let lhs_ty = lhs_lvalue.ty().clone();
         let lhs_span = match &lhs_lvalue {
             TypedLValue::Variable(_, span, _) => *span,
-            TypedLValue::Deref(expr, _) => expr.span(),
-            TypedLValue::Member(expr, _, _) => expr.span(),
-            TypedLValue::String(_, _) => SourceSpan::default(),
+            TypedLValue::Deref(expr, _, _) => expr.span(),
+            TypedLValue::Member(expr, _, _, _) => expr.span(),
+            TypedLValue::String(_, span, _) => *span,
         };
 
         if !lhs_lvalue.is_modifiable() {
@@ -1027,39 +1025,72 @@ impl SemanticAnalyzer {
         let result_ty = lhs_ty;
 
         match op {
-            AssignOp::Assign => {
-                TypedExpr::Assign(Box::new(lhs_lvalue), Box::new(rhs_cast), result_ty)
-            }
-            AssignOp::Add => {
-                TypedExpr::AssignAdd(Box::new(lhs_lvalue), Box::new(rhs_cast), result_ty)
-            }
-            AssignOp::Sub => {
-                TypedExpr::AssignSub(Box::new(lhs_lvalue), Box::new(rhs_cast), result_ty)
-            }
-            AssignOp::Mul => {
-                TypedExpr::AssignMul(Box::new(lhs_lvalue), Box::new(rhs_cast), result_ty)
-            }
-            AssignOp::Div => {
-                TypedExpr::AssignDiv(Box::new(lhs_lvalue), Box::new(rhs_cast), result_ty)
-            }
-            AssignOp::Mod => {
-                TypedExpr::AssignMod(Box::new(lhs_lvalue), Box::new(rhs_cast), result_ty)
-            }
-            AssignOp::LeftShift => {
-                TypedExpr::AssignLeftShift(Box::new(lhs_lvalue), Box::new(rhs_cast), result_ty)
-            }
-            AssignOp::RightShift => {
-                TypedExpr::AssignRightShift(Box::new(lhs_lvalue), Box::new(rhs_cast), result_ty)
-            }
-            AssignOp::BitwiseAnd => {
-                TypedExpr::AssignBitwiseAnd(Box::new(lhs_lvalue), Box::new(rhs_cast), result_ty)
-            }
-            AssignOp::BitwiseXor => {
-                TypedExpr::AssignBitwiseXor(Box::new(lhs_lvalue), Box::new(rhs_cast), result_ty)
-            }
-            AssignOp::BitwiseOr => {
-                TypedExpr::AssignBitwiseOr(Box::new(lhs_lvalue), Box::new(rhs_cast), result_ty)
-            }
+            AssignOp::Assign => TypedExpr::Assign(
+                Box::new(lhs_lvalue),
+                Box::new(rhs_cast),
+                SourceSpan::default(),
+                result_ty,
+            ),
+            AssignOp::Add => TypedExpr::AssignAdd(
+                Box::new(lhs_lvalue),
+                Box::new(rhs_cast),
+                SourceSpan::default(),
+                result_ty,
+            ),
+            AssignOp::Sub => TypedExpr::AssignSub(
+                Box::new(lhs_lvalue),
+                Box::new(rhs_cast),
+                SourceSpan::default(),
+                result_ty,
+            ),
+            AssignOp::Mul => TypedExpr::AssignMul(
+                Box::new(lhs_lvalue),
+                Box::new(rhs_cast),
+                SourceSpan::default(),
+                result_ty,
+            ),
+            AssignOp::Div => TypedExpr::AssignDiv(
+                Box::new(lhs_lvalue),
+                Box::new(rhs_cast),
+                SourceSpan::default(),
+                result_ty,
+            ),
+            AssignOp::Mod => TypedExpr::AssignMod(
+                Box::new(lhs_lvalue),
+                Box::new(rhs_cast),
+                SourceSpan::default(),
+                result_ty,
+            ),
+            AssignOp::LeftShift => TypedExpr::AssignLeftShift(
+                Box::new(lhs_lvalue),
+                Box::new(rhs_cast),
+                SourceSpan::default(),
+                result_ty,
+            ),
+            AssignOp::RightShift => TypedExpr::AssignRightShift(
+                Box::new(lhs_lvalue),
+                Box::new(rhs_cast),
+                SourceSpan::default(),
+                result_ty,
+            ),
+            AssignOp::BitwiseAnd => TypedExpr::AssignBitwiseAnd(
+                Box::new(lhs_lvalue),
+                Box::new(rhs_cast),
+                SourceSpan::default(),
+                result_ty,
+            ),
+            AssignOp::BitwiseXor => TypedExpr::AssignBitwiseXor(
+                Box::new(lhs_lvalue),
+                Box::new(rhs_cast),
+                SourceSpan::default(),
+                result_ty,
+            ),
+            AssignOp::BitwiseOr => TypedExpr::AssignBitwiseOr(
+                Box::new(lhs_lvalue),
+                Box::new(rhs_cast),
+                SourceSpan::default(),
+                result_ty,
+            ),
         }
     }
 
@@ -1105,10 +1136,12 @@ impl SemanticAnalyzer {
 
                 TypedExpr::Variable(name, location, ty)
             }
-            Expr::Number(n) => TypedExpr::Number(n, Type::Int),
-            Expr::FloatNumber(n) => TypedExpr::FloatNumber(n, Type::Double),
-            Expr::String(s) => TypedExpr::String(s, Type::Pointer(Box::new(Type::Char))),
-            Expr::Char(c) => TypedExpr::Char(c, Type::Char),
+            Expr::Number(n, span) => TypedExpr::Number(n, span, Type::Int),
+            Expr::FloatNumber(n, span) => TypedExpr::FloatNumber(n, span, Type::Double),
+            Expr::String(s, span) => {
+                TypedExpr::String(s, span, Type::Pointer(Box::new(Type::Char)))
+            }
+            Expr::Char(c, span) => TypedExpr::Char(c, span, Type::Char),
             Expr::Call(name, args, location) => {
                 if let Some(symbol) = self.symbol_table.lookup(&name) {
                     if symbol.is_builtin {
@@ -1135,23 +1168,31 @@ impl SemanticAnalyzer {
             }
             Expr::Neg(expr) => {
                 let typed = self.check_expression(*expr, filename);
-                TypedExpr::Neg(Box::new(typed.clone()), typed.ty().clone())
+                TypedExpr::Neg(
+                    Box::new(typed.clone()),
+                    SourceSpan::default(),
+                    typed.ty().clone(),
+                )
             }
             Expr::LogicalNot(expr) => {
                 let typed = self.check_expression(*expr, filename);
-                TypedExpr::LogicalNot(Box::new(typed), Type::Bool)
+                TypedExpr::LogicalNot(Box::new(typed), SourceSpan::default(), Type::Bool)
             }
             Expr::BitwiseNot(expr) => {
                 let typed = self.check_expression(*expr, filename);
-                TypedExpr::BitwiseNot(Box::new(typed.clone()), typed.ty().clone())
+                TypedExpr::BitwiseNot(
+                    Box::new(typed.clone()),
+                    SourceSpan::default(),
+                    typed.ty().clone(),
+                )
             }
             Expr::Sizeof(expr) => {
                 let _typed = self.check_expression(*expr, filename);
-                TypedExpr::Sizeof(Box::new(_typed), Type::Int)
+                TypedExpr::Sizeof(Box::new(_typed), SourceSpan::default(), Type::Int)
             }
             Expr::Alignof(expr) => {
                 let _typed = self.check_expression(*expr, filename);
-                TypedExpr::Alignof(Box::new(_typed), Type::Int)
+                TypedExpr::Alignof(Box::new(_typed), SourceSpan::default(), Type::Int)
             }
             Expr::Deref(expr) => {
                 let typed = self.check_expression(*expr, filename);
@@ -1167,7 +1208,7 @@ impl SemanticAnalyzer {
                         Type::Int
                     }
                 };
-                TypedExpr::Deref(Box::new(typed), result_ty)
+                TypedExpr::Deref(Box::new(typed), SourceSpan::default(), result_ty)
             }
             Expr::AddressOf(expr) => {
                 let typed_expr = self.check_expression(*expr, filename);
@@ -1185,10 +1226,14 @@ impl SemanticAnalyzer {
                     }
                 };
                 let ty = lvalue.ty().clone();
-                TypedExpr::AddressOf(Box::new(lvalue), Type::Pointer(Box::new(ty)))
+                TypedExpr::AddressOf(
+                    Box::new(lvalue),
+                    SourceSpan::default(),
+                    Type::Pointer(Box::new(ty)),
+                )
             }
-            Expr::SizeofType(ty) => TypedExpr::SizeofType(ty, Type::Int),
-            Expr::AlignofType(ty) => TypedExpr::AlignofType(ty, Type::Int),
+            Expr::SizeofType(ty) => TypedExpr::SizeofType(ty, SourceSpan::default(), Type::Int),
+            Expr::AlignofType(ty) => TypedExpr::AlignofType(ty, SourceSpan::default(), Type::Int),
             Expr::Ternary(cond, then_expr, else_expr) => {
                 let cond_typed = self.check_expression(*cond, filename);
                 let then_typed = self.check_expression(*then_expr, filename);
@@ -1202,6 +1247,7 @@ impl SemanticAnalyzer {
                     Box::new(cond_typed),
                     Box::new(then_typed),
                     Box::new(else_typed),
+                    SourceSpan::default(),
                     result_ty,
                 )
             }
@@ -1230,7 +1276,7 @@ impl SemanticAnalyzer {
                         ));
                         Type::Int
                     });
-                TypedExpr::Member(Box::new(typed), member, member_ty)
+                TypedExpr::Member(Box::new(typed), member, SourceSpan::default(), member_ty)
             }
             Expr::PointerMember(expr, member) => {
                 let typed_ptr = self.check_expression(*expr, filename);
@@ -1245,10 +1291,11 @@ impl SemanticAnalyzer {
                         typed_ptr.span(),
                     ));
                     // Return a dummy expression to continue analysis
-                    return TypedExpr::Number(0, Type::Int);
+                    return TypedExpr::Number(0, SourceSpan::default(), Type::Int);
                 };
 
-                let deref_expr = TypedExpr::Deref(Box::new(typed_ptr), *inner_ty);
+                let deref_expr =
+                    TypedExpr::Deref(Box::new(typed_ptr), SourceSpan::default(), *inner_ty);
 
                 // Now perform member access on the dereferenced expression
                 let resolved_ty = self.resolve_type(deref_expr.ty());
@@ -1276,7 +1323,12 @@ impl SemanticAnalyzer {
                     });
 
                 // Return a Member expression, effectively de-sugaring p->y to (*p).y
-                TypedExpr::Member(Box::new(deref_expr), member, member_ty)
+                TypedExpr::Member(
+                    Box::new(deref_expr),
+                    member,
+                    SourceSpan::default(),
+                    member_ty,
+                )
             }
             Expr::InitializerList(list) => {
                 let typed_list = list
@@ -1296,15 +1348,25 @@ impl SemanticAnalyzer {
                         (typed_designators, Box::new(typed_initializer))
                     })
                     .collect();
-                TypedExpr::InitializerList(typed_list, Type::Int)
+                TypedExpr::InitializerList(typed_list, SourceSpan::default(), Type::Int)
             }
             Expr::ExplicitCast(ty, expr) => {
                 let typed_expr = self.check_expression(*expr, filename);
-                TypedExpr::ExplicitCast(Box::new(*ty.clone()), Box::new(typed_expr), *ty.clone())
+                TypedExpr::ExplicitCast(
+                    Box::new(*ty.clone()),
+                    Box::new(typed_expr),
+                    SourceSpan::default(),
+                    *ty.clone(),
+                )
             }
             Expr::ImplicitCast(ty, expr) => {
                 let typed_expr = self.check_expression(*expr, filename);
-                TypedExpr::ImplicitCast(Box::new(*ty.clone()), Box::new(typed_expr), *ty.clone())
+                TypedExpr::ImplicitCast(
+                    Box::new(*ty.clone()),
+                    Box::new(typed_expr),
+                    SourceSpan::default(),
+                    *ty.clone(),
+                )
             }
             Expr::CompoundLiteral(ty, initializer) => {
                 let typed_initializer = self.convert_initializer_to_typed(*initializer, filename);
@@ -1314,7 +1376,12 @@ impl SemanticAnalyzer {
                 {
                     final_ty = Type::Array(elem_ty.clone(), list.len());
                 }
-                TypedExpr::CompoundLiteral(ty, Box::new(typed_initializer), final_ty)
+                TypedExpr::CompoundLiteral(
+                    ty,
+                    Box::new(typed_initializer),
+                    SourceSpan::default(),
+                    final_ty,
+                )
             }
             Expr::PreIncrement(expr) => {
                 let typed_expr = self.check_expression(*expr, filename);
@@ -1338,7 +1405,7 @@ impl SemanticAnalyzer {
                     ));
                 }
                 let ty = lvalue.ty().clone();
-                TypedExpr::PreIncrement(Box::new(lvalue), ty)
+                TypedExpr::PreIncrement(Box::new(lvalue), SourceSpan::default(), ty)
             }
             Expr::PreDecrement(expr) => {
                 let typed_expr = self.check_expression(*expr, filename);
@@ -1362,7 +1429,7 @@ impl SemanticAnalyzer {
                     ));
                 }
                 let ty = lvalue.ty().clone();
-                TypedExpr::PreDecrement(Box::new(lvalue), ty)
+                TypedExpr::PreDecrement(Box::new(lvalue), SourceSpan::default(), ty)
             }
             Expr::PostIncrement(expr) => {
                 let typed_expr = self.check_expression(*expr, filename);
@@ -1386,7 +1453,7 @@ impl SemanticAnalyzer {
                     ));
                 }
                 let ty = lvalue.ty().clone();
-                TypedExpr::PostIncrement(Box::new(lvalue), ty)
+                TypedExpr::PostIncrement(Box::new(lvalue), SourceSpan::default(), ty)
             }
             Expr::PostDecrement(expr) => {
                 let typed_expr = self.check_expression(*expr, filename);
@@ -1410,7 +1477,7 @@ impl SemanticAnalyzer {
                     ));
                 }
                 let ty = lvalue.ty().clone();
-                TypedExpr::PostDecrement(Box::new(lvalue), ty)
+                TypedExpr::PostDecrement(Box::new(lvalue), SourceSpan::default(), ty)
             }
             _ => todo!("This expression is not supported yet"),
         }
@@ -1509,7 +1576,7 @@ impl SemanticAnalyzer {
 
 fn is_const_expr(initializer: &TypedInitializer) -> bool {
     match initializer {
-        TypedInitializer::Expr(expr) => matches!(**expr, TypedExpr::Number(_, _)),
+        TypedInitializer::Expr(expr) => matches!(**expr, TypedExpr::Number(_, _, _)),
         TypedInitializer::List(list) => list
             .iter()
             .all(|(_, initializer)| is_const_expr(initializer)),

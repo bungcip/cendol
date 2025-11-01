@@ -212,7 +212,7 @@ impl CodeGen {
 
                             let initial_value = if let Some(init) = &declarator.initializer {
                                 if let TypedInitializer::Expr(expr) = init {
-                                    if let TypedExpr::Number(num, _) = **expr {
+                                    if let TypedExpr::Number(num, _, _) = **expr {
                                         num.to_le_bytes().to_vec()
                                     } else {
                                         return Err(CodegenError::InvalidStaticInitializer);
@@ -277,7 +277,7 @@ impl CodeGen {
                 let mut next_value = 0;
                 for (name, value, _span) in members {
                     let val = if let Some(expr) = value {
-                        if let Expr::Number(num) = **expr {
+                        if let Expr::Number(num, _) = **expr {
                             num
                         } else {
                             -1 // Dummy value
@@ -409,7 +409,7 @@ impl CodeGen {
                         let mut next_value = 0;
                         for (name, value, _span) in members {
                             let val = if let Some(expr) = value {
-                                if let Expr::Number(num) = **expr {
+                                if let Expr::Number(num, _) = **expr {
                                     num
                                 } else {
                                     -1 // Dummy value

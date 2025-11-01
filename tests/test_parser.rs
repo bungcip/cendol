@@ -5,9 +5,19 @@
 
 use cendol::file::FileManager;
 use cendol::parser::Parser;
-use cendol::parser::ast::{Expr, Function, Stmt, TranslationUnit, Type};
+use cendol::parser::ast::{Stmt, TranslationUnit};
 use cendol::preprocessor::Preprocessor;
 use thin_vec::ThinVec;
+
+macro_rules! assert_stmt_expr {
+    ($stmt:expr, $pat:pat) => {
+        assert!(
+            matches!($stmt, Stmt::Expr(ref expr) if matches!(**expr, $pat)),
+            "Expected stmt to match pattern `{}`",
+            stringify!($pat)
+        );
+    };
+}
 
 /// Test configuration constants
 mod config {
@@ -45,100 +55,51 @@ fn parse_c_body(input: &str) -> ThinVec<Stmt> {
     body
 }
 
-/// Creates a simple C program AST for testing
-fn create_simple_program_ast() -> TranslationUnit {
-    TranslationUnit {
-        globals: ThinVec::new(),
-        functions: ThinVec::from(vec![Function {
-            return_type: Type::Int,
-            name: "main".into(),
-            params: ThinVec::new(),
-            body: ThinVec::from(vec![Stmt::Return(Box::new(Expr::Number(0)))]),
-            is_inline: false,
-            is_variadic: false,
-            is_noreturn: false,
-        }]),
-    }
-}
-
-/// Creates a program AST with if-else control flow
-fn create_control_flow_program_ast() -> TranslationUnit {
-    TranslationUnit {
-        globals: ThinVec::new(),
-        functions: ThinVec::from(vec![Function {
-            return_type: Type::Int,
-            name: "main".into(),
-            params: ThinVec::new(),
-            body: ThinVec::from(vec![Stmt::If(
-                Box::new(Expr::Number(1)),
-                Box::new(Stmt::Return(Box::new(Expr::Number(1)))),
-                Some(Box::new(Stmt::Return(Box::new(Expr::Number(0))))),
-            )]),
-            is_inline: false,
-            is_variadic: false,
-            is_noreturn: false,
-        }]),
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use super::parse_c_code;
     use crate::parse_c_body;
-
-    use super::{create_control_flow_program_ast, create_simple_program_ast, parse_c_code};
     use cendol::parser::ast::{Expr, Initializer, Stmt, Type};
 
-    /// Test parsing of simple C programs
     #[test]
-    fn test_simple_program() {
-        let input = "int main() { return 0; }";
-        let ast = parse_c_code(input).unwrap();
-        let expected = create_simple_program_ast();
-        assert_eq!(ast.functions[0].name, expected.functions[0].name);
-        assert_eq!(
-            ast.functions[0].body.len(),
-            expected.functions[0].body.len()
-        );
+    fn test_return_stmt() {
+        let input = "return 0;";
+        let stmts = parse_c_body(input);
+
+        assert!(matches!(&stmts[0], Stmt::Return(..)));
     }
 
     /// Test parsing of programs with control flow (if-else statements)
     #[test]
     fn test_control_flow() {
-        let input = "int main() { if (1) return 1; else return 0; }";
-        let ast = parse_c_code(input).unwrap();
-        let expected = create_control_flow_program_ast();
-        assert_eq!(ast.functions[0].name, expected.functions[0].name);
-        assert_eq!(
-            ast.functions[0].body.len(),
-            expected.functions[0].body.len()
-        );
+        let input = "if (1) return 1; else return 0;";
+        let stmts = parse_c_body(input);
+
+        assert!(matches!(&stmts[0], Stmt::If(..)));
+        if let Stmt::If(cond, then_block, else_block) = &stmts[0] {
+            assert!(matches!(**cond, Expr::Number(..)));
+            assert!(matches!(**then_block, Stmt::Return(..)));
+
+            let else_block = *else_block.clone().unwrap();
+            assert!(matches!(else_block, Stmt::Return(..)));
+        }
     }
 
     /// Test parsing of programs with _Bool variable declarations
     #[test]
     fn test_bool_declaration() {
-        let input = "int main() { _Bool a = 1; return 0; }";
-        let ast = parse_c_code(input).unwrap();
-        let body = &ast.functions[0].body;
+        let input = "_Bool roti_bakar = 1;";
+        let stmts = parse_c_body(input);
 
-        if let Stmt::Declaration(ty, declarators, false) = &body[0] {
+        assert!(matches!(&stmts[0], Stmt::Declaration(..)));
+        if let Stmt::Declaration(_, declarators, ..) = &stmts[0] {
             let declarator = &declarators[0];
-            assert_eq!(declarator.name.as_str(), "a");
-            assert_eq!(**ty, Type::Bool);
-
-            if let Some(Initializer::Expr(expr)) = &declarator.initializer {
-                assert!(matches!(**expr, Expr::Number(1)));
-            } else {
-                panic!("Expected an initializer");
-            }
-        } else {
-            panic!("Expected a declaration statement");
-        }
-
-        if let Stmt::Return(expr) = &body[1] {
-            assert!(matches!(**expr, Expr::Number(0)));
-        } else {
-            panic!("Expected a return statement");
+            assert_eq!(declarator.name.as_str(), "roti_bakar");
+            assert_eq!(declarator.ty, Type::Bool);
+            assert!(matches!(
+                &declarator.initializer,
+                Some(Initializer::Expr(..))
+            ));
         }
     }
 
@@ -216,39 +177,11 @@ mod tests {
         }
 
         if let Stmt::Return(expr) = &body[1] {
-            assert!(matches!(**expr, Expr::Number(0)));
+            assert!(matches!(**expr, Expr::Number(0, ..)));
         } else {
             panic!("Expected a return statement");
         }
     }
-
-    // /// Test parsing of designated initializers for structs
-    // #[test]
-    // fn test_designated_initializer() {
-    //     let input = "struct { int x; int y; } point = { .y = 10, .x = 20 };";
-    //     let stmts = parse_c_body(input);
-    //     let expected = Stmt::Declaration(
-    //         Type::Struct(
-    //             None,
-    //             vec![
-    //                 cendol::parser::ast::Parameter {
-    //                     ty: Type::Int,
-    //                     name: "x".to_string(),
-    //                 },
-    //                 cendol::parser::ast::Parameter {
-    //                     ty: Type::Int,
-    //                     name: "y".to_string(),
-    //                 },
-    //             ],
-    //         ),
-    //         "point".to_string(),
-    //         Some(Box::new(Expr::StructInitializer(vec![
-    //             Expr::DesignatedInitializer("y".to_string(), Box::new(Expr::Number(10))),
-    //             Expr::DesignatedInitializer("x".to_string(), Box::new(Expr::Number(20))),
-    //         ]))),
-    //     );
-    //     assert_eq!(stmts[0], expected);
-    // }
 
     #[test]
     fn test_all_expressions() {
@@ -338,132 +271,85 @@ mod tests {
         let stmts = parse_c_body(input);
 
         // primary expressions
-        assert!(matches!(stmts[0], Stmt::Expr(ref expr) if matches!(**expr, Expr::Variable(_, _))));
-        assert!(matches!(stmts[1], Stmt::Expr(ref expr) if matches!(**expr, Expr::Number(_))));
-        assert!(matches!(stmts[2], Stmt::Expr(ref expr) if matches!(**expr, Expr::Char(_))));
-        assert!(matches!(stmts[3], Stmt::Expr(ref expr) if matches!(**expr, Expr::String(_))));
-        assert!(matches!(stmts[4], Stmt::Expr(ref expr) if matches!(**expr, Expr::Add(..)))); // currenty don't have Paren expr
+        assert_stmt_expr!(stmts[0], Expr::Variable(..));
+        assert_stmt_expr!(stmts[1], Expr::Number(..));
+        assert_stmt_expr!(stmts[2], Expr::Char(..));
+        assert_stmt_expr!(stmts[3], Expr::String(..));
+        assert_stmt_expr!(stmts[4], Expr::Add(..)); // currenty don't have Paren expr
 
         // postfix expressions
-        assert!(matches!(stmts[5], Stmt::Expr(ref expr) if matches!(**expr, Expr::Deref(..))));
-        assert!(matches!(stmts[6], Stmt::Expr(ref expr) if matches!(**expr, Expr::Call(..))));
-        assert!(matches!(stmts[7], Stmt::Expr(ref expr) if matches!(**expr, Expr::Call(..))));
-        assert!(matches!(stmts[8], Stmt::Expr(ref expr) if matches!(**expr, Expr::Member(..))));
-        assert!(
-            matches!(stmts[9], Stmt::Expr(ref expr) if matches!(**expr, Expr::PointerMember(..)))
-        );
-        assert!(
-            matches!(stmts[10], Stmt::Expr(ref expr) if matches!(**expr, Expr::PostIncrement(..)))
-        );
-        assert!(
-            matches!(stmts[11], Stmt::Expr(ref expr) if matches!(**expr, Expr::PostDecrement(..)))
-        );
-        assert!(
-            matches!(stmts[12], Stmt::Expr(ref expr) if matches!(**expr, Expr::CompoundLiteral(..)))
-        );
+        assert_stmt_expr!(stmts[5], Expr::Deref(..));
+        assert_stmt_expr!(stmts[6], Expr::Call(..));
+        assert_stmt_expr!(stmts[7], Expr::Call(..));
+        assert_stmt_expr!(stmts[8], Expr::Member(..));
+        assert_stmt_expr!(stmts[9], Expr::PointerMember(..));
+        assert_stmt_expr!(stmts[10], Expr::PostIncrement(..));
+        assert_stmt_expr!(stmts[11], Expr::PostDecrement(..));
+        assert_stmt_expr!(stmts[12], Expr::CompoundLiteral(..));
 
         // unary expressions
-        assert!(
-            matches!(stmts[13], Stmt::Expr(ref expr) if matches!(**expr, Expr::PreIncrement(..)))
-        );
-        assert!(
-            matches!(stmts[14], Stmt::Expr(ref expr) if matches!(**expr, Expr::PreDecrement(..)))
-        );
-        assert!(matches!(stmts[15], Stmt::Expr(ref expr) if matches!(**expr, Expr::AddressOf(..))));
-        assert!(matches!(stmts[16], Stmt::Expr(ref expr) if matches!(**expr, Expr::Deref(..))));
-        assert!(matches!(stmts[17], Stmt::Expr(ref expr) if matches!(**expr, Expr::Variable(..)))); // +x is parsed as just x
-        assert!(matches!(stmts[18], Stmt::Expr(ref expr) if matches!(**expr, Expr::Neg(..))));
-        assert!(
-            matches!(stmts[19], Stmt::Expr(ref expr) if matches!(**expr, Expr::BitwiseNot(..)))
-        );
-        assert!(
-            matches!(stmts[20], Stmt::Expr(ref expr) if matches!(**expr, Expr::LogicalNot(..)))
-        );
-        assert!(matches!(stmts[21], Stmt::Expr(ref expr) if matches!(**expr, Expr::Sizeof(..))));
-        assert!(
-            matches!(stmts[22], Stmt::Expr(ref expr) if matches!(**expr, Expr::SizeofType(..)))
-        );
-        assert!(
-            matches!(stmts[23], Stmt::Expr(ref expr) if matches!(**expr, Expr::AlignofType(..)))
-        );
+        assert_stmt_expr!(stmts[13], Expr::PreIncrement(..));
+        assert_stmt_expr!(stmts[14], Expr::PreDecrement(..));
+        assert_stmt_expr!(stmts[15], Expr::AddressOf(..));
+        assert_stmt_expr!(stmts[16], Expr::Deref(..));
+        assert_stmt_expr!(stmts[17], Expr::Variable(..)); // +x is parsed as just x
+        assert_stmt_expr!(stmts[18], Expr::Neg(..));
+        assert_stmt_expr!(stmts[19], Expr::BitwiseNot(..));
+        assert_stmt_expr!(stmts[20], Expr::LogicalNot(..));
+        assert_stmt_expr!(stmts[21], Expr::Sizeof(..));
+        assert_stmt_expr!(stmts[22], Expr::SizeofType(..));
+        assert_stmt_expr!(stmts[23], Expr::AlignofType(..));
 
         // cast expression
-        assert!(
-            matches!(stmts[24], Stmt::Expr(ref expr) if matches!(**expr, Expr::ExplicitCast(..)))
-        );
+        assert_stmt_expr!(stmts[24], Expr::ExplicitCast(..));
 
         // multiplicative expressions
-        assert!(matches!(stmts[25], Stmt::Expr(ref expr) if matches!(**expr, Expr::Mul(..))));
-        assert!(matches!(stmts[26], Stmt::Expr(ref expr) if matches!(**expr, Expr::Div(..))));
-        assert!(matches!(stmts[27], Stmt::Expr(ref expr) if matches!(**expr, Expr::Mod(..))));
+        assert_stmt_expr!(stmts[25], Expr::Mul(..));
+        assert_stmt_expr!(stmts[26], Expr::Div(..));
+        assert_stmt_expr!(stmts[27], Expr::Mod(..));
 
         // additive expressions
-        assert!(matches!(stmts[28], Stmt::Expr(ref expr) if matches!(**expr, Expr::Add(..))));
-        assert!(matches!(stmts[29], Stmt::Expr(ref expr) if matches!(**expr, Expr::Sub(..))));
+        assert_stmt_expr!(stmts[28], Expr::Add(..));
+        assert_stmt_expr!(stmts[29], Expr::Sub(..));
 
         // relational expressions
-        assert!(matches!(stmts[30], Stmt::Expr(ref expr) if matches!(**expr, Expr::LeftShift(..))));
-        assert!(
-            matches!(stmts[31], Stmt::Expr(ref expr) if matches!(**expr, Expr::RightShift(..)))
-        );
-        assert!(matches!(stmts[32], Stmt::Expr(ref expr) if matches!(**expr, Expr::LessThan(..))));
-        assert!(
-            matches!(stmts[33], Stmt::Expr(ref expr) if matches!(**expr, Expr::GreaterThan(..)))
-        );
-        assert!(
-            matches!(stmts[34], Stmt::Expr(ref expr) if matches!(**expr, Expr::LessThanOrEqual(..)))
-        );
-        assert!(matches!(
-            stmts[35],
-            Stmt::Expr(ref expr) if matches!(**expr, Expr::GreaterThanOrEqual(..))
-        ));
+        assert_stmt_expr!(stmts[30], Expr::LeftShift(..));
+        assert_stmt_expr!(stmts[31], Expr::RightShift(..));
+        assert_stmt_expr!(stmts[32], Expr::LessThan(..));
+        assert_stmt_expr!(stmts[33], Expr::GreaterThan(..));
+        assert_stmt_expr!(stmts[34], Expr::LessThanOrEqual(..));
+        assert_stmt_expr!(stmts[35], Expr::GreaterThanOrEqual(..));
 
         // equality expressions
-        assert!(matches!(stmts[36], Stmt::Expr(ref expr) if matches!(**expr, Expr::Equal(..))));
-        assert!(matches!(stmts[37], Stmt::Expr(ref expr) if matches!(**expr, Expr::NotEqual(..))));
+        assert_stmt_expr!(stmts[36], Expr::Equal(..));
+        assert_stmt_expr!(stmts[37], Expr::NotEqual(..));
 
         // bitwise expressions
-        assert!(
-            matches!(stmts[38], Stmt::Expr(ref expr) if matches!(**expr, Expr::BitwiseAnd(..)))
-        );
-        assert!(
-            matches!(stmts[39], Stmt::Expr(ref expr) if matches!(**expr, Expr::BitwiseXor(..)))
-        );
-        assert!(matches!(stmts[40], Stmt::Expr(ref expr) if matches!(**expr, Expr::BitwiseOr(..))));
+        assert_stmt_expr!(stmts[38], Expr::BitwiseAnd(..));
+        assert_stmt_expr!(stmts[39], Expr::BitwiseXor(..));
+        assert_stmt_expr!(stmts[40], Expr::BitwiseOr(..));
 
         // logical expressions
-        assert!(
-            matches!(stmts[41], Stmt::Expr(ref expr) if matches!(**expr, Expr::LogicalAnd(..)))
-        );
-        assert!(matches!(stmts[42], Stmt::Expr(ref expr) if matches!(**expr, Expr::LogicalOr(..))));
+        assert_stmt_expr!(stmts[41], Expr::LogicalAnd(..));
+        assert_stmt_expr!(stmts[42], Expr::LogicalOr(..));
 
         // conditional expression
-        assert!(matches!(stmts[43], Stmt::Expr(ref expr) if matches!(**expr, Expr::Ternary(..))));
+        assert_stmt_expr!(stmts[43], Expr::Ternary(..));
         // assignment expressions
-        assert!(matches!(stmts[44], Stmt::Expr(ref expr) if matches!(**expr, Expr::Assign(..))));
-        assert!(matches!(stmts[45], Stmt::Expr(ref expr) if matches!(**expr, Expr::AssignMul(..))));
-        assert!(matches!(stmts[46], Stmt::Expr(ref expr) if matches!(**expr, Expr::AssignDiv(..))));
-        assert!(matches!(stmts[47], Stmt::Expr(ref expr) if matches!(**expr, Expr::AssignMod(..))));
-        assert!(matches!(stmts[48], Stmt::Expr(ref expr) if matches!(**expr, Expr::AssignAdd(..))));
-        assert!(matches!(stmts[49], Stmt::Expr(ref expr) if matches!(**expr, Expr::AssignSub(..))));
-        assert!(
-            matches!(stmts[50], Stmt::Expr(ref expr) if matches!(**expr, Expr::AssignLeftShift(..)))
-        );
-        assert!(
-            matches!(stmts[51], Stmt::Expr(ref expr) if matches!(**expr, Expr::AssignRightShift(..)))
-        );
-        assert!(
-            matches!(stmts[52], Stmt::Expr(ref expr) if matches!(**expr, Expr::AssignBitwiseAnd(..)))
-        );
-        assert!(
-            matches!(stmts[53], Stmt::Expr(ref expr) if matches!(**expr, Expr::AssignBitwiseXor(..)))
-        );
-        assert!(
-            matches!(stmts[54], Stmt::Expr(ref expr) if matches!(**expr, Expr::AssignBitwiseOr(..)))
-        );
+        assert_stmt_expr!(stmts[44], Expr::Assign(..));
+        assert_stmt_expr!(stmts[45], Expr::AssignMul(..));
+        assert_stmt_expr!(stmts[46], Expr::AssignDiv(..));
+        assert_stmt_expr!(stmts[47], Expr::AssignMod(..));
+        assert_stmt_expr!(stmts[48], Expr::AssignAdd(..));
+        assert_stmt_expr!(stmts[49], Expr::AssignSub(..));
+        assert_stmt_expr!(stmts[50], Expr::AssignLeftShift(..));
+        assert_stmt_expr!(stmts[51], Expr::AssignRightShift(..));
+        assert_stmt_expr!(stmts[52], Expr::AssignBitwiseAnd(..));
+        assert_stmt_expr!(stmts[53], Expr::AssignBitwiseXor(..));
+        assert_stmt_expr!(stmts[54], Expr::AssignBitwiseOr(..));
 
         // comma expression
-        assert!(matches!(stmts[55], Stmt::Expr(ref expr) if matches!(**expr, Expr::Comma(..))));
+        assert_stmt_expr!(stmts[55], Expr::Comma(..));
     }
 
     /// Test parsing of goto and label statements

@@ -412,4 +412,20 @@ mod tests {
             }
         ));
     }
+
+    /// Test parsing of pointer and address-of operator precedence
+    #[test]
+    fn test_pointer_precedence() {
+        let input = "&x[1] - &x[0];";
+        let stmts = parse_c_body(input);
+        assert_stmt_expr!(stmts[0], Expr::Sub(..));
+        if let Stmt::Expr(expr) = &stmts[0] {
+            if let Expr::Sub(lhs, rhs) = &**expr {
+                assert!(matches!(**lhs, Expr::AddressOf(..)));
+                assert!(matches!(**rhs, Expr::AddressOf(..)));
+            } else {
+                panic!("Expected a subtraction expression");
+            }
+        }
+    }
 }

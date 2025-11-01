@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use thin_vec::ThinVec;
 mod expressions;
 use expressions::TypedExpression;
+use std::collections::hash_map::Entry::Vacant;
 use symbol_table::GlobalSymbol as StringId;
 pub mod error;
 
@@ -73,6 +74,12 @@ impl SymbolTable {
 }
 
 use std::collections::HashSet;
+
+pub struct SemaOutput(
+    pub TypedTranslationUnit,
+    pub Vec<(SemanticError, String, SourceSpan)>,
+    pub SemanticAnalyzer,
+);
 
 /// A semantic analyzer that checks for semantic errors in the AST.
 pub struct SemanticAnalyzer {
@@ -168,7 +175,7 @@ impl SemanticAnalyzer {
                         new_p
                     })
                     .collect();
-                Type::Struct(name.clone(), resolved_members)
+                Type::Struct(*name, resolved_members)
             }
             Type::Union(name, members) => {
                 let resolved_members = members
@@ -179,7 +186,7 @@ impl SemanticAnalyzer {
                         new_p
                     })
                     .collect();
-                Type::Union(name.clone(), resolved_members)
+                Type::Union(*name, resolved_members)
             }
             _ => ty.clone(),
         }
@@ -199,14 +206,7 @@ impl SemanticAnalyzer {
         mut self,
         program: TranslationUnit,
         filename: &str,
-    ) -> Result<
-        (
-            TypedTranslationUnit,
-            Vec<(SemanticError, String, SourceSpan)>,
-            Self,
-        ),
-        Vec<(SemanticError, String, SourceSpan)>,
-    > {
+    ) -> Result<SemaOutput, Vec<(SemanticError, String, SourceSpan)>> {
         // First pass: collect all function definitions and global declarations
         self.collect_symbols(&program, filename);
 
@@ -214,7 +214,7 @@ impl SemanticAnalyzer {
         let typed_program = self.check_program(program, filename);
 
         if self.errors.is_empty() {
-            Ok((typed_program, self.warnings.clone(), self))
+            Ok(SemaOutput(typed_program, self.warnings.clone(), self))
         } else {
             Err(self.errors)
         }
@@ -228,14 +228,14 @@ impl SemanticAnalyzer {
                     if let Some(existing) = self.symbol_table.lookup(name) {
                         if existing.is_function {
                             self.errors.push((
-                                SemanticError::FunctionRedeclaration(name.clone()),
+                                SemanticError::FunctionRedeclaration(*name),
                                 filename.to_string(),
                                 SourceSpan::default(),
                             ));
                         }
                     } else {
                         self.symbol_table.insert(
-                            name.clone(),
+                            *name,
                             Symbol {
                                 ty: *ty.clone(),
                                 is_function: true,
@@ -256,7 +256,7 @@ impl SemanticAnalyzer {
                                     num
                                 } else {
                                     self.errors.push((
-                                        SemanticError::InvalidEnumInitializer(name.clone()),
+                                        SemanticError::InvalidEnumInitializer(*name),
                                         filename.to_string(),
                                         *span,
                                     ));
@@ -266,25 +266,25 @@ impl SemanticAnalyzer {
                                 next_value
                             };
 
-                            if self.enum_constants.contains_key(&name) {
+                            if self.enum_constants.contains_key(name) {
                                 self.errors.push((
-                                    SemanticError::VariableRedeclaration(name.clone()),
+                                    SemanticError::VariableRedeclaration(*name),
                                     filename.to_string(),
                                     *span,
                                 ));
                             } else {
-                                self.enum_constants.insert(name.clone(), val);
+                                self.enum_constants.insert(*name, val);
                             }
                             next_value = val + 1;
                         }
                     } else if let Type::Struct(Some(name), members) = &**ty {
-                        if !members.is_empty() || !self.struct_definitions.contains_key(&name) {
-                            self.struct_definitions.insert(name.clone(), *ty.clone());
+                        if !members.is_empty() || !self.struct_definitions.contains_key(name) {
+                            self.struct_definitions.insert(*name, *ty.clone());
                         }
-                    } else if let Type::Union(Some(name), members) = &**ty {
-                        if !members.is_empty() || !self.union_definitions.contains_key(&name) {
-                            self.union_definitions.insert(name.clone(), *ty.clone());
-                        }
+                    } else if let Type::Union(Some(name), members) = &**ty
+                        && (!members.is_empty() || !self.union_definitions.contains_key(name))
+                    {
+                        self.union_definitions.insert(*name, *ty.clone());
                     }
 
                     for declarator in declarators {
@@ -293,14 +293,14 @@ impl SemanticAnalyzer {
                         if let Some(existing) = self.symbol_table.lookup(&declarator.name) {
                             if existing.is_function {
                                 self.errors.push((
-                                    SemanticError::VariableRedeclaration(declarator.name.clone()),
+                                    SemanticError::VariableRedeclaration(declarator.name),
                                     filename.to_string(),
                                     declarator.span,
                                 ));
                             }
                         } else {
                             self.symbol_table.insert(
-                                declarator.name.clone(),
+                                declarator.name,
                                 Symbol {
                                     ty: declarator.ty.clone(),
                                     is_function: false,
@@ -320,14 +320,14 @@ impl SemanticAnalyzer {
             if let Some(existing) = self.symbol_table.lookup(&function.name) {
                 if existing.is_function {
                     self.errors.push((
-                        SemanticError::FunctionRedeclaration(function.name.clone()),
+                        SemanticError::FunctionRedeclaration(function.name),
                         filename.to_string(),
                         SourceSpan::default(),
                     ));
                 }
             } else {
                 self.symbol_table.insert(
-                    function.name.clone(),
+                    function.name,
                     Symbol {
                         ty: function.return_type.clone(),
                         is_function: true,
@@ -343,7 +343,7 @@ impl SemanticAnalyzer {
     fn check_program(&mut self, program: TranslationUnit, filename: &str) -> TypedTranslationUnit {
         let mut typed_functions = Vec::new();
         for function in program.functions {
-            self.current_function = Some(function.name.clone());
+            self.current_function = Some(function.name);
             typed_functions.push(self.check_function(function, filename));
         }
 
@@ -357,7 +357,7 @@ impl SemanticAnalyzer {
             if let Some(symbol) = self.symbol_table.lookup(name) {
                 typed_globals.push(TypedStmt::FunctionDeclaration {
                     ty: symbol.ty.clone(),
-                    name: name.clone(),
+                    name: *name,
                     params: ThinVec::new(), // Built-ins don't have specified params in this context
                     is_variadic: true,      // Assume built-ins can be variadic
                     is_inline: false,
@@ -371,7 +371,7 @@ impl SemanticAnalyzer {
             .iter()
             .filter_map(|stmt| {
                 if let TypedStmt::FunctionDeclaration { name, .. } = stmt {
-                    Some(name.clone())
+                    Some(*name)
                 } else {
                     None
                 }
@@ -379,17 +379,17 @@ impl SemanticAnalyzer {
             .collect();
 
         for name in &self.used_builtins {
-            if !declared_functions.contains(name) {
-                if let Some(symbol) = self.symbol_table.lookup(name) {
-                    typed_globals.push(TypedStmt::FunctionDeclaration {
-                        ty: symbol.ty.clone(),
-                        name: name.clone(),
-                        params: ThinVec::new(),
-                        is_variadic: true, // Assume variadic
-                        is_inline: false,
-                        is_noreturn: false,
-                    });
-                }
+            if !declared_functions.contains(name)
+                && let Some(symbol) = self.symbol_table.lookup(name)
+            {
+                typed_globals.push(TypedStmt::FunctionDeclaration {
+                    ty: symbol.ty.clone(),
+                    name: *name,
+                    params: ThinVec::new(),
+                    is_variadic: true, // Assume variadic
+                    is_inline: false,
+                    is_noreturn: false,
+                });
             }
         }
 
@@ -406,12 +406,12 @@ impl SemanticAnalyzer {
                 Stmt::Label(name, body, span) => {
                     if self.labels.contains_key(name) {
                         self.errors.push((
-                            SemanticError::VariableRedeclaration(name.clone()),
+                            SemanticError::VariableRedeclaration(*name),
                             filename.to_string(),
                             *span,
                         ));
                     } else {
-                        self.labels.insert(name.clone(), *span);
+                        self.labels.insert(*name, *span);
                     }
                     self.collect_labels(&[*body.clone()], filename);
                 }
@@ -465,16 +465,16 @@ impl SemanticAnalyzer {
         // Check parameters for redeclaration
         let mut param_names = std::collections::HashSet::new();
         for param in &function.params {
-            if !param_names.insert(param.name.clone()) {
+            if !param_names.insert(param.name) {
                 self.errors.push((
-                    SemanticError::VariableRedeclaration(param.name.clone()),
+                    SemanticError::VariableRedeclaration(param.name),
                     filename.to_string(),
                     param.span,
                 ));
             }
             // Add parameters to local symbol table
             self.symbol_table.insert(
-                param.name.clone(),
+                param.name,
                 Symbol {
                     ty: param.ty.clone(),
                     is_function: false,
@@ -527,42 +527,38 @@ impl SemanticAnalyzer {
                         if !members.is_empty() {
                             for member in members.iter_mut() {
                                 if let Type::Struct(Some(s_name), s_members) = &member.ty {
-                                    if s_members.is_empty() {
-                                        if let Some(def) = self.struct_definitions.get(s_name) {
-                                            member.ty = def.clone();
-                                        }
+                                    if s_members.is_empty()
+                                        && let Some(def) = self.struct_definitions.get(s_name)
+                                    {
+                                        member.ty = def.clone();
                                     }
-                                } else if let Type::Union(Some(u_name), u_members) = &member.ty {
-                                    if u_members.is_empty() {
-                                        if let Some(def) = self.union_definitions.get(u_name) {
-                                            member.ty = def.clone();
-                                        }
-                                    }
+                                } else if let Type::Union(Some(u_name), u_members) = &member.ty
+                                    && u_members.is_empty()
+                                    && let Some(def) = self.union_definitions.get(u_name)
+                                {
+                                    member.ty = def.clone();
                                 }
                             }
-                            self.struct_definitions
-                                .insert(name.clone(), *base_ty.clone());
+                            self.struct_definitions.insert(*name, *base_ty.clone());
                         }
                     }
                     Type::Union(Some(name), members) => {
                         for member in members.iter_mut() {
                             if let Type::Struct(Some(s_name), s_members) = &member.ty {
-                                if s_members.is_empty() {
-                                    if let Some(def) = self.struct_definitions.get(s_name) {
-                                        member.ty = def.clone();
-                                    }
+                                if s_members.is_empty()
+                                    && let Some(def) = self.struct_definitions.get(s_name)
+                                {
+                                    member.ty = def.clone();
                                 }
-                            } else if let Type::Union(Some(u_name), u_members) = &member.ty {
-                                if u_members.is_empty() {
-                                    if let Some(def) = self.union_definitions.get(u_name) {
-                                        member.ty = def.clone();
-                                    }
-                                }
+                            } else if let Type::Union(Some(u_name), u_members) = &member.ty
+                                && u_members.is_empty()
+                                && let Some(def) = self.union_definitions.get(u_name)
+                            {
+                                member.ty = def.clone();
                             }
                         }
                         if !members.is_empty() || !self.union_definitions.contains_key(name) {
-                            self.union_definitions
-                                .insert(name.clone(), *base_ty.clone());
+                            self.union_definitions.insert(*name, *base_ty.clone());
                         }
                     }
                     _ => {}
@@ -578,7 +574,7 @@ impl SemanticAnalyzer {
                                     num
                                 } else {
                                     self.errors.push((
-                                        SemanticError::InvalidEnumInitializer(name.clone()),
+                                        SemanticError::InvalidEnumInitializer(name),
                                         filename.to_string(),
                                         span,
                                     ));
@@ -588,15 +584,15 @@ impl SemanticAnalyzer {
                                 next_value
                             };
 
-                            if self.enum_constants.contains_key(&name) {
+                            if let Vacant(e) = self.enum_constants.entry(name) {
+                                e.insert(val);
+                            } else {
                                 self.errors.push((
                                     SemanticError::VariableRedeclaration(name),
                                     filename.to_string(),
                                     span,
                                 ));
-                            } else {
-                                self.enum_constants.insert(name.clone(), val);
-                            }
+                            };
                             next_value = val + 1;
                         }
                     }
@@ -610,7 +606,7 @@ impl SemanticAnalyzer {
                         && !existing.is_function
                     {
                         self.errors.push((
-                            SemanticError::VariableRedeclaration(declarator.name.clone()),
+                            SemanticError::VariableRedeclaration(declarator.name),
                             filename.to_string(),
                             declarator.span,
                         ));
@@ -620,7 +616,7 @@ impl SemanticAnalyzer {
                     if self.symbol_table.lookup(&declarator.name).is_none() {
                         let resolved_ty = self.resolve_type(&declarator.ty);
                         self.symbol_table.insert(
-                            declarator.name.clone(),
+                            declarator.name,
                             Symbol {
                                 ty: resolved_ty,
                                 is_function: false,
@@ -652,7 +648,7 @@ impl SemanticAnalyzer {
                         initializer: typed_initializer,
                     });
                 }
-                TypedStmt::Declaration(*base_ty, typed_declarators.into(), is_static)
+                TypedStmt::Declaration(*base_ty, typed_declarators, is_static)
             }
             Stmt::Expr(expr) => {
                 let typed_expr = self.check_expression(*expr, filename);
@@ -680,14 +676,14 @@ impl SemanticAnalyzer {
                         if let Some(existing) = self.symbol_table.lookup(&name) {
                             if !existing.is_function {
                                 self.errors.push((
-                                    SemanticError::FunctionRedeclaration(name.clone()),
+                                    SemanticError::FunctionRedeclaration(name),
                                     filename.to_string(),
                                     SourceSpan::default(),
                                 ));
                             }
                         } else {
                             self.symbol_table.insert(
-                                name.clone(),
+                                name,
                                 Symbol {
                                     ty: ty.clone(),
                                     is_function: false,
@@ -747,7 +743,7 @@ impl SemanticAnalyzer {
             Stmt::Goto(label, span) => {
                 if !self.labels.contains_key(&label) {
                     self.errors.push((
-                        SemanticError::UndefinedLabel(label.clone()),
+                        SemanticError::UndefinedLabel(label),
                         filename.to_string(),
                         span,
                     ));
@@ -785,14 +781,14 @@ impl SemanticAnalyzer {
                         filename.to_string(),
                         typed_expr.span(),
                     ));
-                } else if let TypedExpr::Number(val, _) = typed_expr {
-                    if val == 0 {
-                        self.errors.push((
-                            SemanticError::StaticAssertFailed(message.clone()),
-                            filename.to_string(),
-                            typed_expr.span(),
-                        ));
-                    }
+                } else if let TypedExpr::Number(val, _) = typed_expr
+                    && val == 0
+                {
+                    self.errors.push((
+                        SemanticError::StaticAssertFailed(message),
+                        filename.to_string(),
+                        typed_expr.span(),
+                    ));
                 }
                 TypedStmt::StaticAssert(Box::new(typed_expr), message)
             }
@@ -953,12 +949,12 @@ impl SemanticAnalyzer {
 
         match expr {
             Expr::Variable(name, location) => {
-                self.used_variables.insert(name.clone());
+                self.used_variables.insert(name);
                 if !self.symbol_table.contains_key(&name)
                     && !self.enum_constants.contains_key(&name)
                 {
                     self.errors.push((
-                        SemanticError::UndefinedVariable(name.clone()),
+                        SemanticError::UndefinedVariable(name),
                         filename.to_string(),
                         location,
                     ));
@@ -996,7 +992,7 @@ impl SemanticAnalyzer {
                     }
                 } else {
                     self.errors.push((
-                        SemanticError::UndefinedFunction(name.clone()),
+                        SemanticError::UndefinedFunction(name),
                         filename.to_string(),
                         location,
                     ));
@@ -1078,8 +1074,7 @@ impl SemanticAnalyzer {
                 let typed = self.check_expression(*expr, filename);
                 let resolved_ty = self.resolve_type(typed.ty());
                 let members = match resolved_ty {
-                    Type::Struct(_, members) => Some(members),
-                    Type::Union(_, members) => Some(members),
+                    Type::Struct(_, members) | Type::Union(_, members) => Some(members),
                     other => {
                         self.errors.push((
                             SemanticError::NotAStructOrUnion(other),
@@ -1094,7 +1089,7 @@ impl SemanticAnalyzer {
                     .and_then(|m| m.iter().find(|p| p.name == member).map(|p| p.ty.clone()))
                     .unwrap_or_else(|| {
                         self.errors.push((
-                            SemanticError::UndefinedMember(member.clone()),
+                            SemanticError::UndefinedMember(member),
                             filename.to_string(),
                             typed.span(),
                         ));
@@ -1123,8 +1118,7 @@ impl SemanticAnalyzer {
                 // Now perform member access on the dereferenced expression
                 let resolved_ty = self.resolve_type(deref_expr.ty());
                 let members = match resolved_ty {
-                    Type::Struct(_, members) => Some(members),
-                    Type::Union(_, members) => Some(members),
+                    Type::Struct(_, members) | Type::Union(_, members) => Some(members),
                     other => {
                         self.errors.push((
                             SemanticError::NotAStructOrUnion(other),
@@ -1139,7 +1133,7 @@ impl SemanticAnalyzer {
                     .and_then(|m| m.iter().find(|p| p.name == member).map(|p| p.ty.clone()))
                     .unwrap_or_else(|| {
                         self.errors.push((
-                            SemanticError::UndefinedMember(member.clone()),
+                            SemanticError::UndefinedMember(member),
                             filename.to_string(),
                             deref_expr.span(),
                         ));
@@ -1180,10 +1174,10 @@ impl SemanticAnalyzer {
             Expr::CompoundLiteral(ty, initializer) => {
                 let typed_initializer = self.convert_initializer_to_typed(*initializer, filename);
                 let mut final_ty = *ty.clone();
-                if let Type::Array(elem_ty, 0) = &final_ty {
-                    if let TypedInitializer::List(list) = &typed_initializer {
-                        final_ty = Type::Array(elem_ty.clone(), list.len());
-                    }
+                if let Type::Array(elem_ty, 0) = &final_ty
+                    && let TypedInitializer::List(list) = &typed_initializer
+                {
+                    final_ty = Type::Array(elem_ty.clone(), list.len());
                 }
                 TypedExpr::CompoundLiteral(ty, Box::new(typed_initializer), final_ty)
             }
@@ -1289,10 +1283,7 @@ impl SemanticAnalyzer {
 
 fn is_const_expr(initializer: &TypedInitializer) -> bool {
     match initializer {
-        TypedInitializer::Expr(expr) => match **expr {
-            TypedExpr::Number(_, _) => true,
-            _ => false,
-        },
+        TypedInitializer::Expr(expr) => matches!(**expr, TypedExpr::Number(_, _)),
         TypedInitializer::List(list) => list
             .iter()
             .all(|(_, initializer)| is_const_expr(initializer)),

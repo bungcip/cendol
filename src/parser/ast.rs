@@ -81,6 +81,14 @@ impl Type {
         }
     }
 
+    pub fn is_record(&self) -> bool {
+        matches!(self, Type::Struct(..) | Type::Union(..))
+    }
+
+    pub fn is_aggregate(&self) -> bool {
+        matches!(self, Type::Struct(..) | Type::Union(..) | Type::Array(..))
+    }
+
     /// Returns the rank of an integer type.
     pub fn get_integer_rank(&self) -> i32 {
         match self {

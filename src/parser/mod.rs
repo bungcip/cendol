@@ -15,6 +15,8 @@ pub mod error;
 pub mod string_interner;
 pub mod token;
 
+pub struct FunctionSignature(Type, StringId, ThinVec<Parameter>, bool, bool, bool);
+
 /// A parser that converts a stream of tokens into an abstract syntax tree.
 pub struct Parser {
     tokens: Vec<Token>,
@@ -1078,7 +1080,7 @@ impl Parser {
     fn parse_function_signature(
         &mut self,
         param_name_required: bool,
-    ) -> Result<(Type, StringId, ThinVec<Parameter>, bool, bool, bool), ParserError> {
+    ) -> Result<FunctionSignature, ParserError> {
         let mut is_inline = false;
         let mut is_noreturn = false;
         loop {
@@ -1113,12 +1115,19 @@ impl Parser {
 
             self.eat_token(&TokenKind::Comma)?;
         }
-        Ok((ty, id, params, is_inline, is_variadic, is_noreturn))
+        Ok(FunctionSignature(
+            ty,
+            id,
+            params,
+            is_inline,
+            is_variadic,
+            is_noreturn,
+        ))
     }
 
     /// Parses a function.
     fn parse_function(&mut self) -> Result<Function, ParserError> {
-        let (return_type, name, params, is_inline, is_variadic, is_noreturn) =
+        let FunctionSignature(return_type, name, params, is_inline, is_variadic, is_noreturn) =
             self.parse_function_signature(false)?;
         self.expect_punct(TokenKind::LeftBrace)?;
         let mut stmts = ThinVec::new();
@@ -1143,7 +1152,7 @@ impl Parser {
     /// A `Result` containing the parsed `Program`, or a `ParserError` if parsing fails.
     fn parse_global(&mut self) -> Result<Stmt, ParserError> {
         let pos = self.position;
-        if let Ok((ty, name, params, is_inline, is_variadic, is_noreturn)) =
+        if let Ok(FunctionSignature(ty, name, params, is_inline, is_variadic, is_noreturn)) =
             self.parse_function_signature(false)
         {
             if self.eat_token(&TokenKind::Semicolon)? {
@@ -1303,7 +1312,7 @@ impl Parser {
                 self.eat()?;
                 self.expect_punct(TokenKind::RightParen)?;
                 self.expect_punct(TokenKind::Semicolon)?;
-                Ok(Stmt::StaticAssert(Box::new(expr), s.clone()))
+                Ok(Stmt::StaticAssert(Box::new(expr), s))
             }
             _ => Err(ParserError::UnexpectedToken(token.clone())),
         }

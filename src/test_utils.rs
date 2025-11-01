@@ -7,6 +7,7 @@ use crate::parser::ast::{Expr, Function, Stmt, TranslationUnit, Type};
 use crate::preprocessor::Preprocessor;
 use crate::preprocessor::lexer::Lexer;
 use crate::preprocessor::token::{Token, TokenKind};
+use crate::semantic::SemaOutput;
 use thin_vec::ThinVec;
 
 use std::fs;
@@ -351,7 +352,7 @@ pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> 
     // Now check semantic errors
     let analyzer = crate::semantic::SemanticAnalyzer::with_builtins();
     match analyzer.analyze(ast, filename) {
-        Ok((_, warnings, _)) => {
+        Ok(SemaOutput(_, warnings, _)) => {
             if warnings.is_empty() {
                 Ok(())
             } else {

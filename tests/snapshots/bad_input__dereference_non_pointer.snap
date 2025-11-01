@@ -5,14 +5,10 @@ expression: err.unwrap_err()
 msg: "Cannot dereference non-pointer type `Int`"
 path: dereference_non_pointer.c
 span:
-  file: 0
-  start:
-    file: 0
-    line: 1
-    column: 27
-  end:
-    file: 0
-    line: 1
-    column: 28
+  file_id: 0
+  start_line: 1
+  start_column: 27
+  end_line: 1
+  end_column: 28
 verbose: false
 is_warning: false

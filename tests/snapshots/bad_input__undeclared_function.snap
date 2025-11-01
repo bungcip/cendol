@@ -5,14 +5,10 @@ expression: err.unwrap_err()
 msg: "Undefined function `undeclared_function` called"
 path: undeclared_function.c
 span:
-  file: 0
-  start:
-    file: 0
-    line: 1
-    column: 14
-  end:
-    file: 0
-    line: 1
-    column: 33
+  file_id: 0
+  start_line: 1
+  start_column: 14
+  end_line: 1
+  end_column: 33
 verbose: false
 is_warning: false

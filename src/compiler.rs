@@ -153,7 +153,7 @@ impl Compiler {
                     let path = self
                         .preprocessor
                         .file_manager()
-                        .get_path(location.start.file)
+                        .get_path(location.file_id)
                         .unwrap()
                         .to_str()
                         .unwrap()

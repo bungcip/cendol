@@ -334,7 +334,7 @@ pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> 
             let (path, span) = if let Some(location) = location {
                 let path = preprocessor
                     .file_manager()
-                    .get_path(location.start.file)
+                    .get_path(location.file_id)
                     .unwrap()
                     .to_str()
                     .unwrap()

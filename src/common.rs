@@ -30,15 +30,23 @@ impl SourceLocation {
     }
 }
 
+impl From<SourceLocation> for SourceSpan {
+    fn from(value: SourceLocation) -> Self {
+        Self::new(value.file, value, value)
+    }
+}
+
 /// Represents a span in a source file, from start to end.
 #[derive(Debug, PartialEq, Clone, Default, Copy, serde::Serialize)]
 pub struct SourceSpan {
     /// The file name.
-    pub file: FileId,
+    pub file_id: FileId,
     /// The start location.
-    pub start: SourceLocation,
+    pub start_line: u32,
+    pub start_column: u32,
     /// The end location.
-    pub end: SourceLocation,
+    pub end_line: u32,
+    pub end_column: u32,
 }
 
 impl SourceSpan {
@@ -54,7 +62,17 @@ impl SourceSpan {
     ///
     /// A new `SourceSpan` instance.
     pub fn new(file: FileId, start: SourceLocation, end: SourceLocation) -> Self {
-        SourceSpan { file, start, end }
+        SourceSpan {
+            file_id: file,
+            start_line: start.line,
+            start_column: start.column,
+            end_line: end.line,
+            end_column: end.column,
+        }
+    }
+
+    pub fn start(&self) -> SourceLocation {
+        SourceLocation::new(self.file_id, self.start_line, self.start_column)
     }
 }
 

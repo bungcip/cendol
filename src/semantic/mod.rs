@@ -6,8 +6,8 @@ use crate::parser::ast::{
 };
 use crate::parser::string_interner::StringInterner;
 use crate::semantic::error::SemanticError;
-use thin_vec::ThinVec;
 use std::collections::HashMap;
+use thin_vec::ThinVec;
 mod expressions;
 use expressions::TypedExpression;
 use symbol_table::GlobalSymbol as StringId;
@@ -359,7 +359,7 @@ impl SemanticAnalyzer {
                     ty: symbol.ty.clone(),
                     name: name.clone(),
                     params: ThinVec::new(), // Built-ins don't have specified params in this context
-                    is_variadic: true, // Assume built-ins can be variadic
+                    is_variadic: true,      // Assume built-ins can be variadic
                     is_inline: false,
                     is_noreturn: false,
                 });
@@ -1237,16 +1237,6 @@ impl SemanticAnalyzer {
                     .collect();
                 TypedInitializer::List(typed_list)
             }
-        }
-    }
-
-    /// Performs integer promotions on a type.
-    fn integer_promote(&self, ty: &Type) -> Type {
-        match ty {
-            Type::Bool | Type::Char | Type::UnsignedChar | Type::Short | Type::UnsignedShort => {
-                Type::Int
-            }
-            _ => ty.clone(),
         }
     }
 

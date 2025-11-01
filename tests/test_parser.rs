@@ -86,7 +86,7 @@ mod tests {
     use crate::parse_c_body;
 
     use super::{create_control_flow_program_ast, create_simple_program_ast, parse_c_code};
-    use cendol::parser::ast::{Declarator, Expr, Initializer, Stmt, Type};
+    use cendol::parser::ast::{Expr, Initializer, Stmt, Type};
 
     /// Test parsing of simple C programs
     #[test]

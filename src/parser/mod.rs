@@ -7,8 +7,8 @@ use crate::parser::error::ParserError;
 use crate::parser::string_interner::StringId;
 use crate::parser::token::{KeywordKind, Token, TokenKind};
 use crate::preprocessor;
-use thin_vec::ThinVec;
 use std::collections::HashMap;
+use thin_vec::ThinVec;
 
 pub mod ast;
 pub mod error;
@@ -927,7 +927,11 @@ impl Parser {
         if self.is_type_name() && self.peek()? != TokenKind::LeftParen {
             let base_type = self.parse_type_specifier()?;
             if self.eat_token(&TokenKind::Semicolon)? {
-                return Ok(Stmt::Declaration(Box::new(base_type), ThinVec::new(), false));
+                return Ok(Stmt::Declaration(
+                    Box::new(base_type),
+                    ThinVec::new(),
+                    false,
+                ));
             }
             let mut declarators = ThinVec::new();
             loop {
@@ -1175,7 +1179,11 @@ impl Parser {
         let is_static = self.eat_token(&TokenKind::Keyword(KeywordKind::Static))?;
         let base_type = self.parse_type_specifier()?;
         if self.eat_token(&TokenKind::Semicolon)? {
-            return Ok(Stmt::Declaration(Box::new(base_type), ThinVec::new(), is_static));
+            return Ok(Stmt::Declaration(
+                Box::new(base_type),
+                ThinVec::new(),
+                is_static,
+            ));
         }
         let mut declarators = ThinVec::new();
         loop {

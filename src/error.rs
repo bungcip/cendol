@@ -94,26 +94,26 @@ pub fn report(report: &Report) {
 
     if let Some(span) = &report.span {
         let source = std::fs::read_to_string(&path).unwrap_or_else(|_| "".to_string());
-        let start_offset = if span.start.line == 0 || span.start.column == 0 {
+        let start_offset = if span.start_line == 0 || span.start_column == 0 {
             0
         } else {
             source
                 .lines()
-                .take(span.start.line as usize - 1)
+                .take(span.start_line as usize - 1)
                 .map(|line| line.len() + 1)
                 .sum::<usize>()
-                + span.start.column as usize
+                + span.start_column as usize
                 - 1
         };
-        let end_offset = if span.end.line == 0 || span.end.column == 0 {
+        let end_offset = if span.end_line == 0 || span.end_column == 0 {
             start_offset + 1
         } else {
             source
                 .lines()
-                .take(span.end.line as usize - 1)
+                .take(span.end_line as usize - 1)
                 .map(|line| line.len() + 1)
                 .sum::<usize>()
-                + span.end.column as usize
+                + span.end_column as usize
                 - 1
         };
 

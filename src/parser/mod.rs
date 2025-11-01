@@ -777,8 +777,7 @@ impl Parser {
                             self.eat()?;
                             let index = self.parse_expr()?;
                             self.expect_punct(TokenKind::RightBracket)?;
-                            let add = Expr::Add(Box::new(expr), Box::new(index));
-                            expr = Expr::Deref(Box::new(add));
+                            expr = Expr::Deref(Box::new(Expr::Add(Box::new(expr), Box::new(index))));
                         }
                         _ => break,
                     }
@@ -787,12 +786,12 @@ impl Parser {
             }
             TokenKind::Star => {
                 self.eat()?;
-                let expr = self.parse_primary()?;
+                let expr = self.parse_pratt_expr(27)?;
                 Ok(Expr::Deref(Box::new(expr)))
             }
             TokenKind::Ampersand => {
                 self.eat()?;
-                let expr = self.parse_pratt_expr(15)?;
+                let expr = self.parse_pratt_expr(27)?;
                 Ok(Expr::AddressOf(Box::new(expr)))
             }
             TokenKind::Minus => {

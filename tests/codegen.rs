@@ -208,37 +208,37 @@ mod tests {
     //     assert_eq!(exit_code, 2);
     // }
 
-    // /// Test code generation with pointer member access
-    // #[test]
-    // fn test_pointer_member_access() {
-    //     let input = r#"
-    //     int main() {
-    //         struct { int x; int y; } point = { .x = 10, .y = 20 };
-    //         struct { int x; int y; } *p = &point;
-    //         return p->y;
-    //     }
-    //     "#;
-    //     let exit_code = compile_and_run(input, "pointer_member_access").unwrap();
-    //     assert_eq!(exit_code, 20);
-    // }
+    /// Test code generation with pointer member access
+    #[test]
+    fn test_pointer_member_access() {
+        let input = r#"
+        int main() {
+            struct { int x; int y; } point = { .x = 10, .y = 20 };
+            struct { int x; int y; } *p = &point;
+            return p->y;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "pointer_member_access").unwrap();
+        assert_eq!(exit_code, 20);
+    }
 
-    // /// Test code generation with advanced pointer member access
-    // #[test]
-    // fn test_advanced_pointer_member_access() {
-    //     let input = r#"
-    //     struct Point { int x; int y; };
-    //     struct Point get_point() {
-    //         struct Point p;
-    //         p.y = 20;
-    //         return p;
-    //     }
-    //     int main() {
-    //         return get_point().y;
-    //     }
-    //     "#;
-    //     let exit_code = compile_and_run(input, "advanced_pointer_member_access").unwrap();
-    //     assert_eq!(exit_code, 20);
-    // }
+    /// Test code generation with advanced pointer member access
+    #[test]
+    fn test_advanced_pointer_member_access() {
+        let input = r#"
+        struct Point { int x; int y; };
+        struct Point get_point() {
+            struct Point p;
+            p.y = 20;
+            return p;
+        }
+        int main() {
+            return get_point().y;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "advanced_pointer_member_access").unwrap();
+        assert_eq!(exit_code, 20);
+    }
 
     /// Test code generation for type casting
     #[test]

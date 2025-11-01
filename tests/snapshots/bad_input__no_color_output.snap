@@ -1,0 +1,14 @@
+---
+source: tests/bad_input.rs
+expression: err.unwrap_err()
+---
+msg: Unexpected token
+path: no_color_output.c
+span:
+  file_id: 0
+  start_line: 1
+  start_column: 25
+  end_line: 1
+  end_column: 26
+verbose: false
+is_warning: false

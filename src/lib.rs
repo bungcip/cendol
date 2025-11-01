@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 //! A C compiler implemented in Rust.
 
 pub mod file;

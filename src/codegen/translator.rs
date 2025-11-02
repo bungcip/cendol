@@ -14,11 +14,11 @@ use std::collections::HashMap;
 
 use super::SymbolTable;
 use super::util;
+use crate::parser::string_interner::StringInterner;
 use cranelift_module::DataId;
 use cranelift_module::FuncId;
 use cranelift_module::Linkage;
 use cranelift_object::ObjectModule;
-use crate::parser::string_interner::StringInterner;
 
 /// The state of the current block.
 #[derive(PartialEq, PartialOrd)]
@@ -213,27 +213,23 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 current_offset = (current_offset + member_alignment - 1) & !(member_alignment - 1);
                 if member.name == *member_name {
                     return Some((current_offset, member.ty.clone()));
-                } else if member.name == empty_name {
-                    if let Type::Struct(..) | Type::Union(..) = &member.ty {
-                        if let Some((offset, ty)) =
-                            self.find_member_offset_recursively(&member.ty, member_name)
-                        {
-                            return Some((current_offset + offset, ty));
-                        }
-                    }
+                } else if member.name == empty_name
+                    && let Type::Struct(..) | Type::Union(..) = &member.ty
+                    && let Some((offset, ty)) =
+                        self.find_member_offset_recursively(&member.ty, member_name)
+                {
+                    return Some((current_offset + offset, ty));
                 }
                 current_offset += self.get_type_size(&member.ty);
             }
         } else if let Type::Union(..) = &resolved_ty {
             for member in members {
-                if member.name == empty_name {
-                    if let Type::Struct(..) | Type::Union(..) = &member.ty {
-                        if let Some((offset, ty)) =
-                            self.find_member_offset_recursively(&member.ty, member_name)
-                        {
-                            return Some((offset, ty));
-                        }
-                    }
+                if member.name == empty_name
+                    && let Type::Struct(..) | Type::Union(..) = &member.ty
+                    && let Some((offset, ty)) =
+                        self.find_member_offset_recursively(&member.ty, member_name)
+                {
+                    return Some((offset, ty));
                 }
             }
         }
@@ -1212,12 +1208,9 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         Ok((member_addr, member_ty))
                     } else {
                         Ok((
-                            self.builder.ins().load(
-                                types::I64,
-                                MemFlags::new(),
-                                member_addr,
-                                0,
-                            ),
+                            self.builder
+                                .ins()
+                                .load(types::I64, MemFlags::new(), member_addr, 0),
                             member_ty,
                         ))
                     }

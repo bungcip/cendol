@@ -60,9 +60,10 @@ pub fn evaluate_static_initializer(
 
         // Handle address-of expressions
         TypedExpr::AddressOf(lvalue, _, _) => match &**lvalue {
-            TypedLValue::Variable(name, _, _) => {
-                Ok(EvaluatedInitializer::Reloc { name: *name, addend: 0 })
-            }
+            TypedLValue::Variable(name, _, _) => Ok(EvaluatedInitializer::Reloc {
+                name: *name,
+                addend: 0,
+            }),
             // Other lvalues like string literals will be handled separately.
             _ => Err(CodegenError::InvalidStaticInitializer),
         },

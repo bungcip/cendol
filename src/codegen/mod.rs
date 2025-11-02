@@ -9,7 +9,7 @@ use cranelift_codegen::ir::Function;
 use cranelift_codegen::ir::{AbiParam, types};
 use cranelift_codegen::settings;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
-use cranelift_module::{Linkage, Module, DataDescription};
+use cranelift_module::{DataDescription, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -222,7 +222,8 @@ impl CodeGen {
                                 if let TypedInitializer::Expr(expr) = init {
                                     // Special handling for string literals
                                     if let TypedExpr::String(s, _, _) = **expr {
-                                        let name = format!(".L.str.{}", self.anonymous_string_count);
+                                        let name =
+                                            format!(".L.str.{}", self.anonymous_string_count);
                                         self.anonymous_string_count += 1;
                                         let mut val = util::unescape_string(s.as_str());
                                         val.push(0); // Null terminator
@@ -234,12 +235,12 @@ impl CodeGen {
                                         str_desc.define(val.into_boxed_slice());
                                         self.module.define_data(str_id, &str_desc).unwrap();
 
-                                        let reloc = Reloc::Abs8;
                                         let offset = 0;
                                         data_desc.define(vec![0; 8].into_boxed_slice());
-                                        let global_val = self.module.declare_data_in_data(str_id, &mut data_desc);
+                                        let global_val = self
+                                            .module
+                                            .declare_data_in_data(str_id, &mut data_desc);
                                         data_desc.write_data_addr(offset, global_val, 0);
-
                                     } else {
                                         let context = util::StaticInitContext {
                                             global_variables: global_vars,
@@ -253,9 +254,16 @@ impl CodeGen {
                                                 if let Some(var_id) =
                                                     context.global_variables.get(&name)
                                                 {
-                                                    data_desc.define(vec![0; size as usize].into_boxed_slice());
-                                                    let global_val = self.module.declare_data_in_data(*var_id, &mut data_desc);
-                                                    data_desc.write_data_addr(0, global_val, addend);
+                                                    data_desc.define(
+                                                        vec![0; size as usize].into_boxed_slice(),
+                                                    );
+                                                    let global_val =
+                                                        self.module.declare_data_in_data(
+                                                            *var_id,
+                                                            &mut data_desc,
+                                                        );
+                                                    data_desc
+                                                        .write_data_addr(0, global_val, addend);
                                                 } else {
                                                     return Err(
                                                         CodegenError::InvalidStaticInitializer,

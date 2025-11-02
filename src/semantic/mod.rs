@@ -185,12 +185,11 @@ impl SemanticAnalyzer {
         // 2. Search anonymous members
         let empty_name = StringInterner::intern("");
         for member in members {
-            if member.name == empty_name {
-                if let Type::Struct(..) | Type::Union(..) = &member.ty {
-                    if let Some(found_ty) = self.find_member_recursively(&member.ty, member_name) {
-                        return Some(found_ty);
-                    }
-                }
+            if member.name == empty_name
+                && let Type::Struct(..) | Type::Union(..) = &member.ty
+                && let Some(found_ty) = self.find_member_recursively(&member.ty, member_name)
+            {
+                return Some(found_ty);
             }
         }
         None

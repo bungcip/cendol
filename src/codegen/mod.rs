@@ -220,7 +220,6 @@ impl CodeGen {
 
                             if let Some(init) = &declarator.initializer {
                                 if let TypedInitializer::Expr(expr) = init {
-                                    // Special handling for string literals
                                     if let TypedExpr::String(s, _, _) = **expr {
                                         let name =
                                             format!(".L.str.{}", self.anonymous_string_count);
@@ -246,7 +245,7 @@ impl CodeGen {
                                             global_variables: global_vars,
                                         };
 
-                                        match util::evaluate_static_initializer(expr, &context)? {
+                                        match util::evaluate_static_initializer(init, &context)? {
                                             util::EvaluatedInitializer::Bytes(bytes) => {
                                                 data_desc.define(bytes.into_boxed_slice());
                                             }
@@ -273,7 +272,31 @@ impl CodeGen {
                                         }
                                     }
                                 } else {
-                                    return Err(CodegenError::InvalidStaticInitializer);
+                                    let context = util::StaticInitContext {
+                                        global_variables: global_vars,
+                                    };
+
+                                    match util::evaluate_static_initializer(init, &context)? {
+                                        util::EvaluatedInitializer::Bytes(bytes) => {
+                                            data_desc.define(bytes.into_boxed_slice());
+                                        }
+                                        util::EvaluatedInitializer::Reloc { name, addend } => {
+                                            if let Some(var_id) =
+                                                context.global_variables.get(&name)
+                                            {
+                                                data_desc.define(
+                                                    vec![0; size as usize].into_boxed_slice(),
+                                                );
+                                                let global_val = self.module.declare_data_in_data(
+                                                    *var_id,
+                                                    &mut data_desc,
+                                                );
+                                                data_desc.write_data_addr(0, global_val, addend);
+                                            } else {
+                                                return Err(CodegenError::InvalidStaticInitializer);
+                                            }
+                                        }
+                                    }
                                 }
                             } else {
                                 data_desc.define(vec![0; size as usize].into_boxed_slice());

@@ -149,12 +149,24 @@ impl SemanticAnalyzer {
     fn add_builtin_functions(&mut self) {
         // Add common C built-in functions that might be called
         let builtins = vec![
-            ("printf", Type::Int),
-            ("malloc", Type::Pointer(Box::new(Type::Void))),
-            ("free", Type::Void),
-            ("scanf", Type::Int),
-            ("strcmp", Type::Int),
-            ("memcpy", Type::Pointer(Box::new(Type::Void))),
+            ("printf", Type::Int(SourceSpan::default())),
+            (
+                "malloc",
+                Type::Pointer(
+                    Box::new(Type::Void(SourceSpan::default())),
+                    SourceSpan::default(),
+                ),
+            ),
+            ("free", Type::Void(SourceSpan::default())),
+            ("scanf", Type::Int(SourceSpan::default())),
+            ("strcmp", Type::Int(SourceSpan::default())),
+            (
+                "memcpy",
+                Type::Pointer(
+                    Box::new(Type::Void(SourceSpan::default())),
+                    SourceSpan::default(),
+                ),
+            ),
         ];
 
         for (name, return_type) in builtins {
@@ -173,7 +185,7 @@ impl SemanticAnalyzer {
     fn find_member_recursively(&self, ty: &Type, member_name: &StringId) -> Option<Type> {
         let resolved_ty = self.resolve_type(ty);
         let members = match &resolved_ty {
-            Type::Struct(_, members) | Type::Union(_, members) => members,
+            Type::Struct(_, members, _) | Type::Union(_, members, _) => members,
             _ => return None,
         };
 
@@ -185,11 +197,12 @@ impl SemanticAnalyzer {
         // 2. Search anonymous members
         let empty_name = StringInterner::intern("");
         for member in members {
-            if member.name == empty_name
-                && let Type::Struct(..) | Type::Union(..) = &member.ty
-                && let Some(found_ty) = self.find_member_recursively(&member.ty, member_name)
-            {
-                return Some(found_ty);
+            if member.name == empty_name {
+                if let Type::Struct(_, _, _) | Type::Union(_, _, _) = &member.ty {
+                    if let Some(found_ty) = self.find_member_recursively(&member.ty, member_name) {
+                        return Some(found_ty);
+                    }
+                }
             }
         }
         None
@@ -197,21 +210,23 @@ impl SemanticAnalyzer {
 
     fn resolve_type(&self, ty: &Type) -> Type {
         match ty {
-            Type::Pointer(base) => Type::Pointer(Box::new(self.resolve_type(base))),
-            Type::Array(base, size) => Type::Array(Box::new(self.resolve_type(base)), *size),
-            Type::Const(base) => Type::Const(Box::new(self.resolve_type(base))),
-            Type::Volatile(base) => Type::Volatile(Box::new(self.resolve_type(base))),
-            Type::Struct(Some(name), members) if members.is_empty() => self
+            Type::Pointer(base, span) => Type::Pointer(Box::new(self.resolve_type(base)), *span),
+            Type::Array(base, size, span) => {
+                Type::Array(Box::new(self.resolve_type(base)), *size, *span)
+            }
+            Type::Const(base, span) => Type::Const(Box::new(self.resolve_type(base)), *span),
+            Type::Volatile(base, span) => Type::Volatile(Box::new(self.resolve_type(base)), *span),
+            Type::Struct(Some(name), members, _) if members.is_empty() => self
                 .struct_definitions
                 .get(name)
                 .cloned()
                 .unwrap_or_else(|| ty.clone()),
-            Type::Union(Some(name), members) if members.is_empty() => self
+            Type::Union(Some(name), members, _) if members.is_empty() => self
                 .union_definitions
                 .get(name)
                 .cloned()
                 .unwrap_or_else(|| ty.clone()),
-            Type::Struct(name, members) => {
+            Type::Struct(name, members, span) => {
                 let resolved_members = members
                     .iter()
                     .map(|p| {
@@ -220,9 +235,9 @@ impl SemanticAnalyzer {
                         new_p
                     })
                     .collect();
-                Type::Struct(*name, resolved_members)
+                Type::Struct(*name, resolved_members, *span)
             }
-            Type::Union(name, members) => {
+            Type::Union(name, members, span) => {
                 let resolved_members = members
                     .iter()
                     .map(|p| {
@@ -231,7 +246,7 @@ impl SemanticAnalyzer {
                         new_p
                     })
                     .collect();
-                Type::Union(*name, resolved_members)
+                Type::Union(*name, resolved_members, *span)
             }
             _ => ty.clone(),
         }
@@ -270,28 +285,29 @@ impl SemanticAnalyzer {
         for global in &program.globals {
             match global {
                 Stmt::FunctionDeclaration { ty, name, .. } => {
+                    let span = ty.span();
                     if let Some(existing) = self.symbol_table.lookup(name) {
                         if existing.is_function {
                             self.errors.push((
                                 SemanticError::FunctionRedeclaration(*name),
                                 filename.to_string(),
-                                SourceSpan::default(),
+                                span,
                             ));
                         }
                     } else {
                         self.symbol_table.insert(
                             *name,
                             Symbol {
-                                ty: *ty.clone(),
+                                ty: ty.as_ref().clone(),
                                 is_function: true,
-                                span: SourceSpan::default(),
+                                span,
                                 is_builtin: false,
                             },
                         );
                     }
                 }
                 Stmt::Declaration(ty, declarators, _is_static) => {
-                    if let Type::Enum(_name, members) = &**ty
+                    if let Type::Enum(_name, members, _) = &**ty
                         && !members.is_empty()
                     {
                         let mut next_value = 0;
@@ -322,14 +338,14 @@ impl SemanticAnalyzer {
                             }
                             next_value = val + 1;
                         }
-                    } else if let Type::Struct(Some(name), members) = &**ty {
+                    } else if let Type::Struct(Some(name), members, _) = &**ty {
                         if !members.is_empty() || !self.struct_definitions.contains_key(name) {
-                            self.struct_definitions.insert(*name, *ty.clone());
+                            self.struct_definitions.insert(*name, ty.as_ref().clone());
                         }
-                    } else if let Type::Union(Some(name), members) = &**ty
+                    } else if let Type::Union(Some(name), members, _) = &**ty
                         && (!members.is_empty() || !self.union_definitions.contains_key(name))
                     {
-                        self.union_definitions.insert(*name, *ty.clone());
+                        self.union_definitions.insert(*name, ty.as_ref().clone());
                     }
 
                     for declarator in declarators {
@@ -362,12 +378,13 @@ impl SemanticAnalyzer {
 
         // Collect function definitions
         for function in &program.functions {
+            let span = function.return_type.span();
             if let Some(existing) = self.symbol_table.lookup(&function.name) {
                 if existing.is_function {
                     self.errors.push((
                         SemanticError::FunctionRedeclaration(function.name),
                         filename.to_string(),
-                        SourceSpan::default(),
+                        span,
                     ));
                 }
             } else {
@@ -376,7 +393,7 @@ impl SemanticAnalyzer {
                     Symbol {
                         ty: function.return_type.clone(),
                         is_function: true,
-                        span: SourceSpan::default(),
+                        span,
                         is_builtin: false,
                     },
                 );
@@ -568,16 +585,16 @@ impl SemanticAnalyzer {
             Stmt::Declaration(ty, declarators, is_static) => {
                 let mut base_ty = ty.clone();
                 match &mut *base_ty {
-                    Type::Struct(Some(name), members) => {
+                    Type::Struct(Some(name), members, _) => {
                         if !members.is_empty() {
                             for member in members.iter_mut() {
-                                if let Type::Struct(Some(s_name), s_members) = &member.ty {
+                                if let Type::Struct(Some(s_name), s_members, _) = &member.ty {
                                     if s_members.is_empty()
                                         && let Some(def) = self.struct_definitions.get(s_name)
                                     {
                                         member.ty = def.clone();
                                     }
-                                } else if let Type::Union(Some(u_name), u_members) = &member.ty
+                                } else if let Type::Union(Some(u_name), u_members, _) = &member.ty
                                     && u_members.is_empty()
                                     && let Some(def) = self.union_definitions.get(u_name)
                                 {
@@ -587,15 +604,15 @@ impl SemanticAnalyzer {
                             self.struct_definitions.insert(*name, *base_ty.clone());
                         }
                     }
-                    Type::Union(Some(name), members) => {
+                    Type::Union(Some(name), members, _) => {
                         for member in members.iter_mut() {
-                            if let Type::Struct(Some(s_name), s_members) = &member.ty {
+                            if let Type::Struct(Some(s_name), s_members, _) = &member.ty {
                                 if s_members.is_empty()
                                     && let Some(def) = self.struct_definitions.get(s_name)
                                 {
                                     member.ty = def.clone();
                                 }
-                            } else if let Type::Union(Some(u_name), u_members) = &member.ty
+                            } else if let Type::Union(Some(u_name), u_members, _) = &member.ty
                                 && u_members.is_empty()
                                 && let Some(def) = self.union_definitions.get(u_name)
                             {
@@ -608,7 +625,7 @@ impl SemanticAnalyzer {
                     }
                     _ => {}
                 }
-                if let Type::Enum(_name, members) = *ty {
+                if let Type::Enum(_name, members, _) = *ty {
                     // Only process enum constants for local enums (inside functions)
                     // Global enums are already processed in collect_symbols
                     if self.current_function.is_some() {
@@ -657,13 +674,14 @@ impl SemanticAnalyzer {
                         ));
                     }
 
+                    let declarator_ty = self.resolve_type(&declarator.ty);
+
                     // Insert symbol if not already present
                     if self.symbol_table.lookup(&declarator.name).is_none() {
-                        let resolved_ty = self.resolve_type(&declarator.ty);
                         self.symbol_table.insert(
                             declarator.name,
                             Symbol {
-                                ty: resolved_ty,
+                                ty: declarator_ty.clone(),
                                 is_function: false,
                                 span: declarator.span,
                                 is_builtin: false,
@@ -672,9 +690,11 @@ impl SemanticAnalyzer {
                     }
 
                     // Check initializer expression
-                    let typed_initializer = declarator
-                        .initializer
-                        .map(|init| self.convert_initializer_to_typed(init, filename));
+                    let typed_initializer = declarator.initializer.map(|init| {
+                        let typed_init = self.convert_initializer_to_typed(init, filename);
+                        self.check_initializer(&typed_init, &declarator_ty, filename);
+                        typed_init
+                    });
 
                     if (is_static || self.current_function.is_none())
                         && let Some(ref init) = typed_initializer
@@ -688,7 +708,7 @@ impl SemanticAnalyzer {
                     }
 
                     typed_declarators.push(TypedDeclarator {
-                        ty: declarator.ty,
+                        ty: declarator_ty,
                         name: declarator.name,
                         initializer: typed_initializer,
                     });
@@ -935,13 +955,13 @@ impl SemanticAnalyzer {
         filename: &str,
     ) -> TypedExpr {
         let mut lhs_typed = self.check_expression(lhs.clone(), filename);
-        if let Type::Array(elem_ty, _) = lhs_typed.ty().clone() {
-            lhs_typed = lhs_typed.implicit_cast(Type::Pointer(elem_ty));
+        if let Type::Array(elem_ty, _, span) = lhs_typed.ty().clone() {
+            lhs_typed = lhs_typed.implicit_cast(Type::Pointer(elem_ty.clone(), span));
         }
 
         let mut rhs_typed = self.check_expression(rhs.clone(), filename);
-        if let Type::Array(elem_ty, _) = rhs_typed.ty().clone() {
-            rhs_typed = rhs_typed.implicit_cast(Type::Pointer(elem_ty));
+        if let Type::Array(elem_ty, _, span) = rhs_typed.ty().clone() {
+            rhs_typed = rhs_typed.implicit_cast(Type::Pointer(elem_ty.clone(), span));
         }
 
         let lhs_ty = lhs_typed.ty().clone();
@@ -952,9 +972,11 @@ impl SemanticAnalyzer {
                 if lhs_ty.is_pointer() || rhs_ty.is_pointer() {
                     // Pointer arithmetic
                     let result_ty = match (lhs_ty.unwrap_const(), rhs_ty.unwrap_const()) {
-                        (Type::Pointer(_), Type::Pointer(_)) if op == BinOp::Sub => Type::Int,
-                        (Type::Pointer(..), ty) if ty.get_integer_rank() > 0 => lhs_ty.clone(),
-                        (ty, Type::Pointer(..))
+                        (Type::Pointer(_, span), Type::Pointer(_, _)) if op == BinOp::Sub => {
+                            Type::Int(*span)
+                        }
+                        (Type::Pointer(_, _), ty) if ty.get_integer_rank() > 0 => lhs_ty.clone(),
+                        (ty, Type::Pointer(_, _))
                             if ty.get_integer_rank() > 0 && op == BinOp::Add =>
                         {
                             rhs_ty.clone()
@@ -965,7 +987,7 @@ impl SemanticAnalyzer {
                                 filename.to_string(),
                                 SourceSpan::default(), // Consider improving span info
                             ));
-                            Type::Int // dummy type
+                            Type::Int(SourceSpan::default()) // dummy type
                         }
                     };
                     (lhs_typed, rhs_typed, result_ty)
@@ -992,10 +1014,10 @@ impl SemanticAnalyzer {
             | BinOp::LessThan
             | BinOp::GreaterThan
             | BinOp::LessThanOrEqual
-            | BinOp::GreaterThanOrEqual => (lhs_typed, rhs_typed, Type::Bool),
-            BinOp::LogicalAnd | BinOp::LogicalOr => (lhs_typed, rhs_typed, Type::Bool),
+            | BinOp::GreaterThanOrEqual => (lhs_typed, rhs_typed, Type::Bool(SourceSpan::default())),
+            BinOp::LogicalAnd | BinOp::LogicalOr => (lhs_typed, rhs_typed, Type::Bool(SourceSpan::default())),
             BinOp::BitwiseOr | BinOp::BitwiseXor | BinOp::BitwiseAnd => {
-                (lhs_typed, rhs_typed, Type::Int)
+                (lhs_typed, rhs_typed, Type::Int(SourceSpan::default()))
             }
             BinOp::LeftShift | BinOp::RightShift => (lhs_typed, rhs_typed, lhs_ty.clone()),
             BinOp::Comma => (lhs_typed, rhs_typed, rhs_ty.clone()),
@@ -1020,9 +1042,28 @@ impl SemanticAnalyzer {
                 self.errors
                     .push((err, filename.to_string(), lhs_typed.span()));
                 // Create a dummy l-value to continue analysis
-                TypedLValue::Variable(StringInterner::intern(""), SourceSpan::default(), Type::Int)
+                TypedLValue::Variable(
+                    StringInterner::intern(""),
+                    SourceSpan::default(),
+                    Type::Int(SourceSpan::default()),
+                )
             }
         };
+
+        if let TypedExpr::CompoundLiteral(_, _, _, ty) = &rhs_typed {
+            if let Type::Array(elem_ty, _, span) = ty {
+                let pointer_ty = Type::Pointer(elem_ty.clone(), *span);
+                if lhs_lvalue.ty().is_pointer() && lhs_lvalue.ty().is_pointer() {
+                    let rhs_cast = rhs_typed.implicit_cast(pointer_ty);
+                    return TypedExpr::Assign(
+                        Box::new(lhs_lvalue.clone()),
+                        Box::new(rhs_cast),
+                        SourceSpan::default(),
+                        lhs_lvalue.ty().clone(),
+                    );
+                }
+            }
+        }
 
         let lhs_ty = lhs_lvalue.ty().clone();
         let lhs_span = match &lhs_lvalue {
@@ -1038,7 +1079,7 @@ impl SemanticAnalyzer {
                 filename.to_string(),
                 lhs_span,
             ));
-        } else if let Type::Const(_) = &lhs_ty.unwrap_volatile() {
+        } else if let Type::Const(_, _) = &lhs_ty.unwrap_volatile() {
             self.errors.push((
                 SemanticError::AssignmentToConst,
                 filename.to_string(),
@@ -1143,30 +1184,30 @@ impl SemanticAnalyzer {
                     .symbol_table
                     .lookup(&name)
                     .map(|s| s.ty.clone())
-                    .unwrap_or(Type::Int);
+                    .unwrap_or(Type::Int(SourceSpan::default()));
 
                 let ty = match ty {
-                    Type::Struct(Some(s_name), members) if members.is_empty() => self
+                    Type::Struct(Some(s_name), members, span) if members.is_empty() => self
                         .struct_definitions
                         .get(&s_name)
                         .cloned()
-                        .unwrap_or(Type::Struct(Some(s_name), ThinVec::new())),
-                    Type::Union(Some(u_name), members) if members.is_empty() => self
+                        .unwrap_or(Type::Struct(Some(s_name), ThinVec::new(), span)),
+                    Type::Union(Some(u_name), members, span) if members.is_empty() => self
                         .union_definitions
                         .get(&u_name)
                         .cloned()
-                        .unwrap_or(Type::Union(Some(u_name), ThinVec::new())),
+                        .unwrap_or(Type::Union(Some(u_name), ThinVec::new(), span)),
                     _ => ty,
                 };
 
                 TypedExpr::Variable(name, location, ty)
             }
-            Expr::Number(n, span) => TypedExpr::Number(n, span, Type::Int),
-            Expr::FloatNumber(n, span) => TypedExpr::FloatNumber(n, span, Type::Double),
+            Expr::Number(n, span) => TypedExpr::Number(n, span, Type::Int(span)),
+            Expr::FloatNumber(n, span) => TypedExpr::FloatNumber(n, span, Type::Double(span)),
             Expr::String(s, span) => {
-                TypedExpr::String(s, span, Type::Pointer(Box::new(Type::Char)))
+                TypedExpr::String(s, span, Type::Pointer(Box::new(Type::Char(span)), span))
             }
-            Expr::Char(c, span) => TypedExpr::Char(c, span, Type::Char),
+            Expr::Char(c, span) => TypedExpr::Char(c, span, Type::Char(span)),
             Expr::Call(name, args, location) => {
                 if let Some(symbol) = self.symbol_table.lookup(&name) {
                     if symbol.is_builtin {
@@ -1184,7 +1225,7 @@ impl SemanticAnalyzer {
                     .symbol_table
                     .lookup(&name)
                     .map(|s| s.ty.clone())
-                    .unwrap_or(Type::Int);
+                    .unwrap_or(Type::Int(SourceSpan::default()));
                 let typed_args = args
                     .into_iter()
                     .map(|arg| self.check_expression(arg, filename))
@@ -1201,7 +1242,11 @@ impl SemanticAnalyzer {
             }
             Expr::LogicalNot(expr) => {
                 let typed = self.check_expression(*expr, filename);
-                TypedExpr::LogicalNot(Box::new(typed), SourceSpan::default(), Type::Bool)
+                TypedExpr::LogicalNot(
+                    Box::new(typed),
+                    SourceSpan::default(),
+                    Type::Bool(SourceSpan::default()),
+                )
             }
             Expr::BitwiseNot(expr) => {
                 let typed = self.check_expression(*expr, filename);
@@ -1213,24 +1258,32 @@ impl SemanticAnalyzer {
             }
             Expr::Sizeof(expr) => {
                 let _typed = self.check_expression(*expr, filename);
-                TypedExpr::Sizeof(Box::new(_typed), SourceSpan::default(), Type::Int)
+                TypedExpr::Sizeof(
+                    Box::new(_typed),
+                    SourceSpan::default(),
+                    Type::Int(SourceSpan::default()),
+                )
             }
             Expr::Alignof(expr) => {
                 let _typed = self.check_expression(*expr, filename);
-                TypedExpr::Alignof(Box::new(_typed), SourceSpan::default(), Type::Int)
+                TypedExpr::Alignof(
+                    Box::new(_typed),
+                    SourceSpan::default(),
+                    Type::Int(SourceSpan::default()),
+                )
             }
             Expr::Deref(expr) => {
                 let typed = self.check_expression(*expr, filename);
                 let result_ty = match typed.ty().unwrap_const().clone() {
-                    Type::Pointer(base_ty) => *base_ty,
-                    Type::Array(elem_ty, _) => *elem_ty,
+                    Type::Pointer(base_ty, _) => *base_ty,
+                    Type::Array(elem_ty, _, _) => *elem_ty,
                     other_ty => {
                         self.errors.push((
                             SemanticError::NotAPointer(other_ty),
                             filename.to_string(),
                             typed.span(),
                         ));
-                        Type::Int
+                        Type::Int(SourceSpan::default())
                     }
                 };
                 TypedExpr::Deref(Box::new(typed), SourceSpan::default(), result_ty)
@@ -1246,7 +1299,7 @@ impl SemanticAnalyzer {
                         TypedLValue::Variable(
                             StringInterner::intern(""),
                             SourceSpan::default(),
-                            Type::Int,
+                            Type::Int(SourceSpan::default()),
                         )
                     }
                 };
@@ -1254,11 +1307,15 @@ impl SemanticAnalyzer {
                 TypedExpr::AddressOf(
                     Box::new(lvalue),
                     SourceSpan::default(),
-                    Type::Pointer(Box::new(ty)),
+                    Type::Pointer(Box::new(ty), SourceSpan::default()),
                 )
             }
-            Expr::SizeofType(ty) => TypedExpr::SizeofType(ty, SourceSpan::default(), Type::Int),
-            Expr::AlignofType(ty) => TypedExpr::AlignofType(ty, SourceSpan::default(), Type::Int),
+            Expr::SizeofType(ty) => {
+                TypedExpr::SizeofType(ty, SourceSpan::default(), Type::Int(SourceSpan::default()))
+            }
+            Expr::AlignofType(ty) => {
+                TypedExpr::AlignofType(ty, SourceSpan::default(), Type::Int(SourceSpan::default()))
+            }
             Expr::Ternary(cond, then_expr, else_expr) => {
                 let cond_typed = self.check_expression(*cond, filename);
                 let then_typed = self.check_expression(*then_expr, filename);
@@ -1266,7 +1323,7 @@ impl SemanticAnalyzer {
                 let result_ty = if then_typed.ty() == else_typed.ty() {
                     then_typed.ty().clone()
                 } else {
-                    Type::Int
+                    Type::Int(SourceSpan::default())
                 };
                 TypedExpr::Ternary(
                     Box::new(cond_typed),
@@ -1286,14 +1343,15 @@ impl SemanticAnalyzer {
                             filename.to_string(),
                             typed.span(),
                         ));
-                        Type::Int // Dummy type
+                        Type::Int(SourceSpan::default()) // Dummy type
                     });
                 TypedExpr::Member(Box::new(typed), member, SourceSpan::default(), member_ty)
             }
             Expr::PointerMember(expr, member) => {
                 let typed_ptr = self.check_expression(*expr, filename);
 
-                let inner_ty = if let Type::Pointer(inner) = typed_ptr.ty().clone().unwrap_const() {
+                let inner_ty = if let Type::Pointer(inner, _) = typed_ptr.ty().clone().unwrap_const()
+                {
                     inner.clone()
                 } else {
                     self.errors.push((
@@ -1301,7 +1359,11 @@ impl SemanticAnalyzer {
                         filename.to_string(),
                         typed_ptr.span(),
                     ));
-                    return TypedExpr::Number(0, SourceSpan::default(), Type::Int);
+                    return TypedExpr::Number(
+                        0,
+                        SourceSpan::default(),
+                        Type::Int(SourceSpan::default()),
+                    );
                 };
 
                 let deref_expr =
@@ -1315,7 +1377,7 @@ impl SemanticAnalyzer {
                             filename.to_string(),
                             deref_expr.span(),
                         ));
-                        Type::Int
+                        Type::Int(SourceSpan::default())
                     });
 
                 TypedExpr::Member(
@@ -1343,7 +1405,11 @@ impl SemanticAnalyzer {
                         (typed_designators, Box::new(typed_initializer))
                     })
                     .collect();
-                TypedExpr::InitializerList(typed_list, SourceSpan::default(), Type::Int)
+                TypedExpr::InitializerList(
+                    typed_list,
+                    SourceSpan::default(),
+                    Type::Int(SourceSpan::default()),
+                )
             }
             Expr::ExplicitCast(ty, expr) => {
                 let typed_expr = self.check_expression(*expr, filename);
@@ -1366,17 +1432,24 @@ impl SemanticAnalyzer {
             Expr::CompoundLiteral(ty, initializer) => {
                 let typed_initializer = self.convert_initializer_to_typed(*initializer, filename);
                 let mut final_ty = *ty.clone();
-                if let Type::Array(elem_ty, 0) = &final_ty
+                if let Type::Array(elem_ty, 0, span) = &final_ty
                     && let TypedInitializer::List(list) = &typed_initializer
                 {
-                    final_ty = Type::Array(elem_ty.clone(), list.len());
+                    final_ty = Type::Array(elem_ty.clone(), list.len(), *span);
                 }
-                TypedExpr::CompoundLiteral(
+                let mut typed_expr = TypedExpr::CompoundLiteral(
                     ty,
                     Box::new(typed_initializer),
                     SourceSpan::default(),
-                    final_ty,
-                )
+                    final_ty.clone(),
+                );
+
+                if let Type::Array(elem_ty, _, span) = &final_ty {
+                    typed_expr =
+                        typed_expr.implicit_cast(Type::Pointer(elem_ty.clone(), *span));
+                }
+
+                typed_expr
             }
             Expr::PreIncrement(expr) => {
                 let typed_expr = self.check_expression(*expr, filename);
@@ -1388,7 +1461,7 @@ impl SemanticAnalyzer {
                         TypedLValue::Variable(
                             StringInterner::intern(""),
                             SourceSpan::default(),
-                            Type::Int,
+                            Type::Int(SourceSpan::default()),
                         )
                     }
                 };
@@ -1412,7 +1485,7 @@ impl SemanticAnalyzer {
                         TypedLValue::Variable(
                             StringInterner::intern(""),
                             SourceSpan::default(),
-                            Type::Int,
+                            Type::Int(SourceSpan::default()),
                         )
                     }
                 };
@@ -1436,7 +1509,7 @@ impl SemanticAnalyzer {
                         TypedLValue::Variable(
                             StringInterner::intern(""),
                             SourceSpan::default(),
-                            Type::Int,
+                            Type::Int(SourceSpan::default()),
                         )
                     }
                 };
@@ -1460,7 +1533,7 @@ impl SemanticAnalyzer {
                         TypedLValue::Variable(
                             StringInterner::intern(""),
                             SourceSpan::default(),
-                            Type::Int,
+                            Type::Int(SourceSpan::default()),
                         )
                     }
                 };
@@ -1515,9 +1588,11 @@ impl SemanticAnalyzer {
     #[allow(dead_code)]
     fn integer_promote(&self, ty: &Type) -> Type {
         match ty {
-            Type::Bool | Type::Char | Type::UnsignedChar | Type::Short | Type::UnsignedShort => {
-                Type::Int
-            }
+            Type::Bool(_)
+            | Type::Char(_)
+            | Type::UnsignedChar(_)
+            | Type::Short(_)
+            | Type::UnsignedShort(_) => Type::Int(SourceSpan::default()),
             _ => ty.clone(),
         }
     }
@@ -1533,13 +1608,19 @@ impl SemanticAnalyzer {
         // But we don't have long double, so skip
 
         // If one is double, convert both to double
-        if *lhs_ty == Type::Double || *rhs_ty == Type::Double {
-            return (Type::Double, Type::Double);
+        if let Type::Double(span) = lhs_ty {
+            return (Type::Double(*span), Type::Double(*span));
+        }
+        if let Type::Double(span) = rhs_ty {
+            return (Type::Double(*span), Type::Double(*span));
         }
 
         // If one is float, convert both to float
-        if *lhs_ty == Type::Float || *rhs_ty == Type::Float {
-            return (Type::Float, Type::Float);
+        if let Type::Float(span) = lhs_ty {
+            return (Type::Float(*span), Type::Float(*span));
+        }
+        if let Type::Float(span) = rhs_ty {
+            return (Type::Float(*span), Type::Float(*span));
         }
 
         // Both are integer types, apply integer conversion rules
@@ -1553,17 +1634,17 @@ impl SemanticAnalyzer {
         } else {
             // Same rank, check signedness
             match (lhs_ty, rhs_ty) {
-                (Type::UnsignedLongLong, _) => (Type::UnsignedLongLong, Type::UnsignedLongLong),
-                (_, Type::UnsignedLongLong) => (Type::UnsignedLongLong, Type::UnsignedLongLong),
-                (Type::LongLong, _) => (Type::LongLong, Type::LongLong),
-                (_, Type::LongLong) => (Type::LongLong, Type::LongLong),
-                (Type::UnsignedLong, _) => (Type::UnsignedLong, Type::UnsignedLong),
-                (_, Type::UnsignedLong) => (Type::UnsignedLong, Type::UnsignedLong),
-                (Type::Long, _) => (Type::Long, Type::Long),
-                (_, Type::Long) => (Type::Long, Type::Long),
-                (Type::UnsignedInt, _) => (Type::UnsignedInt, Type::UnsignedInt),
-                (_, Type::UnsignedInt) => (Type::UnsignedInt, Type::UnsignedInt),
-                _ => (Type::Int, Type::Int),
+                (Type::UnsignedLongLong(span), _) => (Type::UnsignedLongLong(*span), Type::UnsignedLongLong(*span)),
+                (_, Type::UnsignedLongLong(span)) => (Type::UnsignedLongLong(*span), Type::UnsignedLongLong(*span)),
+                (Type::LongLong(span), _) => (Type::LongLong(*span), Type::LongLong(*span)),
+                (_, Type::LongLong(span)) => (Type::LongLong(*span), Type::LongLong(*span)),
+                (Type::UnsignedLong(span), _) => (Type::UnsignedLong(*span), Type::UnsignedLong(*span)),
+                (_, Type::UnsignedLong(span)) => (Type::UnsignedLong(*span), Type::UnsignedLong(*span)),
+                (Type::Long(span), _) => (Type::Long(*span), Type::Long(*span)),
+                (_, Type::Long(span)) => (Type::Long(*span), Type::Long(*span)),
+                (Type::UnsignedInt(span), _) => (Type::UnsignedInt(*span), Type::UnsignedInt(*span)),
+                (_, Type::UnsignedInt(span)) => (Type::UnsignedInt(*span), Type::UnsignedInt(*span)),
+                _ => (Type::Int(SourceSpan::default()), Type::Int(SourceSpan::default())),
             }
         }
     }
@@ -1594,5 +1675,105 @@ fn is_const_expr(expr: &TypedExpr) -> bool {
         // For other expression types, we conservatively return false
         // This could be extended to support more complex constant expressions
         _ => false,
+    }
+}
+
+
+impl SemanticAnalyzer {
+    fn check_initializer(&mut self, initializer: &TypedInitializer, ty: &Type, filename: &str) {
+        match initializer {
+            TypedInitializer::Expr(expr) => {
+                if expr.ty().is_aggregate() && !ty.is_aggregate() {
+                    self.errors.push((
+                        SemanticError::TypeMismatch,
+                        filename.to_string(),
+                        expr.span(),
+                    ));
+                }
+            }
+            TypedInitializer::List(list) => {
+                let real_ty = self.resolve_type(ty);
+                match real_ty {
+                    Type::Struct(_, ref _members, _) => {
+                        for (designators, init) in list {
+                            if designators.is_empty() {
+                                // Non-designated initializers will be checked based on order
+                            } else {
+                                let mut current_ty = real_ty.clone();
+                                for designator in designators {
+                                    match designator {
+                                        TypedDesignator::Member(name) => {
+                                            if let Some(member_ty) = self.find_member_recursively(&current_ty, name) {
+                                                current_ty = member_ty;
+                                            } else {
+                                                self.errors.push((
+                                                    SemanticError::UndefinedMember(*name),
+                                                    filename.to_string(),
+                                                    ty.span(),
+                                                ));
+                                                return;
+                                            }
+                                        }
+                                        _ => {
+                                            self.errors.push((
+                                                SemanticError::TypeMismatch,
+                                                filename.to_string(),
+                                                ty.span(),
+                                            ));
+                                            return;
+                                        }
+                                    }
+                                }
+                                self.check_initializer(init, &current_ty, filename);
+                            }
+                        }
+                    }
+                    Type::Array(elem_ty, size, _) => {
+                        for (designators, init) in list {
+                            if designators.is_empty() {
+                                self.check_initializer(init, &elem_ty, filename);
+                            } else {
+                                for designator in designators {
+                                    match designator {
+                                        TypedDesignator::Index(expr) => {
+                                            if let TypedExpr::Number(n, _, _) = **expr {
+                                                if size > 0 && n as usize >= size {
+                                                    self.errors.push((
+                                                        SemanticError::ArrayIndexOutOfBounds,
+                                                        filename.to_string(),
+                                                        expr.span(),
+                                                    ));
+                                                }
+                                            } else {
+                                                self.errors.push((
+                                                    SemanticError::NotAConstantExpression,
+                                                    filename.to_string(),
+                                                    expr.span(),
+                                                ));
+                                            }
+                                        }
+                                        _ => {
+                                            self.errors.push((
+                                                SemanticError::TypeMismatch,
+                                                filename.to_string(),
+                                                ty.span(),
+                                            ));
+                                        }
+                                    }
+                                }
+                                self.check_initializer(init, &elem_ty, filename);
+                            }
+                        }
+                    }
+                    _ => {
+                        self.errors.push((
+                            SemanticError::TypeMismatch,
+                            filename.to_string(),
+                            ty.span(),
+                        ));
+                    }
+                }
+            }
+        }
     }
 }

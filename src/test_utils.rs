@@ -175,7 +175,7 @@ pub fn create_simple_program_ast() -> TranslationUnit {
     TranslationUnit {
         globals: ThinVec::new(),
         functions: ThinVec::from(vec![Function {
-            return_type: Type::Int,
+            return_type: Type::Int(SourceSpan::default()),
             name: crate::parser::string_interner::StringInterner::intern("main"),
             params: ThinVec::new(),
             body: ThinVec::from(vec![Stmt::Return(Box::new(Expr::Number(

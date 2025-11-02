@@ -33,7 +33,7 @@ pub enum SemanticError {
     InvalidStaticInitializer(String),
 
     /// Attempted to dereference a non-pointer type.
-    #[error("Cannot dereference non-pointer type `{0:?}`")]
+    #[error("Cannot dereference non-pointer type `{0}`")]
     NotAPointer(crate::parser::ast::Type),
 
     /// An undefined label was referenced in a goto statement.
@@ -95,6 +95,10 @@ pub enum SemanticError {
     /// A continue statement was used outside of a loop.
     #[error("Continue statement outside of loop")]
     ContinueOutsideLoop,
+
+    /// An array index was out of bounds.
+    #[error("Array index out of bounds")]
+    ArrayIndexOutOfBounds,
 }
 
 impl SemanticError {

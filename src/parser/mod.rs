@@ -175,12 +175,12 @@ impl Parser {
             if k == KeywordKind::Const {
                 self.eat()?;
                 let ty = self.parse_type_specifier()?;
-                return Ok(Type::Const(Box::new(ty)));
+                return Ok(Type::Const(Box::new(ty), token.span));
             }
             if k == KeywordKind::Volatile {
                 self.eat()?;
                 let ty = self.parse_type_specifier()?;
-                return Ok(Type::Volatile(Box::new(ty)));
+                return Ok(Type::Volatile(Box::new(ty), token.span));
             }
             self.parse_type_specifier_kind(k)
         } else if let TokenKind::Identifier(id) = token.kind.clone() {
@@ -215,30 +215,30 @@ impl Parser {
                                 {
                                     self.eat()?; // consume "int"
                                 }
-                                Ok(Type::UnsignedLongLong)
+                                Ok(Type::UnsignedLongLong(token.span))
                             } else if let TokenKind::Keyword(KeywordKind::Int) = n2.kind {
                                 self.eat()?; // consume "int"
-                                Ok(Type::UnsignedLong)
+                                Ok(Type::UnsignedLong(token.span))
                             } else {
-                                Ok(Type::UnsignedLong)
+                                Ok(Type::UnsignedLong(token.span))
                             }
                         } else {
-                            Ok(Type::UnsignedLong)
+                            Ok(Type::UnsignedLong(token.span))
                         }
                     } else if let TokenKind::Keyword(KeywordKind::Int) = next.kind {
                         self.eat()?; // consume "int"
-                        Ok(Type::UnsignedInt)
+                        Ok(Type::UnsignedInt(token.span))
                     } else if let TokenKind::Keyword(KeywordKind::Char) = next.kind {
                         self.eat()?; // consume "char"
-                        Ok(Type::UnsignedChar)
+                        Ok(Type::UnsignedChar(token.span))
                     } else if let TokenKind::Keyword(KeywordKind::Short) = next.kind {
                         self.eat()?; // consume "short"
-                        Ok(Type::UnsignedShort)
+                        Ok(Type::UnsignedShort(token.span))
                     } else {
-                        Ok(Type::UnsignedInt)
+                        Ok(Type::UnsignedInt(token.span))
                     }
                 } else {
-                    Ok(Type::UnsignedInt)
+                    Ok(Type::UnsignedInt(token.span))
                 }
             }
             KeywordKind::Short => {
@@ -249,7 +249,7 @@ impl Parser {
                 {
                     self.eat()?; // consume "int"
                 }
-                Ok(Type::Short)
+                Ok(Type::Short(token.span))
             }
             KeywordKind::Long => {
                 self.eat()?; // consume "long"
@@ -267,15 +267,15 @@ impl Parser {
                                 {
                                     self.eat()?; // consume "int"
                                 }
-                                Ok(Type::UnsignedLongLong)
+                                Ok(Type::UnsignedLongLong(token.span))
                             } else if let TokenKind::Keyword(KeywordKind::Int) = n2.kind {
                                 self.eat()?; // consume "int"
-                                Ok(Type::LongLong)
+                                Ok(Type::LongLong(token.span))
                             } else {
-                                Ok(Type::LongLong)
+                                Ok(Type::LongLong(token.span))
                             }
                         } else {
-                            Ok(Type::LongLong)
+                            Ok(Type::LongLong(token.span))
                         }
                     } else if let TokenKind::Keyword(KeywordKind::Unsigned) = next.kind {
                         self.eat()?; // consume "unsigned"
@@ -289,24 +289,24 @@ impl Parser {
                                 {
                                     self.eat()?; // consume "int"
                                 }
-                                Ok(Type::UnsignedLongLong)
+                                Ok(Type::UnsignedLongLong(token.span))
                             } else if let TokenKind::Keyword(KeywordKind::Int) = n2.kind {
                                 self.eat()?; // consume "int"
-                                Ok(Type::UnsignedLong)
+                                Ok(Type::UnsignedLong(token.span))
                             } else {
-                                Ok(Type::UnsignedLong)
+                                Ok(Type::UnsignedLong(token.span))
                             }
                         } else {
-                            Ok(Type::UnsignedLong)
+                            Ok(Type::UnsignedLong(token.span))
                         }
                     } else if let TokenKind::Keyword(KeywordKind::Int) = next.kind {
                         self.eat()?; // consume "int"
-                        Ok(Type::Long)
+                        Ok(Type::Long(token.span))
                     } else {
-                        Ok(Type::Long)
+                        Ok(Type::Long(token.span))
                     }
                 } else {
-                    Ok(Type::Long)
+                    Ok(Type::Long(token.span))
                 }
             }
             KeywordKind::Int => self.parse_simple_type(Type::Int),
@@ -315,36 +315,47 @@ impl Parser {
             KeywordKind::Double => self.parse_simple_type(Type::Double),
             KeywordKind::Void => self.parse_simple_type(Type::Void),
             KeywordKind::Bool => self.parse_simple_type(Type::Bool),
-            KeywordKind::Struct => self.parse_struct_or_union(|name, members| {
-                if let Some(members) = members {
-                    Type::Struct(name, members)
-                } else if let Some(name) = name {
-                    Type::Struct(Some(name), ThinVec::new())
-                } else {
-                    unreachable!()
-                }
-            }),
-            KeywordKind::Union => self.parse_struct_or_union(|name, members| {
-                if let Some(members) = members {
-                    Type::Union(name, members)
-                } else if let Some(name) = name {
-                    Type::Union(Some(name), ThinVec::new())
-                } else {
-                    unreachable!()
-                }
-            }),
+            KeywordKind::Struct => self.parse_struct_or_union(
+                |name, members, span| {
+                    if let Some(members) = members {
+                        Type::Struct(name, members, span)
+                    } else if let Some(name) = name {
+                        Type::Struct(Some(name), ThinVec::new(), span)
+                    } else {
+                        unreachable!()
+                    }
+                },
+                token.span,
+            ),
+            KeywordKind::Union => self.parse_struct_or_union(
+                |name, members, span| {
+                    if let Some(members) = members {
+                        Type::Union(name, members, span)
+                    } else if let Some(name) = name {
+                        Type::Union(Some(name), ThinVec::new(), span)
+                    } else {
+                        unreachable!()
+                    }
+                },
+                token.span,
+            ),
             KeywordKind::Enum => self.parse_enum_specifier(),
             _ => Err(ParserError::UnexpectedToken(token)),
         }
     }
     /// Parses a simple type keyword and returns the corresponding `Type`.
-    fn parse_simple_type(&mut self, ty: Type) -> Result<Type, ParserError> {
+    fn parse_simple_type(
+        &mut self,
+        constructor: fn(SourceSpan) -> Type,
+    ) -> Result<Type, ParserError> {
+        let token = self.current_token()?;
         self.eat()?;
-        Ok(ty)
+        Ok(constructor(token.span))
     }
 
     /// Parses an enum specifier.
     fn parse_enum_specifier(&mut self) -> Result<Type, ParserError> {
+        let token = self.current_token()?;
         self.eat()?; // consume 'enum'
         let name = self.maybe_name()?;
         if self.eat_token(&TokenKind::LeftBrace)? {
@@ -361,9 +372,9 @@ impl Parser {
                     }
                 }
             }
-            Ok(Type::Enum(name, enumerators))
+            Ok(Type::Enum(name, enumerators, token.span))
         } else if let Some(name) = name {
-            Ok(Type::Enum(Some(name), ThinVec::new()))
+            Ok(Type::Enum(Some(name), ThinVec::new(), token.span))
         } else {
             let token = self.current_token()?;
             Err(ParserError::UnexpectedToken(token))
@@ -385,18 +396,22 @@ impl Parser {
     }
 
     /// Parses a struct or union type.
-    fn parse_struct_or_union<F>(&mut self, constructor: F) -> Result<Type, ParserError>
+    fn parse_struct_or_union<F>(
+        &mut self,
+        constructor: F,
+        span: SourceSpan,
+    ) -> Result<Type, ParserError>
     where
-        F: Fn(Option<StringId>, Option<ThinVec<Parameter>>) -> Type,
+        F: Fn(Option<StringId>, Option<ThinVec<Parameter>>, SourceSpan) -> Type,
     {
         self.eat()?;
         let name = self.maybe_name()?;
         match self.current_kind()? {
             TokenKind::LeftBrace => {
                 let members = self.parse_struct_or_union_members()?;
-                Ok(constructor(name, Some(members)))
+                Ok(constructor(name, Some(members), span))
             }
-            _ if name.is_some() => Ok(constructor(name, None)),
+            _ if name.is_some() => Ok(constructor(name, None, span)),
             _ => {
                 let token = self.current_token()?;
                 Err(ParserError::UnexpectedToken(token))
@@ -430,13 +445,23 @@ impl Parser {
         let mut ty = base_type;
 
         // Parse pointers
-        while self.eat_token(&TokenKind::Star)? {
-            ty = Type::Pointer(Box::new(ty));
-            while self.eat_token(&TokenKind::Keyword(KeywordKind::Const))? {
-                ty = Type::Const(Box::new(ty));
-            }
-            while self.eat_token(&TokenKind::Keyword(KeywordKind::Volatile))? {
-                ty = Type::Volatile(Box::new(ty));
+        while let Ok(token) = self.current_token() {
+            if token.kind == TokenKind::Star {
+                self.eat()?;
+                ty = Type::Pointer(Box::new(ty), token.span);
+                while let Ok(token) = self.current_token() {
+                    if token.kind == TokenKind::Keyword(KeywordKind::Const) {
+                        self.eat()?;
+                        ty = Type::Const(Box::new(ty), token.span);
+                    } else if token.kind == TokenKind::Keyword(KeywordKind::Volatile) {
+                        self.eat()?;
+                        ty = Type::Volatile(Box::new(ty), token.span);
+                    } else {
+                        break;
+                    }
+                }
+            } else {
+                break;
             }
         }
 
@@ -458,19 +483,24 @@ impl Parser {
         };
 
         // Parse array dimensions
-        while self.eat_token(&TokenKind::LeftBracket)? {
-            if self.eat_token(&TokenKind::RightBracket)? {
-                ty = Type::Array(Box::new(ty), 0); // Unsized array
-            } else {
-                let size_expr = self.parse_expr()?;
-                let size = if let Expr::Number(n, _) = size_expr {
-                    n as usize
+        while let Ok(token) = self.current_token() {
+            if token.kind == TokenKind::LeftBracket {
+                self.eat()?;
+                if self.eat_token(&TokenKind::RightBracket)? {
+                    ty = Type::Array(Box::new(ty), 0, token.span); // Unsized array
                 } else {
-                    let token = self.current_token()?;
-                    return Err(ParserError::UnexpectedToken(token));
-                };
-                self.expect_punct(TokenKind::RightBracket)?;
-                ty = Type::Array(Box::new(ty), size);
+                    let size_expr = self.parse_expr()?;
+                    let size = if let Expr::Number(n, _) = size_expr {
+                        n as usize
+                    } else {
+                        let token = self.current_token()?;
+                        return Err(ParserError::UnexpectedToken(token));
+                    };
+                    self.expect_punct(TokenKind::RightBracket)?;
+                    ty = Type::Array(Box::new(ty), size, token.span);
+                }
+            } else {
+                break;
             }
         }
         Ok((ty, id, final_token))

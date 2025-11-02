@@ -603,6 +603,23 @@ mod tests {
         assert_eq!(exit_code, 0);
     }
 
+#[test]
+fn test_designated_initializer_nested_struct() {
+    let input = r#"
+        struct Inner { int y; };
+        struct Outer { int x; struct Inner inner; };
+        struct Outer s = { .inner.y = 1, .x = 2 };
+
+        int main() {
+            if (s.x != 2) return 1;
+            if (s.inner.y != 1) return 2;
+            return 0;
+        }
+    "#;
+    let result = compile_and_run(input, "test_designated_initializer_nested_struct").unwrap();
+    assert_eq!(result, 0);
+}
+
     /// Test code generation for character literals
     #[test]
     fn test_char_literal() {
@@ -1122,6 +1139,27 @@ mod tests {
         }
         "#;
         let exit_code = compile_and_run(input, "global_anonymous_struct_initializer").unwrap();
+        assert_eq!(exit_code, 0);
+    }
+
+    /// Test code generation for designated initializers for global structs
+    #[test]
+    fn test_designated_initializer_global_struct() {
+        let input = r#"
+        struct S {int a; int b;};
+        struct S s = { .b = 2, .a = 1};
+
+        int
+        main()
+        {
+                if(s.a != 1)
+                        return 1;
+                if(s.b != 2)
+                        return 2;
+                return 0;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "designated_initializer_global_struct").unwrap();
         assert_eq!(exit_code, 0);
     }
 }

@@ -56,19 +56,19 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     ) -> u32 {
         let real_ty = Self::get_real_type_from_type(ty, structs, unions).unwrap();
         match &real_ty {
-            Type::Const(inner) => Self::get_type_size_from_type(inner, structs, unions),
-            Type::Volatile(inner) => Self::get_type_size_from_type(inner, structs, unions),
-            Type::Int | Type::UnsignedInt => 8,
-            Type::Char | Type::UnsignedChar => 1,
-            Type::Short | Type::UnsignedShort => 2,
-            Type::Float => 4,
-            Type::Double => 8,
-            Type::Long | Type::UnsignedLong => 8,
-            Type::LongLong | Type::UnsignedLongLong => 8,
-            Type::Void => 0,
-            Type::Bool => 1,
-            Type::Pointer(_) => 8,
-            Type::Struct(_, members) => {
+            Type::Const(inner, _) => Self::get_type_size_from_type(inner, structs, unions),
+            Type::Volatile(inner, _) => Self::get_type_size_from_type(inner, structs, unions),
+            Type::Int(_) | Type::UnsignedInt(_) => 8,
+            Type::Char(_) | Type::UnsignedChar(_) => 1,
+            Type::Short(_) | Type::UnsignedShort(_) => 2,
+            Type::Float(_) => 4,
+            Type::Double(_) => 8,
+            Type::Long(_) | Type::UnsignedLong(_) => 8,
+            Type::LongLong(_) | Type::UnsignedLongLong(_) => 8,
+            Type::Void(_) => 0,
+            Type::Bool(_) => 1,
+            Type::Pointer(_, _) => 8,
+            Type::Struct(_, members, _) => {
                 let mut size = 0;
                 for member in members {
                     let member_size = Self::get_type_size_from_type(&member.ty, structs, unions);
@@ -80,7 +80,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let struct_alignment = Self::get_type_alignment_from_type(ty, structs, unions);
                 (size + struct_alignment - 1) & !(struct_alignment - 1)
             }
-            Type::Union(_, members) => {
+            Type::Union(_, members, _) => {
                 let size = members
                     .iter()
                     .map(|m| Self::get_type_size_from_type(&m.ty, structs, unions))
@@ -89,44 +89,46 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let union_alignment = Self::get_type_alignment_from_type(ty, structs, unions);
                 (size + union_alignment - 1) & !(union_alignment - 1)
             }
-            Type::Array(elem_ty, size) => {
+            Type::Array(elem_ty, size, _) => {
                 Self::get_type_size_from_type(elem_ty, structs, unions) * *size as u32
             }
-            Type::Enum(_, _) => 8,
+            Type::Enum(_, _, _) => 8,
         }
     }
 
-    fn get_type_alignment_from_type(
+    pub(crate) fn get_type_alignment_from_type(
         ty: &Type,
         structs: &HashMap<StringId, Type>,
         unions: &HashMap<StringId, Type>,
     ) -> u32 {
         let real_ty = Self::get_real_type_from_type(ty, structs, unions).unwrap();
         match &real_ty {
-            Type::Const(inner) => Self::get_type_alignment_from_type(inner, structs, unions),
-            Type::Volatile(inner) => Self::get_type_alignment_from_type(inner, structs, unions),
-            Type::Int | Type::UnsignedInt => 8,
-            Type::Char | Type::UnsignedChar => 1,
-            Type::Short | Type::UnsignedShort => 2,
-            Type::Float => 4,
-            Type::Double => 8,
-            Type::Long | Type::UnsignedLong => 8,
-            Type::LongLong | Type::UnsignedLongLong => 8,
-            Type::Void => 1,
-            Type::Bool => 1,
-            Type::Pointer(_) => 8,
-            Type::Struct(_, members) => members
+            Type::Const(inner, _) => Self::get_type_alignment_from_type(inner, structs, unions),
+            Type::Volatile(inner, _) => Self::get_type_alignment_from_type(inner, structs, unions),
+            Type::Int(_) | Type::UnsignedInt(_) => 8,
+            Type::Char(_) | Type::UnsignedChar(_) => 1,
+            Type::Short(_) | Type::UnsignedShort(_) => 2,
+            Type::Float(_) => 4,
+            Type::Double(_) => 8,
+            Type::Long(_) | Type::UnsignedLong(_) => 8,
+            Type::LongLong(_) | Type::UnsignedLongLong(_) => 8,
+            Type::Void(_) => 1,
+            Type::Bool(_) => 1,
+            Type::Pointer(_, _) => 8,
+            Type::Struct(_, members, _) => members
                 .iter()
                 .map(|m| Self::get_type_alignment_from_type(&m.ty, structs, unions))
                 .max()
                 .unwrap_or(1),
-            Type::Union(_, members) => members
+            Type::Union(_, members, _) => members
                 .iter()
                 .map(|m| Self::get_type_alignment_from_type(&m.ty, structs, unions))
                 .max()
                 .unwrap_or(1),
-            Type::Array(elem_ty, _) => Self::get_type_alignment_from_type(elem_ty, structs, unions),
-            Type::Enum(_, _) => 8,
+            Type::Array(elem_ty, _, _) => {
+                Self::get_type_alignment_from_type(elem_ty, structs, unions)
+            }
+            Type::Enum(_, _, _) => 8,
         }
     }
 
@@ -135,14 +137,14 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         structs: &HashMap<StringId, Type>,
         unions: &HashMap<StringId, Type>,
     ) -> Result<Type, CodegenError> {
-        if let Type::Struct(Some(name), members) = ty
-            && members.is_empty()
-        {
-            return Ok(structs.get(name).unwrap().clone());
-        } else if let Type::Union(Some(name), members) = ty
-            && members.is_empty()
-        {
-            return Ok(unions.get(name).unwrap().clone());
+        if let Type::Struct(Some(name), members, _) = ty {
+            if members.is_empty() {
+                return Ok(structs.get(name).unwrap().clone());
+            }
+        } else if let Type::Union(Some(name), members, _) = ty {
+            if members.is_empty() {
+                return Ok(unions.get(name).unwrap().clone());
+            }
         }
         Ok(ty.clone())
     }
@@ -176,10 +178,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         let mut current = ty;
         loop {
             match current {
-                Type::Const(inner) | Type::Volatile(inner) => {
+                Type::Const(inner, _) | Type::Volatile(inner, _) => {
                     current = inner;
                 }
-                Type::Pointer(base_ty) => {
+                Type::Pointer(base_ty, _) => {
                     return self.get_type_size(base_ty) as i64;
                 }
                 _ => return 1,
@@ -194,8 +196,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     ) -> Option<(u32, Type)> {
         let resolved_ty = self.get_real_type(ty).unwrap();
         let members = match &resolved_ty {
-            Type::Struct(_, members) => members,
-            Type::Union(_, members) => {
+            Type::Struct(_, members, _) => members,
+            Type::Union(_, members, _) => {
                 if let Some(member) = members.iter().find(|p| p.name == *member_name) {
                     return Some((0, member.ty.clone()));
                 }
@@ -207,29 +209,33 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         let mut current_offset = 0;
         let empty_name = StringInterner::intern("");
 
-        if let Type::Struct(..) = &resolved_ty {
+        if let Type::Struct(_, _, _) = &resolved_ty {
             for member in members {
                 let member_alignment = self.get_type_alignment(&member.ty);
                 current_offset = (current_offset + member_alignment - 1) & !(member_alignment - 1);
                 if member.name == *member_name {
                     return Some((current_offset, member.ty.clone()));
-                } else if member.name == empty_name
-                    && let Type::Struct(..) | Type::Union(..) = &member.ty
-                    && let Some((offset, ty)) =
-                        self.find_member_offset_recursively(&member.ty, member_name)
-                {
-                    return Some((current_offset + offset, ty));
+                } else if member.name == empty_name {
+                    if let Type::Struct(_, _, _) | Type::Union(_, _, _) = &member.ty {
+                        if let Some((offset, ty)) =
+                            self.find_member_offset_recursively(&member.ty, member_name)
+                        {
+                            return Some((current_offset + offset, ty));
+                        }
+                    }
                 }
                 current_offset += self.get_type_size(&member.ty);
             }
-        } else if let Type::Union(..) = &resolved_ty {
+        } else if let Type::Union(_, _, _) = &resolved_ty {
             for member in members {
-                if member.name == empty_name
-                    && let Type::Struct(..) | Type::Union(..) = &member.ty
-                    && let Some((offset, ty)) =
-                        self.find_member_offset_recursively(&member.ty, member_name)
-                {
-                    return Some((offset, ty));
+                if member.name == empty_name {
+                    if let Type::Struct(_, _, _) | Type::Union(_, _, _) = &member.ty {
+                        if let Some((offset, ty)) =
+                            self.find_member_offset_recursively(&member.ty, member_name)
+                        {
+                            return Some((offset, ty));
+                        }
+                    }
                 }
             }
         }
@@ -297,8 +303,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         if let Some(init) = &declarator.initializer {
                             let context = util::StaticInitContext {
                                 global_variables: global_vars,
+                                structs: &self.structs,
+                                unions: &self.unions,
                             };
-                            match util::evaluate_static_initializer(init, &context)? {
+                            match util::evaluate_static_initializer(&declarator.ty, init, &context)? {
                                 util::EvaluatedInitializer::Bytes(bytes) => {
                                     data_desc.define(bytes.into_boxed_slice());
                                 }
@@ -709,9 +717,11 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
     fn integer_promotion(&self, ty: &Type) -> Type {
         match ty {
-            Type::Char | Type::Short | Type::Bool | Type::UnsignedChar | Type::UnsignedShort => {
-                Type::Int
-            }
+            Type::Char(_)
+            | Type::Short(_)
+            | Type::Bool(_)
+            | Type::UnsignedChar(_)
+            | Type::UnsignedShort(_) => Type::Int(ty.span()),
             _ => ty.clone(),
         }
     }
@@ -747,37 +757,37 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         }
 
         match signed_ty {
-            Type::Int => Type::UnsignedInt,
-            Type::Long => Type::UnsignedLong,
-            Type::LongLong => Type::UnsignedLongLong,
+            Type::Int(span) => Type::UnsignedInt(span),
+            Type::Long(span) => Type::UnsignedLong(span),
+            Type::LongLong(span) => Type::UnsignedLongLong(span),
             _ => unsigned_ty,
         }
     }
 
     fn load_variable(&mut self, slot: StackSlot, ty: &Type) -> Value {
-        let is_volatile = matches!(ty, Type::Volatile(_));
+        let is_volatile = matches!(ty, Type::Volatile(_, _));
         if is_volatile {
             self.builder.ins().fence();
         }
         let value = match ty.unwrap_volatile() {
-            Type::Char | Type::Bool => {
+            Type::Char(_) | Type::Bool(_) => {
                 let val = self.builder.ins().stack_load(types::I8, slot, 0);
                 self.builder.ins().sextend(types::I64, val)
             }
-            Type::UnsignedChar => {
+            Type::UnsignedChar(_) => {
                 let val = self.builder.ins().stack_load(types::I8, slot, 0);
                 self.builder.ins().uextend(types::I64, val)
             }
-            Type::Short => {
+            Type::Short(_) => {
                 let val = self.builder.ins().stack_load(types::I16, slot, 0);
                 self.builder.ins().sextend(types::I64, val)
             }
-            Type::UnsignedShort => {
+            Type::UnsignedShort(_) => {
                 let val = self.builder.ins().stack_load(types::I16, slot, 0);
                 self.builder.ins().uextend(types::I64, val)
             }
-            Type::Float => self.builder.ins().stack_load(types::F32, slot, 0),
-            Type::Double => self.builder.ins().stack_load(types::F64, slot, 0),
+            Type::Float(_) => self.builder.ins().stack_load(types::F32, slot, 0),
+            Type::Double(_) => self.builder.ins().stack_load(types::F64, slot, 0),
             _ => self.builder.ins().stack_load(types::I64, slot, 0),
         };
         if is_volatile {
@@ -787,30 +797,30 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     }
 
     fn load_lvalue(&mut self, addr: Value, ty: &Type) -> Value {
-        let is_volatile = matches!(ty, Type::Volatile(_));
+        let is_volatile = matches!(ty, Type::Volatile(_, _));
         if is_volatile {
             self.builder.ins().fence();
         }
         let flags = MemFlags::new();
         let value = match ty.unwrap_volatile() {
-            Type::Char | Type::Bool => {
+            Type::Char(_) | Type::Bool(_) => {
                 let val = self.builder.ins().load(types::I8, flags, addr, 0);
                 self.builder.ins().sextend(types::I64, val)
             }
-            Type::UnsignedChar => {
+            Type::UnsignedChar(_) => {
                 let val = self.builder.ins().load(types::I8, flags, addr, 0);
                 self.builder.ins().uextend(types::I64, val)
             }
-            Type::Short => {
+            Type::Short(_) => {
                 let val = self.builder.ins().load(types::I16, flags, addr, 0);
                 self.builder.ins().sextend(types::I64, val)
             }
-            Type::UnsignedShort => {
+            Type::UnsignedShort(_) => {
                 let val = self.builder.ins().load(types::I16, flags, addr, 0);
                 self.builder.ins().uextend(types::I64, val)
             }
-            Type::Float => self.builder.ins().load(types::F32, flags, addr, 0),
-            Type::Double => self.builder.ins().load(types::F64, flags, addr, 0),
+            Type::Float(_) => self.builder.ins().load(types::F32, flags, addr, 0),
+            Type::Double(_) => self.builder.ins().load(types::F64, flags, addr, 0),
             _ => self.builder.ins().load(types::I64, flags, addr, 0),
         };
         if is_volatile {
@@ -867,7 +877,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             AssignOp::LeftShift => self.builder.ins().ishl(lhs_val, rhs_val),
             AssignOp::RightShift => self.builder.ins().sshr(lhs_val, rhs_val),
         };
-        let is_volatile = matches!(lhs_ty, Type::Volatile(_));
+        let is_volatile = matches!(lhs_ty, Type::Volatile(_, _));
         if is_volatile {
             self.builder.ins().fence();
         }
@@ -894,18 +904,18 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let (rhs_val, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
                 let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
                 let result_val = match (&lhs_ty, &rhs_ty) {
-                    (Type::Pointer(base_ty), Type::Int) => {
+                    (Type::Pointer(base_ty, _), Type::Int(_)) => {
                         let size = self.get_type_size(base_ty);
                         let offset = self.builder.ins().imul_imm(rhs_val, size as i64);
                         self.builder.ins().iadd(lhs_val, offset)
                     }
-                    (Type::Int, Type::Pointer(base_ty)) => {
+                    (Type::Int(_), Type::Pointer(base_ty, _)) => {
                         let size = self.get_type_size(base_ty);
                         let offset = self.builder.ins().imul_imm(lhs_val, size as i64);
                         self.builder.ins().iadd(rhs_val, offset)
                     }
-                    (Type::Float, Type::Float) => self.builder.ins().fadd(lhs_val, rhs_val),
-                    (Type::Double, Type::Double) => self.builder.ins().fadd(lhs_val, rhs_val),
+                    (Type::Float(_), Type::Float(_)) => self.builder.ins().fadd(lhs_val, rhs_val),
+                    (Type::Double(_), Type::Double(_)) => self.builder.ins().fadd(lhs_val, rhs_val),
                     _ => self.builder.ins().iadd(lhs_val, rhs_val),
                 };
                 let _result_ty = if lhs_ty.is_pointer() {
@@ -920,23 +930,25 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let (rhs_val, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
                 let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
                 let result_val = match (&lhs_ty, &rhs_ty) {
-                    (Type::Pointer(base_ty), Type::Int) => {
+                    (Type::Pointer(base_ty, _), Type::Int(_)) => {
                         let size = self.get_type_size(base_ty);
                         let offset = self.builder.ins().imul_imm(rhs_val, size as i64);
                         self.builder.ins().isub(lhs_val, offset)
                     }
-                    (Type::Pointer(lhs_base), Type::Pointer(rhs_base)) if lhs_base == rhs_base => {
+                    (Type::Pointer(lhs_base, _), Type::Pointer(rhs_base, _))
+                        if lhs_base.equals_ignore_span(rhs_base) =>
+                    {
                         let diff = self.builder.ins().isub(lhs_val, rhs_val);
                         let size = self.get_type_size(lhs_base);
                         self.builder.ins().sdiv_imm(diff, size as i64)
                     }
-                    (Type::Float, Type::Float) => self.builder.ins().fsub(lhs_val, rhs_val),
-                    (Type::Double, Type::Double) => self.builder.ins().fsub(lhs_val, rhs_val),
+                    (Type::Float(_), Type::Float(_)) => self.builder.ins().fsub(lhs_val, rhs_val),
+                    (Type::Double(_), Type::Double(_)) => self.builder.ins().fsub(lhs_val, rhs_val),
                     _ => self.builder.ins().isub(lhs_val, rhs_val),
                 };
                 let result_ty = match (&lhs_ty, &rhs_ty) {
-                    (Type::Pointer(_), Type::Pointer(_)) => Type::Int,
-                    (Type::Pointer(_), Type::Int) => lhs_ty,
+                    (Type::Pointer(_, _), Type::Pointer(_, _)) => Type::Int(lhs_ty.span()),
+                    (Type::Pointer(_, _), Type::Int(_)) => lhs_ty,
                     _ => common_ty,
                 };
                 Ok((result_val, result_ty))
@@ -1194,7 +1206,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             TypedExpr::PointerMember(expr, member, _, _ty) => {
                 let (ptr, ptr_ty) = self.translate_typed_expr(*expr)?;
-                if let Type::Pointer(base_ty) = ptr_ty {
+                if let Type::Pointer(base_ty, _) = ptr_ty {
                     let (offset, member_ty) = self
                         .find_member_offset_recursively(&base_ty, &member)
                         .unwrap();
@@ -1216,7 +1228,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             TypedExpr::ImplicitCast(ty, expr, _, result_ty) => {
                 let (val, expr_ty) = self.translate_typed_expr(*expr)?;
-                if *ty == Type::Bool {
+                if let Type::Bool(_) = *ty {
                     let zero = self.builder.ins().iconst(types::I64, 0);
                     let is_not_zero = self.builder.ins().icmp(IntCC::NotEqual, val, zero);
                     let bool_as_i64 = self.builder.ins().uextend(types::I64, is_not_zero);
@@ -1225,16 +1237,20 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
                 let cast_val = if ty.is_floating() && expr_ty.is_floating() {
                     // float <-> double
-                    if *ty == Type::Double && expr_ty.unwrap_const() == &Type::Float {
+                    if let (Type::Double(_), Type::Float(_)) =
+                        (ty.as_ref(), expr_ty.unwrap_const())
+                    {
                         self.builder.ins().fpromote(types::F64, val)
-                    } else if *ty == Type::Float && expr_ty.unwrap_const() == &Type::Double {
+                    } else if let (Type::Float(_), Type::Double(_)) =
+                        (ty.as_ref(), expr_ty.unwrap_const())
+                    {
                         self.builder.ins().fdemote(types::F32, val)
                     } else {
                         val
                     }
                 } else if ty.is_floating() && !expr_ty.is_floating() {
                     // int -> float
-                    let target_ty = if *ty == Type::Float {
+                    let target_ty = if let Type::Float(_) = *ty {
                         types::F32
                     } else {
                         types::F64
@@ -1247,8 +1263,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 } else if !ty.is_floating() && expr_ty.is_floating() {
                     // float -> int
                     let target_ty = match ty.unwrap_const() {
-                        Type::Char | Type::UnsignedChar | Type::Bool => types::I8,
-                        Type::Short | Type::UnsignedShort => types::I16,
+                        Type::Char(_) | Type::UnsignedChar(_) | Type::Bool(_) => types::I8,
+                        Type::Short(_) | Type::UnsignedShort(_) => types::I16,
                         _ => types::I64,
                     };
                     let converted = if ty.is_unsigned() {
@@ -1292,23 +1308,27 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             TypedExpr::ExplicitCast(ty, expr, _, result_ty) => {
                 let (val, _) = self.translate_typed_expr(*expr)?;
-                if *ty == Type::Bool {
+                if let Type::Bool(_) = *ty {
                     let zero = self.builder.ins().iconst(types::I64, 0);
                     let is_not_zero = self.builder.ins().icmp(IntCC::NotEqual, val, zero);
                     let bool_as_i64 = self.builder.ins().uextend(types::I64, is_not_zero);
                     return Ok((bool_as_i64, result_ty));
                 }
                 let cast_val = match *ty {
-                    Type::Char | Type::UnsignedChar => self.builder.ins().ireduce(types::I8, val),
-                    Type::Short | Type::UnsignedShort => {
+                    Type::Char(_) | Type::UnsignedChar(_) => {
+                        self.builder.ins().ireduce(types::I8, val)
+                    }
+                    Type::Short(_) | Type::UnsignedShort(_) => {
                         self.builder.ins().ireduce(types::I16, val)
                     }
                     _ => val,
                 };
 
                 let extended_val = match *ty {
-                    Type::Char | Type::Short => self.builder.ins().sextend(types::I64, cast_val),
-                    Type::UnsignedChar | Type::UnsignedShort => {
+                    Type::Char(_) | Type::Short(_) => {
+                        self.builder.ins().sextend(types::I64, cast_val)
+                    }
+                    Type::UnsignedChar(_) | Type::UnsignedShort(_) => {
                         self.builder.ins().uextend(types::I64, cast_val)
                     }
                     _ => cast_val,
@@ -1455,16 +1475,19 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             TypedExpr::Variable(name, _, ty) => {
                 if let Some(val) = self.enum_constants.get(&name) {
-                    return Ok((self.builder.ins().iconst(types::I64, *val), Type::Int));
+                    return Ok((
+                        self.builder.ins().iconst(types::I64, *val),
+                        Type::Int(ty.span()),
+                    ));
                 }
                 if let Some((_var_opt, slot_opt, _)) = self.variables.get(&name) {
                     if let Some(slot) = slot_opt {
                         if ty.is_record() {
                             return Ok((self.builder.ins().stack_addr(types::I64, slot, 0), ty));
                         }
-                        if let Type::Array(elem_ty, _) = &ty {
+                        if let Type::Array(elem_ty, _, span) = &ty {
                             let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
-                            return Ok((addr, Type::Pointer(elem_ty.clone())));
+                            return Ok((addr, Type::Pointer(elem_ty.clone(), *span)));
                         }
                         let loaded_val = self.load_variable(slot, &ty);
                         Ok((loaded_val, ty))
@@ -1526,8 +1549,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     let mut sig = self.signatures.get(&name).unwrap().clone();
                     for arg in &args[sig.params.len()..] {
                         let abi_param = match arg.ty() {
-                            Type::Float => AbiParam::new(types::F32),
-                            Type::Double => AbiParam::new(types::F64),
+                            Type::Float(_) => AbiParam::new(types::F32),
+                            Type::Double(_) => AbiParam::new(types::F64),
                             _ => AbiParam::new(types::I64),
                         };
                         sig.params.push(abi_param);
@@ -1562,7 +1585,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             TypedInitializer::Expr(expr) => {
                 if let TypedExpr::Comma(lhs, rhs, _, _) = *expr.clone() {
                     self.translate_initializer(base_addr, ty, &TypedInitializer::Expr(lhs))?;
-                    if let Type::Array(elem_ty, _) = ty {
+                    if let Type::Array(elem_ty, _, _) = ty {
                         let elem_size = self.get_type_size(elem_ty);
                         let next_addr = self.builder.ins().iadd_imm(base_addr, elem_size as i64);
                         self.translate_initializer(next_addr, ty, &TypedInitializer::Expr(rhs))?;
@@ -1589,7 +1612,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             TypedInitializer::List(list) => {
                 let ty = self.get_real_type(ty)?;
                 match ty {
-                    Type::Struct(_, ref members) => {
+                    Type::Struct(_, ref members, _) => {
                         let mut member_index = 0;
                         for (designators, initializer) in list {
                             let (offset, member_ty) = if !designators.is_empty() {
@@ -1599,7 +1622,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                                     match designator {
                                         TypedDesignator::Member(name) => {
                                             let s = self.get_real_type(&current_ty)?;
-                                            if let Type::Struct(_, members) = s {
+                                            if let Type::Struct(_, members, _) = s {
                                                 let mut found = false;
                                                 for (i, member) in members.iter().enumerate() {
                                                     let member_alignment =
@@ -1627,7 +1650,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                                         }
                                         TypedDesignator::Index(expr) => {
                                             let s = self.get_real_type(&current_ty)?;
-                                            if let Type::Array(elem_ty, _) = s {
+                                            if let Type::Array(elem_ty, _, _) = s {
                                                 let elem_size = self.get_type_size(&elem_ty);
                                                 if let TypedExpr::Number(n, _, _) = **expr {
                                                     current_offset += n as u32 * elem_size;
@@ -1662,7 +1685,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                             member_index += 1;
                         }
                     }
-                    Type::Array(elem_ty, _) => {
+                    Type::Array(elem_ty, _, _) => {
                         let elem_size = self.get_type_size(&elem_ty);
                         let mut index = 0;
                         for (designators, initializer) in list {

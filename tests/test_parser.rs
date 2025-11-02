@@ -147,7 +147,13 @@ mod tests {
         let input = "_Bool roti_bakar = 1;";
         let stmts = parse_c_body(input);
 
-        assert_decl_full!(stmts, 0, "roti_bakar", Type::Bool, Expr::Number(..))
+        assert_decl_full!(
+            stmts,
+            0,
+            "roti_bakar",
+            Type::Bool(_),
+            Expr::Number(..)
+        )
     }
 
     /// Test parsing of switch statements
@@ -194,31 +200,26 @@ mod tests {
 
         if let Stmt::Declaration(ty, declarators, false) = &body[0] {
             assert_eq!(declarators.len(), 3);
-            assert_eq!(**ty, Type::Int);
+            assert!(matches!(**ty, Type::Int(_)));
 
             // Check first declarator: int x
             assert_eq!(declarators[0].name.as_str(), "x");
-            assert_eq!(declarators[0].ty, Type::Int);
+            assert!(matches!(declarators[0].ty, Type::Int(_)));
 
             // Check second declarator: int *p
             assert_eq!(declarators[1].name.as_str(), "p");
-            if let Type::Pointer(inner) = &declarators[1].ty {
-                assert_eq!(**inner, Type::Int);
-            } else {
-                panic!("Expected pointer type");
-            }
+            assert!(matches!(
+                declarators[1].ty,
+                Type::Pointer(ref inner, _) if matches!(**inner, Type::Int(_))
+            ));
 
             // Check third declarator: int **pp
             assert_eq!(declarators[2].name.as_str(), "pp");
-            if let Type::Pointer(inner1) = &declarators[2].ty {
-                if let Type::Pointer(inner2) = &**inner1 {
-                    assert_eq!(**inner2, Type::Int);
-                } else {
-                    panic!("Expected pointer to pointer");
-                }
-            } else {
-                panic!("Expected pointer type");
-            }
+            assert!(matches!(
+                declarators[2].ty,
+                Type::Pointer(ref inner1, _)
+                    if matches!(**inner1, Type::Pointer(ref inner2, _) if matches!(**inner2, Type::Int(_)))
+            ));
         } else {
             panic!("Expected a declaration statement");
         }
@@ -421,9 +422,9 @@ mod tests {
         "#;
         let stmts = parse_c_body(input);
 
-        assert_decl_full!(stmts, 0, "a", Type::Float, Expr::FloatNumber(..));
-        assert_decl_full!(stmts, 1, "b", Type::Double, Expr::FloatNumber(..));
-        assert_decl_full!(stmts, 2, "c", Type::Float, Expr::FloatNumber(..));
+        assert_decl_full!(stmts, 0, "a", Type::Float(_), Expr::FloatNumber(..));
+        assert_decl_full!(stmts, 1, "b", Type::Double(_), Expr::FloatNumber(..));
+        assert_decl_full!(stmts, 2, "c", Type::Float(_), Expr::FloatNumber(..));
     }
 
     /// Test parsing of function declarations with void star
@@ -484,8 +485,8 @@ mod tests {
         let ast1 = parse_c_code(input1).unwrap();
         if let Stmt::FunctionDeclaration { params, .. } = &ast1.globals[0] {
             assert_eq!(params.len(), 2);
-            assert_eq!(params[0].ty, Type::UnsignedLong);
-            assert_eq!(params[1].ty, Type::UnsignedLong);
+            assert!(matches!(params[0].ty, Type::UnsignedLong(_)));
+            assert!(matches!(params[1].ty, Type::UnsignedLong(_)));
         } else {
             panic!("Expected FunctionDeclaration");
         }
@@ -494,9 +495,9 @@ mod tests {
         let input2 = "long unsigned x;";
         let stmts2 = parse_c_body(input2);
         if let Stmt::Declaration(ty, declarators, _) = &stmts2[0] {
-            assert_eq!(**ty, Type::UnsignedLong);
+            assert!(matches!(**ty, Type::UnsignedLong(_)));
             assert_eq!(declarators[0].name.as_str(), "x");
-            assert_eq!(declarators[0].ty, Type::UnsignedLong);
+            assert!(matches!(declarators[0].ty, Type::UnsignedLong(_)));
         } else {
             panic!("Expected Declaration");
         }
@@ -505,9 +506,9 @@ mod tests {
         let input3 = "long long unsigned x;";
         let stmts3 = parse_c_body(input3);
         if let Stmt::Declaration(ty, declarators, _) = &stmts3[0] {
-            assert_eq!(**ty, Type::UnsignedLongLong);
+            assert!(matches!(**ty, Type::UnsignedLongLong(_)));
             assert_eq!(declarators[0].name.as_str(), "x");
-            assert_eq!(declarators[0].ty, Type::UnsignedLongLong);
+            assert!(matches!(declarators[0].ty, Type::UnsignedLongLong(_)));
         } else {
             panic!("Expected Declaration");
         }
@@ -516,9 +517,9 @@ mod tests {
         let input4 = "long unsigned long x;";
         let stmts4 = parse_c_body(input4);
         if let Stmt::Declaration(ty, declarators, _) = &stmts4[0] {
-            assert_eq!(**ty, Type::UnsignedLongLong);
+            assert!(matches!(**ty, Type::UnsignedLongLong(_)));
             assert_eq!(declarators[0].name.as_str(), "x");
-            assert_eq!(declarators[0].ty, Type::UnsignedLongLong);
+            assert!(matches!(declarators[0].ty, Type::UnsignedLongLong(_)));
         } else {
             panic!("Expected Declaration");
         }
@@ -527,9 +528,9 @@ mod tests {
         let input5 = "unsigned long x;";
         let stmts5 = parse_c_body(input5);
         if let Stmt::Declaration(ty, declarators, _) = &stmts5[0] {
-            assert_eq!(**ty, Type::UnsignedLong);
+            assert!(matches!(**ty, Type::UnsignedLong(_)));
             assert_eq!(declarators[0].name.as_str(), "x");
-            assert_eq!(declarators[0].ty, Type::UnsignedLong);
+            assert!(matches!(declarators[0].ty, Type::UnsignedLong(_)));
         } else {
             panic!("Expected Declaration");
         }
@@ -538,9 +539,9 @@ mod tests {
         let input6 = "unsigned long long x;";
         let stmts6 = parse_c_body(input6);
         if let Stmt::Declaration(ty, declarators, _) = &stmts6[0] {
-            assert_eq!(**ty, Type::UnsignedLongLong);
+            assert!(matches!(**ty, Type::UnsignedLongLong(_)));
             assert_eq!(declarators[0].name.as_str(), "x");
-            assert_eq!(declarators[0].ty, Type::UnsignedLongLong);
+            assert!(matches!(declarators[0].ty, Type::UnsignedLongLong(_)));
         } else {
             panic!("Expected Declaration");
         }
@@ -549,9 +550,9 @@ mod tests {
         let input7 = "long int x;";
         let stmts7 = parse_c_body(input7);
         if let Stmt::Declaration(ty, declarators, _) = &stmts7[0] {
-            assert_eq!(**ty, Type::Long);
+            assert!(matches!(**ty, Type::Long(_)));
             assert_eq!(declarators[0].name.as_str(), "x");
-            assert_eq!(declarators[0].ty, Type::Long);
+            assert!(matches!(declarators[0].ty, Type::Long(_)));
         } else {
             panic!("Expected Declaration");
         }
@@ -563,36 +564,36 @@ mod tests {
 
         // Check first: unsigned long a
         if let Stmt::Declaration(ty1, decls1, _) = &stmts8[0] {
-            assert_eq!(**ty1, Type::UnsignedLong);
+            assert!(matches!(**ty1, Type::UnsignedLong(_)));
             assert_eq!(decls1[0].name.as_str(), "a");
-            assert_eq!(decls1[0].ty, Type::UnsignedLong);
+            assert!(matches!(decls1[0].ty, Type::UnsignedLong(_)));
         } else {
             panic!("Expected Declaration for a");
         }
 
         // Check second: long unsigned int b
         if let Stmt::Declaration(ty2, decls2, _) = &stmts8[1] {
-            assert_eq!(**ty2, Type::UnsignedLong);
+            assert!(matches!(**ty2, Type::UnsignedLong(_)));
             assert_eq!(decls2[0].name.as_str(), "b");
-            assert_eq!(decls2[0].ty, Type::UnsignedLong);
+            assert!(matches!(decls2[0].ty, Type::UnsignedLong(_)));
         } else {
             panic!("Expected Declaration for b");
         }
 
         // Check third: unsigned long long c
         if let Stmt::Declaration(ty3, decls3, _) = &stmts8[2] {
-            assert_eq!(**ty3, Type::UnsignedLongLong);
+            assert!(matches!(**ty3, Type::UnsignedLongLong(_)));
             assert_eq!(decls3[0].name.as_str(), "c");
-            assert_eq!(decls3[0].ty, Type::UnsignedLongLong);
+            assert!(matches!(decls3[0].ty, Type::UnsignedLongLong(_)));
         } else {
             panic!("Expected Declaration for c");
         }
 
         // Check fourth: long long unsigned d
         if let Stmt::Declaration(ty4, decls4, _) = &stmts8[3] {
-            assert_eq!(**ty4, Type::UnsignedLongLong);
+            assert!(matches!(**ty4, Type::UnsignedLongLong(_)));
             assert_eq!(decls4[0].name.as_str(), "d");
-            assert_eq!(decls4[0].ty, Type::UnsignedLongLong);
+            assert!(matches!(decls4[0].ty, Type::UnsignedLongLong(_)));
         } else {
             panic!("Expected Declaration for d");
         }

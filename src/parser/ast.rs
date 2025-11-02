@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::SourceSpan;
 use crate::parser::string_interner::StringId;
 use thin_vec::ThinVec;
@@ -12,57 +14,112 @@ pub type TypedInitializerList = ThinVec<(ThinVec<TypedDesignator>, Box<TypedInit
 #[derive(Debug, PartialEq, Clone)]
 pub enum Type {
     /// The `int` type.
-    Int,
+    Int(SourceSpan),
     /// The `char` type.
-    Char,
+    Char(SourceSpan),
     /// The `short` type.
-    Short,
+    Short(SourceSpan),
     /// The `float` type.
-    Float,
+    Float(SourceSpan),
     /// The `double` type.
-    Double,
+    Double(SourceSpan),
     /// The `long` type.
-    Long,
+    Long(SourceSpan),
     /// The `long long` type.
-    LongLong,
+    LongLong(SourceSpan),
     /// The `unsigned int` type.
-    UnsignedInt,
+    UnsignedInt(SourceSpan),
     /// The `unsigned char` type.
-    UnsignedChar,
+    UnsignedChar(SourceSpan),
     /// The `unsigned short` type.
-    UnsignedShort,
+    UnsignedShort(SourceSpan),
     /// The `unsigned long` type.
-    UnsignedLong,
+    UnsignedLong(SourceSpan),
     /// The `unsigned long long` type.
-    UnsignedLongLong,
+    UnsignedLongLong(SourceSpan),
     /// The `void` type.
-    Void,
+    Void(SourceSpan),
     /// The `_Bool` type.
-    Bool,
+    Bool(SourceSpan),
     /// A pointer to another type.
-    Pointer(Box<Type>),
+    Pointer(Box<Type>, SourceSpan),
     /// An array of a specific size.
-    Array(Box<Type>, usize),
+    Array(Box<Type>, usize, SourceSpan),
     /// A struct definition.
-    Struct(Option<StringId>, ThinVec<Parameter>),
+    Struct(Option<StringId>, ThinVec<Parameter>, SourceSpan),
     /// A union definition.
-    Union(Option<StringId>, ThinVec<Parameter>),
+    Union(Option<StringId>, ThinVec<Parameter>, SourceSpan),
     /// An enum definition.
     Enum(
         Option<StringId>,
         ThinVec<(StringId, Option<Box<Expr>>, SourceSpan)>,
+        SourceSpan,
     ),
-    Const(Box<Type>),
-    Volatile(Box<Type>),
+    Const(Box<Type>, SourceSpan),
+    Volatile(Box<Type>, SourceSpan),
+}
+
+impl Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type::Int(_) => write!(f, "int"),
+            Type::Char(_) => write!(f, "char"),
+            Type::Short(_) => write!(f, "short"),
+            Type::Float(_) => write!(f, "float"),
+            Type::Double(_) => write!(f, "double"),
+            Type::Long(_) => write!(f, "long"),
+            Type::LongLong(_) => write!(f, "long long"),
+            Type::UnsignedInt(_) => write!(f, "unsigned int"),
+            Type::UnsignedChar(_) => write!(f, "unsigned char"),
+            Type::UnsignedShort(_) => write!(f, "unsigned short"),
+            Type::UnsignedLong(_) => write!(f, "unsigned long"),
+            Type::UnsignedLongLong(_) => write!(f, "unsigned long long"),
+            Type::Void(_) => write!(f, "void"),
+            Type::Bool(_) => write!(f, "_Bool"),
+            Type::Pointer(inner, _) => {
+                write!(f, "{}*", inner)
+            }
+            Type::Array(inner, size, _) => {
+                write!(f, "{}[{}]", inner, size)
+            }
+            Type::Struct(name, _members, _) => {
+                if let Some(name) = name {
+                    write!(f, "struct {}", name)
+                } else {
+                    write!(f, "struct {{ /* anonymous */ }}")
+                }
+            }
+            Type::Union(name, _members, _) => {
+                if let Some(name) = name {
+                    write!(f, "union {}", name)
+                } else {
+                    write!(f, "union {{ /* anonymous */ }}")
+                }
+            }
+            Type::Enum(name, _variants, _) => {
+                if let Some(name) = name {
+                    write!(f, "enum {}", name)
+                } else {
+                    write!(f, "enum {{ /* anonymous */ }}")
+                }
+            }
+            Type::Const(inner, _) => {
+                write!(f, "const {}", inner)
+            }
+            Type::Volatile(inner, _) => {
+                write!(f, "volatile {}", inner)
+            }
+        }
+    }
 }
 
 impl Type {
     /// Returns `true` if the type is a pointer.
     pub fn is_pointer(&self) -> bool {
         match self {
-            Type::Pointer(_) => true,
-            Type::Const(ty) => ty.is_pointer(),
-            Type::Volatile(ty) => ty.is_pointer(),
+            Type::Pointer(_, _) => true,
+            Type::Const(ty, _) => ty.is_pointer(),
+            Type::Volatile(ty, _) => ty.is_pointer(),
             _ => false,
         }
     }
@@ -70,13 +127,13 @@ impl Type {
     /// Returns `true` if the type is unsigned.
     pub fn is_unsigned(&self) -> bool {
         match self {
-            Type::UnsignedInt
-            | Type::UnsignedChar
-            | Type::UnsignedShort
-            | Type::UnsignedLong
-            | Type::UnsignedLongLong => true,
-            Type::Const(ty) => ty.is_unsigned(),
-            Type::Volatile(ty) => ty.is_unsigned(),
+            Type::UnsignedInt(_)
+            | Type::UnsignedChar(_)
+            | Type::UnsignedShort(_)
+            | Type::UnsignedLong(_)
+            | Type::UnsignedLongLong(_) => true,
+            Type::Const(ty, _) => ty.is_unsigned(),
+            Type::Volatile(ty, _) => ty.is_unsigned(),
             _ => false,
         }
     }
@@ -96,14 +153,14 @@ impl Type {
     /// Returns the rank of an integer type.
     pub fn get_integer_rank(&self) -> i32 {
         match self {
-            Type::Bool => 1,
-            Type::Char | Type::UnsignedChar => 2,
-            Type::Short | Type::UnsignedShort => 3,
-            Type::Int | Type::UnsignedInt => 4,
-            Type::Long | Type::UnsignedLong => 5,
-            Type::LongLong | Type::UnsignedLongLong => 6,
-            Type::Const(ty) => ty.get_integer_rank(),
-            Type::Volatile(ty) => ty.get_integer_rank(),
+            Type::Bool(_) => 1,
+            Type::Char(_) | Type::UnsignedChar(_) => 2,
+            Type::Short(_) | Type::UnsignedShort(_) => 3,
+            Type::Int(_) | Type::UnsignedInt(_) => 4,
+            Type::Long(_) | Type::UnsignedLong(_) => 5,
+            Type::LongLong(_) | Type::UnsignedLongLong(_) => 6,
+            Type::Const(ty, _) => ty.get_integer_rank(),
+            Type::Volatile(ty, _) => ty.get_integer_rank(),
             _ => 0,
         }
     }
@@ -111,9 +168,9 @@ impl Type {
     /// Returns `true` if the type is a floating-point type.
     pub fn is_floating(&self) -> bool {
         match self {
-            Type::Float | Type::Double => true,
-            Type::Const(ty) => ty.is_floating(),
-            Type::Volatile(ty) => ty.is_floating(),
+            Type::Float(_) | Type::Double(_) => true,
+            Type::Const(ty, _) => ty.is_floating(),
+            Type::Volatile(ty, _) => ty.is_floating(),
             _ => false,
         }
     }
@@ -121,16 +178,16 @@ impl Type {
     /// Returns `true` if the type is numeric.
     pub fn is_numeric(&self) -> bool {
         match self {
-            Type::Int
-            | Type::Char
-            | Type::Short
-            | Type::Long
-            | Type::LongLong
-            | Type::Float
-            | Type::Double
-            | Type::Enum(_, _) => true,
-            Type::Const(ty) => ty.is_numeric(),
-            Type::Volatile(ty) => ty.is_numeric(),
+            Type::Int(_)
+            | Type::Char(_)
+            | Type::Short(_)
+            | Type::Long(_)
+            | Type::LongLong(_)
+            | Type::Float(_)
+            | Type::Double(_)
+            | Type::Enum(_, _, _) => true,
+            Type::Const(ty, _) => ty.is_numeric(),
+            Type::Volatile(ty, _) => ty.is_numeric(),
             _ => false,
         }
     }
@@ -138,16 +195,16 @@ impl Type {
     /// Returns the arithmetic conversion rank for usual arithmetic conversions.
     pub fn get_arithmetic_rank(&self) -> i32 {
         match self {
-            Type::Bool => 1,
-            Type::Char | Type::UnsignedChar => 2,
-            Type::Short | Type::UnsignedShort => 3,
-            Type::Int | Type::UnsignedInt => 4,
-            Type::Long | Type::UnsignedLong => 5,
-            Type::LongLong | Type::UnsignedLongLong => 6,
-            Type::Float => 7,
-            Type::Double => 8,
-            Type::Const(ty) => ty.get_arithmetic_rank(),
-            Type::Volatile(ty) => ty.get_arithmetic_rank(),
+            Type::Bool(_) => 1,
+            Type::Char(_) | Type::UnsignedChar(_) => 2,
+            Type::Short(_) | Type::UnsignedShort(_) => 3,
+            Type::Int(_) | Type::UnsignedInt(_) => 4,
+            Type::Long(_) | Type::UnsignedLong(_) => 5,
+            Type::LongLong(_) | Type::UnsignedLongLong(_) => 6,
+            Type::Float(_) => 7,
+            Type::Double(_) => 8,
+            Type::Const(ty, _) => ty.get_arithmetic_rank(),
+            Type::Volatile(ty, _) => ty.get_arithmetic_rank(),
             _ => 0,
         }
     }
@@ -155,7 +212,7 @@ impl Type {
     /// Recursively unwraps `const` qualifiers from a type.
     pub fn unwrap_const(&self) -> &Type {
         match self {
-            Type::Const(ty) => ty.unwrap_const(),
+            Type::Const(ty, _) => ty.unwrap_const(),
             _ => self,
         }
     }
@@ -163,8 +220,58 @@ impl Type {
     /// Recursively unwraps `volatile` qualifiers from a type.
     pub fn unwrap_volatile(&self) -> &Type {
         match self {
-            Type::Volatile(ty) => ty.unwrap_volatile(),
+            Type::Volatile(ty, _) => ty.unwrap_volatile(),
             _ => self,
+        }
+    }
+
+    pub fn equals_ignore_span(&self, other: &Type) -> bool {
+        if std::mem::discriminant(self) != std::mem::discriminant(other) {
+            return false;
+        }
+        match (self, other) {
+            (Type::Pointer(a, _), Type::Pointer(b, _)) => a.equals_ignore_span(b),
+            (Type::Array(a, s_a, _), Type::Array(b, s_b, _)) => {
+                s_a == s_b && a.equals_ignore_span(b)
+            }
+            (Type::Const(a, _), Type::Const(b, _)) => a.equals_ignore_span(b),
+            (Type::Volatile(a, _), Type::Volatile(b, _)) => a.equals_ignore_span(b),
+            // For structs/unions, named types are nominally typed.
+            // If they have a name, the names must match.
+            (Type::Struct(n1, _, _), Type::Struct(n2, _, _)) if n1.is_some() && n2.is_some() => {
+                n1 == n2
+            }
+            (Type::Union(n1, _, _), Type::Union(n2, _, _)) if n1.is_some() && n2.is_some() => {
+                n1 == n2
+            }
+            // For other types that have no inner type, discriminant check is enough.
+            _ => true,
+        }
+    }
+
+    pub fn span(&self) -> SourceSpan {
+        match self {
+            Type::Int(span) => *span,
+            Type::Char(span) => *span,
+            Type::Short(span) => *span,
+            Type::Float(span) => *span,
+            Type::Double(span) => *span,
+            Type::Long(span) => *span,
+            Type::LongLong(span) => *span,
+            Type::UnsignedInt(span) => *span,
+            Type::UnsignedChar(span) => *span,
+            Type::UnsignedShort(span) => *span,
+            Type::UnsignedLong(span) => *span,
+            Type::UnsignedLongLong(span) => *span,
+            Type::Void(span) => *span,
+            Type::Bool(span) => *span,
+            Type::Pointer(_, span) => *span,
+            Type::Array(_, _, span) => *span,
+            Type::Struct(_, _, span) => *span,
+            Type::Union(_, _, span) => *span,
+            Type::Enum(_, _, span) => *span,
+            Type::Const(_, span) => *span,
+            Type::Volatile(_, span) => *span,
         }
     }
 }

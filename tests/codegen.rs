@@ -1101,4 +1101,27 @@ mod tests {
         let exit_code = compile_and_run(input, "anonymous_struct_union").unwrap();
         assert_eq!(exit_code, 0);
     }
+
+    /// Test code generation for global anonymous struct initializer
+    #[test]
+    fn test_global_anonymous_struct_initializer() {
+        let input = r#"
+        struct { int a; int b; int c; } s = {1, 2, 3};
+
+        int
+        main()
+        {
+                if (s.a != 1)
+                        return 1;
+                if (s.b != 2)
+                        return 2;
+                if (s.c != 3)
+                        return 3;
+
+                return 0;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "global_anonymous_struct_initializer").unwrap();
+        assert_eq!(exit_code, 0);
+    }
 }

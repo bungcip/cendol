@@ -49,14 +49,43 @@ pub fn unescape_string(s: &str) -> Vec<u8> {
     unescaped
 }
 
+use crate::parser::ast::TypedInitializer;
+
 /// Evaluates a static initializer expression at compile time
 pub fn evaluate_static_initializer(
+    initializer: &TypedInitializer,
+    context: &StaticInitContext,
+) -> Result<EvaluatedInitializer, CodegenError> {
+    match initializer {
+        TypedInitializer::Expr(expr) => evaluate_static_expr(expr, context),
+        TypedInitializer::List(initializers) => {
+            let mut bytes = Vec::new();
+            for (_, initializer) in initializers {
+                if let EvaluatedInitializer::Bytes(mut new_bytes) =
+                    evaluate_static_initializer(initializer, context)?
+                {
+                    bytes.append(&mut new_bytes);
+                } else {
+                    // Nested relocations are not supported yet
+                    return Err(CodegenError::InvalidStaticInitializer);
+                }
+            }
+            Ok(EvaluatedInitializer::Bytes(bytes))
+        }
+    }
+}
+
+/// Evaluates a static initializer expression at compile time
+pub fn evaluate_static_expr(
     expr: &TypedExpr,
     _context: &StaticInitContext,
 ) -> Result<EvaluatedInitializer, CodegenError> {
     match expr {
         // Handle numeric literals
         TypedExpr::Number(num, _, _) => Ok(EvaluatedInitializer::Bytes(num.to_le_bytes().to_vec())),
+        TypedExpr::FloatNumber(num, _, _) => {
+            Ok(EvaluatedInitializer::Bytes(num.to_le_bytes().to_vec()))
+        }
 
         // Handle address-of expressions
         TypedExpr::AddressOf(lvalue, _, _) => match &**lvalue {

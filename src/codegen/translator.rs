@@ -295,21 +295,17 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                             .collect();
 
                         if let Some(init) = &declarator.initializer {
-                            if let TypedInitializer::Expr(expr) = init {
-                                let context = util::StaticInitContext {
-                                    global_variables: global_vars,
-                                };
-                                match util::evaluate_static_initializer(expr, &context)? {
-                                    util::EvaluatedInitializer::Bytes(bytes) => {
-                                        data_desc.define(bytes.into_boxed_slice());
-                                    }
-                                    util::EvaluatedInitializer::Reloc { .. } => {
-                                        // Relocations are not supported for static local variables.
-                                        return Err(CodegenError::InvalidStaticInitializer);
-                                    }
+                            let context = util::StaticInitContext {
+                                global_variables: global_vars,
+                            };
+                            match util::evaluate_static_initializer(init, &context)? {
+                                util::EvaluatedInitializer::Bytes(bytes) => {
+                                    data_desc.define(bytes.into_boxed_slice());
                                 }
-                            } else {
-                                return Err(CodegenError::InvalidStaticInitializer);
+                                util::EvaluatedInitializer::Reloc { .. } => {
+                                    // Relocations are not supported for static local variables.
+                                    return Err(CodegenError::InvalidStaticInitializer);
+                                }
                             }
                         } else {
                             data_desc.define(vec![0; size as usize].into_boxed_slice());

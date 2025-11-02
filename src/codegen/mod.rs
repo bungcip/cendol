@@ -9,7 +9,7 @@ use cranelift_codegen::ir::Function;
 use cranelift_codegen::ir::{AbiParam, types};
 use cranelift_codegen::settings;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
-use cranelift_module::{Linkage, Module};
+use cranelift_module::{Linkage, Module, DataDescription};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -204,7 +204,7 @@ impl CodeGen {
                             self.global_variables
                                 .insert(declarator.name, (id, declarator.ty.clone()));
 
-                            let mut data_desc = cranelift_module::DataDescription::new();
+                            let mut data_desc = DataDescription::new();
 
                             let size = FunctionTranslator::get_type_size_from_type(
                                 &declarator.ty,
@@ -218,52 +218,59 @@ impl CodeGen {
                                 .map(|(k, v)| (*k, v.0))
                                 .collect();
 
-                            let initial_value = if let Some(init) = &declarator.initializer {
+                            if let Some(init) = &declarator.initializer {
                                 if let TypedInitializer::Expr(expr) = init {
-                                    // Special handling for string literals in global initializers
+                                    // Special handling for string literals
                                     if let TypedExpr::String(s, _, _) = **expr {
-                                        // Create the string data
-                                        let string_value = s.as_str();
-                                        let unescaped = util::unescape_string(string_value);
-                                        let mut data = Vec::with_capacity(unescaped.len() + 1);
-                                        data.extend_from_slice(&unescaped);
-                                        data.push(0); // Null terminator
-
-                                        // Create a unique name for the string literal
-                                        let name = format!(".L.str{}", self.anonymous_string_count);
+                                        let name = format!(".L.str.{}", self.anonymous_string_count);
                                         self.anonymous_string_count += 1;
-
-                                        let string_id = self
+                                        let mut val = util::unescape_string(s.as_str());
+                                        val.push(0); // Null terminator
+                                        let str_id = self
                                             .module
                                             .declare_data(&name, Linkage::Local, false, false)
                                             .unwrap();
-                                        let mut string_data_desc =
-                                            cranelift_module::DataDescription::new();
-                                        string_data_desc.define(data.into_boxed_slice());
-                                        self.module
-                                            .define_data(string_id, &string_data_desc)
-                                            .unwrap();
+                                        let mut str_desc = DataDescription::new();
+                                        str_desc.define(val.into_boxed_slice());
+                                        self.module.define_data(str_id, &str_desc).unwrap();
 
-                                        // For now, return placeholder data - proper relocation handling needed
-                                        vec![0u8; size as usize]
+                                        let reloc = Reloc::Abs8;
+                                        let offset = 0;
+                                        data_desc.define(vec![0; 8].into_boxed_slice());
+                                        let global_val = self.module.declare_data_in_data(str_id, &mut data_desc);
+                                        data_desc.write_data_addr(offset, global_val, 0);
+
                                     } else {
                                         let context = util::StaticInitContext {
                                             global_variables: global_vars,
                                         };
-                                        util::evaluate_static_initializer(
-                                            expr,
-                                            size as usize,
-                                            &context,
-                                        )?
+
+                                        match util::evaluate_static_initializer(expr, &context)? {
+                                            util::EvaluatedInitializer::Bytes(bytes) => {
+                                                data_desc.define(bytes.into_boxed_slice());
+                                            }
+                                            util::EvaluatedInitializer::Reloc { name, addend } => {
+                                                if let Some(var_id) =
+                                                    context.global_variables.get(&name)
+                                                {
+                                                    data_desc.define(vec![0; size as usize].into_boxed_slice());
+                                                    let global_val = self.module.declare_data_in_data(*var_id, &mut data_desc);
+                                                    data_desc.write_data_addr(0, global_val, addend);
+                                                } else {
+                                                    return Err(
+                                                        CodegenError::InvalidStaticInitializer,
+                                                    );
+                                                }
+                                            }
+                                        }
                                     }
                                 } else {
                                     return Err(CodegenError::InvalidStaticInitializer);
                                 }
                             } else {
-                                vec![0; size as usize]
-                            };
+                                data_desc.define(vec![0; size as usize].into_boxed_slice());
+                            }
 
-                            data_desc.define(initial_value.into_boxed_slice());
                             self.module.define_data(id, &data_desc).unwrap();
                         }
                     }

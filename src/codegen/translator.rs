@@ -243,20 +243,26 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                             .map(|(k, v)| (*k, v.0))
                             .collect();
 
-                        let initial_value = if let Some(init) = &declarator.initializer {
+                        if let Some(init) = &declarator.initializer {
                             if let TypedInitializer::Expr(expr) = init {
                                 let context = util::StaticInitContext {
                                     global_variables: global_vars,
                                 };
-                                util::evaluate_static_initializer(expr, size as usize, &context)?
+                                match util::evaluate_static_initializer(expr, &context)? {
+                                    util::EvaluatedInitializer::Bytes(bytes) => {
+                                        data_desc.define(bytes.into_boxed_slice());
+                                    }
+                                    util::EvaluatedInitializer::Reloc { .. } => {
+                                        // Relocations are not supported for static local variables.
+                                        return Err(CodegenError::InvalidStaticInitializer);
+                                    }
+                                }
                             } else {
                                 return Err(CodegenError::InvalidStaticInitializer);
                             }
                         } else {
-                            vec![0; size as usize]
-                        };
-
-                        data_desc.define(initial_value.into_boxed_slice());
+                            data_desc.define(vec![0; size as usize].into_boxed_slice());
+                        }
                         self.module.define_data(id, &data_desc).unwrap();
                     } else {
                         let ty = &declarator.ty;

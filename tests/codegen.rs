@@ -1035,4 +1035,28 @@ mod tests {
         let exit_code = compile_and_run(input, "mixed_initializers").unwrap();
         assert_eq!(exit_code, 0);
     }
+
+    /// Test code generation for global pointer initialization
+    #[test]
+    fn test_global_pointer_initialization() {
+        let input = r#"
+            int x = 5;
+            long y = 6;
+            int *p = &x;
+
+            int
+            main()
+            {
+                if (x != 5)
+                    return 1;
+                if (y != 6)
+                    return 2;
+                if (*p != 5)
+                    return 3;
+                return 0;
+            }
+        "#;
+        let exit_code = compile_and_run(input, "global_pointer_initialization").unwrap();
+        assert_eq!(exit_code, 0);
+    }
 }

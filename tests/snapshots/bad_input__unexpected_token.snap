@@ -2,7 +2,7 @@
 source: tests/bad_input.rs
 expression: err.unwrap_err()
 ---
-msg: Unexpected token
+msg: "Unexpected token: ;"
 span:
   start: 1025
   end: 1026

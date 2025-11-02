@@ -33,7 +33,7 @@ pub enum SemanticError {
     InvalidStaticInitializer(String),
 
     /// Attempted to dereference a non-pointer type.
-    #[error("Cannot dereference non-pointer type `{0:?}`")]
+    #[error("Cannot dereference non-pointer type `{0}`")]
     NotAPointer(crate::parser::ast::Type),
 
     /// An undefined label was referenced in a goto statement.

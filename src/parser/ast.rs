@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::SourceSpan;
 use crate::parser::string_interner::StringId;
 use thin_vec::ThinVec;
@@ -55,6 +57,60 @@ pub enum Type {
     ),
     Const(Box<Type>, SourceSpan),
     Volatile(Box<Type>, SourceSpan),
+}
+
+impl Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type::Int(_) => write!(f, "int"),
+            Type::Char(_) => write!(f, "char"),
+            Type::Short(_) => write!(f, "short"),
+            Type::Float(_) => write!(f, "float"),
+            Type::Double(_) => write!(f, "double"),
+            Type::Long(_) => write!(f, "long"),
+            Type::LongLong(_) => write!(f, "long long"),
+            Type::UnsignedInt(_) => write!(f, "unsigned int"),
+            Type::UnsignedChar(_) => write!(f, "unsigned char"),
+            Type::UnsignedShort(_) => write!(f, "unsigned short"),
+            Type::UnsignedLong(_) => write!(f, "unsigned long"),
+            Type::UnsignedLongLong(_) => write!(f, "unsigned long long"),
+            Type::Void(_) => write!(f, "void"),
+            Type::Bool(_) => write!(f, "_Bool"),
+            Type::Pointer(inner, _) => {
+                write!(f, "{}*", inner)
+            }
+            Type::Array(inner, size, _) => {
+                write!(f, "{}[{}]", inner, size)
+            }
+            Type::Struct(name, _members, _) => {
+                if let Some(name) = name {
+                    write!(f, "struct {}", name)
+                } else {
+                    write!(f, "struct {{ /* anonymous */ }}")
+                }
+            }
+            Type::Union(name, _members, _) => {
+                if let Some(name) = name {
+                    write!(f, "union {}", name)
+                } else {
+                    write!(f, "union {{ /* anonymous */ }}")
+                }
+            }
+            Type::Enum(name, _variants, _) => {
+                if let Some(name) = name {
+                    write!(f, "enum {}", name)
+                } else {
+                    write!(f, "enum {{ /* anonymous */ }}")
+                }
+            }
+            Type::Const(inner, _) => {
+                write!(f, "const {}", inner)
+            }
+            Type::Volatile(inner, _) => {
+                write!(f, "volatile {}", inner)
+            }
+        }
+    }
 }
 
 impl Type {

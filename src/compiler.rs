@@ -151,12 +151,8 @@ impl Compiler {
             let output = match preprocessor.preprocess(&mut self.fm, file_id) {
                 Ok(output) => output,
                 Err(err) => {
-                    let span = if let Some(location) = err.span() {
-                        Some(location)
-                    } else {
-                        None
-                    };
-                    let report = Report::new(err.to_string(), span, self.cli.verbose, false);
+                    let span = err.span();
+                    let report = Report::err(err.to_string(), span);
                     return Err(CompilerError::new(vec![report]));
                 }
             };
@@ -174,12 +170,8 @@ impl Compiler {
         let tokens = match preprocessor.preprocess(&mut self.fm, file_id) {
             Ok(tokens) => tokens,
             Err(err) => {
-                let span = if let Some(location) = err.span() {
-                    Some(location)
-                } else {
-                    None
-                };
-                let report = Report::new(err.to_string(), span, self.cli.verbose, false);
+                let span = err.span();
+                let report = Report::err(err.to_string(), span);
                 return Err(CompilerError::new(vec![report]));
             }
         };
@@ -187,7 +179,7 @@ impl Compiler {
         let mut parser = match Parser::new(tokens) {
             Ok(parser) => parser,
             Err(err) => {
-                let report = Report::new(err.to_string(), None, self.cli.verbose, false);
+                let report = Report::err(err.to_string(), Some(err.span()));
                 return Err(CompilerError::new(vec![report]));
             }
         };

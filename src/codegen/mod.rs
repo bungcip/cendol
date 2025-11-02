@@ -359,9 +359,9 @@ impl CodeGen {
 
         // Collect enum constants from global declarations
         for global in &typed_unit.globals {
-            if let TypedStmt::Declaration(ty, _, _) = global {
-                if let Type::Enum(_name, members, _) = ty {
-                    if !members.is_empty() {
+            if let TypedStmt::Declaration(ty, _, _) = global
+                && let Type::Enum(_name, members, _) = ty
+                    && !members.is_empty() {
                         let mut next_value = 0;
                         for (name, value, _span) in members {
                             let val = if let Some(expr) = value {
@@ -377,8 +377,6 @@ impl CodeGen {
                             next_value = val + 1;
                         }
                     }
-                }
-            }
         }
 
         // Collect enum constants from function bodies
@@ -493,8 +491,8 @@ impl CodeGen {
         for stmt in stmts {
             match stmt {
                 TypedStmt::Declaration(ty, _, _) => {
-                    if let Type::Enum(_name, members, _) = ty {
-                        if !members.is_empty() {
+                    if let Type::Enum(_name, members, _) = ty
+                        && !members.is_empty() {
                             let mut next_value = 0;
                             for (name, value, _span) in members {
                                 let val = if let Some(expr) = value {
@@ -510,7 +508,6 @@ impl CodeGen {
                                 next_value = val + 1;
                             }
                         }
-                    }
                 }
                 TypedStmt::Block(stmts) => {
                     self.collect_enum_constants_from_stmts(stmts)?;

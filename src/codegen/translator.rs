@@ -141,11 +141,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             if members.is_empty() {
                 return Ok(structs.get(name).unwrap().clone());
             }
-        } else if let Type::Union(Some(name), members, _) = ty {
-            if members.is_empty() {
+        } else if let Type::Union(Some(name), members, _) = ty
+            && members.is_empty() {
                 return Ok(unions.get(name).unwrap().clone());
             }
-        }
         Ok(ty.clone())
     }
 
@@ -215,28 +214,24 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 current_offset = (current_offset + member_alignment - 1) & !(member_alignment - 1);
                 if member.name == *member_name {
                     return Some((current_offset, member.ty.clone()));
-                } else if member.name == empty_name {
-                    if let Type::Struct(_, _, _) | Type::Union(_, _, _) = &member.ty {
-                        if let Some((offset, ty)) =
+                } else if member.name == empty_name
+                    && let Type::Struct(_, _, _) | Type::Union(_, _, _) = &member.ty
+                        && let Some((offset, ty)) =
                             self.find_member_offset_recursively(&member.ty, member_name)
                         {
                             return Some((current_offset + offset, ty));
                         }
-                    }
-                }
                 current_offset += self.get_type_size(&member.ty);
             }
         } else if let Type::Union(_, _, _) = &resolved_ty {
             for member in members {
-                if member.name == empty_name {
-                    if let Type::Struct(_, _, _) | Type::Union(_, _, _) = &member.ty {
-                        if let Some((offset, ty)) =
+                if member.name == empty_name
+                    && let Type::Struct(_, _, _) | Type::Union(_, _, _) = &member.ty
+                        && let Some((offset, ty)) =
                             self.find_member_offset_recursively(&member.ty, member_name)
                         {
                             return Some((offset, ty));
                         }
-                    }
-                }
             }
         }
 
@@ -303,8 +298,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         if let Some(init) = &declarator.initializer {
                             let context = util::StaticInitContext {
                                 global_variables: global_vars,
-                                structs: &self.structs,
-                                unions: &self.unions,
+                                structs: self.structs,
+                                unions: self.unions,
                             };
                             match util::evaluate_static_initializer(&declarator.ty, init, &context)?
                             {

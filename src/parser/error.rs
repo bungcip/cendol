@@ -18,7 +18,7 @@ impl ParserError {
     pub fn span(&self) -> SourceSpan {
         match self {
             ParserError::UnexpectedToken(token) => token.span,
-            ParserError::UnexpectedEof(span) => span.clone(),
+            ParserError::UnexpectedEof(span) => *span,
         }
     }
 }

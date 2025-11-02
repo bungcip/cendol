@@ -13,41 +13,11 @@ use cranelift_module::Module;
 use std::collections::HashMap;
 
 use super::SymbolTable;
+use super::util;
 use cranelift_module::DataId;
 use cranelift_module::FuncId;
 use cranelift_module::Linkage;
 use cranelift_object::ObjectModule;
-
-fn unescape(s: &str) -> Vec<u8> {
-    let mut unescaped = Vec::with_capacity(s.len());
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
-        if c == '\\' {
-            if let Some(next) = chars.next() {
-                match next {
-                    'n' => unescaped.push(b'\n'),
-                    't' => unescaped.push(b'\t'),
-                    'r' => unescaped.push(b'\r'),
-                    '\\' => unescaped.push(b'\\'),
-                    '"' => unescaped.push(b'"'),
-                    '\'' => unescaped.push(b'\''),
-                    '0' => unescaped.push(b'\0'),
-                    _ => {
-                        // Not a valid escape sequence, treat as literal backslash and character
-                        unescaped.push(b'\\');
-                        unescaped.push(next as u8);
-                    }
-                }
-            } else {
-                // Trailing backslash
-                unescaped.push(b'\\');
-            }
-        } else {
-            unescaped.push(c as u8);
-        }
-    }
-    unescaped
-}
 
 /// The state of the current block.
 #[derive(PartialEq, PartialOrd)]
@@ -267,13 +237,18 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         let mut data_desc = cranelift_module::DataDescription::new();
 
                         let size = self.get_type_size(&declarator.ty);
+                        let global_vars: HashMap<StringId, DataId> = self
+                            .global_variables
+                            .iter()
+                            .map(|(k, v)| (*k, v.0))
+                            .collect();
+
                         let initial_value = if let Some(init) = &declarator.initializer {
                             if let TypedInitializer::Expr(expr) = init {
-                                if let TypedExpr::Number(num, _, _) = **expr {
-                                    num.to_le_bytes().to_vec()
-                                } else {
-                                    return Err(CodegenError::InvalidStaticInitializer);
-                                }
+                                let context = util::StaticInitContext {
+                                    global_variables: global_vars,
+                                };
+                                util::evaluate_static_initializer(expr, size as usize, &context)?
                             } else {
                                 return Err(CodegenError::InvalidStaticInitializer);
                             }
@@ -677,7 +652,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             TypedLValue::String(s, _, ty) => {
                 let string_value = s.as_str();
-                let unescaped = unescape(string_value);
+                let unescaped = util::unescape_string(string_value);
                 let mut data = Vec::with_capacity(unescaped.len() + 1);
                 data.extend_from_slice(&unescaped);
                 data.push(0); // Null terminator
@@ -1159,7 +1134,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             TypedExpr::FloatNumber(n, _, ty) => Ok((self.builder.ins().f64const(n), ty)),
             TypedExpr::String(s, _, ty) => {
                 let string_value = s.as_str();
-                let unescaped = unescape(string_value);
+                let unescaped = util::unescape_string(string_value);
                 let mut data = Vec::with_capacity(unescaped.len() + 1);
                 data.extend_from_slice(&unescaped);
                 data.push(0); // Null terminator

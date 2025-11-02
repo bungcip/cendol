@@ -1,9 +1,10 @@
 use crate::codegen::error::CodegenError;
 use crate::parser::ast::{
-    Expr, Type, TypedExpr, TypedInitializer, TypedStmt, TypedTranslationUnit,
+    Expr, Type, TypedExpr, TypedInitializer, TypedLValue, TypedStmt, TypedTranslationUnit,
 };
 use crate::parser::string_interner::StringId;
 use cranelift::prelude::*;
+use cranelift_codegen::binemit::Reloc;
 use cranelift_codegen::ir::Function;
 use cranelift_codegen::ir::{AbiParam, types};
 use cranelift_codegen::settings;
@@ -16,6 +17,7 @@ use translator::{BlockState, FunctionTranslator};
 
 pub mod error;
 mod translator;
+mod util;
 struct SymbolTable<K, V> {
     scopes: Vec<HashMap<K, V>>,
 }
@@ -210,12 +212,49 @@ impl CodeGen {
                                 &self.unions,
                             );
 
+                            let global_vars: HashMap<StringId, DataId> = self
+                                .global_variables
+                                .iter()
+                                .map(|(k, v)| (*k, v.0))
+                                .collect();
+
                             let initial_value = if let Some(init) = &declarator.initializer {
                                 if let TypedInitializer::Expr(expr) = init {
-                                    if let TypedExpr::Number(num, _, _) = **expr {
-                                        num.to_le_bytes().to_vec()
+                                    // Special handling for string literals in global initializers
+                                    if let TypedExpr::String(s, _, _) = **expr {
+                                        // Create the string data
+                                        let string_value = s.as_str();
+                                        let unescaped = util::unescape_string(string_value);
+                                        let mut data = Vec::with_capacity(unescaped.len() + 1);
+                                        data.extend_from_slice(&unescaped);
+                                        data.push(0); // Null terminator
+
+                                        // Create a unique name for the string literal
+                                        let name = format!(".L.str{}", self.anonymous_string_count);
+                                        self.anonymous_string_count += 1;
+
+                                        let string_id = self
+                                            .module
+                                            .declare_data(&name, Linkage::Local, false, false)
+                                            .unwrap();
+                                        let mut string_data_desc =
+                                            cranelift_module::DataDescription::new();
+                                        string_data_desc.define(data.into_boxed_slice());
+                                        self.module
+                                            .define_data(string_id, &string_data_desc)
+                                            .unwrap();
+
+                                        // For now, return placeholder data - proper relocation handling needed
+                                        vec![0u8; size as usize]
                                     } else {
-                                        return Err(CodegenError::InvalidStaticInitializer);
+                                        let context = util::StaticInitContext {
+                                            global_variables: global_vars,
+                                        };
+                                        util::evaluate_static_initializer(
+                                            expr,
+                                            size as usize,
+                                            &context,
+                                        )?
                                     }
                                 } else {
                                     return Err(CodegenError::InvalidStaticInitializer);

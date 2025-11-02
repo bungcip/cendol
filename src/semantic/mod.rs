@@ -653,7 +653,7 @@ impl SemanticAnalyzer {
 
                     if (is_static || self.current_function.is_none())
                         && let Some(ref init) = typed_initializer
-                        && !is_const_expr(init)
+                        && !is_const_initializer(init)
                     {
                         self.errors.push((
                             SemanticError::InvalidStaticInitializer(declarator.name.to_string()),
@@ -881,7 +881,7 @@ impl SemanticAnalyzer {
             Stmt::Empty => TypedStmt::Empty,
             Stmt::StaticAssert(expr, message) => {
                 let typed_expr = self.check_expression(*expr, filename);
-                if !is_const_expr(&TypedInitializer::Expr(Box::new(typed_expr.clone()))) {
+                if !is_const_initializer(&TypedInitializer::Expr(Box::new(typed_expr.clone()))) {
                     self.errors.push((
                         SemanticError::NotAConstantExpression,
                         filename.to_string(),
@@ -1574,11 +1574,30 @@ impl SemanticAnalyzer {
     }
 }
 
-fn is_const_expr(initializer: &TypedInitializer) -> bool {
+fn is_const_initializer(initializer: &TypedInitializer) -> bool {
     match initializer {
-        TypedInitializer::Expr(expr) => matches!(**expr, TypedExpr::Number(_, _, _)),
+        TypedInitializer::Expr(expr) => is_const_expr(expr),
         TypedInitializer::List(list) => list
             .iter()
-            .all(|(_, initializer)| is_const_expr(initializer)),
+            .all(|(_, initializer)| is_const_initializer(initializer)),
+    }
+}
+
+fn is_const_expr(expr: &TypedExpr) -> bool {
+    match expr {
+        // Numeric literals are always constant expressions
+        TypedExpr::Number(_, _, _) => true,
+        // String literals are constant expressions
+        TypedExpr::String(_, _, _) => true,
+        // Address-of expressions are constant if the operand is a valid constant
+        TypedExpr::AddressOf(lvalue, _, _) => match lvalue.as_ref() {
+            // Address of a variable or string literal is constant
+            TypedLValue::Variable(_, _, _) | TypedLValue::String(_, _, _) => true,
+            // Other lvalues (like dereferences) are not constant
+            _ => false,
+        },
+        // For other expression types, we conservatively return false
+        // This could be extended to support more complex constant expressions
+        _ => false,
     }
 }

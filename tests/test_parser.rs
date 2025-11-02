@@ -556,9 +556,10 @@ mod tests {
         }
 
         // Test multiple type combinations in same declaration
-        let input8 = "unsigned long a; long unsigned int b; unsigned long long c; long long unsigned d;";
+        let input8 =
+            "unsigned long a; long unsigned int b; unsigned long long c; long long unsigned d;";
         let stmts8 = parse_c_body(input8);
-        
+
         // Check first: unsigned long a
         if let Stmt::Declaration(ty1, decls1, _) = &stmts8[0] {
             assert_eq!(**ty1, Type::UnsignedLong);

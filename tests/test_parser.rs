@@ -147,13 +147,7 @@ mod tests {
         let input = "_Bool roti_bakar = 1;";
         let stmts = parse_c_body(input);
 
-        assert_decl_full!(
-            stmts,
-            0,
-            "roti_bakar",
-            Type::Bool(_),
-            Expr::Number(..)
-        )
+        assert_decl_full!(stmts, 0, "roti_bakar", Type::Bool(_), Expr::Number(..))
     }
 
     /// Test parsing of switch statements

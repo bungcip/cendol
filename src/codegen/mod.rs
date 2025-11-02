@@ -248,7 +248,11 @@ impl CodeGen {
                                             unions: &self.unions,
                                         };
 
-                                        match util::evaluate_static_initializer(&declarator.ty, init, &context)? {
+                                        match util::evaluate_static_initializer(
+                                            &declarator.ty,
+                                            init,
+                                            &context,
+                                        )? {
                                             util::EvaluatedInitializer::Bytes(bytes) => {
                                                 data_desc.define(bytes.into_boxed_slice());
                                             }
@@ -281,7 +285,11 @@ impl CodeGen {
                                         unions: &self.unions,
                                     };
 
-                                    match util::evaluate_static_initializer(&declarator.ty, init, &context)? {
+                                    match util::evaluate_static_initializer(
+                                        &declarator.ty,
+                                        init,
+                                        &context,
+                                    )? {
                                         util::EvaluatedInitializer::Bytes(bytes) => {
                                             data_desc.define(bytes.into_boxed_slice());
                                         }

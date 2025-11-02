@@ -67,7 +67,9 @@ pub fn evaluate_static_initializer(
     match initializer {
         TypedInitializer::Expr(expr) => evaluate_static_expr(expr, context),
         TypedInitializer::List(initializers) => {
-            let size = FunctionTranslator::get_type_size_from_type(ty, context.structs, context.unions) as usize;
+            let size =
+                FunctionTranslator::get_type_size_from_type(ty, context.structs, context.unions)
+                    as usize;
             let mut bytes = vec![0; size];
             let mut offset = 0;
 
@@ -79,16 +81,29 @@ pub fn evaluate_static_initializer(
                             let mut current_offset = 0;
                             let mut found = false;
                             for member in members {
-                                let member_alignment = FunctionTranslator::get_type_alignment_from_type(&member.ty, context.structs, context.unions);
-                                current_offset = (current_offset + member_alignment - 1) & !(member_alignment - 1);
+                                let member_alignment =
+                                    FunctionTranslator::get_type_alignment_from_type(
+                                        &member.ty,
+                                        context.structs,
+                                        context.unions,
+                                    );
+                                current_offset = (current_offset + member_alignment - 1)
+                                    & !(member_alignment - 1);
                                 if member.name == *name {
                                     found = true;
                                     break;
                                 }
-                                current_offset += FunctionTranslator::get_type_size_from_type(&member.ty, context.structs, context.unions);
+                                current_offset += FunctionTranslator::get_type_size_from_type(
+                                    &member.ty,
+                                    context.structs,
+                                    context.unions,
+                                );
                             }
                             if found {
-                                (current_offset, members.iter().find(|m| m.name == *name).unwrap().ty.clone())
+                                (
+                                    current_offset,
+                                    members.iter().find(|m| m.name == *name).unwrap().ty.clone(),
+                                )
                             } else {
                                 return Err(CodegenError::InvalidStaticInitializer);
                             }
@@ -97,7 +112,11 @@ pub fn evaluate_static_initializer(
                         }
                     } else {
                         let member = member_iter.next().unwrap();
-                        let member_alignment = FunctionTranslator::get_type_alignment_from_type(&member.ty, context.structs, context.unions);
+                        let member_alignment = FunctionTranslator::get_type_alignment_from_type(
+                            &member.ty,
+                            context.structs,
+                            context.unions,
+                        );
                         offset = (offset + member_alignment - 1) & !(member_alignment - 1);
                         (offset, member.ty.clone())
                     };
@@ -105,13 +124,18 @@ pub fn evaluate_static_initializer(
                     if let EvaluatedInitializer::Bytes(new_bytes) =
                         evaluate_static_initializer(&member_ty, init, context)?
                     {
-                        bytes[member_offset as usize..member_offset as usize + new_bytes.len()].copy_from_slice(&new_bytes);
+                        bytes[member_offset as usize..member_offset as usize + new_bytes.len()]
+                            .copy_from_slice(&new_bytes);
                     } else {
                         return Err(CodegenError::InvalidStaticInitializer);
                     }
 
                     if designators.is_empty() {
-                        offset += FunctionTranslator::get_type_size_from_type(&member_ty, context.structs, context.unions);
+                        offset += FunctionTranslator::get_type_size_from_type(
+                            &member_ty,
+                            context.structs,
+                            context.unions,
+                        );
                     }
                 }
             } else {

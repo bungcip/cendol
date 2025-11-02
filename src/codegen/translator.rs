@@ -306,7 +306,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                                 structs: &self.structs,
                                 unions: &self.unions,
                             };
-                            match util::evaluate_static_initializer(&declarator.ty, init, &context)? {
+                            match util::evaluate_static_initializer(&declarator.ty, init, &context)?
+                            {
                                 util::EvaluatedInitializer::Bytes(bytes) => {
                                     data_desc.define(bytes.into_boxed_slice());
                                 }
@@ -1237,8 +1238,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
                 let cast_val = if ty.is_floating() && expr_ty.is_floating() {
                     // float <-> double
-                    if let (Type::Double(_), Type::Float(_)) =
-                        (ty.as_ref(), expr_ty.unwrap_const())
+                    if let (Type::Double(_), Type::Float(_)) = (ty.as_ref(), expr_ty.unwrap_const())
                     {
                         self.builder.ins().fpromote(types::F64, val)
                     } else if let (Type::Float(_), Type::Double(_)) =

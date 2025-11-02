@@ -1,6 +1,6 @@
 use crate::SourceSpan;
 use crate::parser::ast::{
-    AssignOp, BinOp, Designator, Expr, ForInit, Initializer, Stmt, TranslationUnit, Type,
+    AssignOp, BinOp, Designator, Expr, ForInit, Function, Initializer, Stmt, TranslationUnit, Type,
     TypedDeclarator, TypedDesignator, TypedExpr, TypedForInit, TypedFunctionDecl, TypedInitializer,
     TypedLValue, TypedStmt, TypedTranslationUnit,
 };
@@ -77,7 +77,7 @@ use std::collections::HashSet;
 
 pub struct SemaOutput(
     pub TypedTranslationUnit,
-    pub Vec<(SemanticError, String, SourceSpan)>,
+    pub Vec<(SemanticError, SourceSpan)>,
     pub SemanticAnalyzer,
 );
 
@@ -89,8 +89,8 @@ pub struct SemanticAnalyzer {
     union_definitions: HashMap<StringId, Type>,
     current_function: Option<StringId>,
     labels: HashMap<StringId, SourceSpan>,
-    errors: Vec<(SemanticError, String, SourceSpan)>, // (error, file, span)
-    warnings: Vec<(SemanticError, String, SourceSpan)>, // (warning, file, span)
+    errors: Vec<(SemanticError, SourceSpan)>, // (error, file, span)
+    warnings: Vec<(SemanticError, SourceSpan)>, // (warning, file, span)
     used_builtins: HashSet<StringId>,
     used_variables: HashSet<StringId>,
     in_loop: bool,
@@ -181,6 +181,9 @@ impl SemanticAnalyzer {
             );
         }
     }
+    fn err(&mut self, error: SemanticError, span: SourceSpan) {
+        self.errors.push((error, span));
+    }
 
     fn find_member_recursively(&self, ty: &Type, member_name: &StringId) -> Option<Type> {
         let resolved_ty = self.resolve_type(ty);
@@ -265,13 +268,12 @@ impl SemanticAnalyzer {
     pub fn analyze(
         mut self,
         program: TranslationUnit,
-        filename: &str,
-    ) -> Result<SemaOutput, Vec<(SemanticError, String, SourceSpan)>> {
+    ) -> Result<SemaOutput, Vec<(SemanticError, SourceSpan)>> {
         // First pass: collect all function definitions and global declarations
-        self.collect_symbols(&program, filename);
+        self.collect_symbols(&program);
 
         // Second pass: check all expressions and statements for semantic errors and build typed AST
-        let typed_program = self.check_program(program, filename);
+        let typed_program = self.check_program(program);
 
         if self.errors.is_empty() {
             Ok(SemaOutput(typed_program, self.warnings.clone(), self))
@@ -281,18 +283,14 @@ impl SemanticAnalyzer {
     }
 
     /// First pass: collect all symbols (functions and global variables).
-    fn collect_symbols(&mut self, program: &TranslationUnit, filename: &str) {
+    fn collect_symbols(&mut self, program: &TranslationUnit) {
         for global in &program.globals {
             match global {
                 Stmt::FunctionDeclaration { ty, name, .. } => {
                     let span = ty.span();
                     if let Some(existing) = self.symbol_table.lookup(name) {
                         if existing.is_function {
-                            self.errors.push((
-                                SemanticError::FunctionRedeclaration(*name),
-                                filename.to_string(),
-                                span,
-                            ));
+                            self.err(SemanticError::FunctionRedeclaration(*name), span);
                         }
                     } else {
                         self.symbol_table.insert(
@@ -316,11 +314,7 @@ impl SemanticAnalyzer {
                                 if let Expr::Number(num, _) = **expr {
                                     num
                                 } else {
-                                    self.errors.push((
-                                        SemanticError::InvalidEnumInitializer(*name),
-                                        filename.to_string(),
-                                        *span,
-                                    ));
+                                    self.err(SemanticError::InvalidEnumInitializer(*name), *span);
                                     -1 // Dummy value
                                 }
                             } else {
@@ -328,11 +322,7 @@ impl SemanticAnalyzer {
                             };
 
                             if self.enum_constants.contains_key(name) {
-                                self.errors.push((
-                                    SemanticError::VariableRedeclaration(*name),
-                                    filename.to_string(),
-                                    *span,
-                                ));
+                                self.err(SemanticError::VariableRedeclaration(*name), *span);
                             } else {
                                 self.enum_constants.insert(*name, val);
                             }
@@ -353,11 +343,10 @@ impl SemanticAnalyzer {
                         // Only check for conflicts with functions
                         if let Some(existing) = self.symbol_table.lookup(&declarator.name) {
                             if existing.is_function {
-                                self.errors.push((
+                                self.err(
                                     SemanticError::VariableRedeclaration(declarator.name),
-                                    filename.to_string(),
                                     declarator.span,
-                                ));
+                                );
                             }
                         } else {
                             self.symbol_table.insert(
@@ -381,11 +370,7 @@ impl SemanticAnalyzer {
             let span = function.return_type.span();
             if let Some(existing) = self.symbol_table.lookup(&function.name) {
                 if existing.is_function {
-                    self.errors.push((
-                        SemanticError::FunctionRedeclaration(function.name),
-                        filename.to_string(),
-                        span,
-                    ));
+                    self.err(SemanticError::FunctionRedeclaration(function.name), span);
                 }
             } else {
                 self.symbol_table.insert(
@@ -402,16 +387,16 @@ impl SemanticAnalyzer {
     }
 
     /// Second pass: check all statements and expressions for semantic correctness and build typed AST.
-    fn check_program(&mut self, program: TranslationUnit, filename: &str) -> TypedTranslationUnit {
+    fn check_program(&mut self, program: TranslationUnit) -> TypedTranslationUnit {
         let mut typed_functions = Vec::new();
         for function in program.functions {
             self.current_function = Some(function.name);
-            typed_functions.push(self.check_function(function, filename));
+            typed_functions.push(self.check_function(function));
         }
 
         let mut typed_globals = Vec::new();
         for global in program.globals {
-            typed_globals.push(self.check_statement(global, filename));
+            typed_globals.push(self.check_statement(global));
         }
 
         // Add built-in function declarations to the typed AST
@@ -462,47 +447,43 @@ impl SemanticAnalyzer {
     }
 
     /// Collects all labels defined in a function's statements.
-    fn collect_labels(&mut self, stmts: &[Stmt], filename: &str) {
+    fn collect_labels(&mut self, stmts: &[Stmt]) {
         for stmt in stmts {
             match stmt {
                 Stmt::Label(name, body, span) => {
                     if self.labels.contains_key(name) {
-                        self.errors.push((
-                            SemanticError::VariableRedeclaration(*name),
-                            filename.to_string(),
-                            *span,
-                        ));
+                        self.err(SemanticError::VariableRedeclaration(*name), *span);
                     } else {
                         self.labels.insert(*name, *span);
                     }
-                    self.collect_labels(&[*body.clone()], filename);
+                    self.collect_labels(&[*body.clone()]);
                 }
                 Stmt::Block(stmts) => {
-                    self.collect_labels(stmts, filename);
+                    self.collect_labels(stmts);
                 }
                 Stmt::If(_, then, otherwise) => {
-                    self.collect_labels(&[*then.clone()], filename);
+                    self.collect_labels(&[*then.clone()]);
                     if let Some(otherwise) = otherwise {
-                        self.collect_labels(&[*otherwise.clone()], filename);
+                        self.collect_labels(&[*otherwise.clone()]);
                     }
                 }
                 Stmt::While(_, body) => {
-                    self.collect_labels(&[*body.clone()], filename);
+                    self.collect_labels(&[*body.clone()]);
                 }
                 Stmt::For(_, _, _, body) => {
-                    self.collect_labels(&[*body.clone()], filename);
+                    self.collect_labels(&[*body.clone()]);
                 }
                 Stmt::DoWhile(body, _) => {
-                    self.collect_labels(&[*body.clone()], filename);
+                    self.collect_labels(&[*body.clone()]);
                 }
                 Stmt::Switch(_, body) => {
-                    self.collect_labels(&[*body.clone()], filename);
+                    self.collect_labels(&[*body.clone()]);
                 }
                 Stmt::Case(_, body) => {
-                    self.collect_labels(&[*body.clone()], filename);
+                    self.collect_labels(&[*body.clone()]);
                 }
                 Stmt::Default(body) => {
-                    self.collect_labels(&[*body.clone()], filename);
+                    self.collect_labels(&[*body.clone()]);
                 }
                 _ => {}
             }
@@ -510,11 +491,7 @@ impl SemanticAnalyzer {
     }
 
     /// Checks a function for semantic errors and returns a typed function declaration.
-    fn check_function(
-        &mut self,
-        function: crate::parser::ast::Function,
-        filename: &str,
-    ) -> TypedFunctionDecl {
+    fn check_function(&mut self, function: Function) -> TypedFunctionDecl {
         // Push function scope
         self.symbol_table.push_scope();
 
@@ -522,17 +499,13 @@ impl SemanticAnalyzer {
         self.labels.clear();
 
         // First pass: collect all labels in the function
-        self.collect_labels(&function.body, filename);
+        self.collect_labels(&function.body);
 
         // Check parameters for redeclaration
         let mut param_names = std::collections::HashSet::new();
         for param in &function.params {
             if !param_names.insert(param.name) {
-                self.errors.push((
-                    SemanticError::VariableRedeclaration(param.name),
-                    filename.to_string(),
-                    param.span,
-                ));
+                self.err(SemanticError::VariableRedeclaration(param.name), param.span);
             }
             // Add parameters to local symbol table
             self.symbol_table.insert(
@@ -549,17 +522,14 @@ impl SemanticAnalyzer {
         // Check function body and build typed statements
         let mut typed_body = ThinVec::new();
         for stmt in function.body {
-            typed_body.push(self.check_statement(stmt, filename));
+            typed_body.push(self.check_statement(stmt));
         }
 
         // Check for unused variables
         for (name, symbol) in self.symbol_table.scopes.last().unwrap() {
             if !self.used_variables.contains(name) {
-                self.warnings.push((
-                    SemanticError::UnusedVariable(name.to_string()),
-                    filename.to_string(),
-                    symbol.span,
-                ));
+                self.warnings
+                    .push((SemanticError::UnusedVariable(name.to_string()), symbol.span));
             }
         }
 
@@ -580,7 +550,7 @@ impl SemanticAnalyzer {
     }
 
     /// Checks a statement for semantic errors and returns a typed statement.
-    fn check_statement(&mut self, stmt: Stmt, filename: &str) -> TypedStmt {
+    fn check_statement(&mut self, stmt: Stmt) -> TypedStmt {
         match stmt {
             Stmt::Declaration(ty, declarators, is_static) => {
                 let mut base_ty = ty.clone();
@@ -635,11 +605,7 @@ impl SemanticAnalyzer {
                                 if let Expr::Number(num, _) = *expr {
                                     num
                                 } else {
-                                    self.errors.push((
-                                        SemanticError::InvalidEnumInitializer(name),
-                                        filename.to_string(),
-                                        span,
-                                    ));
+                                    self.err(SemanticError::InvalidEnumInitializer(name), span);
                                     -1 // Dummy value
                                 }
                             } else {
@@ -649,11 +615,7 @@ impl SemanticAnalyzer {
                             if let Vacant(e) = self.enum_constants.entry(name) {
                                 e.insert(val);
                             } else {
-                                self.errors.push((
-                                    SemanticError::VariableRedeclaration(name),
-                                    filename.to_string(),
-                                    span,
-                                ));
+                                self.err(SemanticError::VariableRedeclaration(name), span);
                             };
                             next_value = val + 1;
                         }
@@ -667,11 +629,10 @@ impl SemanticAnalyzer {
                         && let Some(existing) = self.symbol_table.lookup(&declarator.name)
                         && !existing.is_function
                     {
-                        self.errors.push((
+                        self.err(
                             SemanticError::VariableRedeclaration(declarator.name),
-                            filename.to_string(),
                             declarator.span,
-                        ));
+                        );
                     }
 
                     let declarator_ty = self.resolve_type(&declarator.ty);
@@ -691,8 +652,8 @@ impl SemanticAnalyzer {
 
                     // Check initializer expression
                     let typed_initializer = declarator.initializer.map(|init| {
-                        let typed_init = self.convert_initializer_to_typed(init, filename);
-                        self.check_initializer(&typed_init, &declarator_ty, filename);
+                        let typed_init = self.convert_initializer_to_typed(init);
+                        self.check_initializer(&typed_init, &declarator_ty);
                         typed_init
                     });
 
@@ -700,11 +661,10 @@ impl SemanticAnalyzer {
                         && let Some(ref init) = typed_initializer
                         && !is_const_initializer(init)
                     {
-                        self.errors.push((
+                        self.err(
                             SemanticError::InvalidStaticInitializer(declarator.name.to_string()),
-                            filename.to_string(),
                             SourceSpan::default(),
-                        ));
+                        );
                     }
 
                     typed_declarators.push(TypedDeclarator {
@@ -716,25 +676,24 @@ impl SemanticAnalyzer {
                 TypedStmt::Declaration(*base_ty, typed_declarators, is_static)
             }
             Stmt::Expr(expr) => {
-                let typed_expr = self.check_expression(*expr, filename);
+                let typed_expr = self.check_expression(*expr);
                 TypedStmt::Expr(typed_expr)
             }
             Stmt::Return(expr) => {
-                let typed_expr = self.check_expression(*expr, filename);
+                let typed_expr = self.check_expression(*expr);
                 TypedStmt::Return(typed_expr)
             }
             Stmt::If(cond, then, otherwise) => {
-                let typed_cond = self.check_expression(*cond, filename);
-                let typed_then = Box::new(self.check_statement(*then, filename));
-                let typed_otherwise =
-                    otherwise.map(|o| Box::new(self.check_statement(*o, filename)));
+                let typed_cond = self.check_expression(*cond);
+                let typed_then = Box::new(self.check_statement(*then));
+                let typed_otherwise = otherwise.map(|o| Box::new(self.check_statement(*o)));
                 TypedStmt::If(typed_cond, typed_then, typed_otherwise)
             }
             Stmt::While(cond, body) => {
                 let prev_in_loop = self.in_loop;
                 self.in_loop = true;
-                let typed_cond = self.check_expression(*cond, filename);
-                let typed_body = Box::new(self.check_statement(*body, filename));
+                let typed_cond = self.check_expression(*cond);
+                let typed_body = Box::new(self.check_statement(*body));
                 self.in_loop = prev_in_loop;
                 TypedStmt::While(typed_cond, typed_body)
             }
@@ -743,11 +702,10 @@ impl SemanticAnalyzer {
                     ForInit::Declaration(ty, name, initializer) => {
                         if let Some(existing) = self.symbol_table.lookup(&name) {
                             if !existing.is_function {
-                                self.errors.push((
+                                self.err(
                                     SemanticError::FunctionRedeclaration(name),
-                                    filename.to_string(),
                                     SourceSpan::default(),
-                                ));
+                                );
                             }
                         } else {
                             self.symbol_table.insert(
@@ -760,21 +718,21 @@ impl SemanticAnalyzer {
                                 },
                             );
                         }
-                        let typed_initializer = initializer
-                            .map(|init| self.convert_initializer_to_typed(init, filename));
+                        let typed_initializer =
+                            initializer.map(|init| self.convert_initializer_to_typed(init));
                         TypedForInit::Declaration(ty, name, typed_initializer)
                     }
                     ForInit::Expr(expr) => {
-                        let typed_expr = self.check_expression(expr, filename);
+                        let typed_expr = self.check_expression(expr);
                         TypedForInit::Expr(typed_expr)
                     }
                 });
 
                 let prev_in_loop = self.in_loop;
                 self.in_loop = true;
-                let typed_cond = cond.map(|c| self.check_expression(*c, filename));
-                let typed_inc = inc.map(|i| self.check_expression(*i, filename));
-                let typed_body = Box::new(self.check_statement(*body, filename));
+                let typed_cond = cond.map(|c| self.check_expression(*c));
+                let typed_inc = inc.map(|i| self.check_expression(*i));
+                let typed_body = Box::new(self.check_statement(*body));
                 self.in_loop = prev_in_loop;
 
                 TypedStmt::For(
@@ -786,10 +744,7 @@ impl SemanticAnalyzer {
             }
             Stmt::Block(stmts) => {
                 self.symbol_table.push_scope();
-                let typed_stmts = stmts
-                    .into_iter()
-                    .map(|s| self.check_statement(s, filename))
-                    .collect();
+                let typed_stmts = stmts.into_iter().map(|s| self.check_statement(s)).collect();
                 self.symbol_table.pop_scope();
                 TypedStmt::Block(typed_stmts)
             }
@@ -802,16 +757,12 @@ impl SemanticAnalyzer {
                 self.case_labels.clear();
                 self.has_default = false;
 
-                let typed_expr = self.check_expression(*expr, filename);
+                let typed_expr = self.check_expression(*expr);
                 if typed_expr.ty().get_integer_rank() == 0 {
-                    self.errors.push((
-                        SemanticError::SwitchConditionNotInteger,
-                        filename.to_string(),
-                        typed_expr.span(),
-                    ));
+                    self.err(SemanticError::SwitchConditionNotInteger, typed_expr.span());
                 }
 
-                let typed_body = Box::new(self.check_statement(*body, filename));
+                let typed_body = Box::new(self.check_statement(*body));
 
                 self.in_switch = prev_in_switch;
                 self.case_labels = prev_case_labels;
@@ -822,61 +773,37 @@ impl SemanticAnalyzer {
             Stmt::Case(expr, body) => {
                 let span = (*expr).span();
                 if !self.in_switch {
-                    self.errors.push((
-                        SemanticError::CaseOutsideSwitch,
-                        filename.to_string(),
-                        span,
-                    ));
+                    self.err(SemanticError::CaseOutsideSwitch, span);
                 }
-                let typed_expr = self.check_expression(*expr, filename);
+                let typed_expr = self.check_expression(*expr);
                 if let TypedExpr::Number(val, _, _) = typed_expr {
                     if !self.case_labels.insert(val) {
-                        self.errors.push((
-                            SemanticError::DuplicateCaseLabel(val),
-                            filename.to_string(),
-                            typed_expr.span(),
-                        ));
+                        self.err(SemanticError::DuplicateCaseLabel(val), typed_expr.span());
                     }
                 } else {
-                    self.errors.push((
-                        SemanticError::NotAConstantExpression,
-                        filename.to_string(),
-                        typed_expr.span(),
-                    ));
+                    self.err(SemanticError::NotAConstantExpression, typed_expr.span());
                 }
-                let typed_body = Box::new(self.check_statement(*body, filename));
+                let typed_body = Box::new(self.check_statement(*body));
                 TypedStmt::Case(typed_expr, typed_body)
             }
             Stmt::Default(body) => {
                 if !self.in_switch {
-                    self.errors.push((
-                        SemanticError::DefaultOutsideSwitch,
-                        filename.to_string(),
-                        (*body).span(),
-                    ));
+                    self.err(SemanticError::DefaultOutsideSwitch, (*body).span());
                 }
                 if self.has_default {
-                    self.errors.push((
-                        SemanticError::DuplicateDefaultLabel,
-                        filename.to_string(),
-                        (*body).span(),
-                    ));
+                    self.err(SemanticError::DuplicateDefaultLabel, (*body).span());
                 }
                 self.has_default = true;
-                let typed_body = Box::new(self.check_statement(*body, filename));
+                let typed_body = Box::new(self.check_statement(*body));
                 TypedStmt::Default(typed_body)
             }
             Stmt::Label(label, body, _) => {
-                let typed_body = Box::new(self.check_statement(*body, filename));
+                let typed_body = Box::new(self.check_statement(*body));
                 TypedStmt::Label(label, typed_body)
             }
             Stmt::Goto(label, span) => {
                 if !self.labels.contains_key(&label) {
-                    self.errors.push((
-                        SemanticError::UndefinedLabel(label),
-                        filename.to_string(),
-                        span,
-                    ));
+                    self.err(SemanticError::UndefinedLabel(label), span);
                 }
                 TypedStmt::Goto(label)
             }
@@ -897,49 +824,39 @@ impl SemanticAnalyzer {
             },
             Stmt::Break => {
                 if !self.in_switch && !self.in_loop {
-                    self.errors.push((
+                    self.err(
                         SemanticError::BreakOutsideLoopOrSwitch,
-                        filename.to_string(),
                         SourceSpan::default(),
-                    ));
+                    );
                 }
                 TypedStmt::Break
             }
             Stmt::Continue => {
                 if !self.in_loop {
-                    self.errors.push((
-                        SemanticError::ContinueOutsideLoop,
-                        filename.to_string(),
-                        SourceSpan::default(),
-                    ));
+                    self.err(SemanticError::ContinueOutsideLoop, SourceSpan::default());
                 }
                 TypedStmt::Continue
             }
             Stmt::DoWhile(body, cond) => {
                 let prev_in_loop = self.in_loop;
                 self.in_loop = true;
-                let typed_body = Box::new(self.check_statement(*body, filename));
-                let typed_cond = self.check_expression(*cond, filename);
+                let typed_body = Box::new(self.check_statement(*body));
+                let typed_cond = self.check_expression(*cond);
                 self.in_loop = prev_in_loop;
                 TypedStmt::DoWhile(typed_body, typed_cond)
             }
             Stmt::Empty => TypedStmt::Empty,
             Stmt::StaticAssert(expr, message) => {
-                let typed_expr = self.check_expression(*expr, filename);
+                let typed_expr = self.check_expression(*expr);
                 if !is_const_initializer(&TypedInitializer::Expr(Box::new(typed_expr.clone()))) {
-                    self.errors.push((
-                        SemanticError::NotAConstantExpression,
-                        filename.to_string(),
-                        typed_expr.span(),
-                    ));
+                    self.err(SemanticError::NotAConstantExpression, typed_expr.span());
                 } else if let TypedExpr::Number(val, _, _) = typed_expr
                     && val == 0
                 {
-                    self.errors.push((
+                    self.err(
                         SemanticError::StaticAssertFailed(message),
-                        filename.to_string(),
                         typed_expr.span(),
-                    ));
+                    );
                 }
                 TypedStmt::StaticAssert(Box::new(typed_expr), message)
             }
@@ -947,19 +864,13 @@ impl SemanticAnalyzer {
     }
 
     /// Checks a binary expression for semantic errors and returns a typed expression.
-    fn check_binary_expression(
-        &mut self,
-        op: BinOp,
-        lhs: &Expr,
-        rhs: &Expr,
-        filename: &str,
-    ) -> TypedExpr {
-        let mut lhs_typed = self.check_expression(lhs.clone(), filename);
+    fn check_binary_expression(&mut self, op: BinOp, lhs: &Expr, rhs: &Expr) -> TypedExpr {
+        let mut lhs_typed = self.check_expression(lhs.clone());
         if let Type::Array(elem_ty, _, span) = lhs_typed.ty().clone() {
             lhs_typed = lhs_typed.implicit_cast(Type::Pointer(elem_ty.clone(), span));
         }
 
-        let mut rhs_typed = self.check_expression(rhs.clone(), filename);
+        let mut rhs_typed = self.check_expression(rhs.clone());
         if let Type::Array(elem_ty, _, span) = rhs_typed.ty().clone() {
             rhs_typed = rhs_typed.implicit_cast(Type::Pointer(elem_ty.clone(), span));
         }
@@ -982,11 +893,10 @@ impl SemanticAnalyzer {
                             rhs_ty.clone()
                         }
                         _ => {
-                            self.errors.push((
+                            self.err(
                                 SemanticError::TypeMismatch,
-                                filename.to_string(),
                                 SourceSpan::default(), // Consider improving span info
-                            ));
+                            );
                             Type::Int(SourceSpan::default()) // dummy type
                         }
                     };
@@ -1014,8 +924,12 @@ impl SemanticAnalyzer {
             | BinOp::LessThan
             | BinOp::GreaterThan
             | BinOp::LessThanOrEqual
-            | BinOp::GreaterThanOrEqual => (lhs_typed, rhs_typed, Type::Bool(SourceSpan::default())),
-            BinOp::LogicalAnd | BinOp::LogicalOr => (lhs_typed, rhs_typed, Type::Bool(SourceSpan::default())),
+            | BinOp::GreaterThanOrEqual => {
+                (lhs_typed, rhs_typed, Type::Bool(SourceSpan::default()))
+            }
+            BinOp::LogicalAnd | BinOp::LogicalOr => {
+                (lhs_typed, rhs_typed, Type::Bool(SourceSpan::default()))
+            }
             BinOp::BitwiseOr | BinOp::BitwiseXor | BinOp::BitwiseAnd => {
                 (lhs_typed, rhs_typed, Type::Int(SourceSpan::default()))
             }
@@ -1026,21 +940,14 @@ impl SemanticAnalyzer {
         TypedExpression::new(op, lhs_final, rhs_final, result_ty).into()
     }
 
-    fn check_assignment_expression(
-        &mut self,
-        op: AssignOp,
-        lhs: &Expr,
-        rhs: &Expr,
-        filename: &str,
-    ) -> TypedExpr {
-        let lhs_typed = self.check_expression(lhs.clone(), filename);
-        let rhs_typed = self.check_expression(rhs.clone(), filename);
+    fn check_assignment_expression(&mut self, op: AssignOp, lhs: &Expr, rhs: &Expr) -> TypedExpr {
+        let lhs_typed = self.check_expression(lhs.clone());
+        let rhs_typed = self.check_expression(rhs.clone());
 
         let lhs_lvalue = match self.check_lvalue(lhs_typed.clone()) {
             Ok(lvalue) => lvalue,
             Err(err) => {
-                self.errors
-                    .push((err, filename.to_string(), lhs_typed.span()));
+                self.err(err, lhs_typed.span());
                 // Create a dummy l-value to continue analysis
                 TypedLValue::Variable(
                     StringInterner::intern(""),
@@ -1074,17 +981,9 @@ impl SemanticAnalyzer {
         };
 
         if !lhs_lvalue.is_modifiable() {
-            self.errors.push((
-                SemanticError::AssignmentToConst,
-                filename.to_string(),
-                lhs_span,
-            ));
+            self.err(SemanticError::AssignmentToConst, lhs_span);
         } else if let Type::Const(_, _) = &lhs_ty.unwrap_volatile() {
-            self.errors.push((
-                SemanticError::AssignmentToConst,
-                filename.to_string(),
-                lhs_span,
-            ));
+            self.err(SemanticError::AssignmentToConst, lhs_span);
         }
 
         let rhs_cast = rhs_typed.implicit_cast(lhs_ty.clone());
@@ -1161,11 +1060,11 @@ impl SemanticAnalyzer {
     }
 
     /// Checks an expression for semantic errors and returns a typed expression.
-    fn check_expression(&mut self, expr: Expr, filename: &str) -> TypedExpr {
+    fn check_expression(&mut self, expr: Expr) -> TypedExpr {
         if let Some((op, lhs, rhs)) = expr.get_binary_expr() {
-            return self.check_binary_expression(op, lhs, rhs, filename);
+            return self.check_binary_expression(op, lhs, rhs);
         } else if let Some((op, lhs, rhs)) = expr.get_assign_expr() {
-            return self.check_assignment_expression(op, lhs, rhs, filename);
+            return self.check_assignment_expression(op, lhs, rhs);
         }
 
         match expr {
@@ -1174,11 +1073,7 @@ impl SemanticAnalyzer {
                 if !self.symbol_table.contains_key(&name)
                     && !self.enum_constants.contains_key(&name)
                 {
-                    self.errors.push((
-                        SemanticError::UndefinedVariable(name),
-                        filename.to_string(),
-                        location,
-                    ));
+                    self.err(SemanticError::UndefinedVariable(name), location);
                 }
                 let ty = self
                     .symbol_table
@@ -1214,11 +1109,7 @@ impl SemanticAnalyzer {
                         self.used_builtins.insert(name);
                     }
                 } else {
-                    self.errors.push((
-                        SemanticError::UndefinedFunction(name),
-                        filename.to_string(),
-                        location,
-                    ));
+                    self.err(SemanticError::UndefinedFunction(name), location);
                 }
 
                 let return_ty = self
@@ -1228,12 +1119,12 @@ impl SemanticAnalyzer {
                     .unwrap_or(Type::Int(SourceSpan::default()));
                 let typed_args = args
                     .into_iter()
-                    .map(|arg| self.check_expression(arg, filename))
+                    .map(|arg| self.check_expression(arg))
                     .collect::<ThinVec<_>>();
                 TypedExpr::Call(name, typed_args, location, return_ty)
             }
             Expr::Neg(expr) => {
-                let typed = self.check_expression(*expr, filename);
+                let typed = self.check_expression(*expr);
                 TypedExpr::Neg(
                     Box::new(typed.clone()),
                     SourceSpan::default(),
@@ -1241,7 +1132,7 @@ impl SemanticAnalyzer {
                 )
             }
             Expr::LogicalNot(expr) => {
-                let typed = self.check_expression(*expr, filename);
+                let typed = self.check_expression(*expr);
                 TypedExpr::LogicalNot(
                     Box::new(typed),
                     SourceSpan::default(),
@@ -1249,7 +1140,7 @@ impl SemanticAnalyzer {
                 )
             }
             Expr::BitwiseNot(expr) => {
-                let typed = self.check_expression(*expr, filename);
+                let typed = self.check_expression(*expr);
                 TypedExpr::BitwiseNot(
                     Box::new(typed.clone()),
                     SourceSpan::default(),
@@ -1257,7 +1148,7 @@ impl SemanticAnalyzer {
                 )
             }
             Expr::Sizeof(expr) => {
-                let _typed = self.check_expression(*expr, filename);
+                let _typed = self.check_expression(*expr);
                 TypedExpr::Sizeof(
                     Box::new(_typed),
                     SourceSpan::default(),
@@ -1265,7 +1156,7 @@ impl SemanticAnalyzer {
                 )
             }
             Expr::Alignof(expr) => {
-                let _typed = self.check_expression(*expr, filename);
+                let _typed = self.check_expression(*expr);
                 TypedExpr::Alignof(
                     Box::new(_typed),
                     SourceSpan::default(),
@@ -1273,28 +1164,23 @@ impl SemanticAnalyzer {
                 )
             }
             Expr::Deref(expr) => {
-                let typed = self.check_expression(*expr, filename);
+                let typed = self.check_expression(*expr);
                 let result_ty = match typed.ty().unwrap_const().clone() {
                     Type::Pointer(base_ty, _) => *base_ty,
                     Type::Array(elem_ty, _, _) => *elem_ty,
                     other_ty => {
-                        self.errors.push((
-                            SemanticError::NotAPointer(other_ty),
-                            filename.to_string(),
-                            typed.span(),
-                        ));
+                        self.err(SemanticError::NotAPointer(other_ty), typed.span());
                         Type::Int(SourceSpan::default())
                     }
                 };
                 TypedExpr::Deref(Box::new(typed), SourceSpan::default(), result_ty)
             }
             Expr::AddressOf(expr) => {
-                let typed_expr = self.check_expression(*expr, filename);
+                let typed_expr = self.check_expression(*expr);
                 let lvalue = match self.check_lvalue(typed_expr.clone()) {
                     Ok(lvalue) => lvalue,
                     Err(err) => {
-                        self.errors
-                            .push((err, filename.to_string(), typed_expr.span()));
+                        self.err(err, typed_expr.span());
                         // Create a dummy l-value to continue analysis
                         TypedLValue::Variable(
                             StringInterner::intern(""),
@@ -1317,9 +1203,9 @@ impl SemanticAnalyzer {
                 TypedExpr::AlignofType(ty, SourceSpan::default(), Type::Int(SourceSpan::default()))
             }
             Expr::Ternary(cond, then_expr, else_expr) => {
-                let cond_typed = self.check_expression(*cond, filename);
-                let then_typed = self.check_expression(*then_expr, filename);
-                let else_typed = self.check_expression(*else_expr, filename);
+                let cond_typed = self.check_expression(*cond);
+                let then_typed = self.check_expression(*then_expr);
+                let else_typed = self.check_expression(*else_expr);
                 let result_ty = if then_typed.ty() == else_typed.ty() {
                     then_typed.ty().clone()
                 } else {
@@ -1334,37 +1220,32 @@ impl SemanticAnalyzer {
                 )
             }
             Expr::Member(expr, member) => {
-                let typed = self.check_expression(*expr, filename);
+                let typed = self.check_expression(*expr);
                 let member_ty = self
                     .find_member_recursively(typed.ty(), &member)
                     .unwrap_or_else(|| {
-                        self.errors.push((
-                            SemanticError::UndefinedMember(member),
-                            filename.to_string(),
-                            typed.span(),
-                        ));
+                        self.err(SemanticError::UndefinedMember(member), typed.span());
                         Type::Int(SourceSpan::default()) // Dummy type
                     });
                 TypedExpr::Member(Box::new(typed), member, SourceSpan::default(), member_ty)
             }
             Expr::PointerMember(expr, member) => {
-                let typed_ptr = self.check_expression(*expr, filename);
+                let typed_ptr = self.check_expression(*expr);
 
-                let inner_ty = if let Type::Pointer(inner, _) = typed_ptr.ty().clone().unwrap_const()
-                {
-                    inner.clone()
-                } else {
-                    self.errors.push((
-                        SemanticError::NotAPointer(typed_ptr.ty().clone()),
-                        filename.to_string(),
-                        typed_ptr.span(),
-                    ));
-                    return TypedExpr::Number(
-                        0,
-                        SourceSpan::default(),
-                        Type::Int(SourceSpan::default()),
-                    );
-                };
+                let inner_ty =
+                    if let Type::Pointer(inner, _) = typed_ptr.ty().clone().unwrap_const() {
+                        inner.clone()
+                    } else {
+                        self.err(
+                            SemanticError::NotAPointer(typed_ptr.ty().clone()),
+                            typed_ptr.span(),
+                        );
+                        return TypedExpr::Number(
+                            0,
+                            SourceSpan::default(),
+                            Type::Int(SourceSpan::default()),
+                        );
+                    };
 
                 let deref_expr =
                     TypedExpr::Deref(Box::new(typed_ptr), SourceSpan::default(), *inner_ty);
@@ -1372,11 +1253,7 @@ impl SemanticAnalyzer {
                 let member_ty = self
                     .find_member_recursively(deref_expr.ty(), &member)
                     .unwrap_or_else(|| {
-                        self.errors.push((
-                            SemanticError::UndefinedMember(member),
-                            filename.to_string(),
-                            deref_expr.span(),
-                        ));
+                        self.err(SemanticError::UndefinedMember(member), deref_expr.span());
                         Type::Int(SourceSpan::default())
                     });
 
@@ -1394,14 +1271,13 @@ impl SemanticAnalyzer {
                         let typed_designators = designators
                             .into_iter()
                             .map(|d| match d {
-                                Designator::Index(expr) => TypedDesignator::Index(Box::new(
-                                    self.check_expression(*expr, filename),
-                                )),
+                                Designator::Index(expr) => {
+                                    TypedDesignator::Index(Box::new(self.check_expression(*expr)))
+                                }
                                 Designator::Member(name) => TypedDesignator::Member(name),
                             })
                             .collect();
-                        let typed_initializer =
-                            self.convert_initializer_to_typed(*initializer, filename);
+                        let typed_initializer = self.convert_initializer_to_typed(*initializer);
                         (typed_designators, Box::new(typed_initializer))
                     })
                     .collect();
@@ -1412,7 +1288,7 @@ impl SemanticAnalyzer {
                 )
             }
             Expr::ExplicitCast(ty, expr) => {
-                let typed_expr = self.check_expression(*expr, filename);
+                let typed_expr = self.check_expression(*expr);
                 TypedExpr::ExplicitCast(
                     Box::new(*ty.clone()),
                     Box::new(typed_expr),
@@ -1421,7 +1297,7 @@ impl SemanticAnalyzer {
                 )
             }
             Expr::ImplicitCast(ty, expr) => {
-                let typed_expr = self.check_expression(*expr, filename);
+                let typed_expr = self.check_expression(*expr);
                 TypedExpr::ImplicitCast(
                     Box::new(*ty.clone()),
                     Box::new(typed_expr),
@@ -1430,7 +1306,7 @@ impl SemanticAnalyzer {
                 )
             }
             Expr::CompoundLiteral(ty, initializer) => {
-                let typed_initializer = self.convert_initializer_to_typed(*initializer, filename);
+                let typed_initializer = self.convert_initializer_to_typed(*initializer);
                 let mut final_ty = *ty.clone();
                 if let Type::Array(elem_ty, 0, span) = &final_ty
                     && let TypedInitializer::List(list) = &typed_initializer
@@ -1445,19 +1321,17 @@ impl SemanticAnalyzer {
                 );
 
                 if let Type::Array(elem_ty, _, span) = &final_ty {
-                    typed_expr =
-                        typed_expr.implicit_cast(Type::Pointer(elem_ty.clone(), *span));
+                    typed_expr = typed_expr.implicit_cast(Type::Pointer(elem_ty.clone(), *span));
                 }
 
                 typed_expr
             }
             Expr::PreIncrement(expr) => {
-                let typed_expr = self.check_expression(*expr, filename);
+                let typed_expr = self.check_expression(*expr);
                 let lvalue = match self.check_lvalue(typed_expr.clone()) {
                     Ok(lvalue) => lvalue,
                     Err(err) => {
-                        self.errors
-                            .push((err, filename.to_string(), typed_expr.span()));
+                        self.err(err, typed_expr.span());
                         TypedLValue::Variable(
                             StringInterner::intern(""),
                             SourceSpan::default(),
@@ -1466,22 +1340,17 @@ impl SemanticAnalyzer {
                     }
                 };
                 if !lvalue.is_modifiable() {
-                    self.errors.push((
-                        SemanticError::AssignmentToConst,
-                        filename.to_string(),
-                        typed_expr.span(),
-                    ));
+                    self.err(SemanticError::AssignmentToConst, typed_expr.span());
                 }
                 let ty = lvalue.ty().clone();
                 TypedExpr::PreIncrement(Box::new(lvalue), SourceSpan::default(), ty)
             }
             Expr::PreDecrement(expr) => {
-                let typed_expr = self.check_expression(*expr, filename);
+                let typed_expr = self.check_expression(*expr);
                 let lvalue = match self.check_lvalue(typed_expr.clone()) {
                     Ok(lvalue) => lvalue,
                     Err(err) => {
-                        self.errors
-                            .push((err, filename.to_string(), typed_expr.span()));
+                        self.err(err, typed_expr.span());
                         TypedLValue::Variable(
                             StringInterner::intern(""),
                             SourceSpan::default(),
@@ -1490,22 +1359,17 @@ impl SemanticAnalyzer {
                     }
                 };
                 if !lvalue.is_modifiable() {
-                    self.errors.push((
-                        SemanticError::AssignmentToConst,
-                        filename.to_string(),
-                        typed_expr.span(),
-                    ));
+                    self.err(SemanticError::AssignmentToConst, typed_expr.span());
                 }
                 let ty = lvalue.ty().clone();
                 TypedExpr::PreDecrement(Box::new(lvalue), SourceSpan::default(), ty)
             }
             Expr::PostIncrement(expr) => {
-                let typed_expr = self.check_expression(*expr, filename);
+                let typed_expr = self.check_expression(*expr);
                 let lvalue = match self.check_lvalue(typed_expr.clone()) {
                     Ok(lvalue) => lvalue,
                     Err(err) => {
-                        self.errors
-                            .push((err, filename.to_string(), typed_expr.span()));
+                        self.err(err, typed_expr.span());
                         TypedLValue::Variable(
                             StringInterner::intern(""),
                             SourceSpan::default(),
@@ -1514,22 +1378,17 @@ impl SemanticAnalyzer {
                     }
                 };
                 if !lvalue.is_modifiable() {
-                    self.errors.push((
-                        SemanticError::AssignmentToConst,
-                        filename.to_string(),
-                        typed_expr.span(),
-                    ));
+                    self.err(SemanticError::AssignmentToConst, typed_expr.span());
                 }
                 let ty = lvalue.ty().clone();
                 TypedExpr::PostIncrement(Box::new(lvalue), SourceSpan::default(), ty)
             }
             Expr::PostDecrement(expr) => {
-                let typed_expr = self.check_expression(*expr, filename);
+                let typed_expr = self.check_expression(*expr);
                 let lvalue = match self.check_lvalue(typed_expr.clone()) {
                     Ok(lvalue) => lvalue,
                     Err(err) => {
-                        self.errors
-                            .push((err, filename.to_string(), typed_expr.span()));
+                        self.err(err, typed_expr.span());
                         TypedLValue::Variable(
                             StringInterner::intern(""),
                             SourceSpan::default(),
@@ -1538,11 +1397,7 @@ impl SemanticAnalyzer {
                     }
                 };
                 if !lvalue.is_modifiable() {
-                    self.errors.push((
-                        SemanticError::AssignmentToConst,
-                        filename.to_string(),
-                        typed_expr.span(),
-                    ));
+                    self.err(SemanticError::AssignmentToConst, typed_expr.span());
                 }
                 let ty = lvalue.ty().clone();
                 TypedExpr::PostDecrement(Box::new(lvalue), SourceSpan::default(), ty)
@@ -1551,14 +1406,10 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn convert_initializer_to_typed(
-        &mut self,
-        initializer: Initializer,
-        filename: &str,
-    ) -> TypedInitializer {
+    fn convert_initializer_to_typed(&mut self, initializer: Initializer) -> TypedInitializer {
         match initializer {
             Initializer::Expr(expr) => {
-                let typed_expr = self.check_expression(*expr, filename);
+                let typed_expr = self.check_expression(*expr);
                 TypedInitializer::Expr(Box::new(typed_expr))
             }
             Initializer::List(list) => {
@@ -1568,14 +1419,13 @@ impl SemanticAnalyzer {
                         let typed_designators = designators
                             .into_iter()
                             .map(|d| match d {
-                                Designator::Index(expr) => TypedDesignator::Index(Box::new(
-                                    self.check_expression(*expr, filename),
-                                )),
+                                Designator::Index(expr) => {
+                                    TypedDesignator::Index(Box::new(self.check_expression(*expr)))
+                                }
                                 Designator::Member(name) => TypedDesignator::Member(name),
                             })
                             .collect();
-                        let typed_initializer =
-                            self.convert_initializer_to_typed(*initializer, filename);
+                        let typed_initializer = self.convert_initializer_to_typed(*initializer);
                         (typed_designators, Box::new(typed_initializer))
                     })
                     .collect();
@@ -1634,17 +1484,32 @@ impl SemanticAnalyzer {
         } else {
             // Same rank, check signedness
             match (lhs_ty, rhs_ty) {
-                (Type::UnsignedLongLong(span), _) => (Type::UnsignedLongLong(*span), Type::UnsignedLongLong(*span)),
-                (_, Type::UnsignedLongLong(span)) => (Type::UnsignedLongLong(*span), Type::UnsignedLongLong(*span)),
+                (Type::UnsignedLongLong(span), _) => {
+                    (Type::UnsignedLongLong(*span), Type::UnsignedLongLong(*span))
+                }
+                (_, Type::UnsignedLongLong(span)) => {
+                    (Type::UnsignedLongLong(*span), Type::UnsignedLongLong(*span))
+                }
                 (Type::LongLong(span), _) => (Type::LongLong(*span), Type::LongLong(*span)),
                 (_, Type::LongLong(span)) => (Type::LongLong(*span), Type::LongLong(*span)),
-                (Type::UnsignedLong(span), _) => (Type::UnsignedLong(*span), Type::UnsignedLong(*span)),
-                (_, Type::UnsignedLong(span)) => (Type::UnsignedLong(*span), Type::UnsignedLong(*span)),
+                (Type::UnsignedLong(span), _) => {
+                    (Type::UnsignedLong(*span), Type::UnsignedLong(*span))
+                }
+                (_, Type::UnsignedLong(span)) => {
+                    (Type::UnsignedLong(*span), Type::UnsignedLong(*span))
+                }
                 (Type::Long(span), _) => (Type::Long(*span), Type::Long(*span)),
                 (_, Type::Long(span)) => (Type::Long(*span), Type::Long(*span)),
-                (Type::UnsignedInt(span), _) => (Type::UnsignedInt(*span), Type::UnsignedInt(*span)),
-                (_, Type::UnsignedInt(span)) => (Type::UnsignedInt(*span), Type::UnsignedInt(*span)),
-                _ => (Type::Int(SourceSpan::default()), Type::Int(SourceSpan::default())),
+                (Type::UnsignedInt(span), _) => {
+                    (Type::UnsignedInt(*span), Type::UnsignedInt(*span))
+                }
+                (_, Type::UnsignedInt(span)) => {
+                    (Type::UnsignedInt(*span), Type::UnsignedInt(*span))
+                }
+                _ => (
+                    Type::Int(SourceSpan::default()),
+                    Type::Int(SourceSpan::default()),
+                ),
             }
         }
     }
@@ -1678,17 +1543,12 @@ fn is_const_expr(expr: &TypedExpr) -> bool {
     }
 }
 
-
 impl SemanticAnalyzer {
-    fn check_initializer(&mut self, initializer: &TypedInitializer, ty: &Type, filename: &str) {
+    fn check_initializer(&mut self, initializer: &TypedInitializer, ty: &Type) {
         match initializer {
             TypedInitializer::Expr(expr) => {
                 if expr.ty().is_aggregate() && !ty.is_aggregate() {
-                    self.errors.push((
-                        SemanticError::TypeMismatch,
-                        filename.to_string(),
-                        expr.span(),
-                    ));
+                    self.err(SemanticError::TypeMismatch, expr.span());
                 }
             }
             TypedInitializer::List(list) => {
@@ -1703,74 +1563,61 @@ impl SemanticAnalyzer {
                                 for designator in designators {
                                     match designator {
                                         TypedDesignator::Member(name) => {
-                                            if let Some(member_ty) = self.find_member_recursively(&current_ty, name) {
+                                            if let Some(member_ty) =
+                                                self.find_member_recursively(&current_ty, name)
+                                            {
                                                 current_ty = member_ty;
                                             } else {
-                                                self.errors.push((
+                                                self.err(
                                                     SemanticError::UndefinedMember(*name),
-                                                    filename.to_string(),
                                                     ty.span(),
-                                                ));
+                                                );
                                                 return;
                                             }
                                         }
                                         _ => {
-                                            self.errors.push((
-                                                SemanticError::TypeMismatch,
-                                                filename.to_string(),
-                                                ty.span(),
-                                            ));
+                                            self.err(SemanticError::TypeMismatch, ty.span());
                                             return;
                                         }
                                     }
                                 }
-                                self.check_initializer(init, &current_ty, filename);
+                                self.check_initializer(init, &current_ty);
                             }
                         }
                     }
                     Type::Array(elem_ty, size, _) => {
                         for (designators, init) in list {
                             if designators.is_empty() {
-                                self.check_initializer(init, &elem_ty, filename);
+                                self.check_initializer(init, &elem_ty);
                             } else {
                                 for designator in designators {
                                     match designator {
                                         TypedDesignator::Index(expr) => {
                                             if let TypedExpr::Number(n, _, _) = **expr {
                                                 if size > 0 && n as usize >= size {
-                                                    self.errors.push((
+                                                    self.err(
                                                         SemanticError::ArrayIndexOutOfBounds,
-                                                        filename.to_string(),
                                                         expr.span(),
-                                                    ));
+                                                    );
                                                 }
                                             } else {
-                                                self.errors.push((
+                                                self.err(
                                                     SemanticError::NotAConstantExpression,
-                                                    filename.to_string(),
                                                     expr.span(),
-                                                ));
+                                                );
                                             }
                                         }
                                         _ => {
-                                            self.errors.push((
-                                                SemanticError::TypeMismatch,
-                                                filename.to_string(),
-                                                ty.span(),
-                                            ));
+                                            self.err(SemanticError::TypeMismatch, ty.span());
                                         }
                                     }
                                 }
-                                self.check_initializer(init, &elem_ty, filename);
+                                self.check_initializer(init, &elem_ty);
                             }
                         }
                     }
                     _ => {
-                        self.errors.push((
-                            SemanticError::TypeMismatch,
-                            filename.to_string(),
-                            ty.span(),
-                        ));
+                        self.err(SemanticError::TypeMismatch, ty.span());
                     }
                 }
             }

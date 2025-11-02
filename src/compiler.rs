@@ -137,14 +137,6 @@ impl Compiler {
     fn compile(&mut self, file_id: FileId) -> Result<(), CompilerError> {
         self.logger.log("Verbose output enabled");
 
-        let filename = self
-            .fm
-            .get_path(file_id)
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_string();
-
         let mut preprocessor = Preprocessor::new();
 
         for def in &self.cli.define {
@@ -212,14 +204,14 @@ impl Compiler {
         // Perform semantic analysis
         let semantic_analyzer = SemanticAnalyzer::with_builtins();
         let SemaOutput(typed_ast, warnings, semantic_analyzer) =
-            match semantic_analyzer.analyze(ast, &filename) {
+            match semantic_analyzer.analyze(ast) {
                 Ok(output) => {
                     self.logger.log("Semantic analysis passed");
                     output
                 }
                 Err(errors) => {
                     let mut reports = vec![];
-                    for (error, _, span) in errors {
+                    for (error, span) in errors {
                         let report_data = Report::err(error.to_string(), Some(span));
                         reports.push(report_data);
                     }
@@ -228,7 +220,7 @@ impl Compiler {
                 }
             };
 
-        for (warning, _, span) in &warnings {
+        for (warning, span) in &warnings {
             // TODO: return it as Compiler Output
             let report_data = Report::warn(warning.to_string(), Some(*span));
             crate::error::report(&report_data, &self.fm);

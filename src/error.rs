@@ -7,7 +7,9 @@ use crate::{
     preprocessor::error::PreprocessorError,
     semantic::error::SemanticError,
 };
-use ariadne::{Cache, Color, Config, Fmt, Label, Report as AriadneReport, ReportKind, Source, Span};
+use ariadne::{
+    Cache, Color, Config, Fmt, Label, Report as AriadneReport, ReportKind, Source, Span,
+};
 use thiserror::Error;
 
 /// Returns `true` if colors should be used for the report.

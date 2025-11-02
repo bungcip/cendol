@@ -603,9 +603,9 @@ mod tests {
         assert_eq!(exit_code, 0);
     }
 
-#[test]
-fn test_designated_initializer_nested_struct() {
-    let input = r#"
+    #[test]
+    fn test_designated_initializer_nested_struct() {
+        let input = r#"
         struct Inner { int y; };
         struct Outer { int x; struct Inner inner; };
         struct Outer s = { .inner.y = 1, .x = 2 };
@@ -616,9 +616,9 @@ fn test_designated_initializer_nested_struct() {
             return 0;
         }
     "#;
-    let result = compile_and_run(input, "test_designated_initializer_nested_struct").unwrap();
-    assert_eq!(result, 0);
-}
+        let result = compile_and_run(input, "test_designated_initializer_nested_struct").unwrap();
+        assert_eq!(result, 0);
+    }
 
     /// Test code generation for character literals
     #[test]

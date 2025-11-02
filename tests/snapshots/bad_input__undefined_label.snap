@@ -5,10 +5,7 @@ expression: err.unwrap_err()
 msg: "Undefined label `undefined_label`"
 path: undefined_label.c
 span:
-  file_id: 0
-  start_line: 1
-  start_column: 19
-  end_line: 1
-  end_column: 34
+  start: 1019
+  end: 1034
 verbose: false
 is_warning: false

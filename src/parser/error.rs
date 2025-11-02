@@ -1,3 +1,4 @@
+use crate::SourceSpan;
 use crate::parser::token::Token;
 use thiserror::Error;
 
@@ -9,5 +10,5 @@ pub enum ParserError {
     UnexpectedToken(Token),
     /// The end of the input was reached unexpectedly.
     #[error("Unexpected end of input")]
-    UnexpectedEof(crate::common::SourceSpan),
+    UnexpectedEof(SourceSpan),
 }

@@ -287,10 +287,9 @@ impl CodeGen {
                                                 data_desc.define(
                                                     vec![0; size as usize].into_boxed_slice(),
                                                 );
-                                                let global_val = self.module.declare_data_in_data(
-                                                    *var_id,
-                                                    &mut data_desc,
-                                                );
+                                                let global_val = self
+                                                    .module
+                                                    .declare_data_in_data(*var_id, &mut data_desc);
                                                 data_desc.write_data_addr(0, global_val, addend);
                                             } else {
                                                 return Err(CodegenError::InvalidStaticInitializer);

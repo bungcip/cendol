@@ -1,4 +1,3 @@
-use crate::common::{SourceLocation, SourceSpan};
 use crate::compiler::{Cli, Compiler};
 use crate::error::Report;
 use crate::file::{FileId, FileManager};
@@ -8,6 +7,7 @@ use crate::preprocessor::Preprocessor;
 use crate::preprocessor::lexer::Lexer;
 use crate::preprocessor::token::{Token, TokenKind};
 use crate::semantic::SemaOutput;
+use crate::{SourceLocation, SourceSpan};
 use thin_vec::ThinVec;
 
 use std::fs;
@@ -40,8 +40,8 @@ pub fn create_file_manager() -> FileManager {
 
 /// Creates a source location for testing
 pub fn create_test_location(file_id: u32, line: u32) -> SourceSpan {
-    let location = SourceLocation::new(FileId(file_id), line, 1);
-    SourceSpan::new(FileId(file_id), location, location)
+    let location = SourceLocation::new(FileId(file_id), line * 100 + 1);
+    SourceSpan::new(location, location)
 }
 
 /// Compiles and runs C code, returning the exit code
@@ -338,7 +338,7 @@ pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> 
             let (path, span) = if let Some(location) = location {
                 let path = preprocessor
                     .file_manager()
-                    .get_path(location.file_id)
+                    .get_path(location.file_id())
                     .unwrap()
                     .to_str()
                     .unwrap()

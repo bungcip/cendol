@@ -1,5 +1,6 @@
-pub use crate::common::{KeywordKind, SourceLocation, SourceSpan};
+pub use crate::common::KeywordKind;
 use crate::parser::string_interner::{StringId, StringInterner};
+use crate::{SourceLocation, SourceSpan};
 use std::fmt;
 
 /// Represents a token in the C language.

@@ -296,10 +296,10 @@ mod tests {
         assert_eq!(exit_code, 3);
     }
 
-     /// Test code generation for inline functions
-     #[test]
-     fn test_inline_function() {
-         let input = r#"
+    /// Test code generation for inline functions
+    #[test]
+    fn test_inline_function() {
+        let input = r#"
          inline int add(int a, int b) {
              return a + b;
          }
@@ -307,9 +307,9 @@ mod tests {
              return add(5, 3);
          }
          "#;
-         let exit_code = compile_and_run(input, "inline_function").unwrap();
-         assert_eq!(exit_code, 8);
-     }
+        let exit_code = compile_and_run(input, "inline_function").unwrap();
+        assert_eq!(exit_code, 8);
+    }
 
     /// Test code generation for variadic functions
     #[test]

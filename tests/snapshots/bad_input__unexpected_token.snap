@@ -5,10 +5,7 @@ expression: err.unwrap_err()
 msg: Unexpected token
 path: unexpected_token.c
 span:
-  file_id: 0
-  start_line: 1
-  start_column: 25
-  end_line: 1
-  end_column: 26
+  start: 1025
+  end: 1026
 verbose: false
 is_warning: false

@@ -1,4 +1,4 @@
-use crate::common::SourceSpan;
+use crate::SourceSpan;
 use crate::parser::ast::{
     AssignOp, BinOp, Designator, Expr, ForInit, Initializer, Stmt, TranslationUnit, Type,
     TypedDeclarator, TypedDesignator, TypedExpr, TypedForInit, TypedFunctionDecl, TypedInitializer,

@@ -1,7 +1,7 @@
 #![allow(unused_imports)]
 //! A C compiler implemented in Rust.
-
 pub mod file;
+pub mod source;
 
 /// Contains the code generation components.
 pub mod codegen;
@@ -20,3 +20,5 @@ pub mod preprocessor;
 pub mod semantic;
 
 pub mod test_utils;
+
+use source::{FileId, SourceLocation, SourceSpan};

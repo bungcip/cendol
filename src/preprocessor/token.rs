@@ -1,4 +1,5 @@
-pub use crate::common::{KeywordKind, SourceLocation, SourceSpan};
+pub use crate::common::KeywordKind;
+pub(crate) use crate::{SourceLocation, SourceSpan};
 use std::collections::HashSet;
 use std::fmt;
 
@@ -176,7 +177,7 @@ impl fmt::Display for Token {
 
 impl fmt::Display for SourceLocation {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "file{}:line{}", self.file.0, self.line)
+        write!(f, "file{}:offset{}", self.file_id().0, self.offset())
     }
 }
 

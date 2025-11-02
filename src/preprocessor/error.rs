@@ -1,4 +1,4 @@
-use crate::common::SourceSpan;
+use crate::SourceSpan;
 use thiserror::Error;
 
 /// An error that can occur during preprocessing.

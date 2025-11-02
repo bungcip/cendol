@@ -20,7 +20,7 @@ fn create_file_manager() -> FileManager {
 /// Helper function to collect all tokens from a lexer
 fn collect_tokens(input: &str, filename: &str) -> Vec<TokenKind> {
     let mut file_manager = create_file_manager();
-    let file_id = file_manager.open(filename).unwrap();
+    let file_id = file_manager.register_file(filename, input).unwrap();
     let mut lexer = Lexer::new(input, file_id);
     let mut tokens = Vec::new();
 
@@ -39,7 +39,7 @@ fn collect_tokens(input: &str, filename: &str) -> Vec<TokenKind> {
 fn collect_tokens_without_whitespace(input: &str) -> Vec<TokenKind> {
     let filename = "test.c";
     let mut file_manager = create_file_manager();
-    let file_id = file_manager.open(filename).unwrap();
+    let file_id = file_manager.register_file(filename, input).unwrap();
     let mut lexer = Lexer::new(input, file_id);
     let mut tokens = Vec::new();
 

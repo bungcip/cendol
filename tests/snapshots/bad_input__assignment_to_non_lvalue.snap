@@ -5,10 +5,7 @@ expression: err.unwrap_err()
 msg: Assignment to a non-lvalue expression
 path: assignment_to_non_lvalue.c
 span:
-  file_id: 0
-  start_line: 1
-  start_column: 14
-  end_line: 1
-  end_column: 16
+  start: 1014
+  end: 1016
 verbose: false
 is_warning: false

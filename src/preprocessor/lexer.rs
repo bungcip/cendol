@@ -1,6 +1,7 @@
 use crate::file::FileId;
 use crate::preprocessor::error::PreprocessorError;
-use crate::preprocessor::token::{DirectiveKind, SourceLocation, SourceSpan, Token, TokenKind};
+use crate::preprocessor::token::{DirectiveKind, Token, TokenKind};
+use crate::{SourceLocation, SourceSpan};
 use std::iter::Peekable;
 use std::str::Chars;
 
@@ -598,14 +599,13 @@ impl<'a> Lexer<'a> {
 
     /// Returns the current location in the source file.
     fn current_location(&self) -> SourceLocation {
-        SourceLocation::new(self.file, self.line, self.column)
+        SourceLocation::new(self.file, self.line * 1000 + self.column)
     }
 
     /// Returns the current span from start to current.
     fn current_span(&self) -> SourceSpan {
         SourceSpan::new(
-            self.file,
-            SourceLocation::new(self.file, self.start_line, self.start_column),
+            SourceLocation::new(self.file, self.start_line * 1000 + self.start_column),
             self.current_location(),
         )
     }

@@ -175,7 +175,7 @@ impl Preprocessor {
     fn tokenize(&mut self, input: &str, filename: &str) -> Result<Vec<Token>, PreprocessorError> {
         let file_id = self
             .file_manager
-            .open(filename)
+            .register_file(filename, input)
             .map_err(|_| PreprocessorError::FileNotFound(filename.to_string(), None))?;
         let mut lexer = Lexer::new(input, file_id);
         let mut tokens = Vec::new();
@@ -347,11 +347,11 @@ impl Preprocessor {
                             eprintln!(
                                 "{}:{}: warning: {}",
                                 self.file_manager
-                                    .get_path(token.span.file_id)
+                                    .get_path(token.span.file_id())
                                     .unwrap()
                                     .to_str()
                                     .unwrap(),
-                                token.span.start_line,
+                                token.span.start_offset(),
                                 message
                             );
                         }
@@ -365,7 +365,7 @@ impl Preprocessor {
                                 parse_include(file_state.index, &file_state.tokens)?
                             };
                             let new_tokens =
-                                self.include_file(&filename, include_kind, token.span.file_id)?;
+                                self.include_file(&filename, include_kind, token.span.file_id())?;
                             self.file_stack.last_mut().unwrap().index = end;
                             self.file_stack.push(FileState {
                                 tokens: new_tokens,
@@ -408,8 +408,8 @@ impl Preprocessor {
         } else {
             return Err(PreprocessorError::Generic(
                 format!(
-                    "Expected identifier after #define, but found {} at line {}, column {}",
-                    name_token.kind, name_token.span.start_line, name_token.span.start_column
+                    "Expected identifier after #define, but found {}",
+                    name_token.kind
                 ),
                 Some(name_token.span),
             ));
@@ -738,7 +738,7 @@ impl Preprocessor {
                     .map(|t| t.kind.to_string())
                     .collect::<String>();
                 let pasted_str = format!("{}{}", lhs.kind, rhs_str);
-                let mut lexer = Lexer::new(&pasted_str, lhs.span.file_id);
+                let mut lexer = Lexer::new(&pasted_str, lhs.span.file_id());
                 let mut new_token = lexer.next_token()?;
                 if !matches!(new_token.kind, TokenKind::Eof) {
                     let mut new_hideset = lhs.hideset.clone();
@@ -810,10 +810,11 @@ impl Preprocessor {
             .file_manager
             .open_include(filename, kind, includer)
             .map_err(|_| PreprocessorError::FileNotFound(filename.to_string(), None))?;
-        let content = self
-            .file_manager
-            .read(file_id)
-            .map_err(|_| PreprocessorError::FileNotFound(filename.to_string(), None))?;
+
+        let content = match self.file_manager.read(file_id) {
+            Some(content) => content,
+            None => return Err(PreprocessorError::FileNotFound(filename.to_string(), None)),
+        };
         let mut lexer = Lexer::new(&content, file_id);
         let mut tokens = Vec::new();
         loop {
@@ -1059,10 +1060,7 @@ fn parse_line_directive(
         s.parse().unwrap()
     } else {
         return Err(PreprocessorError::Generic(
-            format!(
-                "Expected line number, but found {} at line {}, column {}",
-                tokens[i].kind, tokens[i].span.start_line, tokens[i].span.start_column
-            ),
+            format!("Expected line number, but found {}", tokens[i].kind),
             Some(tokens[i].span),
         ));
     };
@@ -1120,24 +1118,14 @@ fn parse_expr_bp(tokens: &[Token], i: &mut usize, min_bp: u8) -> Result<Expr, Pr
                         name.clone()
                     } else {
                         return Err(PreprocessorError::Generic(
-                            format!(
-                                "Expected identifier, but found {} at line {}, column {}",
-                                tokens[*i].kind,
-                                tokens[*i].span.start_line,
-                                tokens[*i].span.start_column
-                            ),
+                            format!("Expected identifier, but found {}", tokens[*i].kind,),
                             Some(tokens[*i].span),
                         ));
                     };
                     *i += 1;
                     if !matches!(tokens[*i].kind, TokenKind::RightParen) {
                         return Err(PreprocessorError::Generic(
-                            format!(
-                                "Expected ')', but found {} at line {}, column {}",
-                                tokens[*i].kind,
-                                tokens[*i].span.start_line,
-                                tokens[*i].span.start_column
-                            ),
+                            format!("Expected ')', but found {}", tokens[*i].kind),
                             Some(tokens[*i].span),
                         ));
                     }
@@ -1148,12 +1136,7 @@ fn parse_expr_bp(tokens: &[Token], i: &mut usize, min_bp: u8) -> Result<Expr, Pr
                     name.clone()
                 } else {
                     return Err(PreprocessorError::Generic(
-                        format!(
-                            "Expected identifier, but found {} at line {}, column {}",
-                            tokens[*i].kind,
-                            tokens[*i].span.start_line,
-                            tokens[*i].span.start_column
-                        ),
+                        format!("Expected identifier, but found {}", tokens[*i].kind,),
                         Some(tokens[*i].span),
                     ));
                 };
@@ -1172,10 +1155,7 @@ fn parse_expr_bp(tokens: &[Token], i: &mut usize, min_bp: u8) -> Result<Expr, Pr
             let expr = parse_expr_bp(tokens, i, 0)?;
             if !matches!(tokens[*i].kind, TokenKind::RightParen) {
                 return Err(PreprocessorError::Generic(
-                    format!(
-                        "Expected ')', but found {} at line {}, column {}",
-                        tokens[*i].kind, tokens[*i].span.start_line, tokens[*i].span.start_column
-                    ),
+                    format!("Expected ')', but found {}", tokens[*i].kind,),
                     Some(tokens[*i].span),
                 ));
             }
@@ -1184,10 +1164,7 @@ fn parse_expr_bp(tokens: &[Token], i: &mut usize, min_bp: u8) -> Result<Expr, Pr
         }
         _ => {
             return Err(PreprocessorError::Generic(
-                format!(
-                    "Expected expression, but found {} at line {}, column {}",
-                    tokens[*i].kind, tokens[*i].span.start_line, tokens[*i].span.start_column
-                ),
+                format!("Expected expression, but found {}", tokens[*i].kind),
                 Some(tokens[*i].span),
             ));
         }

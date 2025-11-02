@@ -104,7 +104,7 @@ impl Compiler {
                     let path = self
                         .preprocessor
                         .file_manager()
-                        .get_path(location.file_id)
+                        .get_path(location.file_id())
                         .unwrap()
                         .to_str()
                         .unwrap()
@@ -126,7 +126,7 @@ impl Compiler {
                         let path = self
                             .preprocessor
                             .file_manager()
-                            .get_path(location.file_id)
+                            .get_path(location.file_id())
                             .unwrap()
                             .to_str()
                             .unwrap()
@@ -157,7 +157,7 @@ impl Compiler {
                     let path = self
                         .preprocessor
                         .file_manager()
-                        .get_path(location.file_id)
+                        .get_path(location.file_id())
                         .unwrap()
                         .to_str()
                         .unwrap()
@@ -192,7 +192,7 @@ impl Compiler {
                     let path = self
                         .preprocessor
                         .file_manager()
-                        .get_path(location.file_id)
+                        .get_path(location.file_id())
                         .unwrap()
                         .to_str()
                         .unwrap()

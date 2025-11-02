@@ -37,7 +37,7 @@ pub enum Error {
     Codegen(#[from] CodegenError),
 }
 
-use crate::common::SourceSpan;
+use crate::SourceSpan;
 use serde::Serialize;
 
 /// Represents a report of an error.
@@ -99,9 +99,9 @@ impl Report {
 /// * `report` - The report to print.
 pub fn report(report: &Report) {
     let path = report.path.clone().unwrap_or_else(|| "input".to_string());
-    let mut msg = report.msg.clone();
+    let msg = &report.msg;
     let kind = if report.is_warning {
-        msg = format!("warning: {}", msg);
+        // msg = format!("warning: {}", msg);
         ReportKind::Warning
     } else {
         ReportKind::Error
@@ -109,55 +109,33 @@ pub fn report(report: &Report) {
 
     let config = Config::default().with_color(colors_enabled());
 
-    if let Some(span) = &report.span {
-        let source = std::fs::read_to_string(&path).unwrap_or_else(|_| "".to_string());
-        let start_offset = if span.start_line == 0 || span.start_column == 0 {
-            0
-        } else {
-            source
-                .lines()
-                .take(span.start_line as usize - 1)
-                .map(|line| line.len() + 1)
-                .sum::<usize>()
-                + span.start_column as usize
-                - 1
-        };
-        let end_offset = if span.end_line == 0 || span.end_column == 0 {
-            start_offset + 1
-        } else {
-            source
-                .lines()
-                .take(span.end_line as usize - 1)
-                .map(|line| line.len() + 1)
-                .sum::<usize>()
-                + span.end_column as usize
-                - 1
-        };
+    let code;
+    let start_offset;
+    let end_offset;
+    let source;
 
-        AriadneReport::<'static, Span>::build(kind, path.clone(), start_offset)
-            .with_code(3)
-            .with_message(&msg)
-            .with_config(config)
-            .with_label(
-                Label::new((path.clone(), start_offset..end_offset))
-                    .with_message(msg.fg(Color::Red))
-                    .with_color(Color::Red),
-            )
-            .finish()
-            .eprint((path.clone(), Source::from(source)))
-            .unwrap();
+    if let Some(span) = &report.span {
+        source = std::fs::read_to_string(&path).unwrap_or_else(|_| "".to_string());
+        start_offset = span.start_offset() as usize;
+        end_offset = span.end_offset() as usize;
+        code = 3;
     } else {
-        AriadneReport::<'static, Span>::build(kind, path.clone(), 0)
-            .with_code(3)
-            .with_message(msg)
-            .with_config(config)
-            .with_label(
-                Label::new((path.clone(), 0..0))
-                    .with_message("".fg(Color::Red))
-                    .with_color(Color::Red),
-            )
-            .finish()
-            .eprint((path, Source::from("")))
-            .unwrap();
+        code = 3;
+        start_offset = 0;
+        end_offset = 0;
+        source = String::from("");
     }
+
+    AriadneReport::<'static, Span>::build(kind, &path, start_offset)
+        .with_code(code)
+        .with_message(&msg)
+        .with_config(config)
+        .with_label(
+            Label::new((path.clone(), start_offset..end_offset))
+                .with_message(msg.fg(Color::Red))
+                .with_color(Color::Red),
+        )
+        .finish()
+        .eprint((path.clone(), Source::from(source)))
+        .unwrap();
 }

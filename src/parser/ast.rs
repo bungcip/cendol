@@ -1,4 +1,4 @@
-use crate::common::SourceSpan;
+use crate::SourceSpan;
 use crate::parser::string_interner::StringId;
 use thin_vec::ThinVec;
 

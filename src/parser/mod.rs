@@ -209,7 +209,16 @@ impl Parser {
                         if let Some(n2) = next2 {
                             if let TokenKind::Keyword(KeywordKind::Long) = n2.kind {
                                 self.eat()?; // consume second "long"
+                                let next3 = self.tokens.get(self.position).cloned();
+                                if let Some(n3) = next3
+                                    && let TokenKind::Keyword(KeywordKind::Int) = n3.kind
+                                {
+                                    self.eat()?; // consume "int"
+                                }
                                 Ok(Type::UnsignedLongLong)
+                            } else if let TokenKind::Keyword(KeywordKind::Int) = n2.kind {
+                                self.eat()?; // consume "int"
+                                Ok(Type::UnsignedLong)
                             } else {
                                 Ok(Type::UnsignedLong)
                             }
@@ -249,12 +258,47 @@ impl Parser {
                     if let TokenKind::Keyword(KeywordKind::Long) = next.kind {
                         self.eat()?; // consume second "long"
                         let next2 = self.tokens.get(self.position).cloned();
-                        if let Some(n2) = next2
-                            && let TokenKind::Keyword(KeywordKind::Int) = n2.kind
-                        {
-                            self.eat()?; // consume "int"
+                        if let Some(n2) = next2 {
+                            if let TokenKind::Keyword(KeywordKind::Unsigned) = n2.kind {
+                                self.eat()?; // consume "unsigned"
+                                let next3 = self.tokens.get(self.position).cloned();
+                                if let Some(n3) = next3
+                                    && let TokenKind::Keyword(KeywordKind::Int) = n3.kind
+                                {
+                                    self.eat()?; // consume "int"
+                                }
+                                Ok(Type::UnsignedLongLong)
+                            } else if let TokenKind::Keyword(KeywordKind::Int) = n2.kind {
+                                self.eat()?; // consume "int"
+                                Ok(Type::LongLong)
+                            } else {
+                                Ok(Type::LongLong)
+                            }
+                        } else {
+                            Ok(Type::LongLong)
                         }
-                        Ok(Type::LongLong)
+                    } else if let TokenKind::Keyword(KeywordKind::Unsigned) = next.kind {
+                        self.eat()?; // consume "unsigned"
+                        let next2 = self.tokens.get(self.position).cloned();
+                        if let Some(n2) = next2 {
+                            if let TokenKind::Keyword(KeywordKind::Long) = n2.kind {
+                                self.eat()?; // consume "long"
+                                let next3 = self.tokens.get(self.position).cloned();
+                                if let Some(n3) = next3
+                                    && let TokenKind::Keyword(KeywordKind::Int) = n3.kind
+                                {
+                                    self.eat()?; // consume "int"
+                                }
+                                Ok(Type::UnsignedLongLong)
+                            } else if let TokenKind::Keyword(KeywordKind::Int) = n2.kind {
+                                self.eat()?; // consume "int"
+                                Ok(Type::UnsignedLong)
+                            } else {
+                                Ok(Type::UnsignedLong)
+                            }
+                        } else {
+                            Ok(Type::UnsignedLong)
+                        }
                     } else if let TokenKind::Keyword(KeywordKind::Int) = next.kind {
                         self.eat()?; // consume "int"
                         Ok(Type::Long)

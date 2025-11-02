@@ -473,4 +473,126 @@ mod tests {
             }
         }
     }
+
+    /// Test parsing of various type specifier combinations to prevent regression
+    /// Tests both original and new supported orderings
+    #[test]
+    fn test_type_specifier_combinations() {
+        // Test original problematic case: long unsigned int
+        let input1 = "void *calloc(long unsigned int __nmemb, long unsigned int __size);";
+        let ast1 = parse_c_code(input1).unwrap();
+        if let Stmt::FunctionDeclaration { params, .. } = &ast1.globals[0] {
+            assert_eq!(params.len(), 2);
+            assert_eq!(params[0].ty, Type::UnsignedLong);
+            assert_eq!(params[1].ty, Type::UnsignedLong);
+        } else {
+            panic!("Expected FunctionDeclaration");
+        }
+
+        // Test long unsigned (without int)
+        let input2 = "long unsigned x;";
+        let stmts2 = parse_c_body(input2);
+        if let Stmt::Declaration(ty, declarators, _) = &stmts2[0] {
+            assert_eq!(**ty, Type::UnsignedLong);
+            assert_eq!(declarators[0].name.as_str(), "x");
+            assert_eq!(declarators[0].ty, Type::UnsignedLong);
+        } else {
+            panic!("Expected Declaration");
+        }
+
+        // Test long long unsigned
+        let input3 = "long long unsigned x;";
+        let stmts3 = parse_c_body(input3);
+        if let Stmt::Declaration(ty, declarators, _) = &stmts3[0] {
+            assert_eq!(**ty, Type::UnsignedLongLong);
+            assert_eq!(declarators[0].name.as_str(), "x");
+            assert_eq!(declarators[0].ty, Type::UnsignedLongLong);
+        } else {
+            panic!("Expected Declaration");
+        }
+
+        // Test long unsigned long
+        let input4 = "long unsigned long x;";
+        let stmts4 = parse_c_body(input4);
+        if let Stmt::Declaration(ty, declarators, _) = &stmts4[0] {
+            assert_eq!(**ty, Type::UnsignedLongLong);
+            assert_eq!(declarators[0].name.as_str(), "x");
+            assert_eq!(declarators[0].ty, Type::UnsignedLongLong);
+        } else {
+            panic!("Expected Declaration");
+        }
+
+        // Test that original combinations still work: unsigned long
+        let input5 = "unsigned long x;";
+        let stmts5 = parse_c_body(input5);
+        if let Stmt::Declaration(ty, declarators, _) = &stmts5[0] {
+            assert_eq!(**ty, Type::UnsignedLong);
+            assert_eq!(declarators[0].name.as_str(), "x");
+            assert_eq!(declarators[0].ty, Type::UnsignedLong);
+        } else {
+            panic!("Expected Declaration");
+        }
+
+        // Test that original combinations still work: unsigned long long
+        let input6 = "unsigned long long x;";
+        let stmts6 = parse_c_body(input6);
+        if let Stmt::Declaration(ty, declarators, _) = &stmts6[0] {
+            assert_eq!(**ty, Type::UnsignedLongLong);
+            assert_eq!(declarators[0].name.as_str(), "x");
+            assert_eq!(declarators[0].ty, Type::UnsignedLongLong);
+        } else {
+            panic!("Expected Declaration");
+        }
+
+        // Test long int
+        let input7 = "long int x;";
+        let stmts7 = parse_c_body(input7);
+        if let Stmt::Declaration(ty, declarators, _) = &stmts7[0] {
+            assert_eq!(**ty, Type::Long);
+            assert_eq!(declarators[0].name.as_str(), "x");
+            assert_eq!(declarators[0].ty, Type::Long);
+        } else {
+            panic!("Expected Declaration");
+        }
+
+        // Test multiple type combinations in same declaration
+        let input8 = "unsigned long a; long unsigned int b; unsigned long long c; long long unsigned d;";
+        let stmts8 = parse_c_body(input8);
+        
+        // Check first: unsigned long a
+        if let Stmt::Declaration(ty1, decls1, _) = &stmts8[0] {
+            assert_eq!(**ty1, Type::UnsignedLong);
+            assert_eq!(decls1[0].name.as_str(), "a");
+            assert_eq!(decls1[0].ty, Type::UnsignedLong);
+        } else {
+            panic!("Expected Declaration for a");
+        }
+
+        // Check second: long unsigned int b
+        if let Stmt::Declaration(ty2, decls2, _) = &stmts8[1] {
+            assert_eq!(**ty2, Type::UnsignedLong);
+            assert_eq!(decls2[0].name.as_str(), "b");
+            assert_eq!(decls2[0].ty, Type::UnsignedLong);
+        } else {
+            panic!("Expected Declaration for b");
+        }
+
+        // Check third: unsigned long long c
+        if let Stmt::Declaration(ty3, decls3, _) = &stmts8[2] {
+            assert_eq!(**ty3, Type::UnsignedLongLong);
+            assert_eq!(decls3[0].name.as_str(), "c");
+            assert_eq!(decls3[0].ty, Type::UnsignedLongLong);
+        } else {
+            panic!("Expected Declaration for c");
+        }
+
+        // Check fourth: long long unsigned d
+        if let Stmt::Declaration(ty4, decls4, _) = &stmts8[3] {
+            assert_eq!(**ty4, Type::UnsignedLongLong);
+            assert_eq!(decls4[0].name.as_str(), "d");
+            assert_eq!(decls4[0].ty, Type::UnsignedLongLong);
+        } else {
+            panic!("Expected Declaration for d");
+        }
+    }
 }

@@ -689,7 +689,7 @@ impl Parser {
                     if self.eat_token(&TokenKind::LeftParen)? {
                         let expr = if self.is_type_name() {
                             let ty = self.parse_type()?;
-                            Expr::SizeofType(ty)
+                            Expr::SizeofType(Box::new(ty))
                         } else {
                             let expr = self.parse_expr()?;
                             Expr::Sizeof(Box::new(expr))

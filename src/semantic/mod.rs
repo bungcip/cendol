@@ -202,9 +202,10 @@ impl SemanticAnalyzer {
         for member in members {
             if member.name == empty_name
                 && let Type::Struct(_, _, _) | Type::Union(_, _, _) = &member.ty
-                    && let Some(found_ty) = self.find_member_recursively(&member.ty, member_name) {
-                        return Some(found_ty);
-                    }
+                && let Some(found_ty) = self.find_member_recursively(&member.ty, member_name)
+            {
+                return Some(found_ty);
+            }
         }
         None
     }
@@ -956,18 +957,19 @@ impl SemanticAnalyzer {
         };
 
         if let TypedExpr::CompoundLiteral(_, _, _, ty) = &rhs_typed
-            && let Type::Array(elem_ty, _, span) = ty {
-                let pointer_ty = Type::Pointer(elem_ty.clone(), *span);
-                if lhs_lvalue.ty().is_pointer() && lhs_lvalue.ty().is_pointer() {
-                    let rhs_cast = rhs_typed.implicit_cast(pointer_ty);
-                    return TypedExpr::Assign(
-                        Box::new(lhs_lvalue.clone()),
-                        Box::new(rhs_cast),
-                        SourceSpan::default(),
-                        lhs_lvalue.ty().clone(),
-                    );
-                }
+            && let Type::Array(elem_ty, _, span) = ty
+        {
+            let pointer_ty = Type::Pointer(elem_ty.clone(), *span);
+            if lhs_lvalue.ty().is_pointer() && lhs_lvalue.ty().is_pointer() {
+                let rhs_cast = rhs_typed.implicit_cast(pointer_ty);
+                return TypedExpr::Assign(
+                    Box::new(lhs_lvalue.clone()),
+                    Box::new(rhs_cast),
+                    SourceSpan::default(),
+                    lhs_lvalue.ty().clone(),
+                );
             }
+        }
 
         let lhs_ty = lhs_lvalue.ty().clone();
         let lhs_span = match &lhs_lvalue {
@@ -1194,7 +1196,7 @@ impl SemanticAnalyzer {
                 )
             }
             Expr::SizeofType(ty) => {
-                TypedExpr::SizeofType(ty, SourceSpan::default(), Type::Int(SourceSpan::default()))
+                TypedExpr::SizeofType(*ty, SourceSpan::default(), Type::Int(SourceSpan::default()))
             }
             Expr::AlignofType(ty) => {
                 TypedExpr::AlignofType(ty, SourceSpan::default(), Type::Int(SourceSpan::default()))

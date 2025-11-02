@@ -524,7 +524,7 @@ pub enum Expr {
     /// A sizeof expression.
     Sizeof(Box<Expr>),
     /// A sizeof type expression.
-    SizeofType(Type),
+    SizeofType(Box<Type>),
     /// An alignof expression.
     Alignof(Box<Expr>),
     /// An alignof type expression.

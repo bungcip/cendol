@@ -361,22 +361,23 @@ impl CodeGen {
         for global in &typed_unit.globals {
             if let TypedStmt::Declaration(ty, _, _) = global
                 && let Type::Enum(_name, members, _) = ty
-                    && !members.is_empty() {
-                        let mut next_value = 0;
-                        for (name, value, _span) in members {
-                            let val = if let Some(expr) = value {
-                                if let Expr::Number(num, _) = &**expr {
-                                    *num
-                                } else {
-                                    -1 // Dummy value
-                                }
-                            } else {
-                                next_value
-                            };
-                            self.enum_constants.insert(*name, val);
-                            next_value = val + 1;
+                && !members.is_empty()
+            {
+                let mut next_value = 0;
+                for (name, value, _span) in members {
+                    let val = if let Some(expr) = value {
+                        if let Expr::Number(num, _) = &**expr {
+                            *num
+                        } else {
+                            -1 // Dummy value
                         }
-                    }
+                    } else {
+                        next_value
+                    };
+                    self.enum_constants.insert(*name, val);
+                    next_value = val + 1;
+                }
+            }
         }
 
         // Collect enum constants from function bodies
@@ -492,22 +493,23 @@ impl CodeGen {
             match stmt {
                 TypedStmt::Declaration(ty, _, _) => {
                     if let Type::Enum(_name, members, _) = ty
-                        && !members.is_empty() {
-                            let mut next_value = 0;
-                            for (name, value, _span) in members {
-                                let val = if let Some(expr) = value {
-                                    if let Expr::Number(num, _) = &**expr {
-                                        *num
-                                    } else {
-                                        -1 // Dummy value
-                                    }
+                        && !members.is_empty()
+                    {
+                        let mut next_value = 0;
+                        for (name, value, _span) in members {
+                            let val = if let Some(expr) = value {
+                                if let Expr::Number(num, _) = &**expr {
+                                    *num
                                 } else {
-                                    next_value
-                                };
-                                self.enum_constants.insert(*name, val);
-                                next_value = val + 1;
-                            }
+                                    -1 // Dummy value
+                                }
+                            } else {
+                                next_value
+                            };
+                            self.enum_constants.insert(*name, val);
+                            next_value = val + 1;
                         }
+                    }
                 }
                 TypedStmt::Block(stmts) => {
                     self.collect_enum_constants_from_stmts(stmts)?;

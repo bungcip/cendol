@@ -142,9 +142,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 return Ok(structs.get(name).unwrap().clone());
             }
         } else if let Type::Union(Some(name), members, _) = ty
-            && members.is_empty() {
-                return Ok(unions.get(name).unwrap().clone());
-            }
+            && members.is_empty()
+        {
+            return Ok(unions.get(name).unwrap().clone());
+        }
         Ok(ty.clone())
     }
 
@@ -216,22 +217,22 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     return Some((current_offset, member.ty.clone()));
                 } else if member.name == empty_name
                     && let Type::Struct(_, _, _) | Type::Union(_, _, _) = &member.ty
-                        && let Some((offset, ty)) =
-                            self.find_member_offset_recursively(&member.ty, member_name)
-                        {
-                            return Some((current_offset + offset, ty));
-                        }
+                    && let Some((offset, ty)) =
+                        self.find_member_offset_recursively(&member.ty, member_name)
+                {
+                    return Some((current_offset + offset, ty));
+                }
                 current_offset += self.get_type_size(&member.ty);
             }
         } else if let Type::Union(_, _, _) = &resolved_ty {
             for member in members {
                 if member.name == empty_name
                     && let Type::Struct(_, _, _) | Type::Union(_, _, _) = &member.ty
-                        && let Some((offset, ty)) =
-                            self.find_member_offset_recursively(&member.ty, member_name)
-                        {
-                            return Some((offset, ty));
-                        }
+                    && let Some((offset, ty)) =
+                        self.find_member_offset_recursively(&member.ty, member_name)
+                {
+                    return Some((offset, ty));
+                }
             }
         }
 

@@ -1,3 +1,5 @@
+use thin_vec::ThinVec;
+
 pub use crate::common::KeywordKind;
 pub(crate) use crate::{SourceLocation, SourceSpan};
 use std::collections::HashSet;
@@ -13,7 +15,7 @@ pub struct Token {
     /// The span of the token in the source code.
     pub span: SourceSpan,
     /// The locations of macro expansions that produced this token.
-    pub expansion_locs: Vec<SourceLocation>,
+    pub expansion_locs: ThinVec<SourceLocation>,
 }
 
 impl Token {
@@ -32,7 +34,7 @@ impl Token {
             kind,
             hideset: HashSet::new(),
             span,
-            expansion_locs: Vec::new(),
+            expansion_locs: ThinVec::new(),
         }
     }
 }

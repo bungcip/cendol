@@ -18,6 +18,7 @@ use cranelift_module::DataId;
 use cranelift_module::FuncId;
 use cranelift_module::Linkage;
 use cranelift_object::ObjectModule;
+use crate::parser::string_interner::StringInterner;
 
 /// The state of the current block.
 #[derive(PartialEq, PartialOrd)]
@@ -184,6 +185,60 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 _ => return 1,
             }
         }
+    }
+
+    fn find_member_offset_recursively(
+        &self,
+        ty: &Type,
+        member_name: &StringId,
+    ) -> Option<(u32, Type)> {
+        let resolved_ty = self.get_real_type(ty).unwrap();
+        let members = match &resolved_ty {
+            Type::Struct(_, members) => members,
+            Type::Union(_, members) => {
+                if let Some(member) = members.iter().find(|p| p.name == *member_name) {
+                    return Some((0, member.ty.clone()));
+                }
+                members
+            }
+            _ => return None,
+        };
+
+        let mut current_offset = 0;
+        let empty_name = StringInterner::intern("");
+
+        if let Type::Struct(..) = &resolved_ty {
+            for member in members {
+                let member_alignment = self.get_type_alignment(&member.ty);
+                current_offset = (current_offset + member_alignment - 1) & !(member_alignment - 1);
+                if member.name == *member_name {
+                    return Some((current_offset, member.ty.clone()));
+                } else if member.name == empty_name {
+                    if let Type::Struct(..) | Type::Union(..) = &member.ty {
+                        if let Some((offset, ty)) =
+                            self.find_member_offset_recursively(&member.ty, member_name)
+                        {
+                            return Some((current_offset + offset, ty));
+                        }
+                    }
+                }
+                current_offset += self.get_type_size(&member.ty);
+            }
+        } else if let Type::Union(..) = &resolved_ty {
+            for member in members {
+                if member.name == empty_name {
+                    if let Type::Struct(..) | Type::Union(..) = &member.ty {
+                        if let Some((offset, ty)) =
+                            self.find_member_offset_recursively(&member.ty, member_name)
+                        {
+                            return Some((offset, ty));
+                        }
+                    }
+                }
+            }
+        }
+
+        None
     }
 
     /// Translates a typed statement into Cranelift IR.
@@ -629,32 +684,11 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             TypedLValue::Member(expr, member, _, _ty) => {
                 let (ptr, expr_ty) = self.translate_typed_expr(*expr)?;
-                let s = self.get_real_type(&expr_ty)?;
-                if let Type::Struct(_, members) = s {
-                    let mut offset = 0;
-                    let mut member_ty = None;
-                    for m in &members {
-                        let member_alignment = self.get_type_alignment(&m.ty);
-                        offset = (offset + member_alignment - 1) & !(member_alignment - 1);
-                        if m.name == member {
-                            member_ty = Some(m.ty.clone());
-                            break;
-                        }
-                        offset += self.get_type_size(&m.ty);
-                    }
-                    let member_ty = member_ty.unwrap();
-                    let member_addr = self.builder.ins().iadd_imm(ptr, offset as i64);
-                    Ok((member_addr, member_ty))
-                } else if let Type::Union(_, members) = s {
-                    let member_ty = members
-                        .iter()
-                        .find(|m| m.name == member)
-                        .map(|m| m.ty.clone())
-                        .unwrap();
-                    Ok((ptr, member_ty))
-                } else {
-                    unreachable!("Not a struct or union")
-                }
+                let (offset, member_ty) = self
+                    .find_member_offset_recursively(&expr_ty, &member)
+                    .unwrap();
+                let member_addr = self.builder.ins().iadd_imm(ptr, offset as i64);
+                Ok((member_addr, member_ty))
             }
             TypedLValue::String(s, _, ty) => {
                 let string_value = s.as_str();
@@ -1169,47 +1203,23 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             TypedExpr::PointerMember(expr, member, _, _ty) => {
                 let (ptr, ptr_ty) = self.translate_typed_expr(*expr)?;
                 if let Type::Pointer(base_ty) = ptr_ty {
-                    let s = self.get_real_type(&base_ty)?;
-                    if let Type::Struct(_, members) = s {
-                        let mut offset = 0;
-                        let mut member_ty = None;
-                        for m in &members {
-                            let member_alignment = self.get_type_alignment(&m.ty);
-                            offset = (offset + member_alignment - 1) & !(member_alignment - 1);
-                            if m.name == member {
-                                member_ty = Some(m.ty.clone());
-                                break;
-                            }
-                            offset += self.get_type_size(&m.ty);
-                        }
-                        let member_ty = member_ty.unwrap();
-                        let member_addr = self.builder.ins().iadd_imm(ptr, offset as i64);
+                    let (offset, member_ty) = self
+                        .find_member_offset_recursively(&base_ty, &member)
+                        .unwrap();
+                    let member_addr = self.builder.ins().iadd_imm(ptr, offset as i64);
 
-                        if member_ty.is_aggregate() {
-                            Ok((member_addr, member_ty))
-                        } else {
-                            Ok((
-                                self.builder.ins().load(
-                                    types::I64,
-                                    MemFlags::new(),
-                                    member_addr,
-                                    0,
-                                ),
-                                member_ty,
-                            ))
-                        }
-                    } else if let Type::Union(_, members) = s {
-                        let member_ty = members
-                            .iter()
-                            .find(|m| m.name == member)
-                            .map(|m| m.ty.clone())
-                            .unwrap();
+                    if member_ty.is_aggregate() {
+                        Ok((member_addr, member_ty))
+                    } else {
                         Ok((
-                            self.builder.ins().load(types::I64, MemFlags::new(), ptr, 0),
+                            self.builder.ins().load(
+                                types::I64,
+                                MemFlags::new(),
+                                member_addr,
+                                0,
+                            ),
                             member_ty,
                         ))
-                    } else {
-                        Err(CodegenError::NotAStruct)
                     }
                 } else {
                     Err(CodegenError::NotAPointer)
@@ -1275,44 +1285,20 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             TypedExpr::Member(expr, member, _, _ty) => {
                 let (ptr, ty) = self.translate_typed_expr(*expr)?;
-                let s = self.get_real_type(&ty)?;
-                if let Type::Struct(_, members) = s {
-                    let mut offset = 0;
-                    let mut member_ty = None;
-                    for m in &members {
-                        let member_alignment = self.get_type_alignment(&m.ty);
-                        offset = (offset + member_alignment - 1) & !(member_alignment - 1);
-                        if m.name == member {
-                            member_ty = Some(m.ty.clone());
-                            break;
-                        }
-                        offset += self.get_type_size(&m.ty);
-                    }
-                    let member_ty = member_ty.unwrap();
-                    let member_addr = self.builder.ins().iadd_imm(ptr, offset as i64);
+                let (offset, member_ty) = self
+                    .find_member_offset_recursively(&ty, &member)
+                    .unwrap_or_else(|| panic!("Member not found: {}", member.as_str()));
+                let member_addr = self.builder.ins().iadd_imm(ptr, offset as i64);
 
-                    if member_ty.is_aggregate() {
-                        Ok((member_addr, member_ty))
-                    } else {
-                        Ok((
-                            self.builder
-                                .ins()
-                                .load(types::I64, MemFlags::new(), member_addr, 0),
-                            member_ty,
-                        ))
-                    }
-                } else if let Type::Union(_, members) = s {
-                    let member_ty = members
-                        .iter()
-                        .find(|m| m.name == member)
-                        .map(|m| m.ty.clone())
-                        .unwrap();
+                if member_ty.is_aggregate() {
+                    Ok((member_addr, member_ty))
+                } else {
                     Ok((
-                        self.builder.ins().load(types::I64, MemFlags::new(), ptr, 0),
+                        self.builder
+                            .ins()
+                            .load(types::I64, MemFlags::new(), member_addr, 0),
                         member_ty,
                     ))
-                } else {
-                    Err(CodegenError::NotAStruct)
                 }
             }
             TypedExpr::ExplicitCast(ty, expr, _, result_ty) => {

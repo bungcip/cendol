@@ -170,6 +170,32 @@ impl SemanticAnalyzer {
         }
     }
 
+    fn find_member_recursively(&self, ty: &Type, member_name: &StringId) -> Option<Type> {
+        let resolved_ty = self.resolve_type(ty);
+        let members = match &resolved_ty {
+            Type::Struct(_, members) | Type::Union(_, members) => members,
+            _ => return None,
+        };
+
+        // 1. Search direct members
+        if let Some(member) = members.iter().find(|p| p.name == *member_name) {
+            return Some(member.ty.clone());
+        }
+
+        // 2. Search anonymous members
+        let empty_name = StringInterner::intern("");
+        for member in members {
+            if member.name == empty_name {
+                if let Type::Struct(..) | Type::Union(..) = &member.ty {
+                    if let Some(found_ty) = self.find_member_recursively(&member.ty, member_name) {
+                        return Some(found_ty);
+                    }
+                }
+            }
+        }
+        None
+    }
+
     fn resolve_type(&self, ty: &Type) -> Type {
         match ty {
             Type::Pointer(base) => Type::Pointer(Box::new(self.resolve_type(base))),
@@ -1253,35 +1279,21 @@ impl SemanticAnalyzer {
             }
             Expr::Member(expr, member) => {
                 let typed = self.check_expression(*expr, filename);
-                let resolved_ty = self.resolve_type(typed.ty());
-                let members = match resolved_ty {
-                    Type::Struct(_, members) | Type::Union(_, members) => Some(members),
-                    other => {
-                        self.errors.push((
-                            SemanticError::NotAStructOrUnion(other),
-                            filename.to_string(),
-                            typed.span(),
-                        ));
-                        None
-                    }
-                };
-
-                let member_ty = members
-                    .and_then(|m| m.iter().find(|p| p.name == member).map(|p| p.ty.clone()))
+                let member_ty = self
+                    .find_member_recursively(typed.ty(), &member)
                     .unwrap_or_else(|| {
                         self.errors.push((
                             SemanticError::UndefinedMember(member),
                             filename.to_string(),
                             typed.span(),
                         ));
-                        Type::Int
+                        Type::Int // Dummy type
                     });
                 TypedExpr::Member(Box::new(typed), member, SourceSpan::default(), member_ty)
             }
             Expr::PointerMember(expr, member) => {
                 let typed_ptr = self.check_expression(*expr, filename);
 
-                // Dereference the pointer to get the struct/union
                 let inner_ty = if let Type::Pointer(inner) = typed_ptr.ty().clone().unwrap_const() {
                     inner.clone()
                 } else {
@@ -1290,29 +1302,14 @@ impl SemanticAnalyzer {
                         filename.to_string(),
                         typed_ptr.span(),
                     ));
-                    // Return a dummy expression to continue analysis
                     return TypedExpr::Number(0, SourceSpan::default(), Type::Int);
                 };
 
                 let deref_expr =
                     TypedExpr::Deref(Box::new(typed_ptr), SourceSpan::default(), *inner_ty);
 
-                // Now perform member access on the dereferenced expression
-                let resolved_ty = self.resolve_type(deref_expr.ty());
-                let members = match resolved_ty {
-                    Type::Struct(_, members) | Type::Union(_, members) => Some(members),
-                    other => {
-                        self.errors.push((
-                            SemanticError::NotAStructOrUnion(other),
-                            filename.to_string(),
-                            deref_expr.span(),
-                        ));
-                        None
-                    }
-                };
-
-                let member_ty = members
-                    .and_then(|m| m.iter().find(|p| p.name == member).map(|p| p.ty.clone()))
+                let member_ty = self
+                    .find_member_recursively(deref_expr.ty(), &member)
                     .unwrap_or_else(|| {
                         self.errors.push((
                             SemanticError::UndefinedMember(member),
@@ -1322,7 +1319,6 @@ impl SemanticAnalyzer {
                         Type::Int
                     });
 
-                // Return a Member expression, effectively de-sugaring p->y to (*p).y
                 TypedExpr::Member(
                     Box::new(deref_expr),
                     member,

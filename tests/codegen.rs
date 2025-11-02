@@ -1059,4 +1059,46 @@ mod tests {
         let exit_code = compile_and_run(input, "global_pointer_initialization").unwrap();
         assert_eq!(exit_code, 0);
     }
+
+    /// Test code generation for anonymous structs and unions
+    #[test]
+    fn test_anonymous_struct_union() {
+        let input = r#"
+        typedef struct {
+            int a;
+            union {
+                int b1;
+                int b2;
+            };
+            struct { union { struct { int c; }; }; };
+            struct {
+                int d;
+            };
+        } s;
+
+        int
+        main()
+        {
+            s v;
+
+            v.a = 1;
+            v.b1 = 2;
+            v.c = 3;
+            v.d = 4;
+
+            if (v.a != 1)
+                return 1;
+            if (v.b1 != 2 && v.b2 != 2)
+                return 2;
+            if (v.c != 3)
+                return 3;
+            if (v.d != 4)
+                return 4;
+
+            return 0;
+        }
+        "#;
+        let exit_code = compile_and_run(input, "anonymous_struct_union").unwrap();
+        assert_eq!(exit_code, 0);
+    }
 }

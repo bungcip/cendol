@@ -104,8 +104,7 @@ impl Compiler {
         let file_id = match self.fm.register_file(path, content) {
             Ok(file_id) => file_id,
             Err(err) => {
-                let report =
-                    Report::new(err.to_string(), Some(path.to_string()), None, false, false);
+                let report = Report::err(err.to_string(), None);
                 return Err(CompilerError::new(vec![report]));
             }
         };
@@ -126,13 +125,7 @@ impl Compiler {
         let file_id = match result {
             Ok(file_id) => file_id,
             Err(err) => {
-                let report = Report::new(
-                    err.to_string(),
-                    Some(self.cli.input_file.to_string()),
-                    None,
-                    false,
-                    false,
-                );
+                let report = Report::err(err.to_string(), None);
                 return Err(CompilerError::new(vec![report]));
             }
         };
@@ -156,22 +149,8 @@ impl Compiler {
 
         for def in &self.cli.define {
             if let Err(err) = preprocessor.define(&mut self.fm, def) {
-                let (file_id, span) = if let Some(location) = err.span() {
-                    (location.file_id(), err.span())
-                } else {
-                    (file_id, Some(SourceSpan::default()))
-                };
-
-                let path = self
-                    .fm
-                    .get_path(file_id)
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .to_string();
-
-                let report =
-                    Report::new(err.to_string(), Some(path), span, self.cli.verbose, false);
+                let span = err.span();
+                let report = Report::err(err.to_string(), span);
                 return Err(CompilerError::new(vec![report]));
             }
         }
@@ -180,19 +159,12 @@ impl Compiler {
             let output = match preprocessor.preprocess(&mut self.fm, file_id) {
                 Ok(output) => output,
                 Err(err) => {
-                    let (path, span) = if let Some(location) = err.span() {
-                        let path = self
-                            .fm
-                            .get_path(location.file_id())
-                            .unwrap()
-                            .to_str()
-                            .unwrap()
-                            .to_string();
-                        (Some(path), Some(location))
+                    let span = if let Some(location) = err.span() {
+                        Some(location)
                     } else {
-                        (None, None)
+                        None
                     };
-                    let report = Report::new(err.to_string(), path, span, self.cli.verbose, false);
+                    let report = Report::new(err.to_string(), span, self.cli.verbose, false);
                     return Err(CompilerError::new(vec![report]));
                 }
             };
@@ -210,19 +182,12 @@ impl Compiler {
         let tokens = match preprocessor.preprocess(&mut self.fm, file_id) {
             Ok(tokens) => tokens,
             Err(err) => {
-                let (path, span) = if let Some(location) = err.span() {
-                    let path = self
-                        .fm
-                        .get_path(location.file_id())
-                        .unwrap()
-                        .to_str()
-                        .unwrap()
-                        .to_string();
-                    (Some(path), Some(location))
+                let span = if let Some(location) = err.span() {
+                    Some(location)
                 } else {
-                    (None, None)
+                    None
                 };
-                let report = Report::new(err.to_string(), path, span, self.cli.verbose, false);
+                let report = Report::new(err.to_string(), span, self.cli.verbose, false);
                 return Err(CompilerError::new(vec![report]));
             }
         };
@@ -230,34 +195,16 @@ impl Compiler {
         let mut parser = match Parser::new(tokens) {
             Ok(parser) => parser,
             Err(err) => {
-                let report = Report::new(err.to_string(), None, None, self.cli.verbose, false);
+                let report = Report::new(err.to_string(), None, self.cli.verbose, false);
                 return Err(CompilerError::new(vec![report]));
             }
         };
         let ast = match parser.parse() {
             Ok(ast) => ast,
             Err(err) => {
-                let (msg, location) = match err {
-                    ParserError::UnexpectedToken(tok) => {
-                        ("Unexpected token".to_string(), Some(tok.span))
-                    }
-                    ParserError::UnexpectedEof(span) => ("Unexpected EOF".to_string(), Some(span)),
-                };
-
-                let (path, span) = if let Some(location) = location {
-                    let path = self
-                        .fm
-                        .get_path(location.file_id())
-                        .unwrap()
-                        .to_str()
-                        .unwrap()
-                        .to_string();
-                    (Some(path), Some(location))
-                } else {
-                    (None, None)
-                };
-
-                let report = Report::new(msg, path, span, self.cli.verbose, false);
+                let span = err.span();
+                let msg = err.to_string();
+                let report = Report::err(msg, Some(span));
                 return Err(CompilerError::new(vec![report]));
             }
         };
@@ -272,14 +219,8 @@ impl Compiler {
                 }
                 Err(errors) => {
                     let mut reports = vec![];
-                    for (error, file, span) in errors {
-                        let report_data = Report::new(
-                            error.to_string(),
-                            Some(file.clone()),
-                            Some(span),
-                            self.cli.verbose,
-                            false,
-                        );
+                    for (error, _, span) in errors {
+                        let report_data = Report::err(error.to_string(), Some(span));
                         reports.push(report_data);
                     }
 
@@ -287,25 +228,14 @@ impl Compiler {
                 }
             };
 
-        for (warning, file, span) in &warnings {
-            let report_data = Report::new(
-                warning.to_string(),
-                Some(file.clone()),
-                Some(*span),
-                self.cli.verbose,
-                true,
-            );
+        for (warning, _, span) in &warnings {
+            // TODO: return it as Compiler Output
+            let report_data = Report::warn(warning.to_string(), Some(*span));
             crate::error::report(&report_data, &self.fm);
         }
 
         if self.cli.wall && !warnings.is_empty() {
-            let report = Report::new(
-                "Warnings treated as errors".to_string(),
-                Some(filename.to_string()),
-                None,
-                self.cli.verbose,
-                false,
-            );
+            let report = Report::err("Warnings treated as errors".to_string(), None);
             return Err(CompilerError::new(vec![report]));
         }
 
@@ -314,14 +244,7 @@ impl Compiler {
         let object_bytes = match codegen.compile(typed_ast) {
             Ok(bytes) => bytes,
             Err(err) => {
-                let mut report = Report::new(
-                    err.to_string(),
-                    Some(filename.to_string()),
-                    None,
-                    self.cli.verbose,
-                    false,
-                );
-                report.verbose = self.cli.verbose;
+                let report = Report::err(err.to_string(), None);
                 return Err(CompilerError::new(vec![report]));
             }
         };
@@ -338,7 +261,7 @@ impl Compiler {
             .write_all(&object_bytes)
             .expect("Failed to write to object file");
 
-        if !self.cli.compile_only {
+        if self.cli.compile_only == false {
             let output_filename = self
                 .cli
                 .output_file

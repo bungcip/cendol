@@ -3,7 +3,6 @@ source: tests/bad_input.rs
 expression: err.unwrap_err()
 ---
 msg: "Redeclaration of variable `x`"
-path: duplicate_variable_declaration.c
 span:
   start: 1030
   end: 1031

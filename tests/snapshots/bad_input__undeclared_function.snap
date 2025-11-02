@@ -3,7 +3,6 @@ source: tests/bad_input.rs
 expression: err.unwrap_err()
 ---
 msg: "Undefined function `undeclared_function` called"
-path: undeclared_function.c
 span:
   start: 1014
   end: 1033

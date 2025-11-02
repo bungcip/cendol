@@ -3,7 +3,6 @@ source: tests/bad_input.rs
 expression: err.unwrap_err()
 ---
 msg: Assignment to const-qualified variable
-path: assignment_to_const.c
 span:
   start: 1032
   end: 1033

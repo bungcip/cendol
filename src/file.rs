@@ -3,6 +3,7 @@ pub use crate::source::{FileId, SourceFile, SourceMap};
 use std::collections::HashMap;
 use std::fs;
 use std::io;
+use std::path::Path;
 use std::path::PathBuf;
 
 /// Handles file loading and lookup.
@@ -204,4 +205,14 @@ impl FileManager {
             self.files.get(&file_id)
         }
     }
+
+    /// get filename from file_id as path, panic if file_id not exists
+    pub fn get_filename(&self, file_id: FileId) -> &Path {
+        let path = self.get_path(file_id);
+        match path {
+            Some(path) => path.as_path(),
+            None => panic!("file_id({file_id}) not exists"),
+        }
+    }
+
 }

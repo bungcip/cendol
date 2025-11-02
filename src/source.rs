@@ -1,9 +1,18 @@
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 
 /// A unique identifier for a file.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, Default, serde::Serialize)]
 pub struct FileId(pub u32);
+
+impl Display for FileId {
+    fn fmt(&self, fmt: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        fmt.write_str("FileId(")?;
+        fmt.write_str(self.0.to_string().as_str())?;
+        fmt.write_str(")")
+    }
+}
 
 /// Represents a single compressed source location (file_id + offset).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, serde::Serialize)]

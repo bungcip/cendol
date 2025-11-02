@@ -3,7 +3,6 @@ source: tests/bad_input.rs
 expression: err.unwrap_err()
 ---
 msg: Unexpected token
-path: unexpected_token.c
 span:
   start: 1025
   end: 1026

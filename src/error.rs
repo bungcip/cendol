@@ -1,11 +1,13 @@
+use std::path::{Path, PathBuf};
+
 use crate::{
     codegen::error::CodegenError,
-    file::{FileId, FileManager},
+    file::{self, FileId, FileManager},
     parser::error::ParserError,
     preprocessor::error::PreprocessorError,
     semantic::error::SemanticError,
 };
-use ariadne::{Color, Config, Fmt, Label, Report as AriadneReport, ReportKind, Source, Span};
+use ariadne::{Cache, Color, Config, Fmt, Label, Report as AriadneReport, ReportKind, Source, Span};
 use thiserror::Error;
 
 /// Returns `true` if colors should be used for the report.
@@ -63,8 +65,6 @@ use serde::Serialize;
 pub struct Report {
     /// The error message.
     pub msg: String,
-    /// The path of the file where the error occurred.
-    pub path: Option<String>,
     /// The span of the error.
     pub span: Option<SourceSpan>,
     /// Whether to print verbose output.
@@ -93,19 +93,30 @@ impl Report {
     /// # Returns
     ///
     /// A new `Report` instance.
-    pub fn new(
-        msg: String,
-        path: Option<String>,
-        span: Option<SourceSpan>,
-        verbose: bool,
-        is_warning: bool,
-    ) -> Self {
+    pub fn new(msg: String, span: Option<SourceSpan>, verbose: bool, is_warning: bool) -> Self {
         Self {
             msg,
-            path,
             span,
             verbose,
             is_warning,
+        }
+    }
+
+    pub fn err(msg: String, span: Option<SourceSpan>) -> Self {
+        Self {
+            msg,
+            span,
+            verbose: false,
+            is_warning: false,
+        }
+    }
+
+    pub fn warn(msg: String, span: Option<SourceSpan>) -> Self {
+        Self {
+            msg,
+            span,
+            verbose: false,
+            is_warning: true,
         }
     }
 }
@@ -116,43 +127,48 @@ impl Report {
 ///
 /// * `report` - The report to print.
 pub fn report(report: &Report, fm: &FileManager) {
-    let path = report.path.clone().unwrap_or_else(|| "input".to_string());
+    let config = Config::default().with_color(colors_enabled());
     let msg = &report.msg;
     let kind = if report.is_warning {
-        // msg = format!("warning: {}", msg);
         ReportKind::Warning
     } else {
         ReportKind::Error
     };
 
-    let config = Config::default().with_color(colors_enabled());
+    let code = 3;
 
-    let code;
-    let start_offset;
-    let source;
-
-    let diag_span = if let Some(span) = &report.span {
-        source = fm.read(span.file_id()).unwrap_or("").to_string();
-        start_offset = span.start_offset() as usize;
-        code = 3;
-        DiagnosticSpan(path.clone(), *span)
-    } else {
-        code = 3;
-        start_offset = 0;
-        source = "".to_string();
-        DiagnosticSpan(path.clone(), SourceSpan::default())
+    let (path, diag_span) = match report.span {
+        Some(span) => {
+            let path = fm.get_path(span.file_id()).unwrap();
+            let diag_span = DiagnosticSpan(path.to_string_lossy().to_string(), span);
+            (path.to_path_buf(), diag_span)
+        }
+        None => {
+            let path = PathBuf::from("<input>");
+            let span = SourceSpan::default();
+            let diag_span = DiagnosticSpan(path.to_string_lossy().to_string(), span);
+            (path, diag_span)
+        }
     };
 
-    AriadneReport::build(kind, &path, start_offset)
+    let start_offset = diag_span.1.start_offset() as usize;
+    let ariadne = AriadneReport::build(kind, path.to_string_lossy().to_string(), start_offset);
+    let ariadne = ariadne
         .with_code(code)
         .with_message(msg)
-        .with_config(config)
+        .with_config(config);
+
+    // label
+    let file_id = diag_span.1.file_id();
+    let file_name = diag_span.0.to_string();
+    let ariadne = ariadne
         .with_label(
             Label::new(diag_span)
                 .with_message(msg.fg(Color::Red))
                 .with_color(Color::Red),
         )
-        .finish()
-        .eprint((path.clone(), Source::from(source)))
-        .unwrap();
+        .finish();
+
+    let source = Source::from(fm.read(file_id).unwrap());
+    ariadne.eprint((file_name, source)).unwrap();
 }

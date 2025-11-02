@@ -3,7 +3,6 @@ source: tests/bad_input.rs
 expression: err.unwrap_err()
 ---
 msg: Assignment to a non-lvalue expression
-path: assignment_to_non_lvalue.c
 span:
   start: 1014
   end: 1016

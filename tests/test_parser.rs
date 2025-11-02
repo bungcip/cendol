@@ -3,10 +3,8 @@
 //! This module tests the parser's ability to correctly parse C source code
 //! and generate the expected Abstract Syntax Tree (AST) structures.
 
-use cendol::file::FileManager;
 use cendol::parser::Parser;
 use cendol::parser::ast::{Stmt, TranslationUnit};
-use cendol::preprocessor::Preprocessor;
 use cendol::test_utils::{create_file_manager, create_preprocessor};
 use thin_vec::ThinVec;
 

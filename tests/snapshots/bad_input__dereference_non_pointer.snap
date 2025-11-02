@@ -3,7 +3,6 @@ source: tests/bad_input.rs
 expression: err.unwrap_err()
 ---
 msg: "Cannot dereference non-pointer type `Int`"
-path: dereference_non_pointer.c
 span:
   start: 1027
   end: 1028

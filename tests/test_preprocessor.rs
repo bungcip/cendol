@@ -3,8 +3,6 @@
 //! This module tests the preprocessor's ability to correctly handle
 //! macro definitions, expansions, and various preprocessor directives.
 
-use cendol::file::FileManager;
-use cendol::preprocessor::Preprocessor;
 use cendol::preprocessor::token::Token;
 use cendol::preprocessor::token::TokenKind;
 use cendol::test_utils::create_file_manager;

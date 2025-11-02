@@ -3,7 +3,6 @@ source: tests/bad_input.rs
 expression: err.unwrap_err()
 ---
 msg: Unexpected token
-path: static_assert_failed.c
 span:
   start: 1049
   end: 1050

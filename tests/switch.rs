@@ -1,5 +1,4 @@
 use cendol::compiler::CompilerError;
-use cendol::error::Report;
 use cendol::test_utils::compile_and_run;
 
 type TestResult = Result<(), CompilerError>;

@@ -95,6 +95,10 @@ pub enum SemanticError {
     /// A continue statement was used outside of a loop.
     #[error("Continue statement outside of loop")]
     ContinueOutsideLoop,
+
+    /// An array index was out of bounds.
+    #[error("Array index out of bounds")]
+    ArrayIndexOutOfBounds,
 }
 
 impl SemanticError {

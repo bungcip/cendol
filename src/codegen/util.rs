@@ -4,10 +4,14 @@ use crate::parser::string_interner::StringId;
 use cranelift_module::DataId;
 use std::collections::HashMap;
 
+use crate::parser::ast::Type;
+
 /// Context needed for resolving addresses in static initializers
-pub struct StaticInitContext {
+pub struct StaticInitContext<'a> {
     /// Mapping from variable names to their data IDs
     pub global_variables: HashMap<StringId, DataId>,
+    pub structs: &'a HashMap<StringId, Type>,
+    pub unions: &'a HashMap<StringId, Type>,
 }
 
 /// The result of evaluating a static initializer.
@@ -52,22 +56,73 @@ pub fn unescape_string(s: &str) -> Vec<u8> {
 use crate::parser::ast::TypedInitializer;
 
 /// Evaluates a static initializer expression at compile time
+use crate::codegen::translator::FunctionTranslator;
+use crate::parser::ast::TypedDesignator;
+
 pub fn evaluate_static_initializer(
+    ty: &Type,
     initializer: &TypedInitializer,
     context: &StaticInitContext,
 ) -> Result<EvaluatedInitializer, CodegenError> {
     match initializer {
         TypedInitializer::Expr(expr) => evaluate_static_expr(expr, context),
         TypedInitializer::List(initializers) => {
-            let mut bytes = Vec::new();
-            for (_, initializer) in initializers {
-                if let EvaluatedInitializer::Bytes(mut new_bytes) =
-                    evaluate_static_initializer(initializer, context)?
-                {
-                    bytes.append(&mut new_bytes);
-                } else {
-                    // Nested relocations are not supported yet
-                    return Err(CodegenError::InvalidStaticInitializer);
+            let size = FunctionTranslator::get_type_size_from_type(ty, context.structs, context.unions) as usize;
+            let mut bytes = vec![0; size];
+            let mut offset = 0;
+
+            if let Type::Struct(_, members, _) = ty {
+                let mut member_iter = members.iter();
+                for (designators, init) in initializers {
+                    let (member_offset, member_ty) = if !designators.is_empty() {
+                        if let TypedDesignator::Member(name) = &designators[0] {
+                            let mut current_offset = 0;
+                            let mut found = false;
+                            for member in members {
+                                let member_alignment = FunctionTranslator::get_type_alignment_from_type(&member.ty, context.structs, context.unions);
+                                current_offset = (current_offset + member_alignment - 1) & !(member_alignment - 1);
+                                if member.name == *name {
+                                    found = true;
+                                    break;
+                                }
+                                current_offset += FunctionTranslator::get_type_size_from_type(&member.ty, context.structs, context.unions);
+                            }
+                            if found {
+                                (current_offset, members.iter().find(|m| m.name == *name).unwrap().ty.clone())
+                            } else {
+                                return Err(CodegenError::InvalidStaticInitializer);
+                            }
+                        } else {
+                            return Err(CodegenError::InvalidStaticInitializer);
+                        }
+                    } else {
+                        let member = member_iter.next().unwrap();
+                        let member_alignment = FunctionTranslator::get_type_alignment_from_type(&member.ty, context.structs, context.unions);
+                        offset = (offset + member_alignment - 1) & !(member_alignment - 1);
+                        (offset, member.ty.clone())
+                    };
+
+                    if let EvaluatedInitializer::Bytes(new_bytes) =
+                        evaluate_static_initializer(&member_ty, init, context)?
+                    {
+                        bytes[member_offset as usize..member_offset as usize + new_bytes.len()].copy_from_slice(&new_bytes);
+                    } else {
+                        return Err(CodegenError::InvalidStaticInitializer);
+                    }
+
+                    if designators.is_empty() {
+                        offset += FunctionTranslator::get_type_size_from_type(&member_ty, context.structs, context.unions);
+                    }
+                }
+            } else {
+                for (_, init) in initializers {
+                    if let EvaluatedInitializer::Bytes(mut new_bytes) =
+                        evaluate_static_initializer(ty, init, context)?
+                    {
+                        bytes.append(&mut new_bytes);
+                    } else {
+                        return Err(CodegenError::InvalidStaticInitializer);
+                    }
                 }
             }
             Ok(EvaluatedInitializer::Bytes(bytes))

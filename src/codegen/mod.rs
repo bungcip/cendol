@@ -163,8 +163,8 @@ impl CodeGen {
                     let mut sig = self.module.make_signature();
                     for param in params {
                         let abi_param = match param.ty {
-                            Type::Float => AbiParam::new(types::F32),
-                            Type::Double => AbiParam::new(types::F64),
+                            Type::Float(_) => AbiParam::new(types::F32),
+                            Type::Double(_) => AbiParam::new(types::F64),
                             _ => AbiParam::new(types::I64),
                         };
                         sig.params.push(abi_param);
@@ -178,19 +178,21 @@ impl CodeGen {
                     self.signatures.insert(*name, sig);
                 }
                 TypedStmt::Declaration(base_ty, declarators, _is_static) => {
-                    if let Type::Struct(Some(name), _) = &base_ty {
+                    if let Type::Struct(Some(name), _, _) = &base_ty {
                         self.structs.insert(*name, base_ty.clone());
-                    } else if let Type::Union(Some(name), _) = &base_ty {
+                    } else if let Type::Union(Some(name), _, _) = &base_ty {
                         self.unions.insert(*name, base_ty.clone());
                     }
                     for declarator in declarators {
-                        if let Type::Struct(Some(name), _) = &declarator.ty {
+                        if let Type::Struct(Some(name), _, _) = &declarator.ty {
                             self.structs.insert(*name, declarator.ty.clone());
-                        } else if let Type::Union(Some(name), _) = &declarator.ty {
+                        } else if let Type::Union(Some(name), _, _) = &declarator.ty {
                             self.unions.insert(*name, declarator.ty.clone());
-                        } else {
-                            // This is a global variable declaration.
-                            let is_const = matches!(declarator.ty, Type::Const(_));
+                        }
+
+                        // This is a global variable declaration.
+                        if !matches!(declarator.ty, Type::Enum(..)) {
+                            let is_const = matches!(declarator.ty, Type::Const(_, _));
                             let id = self
                                 .module
                                 .declare_data(
@@ -200,7 +202,6 @@ impl CodeGen {
                                     false,
                                 )
                                 .unwrap();
-
                             self.global_variables
                                 .insert(declarator.name, (id, declarator.ty.clone()));
 
@@ -243,9 +244,11 @@ impl CodeGen {
                                     } else {
                                         let context = util::StaticInitContext {
                                             global_variables: global_vars,
+                                            structs: &self.structs,
+                                            unions: &self.unions,
                                         };
 
-                                        match util::evaluate_static_initializer(init, &context)? {
+                                        match util::evaluate_static_initializer(&declarator.ty, init, &context)? {
                                             util::EvaluatedInitializer::Bytes(bytes) => {
                                                 data_desc.define(bytes.into_boxed_slice());
                                             }
@@ -274,9 +277,11 @@ impl CodeGen {
                                 } else {
                                     let context = util::StaticInitContext {
                                         global_variables: global_vars,
+                                        structs: &self.structs,
+                                        unions: &self.unions,
                                     };
 
-                                    match util::evaluate_static_initializer(init, &context)? {
+                                    match util::evaluate_static_initializer(&declarator.ty, init, &context)? {
                                         util::EvaluatedInitializer::Bytes(bytes) => {
                                             data_desc.define(bytes.into_boxed_slice());
                                         }
@@ -312,13 +317,13 @@ impl CodeGen {
         // First, declare all functions
         for function in &typed_unit.functions {
             let mut sig = self.module.make_signature();
-            if let Type::Struct(_, _) = function.return_type {
+            if let Type::Struct(_, _, _) = function.return_type {
                 sig.params.push(AbiParam::new(types::I64));
             }
             for param in &function.params {
                 let abi_param = match param.ty {
-                    Type::Float => AbiParam::new(types::F32),
-                    Type::Double => AbiParam::new(types::F64),
+                    Type::Float(_) => AbiParam::new(types::F32),
+                    Type::Double(_) => AbiParam::new(types::F64),
                     _ => AbiParam::new(types::I64),
                 };
                 sig.params.push(abi_param);
@@ -346,23 +351,24 @@ impl CodeGen {
 
         // Collect enum constants from global declarations
         for global in &typed_unit.globals {
-            if let TypedStmt::Declaration(ty, _, _) = global
-                && let Type::Enum(_name, members) = ty
-                && !members.is_empty()
-            {
-                let mut next_value = 0;
-                for (name, value, _span) in members {
-                    let val = if let Some(expr) = value {
-                        if let Expr::Number(num, _) = **expr {
-                            num
-                        } else {
-                            -1 // Dummy value
+            if let TypedStmt::Declaration(ty, _, _) = global {
+                if let Type::Enum(_name, members, _) = ty {
+                    if !members.is_empty() {
+                        let mut next_value = 0;
+                        for (name, value, _span) in members {
+                            let val = if let Some(expr) = value {
+                                if let Expr::Number(num, _) = &**expr {
+                                    *num
+                                } else {
+                                    -1 // Dummy value
+                                }
+                            } else {
+                                next_value
+                            };
+                            self.enum_constants.insert(*name, val);
+                            next_value = val + 1;
                         }
-                    } else {
-                        next_value
-                    };
-                    self.enum_constants.insert(*name, val);
-                    next_value = val + 1;
+                    }
                 }
             }
         }
@@ -479,22 +485,22 @@ impl CodeGen {
         for stmt in stmts {
             match stmt {
                 TypedStmt::Declaration(ty, _, _) => {
-                    if let Type::Enum(_name, members) = ty
-                        && !members.is_empty()
-                    {
-                        let mut next_value = 0;
-                        for (name, value, _span) in members {
-                            let val = if let Some(expr) = value {
-                                if let Expr::Number(num, _) = **expr {
-                                    num
+                    if let Type::Enum(_name, members, _) = ty {
+                        if !members.is_empty() {
+                            let mut next_value = 0;
+                            for (name, value, _span) in members {
+                                let val = if let Some(expr) = value {
+                                    if let Expr::Number(num, _) = &**expr {
+                                        *num
+                                    } else {
+                                        -1 // Dummy value
+                                    }
                                 } else {
-                                    -1 // Dummy value
-                                }
-                            } else {
-                                next_value
-                            };
-                            self.enum_constants.insert(*name, val);
-                            next_value = val + 1;
+                                    next_value
+                                };
+                                self.enum_constants.insert(*name, val);
+                                next_value = val + 1;
+                            }
                         }
                     }
                 }

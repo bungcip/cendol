@@ -367,7 +367,7 @@ impl Parser {
             TokenKind::Semicolon,
             |p| {
                 let base_ty = p.parse_type_specifier()?;
-                let (ty, name, id_token) = p.parse_declarator_suffix(base_ty, true)?;
+                let (ty, name, id_token) = p.parse_declarator_suffix(base_ty)?;
                 Ok(Parameter {
                     ty,
                     name,
@@ -382,7 +382,6 @@ impl Parser {
     fn parse_declarator_suffix(
         &mut self,
         base_type: Type,
-        name_required: bool,
     ) -> Result<(Type, StringId, Token), ParserError> {
         let mut ty = base_type;
 
@@ -402,9 +401,6 @@ impl Parser {
             self.eat()?;
             (name, id_token)
         } else {
-            if name_required {
-                return Err(ParserError::UnexpectedToken(id_token));
-            }
             // For abstract declarators, there's no identifier.
             // We'll pass back the token we're at, but the caller must be careful.
             // Let's create a default token to signify no identifier.
@@ -437,12 +433,8 @@ impl Parser {
     }
 
     /// Parses a declarator with optional initializer.
-    fn parse_declarator(
-        &mut self,
-        base_type: Type,
-        name_required: bool,
-    ) -> Result<ast::Declarator, ParserError> {
-        let (ty, name, id_token) = self.parse_declarator_suffix(base_type, name_required)?;
+    fn parse_declarator(&mut self, base_type: Type) -> Result<ast::Declarator, ParserError> {
+        let (ty, name, id_token) = self.parse_declarator_suffix(base_type)?;
         let initializer = self.parse_initializer_expr()?;
         Ok(ast::Declarator {
             ty,
@@ -479,7 +471,7 @@ impl Parser {
         let original_pos = self.position;
         if let Ok(kind) = self.current_kind()
             && matches!(kind, TokenKind::Star | TokenKind::LeftBracket)
-            && let Ok((ty, _, _)) = self.parse_declarator_suffix(base_type.clone(), false)
+            && let Ok((ty, _, _)) = self.parse_declarator_suffix(base_type.clone())
         {
             return Ok(ty);
         }
@@ -923,7 +915,7 @@ impl Parser {
             }
             let mut declarators = ThinVec::new();
             loop {
-                let declarator = self.parse_declarator(base_type.clone(), true)?;
+                let declarator = self.parse_declarator(base_type.clone())?;
                 declarators.push(declarator);
 
                 if !self.eat_token(&TokenKind::Comma)? {
@@ -945,7 +937,7 @@ impl Parser {
             }
             let mut declarators = ThinVec::new();
             loop {
-                let declarator = self.parse_declarator(base_type.clone(), true)?;
+                let declarator = self.parse_declarator(base_type.clone())?;
                 declarators.push(declarator);
 
                 if !self.eat_token(&TokenKind::Comma)? {
@@ -1046,7 +1038,7 @@ impl Parser {
                 self.eat()?;
                 let base_ty = self.parse_type_specifier()?;
                 loop {
-                    let (ty, name, _) = self.parse_declarator_suffix(base_ty.clone(), true)?;
+                    let (ty, name, _) = self.parse_declarator_suffix(base_ty.clone())?;
                     self.typedefs.insert(name, ty);
                     if !self.eat_token(&TokenKind::Comma)? {
                         break;
@@ -1085,10 +1077,7 @@ impl Parser {
     }
 
     /// Parses a function signature.
-    fn parse_function_signature(
-        &mut self,
-        param_name_required: bool,
-    ) -> Result<FunctionSignature, ParserError> {
+    fn parse_function_signature(&mut self) -> Result<FunctionSignature, ParserError> {
         let mut is_inline = false;
         let mut is_noreturn = false;
         loop {
@@ -1101,8 +1090,11 @@ impl Parser {
             }
         }
 
-        let ty = self.parse_type()?;
-        let id = self.expect_name()?;
+        let base_type = self.parse_type_specifier()?;
+
+        // Parse declarator suffix (including pointers, arrays, and function name)
+        let (ty, id, _) = self.parse_declarator_suffix(base_type)?;
+
         self.expect_punct(TokenKind::LeftParen)?;
         let mut params = ThinVec::new();
         let mut is_variadic = false;
@@ -1114,14 +1106,17 @@ impl Parser {
                 break;
             }
             let base_type = self.parse_type_specifier()?;
-            let declarator = self.parse_declarator(base_type, param_name_required)?;
+            let declarator = self.parse_declarator(base_type)?;
             params.push(Parameter {
                 ty: declarator.ty,
                 name: declarator.name,
                 span: declarator.span,
             });
 
-            self.eat_token(&TokenKind::Comma)?;
+            if !self.eat_token(&TokenKind::Comma)? {
+                self.expect_punct(TokenKind::RightParen)?;
+                break;
+            }
         }
         Ok(FunctionSignature(
             ty,
@@ -1136,7 +1131,7 @@ impl Parser {
     /// Parses a function.
     fn parse_function(&mut self) -> Result<Function, ParserError> {
         let FunctionSignature(return_type, name, params, is_inline, is_variadic, is_noreturn) =
-            self.parse_function_signature(false)?;
+            self.parse_function_signature()?;
         self.expect_punct(TokenKind::LeftBrace)?;
         let mut stmts = ThinVec::new();
         while self.eat_token(&TokenKind::RightBrace)? == false {
@@ -1161,7 +1156,7 @@ impl Parser {
     fn parse_global(&mut self) -> Result<Stmt, ParserError> {
         let pos = self.position;
         if let Ok(FunctionSignature(ty, name, params, is_inline, is_variadic, is_noreturn)) =
-            self.parse_function_signature(false)
+            self.parse_function_signature()
         {
             if self.eat_token(&TokenKind::Semicolon)? {
                 return Ok(Stmt::FunctionDeclaration {
@@ -1183,7 +1178,7 @@ impl Parser {
         if self.eat_token(&TokenKind::Keyword(KeywordKind::Typedef))? {
             let base_ty = self.parse_type_specifier()?;
             loop {
-                let (ty, name, _) = self.parse_declarator_suffix(base_ty.clone(), true)?;
+                let (ty, name, _) = self.parse_declarator_suffix(base_ty.clone())?;
                 self.typedefs.insert(name, ty);
                 if !self.eat_token(&TokenKind::Comma)? {
                     break;
@@ -1204,7 +1199,7 @@ impl Parser {
         }
         let mut declarators = ThinVec::new();
         loop {
-            let (ty, name, id_token) = self.parse_declarator_suffix(base_type.clone(), true)?;
+            let (ty, name, id_token) = self.parse_declarator_suffix(base_type.clone())?;
             let initializer = self.parse_initializer_expr()?;
             declarators.push(ast::Declarator {
                 ty,

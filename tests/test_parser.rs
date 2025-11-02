@@ -18,6 +18,61 @@ macro_rules! assert_stmt_expr {
         );
     };
 }
+macro_rules! assert_decl_full {
+    ($stmts:expr, $idx:expr, $expected_name:expr, $expected_ty:pat, $expr_pat:pat) => {{
+        assert!(
+            matches!(&$stmts[$idx], Stmt::Declaration(..)),
+            "Expected declaration at stmts[{}]",
+            $idx
+        );
+
+        if let Stmt::Declaration(_, declarators, _) = &$stmts[$idx] {
+            assert!(
+                !declarators.is_empty(),
+                "Expected at least one declarator at stmts[{}]",
+                $idx
+            );
+
+            let decl = &declarators[0];
+
+            // cek nama
+            assert_eq!(
+                decl.name.as_str(),
+                $expected_name,
+                "Unexpected declarator name at stmts[{}]",
+                $idx
+            );
+
+            // cek tipe
+            assert!(
+                matches!(decl.ty, $expected_ty),
+                "Unexpected type for declarator `{}` at stmts[{}]: got {:?}",
+                decl.name,
+                $idx,
+                decl.ty
+            );
+
+            // cek initializer -> Expr pattern
+            match &decl.initializer {
+                Some(Initializer::Expr(expr)) => {
+                    assert!(
+                        matches!(**expr, $expr_pat),
+                        "Initializer expression for `{}` did not match `{}` at stmts[{}]",
+                        decl.name,
+                        stringify!($expr_pat),
+                        $idx
+                    );
+                }
+                other => panic!(
+                    "Expected expression initializer for `{}` at stmts[{}], found {:?}",
+                    decl.name, $idx, other
+                ),
+            }
+        } else {
+            panic!("Expected Stmt::Declaration at stmts[{}]", $idx);
+        }
+    }};
+}
 
 /// Test configuration constants
 mod config {
@@ -91,16 +146,7 @@ mod tests {
         let input = "_Bool roti_bakar = 1;";
         let stmts = parse_c_body(input);
 
-        assert!(matches!(&stmts[0], Stmt::Declaration(..)));
-        if let Stmt::Declaration(_, declarators, ..) = &stmts[0] {
-            let declarator = &declarators[0];
-            assert_eq!(declarator.name.as_str(), "roti_bakar");
-            assert_eq!(declarator.ty, Type::Bool);
-            assert!(matches!(
-                &declarator.initializer,
-                Some(Initializer::Expr(..))
-            ));
-        }
+        assert_decl_full!(stmts, 0, "roti_bakar", Type::Bool, Expr::Number(..))
     }
 
     /// Test parsing of switch statements
@@ -373,35 +419,34 @@ mod tests {
             float c = 3e-10;
         "#;
         let stmts = parse_c_body(input);
-        assert!(matches!(&stmts[0], Stmt::Declaration(..)));
-        if let Stmt::Declaration(_, declarators, _) = &stmts[0] {
-            if let Some(Initializer::Expr(expr)) = &declarators[0].initializer {
-                assert!(matches!(**expr, Expr::FloatNumber(..)));
-            } else {
-                panic!("Expected an initializer");
-            }
-        }
-        assert!(matches!(&stmts[1], Stmt::Declaration(..)));
-        if let Stmt::Declaration(_, declarators, _) = &stmts[1] {
-            if let Some(Initializer::Expr(expr)) = &declarators[0].initializer {
-                assert!(matches!(**expr, Expr::FloatNumber(..)));
-            } else {
-                panic!("Expected an initializer");
-            }
-        }
-        assert!(matches!(&stmts[2], Stmt::Declaration(..)));
-        if let Stmt::Declaration(_, declarators, _) = &stmts[2] {
-            if let Some(Initializer::Expr(expr)) = &declarators[0].initializer {
-                assert!(matches!(**expr, Expr::FloatNumber(..)));
-            } else {
-                panic!("Expected an initializer");
-            }
+
+        assert_decl_full!(stmts, 0, "a", Type::Float, Expr::FloatNumber(..));
+        assert_decl_full!(stmts, 1, "b", Type::Double, Expr::FloatNumber(..));
+        assert_decl_full!(stmts, 2, "c", Type::Float, Expr::FloatNumber(..));
+    }
+
+    /// Test parsing of function declarations with void star
+    #[test]
+    fn test_function_with_pointer() {
+        let input = r#"
+            void *calloc(int __nmemb, int __size);
+        "#;
+        let ast = parse_c_code(input).unwrap();
+
+        // Check first function declaration
+        if let Stmt::FunctionDeclaration { name, params, .. } = &ast.globals[0] {
+            assert_eq!(name.as_str(), "calloc");
+            assert_eq!(params.len(), 2);
+            assert_eq!(params[0].name.as_str(), "__nmemb");
+            assert_eq!(params[1].name.as_str(), "__size");
+        } else {
+            panic!("Expected FunctionDeclaration");
         }
     }
 
     /// Test parsing of `_Noreturn` function specifier
     #[test]
-    fn test_noreturn_function() {
+    fn test_function_with_noreturn() {
         let input = "_Noreturn void exit(int status);";
         let ast = parse_c_code(input).unwrap();
         assert!(matches!(

@@ -1,5 +1,4 @@
 use cendol::compiler::{Cli, Compiler};
-use cendol::error::{Report, report};
 use clap::Parser as ClapParser;
 use std::process::exit;
 
@@ -7,8 +6,7 @@ use std::process::exit;
 ///
 /// Parses command-line arguments and runs the compiler.
 fn main() {
-    if let Err(report_data) = run() {
-        report(&report_data);
+    if run() == false {
         exit(1);
     }
 }
@@ -21,8 +19,14 @@ fn main() {
 /// # Returns
 ///
 /// A `Result` which is `Ok` on success or an `Error` on failure.
-fn run() -> Result<(), Report> {
+fn run() -> bool {
     let cli = Cli::parse();
     let mut compiler = Compiler::new(cli, None);
-    compiler.compile()
+    match compiler.run() {
+        Ok(()) => true,
+        Err(e) => {
+            compiler.print_diagnostic(&e.reports);
+            false
+        }
+    }
 }

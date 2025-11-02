@@ -1,6 +1,7 @@
 use crate::error::Report;
-use crate::file::FileManager;
+use crate::file::{self, FileId, FileManager};
 use crate::preprocessor::Preprocessor;
+use crate::source::SourceSpan;
 use clap::Parser as ClapParser;
 
 /// Command-line arguments for the C-like compiler.
@@ -52,80 +53,136 @@ use std::path::PathBuf;
 use std::process::Command;
 
 pub struct Compiler {
-    preprocessor: Preprocessor,
+    fm: FileManager,
     logger: Logger,
     cli: Cli,
     working_dir: PathBuf,
 }
 
+#[derive(Debug)]
+pub struct CompilerError {
+    pub reports: Vec<Report>,
+}
+
+impl CompilerError {
+    pub fn new(reports: Vec<Report>) -> Self {
+        Self { reports }
+    }
+}
+
 impl Compiler {
     pub fn new(cli: Cli, working_dir: Option<PathBuf>) -> Self {
         let logger = Logger::new(cli.verbose);
-        let mut file_manager = FileManager::new();
+        let mut fm = FileManager::new();
         let working_dir = working_dir.unwrap_or_else(|| std::env::current_dir().unwrap());
 
-        file_manager.add_include_path("/usr/include");
-        file_manager.add_include_path("/usr/include/x86_64-linux-gnu");
-        file_manager.add_include_path("/usr/lib/gcc/x86_64-linux-gnu/11/include");
-        file_manager.add_include_path("/usr/local/include");
+        fm.add_include_path("/usr/include");
+        fm.add_include_path("/usr/include/x86_64-linux-gnu");
+        fm.add_include_path("/usr/lib/gcc/x86_64-linux-gnu/11/include");
+        fm.add_include_path("/usr/local/include");
 
         for path in &cli.include_path {
-            file_manager.add_include_path(path);
+            fm.add_include_path(path);
         }
 
-        let preprocessor = Preprocessor::new(file_manager);
-
         Self {
-            preprocessor,
+            fm,
             logger,
             cli,
             working_dir,
         }
     }
 
-    pub fn compile(&mut self) -> Result<(), Report> {
-        self.logger.log("Verbose output enabled");
+    pub fn print_diagnostic(&self, reports: &[Report]) {
+        for r in reports {
+            crate::error::report(r, &self.fm);
+        }
+    }
 
-        let (input, filename) = if self.cli.input_file == "-" {
-            (
-                std::io::read_to_string(std::io::stdin()).expect("Failed to read from stdin"),
-                "<stdin>",
-            )
-        } else {
-            (
-                fs::read_to_string(&self.cli.input_file).expect("Failed to read input file"),
-                self.cli.input_file.as_str(),
-            )
+    /// ignore input file from CLI and use this filename & content
+    pub fn run_virtual_file(&mut self, path: &str, content: &str) -> Result<(), CompilerError> {
+        let file_id = match self.fm.register_file(path, content) {
+            Ok(file_id) => file_id,
+            Err(err) => {
+                let report =
+                    Report::new(err.to_string(), Some(path.to_string()), None, false, false);
+                return Err(CompilerError::new(vec![report]));
+            }
         };
 
+        self.compile(file_id)
+    }
+
+    /// drive compiler proses from cli
+    pub fn run(&mut self) -> Result<(), CompilerError> {
+        self.logger.log("Verbose output enabled");
+
+        let result = if self.cli.input_file == "-" {
+            self.fm.open("<stdin>")
+        } else {
+            self.fm.open(&self.cli.input_file)
+        };
+
+        let file_id = match result {
+            Ok(file_id) => file_id,
+            Err(err) => {
+                let report = Report::new(
+                    err.to_string(),
+                    Some(self.cli.input_file.to_string()),
+                    None,
+                    false,
+                    false,
+                );
+                return Err(CompilerError::new(vec![report]));
+            }
+        };
+
+        self.compile(file_id)
+    }
+
+    /// drive compiler proses from cli
+    fn compile(&mut self, file_id: FileId) -> Result<(), CompilerError> {
+        self.logger.log("Verbose output enabled");
+
+        let filename = self
+            .fm
+            .get_path(file_id)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        let mut preprocessor = Preprocessor::new();
+
         for def in &self.cli.define {
-            if let Err(err) = self.preprocessor.define(def) {
-                let (path, span) = if let Some(location) = err.span() {
-                    let path = self
-                        .preprocessor
-                        .file_manager()
-                        .get_path(location.file_id())
-                        .unwrap()
-                        .to_str()
-                        .unwrap()
-                        .to_string();
-                    (Some(path), Some(location))
+            if let Err(err) = preprocessor.define(&mut self.fm, def) {
+                let (file_id, span) = if let Some(location) = err.span() {
+                    (location.file_id(), err.span())
                 } else {
-                    (Some(filename.to_string()), None)
+                    (file_id, Some(SourceSpan::default()))
                 };
-                let report = Report::new(err.to_string(), path, span, self.cli.verbose, false);
-                return Err(report);
+
+                let path = self
+                    .fm
+                    .get_path(file_id)
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_string();
+
+                let report =
+                    Report::new(err.to_string(), Some(path), span, self.cli.verbose, false);
+                return Err(CompilerError::new(vec![report]));
             }
         }
 
         if self.cli.preprocess_only {
-            let output = match self.preprocessor.preprocess(&input, filename) {
+            let output = match preprocessor.preprocess(&mut self.fm, file_id) {
                 Ok(output) => output,
                 Err(err) => {
                     let (path, span) = if let Some(location) = err.span() {
                         let path = self
-                            .preprocessor
-                            .file_manager()
+                            .fm
                             .get_path(location.file_id())
                             .unwrap()
                             .to_str()
@@ -133,10 +190,10 @@ impl Compiler {
                             .to_string();
                         (Some(path), Some(location))
                     } else {
-                        (Some(filename.to_string()), None)
+                        (None, None)
                     };
                     let report = Report::new(err.to_string(), path, span, self.cli.verbose, false);
-                    return Err(report);
+                    return Err(CompilerError::new(vec![report]));
                 }
             };
 
@@ -150,13 +207,12 @@ impl Compiler {
             return Ok(());
         }
 
-        let tokens = match self.preprocessor.preprocess(&input, filename) {
+        let tokens = match preprocessor.preprocess(&mut self.fm, file_id) {
             Ok(tokens) => tokens,
             Err(err) => {
                 let (path, span) = if let Some(location) = err.span() {
                     let path = self
-                        .preprocessor
-                        .file_manager()
+                        .fm
                         .get_path(location.file_id())
                         .unwrap()
                         .to_str()
@@ -164,10 +220,10 @@ impl Compiler {
                         .to_string();
                     (Some(path), Some(location))
                 } else {
-                    (Some(filename.to_string()), None)
+                    (None, None)
                 };
                 let report = Report::new(err.to_string(), path, span, self.cli.verbose, false);
-                return Err(report);
+                return Err(CompilerError::new(vec![report]));
             }
         };
 
@@ -175,7 +231,7 @@ impl Compiler {
             Ok(parser) => parser,
             Err(err) => {
                 let report = Report::new(err.to_string(), None, None, self.cli.verbose, false);
-                return Err(report);
+                return Err(CompilerError::new(vec![report]));
             }
         };
         let ast = match parser.parse() {
@@ -190,8 +246,7 @@ impl Compiler {
 
                 let (path, span) = if let Some(location) = location {
                     let path = self
-                        .preprocessor
-                        .file_manager()
+                        .fm
                         .get_path(location.file_id())
                         .unwrap()
                         .to_str()
@@ -199,23 +254,24 @@ impl Compiler {
                         .to_string();
                     (Some(path), Some(location))
                 } else {
-                    (Some(filename.to_string()), None)
+                    (None, None)
                 };
 
                 let report = Report::new(msg, path, span, self.cli.verbose, false);
-                return Err(report);
+                return Err(CompilerError::new(vec![report]));
             }
         };
 
         // Perform semantic analysis
         let semantic_analyzer = SemanticAnalyzer::with_builtins();
         let SemaOutput(typed_ast, warnings, semantic_analyzer) =
-            match semantic_analyzer.analyze(ast, filename) {
+            match semantic_analyzer.analyze(ast, &filename) {
                 Ok(output) => {
                     self.logger.log("Semantic analysis passed");
                     output
                 }
                 Err(errors) => {
+                    let mut reports = vec![];
                     for (error, file, span) in errors {
                         let report_data = Report::new(
                             error.to_string(),
@@ -224,15 +280,10 @@ impl Compiler {
                             self.cli.verbose,
                             false,
                         );
-                        crate::error::report(&report_data);
+                        reports.push(report_data);
                     }
-                    return Err(Report::new(
-                        "Semantic errors found".to_string(),
-                        Some(filename.to_string()),
-                        None,
-                        self.cli.verbose,
-                        false,
-                    ));
+
+                    return Err(CompilerError::new(reports));
                 }
             };
 
@@ -244,17 +295,18 @@ impl Compiler {
                 self.cli.verbose,
                 true,
             );
-            crate::error::report(&report_data);
+            crate::error::report(&report_data, &self.fm);
         }
 
         if self.cli.wall && !warnings.is_empty() {
-            return Err(Report::new(
+            let report = Report::new(
                 "Warnings treated as errors".to_string(),
                 Some(filename.to_string()),
                 None,
                 self.cli.verbose,
                 false,
-            ));
+            );
+            return Err(CompilerError::new(vec![report]));
         }
 
         let mut codegen = CodeGen::new();
@@ -270,7 +322,7 @@ impl Compiler {
                     false,
                 );
                 report.verbose = self.cli.verbose;
-                return Err(report);
+                return Err(CompilerError::new(vec![report]));
             }
         };
 

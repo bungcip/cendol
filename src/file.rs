@@ -136,14 +136,12 @@ impl FileManager {
         // Build search paths:
         let mut search_paths: Vec<PathBuf> = Vec::new();
 
-        if kind == IncludeKind::Local {
-            if includer.0 != u32::MAX {
-                if let Some(includer_path) = self.files.get(&includer) {
-                    if let Some(parent) = includer_path.parent() {
-                        search_paths.push(parent.to_path_buf());
-                    }
-                }
-            }
+        if kind == IncludeKind::Local
+            && includer.0 != u32::MAX
+            && let Some(includer_path) = self.files.get(&includer)
+            && let Some(parent) = includer_path.parent()
+        {
+            search_paths.push(parent.to_path_buf());
         }
 
         search_paths.extend(self.include_paths.clone());

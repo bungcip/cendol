@@ -7,6 +7,7 @@ use cendol::file::FileManager;
 use cendol::preprocessor::Preprocessor;
 use cendol::preprocessor::token::Token;
 use cendol::preprocessor::token::TokenKind;
+use cendol::test_utils::create_file_manager;
 use cendol::test_utils::create_preprocessor;
 
 /// Test configuration constants
@@ -16,8 +17,9 @@ mod config {
 
 /// Helper function to preprocess input and return tokens
 fn preprocess_input(input: &str) -> Result<Vec<Token>, Box<dyn std::error::Error>> {
-    let mut preprocessor = create_preprocessor();
-    let tokens = preprocessor.preprocess(input, config::TEST_FILENAME)?;
+    let mut fm = create_file_manager();
+    let pp = create_preprocessor();
+    let tokens = pp.preprocess_virtual_file(&mut fm, input, config::TEST_FILENAME)?;
     Ok(tokens)
 }
 
@@ -141,130 +143,53 @@ fn test_hideset() {
 #[test]
 fn test_simple_function_macro() {
     let input = "#define ID(x) x\nID(1)";
-    let mut preprocessor = create_preprocessor();
-    let tokens = preprocessor.preprocess(input, "<input>").unwrap();
+    let tokens = preprocess_input(input).unwrap();
     let tokens = get_clean_token(tokens);
+    let tokens = get_token_kinds(&tokens);
 
-    // Should expand to: 1
-    // Expected tokens: Number("1")
-    println!(
-        "DEBUG: Simple function macro tokens: {:?}",
-        get_token_kinds(&tokens)
-    );
-
-    // Verify that the macro expansion worked
-    let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(
-        token_strings.contains(&"1".to_string()),
-        "Should contain '1' from macro expansion"
-    );
+    assert_eq!(tokens, ["1"]);
 }
 
 #[test]
 fn test_keyword_macro() {
     let input = "#define p(x) int x\np(elif)";
-    let mut preprocessor = create_preprocessor();
-    let tokens = preprocessor.preprocess(input, "<input>").unwrap();
+    let tokens = preprocess_input(input).unwrap();
     let tokens = get_clean_token(tokens);
+    let tokens = get_token_kinds(&tokens);
 
-    // Should expand to: int elif
-    // Expected tokens: int, elif
-    println!(
-        "DEBUG: Keyword macro tokens: {:?}",
-        get_token_kinds(&tokens)
-    );
-
-    // Verify that the macro expansion worked
-    let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(
-        token_strings.contains(&"int".to_string()),
-        "Should contain 'int' from macro expansion"
-    );
-    assert!(
-        token_strings.contains(&"elif".to_string()),
-        "Should contain 'elif' from macro expansion"
-    );
+    assert_eq!(tokens, ["int", "elif"]);
 }
 
 #[test]
 fn test_line_splicing() {
     let input = "#define A 1 \\\n+ 2\nA";
-    let mut preprocessor = create_preprocessor();
-    let tokens = preprocessor.preprocess(input, "<input>").unwrap();
+    let tokens = preprocess_input(input).unwrap();
     let tokens = get_clean_token(tokens);
+    let tokens = get_token_kinds(&tokens);
 
-    // Should expand to: 1 + 2
-    // Expected tokens: Number("1"), Plus, Number("2")
-    println!(
-        "DEBUG: Line splicing tokens: {:?}",
-        get_token_kinds(&tokens)
-    );
-
-    // Verify that line splicing worked
-    let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(
-        token_strings.contains(&"1".to_string()),
-        "Should contain '1' from line splicing"
-    );
-    assert!(
-        token_strings.contains(&"+".to_string()),
-        "Should contain '+' from line splicing"
-    );
-    assert!(
-        token_strings.contains(&"2".to_string()),
-        "Should contain '2' from line splicing"
-    );
+    assert_eq!(tokens, ["1", "+", "2"]);
 }
+
 #[test]
 fn test_conditional_directives() {
     let input = r#"
 #if 1 > 0
-    int a = 1;
+    1
 #else
-    int a = 2;
+    2
 #endif
 
 #if 0 > 1
-    int b = 1;
+    3
 #else
-    int b = 2;
+    4
 #endif
 "#;
-    let mut preprocessor = create_preprocessor();
-    let tokens = preprocessor.preprocess(input, "<input>").unwrap();
+    let tokens = preprocess_input(input).unwrap();
     let tokens = get_clean_token(tokens);
+    let tokens = get_token_kinds(&tokens);
 
-    // Should expand to: int a = 1 ; int b = 2 ;
-    // Expected tokens: int, a, =, 1, ;, int, b, =, 2, ;
-    println!("DEBUG: Conditional tokens: {:?}", get_token_kinds(&tokens));
-
-    // Verify that conditional compilation worked correctly
-    let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(
-        token_strings.contains(&"int".to_string()),
-        "Should contain 'int' from branches"
-    );
-    assert!(
-        token_strings.contains(&"a".to_string()),
-        "Should contain 'a' from first branch"
-    );
-    assert!(
-        token_strings.contains(&"1".to_string()),
-        "Should contain '1' from first branch (true condition)"
-    );
-    assert!(
-        token_strings.contains(&"b".to_string()),
-        "Should contain 'b' from second branch"
-    );
-    assert!(
-        token_strings.contains(&"2".to_string()),
-        "Should contain '2' from second branch (true condition)"
-    );
-
-    // The key test: verify that we got the right values from the right branches
-    // We should have "1" for variable a (from the true #if 1 > 0 branch)
-    // and "2" for variable b (from the true #if 0 > 1 branch's #else)
-    println!("DEBUG: All conditional tokens: {:?}", token_strings);
+    assert_eq!(tokens, ["1", "4"]);
 }
 #[test]
 fn test_ifdef_directive() {
@@ -301,31 +226,13 @@ REBUS
 fn test_ifndef_directive() {
     let input = r#"
 #ifndef FOO
-    int a = 1;
+    1
 #endif
 "#;
-    let mut preprocessor = Preprocessor::new(FileManager::new()); // Enable verbose mode
-    let tokens = preprocessor.preprocess(input, "<input>").unwrap();
+    let tokens = preprocess_input(input).unwrap();
     let tokens = get_clean_token(tokens);
-
-    // Should include the code because FOO is NOT defined
-    // Expected tokens: int, a, =, 1, ;
-    println!("DEBUG: Ifndef tokens: {:?}", get_token_kinds(&tokens));
-
-    // Verify that ifndef worked correctly
-    let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(
-        token_strings.contains(&"int".to_string()),
-        "Should contain 'int' from ifndef branch"
-    );
-    assert!(
-        token_strings.contains(&"a".to_string()),
-        "Should contain 'a' from ifndef branch"
-    );
-    assert!(
-        token_strings.contains(&"1".to_string()),
-        "Should contain '1' from ifndef branch"
-    );
+    let tokens = get_token_kinds(&tokens);
+    assert_eq!(tokens, ["1"]);
 }
 
 #[test]
@@ -361,36 +268,21 @@ fn test_undef_directive_and_check_with_ifdef() {
 #[test]
 fn test_include_directive() {
     let mut file = std::fs::File::create("test.h").unwrap();
-    std::io::Write::write_all(&mut file, b"int a = 1;").unwrap();
+    std::io::Write::write_all(&mut file, b"KAMBING").unwrap();
 
     let input = r#"
 #include "test.h"
 "#;
-    let mut preprocessor = create_preprocessor();
-    let tokens = preprocessor.preprocess(input, "test.c").unwrap();
+
+    let mut fm = create_file_manager();
+    let pp = create_preprocessor();
+    let tokens = pp
+        .preprocess_virtual_file(&mut fm, input, "test.c")
+        .unwrap();
     let tokens = get_clean_token(tokens);
+    let tokens = get_token_kinds(&tokens);
 
-    // Should include content: int a = 1 ;
-    // Expected tokens: int, a, =, 1, ;
-    println!(
-        "DEBUG: Include directive tokens: {:?}",
-        get_token_kinds(&tokens)
-    );
-
-    // Verify that file inclusion worked
-    let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(
-        token_strings.contains(&"int".to_string()),
-        "Should contain 'int' from included file"
-    );
-    assert!(
-        token_strings.contains(&"a".to_string()),
-        "Should contain 'a' from included file"
-    );
-    assert!(
-        token_strings.contains(&"1".to_string()),
-        "Should contain '1' from included file"
-    );
+    assert_eq!(tokens, ["KAMBING"]);
 
     std::fs::remove_file("test.h").unwrap();
 }
@@ -419,16 +311,9 @@ __LINE__ __FILE__
 #[test]
 fn test_self_referential_macro() {
     let input = "#define FOO FOO\nFOO";
-    let mut preprocessor = create_preprocessor();
-    let tokens = preprocessor.preprocess(input, "<input>").unwrap();
+    let tokens = preprocess_input(input).unwrap();
     let tokens = get_clean_token(tokens);
-
-    // Self-referential macros should be handled gracefully (not cause infinite loops)
-    // The exact output depends on the implementation's recursion handling
-    println!(
-        "DEBUG: Self-referential macro tokens: {:?}",
-        get_token_kinds(&tokens)
-    );
+    let tokens = get_token_kinds(&tokens);
 
     // Just verify that the test doesn't hang and produces some result
     assert!(
@@ -440,16 +325,9 @@ fn test_self_referential_macro() {
 #[test]
 fn test_mutually_recursive_macros() {
     let input = "#define BAR BAZ\n#define BAZ BAR\nBAR BAZ";
-    let mut preprocessor = create_preprocessor();
-    let tokens = preprocessor.preprocess(input, "<input>").unwrap();
+    let tokens = preprocess_input(input).unwrap();
     let tokens = get_clean_token(tokens);
-
-    // Mutually recursive macros should be handled gracefully
-    // The exact output depends on the implementation's recursion handling
-    println!(
-        "DEBUG: Mutually recursive macro tokens: {:?}",
-        get_token_kinds(&tokens)
-    );
+    let tokens = get_token_kinds(&tokens);
 
     // Just verify that the test doesn't hang and produces some result
     assert!(
@@ -461,106 +339,66 @@ fn test_mutually_recursive_macros() {
 #[test]
 fn test_date_and_time_macros() {
     let input = "__DATE__ __TIME__";
-    let mut preprocessor = create_preprocessor();
-    let tokens = preprocessor.preprocess(input, "<input>").unwrap();
+    let tokens = preprocess_input(input).unwrap();
     let tokens = get_clean_token(tokens);
-
-    // Should expand __DATE__ and __TIME__ to current date/time strings
-    // The exact values depend on when the test runs, but we should get string tokens
-    println!(
-        "DEBUG: Date and time macro tokens: {:?}",
-        get_token_kinds(&tokens)
-    );
-
-    // Verify that we got some tokens from the macro expansion
-    assert!(
-        tokens.len() > 0,
-        "Should have tokens from date/time macro expansion"
-    );
+    let tokens = get_token_kinds(&tokens);
 
     // Check that we have string tokens (date and time should be strings)
-    let token_strings: Vec<String> = get_token_kinds(&tokens);
-    let has_date_time = token_strings
-        .iter()
-        .any(|s| s.contains("202") || s.contains(":"));
+    let has_date_time = tokens.iter().any(|s| s.contains("202") || s.contains(":"));
     assert!(has_date_time, "Should contain date or time information");
 }
 
 #[test]
 fn test_object_macro_with_space_before_paren() {
     let input = "#define A (1)\nA";
-    let mut preprocessor = create_preprocessor();
-    let tokens = preprocessor.preprocess(input, "<input>").unwrap();
+    let tokens = preprocess_input(input).unwrap();
     let tokens = get_clean_token(tokens);
-
-    // Should expand to: (1)
-    // Expected tokens: LeftParen, Number("1"), RightParen
-    println!(
-        "DEBUG: Object macro with space tokens: {:?}",
-        get_token_kinds(&tokens)
-    );
-
-    // Verify that the macro expansion worked
-    let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(
-        token_strings.contains(&"(".to_string()),
-        "Should contain '(' from macro expansion"
-    );
-    assert!(
-        token_strings.contains(&"1".to_string()),
-        "Should contain '1' from macro expansion"
-    );
-    assert!(
-        token_strings.contains(&")".to_string()),
-        "Should contain ')' from macro expansion"
-    );
+    let tokens = get_token_kinds(&tokens);
+    assert_eq!(tokens, ["(", "1", ")"]);
 }
 
 #[test]
 fn test_cmdline_define() {
     let input = "A B";
-    let mut preprocessor = create_preprocessor();
-    preprocessor.define("A=1").unwrap();
-    preprocessor.define("B").unwrap();
-    let tokens = preprocessor.preprocess(input, "<input>").unwrap();
+    let mut fm = create_file_manager();
+    let mut pp = create_preprocessor();
+    pp.define(&mut fm, "A=1").unwrap();
+    pp.define(&mut fm, "B").unwrap();
+    let tokens = pp
+        .preprocess_virtual_file(&mut fm, input, "<input>")
+        .unwrap();
     let tokens = get_clean_token(tokens);
+    let tokens = get_token_kinds(&tokens);
 
-    // Should expand A to 1 and B to nothing (empty define)
-    // Expected tokens: Number("1")
-    println!(
-        "DEBUG: Cmdline define tokens: {:?}",
-        get_token_kinds(&tokens)
-    );
-
-    // Verify that the cmdline define worked
-    let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(
-        token_strings.contains(&"1".to_string()),
-        "Should contain '1' from A=1 cmdline define"
-    );
+    assert_eq!(tokens, ["1", "1"]);
 }
 
 #[test]
 fn test_empty_cmdline_define() {
-    let mut preprocessor = create_preprocessor();
-    let result = preprocessor.define("");
+    let mut fm = create_file_manager();
+    let mut pp = create_preprocessor();
+    let result = pp.define(&mut fm, "");
     assert!(result.is_err());
 }
 
 #[test]
 fn test_empty_define_name() {
-    let mut preprocessor = create_preprocessor();
-    let result = preprocessor.define("=1");
+    let mut fm = create_file_manager();
+    let mut pp = create_preprocessor();
+    let result = pp.define(&mut fm, "=1");
     assert!(result.is_err());
 }
 
 #[test]
 fn test_define_without_value() {
-    let mut preprocessor = create_preprocessor();
-    preprocessor.define("A").unwrap();
+    let mut fm = create_file_manager();
+    let mut pp = create_preprocessor();
+    pp.define(&mut fm, "A").unwrap();
 
     let input = "A";
-    let tokens = preprocessor.preprocess(input, "<input>").unwrap();
+    let tokens = pp
+        .preprocess_virtual_file(&mut fm, input, "<input>")
+        .unwrap();
     let tokens = get_clean_token(tokens);
     let tokens = get_token_kinds(&tokens);
     assert_eq!(tokens, ["1"]);
@@ -585,20 +423,9 @@ fn test_simple_object_macro_expansion() {
     let input = "#define COBA AKU\nCOBA";
     let tokens = preprocess_input(input).unwrap();
     let tokens = get_clean_token(tokens);
+    let tokens = get_token_kinds(&tokens);
 
-    // Should expand to: AKU
-    // Expected tokens: Identifier("AKU")
-    println!(
-        "DEBUG: Simple object macro tokens: {:?}",
-        get_token_kinds(&tokens)
-    );
-
-    // Verify that the macro expansion worked
-    let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(
-        token_strings.contains(&"AKU".to_string()),
-        "Should contain 'AKU' from macro expansion"
-    );
+    assert_eq!(tokens, ["AKU"]);
 }
 
 #[test]
@@ -606,18 +433,7 @@ fn test_simple_object_macro_expansion_with_spaces() {
     let input = "#   define COBA AKU\nCOBA";
     let tokens = preprocess_input(input).unwrap();
     let tokens = get_clean_token(tokens);
+    let tokens = get_token_kinds(&tokens);
 
-    // Should expand to: AKU (spaces in define should not affect expansion)
-    // Expected tokens: Identifier("AKU")
-    println!(
-        "DEBUG: Simple object macro with spaces tokens: {:?}",
-        get_token_kinds(&tokens)
-    );
-
-    // Verify that the macro expansion worked
-    let token_strings: Vec<String> = get_token_kinds(&tokens);
-    assert!(
-        token_strings.contains(&"AKU".to_string()),
-        "Should contain 'AKU' from macro expansion"
-    );
+    assert_eq!(tokens, ["AKU"]);
 }

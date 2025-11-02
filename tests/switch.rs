@@ -1,7 +1,8 @@
+use cendol::compiler::CompilerError;
 use cendol::error::Report;
 use cendol::test_utils::compile_and_run;
 
-type TestResult = Result<(), Report>;
+type TestResult = Result<(), CompilerError>;
 
 #[test]
 fn test_switch_basic() -> TestResult {

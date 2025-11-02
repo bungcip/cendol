@@ -7,6 +7,7 @@ use cendol::file::FileManager;
 use cendol::parser::Parser;
 use cendol::parser::ast::{Stmt, TranslationUnit};
 use cendol::preprocessor::Preprocessor;
+use cendol::test_utils::{create_file_manager, create_preprocessor};
 use thin_vec::ThinVec;
 
 macro_rules! assert_stmt_expr {
@@ -81,8 +82,9 @@ mod config {
 
 /// Helper function to parse C code and return the AST
 fn parse_c_code(input: &str) -> Result<TranslationUnit, Box<dyn std::error::Error>> {
-    let mut preprocessor = Preprocessor::new(FileManager::new());
-    let tokens = preprocessor.preprocess(input, config::TEST_FILENAME)?;
+    let mut fm = create_file_manager();
+    let pp = create_preprocessor();
+    let tokens = pp.preprocess_virtual_file(&mut fm, input, config::TEST_FILENAME)?;
     let mut parser = Parser::new(tokens)?;
     let ast = parser.parse()?;
     Ok(ast)
@@ -100,9 +102,10 @@ fn parse_c_body(input: &str) -> ThinVec<Stmt> {
         }}
     ");
 
-    let mut preprocessor = Preprocessor::new(FileManager::new());
-    let tokens = preprocessor
-        .preprocess(&input, config::TEST_FILENAME)
+    let mut fm = create_file_manager();
+    let pp = create_preprocessor();
+    let tokens = pp
+        .preprocess_virtual_file(&mut fm, &input, config::TEST_FILENAME)
         .unwrap();
     let mut parser = Parser::new(tokens).unwrap();
     let ast = parser.parse().unwrap();

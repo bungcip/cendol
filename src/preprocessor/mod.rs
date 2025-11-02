@@ -1,4 +1,4 @@
-use crate::file::FileManager;
+use crate::file::{FileId, FileManager};
 use crate::preprocessor::error::PreprocessorError;
 use crate::preprocessor::lexer::Lexer;
 use crate::preprocessor::token::{DirectiveKind, IncludeKind, Token, TokenKind};
@@ -51,28 +51,27 @@ struct FileState {
 pub struct Preprocessor {
     macros: HashMap<String, Macro>,
     conditional_stack: Vec<bool>,
-    file_manager: FileManager,
     file_stack: Vec<FileState>,
     current_line: u32,
     current_file: String,
 }
 
+impl Default for Preprocessor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Preprocessor {
     /// Creates a new `Preprocessor`.
-    pub fn new(file_manager: FileManager) -> Self {
+    pub fn new() -> Self {
         Preprocessor {
             macros: HashMap::new(),
             conditional_stack: Vec::new(),
-            file_manager,
             file_stack: Vec::new(),
             current_line: 1,
             current_file: String::new(),
         }
-    }
-
-    /// Returns a reference to the `FileManager`.
-    pub fn file_manager(&self) -> &FileManager {
-        &self.file_manager
     }
 
     /// Preprocesses a string of C code.
@@ -84,12 +83,25 @@ impl Preprocessor {
     /// # Returns
     ///
     /// A `Result` containing a vector of tokens, or a `PreprocessorError` if preprocessing fails.
-    pub fn preprocess(
-        &mut self,
+    pub fn preprocess_virtual_file(
+        self,
+        fm: &mut FileManager,
         input: &str,
         filename: &str,
     ) -> Result<Vec<Token>, PreprocessorError> {
-        let initial_tokens = self.tokenize(input, filename)?;
+        let file_id = fm
+            .register_file(filename, input)
+            .map_err(|_| PreprocessorError::FileNotFound(filename.to_string(), None))?;
+
+        self.preprocess(fm, file_id)
+    }
+
+    pub fn preprocess(
+        mut self,
+        fm: &mut FileManager,
+        file_id: FileId,
+    ) -> Result<Vec<Token>, PreprocessorError> {
+        let initial_tokens = self.tokenize(fm, file_id)?;
         self.file_stack.push(FileState {
             tokens: initial_tokens,
             index: 0,
@@ -97,26 +109,10 @@ impl Preprocessor {
 
         let mut final_tokens = Vec::new();
         self.current_line = 1;
-        self.current_file = filename.to_string();
-
-        // Add initial line directive
-        // let dummy_loc = SourceLocation::new(FileId(0), 0, 0);
-        // final_tokens.push(Token::new(
-        //     TokenKind::Directive(DirectiveKind::Line),
-        //     dummy_loc.into(),
-        // ));
-        // final_tokens.push(Token::new(
-        //     TokenKind::Number(current_line.to_string()),
-        //     dummy_loc.into(),
-        // ));
-        // final_tokens.push(Token::new(
-        //     TokenKind::String(current_file.to_string()),
-        //     dummy_loc.into(),
-        // ));
-        // final_tokens.push(Token::new(TokenKind::Newline, dummy_loc.into()));
+        self.current_file = String::from(fm.get_path(file_id).unwrap().to_string_lossy());
 
         while !self.file_stack.is_empty() {
-            let mut tokens = self.process_directives()?;
+            let mut tokens = self.process_directives(fm)?;
             self.expand_all_macros(&mut tokens)?;
 
             // Update line number tracking for line directives
@@ -141,7 +137,11 @@ impl Preprocessor {
     /// # Arguments
     ///
     /// * `definition` - The macro definition string.
-    pub fn define(&mut self, definition: &str) -> Result<(), PreprocessorError> {
+    pub fn define(
+        &mut self,
+        fm: &mut FileManager,
+        definition: &str,
+    ) -> Result<(), PreprocessorError> {
         if definition.is_empty() {
             return Err(PreprocessorError::Generic(
                 "Empty definition".to_string(),
@@ -157,7 +157,7 @@ impl Preprocessor {
             ));
         }
         let value = if parts.len() > 1 { parts[1] } else { "1" };
-        let file_id = self.file_manager.open("<cmdline>")?;
+        let file_id = fm.open("<cmdline>")?;
         let mut lexer = Lexer::new(value, file_id);
         let mut tokens = Vec::new();
         loop {
@@ -172,11 +172,13 @@ impl Preprocessor {
     }
 
     /// Tokenizes an input string.
-    fn tokenize(&mut self, input: &str, filename: &str) -> Result<Vec<Token>, PreprocessorError> {
-        let file_id = self
-            .file_manager
-            .register_file(filename, input)
-            .map_err(|_| PreprocessorError::FileNotFound(filename.to_string(), None))?;
+    fn tokenize(
+        &mut self,
+        fm: &mut FileManager,
+        file_id: FileId,
+    ) -> Result<Vec<Token>, PreprocessorError> {
+        // TODO: make lexer read from FileManager
+        let input = fm.read(file_id).unwrap();
         let mut lexer = Lexer::new(input, file_id);
         let mut tokens = Vec::new();
         loop {
@@ -190,7 +192,10 @@ impl Preprocessor {
     }
 
     /// Processes preprocessor directives.
-    fn process_directives(&mut self) -> Result<Vec<Token>, PreprocessorError> {
+    fn process_directives(
+        &mut self,
+        fm: &mut FileManager,
+    ) -> Result<Vec<Token>, PreprocessorError> {
         let mut final_tokens = Vec::new();
         let mut pending_tokens = Vec::new();
         while !self.file_stack.is_empty() {
@@ -346,11 +351,7 @@ impl Preprocessor {
                             };
                             eprintln!(
                                 "{}:{}: warning: {}",
-                                self.file_manager
-                                    .get_path(token.span.file_id())
-                                    .unwrap()
-                                    .to_str()
-                                    .unwrap(),
+                                fm.get_path(token.span.file_id()).unwrap().to_str().unwrap(),
                                 token.span.start_offset(),
                                 message
                             );
@@ -364,8 +365,12 @@ impl Preprocessor {
                                 let file_state = self.file_stack.last().unwrap();
                                 parse_include(file_state.index, &file_state.tokens)?
                             };
-                            let new_tokens =
-                                self.include_file(&filename, include_kind, token.span.file_id())?;
+                            let new_tokens = self.include_file(
+                                fm,
+                                &filename,
+                                include_kind,
+                                token.span.file_id(),
+                            )?;
                             self.file_stack.last_mut().unwrap().index = end;
                             self.file_stack.push(FileState {
                                 tokens: new_tokens,
@@ -802,20 +807,20 @@ impl Preprocessor {
     /// Includes a file.
     fn include_file(
         &mut self,
+        fm: &mut FileManager,
         filename: &str,
         kind: IncludeKind,
         includer: crate::file::FileId,
     ) -> Result<Vec<Token>, PreprocessorError> {
-        let file_id = self
-            .file_manager
+        let file_id = fm
             .open_include(filename, kind, includer)
             .map_err(|_| PreprocessorError::FileNotFound(filename.to_string(), None))?;
 
-        let content = match self.file_manager.read(file_id) {
+        let content = match fm.read(file_id) {
             Some(content) => content,
             None => return Err(PreprocessorError::FileNotFound(filename.to_string(), None)),
         };
-        let mut lexer = Lexer::new(&content, file_id);
+        let mut lexer = Lexer::new(content, file_id);
         let mut tokens = Vec::new();
         loop {
             let token = lexer.next_token()?;

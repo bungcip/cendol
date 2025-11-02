@@ -1,12 +1,12 @@
 use crate::{
-    codegen::error::CodegenError, parser::error::ParserError,
-    preprocessor::error::PreprocessorError, semantic::error::SemanticError,
+    codegen::error::CodegenError,
+    file::{FileId, FileManager},
+    parser::error::ParserError,
+    preprocessor::error::PreprocessorError,
+    semantic::error::SemanticError,
 };
-use ariadne::{Color, Config, Fmt, Label, Report as AriadneReport, ReportKind, Source};
+use ariadne::{Color, Config, Fmt, Label, Report as AriadneReport, ReportKind, Source, Span};
 use thiserror::Error;
-
-/// A custom span type for `ariadne`.
-pub type Span = (String, std::ops::Range<usize>);
 
 /// Returns `true` if colors should be used for the report.
 fn colors_enabled() -> bool {
@@ -15,6 +15,24 @@ fn colors_enabled() -> bool {
     // Honor `NO_COLOR` environment variable.
     // See: https://no-color.org/
     std::env::var("NO_COLOR").is_err() && atty::is(Stream::Stderr)
+}
+
+/// implement trait neccesary for ariadne
+struct DiagnosticSpan(String, SourceSpan);
+impl Span for DiagnosticSpan {
+    type SourceId = String;
+
+    fn source(&self) -> &Self::SourceId {
+        &self.0
+    }
+
+    fn start(&self) -> usize {
+        self.1.start_offset() as usize
+    }
+
+    fn end(&self) -> usize {
+        self.1.end_offset() as usize
+    }
 }
 
 /// The main error type for the application.
@@ -97,7 +115,7 @@ impl Report {
 /// # Arguments
 ///
 /// * `report` - The report to print.
-pub fn report(report: &Report) {
+pub fn report(report: &Report, fm: &FileManager) {
     let path = report.path.clone().unwrap_or_else(|| "input".to_string());
     let msg = &report.msg;
     let kind = if report.is_warning {
@@ -111,27 +129,26 @@ pub fn report(report: &Report) {
 
     let code;
     let start_offset;
-    let end_offset;
     let source;
 
-    if let Some(span) = &report.span {
-        source = std::fs::read_to_string(&path).unwrap_or_else(|_| "".to_string());
+    let diag_span = if let Some(span) = &report.span {
+        source = fm.read(span.file_id()).unwrap_or("").to_string();
         start_offset = span.start_offset() as usize;
-        end_offset = span.end_offset() as usize;
         code = 3;
+        DiagnosticSpan(path.clone(), *span)
     } else {
         code = 3;
         start_offset = 0;
-        end_offset = 0;
-        source = String::from("");
-    }
+        source = "".to_string();
+        DiagnosticSpan(path.clone(), SourceSpan::default())
+    };
 
-    AriadneReport::<'static, Span>::build(kind, &path, start_offset)
+    AriadneReport::build(kind, &path, start_offset)
         .with_code(code)
-        .with_message(&msg)
+        .with_message(msg)
         .with_config(config)
         .with_label(
-            Label::new((path.clone(), start_offset..end_offset))
+            Label::new(diag_span)
                 .with_message(msg.fg(Color::Red))
                 .with_color(Color::Red),
         )

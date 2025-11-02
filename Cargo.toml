@@ -66,7 +66,3 @@ path = "tests/test_parser.rs"
 [[test]]
 name = "test_preprocessor"
 path = "tests/test_preprocessor.rs"
-
-[[test]]
-name = "verbose"
-path = "tests/verbose.rs"

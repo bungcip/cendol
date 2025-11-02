@@ -101,7 +101,7 @@ impl SourceFile {
             Err(next) => next.saturating_sub(1),
         };
         let col = offset - self.line_starts[line];
-        (line as u32 + 1, col as u32 + 1)
+        (line as u32 + 1, col + 1)
     }
 }
 

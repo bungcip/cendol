@@ -765,7 +765,7 @@ mod tests {
             x = F;
             if (x != 2)
                 return 1;
-            if (sizeof(x) != 8)
+            if (sizeof(x) != 4)
                 return 1;
             return 0;
         }
@@ -868,9 +868,9 @@ mod tests {
         let input = r#"
         int main() {
             if (_Alignof(char) != 1) return 1;
-            if (_Alignof(int) != 8) return 2;
+            if (_Alignof(int) != 4) return 2;
             struct { char a; int b; } s;
-            if (_Alignof(s) != 8) return 3;
+            if (_Alignof(s) != 4) return 3;
             return 0;
         }
         "#;

@@ -364,11 +364,13 @@ impl Parser {
             }),
             KeywordKind::Struct => {
                 let name = self.maybe_name()?;
-                if self.eat_token(&TokenKind::LeftBrace)? {
-                    let _members = self.parse_struct_or_union_members()?;
-                }
+                let members = if self.eat_token(&TokenKind::LeftBrace)? {
+                    self.parse_struct_or_union_members()?
+                } else {
+                    ThinVec::new()
+                };
                 Ok(TypeSpec {
-                    kind: TypeSpecKind::Struct(name),
+                    kind: TypeSpecKind::Struct(name, members),
                     pointer: 0,
                     qualifiers: vec![],
                     array_sizes: vec![],
@@ -376,11 +378,13 @@ impl Parser {
             }
             KeywordKind::Union => {
                 let name = self.maybe_name()?;
-                if self.eat_token(&TokenKind::LeftBrace)? {
-                    let _members = self.parse_struct_or_union_members()?;
-                }
+                let members = if self.eat_token(&TokenKind::LeftBrace)? {
+                    self.parse_struct_or_union_members()?
+                } else {
+                    ThinVec::new()
+                };
                 Ok(TypeSpec {
-                    kind: TypeSpecKind::Union(name),
+                    kind: TypeSpecKind::Union(name, members),
                     pointer: 0,
                     qualifiers: vec![],
                     array_sizes: vec![],
@@ -1250,18 +1254,8 @@ impl Parser {
 
     /// Parses a function.
     fn parse_function(&mut self) -> Result<Function, ParserError> {
-        let FunctionSignature(_return_type, name, params, is_inline, is_variadic, is_noreturn) =
+        let FunctionSignature(return_type_spec, name, params, is_inline, is_variadic, is_noreturn) =
             self.parse_function_signature()?;
-        
-        // Convert return Type back to TypeSpec for Function struct
-        let base_type_spec = self.parse_type_specifier()?;
-        let (type_spec, _, _) = self.parse_declarator_suffix(base_type_spec)?;
-        let return_type_spec = TypeSpec {
-            kind: TypeSpecKind::Builtin(vec![]), // Convert Type back to TypeSpec
-            pointer: 0,
-            qualifiers: vec![],
-            array_sizes: vec![],
-        };
         
         self.expect_punct(TokenKind::LeftBrace)?;
         let mut stmts = ThinVec::new();
@@ -1290,14 +1284,8 @@ impl Parser {
             self.parse_function_signature()
         {
             if self.eat_token(&TokenKind::Semicolon)? {
-                let type_spec = TypeSpec {
-                    kind: TypeSpecKind::Builtin(vec![]), // Convert Type back to TypeSpec
-                    pointer: 0,
-                    qualifiers: vec![],
-                    array_sizes: vec![],
-                };
                 return Ok(Stmt::FunctionDeclaration {
-                    ty: Box::new(type_spec),
+                    ty: Box::new(ty),
                     name,
                     params,
                     is_variadic,

@@ -58,7 +58,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         match &real_ty {
             Type::Const(inner, _) => Self::get_type_size_from_type(inner, structs, unions),
             Type::Volatile(inner, _) => Self::get_type_size_from_type(inner, structs, unions),
-            Type::Int(_) | Type::UnsignedInt(_) => 8,
+            Type::Int(_) | Type::UnsignedInt(_) => 4,
             Type::Char(_) | Type::UnsignedChar(_) => 1,
             Type::Short(_) | Type::UnsignedShort(_) => 2,
             Type::Float(_) => 4,
@@ -70,14 +70,17 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             Type::Pointer(_, _) => 8,
             Type::Struct(_, members, _) => {
                 let mut size = 0;
+                let mut struct_alignment = 1;
                 for member in members {
                     let member_size = Self::get_type_size_from_type(&member.ty, structs, unions);
                     let member_alignment =
                         Self::get_type_alignment_from_type(&member.ty, structs, unions);
                     size = (size + member_alignment - 1) & !(member_alignment - 1);
                     size += member_size;
+                    if member_alignment > struct_alignment {
+                        struct_alignment = member_alignment;
+                    }
                 }
-                let struct_alignment = Self::get_type_alignment_from_type(ty, structs, unions);
                 (size + struct_alignment - 1) & !(struct_alignment - 1)
             }
             Type::Union(_, members, _) => {
@@ -86,13 +89,19 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     .map(|m| Self::get_type_size_from_type(&m.ty, structs, unions))
                     .max()
                     .unwrap_or(0);
-                let union_alignment = Self::get_type_alignment_from_type(ty, structs, unions);
+                let mut union_alignment = 1;
+                for member in members {
+                    let member_alignment = Self::get_type_alignment_from_type(&member.ty, structs, unions);
+                    if member_alignment > union_alignment {
+                        union_alignment = member_alignment;
+                    }
+                }
                 (size + union_alignment - 1) & !(union_alignment - 1)
             }
             Type::Array(elem_ty, size, _) => {
                 Self::get_type_size_from_type(elem_ty, structs, unions) * *size as u32
             }
-            Type::Enum(_, _, _) => 8,
+            Type::Enum(_, _, _) => 4,
         }
     }
 
@@ -105,7 +114,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         match &real_ty {
             Type::Const(inner, _) => Self::get_type_alignment_from_type(inner, structs, unions),
             Type::Volatile(inner, _) => Self::get_type_alignment_from_type(inner, structs, unions),
-            Type::Int(_) | Type::UnsignedInt(_) => 8,
+            Type::Int(_) | Type::UnsignedInt(_) => 4,
             Type::Char(_) | Type::UnsignedChar(_) => 1,
             Type::Short(_) | Type::UnsignedShort(_) => 2,
             Type::Float(_) => 4,
@@ -115,20 +124,33 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             Type::Void(_) => 1,
             Type::Bool(_) => 1,
             Type::Pointer(_, _) => 8,
-            Type::Struct(_, members, _) => members
-                .iter()
-                .map(|m| Self::get_type_alignment_from_type(&m.ty, structs, unions))
-                .max()
-                .unwrap_or(1),
-            Type::Union(_, members, _) => members
-                .iter()
-                .map(|m| Self::get_type_alignment_from_type(&m.ty, structs, unions))
-                .max()
-                .unwrap_or(1),
+            Type::Struct(_, members, _) => {
+                eprintln!("Struct alignment calculation: members={:?}", members);
+                let mut max_alignment = 1;
+                for member in members {
+                    let member_alignment = Self::get_type_alignment_from_type(&member.ty, structs, unions);
+                    eprintln!("Member {} has alignment {}", member.name.as_str(), member_alignment);
+                    if member_alignment > max_alignment {
+                        max_alignment = member_alignment;
+                    }
+                }
+                eprintln!("Struct final alignment: {}", max_alignment);
+                max_alignment
+            }
+            Type::Union(_, members, _) => {
+                let mut max_alignment = 1;
+                for member in members {
+                    let member_alignment = Self::get_type_alignment_from_type(&member.ty, structs, unions);
+                    if member_alignment > max_alignment {
+                        max_alignment = member_alignment;
+                    }
+                }
+                max_alignment
+            }
             Type::Array(elem_ty, _, _) => {
                 Self::get_type_alignment_from_type(elem_ty, structs, unions)
             }
-            Type::Enum(_, _, _) => 8,
+            Type::Enum(_, _, _) => 4,
         }
     }
 
@@ -138,8 +160,14 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         unions: &HashMap<StringId, Type>,
     ) -> Result<Type, CodegenError> {
         if let Type::Struct(Some(name), members, _) = ty {
+            eprintln!("get_real_type_from_type: struct name={}, members.len={}", name.as_str(), members.len());
             if members.is_empty() {
-                return Ok(structs.get(name).unwrap().clone());
+                if let Some(struct_def) = structs.get(name) {
+                    eprintln!("Found struct definition: {:?}", struct_def);
+                    return Ok(struct_def.clone());
+                } else {
+                    eprintln!("Struct definition not found for name: {}", name.as_str());
+                }
             }
         } else if let Type::Union(Some(name), members, _) = ty
             && members.is_empty() {
@@ -1430,6 +1458,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             TypedExpr::AlignofType(ty, _, result_ty) => {
                 let align = self.get_type_alignment(&ty) as i64;
+                eprintln!("AlignofType: ty={:?}, align={}", ty, align);
                 Ok((self.builder.ins().iconst(types::I64, align), result_ty))
             }
             TypedExpr::Deref(expr, _, ty) => {

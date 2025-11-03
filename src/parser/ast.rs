@@ -40,8 +40,8 @@ pub enum TypeKeyword {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeSpecKind {
     Builtin(Vec<TypeKeyword>),
-    Struct(Option<StringId>), // None = anonymous
-    Union(Option<StringId>),
+    Struct(Option<StringId>, ThinVec<Parameter>), // None = anonymous
+    Union(Option<StringId>, ThinVec<Parameter>),
     Enum(Option<StringId>),
     Typedef(StringId),
 }
@@ -163,8 +163,18 @@ impl Type {
                     }
                 }
             }
-            TypeSpecKind::Struct(name_id) => Type::Struct(*name_id, ThinVec::new(), span),
-            TypeSpecKind::Union(name_id) => Type::Union(*name_id, ThinVec::new(), span),
+            TypeSpecKind::Struct(name_id, members) => {
+                let typed_members: ThinVec<TypedParameter> = members.iter()
+                    .map(|param| TypedParameter::from_parameter(param.clone()))
+                    .collect();
+                Type::Struct(*name_id, typed_members, span)
+            },
+            TypeSpecKind::Union(name_id, members) => {
+                let typed_members: ThinVec<TypedParameter> = members.iter()
+                    .map(|param| TypedParameter::from_parameter(param.clone()))
+                    .collect();
+                Type::Union(*name_id, typed_members, span)
+            },
             TypeSpecKind::Enum(name_id) => Type::Enum(*name_id, ThinVec::new(), span),
             TypeSpecKind::Typedef(_name_id) => Type::Int(span), // Fallback for typedef
         };

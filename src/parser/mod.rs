@@ -1,7 +1,7 @@
 use crate::SourceSpan;
 use crate::parser::ast::{
     Designator, Expr, ForInit, Function, Initializer, InitializerList, Parameter, Stmt,
-    TranslationUnit, Type,
+    TranslationUnit, Type, TypeKeyword, TypeQualifier, TypeSpec, TypeSpecKind,
 };
 use crate::parser::error::ParserError;
 use crate::parser::string_interner::StringId;
@@ -15,13 +15,13 @@ pub mod error;
 pub mod string_interner;
 pub mod token;
 
-pub struct FunctionSignature(Type, StringId, ThinVec<Parameter>, bool, bool, bool);
+pub struct FunctionSignature(TypeSpec, StringId, ThinVec<Parameter>, bool, bool, bool);
 
 /// A parser that converts a stream of tokens into an abstract syntax tree.
 pub struct Parser {
     tokens: Vec<Token>,
     position: usize,
-    typedefs: HashMap<StringId, Type>,
+    typedefs: HashMap<StringId, TypeSpec>,
 }
 
 impl Parser {
@@ -169,25 +169,34 @@ impl Parser {
     }
 
     /// Parses a type specifier (e.g., `int`, `struct S`, `long long`).
-    fn parse_type_specifier(&mut self) -> Result<Type, ParserError> {
+    fn parse_type_specifier(&mut self) -> Result<TypeSpec, ParserError> {
         let token = self.current_token()?;
         if let TokenKind::Keyword(k) = token.kind.clone() {
             if k == KeywordKind::Const {
                 self.eat()?;
-                let ty = self.parse_type_specifier()?;
-                return Ok(Type::Const(Box::new(ty), token.span));
+                let mut inner_type_spec = self.parse_type_specifier()?;
+                inner_type_spec.qualifiers.push(TypeQualifier::Const);
+                return Ok(inner_type_spec);
             }
             if k == KeywordKind::Volatile {
                 self.eat()?;
-                let ty = self.parse_type_specifier()?;
-                return Ok(Type::Volatile(Box::new(ty), token.span));
+                let mut inner_type_spec = self.parse_type_specifier()?;
+                inner_type_spec.qualifiers.push(TypeQualifier::Volatile);
+                return Ok(inner_type_spec);
             }
-            self.parse_type_specifier_kind(k)
+            self.parse_type_specifier_kind(k, token.span)
         } else if let TokenKind::Identifier(id) = token.kind.clone() {
-            if let Some(ty) = self.typedefs.get(&id).cloned() {
+            if let Some(_) = self.typedefs.get(&id) {
                 self.eat()?;
-                Ok(ty)
+                Ok(TypeSpec {
+                    kind: TypeSpecKind::Typedef(id),
+                    pointer: 0,
+                    qualifiers: vec![],
+                    array_sizes: vec![],
+                })
             } else {
+                // This might be a forward declaration or anonymous struct/union/enum
+                // Let the struct/union/enum handling in parse_type_specifier_kind deal with it
                 Err(ParserError::UnexpectedToken(token))
             }
         } else {
@@ -196,86 +205,96 @@ impl Parser {
     }
 
     /// Parses a type specifier kind.
-    fn parse_type_specifier_kind(&mut self, k: KeywordKind) -> Result<Type, ParserError> {
-        let token = self.current_token()?;
+    fn parse_type_specifier_kind(&mut self, k: KeywordKind, span: SourceSpan) -> Result<TypeSpec, ParserError> {
+        self.eat()?; // consume the keyword
         match k {
             KeywordKind::Unsigned => {
-                self.eat()?; // consume "unsigned"
+                let mut keywords = vec![TypeKeyword::UnsignedInt];
                 let next_token = self.tokens.get(self.position).cloned();
                 if let Some(next) = next_token {
                     if let TokenKind::Keyword(KeywordKind::Long) = next.kind {
                         self.eat()?; // consume "long"
+                        keywords.push(TypeKeyword::Long);
                         let next2 = self.tokens.get(self.position).cloned();
                         if let Some(n2) = next2 {
                             if let TokenKind::Keyword(KeywordKind::Long) = n2.kind {
                                 self.eat()?; // consume second "long"
+                                keywords.push(TypeKeyword::Long);
                                 let next3 = self.tokens.get(self.position).cloned();
                                 if let Some(n3) = next3
                                     && let TokenKind::Keyword(KeywordKind::Int) = n3.kind
                                 {
                                     self.eat()?; // consume "int"
+                                    keywords.push(TypeKeyword::Int);
                                 }
-                                Ok(Type::UnsignedLongLong(token.span))
+                                keywords.clear();
+                                keywords.push(TypeKeyword::UnsignedLongLong);
                             } else if let TokenKind::Keyword(KeywordKind::Int) = n2.kind {
                                 self.eat()?; // consume "int"
-                                Ok(Type::UnsignedLong(token.span))
-                            } else {
-                                Ok(Type::UnsignedLong(token.span))
+                                keywords.push(TypeKeyword::Int);
                             }
-                        } else {
-                            Ok(Type::UnsignedLong(token.span))
+                        }
+                        if keywords.len() == 2 {
+                            keywords.clear();
+                            keywords.push(TypeKeyword::UnsignedLong);
                         }
                     } else if let TokenKind::Keyword(KeywordKind::Int) = next.kind {
                         self.eat()?; // consume "int"
-                        Ok(Type::UnsignedInt(token.span))
+                        keywords.clear();
+                        keywords.push(TypeKeyword::UnsignedInt);
                     } else if let TokenKind::Keyword(KeywordKind::Char) = next.kind {
                         self.eat()?; // consume "char"
-                        Ok(Type::UnsignedChar(token.span))
+                        keywords.clear();
+                        keywords.push(TypeKeyword::UnsignedChar);
                     } else if let TokenKind::Keyword(KeywordKind::Short) = next.kind {
                         self.eat()?; // consume "short"
-                        Ok(Type::UnsignedShort(token.span))
-                    } else {
-                        Ok(Type::UnsignedInt(token.span))
+                        keywords.clear();
+                        keywords.push(TypeKeyword::UnsignedShort);
                     }
-                } else {
-                    Ok(Type::UnsignedInt(token.span))
                 }
+                Ok(TypeSpec {
+                    kind: TypeSpecKind::Builtin(keywords),
+                    pointer: 0,
+                    qualifiers: vec![],
+                    array_sizes: vec![],
+                })
             }
             KeywordKind::Short => {
-                self.eat()?; // consume "short"
                 let next_token = self.tokens.get(self.position).cloned();
                 if let Some(next) = next_token
                     && let TokenKind::Keyword(KeywordKind::Int) = next.kind
                 {
                     self.eat()?; // consume "int"
                 }
-                Ok(Type::Short(token.span))
+                Ok(TypeSpec {
+                    kind: TypeSpecKind::Builtin(vec![TypeKeyword::Short]),
+                    pointer: 0,
+                    qualifiers: vec![],
+                    array_sizes: vec![],
+                })
             }
             KeywordKind::Long => {
-                self.eat()?; // consume "long"
+                let mut keywords = vec![TypeKeyword::Long];
                 let next_token = self.tokens.get(self.position).cloned();
                 if let Some(next) = next_token {
                     if let TokenKind::Keyword(KeywordKind::Long) = next.kind {
                         self.eat()?; // consume second "long"
+                        keywords.push(TypeKeyword::Long);
                         let next2 = self.tokens.get(self.position).cloned();
                         if let Some(n2) = next2 {
                             if let TokenKind::Keyword(KeywordKind::Unsigned) = n2.kind {
                                 self.eat()?; // consume "unsigned"
-                                let next3 = self.tokens.get(self.position).cloned();
-                                if let Some(n3) = next3
-                                    && let TokenKind::Keyword(KeywordKind::Int) = n3.kind
-                                {
-                                    self.eat()?; // consume "int"
-                                }
-                                Ok(Type::UnsignedLongLong(token.span))
+                                keywords.clear();
+                                keywords.push(TypeKeyword::UnsignedLongLong);
                             } else if let TokenKind::Keyword(KeywordKind::Int) = n2.kind {
                                 self.eat()?; // consume "int"
-                                Ok(Type::LongLong(token.span))
-                            } else {
-                                Ok(Type::LongLong(token.span))
+                                keywords.clear();
+                                keywords.push(TypeKeyword::LongLong);
                             }
-                        } else {
-                            Ok(Type::LongLong(token.span))
+                        }
+                        if keywords.len() == 2 {
+                            keywords.clear();
+                            keywords.push(TypeKeyword::LongLong);
                         }
                     } else if let TokenKind::Keyword(KeywordKind::Unsigned) = next.kind {
                         self.eat()?; // consume "unsigned"
@@ -283,102 +302,127 @@ impl Parser {
                         if let Some(n2) = next2 {
                             if let TokenKind::Keyword(KeywordKind::Long) = n2.kind {
                                 self.eat()?; // consume "long"
-                                let next3 = self.tokens.get(self.position).cloned();
-                                if let Some(n3) = next3
-                                    && let TokenKind::Keyword(KeywordKind::Int) = n3.kind
-                                {
-                                    self.eat()?; // consume "int"
-                                }
-                                Ok(Type::UnsignedLongLong(token.span))
+                                keywords.clear();
+                                keywords.push(TypeKeyword::UnsignedLongLong);
                             } else if let TokenKind::Keyword(KeywordKind::Int) = n2.kind {
                                 self.eat()?; // consume "int"
-                                Ok(Type::UnsignedLong(token.span))
-                            } else {
-                                Ok(Type::UnsignedLong(token.span))
+                                keywords.clear();
+                                keywords.push(TypeKeyword::UnsignedLong);
                             }
-                        } else {
-                            Ok(Type::UnsignedLong(token.span))
+                        }
+                        if keywords.is_empty() {
+                            keywords.push(TypeKeyword::UnsignedLong);
                         }
                     } else if let TokenKind::Keyword(KeywordKind::Int) = next.kind {
                         self.eat()?; // consume "int"
-                        Ok(Type::Long(token.span))
-                    } else {
-                        Ok(Type::Long(token.span))
+                        keywords.clear();
+                        keywords.push(TypeKeyword::Long);
                     }
-                } else {
-                    Ok(Type::Long(token.span))
                 }
+                Ok(TypeSpec {
+                    kind: TypeSpecKind::Builtin(keywords),
+                    pointer: 0,
+                    qualifiers: vec![],
+                    array_sizes: vec![],
+                })
             }
-            KeywordKind::Int => self.parse_simple_type(Type::Int),
-            KeywordKind::Char => self.parse_simple_type(Type::Char),
-            KeywordKind::Float => self.parse_simple_type(Type::Float),
-            KeywordKind::Double => self.parse_simple_type(Type::Double),
-            KeywordKind::Void => self.parse_simple_type(Type::Void),
-            KeywordKind::Bool => self.parse_simple_type(Type::Bool),
-            KeywordKind::Struct => self.parse_struct_or_union(
-                |name, members, span| {
-                    if let Some(members) = members {
-                        Type::Struct(name, members, span)
-                    } else if let Some(name) = name {
-                        Type::Struct(Some(name), ThinVec::new(), span)
-                    } else {
-                        unreachable!()
-                    }
-                },
-                token.span,
-            ),
-            KeywordKind::Union => self.parse_struct_or_union(
-                |name, members, span| {
-                    if let Some(members) = members {
-                        Type::Union(name, members, span)
-                    } else if let Some(name) = name {
-                        Type::Union(Some(name), ThinVec::new(), span)
-                    } else {
-                        unreachable!()
-                    }
-                },
-                token.span,
-            ),
-            KeywordKind::Enum => self.parse_enum_specifier(),
-            _ => Err(ParserError::UnexpectedToken(token)),
+            KeywordKind::Int => Ok(TypeSpec {
+                kind: TypeSpecKind::Builtin(vec![TypeKeyword::Int]),
+                pointer: 0,
+                qualifiers: vec![],
+                array_sizes: vec![],
+            }),
+            KeywordKind::Char => Ok(TypeSpec {
+                kind: TypeSpecKind::Builtin(vec![TypeKeyword::Char]),
+                pointer: 0,
+                qualifiers: vec![],
+                array_sizes: vec![],
+            }),
+            KeywordKind::Float => Ok(TypeSpec {
+                kind: TypeSpecKind::Builtin(vec![TypeKeyword::Float]),
+                pointer: 0,
+                qualifiers: vec![],
+                array_sizes: vec![],
+            }),
+            KeywordKind::Double => Ok(TypeSpec {
+                kind: TypeSpecKind::Builtin(vec![TypeKeyword::Double]),
+                pointer: 0,
+                qualifiers: vec![],
+                array_sizes: vec![],
+            }),
+            KeywordKind::Void => Ok(TypeSpec {
+                kind: TypeSpecKind::Builtin(vec![TypeKeyword::Void]),
+                pointer: 0,
+                qualifiers: vec![],
+                array_sizes: vec![],
+            }),
+            KeywordKind::Bool => Ok(TypeSpec {
+                kind: TypeSpecKind::Builtin(vec![TypeKeyword::Bool]),
+                pointer: 0,
+                qualifiers: vec![],
+                array_sizes: vec![],
+            }),
+            KeywordKind::Struct => {
+                let name = self.maybe_name()?;
+                if self.eat_token(&TokenKind::LeftBrace)? {
+                    let _members = self.parse_struct_or_union_members()?;
+                }
+                Ok(TypeSpec {
+                    kind: TypeSpecKind::Struct(name),
+                    pointer: 0,
+                    qualifiers: vec![],
+                    array_sizes: vec![],
+                })
+            }
+            KeywordKind::Union => {
+                let name = self.maybe_name()?;
+                if self.eat_token(&TokenKind::LeftBrace)? {
+                    let _members = self.parse_struct_or_union_members()?;
+                }
+                Ok(TypeSpec {
+                    kind: TypeSpecKind::Union(name),
+                    pointer: 0,
+                    qualifiers: vec![],
+                    array_sizes: vec![],
+                })
+            }
+            KeywordKind::Enum => {
+                let name = self.maybe_name()?;
+                if self.eat_token(&TokenKind::LeftBrace)? {
+                    // Parse enum members but don't store them in TypeSpec for now
+                    let _enumerators = self.parse_enum_specifier_members()?;
+                }
+                Ok(TypeSpec {
+                    kind: TypeSpecKind::Enum(name),
+                    pointer: 0,
+                    qualifiers: vec![],
+                    array_sizes: vec![],
+                })
+            }
+            _ => {
+                let token = self.current_token()?;
+                Err(ParserError::UnexpectedToken(token))
+            }
         }
-    }
-    /// Parses a simple type keyword and returns the corresponding `Type`.
-    fn parse_simple_type(
-        &mut self,
-        constructor: fn(SourceSpan) -> Type,
-    ) -> Result<Type, ParserError> {
-        let token = self.current_token()?;
-        self.eat()?;
-        Ok(constructor(token.span))
     }
 
-    /// Parses an enum specifier.
-    fn parse_enum_specifier(&mut self) -> Result<Type, ParserError> {
-        let token = self.current_token()?;
-        self.eat()?; // consume 'enum'
-        let name = self.maybe_name()?;
-        if self.eat_token(&TokenKind::LeftBrace)? {
-            let mut enumerators = ThinVec::new();
-            if !self.eat_token(&TokenKind::RightBrace)? {
-                loop {
-                    enumerators.push(self.parse_enumerator()?);
-                    if !self.eat_token(&TokenKind::Comma)? {
-                        self.expect_punct(TokenKind::RightBrace)?;
-                        break;
-                    }
-                    if self.eat_token(&TokenKind::RightBrace)? {
-                        break;
-                    }
+
+    /// Parses enum members without returning a full Type.
+    fn parse_enum_specifier_members(&mut self) -> Result<ThinVec<(StringId, Option<Box<Expr>>, SourceSpan)>, ParserError> {
+        let mut enumerators = ThinVec::new();
+        if !self.eat_token(&TokenKind::RightBrace)? {
+            loop {
+                enumerators.push(self.parse_enumerator()?);
+                if !self.eat_token(&TokenKind::Comma)? {
+                    self.expect_punct(TokenKind::RightBrace)?;
+                    break;
+                }
+                if self.eat_token(&TokenKind::RightBrace)? {
+                    break;
                 }
             }
-            Ok(Type::Enum(name, enumerators, token.span))
-        } else if let Some(name) = name {
-            Ok(Type::Enum(Some(name), ThinVec::new(), token.span))
-        } else {
-            let token = self.current_token()?;
-            Err(ParserError::UnexpectedToken(token))
         }
+        Ok(enumerators)
     }
 
     /// Parses a single enumerator.
@@ -394,68 +438,65 @@ impl Parser {
             Ok((name, None, token.span))
         }
     }
-
-    /// Parses a struct or union type.
-    fn parse_struct_or_union<F>(
-        &mut self,
-        constructor: F,
-        span: SourceSpan,
-    ) -> Result<Type, ParserError>
-    where
-        F: Fn(Option<StringId>, Option<ThinVec<Parameter>>, SourceSpan) -> Type,
-    {
-        self.eat()?;
-        let name = self.maybe_name()?;
-        match self.current_kind()? {
-            TokenKind::LeftBrace => {
-                let members = self.parse_struct_or_union_members()?;
-                Ok(constructor(name, Some(members), span))
-            }
-            _ if name.is_some() => Ok(constructor(name, None, span)),
-            _ => {
-                let token = self.current_token()?;
-                Err(ParserError::UnexpectedToken(token))
-            }
-        }
-    }
     /// Parses members for struct or union.
     fn parse_struct_or_union_members(&mut self) -> Result<ThinVec<Parameter>, ParserError> {
-        self.parse_delimited_list(
-            TokenKind::LeftBrace,
-            TokenKind::RightBrace,
-            TokenKind::Semicolon,
-            |p| {
-                let base_ty = p.parse_type_specifier()?;
-                let (ty, name, id_token) = p.parse_declarator_suffix(base_ty)?;
-                Ok(Parameter {
-                    ty,
-                    name,
-                    span: id_token.span,
-                })
-            },
-        )
+        let mut members = ThinVec::new();
+        
+        // Parse fields until we hit the closing brace
+        while !self.eat_token(&TokenKind::RightBrace)? {
+            // Skip any empty declarations or invalid tokens
+            if let Ok(kind) = self.current_kind() {
+                if matches!(kind, TokenKind::Semicolon) {
+                    self.eat_token(&TokenKind::Semicolon)?;
+                    continue;
+                }
+                
+                // Try to parse a field declaration
+                if let Ok(field_param) = self.parse_struct_field() {
+                    members.push(field_param);
+                } else {
+                    // If parsing fails, skip the problematic token and continue
+                    let _ = self.eat();
+                }
+            } else {
+                // EOF or error, break out
+                break;
+            }
+        }
+        
+        Ok(members)
+    }
+    
+    /// Parses a single struct/union field
+    fn parse_struct_field(&mut self) -> Result<Parameter, ParserError> {
+        let base_type_spec = self.parse_type_specifier()?;
+        let (ty, name, id_token) = self.parse_declarator_suffix(base_type_spec)?;
+        self.expect_punct(TokenKind::Semicolon)?;
+        Ok(Parameter {
+            ty,
+            name,
+            span: id_token.span,
+        })
     }
 
     /// Parses declarator suffixes (pointers and arrays) and returns the final type and identifier.
     /// This function assumes the base type has already been parsed.
     fn parse_declarator_suffix(
         &mut self,
-        base_type: Type,
-    ) -> Result<(Type, StringId, Token), ParserError> {
-        let mut ty = base_type;
-
-        // Parse pointers
+        mut base_type_spec: TypeSpec,
+    ) -> Result<(TypeSpec, StringId, Token), ParserError> {
+        // Parse pointers and their qualifiers
         while let Ok(token) = self.current_token() {
             if token.kind == TokenKind::Star {
                 self.eat()?;
-                ty = Type::Pointer(Box::new(ty), token.span);
+                base_type_spec.pointer += 1;
                 while let Ok(token) = self.current_token() {
                     if token.kind == TokenKind::Keyword(KeywordKind::Const) {
                         self.eat()?;
-                        ty = Type::Const(Box::new(ty), token.span);
+                        base_type_spec.qualifiers.push(TypeQualifier::Const);
                     } else if token.kind == TokenKind::Keyword(KeywordKind::Volatile) {
                         self.eat()?;
-                        ty = Type::Volatile(Box::new(ty), token.span);
+                        base_type_spec.qualifiers.push(TypeQualifier::Volatile);
                     } else {
                         break;
                     }
@@ -487,7 +528,9 @@ impl Parser {
             if token.kind == TokenKind::LeftBracket {
                 self.eat()?;
                 if self.eat_token(&TokenKind::RightBracket)? {
-                    ty = Type::Array(Box::new(ty), 0, token.span); // Unsized array
+                    // Unsized array
+                    let size_expr = Expr::Number(0, token.span);
+                    base_type_spec.array_sizes.push(Box::new(size_expr));
                 } else {
                     let size_expr = self.parse_expr()?;
                     let size = if let Expr::Number(n, _) = size_expr {
@@ -497,21 +540,24 @@ impl Parser {
                         return Err(ParserError::UnexpectedToken(token));
                     };
                     self.expect_punct(TokenKind::RightBracket)?;
-                    ty = Type::Array(Box::new(ty), size, token.span);
+                    // For fixed-size arrays, use the actual size
+                    let array_expr = Expr::Number(size as i64, token.span);
+                    base_type_spec.array_sizes.push(Box::new(array_expr));
                 }
             } else {
                 break;
             }
         }
-        Ok((ty, id, final_token))
+        Ok((base_type_spec, id, final_token))
     }
 
     /// Parses a declarator with optional initializer.
-    fn parse_declarator(&mut self, base_type: Type) -> Result<ast::Declarator, ParserError> {
-        let (ty, name, id_token) = self.parse_declarator_suffix(base_type)?;
+    fn parse_declarator(&mut self, base_type_spec: TypeSpec) -> Result<ast::Declarator, ParserError> {
+        let (type_spec, name, id_token) = self.parse_declarator_suffix(base_type_spec)?;
         let initializer = self.parse_initializer_expr()?;
+        
         Ok(ast::Declarator {
-            ty,
+            ty: type_spec,
             name,
             initializer,
             span: id_token.span,
@@ -536,8 +582,8 @@ impl Parser {
     }
 
     /// Parses a type. This function now orchestrates `parse_type_specifier` and `parse_declarator_suffix`.
-    fn parse_type(&mut self) -> Result<Type, ParserError> {
-        let base_type = self.parse_type_specifier()?;
+    fn parse_type(&mut self) -> Result<TypeSpec, ParserError> {
+        let base_type_spec = self.parse_type_specifier()?;
         // For abstract declarators (e.g., `int *`), there might not be an identifier immediately.
         // This function is primarily for parsing a full type with a declarator.
         // If we are just parsing a type for a cast or sizeof, we might not have an identifier.
@@ -545,12 +591,12 @@ impl Parser {
         let original_pos = self.position;
         if let Ok(kind) = self.current_kind()
             && matches!(kind, TokenKind::Star | TokenKind::LeftBracket)
-            && let Ok((ty, _, _)) = self.parse_declarator_suffix(base_type.clone())
+            && let Ok((type_spec, _, _)) = self.parse_declarator_suffix(base_type_spec.clone())
         {
-            return Ok(ty);
+            return Ok(type_spec);
         }
         self.position = original_pos; // Backtrack if no declarator suffix found
-        Ok(base_type)
+        Ok(base_type_spec)
     }
 
     /// Parses an expression.
@@ -983,13 +1029,13 @@ impl Parser {
             }
             return Ok(Stmt::Block(stmts));
         } else if self.eat_token(&TokenKind::Keyword(KeywordKind::Static))? {
-            let base_type = self.parse_type_specifier()?;
+            let base_type_spec = self.parse_type_specifier()?;
             if self.eat_token(&TokenKind::Semicolon)? {
-                return Ok(Stmt::Declaration(Box::new(base_type), ThinVec::new(), true));
+                return Ok(Stmt::Declaration(Box::new(base_type_spec), ThinVec::new(), true));
             }
             let mut declarators = ThinVec::new();
             loop {
-                let declarator = self.parse_declarator(base_type.clone())?;
+                let declarator = self.parse_declarator(base_type_spec.clone())?;
                 declarators.push(declarator);
 
                 if !self.eat_token(&TokenKind::Comma)? {
@@ -997,21 +1043,21 @@ impl Parser {
                 }
             }
             self.expect_punct(TokenKind::Semicolon)?;
-            return Ok(Stmt::Declaration(Box::new(base_type), declarators, true));
+            return Ok(Stmt::Declaration(Box::new(base_type_spec), declarators, true));
         }
 
         if self.is_type_name() && self.peek()? != TokenKind::LeftParen {
-            let base_type = self.parse_type_specifier()?;
+            let base_type_spec = self.parse_type_specifier()?;
             if self.eat_token(&TokenKind::Semicolon)? {
                 return Ok(Stmt::Declaration(
-                    Box::new(base_type),
+                    Box::new(base_type_spec),
                     ThinVec::new(),
                     false,
                 ));
             }
             let mut declarators = ThinVec::new();
             loop {
-                let declarator = self.parse_declarator(base_type.clone())?;
+                let declarator = self.parse_declarator(base_type_spec.clone())?;
                 declarators.push(declarator);
 
                 if !self.eat_token(&TokenKind::Comma)? {
@@ -1019,7 +1065,7 @@ impl Parser {
                 }
             }
             self.expect_punct(TokenKind::Semicolon)?;
-            return Ok(Stmt::Declaration(Box::new(base_type), declarators, false));
+            return Ok(Stmt::Declaration(Box::new(base_type_spec), declarators, false));
         }
 
         if let TokenKind::Keyword(k) = token.kind {
@@ -1053,10 +1099,10 @@ impl Parser {
                     if p.eat_token(&TokenKind::Keyword(KeywordKind::Static))? {
                         return Err(ParserError::UnexpectedToken(p.current_token()?));
                     }
-                    let result = if let Ok(ty) = p.parse_type() {
+                    let result = if let Ok(type_spec) = p.parse_type_specifier() {
                         let id = p.expect_name()?;
                         let initializer = p.parse_initializer_expr()?;
-                        ForInit::Declaration(ty, id, initializer)
+                        ForInit::Declaration(type_spec, id, initializer)
                     } else {
                         ForInit::Expr(p.parse_expr()?)
                     };
@@ -1110,10 +1156,10 @@ impl Parser {
                 return Ok(Stmt::DoWhile(Box::new(body), Box::new(cond)));
             } else if k == KeywordKind::Typedef {
                 self.eat()?;
-                let base_ty = self.parse_type_specifier()?;
+                let base_type_spec = self.parse_type_specifier()?;
                 loop {
-                    let (ty, name, _) = self.parse_declarator_suffix(base_ty.clone())?;
-                    self.typedefs.insert(name, ty);
+                    let (type_spec, name, _) = self.parse_declarator_suffix(base_type_spec.clone())?;
+                    self.typedefs.insert(name, type_spec);
                     if !self.eat_token(&TokenKind::Comma)? {
                         break;
                     }
@@ -1164,10 +1210,10 @@ impl Parser {
             }
         }
 
-        let base_type = self.parse_type_specifier()?;
+        let base_type_spec = self.parse_type_specifier()?;
 
         // Parse declarator suffix (including pointers, arrays, and function name)
-        let (ty, id, _) = self.parse_declarator_suffix(base_type)?;
+        let (type_spec, id, _) = self.parse_declarator_suffix(base_type_spec)?;
 
         self.expect_punct(TokenKind::LeftParen)?;
         let mut params = ThinVec::new();
@@ -1193,7 +1239,7 @@ impl Parser {
             }
         }
         Ok(FunctionSignature(
-            ty,
+            type_spec,
             id,
             params,
             is_inline,
@@ -1204,15 +1250,26 @@ impl Parser {
 
     /// Parses a function.
     fn parse_function(&mut self) -> Result<Function, ParserError> {
-        let FunctionSignature(return_type, name, params, is_inline, is_variadic, is_noreturn) =
+        let FunctionSignature(_return_type, name, params, is_inline, is_variadic, is_noreturn) =
             self.parse_function_signature()?;
+        
+        // Convert return Type back to TypeSpec for Function struct
+        let base_type_spec = self.parse_type_specifier()?;
+        let (type_spec, _, _) = self.parse_declarator_suffix(base_type_spec)?;
+        let return_type_spec = TypeSpec {
+            kind: TypeSpecKind::Builtin(vec![]), // Convert Type back to TypeSpec
+            pointer: 0,
+            qualifiers: vec![],
+            array_sizes: vec![],
+        };
+        
         self.expect_punct(TokenKind::LeftBrace)?;
         let mut stmts = ThinVec::new();
         while self.eat_token(&TokenKind::RightBrace)? == false {
             stmts.push(self.parse_stmt()?);
         }
         Ok(Function {
-            return_type,
+            return_type: return_type_spec,
             name,
             params,
             body: stmts,
@@ -1233,8 +1290,14 @@ impl Parser {
             self.parse_function_signature()
         {
             if self.eat_token(&TokenKind::Semicolon)? {
+                let type_spec = TypeSpec {
+                    kind: TypeSpecKind::Builtin(vec![]), // Convert Type back to TypeSpec
+                    pointer: 0,
+                    qualifiers: vec![],
+                    array_sizes: vec![],
+                };
                 return Ok(Stmt::FunctionDeclaration {
-                    ty: Box::new(ty),
+                    ty: Box::new(type_spec),
                     name,
                     params,
                     is_variadic,
@@ -1250,10 +1313,10 @@ impl Parser {
         self.position = pos;
 
         if self.eat_token(&TokenKind::Keyword(KeywordKind::Typedef))? {
-            let base_ty = self.parse_type_specifier()?;
+            let base_type_spec = self.parse_type_specifier()?;
             loop {
-                let (ty, name, _) = self.parse_declarator_suffix(base_ty.clone())?;
-                self.typedefs.insert(name, ty);
+                let (type_spec, name, _) = self.parse_declarator_suffix(base_type_spec.clone())?;
+                self.typedefs.insert(name, type_spec);
                 if !self.eat_token(&TokenKind::Comma)? {
                     break;
                 }
@@ -1263,20 +1326,20 @@ impl Parser {
         }
 
         let is_static = self.eat_token(&TokenKind::Keyword(KeywordKind::Static))?;
-        let base_type = self.parse_type_specifier()?;
+        let base_type_spec = self.parse_type_specifier()?;
         if self.eat_token(&TokenKind::Semicolon)? {
             return Ok(Stmt::Declaration(
-                Box::new(base_type),
+                Box::new(base_type_spec),
                 ThinVec::new(),
                 is_static,
             ));
         }
         let mut declarators = ThinVec::new();
         loop {
-            let (ty, name, id_token) = self.parse_declarator_suffix(base_type.clone())?;
+            let (type_spec, name, id_token) = self.parse_declarator_suffix(base_type_spec.clone())?;
             let initializer = self.parse_initializer_expr()?;
             declarators.push(ast::Declarator {
-                ty,
+                ty: type_spec,
                 name,
                 initializer,
                 span: id_token.span,
@@ -1288,7 +1351,7 @@ impl Parser {
         }
         self.expect_punct(TokenKind::Semicolon)?;
         Ok(Stmt::Declaration(
-            Box::new(base_type),
+            Box::new(base_type_spec),
             declarators,
             is_static,
         ))
@@ -1346,35 +1409,6 @@ impl Parser {
 
             Ok(Some(item))
         }
-    }
-
-    /// Parses a delimited list of items.
-    fn parse_delimited_list<T, F>(
-        &mut self,
-        start_token: TokenKind,
-        end_token: TokenKind,
-        separator: TokenKind,
-        mut parse_item: F,
-    ) -> Result<ThinVec<T>, ParserError>
-    where
-        F: FnMut(&mut Self) -> Result<T, ParserError>,
-    {
-        self.expect_punct(start_token)?;
-        let mut items = ThinVec::new();
-        if self.eat_token(&end_token)? {
-            return Ok(items);
-        }
-        loop {
-            items.push(parse_item(self)?);
-            if self.eat_token(&end_token)? {
-                break;
-            }
-            self.expect_punct(separator.clone())?;
-            if self.eat_token(&end_token)? {
-                break;
-            }
-        }
-        Ok(items)
     }
 
     /// Parses a `_Static_assert` declaration.

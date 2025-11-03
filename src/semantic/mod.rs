@@ -1,8 +1,6 @@
 use crate::SourceSpan;
 use crate::parser::ast::{
-    AssignOp, BinOp, Designator, Expr, ForInit, Function, Initializer, Stmt, TranslationUnit, Type,
-    TypedDeclarator, TypedDesignator, TypedExpr, TypedForInit, TypedFunctionDecl, TypedInitializer,
-    TypedLValue, TypedStmt, TypedTranslationUnit,
+    AssignOp, BinOp, Designator, Expr, ForInit, Function, Initializer, Stmt, TranslationUnit, Type, TypeSpec, TypeSpecKind, TypedDeclarator, TypedDesignator, TypedExpr, TypedForInit, TypedFunctionDecl, TypedInitializer, TypedLValue, TypedParameter, TypedStmt, TypedTranslationUnit
 };
 use crate::parser::string_interner::StringInterner;
 use crate::semantic::error::SemanticError;
@@ -291,10 +289,11 @@ impl SemanticAnalyzer {
                             self.err(SemanticError::FunctionRedeclaration(*name), span);
                         }
                     } else {
+                        let ty = Type::from_type_spec(&ty, span);
                         self.symbol_table.insert(
                             *name,
                             Symbol {
-                                ty: ty.as_ref().clone(),
+                                ty,
                                 is_function: true,
                                 span,
                                 is_builtin: false,
@@ -303,7 +302,10 @@ impl SemanticAnalyzer {
                     }
                 }
                 Stmt::Declaration(ty, declarators, _is_static) => {
-                    if let Type::Enum(_name, members, _) = &**ty
+                    // Convert TypeSpec to Type for processing
+                    let converted_ty = Type::from_type_spec(ty.as_ref(), SourceSpan::default());
+                    
+                    if let Type::Enum(_name, members, _) = &converted_ty
                         && !members.is_empty()
                     {
                         let mut next_value = 0;
@@ -326,14 +328,14 @@ impl SemanticAnalyzer {
                             }
                             next_value = val + 1;
                         }
-                    } else if let Type::Struct(Some(name), members, _) = &**ty {
+                    } else if let Type::Struct(Some(name), members, _) = &converted_ty {
                         if !members.is_empty() || !self.struct_definitions.contains_key(name) {
-                            self.struct_definitions.insert(*name, ty.as_ref().clone());
+                            self.struct_definitions.insert(*name, converted_ty);
                         }
-                    } else if let Type::Union(Some(name), members, _) = &**ty
+                    } else if let Type::Union(Some(name), members, _) = &converted_ty
                         && (!members.is_empty() || !self.union_definitions.contains_key(name))
                     {
-                        self.union_definitions.insert(*name, ty.as_ref().clone());
+                        self.union_definitions.insert(*name, converted_ty);
                     }
 
                     for declarator in declarators {
@@ -350,7 +352,7 @@ impl SemanticAnalyzer {
                             self.symbol_table.insert(
                                 declarator.name,
                                 Symbol {
-                                    ty: declarator.ty.clone(),
+                                    ty: Type::from_type_spec(&declarator.ty, declarator.span),
                                     is_function: false,
                                     span: declarator.span,
                                     is_builtin: false,
@@ -371,10 +373,11 @@ impl SemanticAnalyzer {
                     self.err(SemanticError::FunctionRedeclaration(function.name), span);
                 }
             } else {
+                let ty = Type::from_type_spec(&function.return_type, span);
                 self.symbol_table.insert(
                     function.name,
                     Symbol {
-                        ty: function.return_type.clone(),
+                        ty,
                         is_function: true,
                         span,
                         is_builtin: false,
@@ -499,17 +502,27 @@ impl SemanticAnalyzer {
         // First pass: collect all labels in the function
         self.collect_labels(&function.body);
 
-        // Check parameters for redeclaration
+        // Check parameters for redeclaration and convert to TypedParameter
         let mut param_names = std::collections::HashSet::new();
+        let mut typed_params = ThinVec::new();
         for param in &function.params {
             if !param_names.insert(param.name) {
                 self.err(SemanticError::VariableRedeclaration(param.name), param.span);
             }
+            // Convert TypeSpec to Type and create TypedParameter
+            let ty = Type::from_type_spec(&param.ty, param.span);
+            let typed_param = TypedParameter {
+                ty: ty.clone(),
+                name: param.name,
+                span: param.span,
+            };
+            typed_params.push(typed_param);
+            
             // Add parameters to local symbol table
             self.symbol_table.insert(
                 param.name,
                 Symbol {
-                    ty: param.ty.clone(),
+                    ty,
                     is_function: false,
                     span: param.span,
                     is_builtin: false,
@@ -536,10 +549,11 @@ impl SemanticAnalyzer {
         self.current_function = None;
         self.used_variables.clear();
 
+        let return_type = Type::from_type_spec(&function.return_type, SourceSpan::default());
         TypedFunctionDecl {
-            return_type: function.return_type,
+            return_type,
             name: function.name,
-            params: function.params,
+            params: typed_params,
             body: typed_body,
             is_inline: function.is_inline,
             is_variadic: function.is_variadic,
@@ -551,69 +565,40 @@ impl SemanticAnalyzer {
     fn check_statement(&mut self, stmt: Stmt) -> TypedStmt {
         match stmt {
             Stmt::Declaration(ty, declarators, is_static) => {
-                let mut base_ty = ty.clone();
-                match &mut *base_ty {
-                    Type::Struct(Some(name), members, _) => {
-                        if !members.is_empty() {
-                            for member in members.iter_mut() {
-                                if let Type::Struct(Some(s_name), s_members, _) = &member.ty {
-                                    if s_members.is_empty()
-                                        && let Some(def) = self.struct_definitions.get(s_name)
-                                    {
-                                        member.ty = def.clone();
-                                    }
-                                } else if let Type::Union(Some(u_name), u_members, _) = &member.ty
-                                    && u_members.is_empty()
-                                    && let Some(def) = self.union_definitions.get(u_name)
-                                {
-                                    member.ty = def.clone();
-                                }
-                            }
-                            self.struct_definitions.insert(*name, *base_ty.clone());
-                        }
+                let base_ty = Type::from_type_spec(&ty, SourceSpan::default());
+                
+                // Handle struct/union definitions by converting TypeSpec to Type first
+                if let Type::Struct(Some(name), members, _) = &base_ty {
+                    if !members.is_empty() {
+                        self.struct_definitions.insert(name.clone(), base_ty.clone());
                     }
-                    Type::Union(Some(name), members, _) => {
-                        for member in members.iter_mut() {
-                            if let Type::Struct(Some(s_name), s_members, _) = &member.ty {
-                                if s_members.is_empty()
-                                    && let Some(def) = self.struct_definitions.get(s_name)
-                                {
-                                    member.ty = def.clone();
-                                }
-                            } else if let Type::Union(Some(u_name), u_members, _) = &member.ty
-                                && u_members.is_empty()
-                                && let Some(def) = self.union_definitions.get(u_name)
-                            {
-                                member.ty = def.clone();
-                            }
-                        }
-                        if !members.is_empty() || !self.union_definitions.contains_key(name) {
-                            self.union_definitions.insert(*name, *base_ty.clone());
-                        }
+                } else if let Type::Union(Some(name), members, _) = &base_ty {
+                    if !members.is_empty() || !self.union_definitions.contains_key(name) {
+                        self.union_definitions.insert(name.clone(), base_ty.clone());
                     }
-                    _ => {}
                 }
-                if let Type::Enum(_name, members, _) = *ty {
+                
+                if let Type::Enum(_name, members, _) = &base_ty {
                     // Only process enum constants for local enums (inside functions)
                     // Global enums are already processed in collect_symbols
                     if self.current_function.is_some() {
                         let mut next_value = 0;
                         for (name, value, span) in members {
                             let val = if let Some(expr) = value {
-                                if let Expr::Number(num, _) = *expr {
+                                if let Expr::Number(num, _) = **expr {
                                     num
                                 } else {
-                                    self.err(SemanticError::InvalidEnumInitializer(name), span);
+                                    self.err(SemanticError::InvalidEnumInitializer(*name), *span);
                                     -1 // Dummy value
                                 }
                             } else {
                                 next_value
                             };
 
-                            if let Vacant(e) = self.enum_constants.entry(name) {
+                            if let Vacant(e) = self.enum_constants.entry(*name) {
                                 e.insert(val);
                             } else {
-                                self.err(SemanticError::VariableRedeclaration(name), span);
+                                self.err(SemanticError::VariableRedeclaration(*name), *span);
                             };
                             next_value = val + 1;
                         }
@@ -633,7 +618,7 @@ impl SemanticAnalyzer {
                         );
                     }
 
-                    let declarator_ty = self.resolve_type(&declarator.ty);
+                    let declarator_ty = Type::from_type_spec(&declarator.ty, declarator.span);
 
                     // Insert symbol if not already present
                     if self.symbol_table.lookup(&declarator.name).is_none() {
@@ -671,7 +656,7 @@ impl SemanticAnalyzer {
                         initializer: typed_initializer,
                     });
                 }
-                TypedStmt::Declaration(*base_ty, typed_declarators, is_static)
+                TypedStmt::Declaration(base_ty, typed_declarators, is_static)
             }
             Stmt::Expr(expr) => {
                 let typed_expr = self.check_expression(*expr);
@@ -697,7 +682,7 @@ impl SemanticAnalyzer {
             }
             Stmt::For(init, cond, inc, body) => {
                 let typed_init = init.map(|i| match *i {
-                    ForInit::Declaration(ty, name, initializer) => {
+                    ForInit::Declaration(type_spec, name, initializer) => {
                         if let Some(existing) = self.symbol_table.lookup(&name) {
                             if !existing.is_function {
                                 self.err(
@@ -706,10 +691,11 @@ impl SemanticAnalyzer {
                                 );
                             }
                         } else {
+                            let ty = Type::from_type_spec(&type_spec, SourceSpan::default());
                             self.symbol_table.insert(
                                 name,
                                 Symbol {
-                                    ty: ty.clone(),
+                                    ty,
                                     is_function: false,
                                     span: SourceSpan::default(),
                                     is_builtin: false,
@@ -718,6 +704,7 @@ impl SemanticAnalyzer {
                         }
                         let typed_initializer =
                             initializer.map(|init| self.convert_initializer_to_typed(init));
+                        let ty = Type::from_type_spec(&type_spec, SourceSpan::default());
                         TypedForInit::Declaration(ty, name, typed_initializer)
                     }
                     ForInit::Expr(expr) => {
@@ -812,13 +799,28 @@ impl SemanticAnalyzer {
                 is_variadic,
                 is_inline,
                 is_noreturn,
-            } => TypedStmt::FunctionDeclaration {
-                ty: *ty,
-                name,
-                params,
-                is_variadic,
-                is_inline,
-                is_noreturn,
+            } => {
+                // Convert TypeSpec to Type
+                let converted_ty = Type::from_type_spec(ty.as_ref(), SourceSpan::default());
+                
+                // Convert Parameter to TypedParameter
+                let typed_params: ThinVec<TypedParameter> = params
+                    .iter()
+                    .map(|param| TypedParameter {
+                        ty: Type::from_type_spec(&param.ty, param.span),
+                        name: param.name,
+                        span: param.span,
+                    })
+                    .collect();
+                    
+                TypedStmt::FunctionDeclaration {
+                    ty: converted_ty,
+                    name,
+                    params: typed_params,
+                    is_variadic,
+                    is_inline,
+                    is_noreturn,
+                }
             },
             Stmt::Break => {
                 if !self.in_switch && !self.in_loop {
@@ -1194,10 +1196,12 @@ impl SemanticAnalyzer {
                 )
             }
             Expr::SizeofType(ty) => {
-                TypedExpr::SizeofType(ty, SourceSpan::default(), Type::Int(SourceSpan::default()))
+                let converted_ty = Type::from_type_spec(&ty, SourceSpan::default());
+                TypedExpr::SizeofType(converted_ty, SourceSpan::default(), Type::Int(SourceSpan::default()))
             }
             Expr::AlignofType(ty) => {
-                TypedExpr::AlignofType(ty, SourceSpan::default(), Type::Int(SourceSpan::default()))
+                let converted_ty = Type::from_type_spec(&ty, SourceSpan::default());
+                TypedExpr::AlignofType(converted_ty, SourceSpan::default(), Type::Int(SourceSpan::default()))
             }
             Expr::Ternary(cond, then_expr, else_expr) => {
                 let cond_typed = self.check_expression(*cond);
@@ -1286,32 +1290,35 @@ impl SemanticAnalyzer {
             }
             Expr::ExplicitCast(ty, expr) => {
                 let typed_expr = self.check_expression(*expr);
+                let converted_ty = Type::from_type_spec(&ty, SourceSpan::default());
                 TypedExpr::ExplicitCast(
-                    Box::new(*ty.clone()),
+                    Box::new(converted_ty.clone()),
                     Box::new(typed_expr),
                     SourceSpan::default(),
-                    *ty.clone(),
+                    converted_ty,
                 )
             }
             Expr::ImplicitCast(ty, expr) => {
                 let typed_expr = self.check_expression(*expr);
+                let converted_ty = Type::from_type_spec(&ty, SourceSpan::default());
                 TypedExpr::ImplicitCast(
-                    Box::new(*ty.clone()),
+                    Box::new(converted_ty.clone()),
                     Box::new(typed_expr),
                     SourceSpan::default(),
-                    *ty.clone(),
+                    converted_ty,
                 )
             }
             Expr::CompoundLiteral(ty, initializer) => {
                 let typed_initializer = self.convert_initializer_to_typed(*initializer);
-                let mut final_ty = *ty.clone();
+                let mut final_ty = Type::from_type_spec(&ty, SourceSpan::default());
                 if let Type::Array(elem_ty, 0, span) = &final_ty
                     && let TypedInitializer::List(list) = &typed_initializer
                 {
                     final_ty = Type::Array(elem_ty.clone(), list.len(), *span);
                 }
+                let converted_ty = Box::new(Type::from_type_spec(&ty, SourceSpan::default()));
                 let mut typed_expr = TypedExpr::CompoundLiteral(
-                    ty,
+                    converted_ty,
                     Box::new(typed_initializer),
                     SourceSpan::default(),
                     final_ty.clone(),

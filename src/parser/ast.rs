@@ -10,6 +10,72 @@ pub type InitializerList = ThinVec<(ThinVec<Designator>, Box<Initializer>)>;
 /// Type alias for typed initializer lists.
 pub type TypedInitializerList = ThinVec<(ThinVec<TypedDesignator>, Box<TypedInitializer>)>;
 
+/// Qualifiers for pointer/array types
+#[derive(Debug, Clone, PartialEq)]
+pub enum TypeQualifier {
+    Const,
+    Volatile,
+}
+
+/// Type keywords for builtin types
+#[derive(Debug, Clone, PartialEq)]
+pub enum TypeKeyword {
+    Int,
+    Char,
+    Short,
+    Float,
+    Double,
+    Long,
+    LongLong,
+    UnsignedInt,
+    UnsignedChar,
+    UnsignedShort,
+    UnsignedLong,
+    UnsignedLongLong,
+    Void,
+    Bool,
+}
+
+/// Syntactic type from parser
+#[derive(Debug, Clone, PartialEq)]
+pub enum TypeSpecKind {
+    Builtin(Vec<TypeKeyword>),
+    Struct(Option<StringId>), // None = anonymous
+    Union(Option<StringId>),
+    Enum(Option<StringId>),
+    Typedef(StringId),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypeSpec {
+    pub kind: TypeSpecKind,
+    pub pointer: usize,
+    pub qualifiers: Vec<TypeQualifier>,
+    pub array_sizes: Vec<Box<Expr>>,
+}
+
+impl TypeSpec {
+    pub fn span(&self) -> SourceSpan {
+        SourceSpan::default()
+    }
+}
+
+/// Field in struct/union
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructField {
+    pub name: StringId,
+    pub type_spec: TypeSpec,
+    pub span: SourceSpan,
+}
+
+/// Struct declaration node
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructDecl {
+    pub name: Option<StringId>,       // None = anonymous
+    pub fields: Vec<StructField>,     // empty if forward declaration
+    pub span: SourceSpan,
+}
+
 /// Represents a type in the C language.
 #[derive(Debug, PartialEq, Clone)]
 pub enum Type {
@@ -46,9 +112,9 @@ pub enum Type {
     /// An array of a specific size.
     Array(Box<Type>, usize, SourceSpan),
     /// A struct definition.
-    Struct(Option<StringId>, ThinVec<Parameter>, SourceSpan),
+    Struct(Option<StringId>, ThinVec<TypedParameter>, SourceSpan),
     /// A union definition.
-    Union(Option<StringId>, ThinVec<Parameter>, SourceSpan),
+    Union(Option<StringId>, ThinVec<TypedParameter>, SourceSpan),
     /// An enum definition.
     Enum(
         Option<StringId>,
@@ -59,61 +125,77 @@ pub enum Type {
     Volatile(Box<Type>, SourceSpan),
 }
 
-impl Display for Type {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Type::Int(_) => write!(f, "int"),
-            Type::Char(_) => write!(f, "char"),
-            Type::Short(_) => write!(f, "short"),
-            Type::Float(_) => write!(f, "float"),
-            Type::Double(_) => write!(f, "double"),
-            Type::Long(_) => write!(f, "long"),
-            Type::LongLong(_) => write!(f, "long long"),
-            Type::UnsignedInt(_) => write!(f, "unsigned int"),
-            Type::UnsignedChar(_) => write!(f, "unsigned char"),
-            Type::UnsignedShort(_) => write!(f, "unsigned short"),
-            Type::UnsignedLong(_) => write!(f, "unsigned long"),
-            Type::UnsignedLongLong(_) => write!(f, "unsigned long long"),
-            Type::Void(_) => write!(f, "void"),
-            Type::Bool(_) => write!(f, "_Bool"),
-            Type::Pointer(inner, _) => {
-                write!(f, "{}*", inner)
-            }
-            Type::Array(inner, size, _) => {
-                write!(f, "{}[{}]", inner, size)
-            }
-            Type::Struct(name, _members, _) => {
-                if let Some(name) = name {
-                    write!(f, "struct {}", name)
+impl Type {
+    /// Converts a TypeSpec to a Type for compatibility.
+    pub fn from_type_spec(type_spec: &TypeSpec, span: SourceSpan) -> Type {
+        let mut ty = match &type_spec.kind {
+            TypeSpecKind::Builtin(keywords) => {
+                if keywords.is_empty() {
+                    Type::Int(span)
                 } else {
-                    write!(f, "struct {{ /* anonymous */ }}")
+                    match keywords[0] {
+                        TypeKeyword::Int => Type::Int(span),
+                        TypeKeyword::Char => Type::Char(span),
+                        TypeKeyword::Short => Type::Short(span),
+                        TypeKeyword::Float => Type::Float(span),
+                        TypeKeyword::Double => Type::Double(span),
+                        TypeKeyword::Long => {
+                            if keywords.len() >= 2 && keywords[1] == TypeKeyword::Long {
+                                Type::LongLong(span)
+                            } else {
+                                Type::Long(span)
+                            }
+                        }
+                        TypeKeyword::LongLong => Type::LongLong(span),
+                        TypeKeyword::UnsignedInt => Type::UnsignedInt(span),
+                        TypeKeyword::UnsignedChar => Type::UnsignedChar(span),
+                        TypeKeyword::UnsignedShort => Type::UnsignedShort(span),
+                        TypeKeyword::UnsignedLong => {
+                            if keywords.len() >= 2 && keywords[1] == TypeKeyword::Long {
+                                Type::UnsignedLongLong(span)
+                            } else {
+                                Type::UnsignedLong(span)
+                            }
+                        }
+                        TypeKeyword::UnsignedLongLong => Type::UnsignedLongLong(span),
+                        TypeKeyword::Void => Type::Void(span),
+                        TypeKeyword::Bool => Type::Bool(span),
+                    }
                 }
             }
-            Type::Union(name, _members, _) => {
-                if let Some(name) = name {
-                    write!(f, "union {}", name)
+            TypeSpecKind::Struct(name_id) => Type::Struct(*name_id, ThinVec::new(), span),
+            TypeSpecKind::Union(name_id) => Type::Union(*name_id, ThinVec::new(), span),
+            TypeSpecKind::Enum(name_id) => Type::Enum(*name_id, ThinVec::new(), span),
+            TypeSpecKind::Typedef(_name_id) => Type::Int(span), // Fallback for typedef
+        };
+
+        // Apply array sizes
+        for array_size in &type_spec.array_sizes {
+            if let Expr::Number(size, _) = &**array_size {
+                if *size > 0 {
+                    ty = Type::Array(Box::new(ty), *size as usize, span);
                 } else {
-                    write!(f, "union {{ /* anonymous */ }}")
+                    ty = Type::Array(Box::new(ty), 0, span);
                 }
-            }
-            Type::Enum(name, _variants, _) => {
-                if let Some(name) = name {
-                    write!(f, "enum {}", name)
-                } else {
-                    write!(f, "enum {{ /* anonymous */ }}")
-                }
-            }
-            Type::Const(inner, _) => {
-                write!(f, "const {}", inner)
-            }
-            Type::Volatile(inner, _) => {
-                write!(f, "volatile {}", inner)
             }
         }
-    }
-}
 
-impl Type {
+        // Apply pointers
+        for _ in 0..type_spec.pointer {
+            ty = Type::Pointer(Box::new(ty), span);
+        }
+
+        // Apply qualifiers
+        for qualifier in &type_spec.qualifiers {
+            match qualifier {
+                TypeQualifier::Const => ty = Type::Const(Box::new(ty), span),
+                TypeQualifier::Volatile => ty = Type::Volatile(Box::new(ty), span),
+            }
+        }
+
+        ty
+    }
+
     /// Returns `true` if the type is a pointer.
     pub fn is_pointer(&self) -> bool {
         match self {
@@ -276,11 +358,65 @@ impl Type {
     }
 }
 
+impl Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type::Int(_) => write!(f, "int"),
+            Type::Char(_) => write!(f, "char"),
+            Type::Short(_) => write!(f, "short"),
+            Type::Float(_) => write!(f, "float"),
+            Type::Double(_) => write!(f, "double"),
+            Type::Long(_) => write!(f, "long"),
+            Type::LongLong(_) => write!(f, "long long"),
+            Type::UnsignedInt(_) => write!(f, "unsigned int"),
+            Type::UnsignedChar(_) => write!(f, "unsigned char"),
+            Type::UnsignedShort(_) => write!(f, "unsigned short"),
+            Type::UnsignedLong(_) => write!(f, "unsigned long"),
+            Type::UnsignedLongLong(_) => write!(f, "unsigned long long"),
+            Type::Void(_) => write!(f, "void"),
+            Type::Bool(_) => write!(f, "_Bool"),
+            Type::Pointer(inner, _) => {
+                write!(f, "{}*", inner)
+            }
+            Type::Array(inner, size, _) => {
+                write!(f, "{}[{}]", inner, size)
+            }
+            Type::Struct(name, _members, _) => {
+                if let Some(name) = name {
+                    write!(f, "struct {}", name)
+                } else {
+                    write!(f, "struct {{ /* anonymous */ }}")
+                }
+            }
+            Type::Union(name, _members, _) => {
+                if let Some(name) = name {
+                    write!(f, "union {}", name)
+                } else {
+                    write!(f, "union {{ /* anonymous */ }}")
+                }
+            }
+            Type::Enum(name, _variants, _) => {
+                if let Some(name) = name {
+                    write!(f, "enum {}", name)
+                } else {
+                    write!(f, "enum {{ /* anonymous */ }}")
+                }
+            }
+            Type::Const(inner, _) => {
+                write!(f, "const {}", inner)
+            }
+            Type::Volatile(inner, _) => {
+                write!(f, "volatile {}", inner)
+            }
+        }
+    }
+}
+
 /// Represents the initializer of a `for` loop.
 #[derive(Debug, PartialEq, Clone)]
 pub enum ForInit {
     /// A variable declaration.
-    Declaration(Type, StringId, Option<Initializer>),
+    Declaration(TypeSpec, StringId, Option<Initializer>),
     /// An expression.
     Expr(Expr),
 }
@@ -288,7 +424,7 @@ pub enum ForInit {
 /// Represents a declarator, which includes the type modifiers (pointers, arrays) and the identifier.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Declarator {
-    pub ty: Type,
+    pub ty: TypeSpec,
     pub name: StringId,
     pub initializer: Option<Initializer>,
     pub span: SourceSpan,
@@ -323,9 +459,9 @@ pub enum Stmt {
     /// A `goto` statement.
     Goto(StringId, SourceSpan),
     /// A variable declaration.
-    Declaration(Box<Type>, ThinVec<Declarator>, bool),
+    Declaration(Box<TypeSpec>, ThinVec<Declarator>, bool),
     FunctionDeclaration {
-        ty: Box<Type>,
+        ty: Box<TypeSpec>,
         name: StringId,
         params: ThinVec<Parameter>,
         is_variadic: bool,
@@ -524,11 +660,11 @@ pub enum Expr {
     /// A sizeof expression.
     Sizeof(Box<Expr>),
     /// A sizeof type expression.
-    SizeofType(Type),
+    SizeofType(TypeSpec),
     /// An alignof expression.
     Alignof(Box<Expr>),
     /// An alignof type expression.
-    AlignofType(Type),
+    AlignofType(TypeSpec),
     /// A pre-increment expression.
     PreIncrement(Box<Expr>),
     /// A pre-decrement expression.
@@ -546,11 +682,11 @@ pub enum Expr {
     /// A pointer member access expression.
     PointerMember(Box<Expr>, StringId),
     /// An explicit type cast expression.
-    ExplicitCast(Box<Type>, Box<Expr>),
+    ExplicitCast(Box<TypeSpec>, Box<Expr>),
     /// An implicit type cast expression.
-    ImplicitCast(Box<Type>, Box<Expr>),
+    ImplicitCast(Box<TypeSpec>, Box<Expr>),
     /// A compound literal expression.
-    CompoundLiteral(Box<Type>, Box<Initializer>),
+    CompoundLiteral(Box<TypeSpec>, Box<Initializer>),
     /// A comma expression.
     Comma(Box<Expr>, Box<Expr>),
 }
@@ -685,6 +821,17 @@ pub enum Initializer {
 #[derive(Debug, PartialEq, Clone)]
 pub struct Parameter {
     /// The type of the parameter.
+    pub ty: TypeSpec,
+    /// The name of the parameter.
+    pub name: StringId,
+    /// The span of the parameter.
+    pub span: SourceSpan,
+}
+
+/// Represents a typed function parameter (for semantic analysis).
+#[derive(Debug, PartialEq, Clone)]
+pub struct TypedParameter {
+    /// The resolved type of the parameter.
     pub ty: Type,
     /// The name of the parameter.
     pub name: StringId,
@@ -692,11 +839,22 @@ pub struct Parameter {
     pub span: SourceSpan,
 }
 
+impl TypedParameter {
+    pub fn from_parameter(param: Parameter) -> Self {
+        let ty = Type::from_type_spec(&param.ty, SourceSpan::default());
+        Self {
+            ty: ty,
+            name: param.name,
+            span: param.span,
+        }
+    }
+}
+
 /// Represents a function definition.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Function {
     /// The return type of the function.
-    pub return_type: Type,
+    pub return_type: TypeSpec,
     /// The name of the function.
     pub name: StringId,
     /// The parameters of the function.
@@ -1076,7 +1234,7 @@ pub enum TypedStmt {
     FunctionDeclaration {
         ty: Type,
         name: StringId,
-        params: ThinVec<Parameter>,
+        params: ThinVec<TypedParameter>,
         is_variadic: bool,
         is_inline: bool,
         is_noreturn: bool,
@@ -1103,7 +1261,7 @@ pub struct TypedFunctionDecl {
     /// The name of the function.
     pub name: StringId,
     /// The parameters of the function.
-    pub params: ThinVec<Parameter>,
+    pub params: ThinVec<TypedParameter>,
     /// The body of the function.
     pub body: ThinVec<TypedStmt>,
     /// Whether the function is declared as inline.

@@ -98,9 +98,9 @@ fn generate_builtins(output: &mut String, lines: &Vec<(&str, Vec<String>)>) {
     output.push_str("        };\n");
 
     // basic
-    for (i, (name, flags)) in lines.iter().enumerate() {
+    for (i, (name, _flags)) in lines.iter().enumerate() {
         let title = name.to_case(Case::Title);
-        let flags: Vec<String> = flags.iter().map(|x| format!("TypeId::{x}")).collect();
+        // let flags: Vec<String> = flags.iter().map(|x| format!("TypeId::{x}")).collect();
         // let flags = flags.join("|");
         output.push_str(&format!(
             "        push(TypeKind::{title}, &mut table); // {i}\n"

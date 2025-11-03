@@ -170,25 +170,6 @@ pub fn compile_and_run_with_output(input: &str, test_name: &str) -> Result<Strin
     Ok(stdout)
 }
 
-/// Creates a simple C program AST for testing
-pub fn create_simple_program_ast() -> TranslationUnit {
-    TranslationUnit {
-        globals: ThinVec::new(),
-        functions: ThinVec::from(vec![Function {
-            return_type: Type::Int(SourceSpan::default()),
-            name: crate::parser::string_interner::StringInterner::intern("main"),
-            params: ThinVec::new(),
-            body: ThinVec::from(vec![Stmt::Return(Box::new(Expr::Number(
-                0,
-                SourceSpan::default(),
-            )))]),
-            is_inline: false,
-            is_variadic: false,
-            is_noreturn: false,
-        }]),
-    }
-}
-
 /// Helper function to collect all tokens from a lexer
 pub fn collect_tokens_from_lexer(input: &str, filename: &str) -> Vec<Token> {
     let mut file_manager = create_file_manager();

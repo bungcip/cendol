@@ -3,6 +3,12 @@ name = "cendol"
 version = "0.1.0"
 edition = "2024"
 
+[workspace]
+members = [
+    ".",                    # main crate
+    "tools/generate_types", # tool generator
+]
+
 [lints.clippy]
 bool_comparison = "allow" ## reason: `== false` is more readable in some cases
 
@@ -24,6 +30,7 @@ serde = { version = "1.0.203", features = ["derive"] }
 tempfile = "3.23"
 symbol_table = { version = "0.5.0", features = ["global", "serde"] }
 thin-vec = "0.2"
+paste = "1.0"
 
 [dev-dependencies]
 insta = { version = "1.39.0", features = ["yaml"] }

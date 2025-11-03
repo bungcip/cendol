@@ -19,6 +19,9 @@ pub mod preprocessor;
 /// Contains the semantic analyzer.
 pub mod semantic;
 
+pub mod types;
+
 pub mod test_utils;
 
 use source::{FileId, SourceLocation, SourceSpan};
+use symbol_table::GlobalSymbol as StringId;

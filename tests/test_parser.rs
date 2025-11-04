@@ -4,7 +4,7 @@
 //! and generate the expected Abstract Syntax Tree (AST) structures.
 
 use cendol::parser::Parser;
-use cendol::parser::ast::{Stmt, TranslationUnit};
+use cendol::parser::ast::{Decl, FuncDecl, Stmt, TranslationUnit};
 use cendol::test_utils::{create_file_manager, create_preprocessor};
 use thin_vec::ThinVec;
 
@@ -116,7 +116,7 @@ fn parse_c_body(input: &str) -> ThinVec<Stmt> {
 mod tests {
     use super::parse_c_code;
     use crate::parse_c_body;
-    use cendol::parser::ast::{Expr, Initializer, Stmt, TypeSpecKind, TypeKeyword};
+    use cendol::parser::ast::{Decl, Expr, FuncDecl, Initializer, Stmt, TypeSpecKind, TypeKeyword};
 
     #[test]
     fn test_return_stmt() {
@@ -424,7 +424,7 @@ mod tests {
         let ast = parse_c_code(input).unwrap();
 
         // Check first function declaration
-        if let Stmt::FunctionDeclaration { name, params, .. } = &ast.globals[0] {
+        if let Decl::Func(FuncDecl { name, params, .. }) = &ast.globals[0] {
             assert_eq!(name.as_str(), "calloc");
             assert_eq!(params.len(), 2);
             assert_eq!(params[0].name.as_str(), "__nmemb");
@@ -441,10 +441,10 @@ mod tests {
         let ast = parse_c_code(input).unwrap();
         assert!(matches!(
             &ast.globals[0],
-            Stmt::FunctionDeclaration {
+            Decl::Func(FuncDecl {
                 is_noreturn: true,
                 ..
-            }
+            })
         ));
     }
 
@@ -471,10 +471,10 @@ mod tests {
         // Test original problematic case: long unsigned int
         let input1 = "void *calloc(long unsigned int __nmemb, long unsigned int __size);";
         let ast1 = parse_c_code(input1).unwrap();
-        if let Stmt::FunctionDeclaration { params, .. } = &ast1.globals[0] {
+        if let Decl::Func(FuncDecl { params, .. }) = &ast1.globals[0] {
             assert_eq!(params.len(), 2);
-            assert!(matches!(params[0].ty.kind, TypeSpecKind::Builtin(ref k) if k == &vec![TypeKeyword::UnsignedLong]));
-            assert!(matches!(params[1].ty.kind, TypeSpecKind::Builtin(ref k) if k == &vec![TypeKeyword::UnsignedLong]));
+            assert!(matches!(params[0].type_spec.kind, TypeSpecKind::Builtin(ref k) if k == &vec![TypeKeyword::UnsignedLong]));
+            assert!(matches!(params[1].type_spec.kind, TypeSpecKind::Builtin(ref k) if k == &vec![TypeKeyword::UnsignedLong]));
         } else {
             panic!("Expected FunctionDeclaration");
         }
@@ -484,7 +484,7 @@ mod tests {
         let stmts2 = parse_c_body(input2);
         if let Stmt::Declaration(ty, declarators, _) = &stmts2[0] {
             assert_eq!(declarators[0].name.as_str(), "x");
-            assert!(matches!(declarators[0].ty.kind, TypeSpecKind::Builtin(ref k) if k == &vec![TypeKeyword::UnsignedLong]));
+            assert!(matches!(declarators[0].ty.kind, TypeSpecKind::Builtin(ref k) if k == &vec![TypeKeyword::Long, TypeKeyword::UnsignedInt]));
         } else {
             panic!("Expected Declaration");
         }

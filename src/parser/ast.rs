@@ -36,12 +36,12 @@ pub enum TypeKeyword {
     Bool,
 }
 
-/// Syntactic type from parser
+/// Syntactic type from parser - updated to remove problematic ThinVec<Parameter> usage
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeSpecKind {
     Builtin(Vec<TypeKeyword>),
-    Struct(Option<StringId>, ThinVec<Parameter>), // None = anonymous
-    Union(Option<StringId>, ThinVec<Parameter>),
+    Struct(Option<StringId>), // None = anonymous - fields handled separately via Decl::Struct
+    Union(Option<StringId>),  // None = anonymous - fields handled separately via Decl::Union
     Enum(Option<StringId>),
     Typedef(StringId),
 }
@@ -74,6 +74,57 @@ pub struct StructDecl {
     pub name: Option<StringId>,       // None = anonymous
     pub fields: Vec<StructField>,     // empty if forward declaration
     pub span: SourceSpan,
+}
+
+/// Enum member
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumMember {
+    pub name: StringId,
+    pub value: Option<Box<Expr>>,
+    pub span: SourceSpan,
+}
+
+/// Enum declaration
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumDecl {
+    pub name: Option<StringId>,
+    pub members: Vec<EnumMember>,
+    pub span: SourceSpan,
+}
+
+/// Variable declaration
+#[derive(Debug, Clone, PartialEq)]
+pub struct VarDecl {
+    pub name: StringId,
+    pub type_spec: TypeSpec,
+    pub init: Option<Initializer>,
+    pub span: SourceSpan,
+}
+
+/// Function declaration
+#[derive(Debug, Clone, PartialEq)]
+pub struct FuncDecl {
+    pub name: StringId,
+    pub return_type: TypeSpec,
+    pub params: Vec<VarDecl>,
+    pub body: Option<ThinVec<Stmt>>, // None if only prototype
+    pub is_variadic: bool,
+    pub is_inline: bool,
+    pub is_noreturn: bool,
+    pub span: SourceSpan,
+}
+
+/// Declaration enum that encompasses all types of declarations
+#[derive(Debug, Clone, PartialEq)]
+pub enum Decl {
+    Var(VarDecl),
+    Func(FuncDecl),
+    FuncDef(FuncDecl),
+    Struct(StructDecl),
+    Union(StructDecl),
+    Enum(EnumDecl),
+    Typedef(StringId, TypeSpec),
+    StaticAssert(Box<Expr>, StringId),
 }
 
 /// Represents a type in the C language.
@@ -163,17 +214,15 @@ impl Type {
                     }
                 }
             }
-            TypeSpecKind::Struct(name_id, members) => {
-                let typed_members: ThinVec<TypedParameter> = members.iter()
-                    .map(|param| TypedParameter::from_parameter(param.clone()))
-                    .collect();
-                Type::Struct(*name_id, typed_members, span)
+            TypeSpecKind::Struct(name_id) => {
+                // For struct types in TypeSpec, we don't have field information
+                // Field information is handled separately via Decl::Struct
+                Type::Struct(*name_id, ThinVec::new(), span)
             },
-            TypeSpecKind::Union(name_id, members) => {
-                let typed_members: ThinVec<TypedParameter> = members.iter()
-                    .map(|param| TypedParameter::from_parameter(param.clone()))
-                    .collect();
-                Type::Union(*name_id, typed_members, span)
+            TypeSpecKind::Union(name_id) => {
+                // For union types in TypeSpec, we don't have field information
+                // Field information is handled separately via Decl::Union
+                Type::Union(*name_id, ThinVec::new(), span)
             },
             TypeSpecKind::Enum(name_id) => Type::Enum(*name_id, ThinVec::new(), span),
             TypeSpecKind::Typedef(_name_id) => Type::Int(span), // Fallback for typedef
@@ -468,16 +517,6 @@ pub enum Stmt {
     Label(StringId, Box<Stmt>, SourceSpan),
     /// A `goto` statement.
     Goto(StringId, SourceSpan),
-    /// A variable declaration.
-    Declaration(Box<TypeSpec>, ThinVec<Declarator>, bool),
-    FunctionDeclaration {
-        ty: Box<TypeSpec>,
-        name: StringId,
-        params: ThinVec<Parameter>,
-        is_variadic: bool,
-        is_inline: bool,
-        is_noreturn: bool,
-    },
     /// A `break` statement.
     Break,
     /// A `continue` statement.
@@ -488,8 +527,8 @@ pub enum Stmt {
     Empty,
     /// An expression statement.
     Expr(Box<Expr>),
-    /// A `_Static_assert` declaration.
-    StaticAssert(Box<Expr>, StringId),
+    /// A declaration statement.
+    Declaration(TypeSpec, ThinVec<Declarator>, bool),
 }
 
 impl Stmt {
@@ -523,16 +562,12 @@ impl Stmt {
             Stmt::Default(body) => body.span(),
             Stmt::Label(_, _, span) => *span,
             Stmt::Goto(_, span) => *span,
-            Stmt::Declaration(_, declarators, _) => declarators
-                .first()
-                .map_or(SourceSpan::default(), |d| d.span),
-            Stmt::FunctionDeclaration { .. } => SourceSpan::default(),
             Stmt::Break => SourceSpan::default(),
             Stmt::Continue => SourceSpan::default(),
             Stmt::DoWhile(body, _) => body.span(),
             Stmt::Empty => SourceSpan::default(),
             Stmt::Expr(expr) => expr.span(),
-            Stmt::StaticAssert(expr, _) => expr.span(),
+            Stmt::Declaration(_, _, _) => SourceSpan::default(),
         }
     }
 }
@@ -882,8 +917,8 @@ pub struct Function {
 /// Represents a program.
 #[derive(Debug, PartialEq, Clone)]
 pub struct TranslationUnit {
-    /// The global variables.
-    pub globals: ThinVec<Stmt>,
+    /// The global declarations.
+    pub globals: ThinVec<Decl>,
     /// The functions in the program.
     pub functions: ThinVec<Function>,
 }

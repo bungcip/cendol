@@ -13,6 +13,8 @@ pub mod compiler;
 pub mod error;
 /// Contains the logger.
 pub mod logger;
+/// Contains the linker.
+pub mod linker;
 pub mod parser;
 /// Contains the preprocessor.
 pub mod preprocessor;

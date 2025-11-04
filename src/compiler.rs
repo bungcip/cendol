@@ -42,6 +42,7 @@ pub struct Cli {
 }
 
 use crate::codegen::CodeGen;
+use crate::linker;
 use crate::logger::Logger;
 use crate::parser::Parser;
 use crate::parser::error::ParserError;
@@ -50,7 +51,6 @@ use crate::semantic::{SemaOutput, SemanticAnalyzer};
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::Command;
 
 pub struct Compiler {
     fm: FileManager,
@@ -78,7 +78,6 @@ impl Compiler {
 
         fm.add_include_path("/usr/include");
         fm.add_include_path("/usr/include/x86_64-linux-gnu");
-        fm.add_include_path("/usr/lib/gcc/x86_64-linux-gnu/11/include");
         fm.add_include_path("/usr/local/include");
 
         for path in &cli.include_path {
@@ -251,13 +250,19 @@ impl Compiler {
                 .output_file
                 .clone()
                 .unwrap_or_else(|| "a.out".to_string());
-            Command::new("cc")
-                .current_dir(&self.working_dir)
-                .arg(&object_filename)
-                .arg("-o")
-                .arg(&output_filename)
-                .status()
-                .expect("Failed to link");
+
+            match linker::link(&object_filename, &output_filename, &self.working_dir) {
+                Ok(status) => {
+                    if !status.success() {
+                        let report = Report::err("Linker failed".to_string(), None);
+                        return Err(CompilerError::new(vec![report]));
+                    }
+                }
+                Err(e) => {
+                    let report = Report::err(e, None);
+                    return Err(CompilerError::new(vec![report]));
+                }
+            }
         }
 
         Ok(())

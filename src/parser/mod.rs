@@ -290,20 +290,20 @@ impl Parser {
                 if let Some(next) = next_token {
                     if let TokenKind::Keyword(KeywordKind::Long) = next.kind {
                         self.eat()?; // consume "long"
-                        mask |= TypeKeywordMask::LONG;
                         let next2 = self.tokens.get(self.position).cloned();
-                        if let Some(n2) = next2 {
-                            if let TokenKind::Keyword(KeywordKind::Long) = n2.kind {
-                                self.eat()?; // consume second "long"
-                                mask |= TypeKeywordMask::LONGLONG;
-                                let next3 = self.tokens.get(self.position).cloned();
-                                if let Some(n3) = next3
-                                    && let TokenKind::Keyword(KeywordKind::Int) = n3.kind
-                                {
-                                    self.eat()?; // consume "int"
-                                    mask |= TypeKeywordMask::INT;
-                                }
-                            } else if let TokenKind::Keyword(KeywordKind::Int) = n2.kind {
+                        if let Some(n2) = next2.clone() && let TokenKind::Keyword(KeywordKind::Long) = n2.kind {
+                            self.eat()?; // consume second "long"
+                            mask |= TypeKeywordMask::LONGLONG;
+                            let next3 = self.tokens.get(self.position).cloned();
+                            if let Some(n3) = next3
+                                && let TokenKind::Keyword(KeywordKind::Int) = n3.kind
+                            {
+                                self.eat()?; // consume "int"
+                                mask |= TypeKeywordMask::INT;
+                            }
+                        } else {
+                            mask |= TypeKeywordMask::LONG;
+                            if let Some(n2) = next2 && let TokenKind::Keyword(KeywordKind::Int) = n2.kind {
                                 self.eat()?; // consume "int"
                                 mask |= TypeKeywordMask::INT;
                             }
@@ -380,10 +380,20 @@ impl Parser {
                     None,
                 ))
             }
-            KeywordKind::Int => Ok((
-                Parser::new_typespec(TypeSpecKind::Builtin(TypeKeywordMask::INT.bits())),
-                None,
-            )),
+            KeywordKind::Int => {
+                let mut mask = TypeKeywordMask::INT;
+                let next_token = self.tokens.get(self.position).cloned();
+                if let Some(next) = next_token
+                    && let TokenKind::Keyword(KeywordKind::Long) = next.kind
+                {
+                    self.eat()?; // consume "long"
+                    mask |= TypeKeywordMask::LONG;
+                }
+                Ok((
+                    Parser::new_typespec(TypeSpecKind::Builtin(mask.bits())),
+                    None,
+                ))
+            }
             KeywordKind::Char => Ok((
                 Parser::new_typespec(TypeSpecKind::Builtin(TypeKeywordMask::CHAR.bits())),
                 None,

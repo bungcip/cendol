@@ -1,9 +1,7 @@
 use crate::SourceSpan;
 use crate::parser::ast::{
-    AssignOp, BinOp, Decl, Designator, Expr, ForInit, FuncDecl, Function, Initializer, Parameter,
-    Stmt, TranslationUnit, TypeKeyword, TypeSpec, TypeSpecKind, TypedDeclarator, TypedDesignator,
-    TypedExpr, TypedForInit, TypedFunctionDecl, TypedInitializer, TypedLValue, TypedParameter,
-    TypedStmt, TypedTranslationUnit, VarDecl, type_spec_to_type_id,
+    AssignOp, BinOp, Decl, Designator, Expr, ForInit, FuncDecl, Initializer, Parameter,
+    Stmt, TranslationUnit, VarDecl, type_spec_to_type_id,
 };
 use crate::parser::string_interner::StringInterner;
 use crate::semantic::error::SemanticError;
@@ -16,6 +14,8 @@ use expressions::TypedExpression;
 use std::collections::hash_map::Entry::Vacant;
 use symbol_table::GlobalSymbol as StringId;
 pub mod error;
+pub mod typed_ast;
+use crate::semantic::typed_ast::{TypedExpr, TypedLValue, TypedStmt, TypedInitializer, TypedDesignator, TypedForInit, TypedTranslationUnit, TypedFunctionDecl, TypedParameter, TypedDeclarator};
 
 /// Represents a symbol in the symbol table.
 #[derive(Debug, Clone)]
@@ -331,7 +331,7 @@ impl SemanticAnalyzer {
                             if !struct_decl.fields.is_empty() {
                                 let ty = TypeKind::Struct(
                                     Some(struct_decl.name.unwrap_or(
-                                        crate::parser::string_interner::StringInterner::empty_id(),
+                                        StringInterner::empty_id(),
                                     )),
                                     ThinVec::new(),
                                 );
@@ -344,7 +344,7 @@ impl SemanticAnalyzer {
                             if !union_decl.fields.is_empty() {
                                 let ty = TypeKind::Union(
                                     Some(union_decl.name.unwrap_or(
-                                        crate::parser::string_interner::StringInterner::empty_id(),
+                                        StringInterner::empty_id(),
                                     )),
                                     ThinVec::new(),
                                 );
@@ -383,7 +383,7 @@ impl SemanticAnalyzer {
                                 }
                                 let ty = TypeKind::Enum {
                                     name: Some(enum_decl.name.unwrap_or(
-                                        crate::parser::string_interner::StringInterner::empty_id(),
+                                        StringInterner::empty_id(),
                                     )),
                                     underlying_type: TypeId::INT,
                                     variants: ThinVec::new(),
@@ -406,9 +406,9 @@ impl SemanticAnalyzer {
                         _ => return,
                     };
 
-                    if let crate::types::TypeKind::Struct(Some(name), _) = &converted_ty.kind() {
+                    if let TypeKind::Struct(Some(name), _) = &converted_ty.kind() {
                         self.struct_definitions.insert(name.clone(), converted_ty);
-                    } else if let crate::types::TypeKind::Union(Some(name), _) =
+                    } else if let TypeKind::Union(Some(name), _) =
                         &converted_ty.kind()
                     {
                         self.union_definitions.insert(name.clone(), converted_ty);
@@ -423,64 +423,59 @@ impl SemanticAnalyzer {
     fn check_program(&mut self, program: TranslationUnit) -> TypedTranslationUnit {
         let mut typed_functions = Vec::new();
         for global in &program.globals {
-            if let Decl::FuncDef(func_decl) = global {
-                let function = Function {
-                    return_type: func_decl.return_type.clone(),
-                    name: func_decl.name,
-                    params: func_decl
-                        .params
-                        .iter()
-                        .map(|p| Parameter {
-                            ty: TypeSpec {
-                                kind: TypeSpecKind::Builtin(vec![TypeKeyword::Int]), // Placeholder, need proper conversion
-                                pointer: 0,
-                                qualifiers: vec![],
-                                array_sizes: vec![],
-                            },
-                            name: p.name,
-                            span: p.span,
-                        })
-                        .collect(),
-                    body: func_decl.body.clone().unwrap(),
-                    is_inline: func_decl.is_inline,
-                    is_variadic: func_decl.is_variadic,
-                    is_noreturn: func_decl.is_noreturn,
-                };
-                self.current_function = Some(function.name);
-                typed_functions.push(self.check_function(function));
+            if let Decl::Func(func_decl) = global {
+                // let function = Function {
+                //     return_type: func_decl.return_type.clone(),
+                //     name: func_decl.name,
+                //     params: func_decl
+                //         .params
+                //         .iter()
+                //         .map(|p| Parameter {
+                //             ty: TypeSpec {
+                //                 kind: TypeSpecKind::Builtin(vec![TypeKeyword::Int]), // Placeholder, need proper conversion
+                //                 pointer: 0,
+                //                 qualifiers: vec![],
+                //                 array_sizes: vec![],
+                //             },
+                //             name: p.name,
+                //             span: p.span,
+                //         })
+                //         .collect(),
+                //     body: func_decl.body.clone().unwrap(),
+                //     is_inline: func_decl.is_inline,
+                //     is_variadic: func_decl.is_variadic,
+                //     is_noreturn: func_decl.is_noreturn,
+                // };
+                self.current_function = Some(func_decl.name);
+                typed_functions.push(self.check_function(func_decl.clone()));
             }
         }
 
         let mut typed_globals = Vec::new();
-        for global in program.globals {
-            // Handle global declarations properly
-            match global {
-                Decl::Var(var_decl) => {
-                    // Create a TypedStmt for variable declarations
-                    // For now, we'll create a dummy TypedStmt::Empty
-                    // In a full implementation, we might need to create a proper TypedStmt variant for declarations
-                    typed_globals.push(TypedStmt::Empty);
-                }
-                Decl::Func(func_decl) => {
-                    // Function declarations are handled separately in functions
-                    // For now, create a dummy TypedStmt::Empty
-                    typed_globals.push(TypedStmt::Empty);
-                }
-                Decl::FuncDef(func_decl) => {
-                    // Function definitions are handled separately in functions
-                    // For now, create a dummy TypedStmt::Empty
-                    typed_globals.push(TypedStmt::Empty);
-                }
-                Decl::Struct(_)
-                | Decl::Union(_)
-                | Decl::Enum(_)
-                | Decl::Typedef(_, _)
-                | Decl::StaticAssert(_, _) => {
-                    // For now, create a dummy TypedStmt for other declarations
-                    typed_globals.push(TypedStmt::Empty);
-                }
-            }
-        }
+        // for global in program.globals {
+        //     // Handle global declarations properly
+        //     match global {
+        //         Decl::Var(var_decl) => {
+        //             // Create a TypedStmt for variable declarations
+        //             // For now, we'll create a dummy TypedStmt::Empty
+        //             // In a full implementation, we might need to create a proper TypedStmt variant for declarations
+        //             typed_globals.push(TypedStmt::Empty);
+        //         }
+        //         Decl::Func(func_decl) => {
+        //             // Function declarations are handled separately in functions
+        //             // For now, create a dummy TypedStmt::Empty
+        //             typed_globals.push(TypedStmt::Empty);
+        //         }
+        //         Decl::Struct(_)
+        //         | Decl::Union(_)
+        //         | Decl::Enum(_)
+        //         | Decl::Typedef(_, _)
+        //         | Decl::StaticAssert(_, _) => {
+        //             // For now, create a dummy TypedStmt for other declarations
+        //             typed_globals.push(TypedStmt::Empty);
+        //         }
+        //     }
+        // }
 
         // Add built-in function declarations to the typed AST
         for name in &self.used_builtins {
@@ -574,7 +569,7 @@ impl SemanticAnalyzer {
     }
 
     /// Checks a function for semantic errors and returns a typed function declaration.
-    fn check_function(&mut self, function: Function) -> TypedFunctionDecl {
+    fn check_function(&mut self, function: FuncDecl) -> TypedFunctionDecl {
         // Push function scope
         self.symbol_table.push_scope();
 
@@ -582,7 +577,9 @@ impl SemanticAnalyzer {
         self.labels.clear();
 
         // First pass: collect all labels in the function
-        self.collect_labels(&function.body);
+        if let Some(body) = &function.body {
+            self.collect_labels(body);
+        }
 
         // Check parameters for redeclaration and convert to TypedParameter
         let mut param_names = std::collections::HashSet::new();
@@ -592,7 +589,7 @@ impl SemanticAnalyzer {
                 self.err(SemanticError::VariableRedeclaration(param.name), param.span);
             }
             // Convert TypeSpec to Type and create TypedParameter
-            let ty = type_spec_to_type_id(&param.ty, param.span);
+            let ty = type_spec_to_type_id(&param.type_spec, param.span);
             let typed_param = TypedParameter {
                 ty: ty,
                 name: param.name,
@@ -614,8 +611,10 @@ impl SemanticAnalyzer {
 
         // Check function body and build typed statements
         let mut typed_body = ThinVec::new();
-        for stmt in function.body {
-            typed_body.push(self.check_statement(stmt));
+        if let Some(body) = &function.body {
+            for stmt in body {
+                typed_body.push(self.check_statement(stmt.clone()));
+            }
         }
 
         // Check for unused variables
@@ -819,6 +818,18 @@ impl SemanticAnalyzer {
                     });
                 }
                 TypedStmt::Declaration(ty, typed_declarators, is_typedef)
+            }
+            Stmt::StaticAssert(expr, msg) => {
+                let typed_expr = self.check_expression(*expr);
+                // Evaluate static assert at compile time
+                if let TypedExpr::Number(val, _, _) = &typed_expr {
+                    if *val == 0 {
+                        self.err(SemanticError::StaticAssertFailed(msg), typed_expr.span());
+                    }
+                } else {
+                    self.err(SemanticError::NotAConstantExpression, typed_expr.span());
+                }
+                TypedStmt::StaticAssert(Box::new(typed_expr), msg)
             }
         }
     }

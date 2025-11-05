@@ -47,6 +47,8 @@ pub enum KeywordKind {
     Alignof,
     StaticAssert,
     _Noreturn,
+    _Generic,
+    _Alignas,
 }
 
 impl FromStr for KeywordKind {
@@ -103,6 +105,8 @@ impl FromStr for KeywordKind {
             "_Alignof" => Ok(KeywordKind::Alignof),
             "_Static_assert" => Ok(KeywordKind::StaticAssert),
             "_Noreturn" => Ok(KeywordKind::_Noreturn),
+            "_Generic" => Ok(KeywordKind::_Generic),
+            "_Alignas" => Ok(KeywordKind::_Alignas),
             _ => Err(()),
         }
     }
@@ -161,6 +165,8 @@ impl fmt::Display for KeywordKind {
             KeywordKind::Alignof => write!(f, "_Alignof"),
             KeywordKind::StaticAssert => write!(f, "_Static_assert"),
             KeywordKind::_Noreturn => write!(f, "_Noreturn"),
+            KeywordKind::_Generic => write!(f, "_Generic"),
+            KeywordKind::_Alignas => write!(f, "_Alignas"),
         }
     }
 }

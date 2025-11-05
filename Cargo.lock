@@ -180,6 +180,7 @@ dependencies = [
  "ariadne",
  "assert_cmd",
  "atty",
+ "bitflags 2.10.0",
  "chrono",
  "clap",
  "cranelift",

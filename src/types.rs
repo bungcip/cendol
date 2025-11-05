@@ -10,8 +10,76 @@ use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 use std::sync::{OnceLock, RwLock};
+use bitflags::bitflags;
 
 use crate::StringId;
+
+/// Bitflags for type qualifiers — 1 byte total
+bitflags::bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct TypeQualifiers: u8 {
+        const CONST     = 0b0001;
+        const VOLATILE  = 0b0010;
+        const RESTRICT  = 0b0100;
+        const ATOMIC    = 0b1000;
+    }
+}
+
+/// Primary storage classes — single byte
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum StorageClass {
+    None,
+    Typedef,
+    Extern,
+    Static,
+    Auto,
+    Register,
+    ThreadLocal,
+}
+
+/// Compact enum for basic type category (8 bytes total with payload)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TypeSpecKind {
+    Builtin(u16),           // bitmask of TypeKeyword flags
+    Struct(StringId),       // refers to side-table AggregateDecl
+    Union(StringId),
+    Enum(StringId),
+    Typedef(StringId),
+}
+
+/// Simple keyword bitmask — instead of Vec<TypeKeyword>
+bitflags::bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct TypeKeywordMask: u16 {
+        const VOID       = 1 << 0;
+        const BOOL       = 1 << 1;
+        const CHAR       = 1 << 2;
+        const SHORT      = 1 << 3;
+        const INT        = 1 << 4;
+        const LONG       = 1 << 5;
+        const LONGLONG   = 1 << 6;
+        const FLOAT      = 1 << 7;
+        const DOUBLE     = 1 << 8;
+        const SIGNED     = 1 << 9;
+        const UNSIGNED   = 1 << 10;
+        const COMPLEX    = 1 << 11;
+        const IMAGINARY  = 1 << 12;
+        const ATOMIC     = 1 << 13;
+    }
+}
+
+/// A lightweight syntactic type specification node
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypeSpec {
+    pub kind: TypeSpecKind,           // 8 bytes
+    pub qualifiers: TypeQualifiers,   // 1 byte
+    pub storage: StorageClass,        // 1 byte
+    pub pointer_depth: u8,            // up to 255 levels
+    pub array_rank: u8,               // up to 255 dimensions
+    pub alignas: Option<Box<crate::parser::ast::Expr>>,   // optional, rarely used
+    pub array_sizes: ThinVec<crate::parser::ast::Expr>,
+}
 
 // -----------------------------
 // Thread-local global table

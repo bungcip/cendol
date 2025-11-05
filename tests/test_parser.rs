@@ -109,8 +109,12 @@ fn parse_c_body(input: &str) -> ThinVec<Stmt> {
     let mut parser = Parser::new(tokens).unwrap();
     let ast = parser.parse().unwrap();
     let func_def = ast.globals.iter().find_map(|d| {
-        if let Decl::FuncDef(f) = d {
-            Some(f)
+        if let Decl::Func(f) = d {
+            if f.name.as_str() == "c_body" {
+                Some(f)
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -122,7 +126,8 @@ fn parse_c_body(input: &str) -> ThinVec<Stmt> {
 mod tests {
     use super::parse_c_code;
     use crate::parse_c_body;
-    use cendol::parser::ast::{Decl, Expr, FuncDecl, Initializer, Stmt, TypeSpecKind, TypeKeyword};
+    use cendol::parser::ast::{Decl, Expr, FuncDecl, Initializer, Stmt};
+    use cendol::types::{TypeSpecKind, TypeKeywordMask as TypeKeyword};
 
     #[test]
     fn test_return_stmt() {
@@ -195,40 +200,26 @@ mod tests {
     /// Test parsing of multiple declarators in a single declaration
     #[test]
     fn test_multiple_declarators() {
-        let input = "int main() { int x, *p, **pp; return 0; }";
-        let ast = parse_c_code(input).unwrap();
-        let func_def = ast.globals.iter().find_map(|d| {
-            if let Decl::FuncDef(f) = d {
-                Some(f)
-            } else {
-                None
-            }
-        }).unwrap();
-        let body = func_def.body.as_ref().unwrap();
+        let input = "int x, *p, **pp;";
+        let stmts = parse_c_body(input);
 
-        if let Stmt::Declaration(ty, declarators, false) = &body[0] {
+        if let Stmt::Declaration(ty, declarators, false) = &stmts[0] {
             assert_eq!(declarators.len(), 3);
             // Check first declarator: int x
             assert_eq!(declarators[0].name.as_str(), "x");
-            assert!(matches!(declarators[0].ty.kind, TypeSpecKind::Builtin(ref k) if k == &vec![TypeKeyword::Int]));
+            assert!(matches!(declarators[0].ty.kind, TypeSpecKind::Builtin(ref k) if *k == TypeKeyword::INT.bits()));
 
             // Check second declarator: int *p
             assert_eq!(declarators[1].name.as_str(), "p");
-            assert_eq!(declarators[1].ty.pointer, 1);
-            assert!(matches!(declarators[1].ty.kind, TypeSpecKind::Builtin(ref k) if k == &vec![TypeKeyword::Int]));
+            assert_eq!(declarators[1].ty.pointer_depth, 1);
+            assert!(matches!(declarators[1].ty.kind, TypeSpecKind::Builtin(ref k) if *k == TypeKeyword::INT.bits()));
 
             // Check third declarator: int **pp
             assert_eq!(declarators[2].name.as_str(), "pp");
-            assert_eq!(declarators[2].ty.pointer, 2);
-            assert!(matches!(declarators[2].ty.kind, TypeSpecKind::Builtin(ref k) if k == &vec![TypeKeyword::Int]));
+            assert_eq!(declarators[2].ty.pointer_depth, 2);
+            assert!(matches!(declarators[2].ty.kind, TypeSpecKind::Builtin(ref k) if *k == TypeKeyword::INT.bits()));
         } else {
             panic!("Expected a declaration statement");
-        }
-
-        if let Stmt::Return(expr) = &body[1] {
-            assert!(matches!(**expr, Expr::Number(0, ..)));
-        } else {
-            panic!("Expected a return statement");
         }
     }
 
@@ -401,6 +392,41 @@ mod tests {
         assert_stmt_expr!(stmts[55], Expr::Comma(..));
     }
 
+    /// Test parsing of _Generic expressions
+    #[test]
+    fn test_generic_expression() {
+        let input = r#"
+            _Generic(x, int: 1, double: 2.0, default: 0);
+        "#;
+        let stmts = parse_c_body(input);
+        assert_stmt_expr!(stmts[0], Expr::Generic(..));
+    }
+
+    /// Test parsing of _Alignas alignment specifier
+    #[test]
+    fn test_alignas_specifier() {
+        let input = r#"
+            _Alignas(8) int x;
+        "#;
+        let stmts = parse_c_body(input);
+        if let Stmt::Declaration(ty, declarators, _) = &stmts[0] {
+            assert!(ty.alignas.is_some());
+            assert_eq!(declarators[0].name.as_str(), "x");
+        } else {
+            panic!("Expected Declaration");
+        }
+    }
+
+    /// Test parsing of static_assert in statements
+    #[test]
+    fn test_static_assert_statement() {
+        let input = r#"
+            _Static_assert(sizeof(int) == 4, "int must be 4 bytes");
+        "#;
+        let stmts = parse_c_body(input);
+        assert!(matches!(&stmts[0], Stmt::StaticAssert(..)));
+    }
+
     /// Test parsing of goto and label statements
     #[test]
     fn test_goto_and_label() {
@@ -486,8 +512,8 @@ mod tests {
         let ast1 = parse_c_code(input1).unwrap();
         if let Decl::Func(FuncDecl { params, .. }) = &ast1.globals[0] {
             assert_eq!(params.len(), 2);
-            assert!(matches!(params[0].type_spec.kind, TypeSpecKind::Builtin(ref k) if k == &vec![TypeKeyword::UnsignedLong]));
-            assert!(matches!(params[1].type_spec.kind, TypeSpecKind::Builtin(ref k) if k == &vec![TypeKeyword::UnsignedLong]));
+            assert!(matches!(params[0].type_spec.kind, TypeSpecKind::Builtin(ref k) if *k == (TypeKeyword::UNSIGNED.bits() | TypeKeyword::LONG.bits())));
+            assert!(matches!(params[1].type_spec.kind, TypeSpecKind::Builtin(ref k) if *k == (TypeKeyword::UNSIGNED.bits() | TypeKeyword::LONG.bits())));
         } else {
             panic!("Expected FunctionDeclaration");
         }
@@ -497,7 +523,7 @@ mod tests {
         let stmts2 = parse_c_body(input2);
         if let Stmt::Declaration(ty, declarators, _) = &stmts2[0] {
             assert_eq!(declarators[0].name.as_str(), "x");
-            assert!(matches!(declarators[0].ty.kind, TypeSpecKind::Builtin(ref k) if k == &vec![TypeKeyword::Long, TypeKeyword::UnsignedInt]));
+            assert!(matches!(declarators[0].ty.kind, TypeSpecKind::Builtin(ref k) if *k == (TypeKeyword::UNSIGNED.bits() | TypeKeyword::LONG.bits())));
         } else {
             panic!("Expected Declaration");
         }
@@ -507,7 +533,7 @@ mod tests {
         let stmts3 = parse_c_body(input3);
         if let Stmt::Declaration(ty, declarators, _) = &stmts3[0] {
             assert_eq!(declarators[0].name.as_str(), "x");
-            assert!(matches!(declarators[0].ty.kind, TypeSpecKind::Builtin(ref k) if k == &vec![TypeKeyword::UnsignedLongLong]));
+            assert!(matches!(declarators[0].ty.kind, TypeSpecKind::Builtin(ref k) if *k == (TypeKeyword::UNSIGNED.bits() | TypeKeyword::LONG.bits() | TypeKeyword::LONGLONG.bits())));
         } else {
             panic!("Expected Declaration");
         }
@@ -517,7 +543,7 @@ mod tests {
         let stmts4 = parse_c_body(input4);
         if let Stmt::Declaration(ty, declarators, _) = &stmts4[0] {
             assert_eq!(declarators[0].name.as_str(), "x");
-            assert!(matches!(declarators[0].ty.kind, TypeSpecKind::Builtin(ref k) if k == &vec![TypeKeyword::UnsignedLongLong]));
+            assert!(matches!(declarators[0].ty.kind, TypeSpecKind::Builtin(ref k) if *k == (TypeKeyword::UNSIGNED.bits() | TypeKeyword::LONG.bits() | TypeKeyword::LONGLONG.bits())));
         } else {
             panic!("Expected Declaration");
         }
@@ -527,7 +553,7 @@ mod tests {
         let stmts5 = parse_c_body(input5);
         if let Stmt::Declaration(ty, declarators, _) = &stmts5[0] {
             assert_eq!(declarators[0].name.as_str(), "x");
-            assert!(matches!(declarators[0].ty.kind, TypeSpecKind::Builtin(ref k) if k == &vec![TypeKeyword::UnsignedLong]));
+            assert!(matches!(declarators[0].ty.kind, TypeSpecKind::Builtin(ref k) if *k == (TypeKeyword::UNSIGNED.bits() | TypeKeyword::LONG.bits())));
         } else {
             panic!("Expected Declaration");
         }
@@ -537,7 +563,7 @@ mod tests {
         let stmts6 = parse_c_body(input6);
         if let Stmt::Declaration(ty, declarators, _) = &stmts6[0] {
             assert_eq!(declarators[0].name.as_str(), "x");
-            assert!(matches!(declarators[0].ty.kind, TypeSpecKind::Builtin(ref k) if k == &vec![TypeKeyword::UnsignedLongLong]));
+            assert!(matches!(declarators[0].ty.kind, TypeSpecKind::Builtin(ref k) if *k == (TypeKeyword::UNSIGNED.bits() | TypeKeyword::LONG.bits() | TypeKeyword::LONGLONG.bits())));
         } else {
             panic!("Expected Declaration");
         }
@@ -547,7 +573,7 @@ mod tests {
         let stmts7 = parse_c_body(input7);
         if let Stmt::Declaration(ty, declarators, _) = &stmts7[0] {
             assert_eq!(declarators[0].name.as_str(), "x");
-            assert!(matches!(declarators[0].ty.kind, TypeSpecKind::Builtin(ref k) if k == &vec![TypeKeyword::Long]));
+            assert!(matches!(declarators[0].ty.kind, TypeSpecKind::Builtin(ref k) if *k == TypeKeyword::LONG.bits()));
         } else {
             panic!("Expected Declaration");
         }
@@ -560,7 +586,7 @@ mod tests {
         // Check first: unsigned long a
         if let Stmt::Declaration(ty1, decls1, _) = &stmts8[0] {
             assert_eq!(decls1[0].name.as_str(), "a");
-            assert!(matches!(decls1[0].ty.kind, TypeSpecKind::Builtin(ref k) if k == &vec![TypeKeyword::UnsignedLong]));
+            assert!(matches!(decls1[0].ty.kind, TypeSpecKind::Builtin(ref k) if *k == (TypeKeyword::UNSIGNED.bits() | TypeKeyword::LONG.bits())));
         } else {
             panic!("Expected Declaration for a");
         }
@@ -568,7 +594,7 @@ mod tests {
         // Check second: long unsigned int b
         if let Stmt::Declaration(ty2, decls2, _) = &stmts8[1] {
             assert_eq!(decls2[0].name.as_str(), "b");
-            assert!(matches!(decls2[0].ty.kind, TypeSpecKind::Builtin(ref k) if k == &vec![TypeKeyword::UnsignedLong]));
+            assert!(matches!(decls2[0].ty.kind, TypeSpecKind::Builtin(ref k) if *k == (TypeKeyword::UNSIGNED.bits() | TypeKeyword::LONG.bits())));
         } else {
             panic!("Expected Declaration for b");
         }
@@ -576,7 +602,7 @@ mod tests {
         // Check third: unsigned long long c
         if let Stmt::Declaration(ty3, decls3, _) = &stmts8[2] {
             assert_eq!(decls3[0].name.as_str(), "c");
-            assert!(matches!(decls3[0].ty.kind, TypeSpecKind::Builtin(ref k) if k == &vec![TypeKeyword::UnsignedLongLong]));
+            assert!(matches!(decls3[0].ty.kind, TypeSpecKind::Builtin(ref k) if *k == (TypeKeyword::UNSIGNED.bits() | TypeKeyword::LONG.bits() | TypeKeyword::LONGLONG.bits())));
         } else {
             panic!("Expected Declaration for c");
         }
@@ -584,7 +610,7 @@ mod tests {
         // Check fourth: long long unsigned d
         if let Stmt::Declaration(ty4, decls4, _) = &stmts8[3] {
             assert_eq!(decls4[0].name.as_str(), "d");
-            assert!(matches!(decls4[0].ty.kind, TypeSpecKind::Builtin(ref k) if k == &vec![TypeKeyword::UnsignedLongLong]));
+            assert!(matches!(decls4[0].ty.kind, TypeSpecKind::Builtin(ref k) if *k == (TypeKeyword::UNSIGNED.bits() | TypeKeyword::LONG.bits() | TypeKeyword::LONGLONG.bits())));
         } else {
             panic!("Expected Declaration for d");
         }

@@ -1,5 +1,5 @@
 use crate::codegen::error::CodegenError;
-use crate::parser::ast::{TypedExpr, TypedLValue};
+use crate::semantic::typed_ast::{TypedExpr, TypedLValue};
 use crate::parser::string_interner::StringId;
 use cranelift_module::DataId;
 use std::collections::HashMap;
@@ -53,11 +53,11 @@ pub fn unescape_string(s: &str) -> Vec<u8> {
     unescaped
 }
 
-use crate::parser::ast::TypedInitializer;
+use crate::semantic::typed_ast::TypedInitializer;
 
 /// Evaluates a static initializer expression at compile time
 use crate::codegen::translator::FunctionTranslator;
-use crate::parser::ast::TypedDesignator;
+use crate::semantic::typed_ast::TypedDesignator;
 
 pub fn evaluate_static_initializer(
     ty: TypeId,

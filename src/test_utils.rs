@@ -2,7 +2,7 @@ use crate::compiler::{Cli, Compiler, CompilerError};
 use crate::error::Report;
 use crate::file::{FileId, FileManager};
 use crate::parser::Parser;
-use crate::parser::ast::{Expr, Function, Stmt, TranslationUnit};
+use crate::parser::ast::{Expr, Stmt, TranslationUnit};
 use crate::preprocessor::Preprocessor;
 use crate::preprocessor::lexer::Lexer;
 use crate::preprocessor::token::{Token, TokenKind};

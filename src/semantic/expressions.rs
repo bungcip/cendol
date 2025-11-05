@@ -1,4 +1,5 @@
-use crate::parser::ast::{BinOp, TypedExpr};
+use crate::parser::ast::BinOp;
+use crate::semantic::typed_ast::TypedExpr;
 use crate::types::TypeId;
 
 pub(crate) struct TypedExpression {

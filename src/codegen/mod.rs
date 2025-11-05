@@ -1,7 +1,6 @@
 use crate::codegen::error::CodegenError;
-use crate::parser::ast::{
-    Expr, TypedExpr, TypedInitializer, TypedLValue, TypedStmt, TypedTranslationUnit,
-};
+use crate::parser::ast::Expr;
+use crate::semantic::typed_ast::{TypedExpr, TypedInitializer, TypedLValue, TypedStmt, TypedTranslationUnit};
 use crate::parser::string_interner::StringId;
 use crate::types::{TypeId, TypeKind};
 use cranelift::prelude::*;

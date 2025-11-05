@@ -42,25 +42,16 @@ pub struct EnumMember {
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumDecl {
     pub name: Option<StringId>,
-    pub members: Vec<EnumMember>,
+    pub members: ThinVec<EnumMember>,
     pub span: SourceSpan,
 }
 
-/// Variable declaration
-#[derive(Debug, Clone, PartialEq)]
-pub struct VarDecl {
-    pub name: StringId,
-    pub type_spec: TypeSpec,
-    pub init: Option<Initializer>,
-    pub span: SourceSpan,
-}
 
-/// Function declaration
 #[derive(Debug, Clone, PartialEq)]
 pub struct FuncDecl {
     pub name: StringId,
     pub return_type: TypeSpec,
-    pub params: ThinVec<VarDecl>,
+    pub params: ThinVec<ParamDecl>,
     pub body: Option<ThinVec<Stmt>>, // None if only prototype
     pub is_variadic: bool,
     pub is_inline: bool,
@@ -71,13 +62,13 @@ pub struct FuncDecl {
 /// Declaration enum that encompasses all types of declarations
 #[derive(Debug, Clone, PartialEq)]
 pub enum Decl {
-    Var(VarDecl),
     Func(FuncDecl),
     Struct(StructDecl),
     Union(StructDecl),
     Enum(EnumDecl),
     Typedef(StringId, TypeSpec),
     StaticAssert(Box<Expr>, StringId),
+    VarGroup(TypeSpec, ThinVec<Declarator>),
 }
 
 /// Converts a TypeSpec to a TypeId by building the corresponding TypeKind and interning it.
@@ -194,12 +185,23 @@ pub enum ForInit {
     Expr(Expr),
 }
 
+/// Represents a function parameter declaration.
+#[derive(Debug, PartialEq, Clone)]
+pub struct ParamDecl {
+    pub name: StringId,
+    pub type_spec: TypeSpec,
+    pub span: SourceSpan,
+}
 /// Represents a declarator, which includes the type modifiers (pointers, arrays) and the identifier.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Declarator {
-    pub ty: TypeSpec,
-    pub name: StringId,
-    pub initializer: Option<Initializer>,
+    pub name: Option<StringId>,
+    pub pointer_depth: u8,
+    pub array_sizes: ThinVec<Expr>,
+    pub func_params: Option<ThinVec<ParamDecl>>,
+    pub qualifiers: u16,
+    pub inner: Option<Box<Declarator>>, // for nested declarators like (*b)(int)
+    pub init: Option<Box<Expr>>,
     pub span: SourceSpan,
 }
 
@@ -242,7 +244,7 @@ pub enum Stmt {
     /// An expression statement.
     Expr(Box<Expr>),
     /// A declaration statement.
-    Declaration(TypeSpec, ThinVec<Declarator>, bool),
+    Declaration(Decl),
     /// A static assert statement.
     StaticAssert(Box<Expr>, StringId),
 }
@@ -283,7 +285,7 @@ impl Stmt {
             Stmt::DoWhile(body, _) => body.span(),
             Stmt::Empty => SourceSpan::default(),
             Stmt::Expr(expr) => expr.span(),
-            Stmt::Declaration(_, _, _) => SourceSpan::default(),
+            Stmt::Declaration(_) => SourceSpan::default(),
             Stmt::StaticAssert(_, _) => SourceSpan::default(),
         }
     }

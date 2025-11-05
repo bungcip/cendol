@@ -1,7 +1,7 @@
 use crate::SourceSpan;
 use crate::parser::ast::{
     Decl, Designator, Expr, ForInit, FuncDecl, Initializer, InitializerList, Parameter, Stmt,
-    TranslationUnit, VarDecl,
+    TranslationUnit,
 };
 use crate::types::{TypeSpec, TypeSpecKind, TypeQualifiers, StorageClass, TypeKeywordMask};
 use crate::parser::ast::type_spec_to_type_id;
@@ -17,7 +17,7 @@ pub mod error;
 pub mod string_interner;
 pub mod token;
 
-pub struct FuncSignature(TypeSpec, StringId, ThinVec<VarDecl>, bool, bool, bool);
+pub struct FuncSignature(TypeSpec, StringId, ThinVec<ast::ParamDecl>, bool, bool, bool);
 
 /// A parser that converts a stream of tokens into an abstract syntax tree.
 pub struct Parser {
@@ -80,6 +80,19 @@ impl Parser {
             typedefs: HashMap::new(),
         };
         Ok(parser)
+    }
+
+    /// Creates a new TypeSpec with default values for common fields.
+    fn new_typespec(kind: TypeSpecKind) -> crate::types::TypeSpec {
+        crate::types::TypeSpec {
+            kind,
+            qualifiers: TypeQualifiers::empty(),
+            storage: StorageClass::None,
+            pointer_depth: 0,
+            array_rank: 0,
+            alignas: None,
+            array_sizes: thin_vec::ThinVec::new(),
+        }
     }
 
     /// Returns the current token without consuming it.
@@ -250,15 +263,7 @@ impl Parser {
             if let Some(_) = self.typedefs.get(&id) {
                 self.eat()?;
                 Ok((
-                    crate::types::TypeSpec {
-                        kind: TypeSpecKind::Typedef(id),
-                        qualifiers: TypeQualifiers::empty(),
-                        storage: StorageClass::None,
-                        pointer_depth: 0,
-                        array_rank: 0,
-                        alignas: None,
-                        array_sizes: thin_vec::ThinVec::new(),
-                    },
+                    Parser::new_typespec(TypeSpecKind::Typedef(id)),
                     None,
                 ))
             } else {
@@ -315,15 +320,7 @@ impl Parser {
                     }
                 }
                 Ok((
-                    crate::types::TypeSpec {
-                        kind: TypeSpecKind::Builtin(mask.bits()),
-                        qualifiers: TypeQualifiers::empty(),
-                        storage: StorageClass::None,
-                        pointer_depth: 0,
-                        array_rank: 0,
-                        alignas: None,
-                        array_sizes: thin_vec::ThinVec::new(),
-                    },
+                    Parser::new_typespec(TypeSpecKind::Builtin(mask.bits())),
                     None,
                 ))
             }
@@ -337,15 +334,7 @@ impl Parser {
                     mask |= TypeKeywordMask::INT;
                 }
                 Ok((
-                    crate::types::TypeSpec {
-                        kind: TypeSpecKind::Builtin(mask.bits()),
-                        qualifiers: TypeQualifiers::empty(),
-                        storage: StorageClass::None,
-                        pointer_depth: 0,
-                        array_rank: 0,
-                        alignas: None,
-                        array_sizes: thin_vec::ThinVec::new(),
-                    },
+                    Parser::new_typespec(TypeSpecKind::Builtin(mask.bits())),
                     None,
                 ))
             }
@@ -387,88 +376,32 @@ impl Parser {
                     }
                 }
                 Ok((
-                    crate::types::TypeSpec {
-                        kind: TypeSpecKind::Builtin(mask.bits()),
-                        qualifiers: TypeQualifiers::empty(),
-                        storage: StorageClass::None,
-                        pointer_depth: 0,
-                        array_rank: 0,
-                        alignas: None,
-                        array_sizes: thin_vec::ThinVec::new(),
-                    },
+                    Parser::new_typespec(TypeSpecKind::Builtin(mask.bits())),
                     None,
                 ))
             }
             KeywordKind::Int => Ok((
-                crate::types::TypeSpec {
-                    kind: TypeSpecKind::Builtin(TypeKeywordMask::INT.bits()),
-                    qualifiers: TypeQualifiers::empty(),
-                    storage: StorageClass::None,
-                    pointer_depth: 0,
-                    array_rank: 0,
-                    alignas: None,
-                    array_sizes: thin_vec::ThinVec::new(),
-                },
+                Parser::new_typespec(TypeSpecKind::Builtin(TypeKeywordMask::INT.bits())),
                 None,
             )),
             KeywordKind::Char => Ok((
-                crate::types::TypeSpec {
-                    kind: TypeSpecKind::Builtin(TypeKeywordMask::CHAR.bits()),
-                    qualifiers: TypeQualifiers::empty(),
-                    storage: StorageClass::None,
-                    pointer_depth: 0,
-                    array_rank: 0,
-                    alignas: None,
-                    array_sizes: thin_vec::ThinVec::new(),
-                },
+                Parser::new_typespec(TypeSpecKind::Builtin(TypeKeywordMask::CHAR.bits())),
                 None,
             )),
             KeywordKind::Float => Ok((
-                crate::types::TypeSpec {
-                    kind: TypeSpecKind::Builtin(TypeKeywordMask::FLOAT.bits()),
-                    qualifiers: TypeQualifiers::empty(),
-                    storage: StorageClass::None,
-                    pointer_depth: 0,
-                    array_rank: 0,
-                    alignas: None,
-                    array_sizes: thin_vec::ThinVec::new(),
-                },
+                Parser::new_typespec(TypeSpecKind::Builtin(TypeKeywordMask::FLOAT.bits())),
                 None,
             )),
             KeywordKind::Double => Ok((
-                crate::types::TypeSpec {
-                    kind: TypeSpecKind::Builtin(TypeKeywordMask::DOUBLE.bits()),
-                    qualifiers: TypeQualifiers::empty(),
-                    storage: StorageClass::None,
-                    pointer_depth: 0,
-                    array_rank: 0,
-                    alignas: None,
-                    array_sizes: thin_vec::ThinVec::new(),
-                },
+                Parser::new_typespec(TypeSpecKind::Builtin(TypeKeywordMask::DOUBLE.bits())),
                 None,
             )),
             KeywordKind::Void => Ok((
-                crate::types::TypeSpec {
-                    kind: TypeSpecKind::Builtin(TypeKeywordMask::VOID.bits()),
-                    qualifiers: TypeQualifiers::empty(),
-                    storage: StorageClass::None,
-                    pointer_depth: 0,
-                    array_rank: 0,
-                    alignas: None,
-                    array_sizes: thin_vec::ThinVec::new(),
-                },
+                Parser::new_typespec(TypeSpecKind::Builtin(TypeKeywordMask::VOID.bits())),
                 None,
             )),
             KeywordKind::Bool => Ok((
-                crate::types::TypeSpec {
-                    kind: TypeSpecKind::Builtin(TypeKeywordMask::BOOL.bits()),
-                    qualifiers: TypeQualifiers::empty(),
-                    storage: StorageClass::None,
-                    pointer_depth: 0,
-                    array_rank: 0,
-                    alignas: None,
-                    array_sizes: thin_vec::ThinVec::new(),
-                },
+                Parser::new_typespec(TypeSpecKind::Builtin(TypeKeywordMask::BOOL.bits())),
                 None,
             )),
             KeywordKind::Struct => {
@@ -488,28 +421,12 @@ impl Parser {
                         span,
                     });
                     Ok((
-                        crate::types::TypeSpec {
-                            kind: TypeSpecKind::Struct(name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id())),
-                            qualifiers: TypeQualifiers::empty(),
-                            storage: StorageClass::None,
-                            pointer_depth: 0,
-                            array_rank: 0,
-                            alignas: None,
-                            array_sizes: thin_vec::ThinVec::new(),
-                        },
+                        Parser::new_typespec(TypeSpecKind::Struct(name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id()))),
                         Some(struct_decl),
                     ))
                 } else {
                     Ok((
-                        crate::types::TypeSpec {
-                            kind: TypeSpecKind::Struct(name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id())),
-                            qualifiers: TypeQualifiers::empty(),
-                            storage: StorageClass::None,
-                            pointer_depth: 0,
-                            array_rank: 0,
-                            alignas: None,
-                            array_sizes: thin_vec::ThinVec::new(),
-                        },
+                        Parser::new_typespec(TypeSpecKind::Struct(name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id()))),
                         None,
                     ))
                 }
@@ -531,28 +448,12 @@ impl Parser {
                         span,
                     });
                     Ok((
-                        crate::types::TypeSpec {
-                            kind: TypeSpecKind::Union(name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id())),
-                            qualifiers: TypeQualifiers::empty(),
-                            storage: StorageClass::None,
-                            pointer_depth: 0,
-                            array_rank: 0,
-                            alignas: None,
-                            array_sizes: thin_vec::ThinVec::new(),
-                        },
+                        Parser::new_typespec(TypeSpecKind::Union(name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id()))),
                         Some(union_decl),
                     ))
                 } else {
                     Ok((
-                        crate::types::TypeSpec {
-                            kind: TypeSpecKind::Union(name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id())),
-                            qualifiers: TypeQualifiers::empty(),
-                            storage: StorageClass::None,
-                            pointer_depth: 0,
-                            array_rank: 0,
-                            alignas: None,
-                            array_sizes: thin_vec::ThinVec::new(),
-                        },
+                        Parser::new_typespec(TypeSpecKind::Union(name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id()))),
                         None,
                     ))
                 }
@@ -570,28 +471,12 @@ impl Parser {
                         span,
                     });
                     Ok((
-                        crate::types::TypeSpec {
-                            kind: TypeSpecKind::Enum(name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id())),
-                            qualifiers: TypeQualifiers::empty(),
-                            storage: StorageClass::None,
-                            pointer_depth: 0,
-                            array_rank: 0,
-                            alignas: None,
-                            array_sizes: thin_vec::ThinVec::new(),
-                        },
+                        Parser::new_typespec(TypeSpecKind::Enum(name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id()))),
                         Some(enum_decl),
                     ))
                 } else {
                     Ok((
-                        crate::types::TypeSpec {
-                            kind: TypeSpecKind::Enum(name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id())),
-                            qualifiers: TypeQualifiers::empty(),
-                            storage: StorageClass::None,
-                            pointer_depth: 0,
-                            array_rank: 0,
-                            alignas: None,
-                            array_sizes: thin_vec::ThinVec::new(),
-                        },
+                        Parser::new_typespec(TypeSpecKind::Enum(name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id()))),
                         None,
                     ))
                 }
@@ -668,36 +553,48 @@ impl Parser {
     /// Parses a single struct/union field
     fn parse_struct_field(&mut self) -> Result<Parameter, ParserError> {
         let (base_type_spec, _) = self.parse_type_specifier()?;
-        let (ty, name, id_token) = self.parse_declarator_suffix(base_type_spec)?;
+        let (base, declarator) = self.parse_declarator_suffix(base_type_spec)?;
+        let ty = self.apply_declarator_modifiers(&base, &declarator);
         self.expect_punct(TokenKind::Semicolon)?;
         Ok(Parameter {
             ty,
-            name: name, // name can be empty for anonymous members
-            span: id_token.span,
+            name: declarator.name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id()),
+            span: declarator.span,
         })
     }
 
-    /// Parses declarator suffixes (pointers and arrays) and returns the final type and identifier.
+    /// Applies declarator modifiers to a base type spec to produce the final type spec.
+    fn apply_declarator_modifiers(&self, base: &TypeSpec, declarator: &ast::Declarator) -> TypeSpec {
+        let mut ty = base.clone();
+        ty.pointer_depth += declarator.pointer_depth;
+        ty.array_sizes.extend(declarator.array_sizes.iter().cloned());
+        ty.qualifiers |= TypeQualifiers::from_bits_truncate(declarator.qualifiers as u8);
+        ty
+    }
+
+    /// Parses declarator suffixes (pointers and arrays) and returns the base type and declarator.
     /// This function assumes the base type has already been parsed.
     fn parse_declarator_suffix(
         &mut self,
-        mut base_type_spec: crate::types::TypeSpec,
-    ) -> Result<(crate::types::TypeSpec, StringId, Token), ParserError> {
+        base_type_spec: crate::types::TypeSpec,
+    ) -> Result<(crate::types::TypeSpec, ast::Declarator), ParserError> {
+        let mut pointer_depth = 0;
+        let mut qualifiers = 0;
         // Parse pointers and their qualifiers
         while let Ok(token) = self.current_token() {
             if token.kind == TokenKind::Star {
                 self.eat()?;
-                base_type_spec.pointer_depth += 1;
+                pointer_depth += 1;
                 while let Ok(token) = self.current_token() {
                     if token.kind == TokenKind::Keyword(KeywordKind::Const) {
                         self.eat()?;
-                        base_type_spec.qualifiers |= TypeQualifiers::CONST;
+                        qualifiers |= TypeQualifiers::CONST.bits();
                     } else if token.kind == TokenKind::Keyword(KeywordKind::Volatile) {
                         self.eat()?;
-                        base_type_spec.qualifiers |= TypeQualifiers::VOLATILE;
+                        qualifiers |= TypeQualifiers::VOLATILE.bits();
                     } else if token.kind == TokenKind::Keyword(KeywordKind::Restrict) {
                         self.eat()?;
-                        base_type_spec.qualifiers |= TypeQualifiers::RESTRICT;
+                        qualifiers |= TypeQualifiers::RESTRICT.bits();
                     } else {
                         break;
                     }
@@ -708,49 +605,42 @@ impl Parser {
         }
 
         let id_token = self.current_token()?;
-        let (id, final_token) = if let TokenKind::Identifier(name) = id_token.kind.clone() {
+        let (name, span) = if let TokenKind::Identifier(id) = id_token.kind.clone() {
             self.eat()?;
-            (name, id_token)
+            (Some(id), id_token.span)
         } else {
-            // For abstract declarators, there's no identifier.
-            // We'll pass back the token we're at, but the caller must be careful.
-            // Let's create a default token to signify no identifier.
-            (
-                crate::parser::string_interner::StringInterner::empty_id(), // Use empty string for default StringId
-                Token {
-                    span: Default::default(),
-                    kind: TokenKind::Eof,
-                },
-            )
+            (None, id_token.span)
         };
 
         // Parse array dimensions
+        let mut array_sizes = ThinVec::new();
         while let Ok(token) = self.current_token() {
             if token.kind == TokenKind::LeftBracket {
                 self.eat()?;
-                base_type_spec.array_rank += 1;
-                if self.eat_token(&TokenKind::RightBracket)? {
+                let size_expr = if self.eat_token(&TokenKind::RightBracket)? {
                     // Unsized array
-                    let size_expr = Expr::Number(0, token.span);
-                    base_type_spec.array_sizes.push(size_expr);
+                    Expr::Number(0, token.span)
                 } else {
-                    let size_expr = self.parse_expr()?;
-                    let size = if let Expr::Number(n, _) = size_expr {
-                        n as usize
-                    } else {
-                        let token = self.current_token()?;
-                        return Err(ParserError::UnexpectedToken(token));
-                    };
+                    let expr = self.parse_expr()?;
                     self.expect_punct(TokenKind::RightBracket)?;
-                    // For fixed-size arrays, use the actual size
-                    let array_expr = Expr::Number(size as i64, token.span);
-                    base_type_spec.array_sizes.push(array_expr);
-                }
+                    expr
+                };
+                array_sizes.push(size_expr);
             } else {
                 break;
             }
         }
-        Ok((base_type_spec, id, final_token))
+        let declarator = ast::Declarator {
+            name,
+            pointer_depth,
+            array_sizes,
+            func_params: None,
+            qualifiers: qualifiers as u16,
+            inner: None,
+            init: None,
+            span,
+        };
+        Ok((base_type_spec, declarator))
     }
 
     /// Parses a declarator with optional initializer.
@@ -758,15 +648,13 @@ impl Parser {
         &mut self,
         base_type_spec: crate::types::TypeSpec,
     ) -> Result<ast::Declarator, ParserError> {
-        let (type_spec, name, id_token) = self.parse_declarator_suffix(base_type_spec)?;
-        let initializer = self.parse_initializer_expr()?;
+        let (base, mut declarator) = self.parse_declarator_suffix(base_type_spec)?;
+        declarator.init = self.parse_initializer_expr()?.map(|i| Box::new(match i {
+            Initializer::Expr(expr) => *expr,
+            Initializer::List(list) => Expr::InitializerList(list),
+        }));
 
-        Ok(ast::Declarator {
-            ty: type_spec,
-            name,
-            initializer,
-            span: id_token.span,
-        })
+        Ok(declarator)
     }
 
     /// parse initializer expression
@@ -796,8 +684,9 @@ impl Parser {
         let original_pos = self.position;
         if let Ok(kind) = self.current_kind()
             && matches!(kind, TokenKind::Star | TokenKind::LeftBracket)
-            && let Ok((type_spec, _, _)) = self.parse_declarator_suffix(base_type_spec.clone())
+            && let Ok((base, declarator)) = self.parse_declarator_suffix(base_type_spec.clone())
         {
+            let type_spec = self.apply_declarator_modifiers(&base, &declarator);
             return Ok(type_spec);
         }
         self.position = original_pos; // Backtrack if no declarator suffix found
@@ -1286,7 +1175,7 @@ impl Parser {
                 }
             }
             self.expect_punct(TokenKind::Semicolon)?;
-            return Ok(Stmt::Declaration(base_type_spec, declarators, false));
+            return Ok(Stmt::Declaration(Decl::VarGroup(base_type_spec, declarators)));
         }
         let token = self.current_token()?;
         if let TokenKind::LeftBrace = token.kind.clone() {
@@ -1311,7 +1200,7 @@ impl Parser {
                 }
             }
             self.expect_punct(TokenKind::Semicolon)?;
-            return Ok(Stmt::Declaration(base_type_spec, declarators, true));
+            return Ok(Stmt::Declaration(Decl::VarGroup(base_type_spec, declarators)));
         }
 
         if self.is_type_name() && self.peek()? != TokenKind::LeftParen {
@@ -1329,7 +1218,7 @@ impl Parser {
                 }
             }
             self.expect_punct(TokenKind::Semicolon)?;
-            return Ok(Stmt::Declaration(base_type_spec, declarators, false));
+            return Ok(Stmt::Declaration(Decl::VarGroup(base_type_spec, declarators)));
         }
 
         if let TokenKind::Keyword(k) = token.kind {
@@ -1422,8 +1311,9 @@ impl Parser {
                 self.eat()?;
                 let (base_type_spec, _) = self.parse_type_specifier()?;
                 loop {
-                    let (type_spec, name, _) =
-                        self.parse_declarator_suffix(base_type_spec.clone())?;
+                    let (base, declarator) = self.parse_declarator_suffix(base_type_spec.clone())?;
+                    let type_spec = self.apply_declarator_modifiers(&base, &declarator);
+                    let name = declarator.name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id());
                     self.typedefs.insert(name, type_spec);
                     if !self.eat_token(&TokenKind::Comma)? {
                         break;
@@ -1466,7 +1356,9 @@ impl Parser {
         let (base_type_spec, _) = self.parse_type_specifier()?;
 
         // Parse declarator suffix (including pointers, arrays, and function name)
-        let (type_spec, id, _) = self.parse_declarator_suffix(base_type_spec)?;
+        let (base, declarator) = self.parse_declarator_suffix(base_type_spec)?;
+        let type_spec = self.apply_declarator_modifiers(&base, &declarator);
+        let id = declarator.name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id());
 
         self.expect_punct(TokenKind::LeftParen)?;
         let mut params = ThinVec::new();
@@ -1479,12 +1371,12 @@ impl Parser {
                 break;
             }
             let (base_type, _) = self.parse_type_specifier()?;
-            let declarator = self.parse_declarator(base_type)?;
-            params.push(VarDecl {
-                name: declarator.name,
-                type_spec: declarator.ty, // This is still the old TypeSpec, but we need to convert
+            let declarator = self.parse_declarator(base_type.clone())?;
+            let ty = self.apply_declarator_modifiers(&base_type, &declarator);
+            params.push(ast::ParamDecl {
+                name: declarator.name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id()),
+                type_spec: ty,
                 span: declarator.span,
-                init: None,
             });
 
             if !self.eat_token(&TokenKind::Comma)? {
@@ -1492,10 +1384,15 @@ impl Parser {
                 break;
             }
         }
+        let param_decls: ThinVec<ast::ParamDecl> = params.into_iter().map(|p| ast::ParamDecl {
+            name: p.name,
+            type_spec: p.type_spec,
+            span: p.span,
+        }).collect();
         Ok(FuncSignature(
             type_spec,
             id,
-            params,
+            param_decls,
             false, // is_inline - handled in external declaration
             is_variadic,
             false, // is_noreturn - handled in external declaration
@@ -1574,10 +1471,9 @@ impl Parser {
                     return_type: signature.0,
                     params: signature.2
                         .into_iter()
-                        .map(|p| VarDecl {
+                        .map(|p| ast::ParamDecl {
                             name: p.name,
                             type_spec: p.type_spec,
-                            init: None,
                             span: p.span,
                         })
                         .collect(),
@@ -1601,7 +1497,9 @@ impl Parser {
             let (base_type_spec, _) = self.parse_type_specifier()?;
             let mut typedefs = ThinVec::new();
             loop {
-                let (type_spec, name, _) = self.parse_declarator_suffix(base_type_spec.clone())?;
+                let (base, declarator) = self.parse_declarator_suffix(base_type_spec.clone())?;
+                let type_spec = self.apply_declarator_modifiers(&base, &declarator);
+                let name = declarator.name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id());
                 self.typedefs.insert(name, type_spec.clone());
                 typedefs.push((name, type_spec));
                 if !self.eat_token(&TokenKind::Comma)? {
@@ -1628,44 +1526,21 @@ impl Parser {
                 return Ok(decl);
             } else {
                 // Empty variable declaration, but we need to create a Decl
-                // For now, we'll create a dummy VarDecl
-                return Ok(Decl::Var(VarDecl {
-                    name: StringInterner::empty_id(),
-                    type_spec: base_type_spec,
-                    init: None,
-                    span: SourceSpan::default(),
-                }));
+                // For now, we'll create a dummy VarGroup
+                return Ok(Decl::VarGroup(base_type_spec, thin_vec::ThinVec::new()));
             }
         }
-        let mut var_decls = ThinVec::new();
+        let mut declarators = ThinVec::new();
         loop {
-            let (type_spec, name, id_token) =
-                self.parse_declarator_suffix(base_type_spec.clone())?;
-            let initializer = self.parse_initializer_expr()?;
-            var_decls.push(VarDecl {
-                name,
-                type_spec,
-                init: initializer,
-                span: id_token.span,
-            });
+            let declarator = self.parse_declarator(base_type_spec.clone())?;
+            declarators.push(declarator);
 
             if self.eat_token(&TokenKind::Comma)? == false {
                 break;
             }
         }
         self.expect_punct(TokenKind::Semicolon)?;
-        // For multiple declarations, we need to return multiple Decls, but since we can only return one,
-        // we'll return the first one for now. This might need adjustment.
-        if let Some(first) = var_decls.into_iter().next() {
-            Ok(Decl::Var(first))
-        } else {
-            Ok(Decl::Var(VarDecl {
-                name: StringInterner::empty_id(),
-                type_spec: base_type_spec,
-                init: None,
-                span: SourceSpan::default(),
-            }))
-        }
+        Ok(Decl::VarGroup(base_type_spec, declarators))
     }
 
     pub fn parse(&mut self) -> Result<TranslationUnit, ParserError> {

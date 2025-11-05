@@ -14,8 +14,8 @@ use bitflags::bitflags;
 
 use crate::StringId;
 
-/// Bitflags for type qualifiers — 1 byte total
 bitflags::bitflags! {
+    /// Bitflags for type qualifiers — 1 byte total
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct TypeQualifiers: u8 {
         const CONST     = 0b0001;
@@ -48,8 +48,8 @@ pub enum TypeSpecKind {
     Typedef(StringId),
 }
 
-/// Simple keyword bitmask — instead of Vec<TypeKeyword>
 bitflags::bitflags! {
+    /// Simple keyword bitmask — instead of Vec<TypeKeyword>
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct TypeKeywordMask: u16 {
         const VOID       = 1 << 0;
@@ -481,7 +481,9 @@ mod tests {
     #[test]
     fn builtin_ids_match_interned() {
         assert_eq!(TypeId::intern(&TypeKind::Bool).index(), TypeId::BOOL.index());
+        assert_eq!(TypeId::intern(&TypeKind::Int).index(), TypeId::INT.index());
 
+        // pointer
         let vptr = TypeId::intern(&TypeKind::Pointer(TypeId::VOID));
         assert_eq!(vptr.index(), TypeId::VOID_PTR.index());
 

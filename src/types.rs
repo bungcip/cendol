@@ -37,25 +37,25 @@ impl TypeId {
     pub const FLAG_POINTER: u16 = 1 << 0;
     pub const FLAG_ARRAY: u16 = 1 << 1;
     pub const FLAG_FUNCTION: u16 = 1 << 2;
-    pub const FLAG_AGGREGATE: u16 = 1 << 3; // struct, union, enum
+    pub const FLAG_RECORD: u16 = 1 << 3; // struct, union
+    pub const FLAG_AGGREGATE: u16 = 1 << 4; // struct, union, enum
 
     /// traits
-    pub const FLAG_INTEGER: u16 = 1 << 4;
-    pub const FLAG_FLOATING: u16 = 1 << 5;
-    pub const FLAG_SIGNED: u16 = 1 << 6;
-    pub const FLAG_UNSIGNED: u16 = 1 << 7;
+    pub const FLAG_INTEGER: u16 = 1 << 5;
+    pub const FLAG_FLOATING: u16 = 1 << 6;
+    pub const FLAG_SIGNED: u16 = 1 << 7;
+    pub const FLAG_UNSIGNED: u16 = 1 << 8;
 
     /// qualifier
-    pub const FLAG_CONST: u16 = 1 << 8;
-    pub const FLAG_VOLATILE: u16 = 1 << 9;
-    pub const FLAG_RESTRICT: u16 = 1 << 10;
-    pub const FLAG_ATOMIC: u16 = 1 << 11;
+    pub const FLAG_CONST: u16 = 1 << 9;
+    pub const FLAG_VOLATILE: u16 = 1 << 10;
+    pub const FLAG_RESTRICT: u16 = 1 << 11;
+    pub const FLAG_ATOMIC: u16 = 1 << 12;
 
     /// misc
-    pub const FLAG_INCOMPLETE: u16 = 1 << 12;
-    pub const FLAG_CANONICAL: u16 = 1 << 13;
-    pub const FLAG_HAS_NAME: u16 = 1 << 14;
-    pub const FLAG_RESERVED: u16 = 1 << 15;
+    pub const FLAG_INCOMPLETE: u16 = 1 << 13;
+    pub const FLAG_CANONICAL: u16 = 1 << 14;
+    pub const FLAG_HAS_NAME: u16 = 1 << 15;
 
     pub fn with_qualifier(self, q: u16) -> Self {
         let flags = self.flags() | q;
@@ -74,6 +74,55 @@ impl TypeId {
     }
     pub fn is_restrict(self) -> bool {
         self.has_flag(Self::FLAG_RESTRICT)
+    }
+
+    pub fn is_pointer(self) -> bool {
+        self.has_flag(Self::FLAG_POINTER)
+    }
+
+    pub fn is_record(self) -> bool {
+        self.has_flag(Self::FLAG_RECORD)
+    }
+
+    pub fn is_aggregate(self) -> bool {
+        self.has_flag(Self::FLAG_AGGREGATE)
+    }
+
+    pub fn is_floating(self) -> bool {
+        self.has_flag(Self::FLAG_FLOATING)
+    }
+
+    pub fn is_unsigned(self) -> bool {
+        self.has_flag(Self::FLAG_UNSIGNED)
+    }
+
+    pub fn get_integer_rank(self) -> i32 {
+        self.kind().get_integer_rank()
+    }
+
+    // pub fn get_arithmetic_rank(&self) -> i32 {
+    //     self.kind().get_arithmetic_rank()
+    // }
+
+    pub fn unwrap_const(self) -> Self {
+        if self.is_const() {
+            self.without_flag(Self::FLAG_CONST)
+        } else {
+            self
+        }
+    }
+
+    pub fn unwrap_volatile(self) -> Self {
+        if self.is_volatile() {
+            self.without_flag(Self::FLAG_VOLATILE)
+        } else {
+            self
+        }
+    }
+
+    pub fn without_flag(self, flag: u16) -> Self {
+        let flags = self.flags() & !flag;
+        TypeId::from_parts(self.index(), flags)
     }
 
     /// Make from raw index+flags packed.
@@ -113,8 +162,15 @@ impl fmt::Debug for TypeId {
     }
 }
 
+impl fmt::Display for TypeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 /// interning
 impl TypeId {
+    /// return cloned TypeKind from TypeId
     pub fn kind(&self) -> TypeKind {
         THREAD_TABLE.with(|tbl| {
             let t = tbl.borrow();
@@ -280,10 +336,10 @@ impl TypeKind {
             TypeKind::Array(..) => TypeId::FLAG_ARRAY,
 
             // ----- aggregate / composite types -----
-            TypeKind::Struct(Some(_), ..) => TypeId::FLAG_AGGREGATE | TypeId::FLAG_HAS_NAME,
-            TypeKind::Struct(None, ..) => TypeId::FLAG_AGGREGATE,
-            TypeKind::Union(Some(_), ..) => TypeId::FLAG_AGGREGATE | TypeId::FLAG_HAS_NAME,
-            TypeKind::Union(None, ..) => TypeId::FLAG_AGGREGATE,
+            TypeKind::Struct(Some(_), ..) => TypeId::FLAG_RECORD | TypeId::FLAG_AGGREGATE | TypeId::FLAG_HAS_NAME,
+            TypeKind::Struct(None, ..) => TypeId::FLAG_RECORD | TypeId::FLAG_AGGREGATE,
+            TypeKind::Union(Some(_), ..) => TypeId::FLAG_RECORD | TypeId::FLAG_AGGREGATE | TypeId::FLAG_HAS_NAME,
+            TypeKind::Union(None, ..) => TypeId::FLAG_RECORD | TypeId::FLAG_AGGREGATE,
             TypeKind::Enum{name: Some(_), ..} => TypeId::FLAG_AGGREGATE | TypeId::FLAG_HAS_NAME,
             TypeKind::Enum{name: None, ..} => TypeId::FLAG_AGGREGATE,
 
@@ -306,6 +362,18 @@ impl TypeKind {
                 | TypeKind::Double
                 | TypeKind::Pointer(_)
         )
+    }
+
+    pub fn get_integer_rank(&self) -> i32 {
+        match self {
+            TypeKind::Bool => 1,
+            TypeKind::Char | TypeKind::UnsignedChar => 2,
+            TypeKind::Short | TypeKind::UnsignedShort => 3,
+            TypeKind::Int | TypeKind::UnsignedInt => 4,
+            TypeKind::Long | TypeKind::UnsignedLong => 5,
+            TypeKind::LongLong | TypeKind::UnsignedLongLong => 6,
+            _ => 0,
+        }
     }
 }
 

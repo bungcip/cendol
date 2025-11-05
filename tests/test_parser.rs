@@ -108,8 +108,14 @@ fn parse_c_body(input: &str) -> ThinVec<Stmt> {
         .unwrap();
     let mut parser = Parser::new(tokens).unwrap();
     let ast = parser.parse().unwrap();
-    let body = ast.functions.last().unwrap().body.clone();
-    body
+    let func_def = ast.globals.iter().find_map(|d| {
+        if let Decl::FuncDef(f) = d {
+            Some(f)
+        } else {
+            None
+        }
+    }).unwrap();
+    func_def.body.clone().unwrap()
 }
 
 #[cfg(test)]
@@ -191,7 +197,14 @@ mod tests {
     fn test_multiple_declarators() {
         let input = "int main() { int x, *p, **pp; return 0; }";
         let ast = parse_c_code(input).unwrap();
-        let body = &ast.functions[0].body;
+        let func_def = ast.globals.iter().find_map(|d| {
+            if let Decl::FuncDef(f) = d {
+                Some(f)
+            } else {
+                None
+            }
+        }).unwrap();
+        let body = func_def.body.as_ref().unwrap();
 
         if let Stmt::Declaration(ty, declarators, false) = &body[0] {
             assert_eq!(declarators.len(), 3);

@@ -1,7 +1,7 @@
 use crate::SourceSpan;
 use crate::parser::ast::{
     Decl, Designator, Expr, ForInit, FuncDecl, Function, Initializer, InitializerList, Parameter, Stmt,
-    TranslationUnit, Type, TypeKeyword, TypeQualifier, TypeSpec, TypeSpecKind, VarDecl,
+    TranslationUnit, TypeKeyword, TypeQualifier, TypeSpec, TypeSpecKind, VarDecl,
 };
 use crate::parser::error::ParserError;
 use crate::parser::string_interner::StringId;
@@ -1473,7 +1473,6 @@ impl Parser {
 
     pub fn parse(&mut self) -> Result<TranslationUnit, ParserError> {
         let mut globals = ThinVec::new();
-        let mut functions = ThinVec::new();
         while let Ok(token) = self.current_token()
             && token.kind != TokenKind::Eof
         {
@@ -1483,10 +1482,10 @@ impl Parser {
                 globals.push(self.parse_global()?);
             } else {
                 self.position = pos;
-                functions.push(self.parse_function()?);
+                globals.push(self.parse_function_definition()?);
             }
         }
-        Ok(TranslationUnit { globals, functions })
+        Ok(TranslationUnit { globals })
     }
 
     /// parse a option action when start token is found

@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 use crate::SourceSpan;
 use crate::parser::string_interner::StringId;
+use crate::types::{TypeId, TypeKind};
 use thin_vec::ThinVec;
 
 /// Type alias for initializer lists.
@@ -128,348 +129,491 @@ pub enum Decl {
 }
 
 /// Represents a type in the C language.
-#[derive(Debug, PartialEq, Clone)]
-pub enum Type {
-    /// The `int` type.
-    Int(SourceSpan),
-    /// The `char` type.
-    Char(SourceSpan),
-    /// The `short` type.
-    Short(SourceSpan),
-    /// The `float` type.
-    Float(SourceSpan),
-    /// The `double` type.
-    Double(SourceSpan),
-    /// The `long` type.
-    Long(SourceSpan),
-    /// The `long long` type.
-    LongLong(SourceSpan),
-    /// The `unsigned int` type.
-    UnsignedInt(SourceSpan),
-    /// The `unsigned char` type.
-    UnsignedChar(SourceSpan),
-    /// The `unsigned short` type.
-    UnsignedShort(SourceSpan),
-    /// The `unsigned long` type.
-    UnsignedLong(SourceSpan),
-    /// The `unsigned long long` type.
-    UnsignedLongLong(SourceSpan),
-    /// The `void` type.
-    Void(SourceSpan),
-    /// The `_Bool` type.
-    Bool(SourceSpan),
-    /// A pointer to another type.
-    Pointer(Box<Type>, SourceSpan),
-    /// An array of a specific size.
-    Array(Box<Type>, usize, SourceSpan),
-    /// A struct definition.
-    Struct(Option<StringId>, ThinVec<TypedParameter>, SourceSpan),
-    /// A union definition.
-    Union(Option<StringId>, ThinVec<TypedParameter>, SourceSpan),
-    /// An enum definition.
-    Enum(
-        Option<StringId>,
-        ThinVec<(StringId, Option<Box<Expr>>, SourceSpan)>,
-        SourceSpan,
-    ),
-    Const(Box<Type>, SourceSpan),
-    Volatile(Box<Type>, SourceSpan),
-}
+// #[derive(Debug, PartialEq, Clone)]
+// pub enum Type {
+//     /// The `int` type.
+//     Int(SourceSpan),
+//     /// The `char` type.
+//     Char(SourceSpan),
+//     /// The `short` type.
+//     Short(SourceSpan),
+//     /// The `float` type.
+//     Float(SourceSpan),
+//     /// The `double` type.
+//     Double(SourceSpan),
+//     /// The `long` type.
+//     Long(SourceSpan),
+//     /// The `long long` type.
+//     LongLong(SourceSpan),
+//     /// The `unsigned int` type.
+//     UnsignedInt(SourceSpan),
+//     /// The `unsigned char` type.
+//     UnsignedChar(SourceSpan),
+//     /// The `unsigned short` type.
+//     UnsignedShort(SourceSpan),
+//     /// The `unsigned long` type.
+//     UnsignedLong(SourceSpan),
+//     /// The `unsigned long long` type.
+//     UnsignedLongLong(SourceSpan),
+//     /// The `void` type.
+//     Void(SourceSpan),
+//     /// The `_Bool` type.
+//     Bool(SourceSpan),
+//     /// A pointer to another type.
+//     Pointer(Box<Type>, SourceSpan),
+//     /// An array of a specific size.
+//     Array(Box<Type>, usize, SourceSpan),
+//     /// A struct definition.
+//     Struct(Option<StringId>, ThinVec<TypedParameter>, SourceSpan),
+//     /// A union definition.
+//     Union(Option<StringId>, ThinVec<TypedParameter>, SourceSpan),
+//     /// An enum definition.
+//     Enum(
+//         Option<StringId>,
+//         ThinVec<(StringId, Option<Box<Expr>>, SourceSpan)>,
+//         SourceSpan,
+//     ),
+//     Const(Box<Type>, SourceSpan),
+//     Volatile(Box<Type>, SourceSpan),
+// }
 
-impl Type {
-    /// Converts a TypeSpec to a Type for compatibility.
-    pub fn from_type_spec(type_spec: &TypeSpec, span: SourceSpan) -> Type {
-        let mut ty = match &type_spec.kind {
-            TypeSpecKind::Builtin(keywords) => {
-                if keywords.is_empty() {
-                    Type::Int(span)
-                } else {
-                    match keywords[0] {
-                        TypeKeyword::Int => Type::Int(span),
-                        TypeKeyword::Char => Type::Char(span),
-                        TypeKeyword::Short => Type::Short(span),
-                        TypeKeyword::Float => Type::Float(span),
-                        TypeKeyword::Double => Type::Double(span),
-                        TypeKeyword::Long => {
-                            if keywords.len() >= 2 && keywords[1] == TypeKeyword::Long {
-                                Type::LongLong(span)
-                            } else {
-                                Type::Long(span)
-                            }
+/// Converts a TypeSpec to a TypeId by building the corresponding TypeKind and interning it.
+pub fn type_spec_to_type_id(type_spec: &TypeSpec, span: SourceSpan) -> TypeId {
+    let mut kind = match &type_spec.kind {
+        TypeSpecKind::Builtin(keywords) => {
+            if keywords.is_empty() {
+                TypeKind::Int
+            } else {
+                match keywords[0] {
+                    TypeKeyword::Int => TypeKind::Int,
+                    TypeKeyword::Char => TypeKind::Char,
+                    TypeKeyword::Short => TypeKind::Short,
+                    TypeKeyword::Float => TypeKind::Float,
+                    TypeKeyword::Double => TypeKind::Double,
+                    TypeKeyword::Long => {
+                        if keywords.len() >= 2 && keywords[1] == TypeKeyword::Long {
+                            TypeKind::LongLong
+                        } else {
+                            TypeKind::Long
                         }
-                        TypeKeyword::LongLong => Type::LongLong(span),
-                        TypeKeyword::UnsignedInt => Type::UnsignedInt(span),
-                        TypeKeyword::UnsignedChar => Type::UnsignedChar(span),
-                        TypeKeyword::UnsignedShort => Type::UnsignedShort(span),
-                        TypeKeyword::UnsignedLong => {
-                            if keywords.len() >= 2 && keywords[1] == TypeKeyword::Long {
-                                Type::UnsignedLongLong(span)
-                            } else {
-                                Type::UnsignedLong(span)
-                            }
-                        }
-                        TypeKeyword::UnsignedLongLong => Type::UnsignedLongLong(span),
-                        TypeKeyword::Void => Type::Void(span),
-                        TypeKeyword::Bool => Type::Bool(span),
                     }
-                }
-            }
-            TypeSpecKind::Struct(name_id) => {
-                // For struct types in TypeSpec, we don't have field information
-                // Field information is handled separately via Decl::Struct
-                Type::Struct(*name_id, ThinVec::new(), span)
-            },
-            TypeSpecKind::Union(name_id) => {
-                // For union types in TypeSpec, we don't have field information
-                // Field information is handled separately via Decl::Union
-                Type::Union(*name_id, ThinVec::new(), span)
-            },
-            TypeSpecKind::Enum(name_id) => Type::Enum(*name_id, ThinVec::new(), span),
-            TypeSpecKind::Typedef(_name_id) => Type::Int(span), // Fallback for typedef
-        };
-
-        // Apply array sizes
-        for array_size in &type_spec.array_sizes {
-            if let Expr::Number(size, _) = &**array_size {
-                if *size > 0 {
-                    ty = Type::Array(Box::new(ty), *size as usize, span);
-                } else {
-                    ty = Type::Array(Box::new(ty), 0, span);
+                    TypeKeyword::LongLong => TypeKind::LongLong,
+                    TypeKeyword::UnsignedInt => TypeKind::UnsignedInt,
+                    TypeKeyword::UnsignedChar => TypeKind::UnsignedChar,
+                    TypeKeyword::UnsignedShort => TypeKind::UnsignedShort,
+                    TypeKeyword::UnsignedLong => {
+                        if keywords.len() >= 2 && keywords[1] == TypeKeyword::Long {
+                            TypeKind::UnsignedLongLong
+                        } else {
+                            TypeKind::UnsignedLong
+                        }
+                    }
+                    TypeKeyword::UnsignedLongLong => TypeKind::UnsignedLongLong,
+                    TypeKeyword::Void => TypeKind::Void,
+                    TypeKeyword::Bool => TypeKind::Bool,
                 }
             }
         }
+        TypeSpecKind::Struct(name_id) => {
+            // For struct types in TypeSpec, we don't have field information
+            // Field information is handled separately via Decl::Struct
+            TypeKind::Struct(*name_id, thin_vec::ThinVec::new())
+        },
+        TypeSpecKind::Union(name_id) => {
+            // For union types in TypeSpec, we don't have field information
+            // Field information is handled separately via Decl::Union
+            TypeKind::Union(*name_id, thin_vec::ThinVec::new())
+        },
+        TypeSpecKind::Enum(name_id) => TypeKind::Enum {
+            name: *name_id,
+            underlying_type: TypeId::INT,
+            variants: thin_vec::ThinVec::new(),
+        },
+        TypeSpecKind::Typedef(_name_id) => TypeKind::Int, // Fallback for typedef
+    };
 
-        // Apply pointers
-        for _ in 0..type_spec.pointer {
-            ty = Type::Pointer(Box::new(ty), span);
-        }
-
-        // Apply qualifiers
-        for qualifier in &type_spec.qualifiers {
-            match qualifier {
-                TypeQualifier::Const => ty = Type::Const(Box::new(ty), span),
-                TypeQualifier::Volatile => ty = Type::Volatile(Box::new(ty), span),
+    // Apply array sizes
+    for array_size in &type_spec.array_sizes {
+        if let Expr::Number(size, _) = &**array_size {
+            if *size > 0 {
+                kind = TypeKind::Array(TypeId::intern(&kind), *size as usize);
+            } else {
+                kind = TypeKind::Array(TypeId::intern(&kind), 0);
             }
         }
-
-        ty
     }
 
-    /// Returns `true` if the type is a pointer.
-    pub fn is_pointer(&self) -> bool {
-        match self {
-            Type::Pointer(_, _) => true,
-            Type::Const(ty, _) => ty.is_pointer(),
-            Type::Volatile(ty, _) => ty.is_pointer(),
-            _ => false,
+    // Apply pointers
+    for _ in 0..type_spec.pointer {
+        kind = TypeKind::Pointer(TypeId::intern(&kind));
+    }
+
+    // Apply qualifiers
+    let mut flags = kind.flags();
+    for qualifier in &type_spec.qualifiers {
+        match qualifier {
+            TypeQualifier::Const => flags |= TypeId::FLAG_CONST,
+            TypeQualifier::Volatile => flags |= TypeId::FLAG_VOLATILE,
         }
     }
 
-    /// Returns `true` if the type is unsigned.
-    pub fn is_unsigned(&self) -> bool {
-        match self {
-            Type::UnsignedInt(_)
-            | Type::UnsignedChar(_)
-            | Type::UnsignedShort(_)
-            | Type::UnsignedLong(_)
-            | Type::UnsignedLongLong(_) => true,
-            Type::Const(ty, _) => ty.is_unsigned(),
-            Type::Volatile(ty, _) => ty.is_unsigned(),
-            _ => false,
-        }
-    }
-
-    pub fn is_record(&self) -> bool {
-        matches!(self, Type::Struct(..) | Type::Union(..))
-    }
-
-    pub fn is_array(&self) -> bool {
-        matches!(self, Type::Array(..))
-    }
-
-    pub fn is_aggregate(&self) -> bool {
-        matches!(self, Type::Struct(..) | Type::Union(..) | Type::Array(..))
-    }
-
-    /// Returns the rank of an integer type.
-    pub fn get_integer_rank(&self) -> i32 {
-        match self {
-            Type::Bool(_) => 1,
-            Type::Char(_) | Type::UnsignedChar(_) => 2,
-            Type::Short(_) | Type::UnsignedShort(_) => 3,
-            Type::Int(_) | Type::UnsignedInt(_) => 4,
-            Type::Long(_) | Type::UnsignedLong(_) => 5,
-            Type::LongLong(_) | Type::UnsignedLongLong(_) => 6,
-            Type::Const(ty, _) => ty.get_integer_rank(),
-            Type::Volatile(ty, _) => ty.get_integer_rank(),
-            _ => 0,
-        }
-    }
-
-    /// Returns `true` if the type is a floating-point type.
-    pub fn is_floating(&self) -> bool {
-        match self {
-            Type::Float(_) | Type::Double(_) => true,
-            Type::Const(ty, _) => ty.is_floating(),
-            Type::Volatile(ty, _) => ty.is_floating(),
-            _ => false,
-        }
-    }
-
-    /// Returns `true` if the type is numeric.
-    pub fn is_numeric(&self) -> bool {
-        match self {
-            Type::Int(_)
-            | Type::Char(_)
-            | Type::Short(_)
-            | Type::Long(_)
-            | Type::LongLong(_)
-            | Type::Float(_)
-            | Type::Double(_)
-            | Type::Enum(_, _, _) => true,
-            Type::Const(ty, _) => ty.is_numeric(),
-            Type::Volatile(ty, _) => ty.is_numeric(),
-            _ => false,
-        }
-    }
-
-    /// Returns the arithmetic conversion rank for usual arithmetic conversions.
-    pub fn get_arithmetic_rank(&self) -> i32 {
-        match self {
-            Type::Bool(_) => 1,
-            Type::Char(_) | Type::UnsignedChar(_) => 2,
-            Type::Short(_) | Type::UnsignedShort(_) => 3,
-            Type::Int(_) | Type::UnsignedInt(_) => 4,
-            Type::Long(_) | Type::UnsignedLong(_) => 5,
-            Type::LongLong(_) | Type::UnsignedLongLong(_) => 6,
-            Type::Float(_) => 7,
-            Type::Double(_) => 8,
-            Type::Const(ty, _) => ty.get_arithmetic_rank(),
-            Type::Volatile(ty, _) => ty.get_arithmetic_rank(),
-            _ => 0,
-        }
-    }
-
-    /// Recursively unwraps `const` qualifiers from a type.
-    pub fn unwrap_const(&self) -> &Type {
-        match self {
-            Type::Const(ty, _) => ty.unwrap_const(),
-            _ => self,
-        }
-    }
-
-    /// Recursively unwraps `volatile` qualifiers from a type.
-    pub fn unwrap_volatile(&self) -> &Type {
-        match self {
-            Type::Volatile(ty, _) => ty.unwrap_volatile(),
-            _ => self,
-        }
-    }
-
-    pub fn equals_ignore_span(&self, other: &Type) -> bool {
-        if std::mem::discriminant(self) != std::mem::discriminant(other) {
-            return false;
-        }
-        match (self, other) {
-            (Type::Pointer(a, _), Type::Pointer(b, _)) => a.equals_ignore_span(b),
-            (Type::Array(a, s_a, _), Type::Array(b, s_b, _)) => {
-                s_a == s_b && a.equals_ignore_span(b)
-            }
-            (Type::Const(a, _), Type::Const(b, _)) => a.equals_ignore_span(b),
-            (Type::Volatile(a, _), Type::Volatile(b, _)) => a.equals_ignore_span(b),
-            // For structs/unions, named types are nominally typed.
-            // If they have a name, the names must match.
-            (Type::Struct(n1, _, _), Type::Struct(n2, _, _)) if n1.is_some() && n2.is_some() => {
-                n1 == n2
-            }
-            (Type::Union(n1, _, _), Type::Union(n2, _, _)) if n1.is_some() && n2.is_some() => {
-                n1 == n2
-            }
-            // For other types that have no inner type, discriminant check is enough.
-            _ => true,
-        }
-    }
-
-    pub fn span(&self) -> SourceSpan {
-        match self {
-            Type::Int(span) => *span,
-            Type::Char(span) => *span,
-            Type::Short(span) => *span,
-            Type::Float(span) => *span,
-            Type::Double(span) => *span,
-            Type::Long(span) => *span,
-            Type::LongLong(span) => *span,
-            Type::UnsignedInt(span) => *span,
-            Type::UnsignedChar(span) => *span,
-            Type::UnsignedShort(span) => *span,
-            Type::UnsignedLong(span) => *span,
-            Type::UnsignedLongLong(span) => *span,
-            Type::Void(span) => *span,
-            Type::Bool(span) => *span,
-            Type::Pointer(_, span) => *span,
-            Type::Array(_, _, span) => *span,
-            Type::Struct(_, _, span) => *span,
-            Type::Union(_, _, span) => *span,
-            Type::Enum(_, _, span) => *span,
-            Type::Const(_, span) => *span,
-            Type::Volatile(_, span) => *span,
-        }
-    }
+    TypeId::intern_with_flags(&kind, flags)
 }
 
-impl Display for Type {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Type::Int(_) => write!(f, "int"),
-            Type::Char(_) => write!(f, "char"),
-            Type::Short(_) => write!(f, "short"),
-            Type::Float(_) => write!(f, "float"),
-            Type::Double(_) => write!(f, "double"),
-            Type::Long(_) => write!(f, "long"),
-            Type::LongLong(_) => write!(f, "long long"),
-            Type::UnsignedInt(_) => write!(f, "unsigned int"),
-            Type::UnsignedChar(_) => write!(f, "unsigned char"),
-            Type::UnsignedShort(_) => write!(f, "unsigned short"),
-            Type::UnsignedLong(_) => write!(f, "unsigned long"),
-            Type::UnsignedLongLong(_) => write!(f, "unsigned long long"),
-            Type::Void(_) => write!(f, "void"),
-            Type::Bool(_) => write!(f, "_Bool"),
-            Type::Pointer(inner, _) => {
-                write!(f, "{}*", inner)
-            }
-            Type::Array(inner, size, _) => {
-                write!(f, "{}[{}]", inner, size)
-            }
-            Type::Struct(name, _members, _) => {
-                if let Some(name) = name {
-                    write!(f, "struct {}", name)
-                } else {
-                    write!(f, "struct {{ /* anonymous */ }}")
-                }
-            }
-            Type::Union(name, _members, _) => {
-                if let Some(name) = name {
-                    write!(f, "union {}", name)
-                } else {
-                    write!(f, "union {{ /* anonymous */ }}")
-                }
-            }
-            Type::Enum(name, _variants, _) => {
-                if let Some(name) = name {
-                    write!(f, "enum {}", name)
-                } else {
-                    write!(f, "enum {{ /* anonymous */ }}")
-                }
-            }
-            Type::Const(inner, _) => {
-                write!(f, "const {}", inner)
-            }
-            Type::Volatile(inner, _) => {
-                write!(f, "volatile {}", inner)
-            }
-        }
-    }
-}
+// impl Type {
+//     /// Converts a TypeSpec to a Type for compatibility.
+//     pub fn from_type_spec(type_spec: &TypeSpec, span: SourceSpan) -> Type {
+//         let mut ty = match &type_spec.kind {
+//             TypeSpecKind::Builtin(keywords) => {
+//                 if keywords.is_empty() {
+//                     Type::Int(span)
+//                 } else {
+//                     match keywords[0] {
+//                         TypeKeyword::Int => Type::Int(span),
+//                         TypeKeyword::Char => Type::Char(span),
+//                         TypeKeyword::Short => Type::Short(span),
+//                         TypeKeyword::Float => Type::Float(span),
+//                         TypeKeyword::Double => Type::Double(span),
+//                         TypeKeyword::Long => {
+//                             if keywords.len() >= 2 && keywords[1] == TypeKeyword::Long {
+//                                 Type::LongLong(span)
+//                             } else {
+//                                 Type::Long(span)
+//                             }
+//                         }
+//                         TypeKeyword::LongLong => Type::LongLong(span),
+//                         TypeKeyword::UnsignedInt => Type::UnsignedInt(span),
+//                         TypeKeyword::UnsignedChar => Type::UnsignedChar(span),
+//                         TypeKeyword::UnsignedShort => Type::UnsignedShort(span),
+//                         TypeKeyword::UnsignedLong => {
+//                             if keywords.len() >= 2 && keywords[1] == TypeKeyword::Long {
+//                                 Type::UnsignedLongLong(span)
+//                             } else {
+//                                 Type::UnsignedLong(span)
+//                             }
+//                         }
+//                         TypeKeyword::UnsignedLongLong => Type::UnsignedLongLong(span),
+//                         TypeKeyword::Void => Type::Void(span),
+//                         TypeKeyword::Bool => Type::Bool(span),
+//                     }
+//                 }
+//             }
+//             TypeSpecKind::Struct(name_id) => {
+//                 // For struct types in TypeSpec, we don't have field information
+//                 // Field information is handled separately via Decl::Struct
+//                 Type::Struct(*name_id, ThinVec::new(), span)
+//             },
+//             TypeSpecKind::Union(name_id) => {
+//                 // For union types in TypeSpec, we don't have field information
+//                 // Field information is handled separately via Decl::Union
+//                 Type::Union(*name_id, ThinVec::new(), span)
+//             },
+//             TypeSpecKind::Enum(name_id) => Type::Enum(*name_id, ThinVec::new(), span),
+//             TypeSpecKind::Typedef(_name_id) => Type::Int(span), // Fallback for typedef
+//         };
+
+//         // Apply array sizes
+//         for array_size in &type_spec.array_sizes {
+//             if let Expr::Number(size, _) = &**array_size {
+//                 if *size > 0 {
+//                     ty = Type::Array(Box::new(ty), *size as usize, span);
+//                 } else {
+//                     ty = Type::Array(Box::new(ty), 0, span);
+//                 }
+//             }
+//         }
+
+//         // Apply pointers
+//         for _ in 0..type_spec.pointer {
+//             ty = Type::Pointer(Box::new(ty), span);
+//         }
+
+//         // Apply qualifiers
+//         for qualifier in &type_spec.qualifiers {
+//             match qualifier {
+//                 TypeQualifier::Const => ty = Type::Const(Box::new(ty), span),
+//                 TypeQualifier::Volatile => ty = Type::Volatile(Box::new(ty), span),
+//             }
+//         }
+
+//         ty
+//     }
+
+//     /// Returns `true` if the type is a pointer.
+//     pub fn is_pointer(&self) -> bool {
+//         match self {
+//             Type::Pointer(_, _) => true,
+//             Type::Const(ty, _) => ty.is_pointer(),
+//             Type::Volatile(ty, _) => ty.is_pointer(),
+//             _ => false,
+//         }
+//     }
+
+//     /// Returns `true` if the type is unsigned.
+//     pub fn is_unsigned(&self) -> bool {
+//         match self {
+//             Type::UnsignedInt(_)
+//             | Type::UnsignedChar(_)
+//             | Type::UnsignedShort(_)
+//             | Type::UnsignedLong(_)
+//             | Type::UnsignedLongLong(_) => true,
+//             Type::Const(ty, _) => ty.is_unsigned(),
+//             Type::Volatile(ty, _) => ty.is_unsigned(),
+//             _ => false,
+//         }
+//     }
+
+//     pub fn is_record(&self) -> bool {
+//         matches!(self, Type::Struct(..) | Type::Union(..))
+//     }
+
+//     pub fn is_array(&self) -> bool {
+//         matches!(self, Type::Array(..))
+//     }
+
+//     pub fn is_aggregate(&self) -> bool {
+//         matches!(self, Type::Struct(..) | Type::Union(..) | Type::Array(..))
+//     }
+
+//     /// Returns the rank of an integer type.
+//     pub fn get_integer_rank(&self) -> i32 {
+//         match self {
+//             Type::Bool(_) => 1,
+//             Type::Char(_) | Type::UnsignedChar(_) => 2,
+//             Type::Short(_) | Type::UnsignedShort(_) => 3,
+//             Type::Int(_) | Type::UnsignedInt(_) => 4,
+//             Type::Long(_) | Type::UnsignedLong(_) => 5,
+//             Type::LongLong(_) | Type::UnsignedLongLong(_) => 6,
+//             Type::Const(ty, _) => ty.get_integer_rank(),
+//             Type::Volatile(ty, _) => ty.get_integer_rank(),
+//             _ => 0,
+//         }
+//     }
+
+//     /// Returns `true` if the type is a floating-point type.
+//     pub fn is_floating(&self) -> bool {
+//         match self {
+//             Type::Float(_) | Type::Double(_) => true,
+//             Type::Const(ty, _) => ty.is_floating(),
+//             Type::Volatile(ty, _) => ty.is_floating(),
+//             _ => false,
+//         }
+//     }
+
+//     /// Returns `true` if the type is numeric.
+//     pub fn is_numeric(&self) -> bool {
+//         match self {
+//             Type::Int(_)
+//             | Type::Char(_)
+//             | Type::Short(_)
+//             | Type::Long(_)
+//             | Type::LongLong(_)
+//             | Type::Float(_)
+//             | Type::Double(_)
+//             | Type::Enum(_, _, _) => true,
+//             Type::Const(ty, _) => ty.is_numeric(),
+//             Type::Volatile(ty, _) => ty.is_numeric(),
+//             _ => false,
+//         }
+//     }
+
+//     /// Returns the arithmetic conversion rank for usual arithmetic conversions.
+//     pub fn get_arithmetic_rank(&self) -> i32 {
+//         match self {
+//             Type::Bool(_) => 1,
+//             Type::Char(_) | Type::UnsignedChar(_) => 2,
+//             Type::Short(_) | Type::UnsignedShort(_) => 3,
+//             Type::Int(_) | Type::UnsignedInt(_) => 4,
+//             Type::Long(_) | Type::UnsignedLong(_) => 5,
+//             Type::LongLong(_) | Type::UnsignedLongLong(_) => 6,
+//             Type::Float(_) => 7,
+//             Type::Double(_) => 8,
+//             Type::Const(ty, _) => ty.get_arithmetic_rank(),
+//             Type::Volatile(ty, _) => ty.get_arithmetic_rank(),
+//             _ => 0,
+//         }
+//     }
+
+//     /// Recursively unwraps `const` qualifiers from a type.
+//     pub fn unwrap_const(&self) -> &Type {
+//         match self {
+//             Type::Const(ty, _) => ty.unwrap_const(),
+//             _ => self,
+//         }
+//     }
+
+//     /// Recursively unwraps `volatile` qualifiers from a type.
+//     pub fn unwrap_volatile(&self) -> &Type {
+//         match self {
+//             Type::Volatile(ty, _) => ty.unwrap_volatile(),
+//             _ => self,
+//         }
+//     }
+
+//     pub fn equals_ignore_span(&self, other: &Type) -> bool {
+//         if std::mem::discriminant(self) != std::mem::discriminant(other) {
+//             return false;
+//         }
+//         match (self, other) {
+//             (Type::Pointer(a, _), Type::Pointer(b, _)) => a.equals_ignore_span(b),
+//             (Type::Array(a, s_a, _), Type::Array(b, s_b, _)) => {
+//                 s_a == s_b && a.equals_ignore_span(b)
+//             }
+//             (Type::Const(a, _), Type::Const(b, _)) => a.equals_ignore_span(b),
+//             (Type::Volatile(a, _), Type::Volatile(b, _)) => a.equals_ignore_span(b),
+//             // For structs/unions, named types are nominally typed.
+//             // If they have a name, the names must match.
+//             (Type::Struct(n1, _, _), Type::Struct(n2, _, _)) if n1.is_some() && n2.is_some() => {
+//                 n1 == n2
+//             }
+//             (Type::Union(n1, _, _), Type::Union(n2, _, _)) if n1.is_some() && n2.is_some() => {
+//                 n1 == n2
+//             }
+//             // For other types that have no inner type, discriminant check is enough.
+//             _ => true,
+//         }
+//     }
+
+//     pub fn kind(&self) -> crate::types::TypeKind {
+//         match self {
+//             Type::Int(_) => crate::types::TypeKind::Int,
+//             Type::Char(_) => crate::types::TypeKind::Char,
+//             Type::Short(_) => crate::types::TypeKind::Short,
+//             Type::Float(_) => crate::types::TypeKind::Float,
+//             Type::Double(_) => crate::types::TypeKind::Double,
+//             Type::Long(_) => crate::types::TypeKind::Long,
+//             Type::LongLong(_) => crate::types::TypeKind::LongLong,
+//             Type::UnsignedInt(_) => crate::types::TypeKind::UnsignedInt,
+//             Type::UnsignedChar(_) => crate::types::TypeKind::UnsignedChar,
+//             Type::UnsignedShort(_) => crate::types::TypeKind::UnsignedShort,
+//             Type::UnsignedLong(_) => crate::types::TypeKind::UnsignedLong,
+//             Type::UnsignedLongLong(_) => crate::types::TypeKind::UnsignedLongLong,
+//             Type::Void(_) => crate::types::TypeKind::Void,
+//             Type::Bool(_) => crate::types::TypeKind::Bool,
+//             Type::Pointer(inner, _) => crate::types::TypeKind::Pointer(inner.kind()),
+//             Type::Array(inner, size, _) => crate::types::TypeKind::Array(inner.kind(), *size),
+//             Type::Struct(name, members, _) => crate::types::TypeKind::Struct(
+//                 name.clone(),
+//                 members.iter().map(|m| crate::types::ParamType {
+//                     ty: m.ty.kind(),
+//                     name: m.name,
+//                 }).collect(),
+//             ),
+//             Type::Union(name, members, _) => crate::types::TypeKind::Union(
+//                 name.clone(),
+//                 members.iter().map(|m| crate::types::ParamType {
+//                     ty: m.ty.kind(),
+//                     name: m.name,
+//                 }).collect(),
+//             ),
+//             Type::Enum(name, variants, _) => {
+//                 let mut enum_variants = thin_vec::ThinVec::new();
+//                 for (name, value, _) in variants {
+//                     let val = if let Some(expr) = value {
+//                         if let Expr::Number(n, _) = **expr {
+//                             *n
+//                         } else {
+//                             0 // fallback
+//                         }
+//                     } else {
+//                         0
+//                     };
+//                     enum_variants.push(crate::types::EnumVariant {
+//                         name: *name,
+//                         value: val,
+//                     });
+//                 }
+//                 crate::types::TypeKind::Enum {
+//                     name: name.clone(),
+//                     underlying_type: crate::types::TypeId::intern(&crate::types::TypeKind::Int),
+//                     variants: enum_variants,
+//                 }
+//             }
+//             Type::Const(inner, _) => inner.kind(),
+//             Type::Volatile(inner, _) => inner.kind(),
+//         }
+//     }
+
+//     pub fn span(&self) -> SourceSpan {
+//         match self {
+//             Type::Int(span) => *span,
+//             Type::Char(span) => *span,
+//             Type::Short(span) => *span,
+//             Type::Float(span) => *span,
+//             Type::Double(span) => *span,
+//             Type::Long(span) => *span,
+//             Type::LongLong(span) => *span,
+//             Type::UnsignedInt(span) => *span,
+//             Type::UnsignedChar(span) => *span,
+//             Type::UnsignedShort(span) => *span,
+//             Type::UnsignedLong(span) => *span,
+//             Type::UnsignedLongLong(span) => *span,
+//             Type::Void(span) => *span,
+//             Type::Bool(span) => *span,
+//             Type::Pointer(_, span) => *span,
+//             Type::Array(_, _, span) => *span,
+//             Type::Struct(_, _, span) => *span,
+//             Type::Union(_, _, span) => *span,
+//             Type::Enum(_, _, span) => *span,
+//             Type::Const(_, span) => *span,
+//             Type::Volatile(_, span) => *span,
+//         }
+//     }
+// }
+
+// impl Display for Type {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         match self {
+//             Type::Int(_) => write!(f, "int"),
+//             Type::Char(_) => write!(f, "char"),
+//             Type::Short(_) => write!(f, "short"),
+//             Type::Float(_) => write!(f, "float"),
+//             Type::Double(_) => write!(f, "double"),
+//             Type::Long(_) => write!(f, "long"),
+//             Type::LongLong(_) => write!(f, "long long"),
+//             Type::UnsignedInt(_) => write!(f, "unsigned int"),
+//             Type::UnsignedChar(_) => write!(f, "unsigned char"),
+//             Type::UnsignedShort(_) => write!(f, "unsigned short"),
+//             Type::UnsignedLong(_) => write!(f, "unsigned long"),
+//             Type::UnsignedLongLong(_) => write!(f, "unsigned long long"),
+//             Type::Void(_) => write!(f, "void"),
+//             Type::Bool(_) => write!(f, "_Bool"),
+//             Type::Pointer(inner, _) => {
+//                 write!(f, "{}*", inner)
+//             }
+//             Type::Array(inner, size, _) => {
+//                 write!(f, "{}[{}]", inner, size)
+//             }
+//             Type::Struct(name, _members, _) => {
+//                 if let Some(name) = name {
+//                     write!(f, "struct {}", name)
+//                 } else {
+//                     write!(f, "struct {{ /* anonymous */ }}")
+//                 }
+//             }
+//             Type::Union(name, _members, _) => {
+//                 if let Some(name) = name {
+//                     write!(f, "union {}", name)
+//                 } else {
+//                     write!(f, "union {{ /* anonymous */ }}")
+//                 }
+//             }
+//             Type::Enum(name, _variants, _) => {
+//                 if let Some(name) = name {
+//                     write!(f, "enum {}", name)
+//                 } else {
+//                     write!(f, "enum {{ /* anonymous */ }}")
+//                 }
+//             }
+//             Type::Const(inner, _) => {
+//                 write!(f, "const {}", inner)
+//             }
+//             Type::Volatile(inner, _) => {
+//                 write!(f, "volatile {}", inner)
+//             }
+//         }
+//     }
+// }
 
 /// Represents the initializer of a `for` loop.
 #[derive(Debug, PartialEq, Clone)]
@@ -877,7 +1021,7 @@ pub struct Parameter {
 #[derive(Debug, PartialEq, Clone)]
 pub struct TypedParameter {
     /// The resolved type of the parameter.
-    pub ty: Type,
+    pub ty: TypeId,
     /// The name of the parameter.
     pub name: StringId,
     /// The span of the parameter.
@@ -886,7 +1030,7 @@ pub struct TypedParameter {
 
 impl TypedParameter {
     pub fn from_parameter(param: Parameter) -> Self {
-        let ty = Type::from_type_spec(&param.ty, SourceSpan::default());
+        let ty = type_spec_to_type_id(&param.ty, SourceSpan::default());
         Self {
             ty: ty,
             name: param.name,
@@ -917,99 +1061,97 @@ pub struct Function {
 /// Represents a program.
 #[derive(Debug, PartialEq, Clone)]
 pub struct TranslationUnit {
-    /// The global declarations.
+    /// The global declarations and function definitions.
     pub globals: ThinVec<Decl>,
-    /// The functions in the program.
-    pub functions: ThinVec<Function>,
 }
 
 /// Represents a typed expression with type information.
 #[derive(Debug, PartialEq, Clone)]
 pub enum TypedExpr {
-    Number(i64, SourceSpan, Type),
-    FloatNumber(f64, SourceSpan, Type),
-    String(StringId, SourceSpan, Type),
-    Char(StringId, SourceSpan, Type),
-    Variable(StringId, SourceSpan, Type),
-    Call(StringId, ThinVec<TypedExpr>, SourceSpan, Type),
-    Assign(Box<TypedLValue>, Box<TypedExpr>, SourceSpan, Type),
-    AssignAdd(Box<TypedLValue>, Box<TypedExpr>, SourceSpan, Type),
-    AssignSub(Box<TypedLValue>, Box<TypedExpr>, SourceSpan, Type),
-    AssignMul(Box<TypedLValue>, Box<TypedExpr>, SourceSpan, Type),
-    AssignDiv(Box<TypedLValue>, Box<TypedExpr>, SourceSpan, Type),
-    AssignMod(Box<TypedLValue>, Box<TypedExpr>, SourceSpan, Type),
-    AssignLeftShift(Box<TypedLValue>, Box<TypedExpr>, SourceSpan, Type),
-    AssignRightShift(Box<TypedLValue>, Box<TypedExpr>, SourceSpan, Type),
-    AssignBitwiseAnd(Box<TypedLValue>, Box<TypedExpr>, SourceSpan, Type),
-    AssignBitwiseXor(Box<TypedLValue>, Box<TypedExpr>, SourceSpan, Type),
-    AssignBitwiseOr(Box<TypedLValue>, Box<TypedExpr>, SourceSpan, Type),
-    Add(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, Type),
-    Sub(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, Type),
-    Mul(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, Type),
-    Div(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, Type),
-    Mod(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, Type),
-    Equal(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, Type),
-    NotEqual(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, Type),
-    LessThan(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, Type),
-    GreaterThan(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, Type),
-    LessThanOrEqual(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, Type),
-    GreaterThanOrEqual(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, Type),
-    LogicalAnd(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, Type),
-    LogicalOr(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, Type),
-    BitwiseOr(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, Type),
-    BitwiseXor(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, Type),
-    BitwiseAnd(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, Type),
-    LeftShift(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, Type),
-    RightShift(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, Type),
-    Comma(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, Type),
-    Neg(Box<TypedExpr>, SourceSpan, Type),
-    LogicalNot(Box<TypedExpr>, SourceSpan, Type),
-    BitwiseNot(Box<TypedExpr>, SourceSpan, Type),
-    Sizeof(Box<TypedExpr>, SourceSpan, Type),
-    Deref(Box<TypedExpr>, SourceSpan, Type),
-    AddressOf(Box<TypedLValue>, SourceSpan, Type),
-    SizeofType(Type, SourceSpan, Type),
-    Alignof(Box<TypedExpr>, SourceSpan, Type),
-    AlignofType(Type, SourceSpan, Type),
+    Number(i64, SourceSpan, TypeId),
+    FloatNumber(f64, SourceSpan, TypeId),
+    String(StringId, SourceSpan, TypeId),
+    Char(StringId, SourceSpan, TypeId),
+    Variable(StringId, SourceSpan, TypeId),
+    Call(StringId, ThinVec<TypedExpr>, SourceSpan, TypeId),
+    Assign(Box<TypedLValue>, Box<TypedExpr>, SourceSpan, TypeId),
+    AssignAdd(Box<TypedLValue>, Box<TypedExpr>, SourceSpan, TypeId),
+    AssignSub(Box<TypedLValue>, Box<TypedExpr>, SourceSpan, TypeId),
+    AssignMul(Box<TypedLValue>, Box<TypedExpr>, SourceSpan, TypeId),
+    AssignDiv(Box<TypedLValue>, Box<TypedExpr>, SourceSpan, TypeId),
+    AssignMod(Box<TypedLValue>, Box<TypedExpr>, SourceSpan, TypeId),
+    AssignLeftShift(Box<TypedLValue>, Box<TypedExpr>, SourceSpan, TypeId),
+    AssignRightShift(Box<TypedLValue>, Box<TypedExpr>, SourceSpan, TypeId),
+    AssignBitwiseAnd(Box<TypedLValue>, Box<TypedExpr>, SourceSpan, TypeId),
+    AssignBitwiseXor(Box<TypedLValue>, Box<TypedExpr>, SourceSpan, TypeId),
+    AssignBitwiseOr(Box<TypedLValue>, Box<TypedExpr>, SourceSpan, TypeId),
+    Add(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, TypeId),
+    Sub(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, TypeId),
+    Mul(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, TypeId),
+    Div(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, TypeId),
+    Mod(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, TypeId),
+    Equal(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, TypeId),
+    NotEqual(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, TypeId),
+    LessThan(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, TypeId),
+    GreaterThan(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, TypeId),
+    LessThanOrEqual(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, TypeId),
+    GreaterThanOrEqual(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, TypeId),
+    LogicalAnd(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, TypeId),
+    LogicalOr(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, TypeId),
+    BitwiseOr(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, TypeId),
+    BitwiseXor(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, TypeId),
+    BitwiseAnd(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, TypeId),
+    LeftShift(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, TypeId),
+    RightShift(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, TypeId),
+    Comma(Box<TypedExpr>, Box<TypedExpr>, SourceSpan, TypeId),
+    Neg(Box<TypedExpr>, SourceSpan, TypeId),
+    LogicalNot(Box<TypedExpr>, SourceSpan, TypeId),
+    BitwiseNot(Box<TypedExpr>, SourceSpan, TypeId),
+    Sizeof(Box<TypedExpr>, SourceSpan, TypeId),
+    Deref(Box<TypedExpr>, SourceSpan, TypeId),
+    AddressOf(Box<TypedLValue>, SourceSpan, TypeId),
+    SizeofType(TypeId, SourceSpan, TypeId),
+    Alignof(Box<TypedExpr>, SourceSpan, TypeId),
+    AlignofType(TypeId, SourceSpan, TypeId),
     Ternary(
         Box<TypedExpr>,
         Box<TypedExpr>,
         Box<TypedExpr>,
         SourceSpan,
-        Type,
+        TypeId,
     ),
-    Member(Box<TypedExpr>, StringId, SourceSpan, Type),
-    PointerMember(Box<TypedExpr>, StringId, SourceSpan, Type),
-    InitializerList(TypedInitializerList, SourceSpan, Type),
-    ExplicitCast(Box<Type>, Box<TypedExpr>, SourceSpan, Type),
-    ImplicitCast(Box<Type>, Box<TypedExpr>, SourceSpan, Type),
-    CompoundLiteral(Box<Type>, Box<TypedInitializer>, SourceSpan, Type),
-    PreIncrement(Box<TypedLValue>, SourceSpan, Type),
-    PreDecrement(Box<TypedLValue>, SourceSpan, Type),
-    PostIncrement(Box<TypedLValue>, SourceSpan, Type),
-    PostDecrement(Box<TypedLValue>, SourceSpan, Type),
+    Member(Box<TypedExpr>, StringId, SourceSpan, TypeId),
+    PointerMember(Box<TypedExpr>, StringId, SourceSpan, TypeId),
+    InitializerList(TypedInitializerList, SourceSpan, TypeId),
+    ExplicitCast(TypeId, Box<TypedExpr>, SourceSpan, TypeId),
+    ImplicitCast(TypeId, Box<TypedExpr>, SourceSpan, TypeId),
+    CompoundLiteral(TypeId, Box<TypedInitializer>, SourceSpan, TypeId),
+    PreIncrement(Box<TypedLValue>, SourceSpan, TypeId),
+    PreDecrement(Box<TypedLValue>, SourceSpan, TypeId),
+    PostIncrement(Box<TypedLValue>, SourceSpan, TypeId),
+    PostDecrement(Box<TypedLValue>, SourceSpan, TypeId),
 }
 
 /// Represents a typed LValue expression with type information.
 #[derive(Debug, PartialEq, Clone)]
 pub enum TypedLValue {
     /// A variable identifier.
-    Variable(StringId, SourceSpan, Type),
+    Variable(StringId, SourceSpan, TypeId),
     /// A dereference of a pointer expression.
-    Deref(Box<TypedExpr>, SourceSpan, Type),
+    Deref(Box<TypedExpr>, SourceSpan, TypeId),
     /// A member access of a struct/union expression.
-    Member(Box<TypedExpr>, StringId, SourceSpan, Type),
+    Member(Box<TypedExpr>, StringId, SourceSpan, TypeId),
     /// A string literal.
-    String(StringId, SourceSpan, Type),
+    String(StringId, SourceSpan, TypeId),
 }
 
 impl TypedLValue {
-    pub fn ty(&self) -> &Type {
+    pub fn ty(&self) -> TypeId {
         match self {
-            TypedLValue::Variable(_, _, ty) => ty,
-            TypedLValue::Deref(_, _, ty) => ty,
-            TypedLValue::Member(_, _, _, ty) => ty,
-            TypedLValue::String(_, _, ty) => ty,
+            TypedLValue::Variable(_, _, ty) => *ty,
+            TypedLValue::Deref(_, _, ty) => *ty,
+            TypedLValue::Member(_, _, _, ty) => *ty,
+            TypedLValue::String(_, _, ty) => *ty,
         }
     }
 
@@ -1075,73 +1217,73 @@ impl TypedExpr {
         }
     }
 
-    pub fn ty(&self) -> &Type {
+    pub fn ty(&self) -> TypeId {
         match self {
-            TypedExpr::Number(_, _, ty) => ty,
-            TypedExpr::FloatNumber(_, _, ty) => ty,
-            TypedExpr::String(_, _, ty) => ty,
-            TypedExpr::Char(_, _, ty) => ty,
-            TypedExpr::Variable(_, _, ty) => ty,
-            TypedExpr::Call(_, _, _, ty) => ty,
-            TypedExpr::Assign(_, _, _, ty) => ty,
-            TypedExpr::AssignAdd(_, _, _, ty) => ty,
-            TypedExpr::AssignSub(_, _, _, ty) => ty,
-            TypedExpr::AssignMul(_, _, _, ty) => ty,
-            TypedExpr::AssignDiv(_, _, _, ty) => ty,
-            TypedExpr::AssignMod(_, _, _, ty) => ty,
-            TypedExpr::AssignLeftShift(_, _, _, ty) => ty,
-            TypedExpr::AssignRightShift(_, _, _, ty) => ty,
-            TypedExpr::AssignBitwiseAnd(_, _, _, ty) => ty,
-            TypedExpr::AssignBitwiseXor(_, _, _, ty) => ty,
-            TypedExpr::AssignBitwiseOr(_, _, _, ty) => ty,
-            TypedExpr::Add(_, _, _, ty) => ty,
-            TypedExpr::Sub(_, _, _, ty) => ty,
-            TypedExpr::Mul(_, _, _, ty) => ty,
-            TypedExpr::Div(_, _, _, ty) => ty,
-            TypedExpr::Mod(_, _, _, ty) => ty,
-            TypedExpr::Equal(_, _, _, ty) => ty,
-            TypedExpr::NotEqual(_, _, _, ty) => ty,
-            TypedExpr::LessThan(_, _, _, ty) => ty,
-            TypedExpr::GreaterThan(_, _, _, ty) => ty,
-            TypedExpr::LessThanOrEqual(_, _, _, ty) => ty,
-            TypedExpr::GreaterThanOrEqual(_, _, _, ty) => ty,
-            TypedExpr::LogicalAnd(_, _, _, ty) => ty,
-            TypedExpr::LogicalOr(_, _, _, ty) => ty,
-            TypedExpr::BitwiseOr(_, _, _, ty) => ty,
-            TypedExpr::BitwiseXor(_, _, _, ty) => ty,
-            TypedExpr::BitwiseAnd(_, _, _, ty) => ty,
-            TypedExpr::LeftShift(_, _, _, ty) => ty,
-            TypedExpr::RightShift(_, _, _, ty) => ty,
-            TypedExpr::Comma(_, _, _, ty) => ty,
-            TypedExpr::Neg(_, _, ty) => ty,
-            TypedExpr::LogicalNot(_, _, ty) => ty,
-            TypedExpr::BitwiseNot(_, _, ty) => ty,
-            TypedExpr::Sizeof(_, _, ty) => ty,
-            TypedExpr::Deref(_, _, ty) => ty,
-            TypedExpr::AddressOf(_, _, ty) => ty,
-            TypedExpr::SizeofType(_, _, ty) => ty,
-            TypedExpr::Alignof(_, _, ty) => ty,
-            TypedExpr::AlignofType(_, _, ty) => ty,
-            TypedExpr::Ternary(_, _, _, _, ty) => ty,
-            TypedExpr::Member(_, _, _, ty) => ty,
-            TypedExpr::PointerMember(_, _, _, ty) => ty,
-            TypedExpr::InitializerList(_, _, ty) => ty,
-            TypedExpr::ExplicitCast(_, _, _, ty) => ty,
-            TypedExpr::ImplicitCast(_, _, _, ty) => ty,
-            TypedExpr::CompoundLiteral(_, _, _, ty) => ty,
-            TypedExpr::PreIncrement(_, _, ty) => ty,
-            TypedExpr::PreDecrement(_, _, ty) => ty,
-            TypedExpr::PostIncrement(_, _, ty) => ty,
-            TypedExpr::PostDecrement(_, _, ty) => ty,
+            TypedExpr::Number(_, _, ty) => *ty,
+            TypedExpr::FloatNumber(_, _, ty) => *ty,
+            TypedExpr::String(_, _, ty) => *ty,
+            TypedExpr::Char(_, _, ty) => *ty,
+            TypedExpr::Variable(_, _, ty) => *ty,
+            TypedExpr::Call(_, _, _, ty) => *ty,
+            TypedExpr::Assign(_, _, _, ty) => *ty,
+            TypedExpr::AssignAdd(_, _, _, ty) => *ty,
+            TypedExpr::AssignSub(_, _, _, ty) => *ty,
+            TypedExpr::AssignMul(_, _, _, ty) => *ty,
+            TypedExpr::AssignDiv(_, _, _, ty) => *ty,
+            TypedExpr::AssignMod(_, _, _, ty) => *ty,
+            TypedExpr::AssignLeftShift(_, _, _, ty) => *ty,
+            TypedExpr::AssignRightShift(_, _, _, ty) => *ty,
+            TypedExpr::AssignBitwiseAnd(_, _, _, ty) => *ty,
+            TypedExpr::AssignBitwiseXor(_, _, _, ty) => *ty,
+            TypedExpr::AssignBitwiseOr(_, _, _, ty) => *ty,
+            TypedExpr::Add(_, _, _, ty) => *ty,
+            TypedExpr::Sub(_, _, _, ty) => *ty,
+            TypedExpr::Mul(_, _, _, ty) => *ty,
+            TypedExpr::Div(_, _, _, ty) => *ty,
+            TypedExpr::Mod(_, _, _, ty) => *ty,
+            TypedExpr::Equal(_, _, _, ty) => *ty,
+            TypedExpr::NotEqual(_, _, _, ty) => *ty,
+            TypedExpr::LessThan(_, _, _, ty) => *ty,
+            TypedExpr::GreaterThan(_, _, _, ty) => *ty,
+            TypedExpr::LessThanOrEqual(_, _, _, ty) => *ty,
+            TypedExpr::GreaterThanOrEqual(_, _, _, ty) => *ty,
+            TypedExpr::LogicalAnd(_, _, _, ty) => *ty,
+            TypedExpr::LogicalOr(_, _, _, ty) => *ty,
+            TypedExpr::BitwiseOr(_, _, _, ty) => *ty,
+            TypedExpr::BitwiseXor(_, _, _, ty) => *ty,
+            TypedExpr::BitwiseAnd(_, _, _, ty) => *ty,
+            TypedExpr::LeftShift(_, _, _, ty) => *ty,
+            TypedExpr::RightShift(_, _, _, ty) => *ty,
+            TypedExpr::Comma(_, _, _, ty) => *ty,
+            TypedExpr::Neg(_, _, ty) => *ty,
+            TypedExpr::LogicalNot(_, _, ty) => *ty,
+            TypedExpr::BitwiseNot(_, _, ty) => *ty,
+            TypedExpr::Sizeof(_, _, ty) => *ty,
+            TypedExpr::Deref(_, _, ty) => *ty,
+            TypedExpr::AddressOf(_, _, ty) => *ty,
+            TypedExpr::SizeofType(_, _, ty) => *ty,
+            TypedExpr::Alignof(_, _, ty) => *ty,
+            TypedExpr::AlignofType(_, _, ty) => *ty,
+            TypedExpr::Ternary(_, _, _, _, ty) => *ty,
+            TypedExpr::Member(_, _, _, ty) => *ty,
+            TypedExpr::PointerMember(_, _, _, ty) => *ty,
+            TypedExpr::InitializerList(_, _, ty) => *ty,
+            TypedExpr::ExplicitCast(_, _, _, ty) => *ty,
+            TypedExpr::ImplicitCast(_, _, _, ty) => *ty,
+            TypedExpr::CompoundLiteral(_, _, _, ty) => *ty,
+            TypedExpr::PreIncrement(_, _, ty) => *ty,
+            TypedExpr::PreDecrement(_, _, ty) => *ty,
+            TypedExpr::PostIncrement(_, _, ty) => *ty,
+            TypedExpr::PostDecrement(_, _, ty) => *ty,
         }
     }
 
-    pub fn implicit_cast(self, to_ty: Type) -> TypedExpr {
-        if self.ty() == &to_ty {
+    pub fn implicit_cast(self, to_ty: TypeId) -> TypedExpr {
+        if self.ty() == to_ty {
             self
         } else {
             TypedExpr::ImplicitCast(
-                Box::new(to_ty.clone()),
+                to_ty,
                 Box::new(self),
                 SourceSpan::default(),
                 to_ty,
@@ -1232,7 +1374,7 @@ pub enum TypedInitializer {
 /// Represents a typed declarator, which includes the type modifiers (pointers, arrays) and the identifier.
 #[derive(Debug, PartialEq, Clone)]
 pub struct TypedDeclarator {
-    pub ty: Type,
+    pub ty: TypeId,
     pub name: StringId,
     pub initializer: Option<TypedInitializer>,
 }
@@ -1241,7 +1383,7 @@ pub struct TypedDeclarator {
 #[derive(Debug, PartialEq, Clone)]
 pub enum TypedForInit {
     /// A variable declaration.
-    Declaration(Type, StringId, Option<TypedInitializer>),
+    Declaration(TypeId, StringId, Option<TypedInitializer>),
     /// An expression.
     Expr(TypedExpr),
 }
@@ -1275,9 +1417,9 @@ pub enum TypedStmt {
     /// A `goto` statement.
     Goto(StringId),
     /// A variable declaration.
-    Declaration(Type, ThinVec<TypedDeclarator>, bool),
+    Declaration(TypeId, ThinVec<TypedDeclarator>, bool),
     FunctionDeclaration {
-        ty: Type,
+        ty: TypeId,
         name: StringId,
         params: ThinVec<TypedParameter>,
         is_variadic: bool,
@@ -1302,7 +1444,7 @@ pub enum TypedStmt {
 #[derive(Debug, PartialEq, Clone)]
 pub struct TypedFunctionDecl {
     /// The return type of the function.
-    pub return_type: Type,
+    pub return_type: TypeId,
     /// The name of the function.
     pub name: StringId,
     /// The parameters of the function.

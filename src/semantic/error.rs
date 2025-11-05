@@ -34,7 +34,7 @@ pub enum SemanticError {
 
     /// Attempted to dereference a non-pointer type.
     #[error("Cannot dereference non-pointer type `{0}`")]
-    NotAPointer(crate::parser::ast::Type),
+    NotAPointer(crate::types::TypeId),
 
     /// An undefined label was referenced in a goto statement.
     #[error("Undefined label `{0}`")]
@@ -46,7 +46,7 @@ pub enum SemanticError {
 
     /// Member access on a non-struct/union type.
     #[error("Member access on non-struct/union type `{0:?}`")]
-    NotAStructOrUnion(crate::parser::ast::Type),
+    NotAStructOrUnion(crate::types::TypeId),
 
     /// An undefined member was accessed.
     #[error("Undefined member `{0}`")]

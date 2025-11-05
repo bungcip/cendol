@@ -1,9 +1,11 @@
+use crate::SourceSpan;
 use crate::codegen::error::{CodegenError, CodegenResult};
 use crate::parser::ast::{
-    AssignOp, BinOp, Type, TypedDesignator, TypedExpr, TypedForInit, TypedInitializer, TypedLValue,
+    AssignOp, BinOp, Expr, TypedDesignator, TypedExpr, TypedForInit, TypedInitializer, TypedLValue,
     TypedStmt,
 };
 use crate::parser::string_interner::StringId;
+use crate::types::{ParamType, TypeId, TypeKind};
 use cranelift::prelude::*;
 use cranelift_codegen::ir::types;
 use cranelift_codegen::ir::{InstBuilder, Value};
@@ -31,13 +33,13 @@ pub enum BlockState {
 /// A function translator that translates statements and expressions into Cranelift IR.
 pub(crate) struct FunctionTranslator<'a, 'b> {
     pub(crate) builder: FunctionBuilder<'a>,
-    pub(crate) functions: &'b HashMap<StringId, (FuncId, Type, bool)>,
+    pub(crate) functions: &'b HashMap<StringId, (FuncId, TypeId, bool)>,
     pub(crate) variables:
-        &'b mut SymbolTable<StringId, (Option<Variable>, Option<StackSlot>, Type)>,
-    pub(crate) global_variables: &'b HashMap<StringId, (DataId, Type)>,
-    pub(crate) static_local_variables: &'b mut HashMap<StringId, (DataId, Type)>,
-    pub(crate) structs: &'b HashMap<StringId, Type>,
-    pub(crate) unions: &'b HashMap<StringId, Type>,
+        &'b mut SymbolTable<StringId, (Option<Variable>, Option<StackSlot>, TypeId)>,
+    pub(crate) global_variables: &'b HashMap<StringId, (DataId, TypeId)>,
+    pub(crate) static_local_variables: &'b mut HashMap<StringId, (DataId, TypeId)>,
+    pub(crate) structs: &'b HashMap<StringId, TypeId>,
+    pub(crate) unions: &'b HashMap<StringId, TypeId>,
     pub(crate) enum_constants: &'b HashMap<StringId, i64>,
     pub(crate) module: &'b mut ObjectModule,
     pub(crate) loop_context: Vec<(Block, Block)>,
@@ -50,31 +52,38 @@ pub(crate) struct FunctionTranslator<'a, 'b> {
 
 impl<'a, 'b> FunctionTranslator<'a, 'b> {
     pub fn get_type_size_from_type(
-        ty: &Type,
-        structs: &HashMap<StringId, Type>,
-        unions: &HashMap<StringId, Type>,
+        ty: TypeId,
+        structs: &HashMap<StringId, TypeId>,
+        unions: &HashMap<StringId, TypeId>,
     ) -> u32 {
-        let real_ty = Self::get_real_type_from_type(ty, structs, unions).unwrap();
-        match &real_ty {
-            Type::Const(inner, _) => Self::get_type_size_from_type(inner, structs, unions),
-            Type::Volatile(inner, _) => Self::get_type_size_from_type(inner, structs, unions),
-            Type::Int(_) | Type::UnsignedInt(_) => 4,
-            Type::Char(_) | Type::UnsignedChar(_) => 1,
-            Type::Short(_) | Type::UnsignedShort(_) => 2,
-            Type::Float(_) => 4,
-            Type::Double(_) => 8,
-            Type::Long(_) | Type::UnsignedLong(_) => 8,
-            Type::LongLong(_) | Type::UnsignedLongLong(_) => 8,
-            Type::Void(_) => 0,
-            Type::Bool(_) => 1,
-            Type::Pointer(_, _) => 8,
-            Type::Struct(_, members, _) => {
+        if ty.is_const()
+            && let inner = ty.unwrap_const()
+        {
+            return Self::get_type_size_from_type(inner, structs, unions);
+        } else if ty.is_volatile()
+            && let inner = ty.unwrap_volatile()
+        {
+            return Self::get_type_size_from_type(inner, structs, unions);
+        }
+
+        match ty.kind() {
+            TypeKind::Int | TypeKind::UnsignedInt => 4,
+            TypeKind::Char | TypeKind::UnsignedChar => 1,
+            TypeKind::Short | TypeKind::UnsignedShort => 2,
+            TypeKind::Float => 4,
+            TypeKind::Double => 8,
+            TypeKind::Long | TypeKind::UnsignedLong => 8,
+            TypeKind::LongLong | TypeKind::UnsignedLongLong => 8,
+            TypeKind::Void => 0,
+            TypeKind::Bool => 1,
+            TypeKind::Pointer(_) => 8,
+            TypeKind::Struct(_, members) => {
                 let mut size = 0;
                 let mut struct_alignment = 1;
                 for member in members {
-                    let member_size = Self::get_type_size_from_type(&member.ty, structs, unions);
+                    let member_size = Self::get_type_size_from_type_id(member.ty, structs, unions);
                     let member_alignment =
-                        Self::get_type_alignment_from_type(&member.ty, structs, unions);
+                        Self::get_type_alignment_from_type_id(member.ty, structs, unions);
                     size = (size + member_alignment - 1) & !(member_alignment - 1);
                     size += member_size;
                     if member_alignment > struct_alignment {
@@ -83,53 +92,61 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 }
                 (size + struct_alignment - 1) & !(struct_alignment - 1)
             }
-            Type::Union(_, members, _) => {
+            TypeKind::Union(_, members) => {
                 let size = members
                     .iter()
-                    .map(|m| Self::get_type_size_from_type(&m.ty, structs, unions))
+                    .map(|m| Self::get_type_size_from_type_id(m.ty, structs, unions))
                     .max()
                     .unwrap_or(0);
                 let mut union_alignment = 1;
                 for member in members {
-                    let member_alignment = Self::get_type_alignment_from_type(&member.ty, structs, unions);
+                    let member_alignment =
+                        Self::get_type_alignment_from_type_id(member.ty, structs, unions);
                     if member_alignment > union_alignment {
                         union_alignment = member_alignment;
                     }
                 }
                 (size + union_alignment - 1) & !(union_alignment - 1)
             }
-            Type::Array(elem_ty, size, _) => {
-                Self::get_type_size_from_type(elem_ty, structs, unions) * *size as u32
+            TypeKind::Array(elem_ty, size) => {
+                Self::get_type_size_from_type_id(elem_ty, structs, unions)
+                    * size as u32
             }
-            Type::Enum(_, _, _) => 4,
+            TypeKind::Enum { .. } => 4,
+            TypeKind::Function { .. } => 0,
+            TypeKind::Typedef(_, base) => Self::get_type_size_from_type_id(base, structs, unions),
+            _ => todo!(),
         }
     }
 
     pub(crate) fn get_type_alignment_from_type(
-        ty: &Type,
-        structs: &HashMap<StringId, Type>,
-        unions: &HashMap<StringId, Type>,
+        ty: TypeId,
+        structs: &HashMap<StringId, TypeId>,
+        unions: &HashMap<StringId, TypeId>,
     ) -> u32 {
-        let real_ty = Self::get_real_type_from_type(ty, structs, unions).unwrap();
-        match &real_ty {
-            Type::Const(inner, _) => Self::get_type_alignment_from_type(inner, structs, unions),
-            Type::Volatile(inner, _) => Self::get_type_alignment_from_type(inner, structs, unions),
-            Type::Int(_) | Type::UnsignedInt(_) => 4,
-            Type::Char(_) | Type::UnsignedChar(_) => 1,
-            Type::Short(_) | Type::UnsignedShort(_) => 2,
-            Type::Float(_) => 4,
-            Type::Double(_) => 8,
-            Type::Long(_) | Type::UnsignedLong(_) => 8,
-            Type::LongLong(_) | Type::UnsignedLongLong(_) => 8,
-            Type::Void(_) => 1,
-            Type::Bool(_) => 1,
-            Type::Pointer(_, _) => 8,
-            Type::Struct(_, members, _) => {
+        let real_ty = Self::get_real_type_from_type_id(ty, structs, unions).unwrap();
+        match real_ty {
+            TypeKind::Int | TypeKind::UnsignedInt => 4,
+            TypeKind::Char | TypeKind::UnsignedChar => 1,
+            TypeKind::Short | TypeKind::UnsignedShort => 2,
+            TypeKind::Float => 4,
+            TypeKind::Double => 8,
+            TypeKind::Long | TypeKind::UnsignedLong => 8,
+            TypeKind::LongLong | TypeKind::UnsignedLongLong => 8,
+            TypeKind::Void => 1,
+            TypeKind::Bool => 1,
+            TypeKind::Pointer(_) => 8,
+            TypeKind::Struct(_, members) => {
                 eprintln!("Struct alignment calculation: members={:?}", members);
                 let mut max_alignment = 1;
                 for member in members {
-                    let member_alignment = Self::get_type_alignment_from_type(&member.ty, structs, unions);
-                    eprintln!("Member {} has alignment {}", member.name.as_str(), member_alignment);
+                    let member_alignment =
+                        Self::get_type_alignment_from_type_id(member.ty, structs, unions);
+                    eprintln!(
+                        "Member {} has alignment {}",
+                        member.name.as_str(),
+                        member_alignment
+                    );
                     if member_alignment > max_alignment {
                         max_alignment = member_alignment;
                     }
@@ -137,43 +154,144 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 eprintln!("Struct final alignment: {}", max_alignment);
                 max_alignment
             }
-            Type::Union(_, members, _) => {
+            TypeKind::Union(_, members) => {
                 let mut max_alignment = 1;
                 for member in members {
-                    let member_alignment = Self::get_type_alignment_from_type(&member.ty, structs, unions);
+                    let member_alignment =
+                        Self::get_type_alignment_from_type_id(member.ty, structs, unions);
                     if member_alignment > max_alignment {
                         max_alignment = member_alignment;
                     }
                 }
                 max_alignment
             }
-            Type::Array(elem_ty, _, _) => {
-                Self::get_type_alignment_from_type(elem_ty, structs, unions)
-            }
-            Type::Enum(_, _, _) => 4,
+            TypeKind::Array(elem_ty, _) => Self::get_type_alignment_from_type_id(
+                elem_ty,
+                structs,
+                unions,
+            ),
+            TypeKind::Enum { .. } => 4,
+            _ => todo!(),
         }
     }
 
     fn get_real_type_from_type(
-        ty: &Type,
-        structs: &HashMap<StringId, Type>,
-        unions: &HashMap<StringId, Type>,
-    ) -> Result<Type, CodegenError> {
-        if let Type::Struct(Some(name), members, _) = ty {
-            eprintln!("get_real_type_from_type: struct name={}, members.len={}", name.as_str(), members.len());
+        ty: TypeId,
+        structs: &HashMap<StringId, TypeId>,
+        unions: &HashMap<StringId, TypeId>,
+    ) -> Result<TypeId, CodegenError> {
+        let kind = ty.kind();
+        if let TypeKind::Struct(Some(name), members) = kind {
+            eprintln!(
+                "get_real_type_from_type: struct name={}, members.len={}",
+                name.as_str(),
+                members.len()
+            );
             if members.is_empty() {
-                if let Some(struct_def) = structs.get(name) {
+                if let Some(struct_def) = structs.get(&name) {
                     eprintln!("Found struct definition: {:?}", struct_def);
-                    return Ok(struct_def.clone());
+                    return Ok(*struct_def);
                 } else {
                     eprintln!("Struct definition not found for name: {}", name.as_str());
                 }
             }
-        } else if let Type::Union(Some(name), members, _) = ty
-            && members.is_empty() {
-                return Ok(unions.get(name).unwrap().clone());
-            }
+        } else if let TypeKind::Union(Some(name), members) = kind
+            && members.is_empty()
+        {
+            return Ok(unions.get(&name).unwrap().clone());
+        }
         Ok(ty.clone())
+    }
+
+    pub(crate) fn get_real_type_from_type_id(
+        ty: TypeId,
+        structs: &HashMap<StringId, TypeId>,
+        unions: &HashMap<StringId, TypeId>,
+    ) -> Result<TypeKind, CodegenError> {
+        let kind = ty.kind();
+        match kind {
+            crate::types::TypeKind::Struct(Some(name), members) => {
+                eprintln!(
+                    "get_real_type_from_type_id: struct name={}, members.len={}",
+                    name.as_str(),
+                    members.len()
+                );
+                if members.is_empty() {
+                    if let Some(struct_def) = structs.get(&name) {
+                        eprintln!("Found struct definition: {:?}", struct_def);
+                        return Ok(struct_def.kind());
+                    } else {
+                        eprintln!("Struct definition not found for name: {}", name.as_str());
+                    }
+                }
+                // Reconstruct Type from TypeKind - convert ParamType to TypedParameter
+                let typed_members = members
+                    .iter()
+                    .map(|p| ParamType {
+                        ty: p.ty,
+                        name: p.name,
+                    })
+                    .collect();
+                Ok(TypeKind::Struct(Some(name), typed_members))
+            }
+            crate::types::TypeKind::Struct(None, _) => {
+                // Anonymous struct - not supported in this context
+                Ok(TypeKind::Void)
+            }
+            crate::types::TypeKind::Union(Some(name), members) => {
+                if members.is_empty() {
+                    if let Some(union_def) = unions.get(&name) {
+                        return Ok(union_def.kind());
+                    }
+                }
+                let typed_members = members
+                    .iter()
+                    .map(|p| ParamType {
+                        ty: p.ty,
+                        name: p.name,
+                    })
+                    .collect();
+                Ok(TypeKind::Union(Some(name), typed_members))
+            }
+            crate::types::TypeKind::Union(None, _) => {
+                // Anonymous union - not supported in this context
+                Ok(TypeKind::Void)
+            }
+            crate::types::TypeKind::Enum {
+                name,
+                underlying_type,
+                variants,
+            } => Ok(TypeKind::Enum {
+                name,
+                underlying_type,
+                variants,
+            }),
+            crate::types::TypeKind::Pointer(base_ty) => {
+                let base_type = base_ty.canonicalize();
+                Ok(TypeKind::Pointer(base_ty))
+            }
+            crate::types::TypeKind::Array(elem_ty, size) => {
+                Ok(TypeKind::Array(elem_ty, size))
+            }
+            crate::types::TypeKind::Void => Ok(TypeKind::Void),
+            crate::types::TypeKind::Bool => Ok(TypeKind::Bool),
+            crate::types::TypeKind::Char => Ok(TypeKind::Char),
+            crate::types::TypeKind::UnsignedChar => Ok(TypeKind::UnsignedChar),
+            crate::types::TypeKind::Short => Ok(TypeKind::Short),
+            crate::types::TypeKind::UnsignedShort => Ok(TypeKind::UnsignedShort),
+            crate::types::TypeKind::Int => Ok(TypeKind::Int),
+            crate::types::TypeKind::UnsignedInt => Ok(TypeKind::UnsignedInt),
+            crate::types::TypeKind::Long => Ok(TypeKind::Long),
+            crate::types::TypeKind::UnsignedLong => Ok(TypeKind::UnsignedLong),
+            crate::types::TypeKind::LongLong => Ok(TypeKind::LongLong),
+            crate::types::TypeKind::UnsignedLongLong => Ok(TypeKind::UnsignedLongLong),
+            crate::types::TypeKind::Float => Ok(TypeKind::Float),
+            crate::types::TypeKind::Double => Ok(TypeKind::Double),
+            crate::types::TypeKind::Function { .. } => Ok(TypeKind::Void), // Placeholder
+            crate::types::TypeKind::Typedef(_, base) => {
+                Self::get_real_type_from_type_id(base, structs, unions)
+            }
+        }
     }
 
     /// Switches to a new block.
@@ -191,42 +309,178 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     }
 
     /// Returns the alignment of a given type in bytes.
-    pub(crate) fn get_type_alignment(&self, ty: &Type) -> u32 {
-        Self::get_type_alignment_from_type(ty, self.structs, self.unions)
+    pub(crate) fn get_type_alignment(&self, ty: TypeId) -> u32 {
+        Self::get_type_alignment_from_type_id(ty, self.structs, self.unions)
+    }
+
+    pub(crate) fn get_type_size(&self, ty: TypeId) -> u32 {
+        Self::get_type_size_from_type_id(ty, self.structs, self.unions)
+    }
+
+    pub fn get_type_alignment_from_type_id(
+        ty: TypeId,
+        structs: &HashMap<StringId, TypeId>,
+        unions: &HashMap<StringId, TypeId>,
+    ) -> u32 {
+        let real_ty = ty.canonicalize();
+        let real_ty_kind = real_ty.kind();
+        match real_ty_kind {
+            _ if real_ty.is_const() => Self::get_type_alignment_from_type_id(
+                real_ty.unwrap_const(),
+                structs,
+                unions,
+            ),
+            _ if real_ty.is_volatile() => Self::get_type_alignment_from_type_id(
+                real_ty.unwrap_volatile(),
+                structs,
+                unions,
+            ),
+            TypeKind::Int | TypeKind::UnsignedInt => 4,
+            TypeKind::Char | TypeKind::UnsignedChar => 1,
+            TypeKind::Short | TypeKind::UnsignedShort => 2,
+            TypeKind::Float => 4,
+            TypeKind::Double => 8,
+            TypeKind::Long | TypeKind::UnsignedLong => 8,
+            TypeKind::LongLong | TypeKind::UnsignedLongLong => 8,
+            TypeKind::Void => 1,
+            TypeKind::Bool => 1,
+            TypeKind::Pointer(_) => 8,
+            TypeKind::Struct(_, members) => {
+                eprintln!("Struct alignment calculation: members={:?}", members);
+                let mut max_alignment = 1;
+                for member in members {
+                    let member_alignment =
+                        Self::get_type_alignment_from_type_id(member.ty, structs, unions);
+                    eprintln!(
+                        "Member {} has alignment {}",
+                        member.name.as_str(),
+                        member_alignment
+                    );
+                    if member_alignment > max_alignment {
+                        max_alignment = member_alignment;
+                    }
+                }
+                eprintln!("Struct final alignment: {}", max_alignment);
+                max_alignment
+            }
+            TypeKind::Union(_, members) => {
+                let mut max_alignment = 1;
+                for member in members {
+                    let member_alignment =
+                        Self::get_type_alignment_from_type_id(member.ty, structs, unions);
+                    if member_alignment > max_alignment {
+                        max_alignment = member_alignment;
+                    }
+                }
+                max_alignment
+            }
+            TypeKind::Array(elem_ty, ..) => Self::get_type_alignment_from_type_id(
+                elem_ty,
+                structs,
+                unions,
+            ),
+            TypeKind::Enum { .. } => 4,
+            _ => todo!(),
+        }
     }
 
     /// Returns the size of a given type in bytes.
-    pub(crate) fn get_type_size(&self, ty: &Type) -> u32 {
-        Self::get_type_size_from_type(ty, self.structs, self.unions)
+    pub fn get_type_size_from_type_id(
+        ty: TypeId,
+        structs: &HashMap<StringId, TypeId>,
+        unions: &HashMap<StringId, TypeId>,
+    ) -> u32 {
+        let real_ty = ty.canonicalize();
+        let real_ty_kind = real_ty.kind();
+        match real_ty_kind {
+            _ if real_ty.is_const() => Self::get_type_size_from_type_id(
+                real_ty.unwrap_const(),
+                structs,
+                unions,
+            ),
+            _ if real_ty.is_volatile() => Self::get_type_size_from_type_id(
+                real_ty.unwrap_volatile(),
+                structs,
+                unions,
+            ),
+            TypeKind::Int | TypeKind::UnsignedInt => 4,
+            TypeKind::Char | TypeKind::UnsignedChar => 1,
+            TypeKind::Short | TypeKind::UnsignedShort => 2,
+            TypeKind::Float => 4,
+            TypeKind::Double => 8,
+            TypeKind::Long | TypeKind::UnsignedLong => 8,
+            TypeKind::LongLong | TypeKind::UnsignedLongLong => 8,
+            TypeKind::Void => 0,
+            TypeKind::Bool => 1,
+            TypeKind::Pointer(_) => 8,
+            TypeKind::Struct(_, members) => {
+                let mut size = 0;
+                let mut struct_alignment = 1;
+                for member in members {
+                    let member_size = Self::get_type_size_from_type_id(member.ty, structs, unions);
+                    let member_alignment =
+                        Self::get_type_alignment_from_type_id(member.ty, structs, unions);
+                    size = (size + member_alignment - 1) & !(member_alignment - 1);
+                    size += member_size;
+                    if member_alignment > struct_alignment {
+                        struct_alignment = member_alignment;
+                    }
+                }
+                (size + struct_alignment - 1) & !(struct_alignment - 1)
+            }
+            TypeKind::Union(_, members) => {
+                let size = members
+                    .iter()
+                    .map(|m| Self::get_type_size_from_type_id(m.ty, structs, unions))
+                    .max()
+                    .unwrap_or(0);
+                let mut union_alignment = 1;
+                for member in members {
+                    let member_alignment =
+                        Self::get_type_alignment_from_type_id(member.ty, structs, unions);
+                    if member_alignment > union_alignment {
+                        union_alignment = member_alignment;
+                    }
+                }
+                (size + union_alignment - 1) & !(union_alignment - 1)
+            }
+            TypeKind::Array(elem_ty, size) => {
+                Self::get_type_size_from_type_id(elem_ty, structs, unions)
+                    * size as u32
+            }
+            TypeKind::Enum { .. } => 4,
+            _ => todo!(),
+        }
     }
 
     /// Returns the amount to increment or decrement a pointer by.
-    fn get_increment_amount(&mut self, ty: &Type) -> i64 {
+    fn get_increment_amount(&mut self, ty: TypeId) -> i64 {
         let mut current = ty;
         loop {
-            match current {
-                Type::Const(inner, _) | Type::Volatile(inner, _) => {
-                    current = inner;
-                }
-                Type::Pointer(base_ty, _) => {
+            if current.is_const() || current.is_volatile() {
+                current = current.unwrap_const().unwrap_volatile();
+            } else if current.is_pointer() {
+                if let crate::types::TypeKind::Pointer(base_ty) = current.kind() {
                     return self.get_type_size(base_ty) as i64;
                 }
-                _ => return 1,
+                return 1;
+            } else {
+                return 1;
             }
         }
     }
 
     fn find_member_offset_recursively(
         &self,
-        ty: &Type,
+        ty: TypeId,
         member_name: &StringId,
-    ) -> Option<(u32, Type)> {
-        let resolved_ty = self.get_real_type(ty).unwrap();
+    ) -> Option<(u32, TypeId)> {
+        let resolved_ty = Self::get_real_type_from_type_id(ty, self.structs, self.unions).unwrap();
         let members = match &resolved_ty {
-            Type::Struct(_, members, _) => members,
-            Type::Union(_, members, _) => {
+            TypeKind::Struct(_, members) => members,
+            TypeKind::Union(_, members) => {
                 if let Some(member) = members.iter().find(|p| p.name == *member_name) {
-                    return Some((0, member.ty.clone()));
+                    return Some((0, member.ty));
                 }
                 members
             }
@@ -236,30 +490,30 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         let mut current_offset = 0;
         let empty_name = StringInterner::intern("");
 
-        if let Type::Struct(_, _, _) = &resolved_ty {
+        if let TypeKind::Struct(..) = resolved_ty {
             for member in members {
-                let member_alignment = self.get_type_alignment(&member.ty);
+                let member_alignment = self.get_type_alignment(member.ty);
                 current_offset = (current_offset + member_alignment - 1) & !(member_alignment - 1);
                 if member.name == *member_name {
-                    return Some((current_offset, member.ty.clone()));
+                    return Some((current_offset, member.ty));
                 } else if member.name == empty_name
-                    && let Type::Struct(_, _, _) | Type::Union(_, _, _) = &member.ty
-                        && let Some((offset, ty)) =
-                            self.find_member_offset_recursively(&member.ty, member_name)
-                        {
-                            return Some((current_offset + offset, ty));
-                        }
-                current_offset += self.get_type_size(&member.ty);
+                    && member.ty.is_record()
+                    && let Some((offset, ty)) =
+                        self.find_member_offset_recursively(member.ty, member_name)
+                {
+                    return Some((current_offset + offset, ty));
+                }
+                current_offset += self.get_type_size(member.ty);
             }
-        } else if let Type::Union(_, _, _) = &resolved_ty {
+        } else if let TypeKind::Union(..) = &resolved_ty {
             for member in members {
                 if member.name == empty_name
-                    && let Type::Struct(_, _, _) | Type::Union(_, _, _) = &member.ty
-                        && let Some((offset, ty)) =
-                            self.find_member_offset_recursively(&member.ty, member_name)
-                        {
-                            return Some((offset, ty));
-                        }
+                    && member.ty.is_record()
+                    && let Some((offset, ty)) =
+                        self.find_member_offset_recursively(member.ty, member_name)
+                {
+                    return Some((offset, ty));
+                }
             }
         }
 
@@ -276,12 +530,12 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         match stmt {
             TypedStmt::Return(expr) => {
                 let (value, ty) = self.translate_typed_expr(expr)?;
-                if ty.is_record() {
+                if ty.is_aggregate() {
                     let dest = self
                         .builder
                         .block_params(self.builder.current_block().unwrap())[0];
                     let src = value;
-                    let size = self.get_type_size(&ty);
+                    let size = self.get_type_size(ty);
                     self.builder.emit_small_memory_copy(
                         self.module.target_config(),
                         dest,
@@ -316,7 +570,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
                         let mut data_desc = cranelift_module::DataDescription::new();
 
-                        let size = self.get_type_size(&declarator.ty);
+                        let size = self.get_type_size(declarator.ty);
                         let global_vars: HashMap<StringId, DataId> = self
                             .global_variables
                             .iter()
@@ -329,8 +583,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                                 structs: self.structs,
                                 unions: self.unions,
                             };
-                            match util::evaluate_static_initializer(&declarator.ty, init, &context)?
-                            {
+                            match util::evaluate_static_initializer(TypeId::INT, init, &context)? {
                                 util::EvaluatedInitializer::Bytes(bytes) => {
                                     data_desc.define(bytes.into_boxed_slice());
                                 }
@@ -344,7 +597,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         }
                         self.module.define_data(id, &data_desc).unwrap();
                     } else {
-                        let ty = &declarator.ty;
+                        let ty = declarator.ty;
                         let size = self.get_type_size(ty);
                         let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
                             StackSlotKind::ExplicitSlot,
@@ -455,7 +708,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 if let Some(init) = *init {
                     match init {
                         TypedForInit::Declaration(ty, name, initializer) => {
-                            let size = self.get_type_size(&ty);
+                            let size = self.get_type_size(ty);
                             let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
                                 StackSlotKind::ExplicitSlot,
                                 size,
@@ -464,7 +717,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                             self.variables.insert(name, (None, Some(slot), ty.clone()));
                             if let Some(init) = initializer {
                                 let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
-                                self.translate_initializer(addr, &ty, &init)?;
+                                self.translate_initializer(addr, ty, &init)?;
                             } else if ty.is_aggregate() {
                                 let val = self.builder.ins().iconst(types::I64, 0);
                                 self.builder.ins().stack_store(val, slot, 0);
@@ -676,12 +929,12 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     }
 
     /// Resolves the real type of a struct.
-    fn get_real_type(&self, ty: &Type) -> Result<Type, CodegenError> {
-        Self::get_real_type_from_type(ty, self.structs, self.unions)
+    fn get_real_type(&self, ty: TypeId) -> TypeId {
+        ty.canonicalize()
     }
 
     /// Translates an expression into a Cranelift `Value`.
-    fn translate_lvalue(&mut self, expr: TypedLValue) -> Result<(Value, Type), CodegenError> {
+    fn translate_lvalue(&mut self, expr: TypedLValue) -> Result<(Value, TypeId), CodegenError> {
         match expr {
             TypedLValue::Variable(name, _, ty) => {
                 if let Some((_var_opt, slot_opt, _)) = self.variables.get(&name) {
@@ -709,7 +962,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             TypedLValue::Member(expr, member, _, _ty) => {
                 let (ptr, expr_ty) = self.translate_typed_expr(*expr)?;
                 let (offset, member_ty) = self
-                    .find_member_offset_recursively(&expr_ty, &member)
+                    .find_member_offset_recursively(expr_ty, &member)
                     .unwrap();
                 let member_addr = self.builder.ins().iadd_imm(ptr, offset as i64);
                 Ok((member_addr, member_ty))
@@ -739,18 +992,19 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         }
     }
 
-    fn integer_promotion(&self, ty: &Type) -> Type {
-        match ty {
-            Type::Char(_)
-            | Type::Short(_)
-            | Type::Bool(_)
-            | Type::UnsignedChar(_)
-            | Type::UnsignedShort(_) => Type::Int(ty.span()),
-            _ => ty.clone(),
+    fn integer_promotion(&self, ty: TypeId) -> TypeId {
+        let kind = ty.kind();
+        match &kind {
+            crate::types::TypeKind::Char
+            | crate::types::TypeKind::Short
+            | crate::types::TypeKind::Bool
+            | crate::types::TypeKind::UnsignedChar
+            | crate::types::TypeKind::UnsignedShort => TypeId::intern(&crate::types::TypeKind::Int),
+            _ => ty,
         }
     }
 
-    fn usual_arithmetic_conversions(&mut self, left_ty: &Type, right_ty: &Type) -> Type {
+    fn usual_arithmetic_conversions(&mut self, left_ty: TypeId, right_ty: TypeId) -> TypeId {
         let left_ty = self.integer_promotion(left_ty);
         let right_ty = self.integer_promotion(right_ty);
 
@@ -776,42 +1030,44 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             return unsigned_ty;
         }
 
-        if self.get_type_size(&signed_ty) >= self.get_type_size(&unsigned_ty) {
+        if self.get_type_size(signed_ty) >= self.get_type_size(unsigned_ty) {
             return signed_ty;
         }
 
-        match signed_ty {
-            Type::Int(span) => Type::UnsignedInt(span),
-            Type::Long(span) => Type::UnsignedLong(span),
-            Type::LongLong(span) => Type::UnsignedLongLong(span),
+        match signed_ty.kind() {
+            crate::types::TypeKind::Int => TypeId::intern(&crate::types::TypeKind::UnsignedInt),
+            crate::types::TypeKind::Long => TypeId::intern(&crate::types::TypeKind::UnsignedLong),
+            crate::types::TypeKind::LongLong => {
+                TypeId::intern(&crate::types::TypeKind::UnsignedLongLong)
+            }
             _ => unsigned_ty,
         }
     }
 
-    fn load_variable(&mut self, slot: StackSlot, ty: &Type) -> Value {
-        let is_volatile = matches!(ty, Type::Volatile(_, _));
+    fn load_variable(&mut self, slot: StackSlot, ty: TypeId) -> Value {
+        let is_volatile = ty.is_volatile();
         if is_volatile {
             self.builder.ins().fence();
         }
-        let value = match ty.unwrap_volatile() {
-            Type::Char(_) | Type::Bool(_) => {
+        let value = match ty.unwrap_volatile().kind() {
+            crate::types::TypeKind::Char | crate::types::TypeKind::Bool => {
                 let val = self.builder.ins().stack_load(types::I8, slot, 0);
                 self.builder.ins().sextend(types::I64, val)
             }
-            Type::UnsignedChar(_) => {
+            crate::types::TypeKind::UnsignedChar => {
                 let val = self.builder.ins().stack_load(types::I8, slot, 0);
                 self.builder.ins().uextend(types::I64, val)
             }
-            Type::Short(_) => {
+            crate::types::TypeKind::Short => {
                 let val = self.builder.ins().stack_load(types::I16, slot, 0);
                 self.builder.ins().sextend(types::I64, val)
             }
-            Type::UnsignedShort(_) => {
+            crate::types::TypeKind::UnsignedShort => {
                 let val = self.builder.ins().stack_load(types::I16, slot, 0);
                 self.builder.ins().uextend(types::I64, val)
             }
-            Type::Float(_) => self.builder.ins().stack_load(types::F32, slot, 0),
-            Type::Double(_) => self.builder.ins().stack_load(types::F64, slot, 0),
+            crate::types::TypeKind::Float => self.builder.ins().stack_load(types::F32, slot, 0),
+            crate::types::TypeKind::Double => self.builder.ins().stack_load(types::F64, slot, 0),
             _ => self.builder.ins().stack_load(types::I64, slot, 0),
         };
         if is_volatile {
@@ -820,31 +1076,31 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         value
     }
 
-    fn load_lvalue(&mut self, addr: Value, ty: &Type) -> Value {
-        let is_volatile = matches!(ty, Type::Volatile(_, _));
+    fn load_lvalue(&mut self, addr: Value, ty: TypeId) -> Value {
+        let is_volatile = ty.is_volatile();
         if is_volatile {
             self.builder.ins().fence();
         }
         let flags = MemFlags::new();
-        let value = match ty.unwrap_volatile() {
-            Type::Char(_) | Type::Bool(_) => {
+        let value = match ty.unwrap_volatile().kind() {
+            crate::types::TypeKind::Char | crate::types::TypeKind::Bool => {
                 let val = self.builder.ins().load(types::I8, flags, addr, 0);
                 self.builder.ins().sextend(types::I64, val)
             }
-            Type::UnsignedChar(_) => {
+            crate::types::TypeKind::UnsignedChar => {
                 let val = self.builder.ins().load(types::I8, flags, addr, 0);
                 self.builder.ins().uextend(types::I64, val)
             }
-            Type::Short(_) => {
+            crate::types::TypeKind::Short => {
                 let val = self.builder.ins().load(types::I16, flags, addr, 0);
                 self.builder.ins().sextend(types::I64, val)
             }
-            Type::UnsignedShort(_) => {
+            crate::types::TypeKind::UnsignedShort => {
                 let val = self.builder.ins().load(types::I16, flags, addr, 0);
                 self.builder.ins().uextend(types::I64, val)
             }
-            Type::Float(_) => self.builder.ins().load(types::F32, flags, addr, 0),
-            Type::Double(_) => self.builder.ins().load(types::F64, flags, addr, 0),
+            crate::types::TypeKind::Float => self.builder.ins().load(types::F32, flags, addr, 0),
+            crate::types::TypeKind::Double => self.builder.ins().load(types::F64, flags, addr, 0),
             _ => self.builder.ins().load(types::I64, flags, addr, 0),
         };
         if is_volatile {
@@ -858,12 +1114,12 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         op: AssignOp,
         lhs: &TypedLValue,
         rhs: &TypedExpr,
-        ty: &Type,
-    ) -> Result<(Value, Type), CodegenError> {
+        ty: TypeId,
+    ) -> Result<(Value, TypeId), CodegenError> {
         let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
         let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
 
-        let lhs_val = self.load_lvalue(addr, &lhs_ty);
+        let lhs_val = self.load_lvalue(addr, TypeId::INT);
         let result_val = match op {
             AssignOp::Assign => rhs_val,
             AssignOp::Add => {
@@ -901,7 +1157,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             AssignOp::LeftShift => self.builder.ins().ishl(lhs_val, rhs_val),
             AssignOp::RightShift => self.builder.ins().sshr(lhs_val, rhs_val),
         };
-        let is_volatile = matches!(lhs_ty, Type::Volatile(_, _));
+        let is_volatile = lhs_ty.is_volatile();
         if is_volatile {
             self.builder.ins().fence();
         }
@@ -919,27 +1175,31 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         op: BinOp,
         lhs: &TypedExpr,
         rhs: &TypedExpr,
-        ty: &Type,
-    ) -> Result<(Value, Type), CodegenError> {
+        ty: TypeId,
+    ) -> Result<(Value, TypeId), CodegenError> {
         // Assignment operators are now handled by translate_assign_expr
         match op {
             BinOp::Add => {
                 let (lhs_val, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
                 let (rhs_val, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
-                let result_val = match (&lhs_ty, &rhs_ty) {
-                    (Type::Pointer(base_ty, _), Type::Int(_)) => {
-                        let size = self.get_type_size(base_ty);
+                let common_ty = self.usual_arithmetic_conversions(lhs_ty, rhs_ty);
+                let result_val = match (&lhs_ty.kind(), &rhs_ty.kind()) {
+                    (crate::types::TypeKind::Pointer(base_ty), crate::types::TypeKind::Int) => {
+                        let size = self.get_type_size(*base_ty);
                         let offset = self.builder.ins().imul_imm(rhs_val, size as i64);
                         self.builder.ins().iadd(lhs_val, offset)
                     }
-                    (Type::Int(_), Type::Pointer(base_ty, _)) => {
-                        let size = self.get_type_size(base_ty);
+                    (crate::types::TypeKind::Int, crate::types::TypeKind::Pointer(base_ty)) => {
+                        let size = self.get_type_size(*base_ty);
                         let offset = self.builder.ins().imul_imm(lhs_val, size as i64);
                         self.builder.ins().iadd(rhs_val, offset)
                     }
-                    (Type::Float(_), Type::Float(_)) => self.builder.ins().fadd(lhs_val, rhs_val),
-                    (Type::Double(_), Type::Double(_)) => self.builder.ins().fadd(lhs_val, rhs_val),
+                    (crate::types::TypeKind::Float, crate::types::TypeKind::Float) => {
+                        self.builder.ins().fadd(lhs_val, rhs_val)
+                    }
+                    (crate::types::TypeKind::Double, crate::types::TypeKind::Double) => {
+                        self.builder.ins().fadd(lhs_val, rhs_val)
+                    }
                     _ => self.builder.ins().iadd(lhs_val, rhs_val),
                 };
                 let _result_ty = if lhs_ty.is_pointer() {
@@ -952,27 +1212,34 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             BinOp::Sub => {
                 let (lhs_val, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
                 let (rhs_val, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
-                let result_val = match (&lhs_ty, &rhs_ty) {
-                    (Type::Pointer(base_ty, _), Type::Int(_)) => {
+                let common_ty = self.usual_arithmetic_conversions(lhs_ty, rhs_ty);
+                let result_val = match (lhs_ty.kind(), rhs_ty.kind()) {
+                    (crate::types::TypeKind::Pointer(base_ty), crate::types::TypeKind::Int) => {
                         let size = self.get_type_size(base_ty);
                         let offset = self.builder.ins().imul_imm(rhs_val, size as i64);
                         self.builder.ins().isub(lhs_val, offset)
                     }
-                    (Type::Pointer(lhs_base, _), Type::Pointer(rhs_base, _))
-                        if lhs_base.equals_ignore_span(rhs_base) =>
-                    {
+                    (
+                        crate::types::TypeKind::Pointer(lhs_base),
+                        crate::types::TypeKind::Pointer(rhs_base),
+                    ) if lhs_base == rhs_base => {
                         let diff = self.builder.ins().isub(lhs_val, rhs_val);
                         let size = self.get_type_size(lhs_base);
                         self.builder.ins().sdiv_imm(diff, size as i64)
                     }
-                    (Type::Float(_), Type::Float(_)) => self.builder.ins().fsub(lhs_val, rhs_val),
-                    (Type::Double(_), Type::Double(_)) => self.builder.ins().fsub(lhs_val, rhs_val),
+                    (crate::types::TypeKind::Float, crate::types::TypeKind::Float) => {
+                        self.builder.ins().fsub(lhs_val, rhs_val)
+                    }
+                    (crate::types::TypeKind::Double, crate::types::TypeKind::Double) => {
+                        self.builder.ins().fsub(lhs_val, rhs_val)
+                    }
                     _ => self.builder.ins().isub(lhs_val, rhs_val),
                 };
-                let result_ty = match (&lhs_ty, &rhs_ty) {
-                    (Type::Pointer(_, _), Type::Pointer(_, _)) => Type::Int(lhs_ty.span()),
-                    (Type::Pointer(_, _), Type::Int(_)) => lhs_ty,
+                let result_ty = match (lhs_ty.kind(), rhs_ty.kind()) {
+                    (crate::types::TypeKind::Pointer(_), crate::types::TypeKind::Pointer(_)) => {
+                        TypeId::intern(&crate::types::TypeKind::Int)
+                    }
+                    (crate::types::TypeKind::Pointer(_), crate::types::TypeKind::Int) => lhs_ty,
                     _ => common_ty,
                 };
                 Ok((result_val, result_ty))
@@ -980,7 +1247,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             BinOp::Mul => {
                 let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
                 let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let common_ty = self.usual_arithmetic_conversions(lhs_ty, rhs_ty);
                 let result = if common_ty.is_floating() {
                     self.builder.ins().fmul(lhs, rhs)
                 } else {
@@ -991,7 +1258,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             BinOp::Div => {
                 let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
                 let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let common_ty = self.usual_arithmetic_conversions(lhs_ty, rhs_ty);
                 let result = if common_ty.is_floating() {
                     self.builder.ins().fdiv(lhs, rhs)
                 } else if common_ty.is_unsigned() {
@@ -1004,7 +1271,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             BinOp::Mod => {
                 let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
                 let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let common_ty = self.usual_arithmetic_conversions(lhs_ty, rhs_ty);
                 let result = if common_ty.is_unsigned() {
                     self.builder.ins().urem(lhs, rhs)
                 } else {
@@ -1015,7 +1282,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             BinOp::Equal => {
                 let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
                 let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let common_ty = self.usual_arithmetic_conversions(lhs_ty, rhs_ty);
                 let c = if common_ty.is_floating() {
                     self.builder.ins().fcmp(FloatCC::Equal, lhs, rhs)
                 } else {
@@ -1026,7 +1293,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             BinOp::NotEqual => {
                 let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
                 let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let common_ty = self.usual_arithmetic_conversions(lhs_ty, rhs_ty);
                 let c = if common_ty.is_floating() {
                     self.builder.ins().fcmp(FloatCC::NotEqual, lhs, rhs)
                 } else {
@@ -1037,7 +1304,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             BinOp::LessThan => {
                 let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
                 let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let common_ty = self.usual_arithmetic_conversions(lhs_ty, rhs_ty);
                 let c = if common_ty.is_floating() {
                     self.builder.ins().fcmp(FloatCC::LessThan, lhs, rhs)
                 } else {
@@ -1053,7 +1320,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             BinOp::GreaterThan => {
                 let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
                 let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let common_ty = self.usual_arithmetic_conversions(lhs_ty, rhs_ty);
                 let c = if common_ty.is_floating() {
                     self.builder.ins().fcmp(FloatCC::GreaterThan, lhs, rhs)
                 } else {
@@ -1069,7 +1336,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             BinOp::LessThanOrEqual => {
                 let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
                 let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let common_ty = self.usual_arithmetic_conversions(lhs_ty, rhs_ty);
                 let c = if common_ty.is_floating() {
                     self.builder.ins().fcmp(FloatCC::LessThanOrEqual, lhs, rhs)
                 } else {
@@ -1085,7 +1352,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             BinOp::GreaterThanOrEqual => {
                 let (lhs, lhs_ty) = self.translate_typed_expr(lhs.clone())?;
                 let (rhs, rhs_ty) = self.translate_typed_expr(rhs.clone())?;
-                let common_ty = self.usual_arithmetic_conversions(&lhs_ty, &rhs_ty);
+                let common_ty = self.usual_arithmetic_conversions(lhs_ty, rhs_ty);
                 let c = if common_ty.is_floating() {
                     self.builder
                         .ins()
@@ -1188,7 +1455,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         }
     }
 
-    fn translate_typed_expr(&mut self, expr: TypedExpr) -> Result<(Value, Type), CodegenError> {
+    fn translate_typed_expr(&mut self, expr: TypedExpr) -> Result<(Value, TypeId), CodegenError> {
         if let Some((assign_op, lhs, rhs)) = expr.get_assign_expr() {
             return self.translate_assign_expr(assign_op, lhs, rhs, expr.ty());
         }
@@ -1230,9 +1497,9 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             TypedExpr::PointerMember(expr, member, _, _ty) => {
                 let (ptr, ptr_ty) = self.translate_typed_expr(*expr)?;
-                if let Type::Pointer(base_ty, _) = ptr_ty {
+                if let crate::types::TypeKind::Pointer(base_ty) = ptr_ty.kind() {
                     let (offset, member_ty) = self
-                        .find_member_offset_recursively(&base_ty, &member)
+                        .find_member_offset_recursively(base_ty, &member)
                         .unwrap();
                     let member_addr = self.builder.ins().iadd_imm(ptr, offset as i64);
 
@@ -1252,7 +1519,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             TypedExpr::ImplicitCast(ty, expr, _, result_ty) => {
                 let (val, expr_ty) = self.translate_typed_expr(*expr)?;
-                if let Type::Bool(_) = *ty {
+                if let crate::types::TypeKind::Bool = ty.kind() {
                     let zero = self.builder.ins().iconst(types::I64, 0);
                     let is_not_zero = self.builder.ins().icmp(IntCC::NotEqual, val, zero);
                     let bool_as_i64 = self.builder.ins().uextend(types::I64, is_not_zero);
@@ -1261,11 +1528,12 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
                 let cast_val = if ty.is_floating() && expr_ty.is_floating() {
                     // float <-> double
-                    if let (Type::Double(_), Type::Float(_)) = (ty.as_ref(), expr_ty.unwrap_const())
+                    if let (crate::types::TypeKind::Double, crate::types::TypeKind::Float) =
+                        (ty.kind(), expr_ty.unwrap_const().kind())
                     {
                         self.builder.ins().fpromote(types::F64, val)
-                    } else if let (Type::Float(_), Type::Double(_)) =
-                        (ty.as_ref(), expr_ty.unwrap_const())
+                    } else if let (crate::types::TypeKind::Float, crate::types::TypeKind::Double) =
+                        (ty.kind(), expr_ty.unwrap_const().kind())
                     {
                         self.builder.ins().fdemote(types::F32, val)
                     } else {
@@ -1273,7 +1541,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     }
                 } else if ty.is_floating() && !expr_ty.is_floating() {
                     // int -> float
-                    let target_ty = if let Type::Float(_) = *ty {
+                    let target_ty = if let crate::types::TypeKind::Float = ty.kind() {
                         types::F32
                     } else {
                         types::F64
@@ -1285,9 +1553,13 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     }
                 } else if !ty.is_floating() && expr_ty.is_floating() {
                     // float -> int
-                    let target_ty = match ty.unwrap_const() {
-                        Type::Char(_) | Type::UnsignedChar(_) | Type::Bool(_) => types::I8,
-                        Type::Short(_) | Type::UnsignedShort(_) => types::I16,
+                    let target_ty = match ty.unwrap_const().kind() {
+                        crate::types::TypeKind::Char
+                        | crate::types::TypeKind::UnsignedChar
+                        | crate::types::TypeKind::Bool => types::I8,
+                        crate::types::TypeKind::Short | crate::types::TypeKind::UnsignedShort => {
+                            types::I16
+                        }
                         _ => types::I64,
                     };
                     let converted = if ty.is_unsigned() {
@@ -1314,7 +1586,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             TypedExpr::Member(expr, member, _, _ty) => {
                 let (ptr, ty) = self.translate_typed_expr(*expr)?;
                 let (offset, member_ty) = self
-                    .find_member_offset_recursively(&ty, &member)
+                    .find_member_offset_recursively(ty, &member)
                     .unwrap_or_else(|| panic!("Member not found: {}", member.as_str()));
                 let member_addr = self.builder.ins().iadd_imm(ptr, offset as i64);
 
@@ -1331,27 +1603,28 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             TypedExpr::ExplicitCast(ty, expr, _, result_ty) => {
                 let (val, _) = self.translate_typed_expr(*expr)?;
-                if let Type::Bool(_) = *ty {
+                if let crate::types::TypeKind::Bool = ty.kind() {
                     let zero = self.builder.ins().iconst(types::I64, 0);
                     let is_not_zero = self.builder.ins().icmp(IntCC::NotEqual, val, zero);
                     let bool_as_i64 = self.builder.ins().uextend(types::I64, is_not_zero);
                     return Ok((bool_as_i64, result_ty));
                 }
-                let cast_val = match *ty {
-                    Type::Char(_) | Type::UnsignedChar(_) => {
+                let cast_val = match ty.kind() {
+                    crate::types::TypeKind::Char | crate::types::TypeKind::UnsignedChar => {
                         self.builder.ins().ireduce(types::I8, val)
                     }
-                    Type::Short(_) | Type::UnsignedShort(_) => {
+                    crate::types::TypeKind::Short | crate::types::TypeKind::UnsignedShort => {
                         self.builder.ins().ireduce(types::I16, val)
                     }
                     _ => val,
                 };
 
-                let extended_val = match *ty {
-                    Type::Char(_) | Type::Short(_) => {
+                let extended_val = match ty.kind() {
+                    crate::types::TypeKind::Char | crate::types::TypeKind::Short => {
                         self.builder.ins().sextend(types::I64, cast_val)
                     }
-                    Type::UnsignedChar(_) | Type::UnsignedShort(_) => {
+                    crate::types::TypeKind::UnsignedChar
+                    | crate::types::TypeKind::UnsignedShort => {
                         self.builder.ins().uextend(types::I64, cast_val)
                     }
                     _ => cast_val,
@@ -1360,20 +1633,20 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 Ok((extended_val, result_ty))
             }
             TypedExpr::CompoundLiteral(_ty, initializer, _, result_ty) => {
-                let size = self.get_type_size(&result_ty);
+                let size = self.get_type_size(result_ty);
                 let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
                     StackSlotKind::ExplicitSlot,
                     size,
                     0,
                 ));
                 let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
-                self.translate_initializer(addr, &result_ty, &initializer)?;
+                self.translate_initializer(addr, result_ty, &initializer)?;
                 Ok((addr, result_ty))
             }
             TypedExpr::PreIncrement(expr, _, ty) => {
                 let (addr, expr_ty) = self.translate_lvalue(*expr)?;
-                let val = self.load_lvalue(addr, &expr_ty);
-                let amount = self.get_increment_amount(&expr_ty);
+                let val = self.load_lvalue(addr, TypeId::INT);
+                let amount = self.get_increment_amount(TypeId::INT);
                 let inc = self.builder.ins().iconst(types::I64, amount);
                 let new_val = self.builder.ins().iadd(val, inc);
                 self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
@@ -1381,8 +1654,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             TypedExpr::PreDecrement(expr, _, ty) => {
                 let (addr, expr_ty) = self.translate_lvalue(*expr)?;
-                let val = self.load_lvalue(addr, &expr_ty);
-                let amount = self.get_increment_amount(&expr_ty);
+                let val = self.load_lvalue(addr, TypeId::INT);
+                let amount = self.get_increment_amount(TypeId::INT);
                 let dec = self.builder.ins().iconst(types::I64, amount);
                 let new_val = self.builder.ins().isub(val, dec);
                 self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
@@ -1390,8 +1663,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             TypedExpr::PostIncrement(expr, _, ty) => {
                 let (addr, expr_ty) = self.translate_lvalue(*expr)?;
-                let val = self.load_lvalue(addr, &expr_ty);
-                let amount = self.get_increment_amount(&expr_ty);
+                let val = self.load_lvalue(addr, TypeId::INT);
+                let amount = self.get_increment_amount(TypeId::INT);
                 let inc = self.builder.ins().iconst(types::I64, amount);
                 let new_val = self.builder.ins().iadd(val, inc);
                 self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
@@ -1399,8 +1672,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             TypedExpr::PostDecrement(expr, _, ty) => {
                 let (addr, expr_ty) = self.translate_lvalue(*expr)?;
-                let val = self.load_lvalue(addr, &expr_ty);
-                let amount = self.get_increment_amount(&expr_ty);
+                let val = self.load_lvalue(addr, TypeId::INT);
+                let amount = self.get_increment_amount(TypeId::INT);
                 let dec = self.builder.ins().iconst(types::I64, amount);
                 let new_val = self.builder.ins().isub(val, dec);
                 self.builder.ins().store(MemFlags::new(), new_val, addr, 0);
@@ -1444,20 +1717,20 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             TypedExpr::Sizeof(expr, _, ty) => {
                 let (_, expr_ty) = self.translate_typed_expr(*expr)?;
-                let size = self.get_type_size(&expr_ty) as i64;
+                let size = self.get_type_size(expr_ty) as i64;
                 Ok((self.builder.ins().iconst(types::I64, size), ty))
             }
             TypedExpr::SizeofType(ty, _, result_ty) => {
-                let size = self.get_type_size(&ty) as i64;
+                let size = self.get_type_size(ty) as i64;
                 Ok((self.builder.ins().iconst(types::I64, size), result_ty))
             }
             TypedExpr::Alignof(expr, _, ty) => {
                 let (_, expr_ty) = self.translate_typed_expr(*expr)?;
-                let align = self.get_type_alignment(&expr_ty) as i64;
+                let align = self.get_type_alignment(expr_ty) as i64;
                 Ok((self.builder.ins().iconst(types::I64, align), ty))
             }
             TypedExpr::AlignofType(ty, _, result_ty) => {
-                let align = self.get_type_alignment(&ty) as i64;
+                let align = self.get_type_alignment(ty) as i64;
                 eprintln!("AlignofType: ty={:?}, align={}", ty, align);
                 Ok((self.builder.ins().iconst(types::I64, align), result_ty))
             }
@@ -1473,14 +1746,14 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 }
             }
             TypedExpr::InitializerList(list, _, ty) => {
-                let size = self.get_type_size(&ty);
+                let size = self.get_type_size(ty);
                 let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
                     StackSlotKind::ExplicitSlot,
                     size,
                     0,
                 ));
                 let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
-                self.translate_initializer(addr, &ty, &TypedInitializer::List(list.clone()))?;
+                self.translate_initializer(addr, ty, &TypedInitializer::List(list.clone()))?;
                 Ok((addr, ty))
             }
             TypedExpr::LogicalNot(expr, _, ty) => {
@@ -1499,21 +1772,21 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             }
             TypedExpr::Variable(name, _, ty) => {
                 if let Some(val) = self.enum_constants.get(&name) {
-                    return Ok((
-                        self.builder.ins().iconst(types::I64, *val),
-                        Type::Int(ty.span()),
-                    ));
+                    return Ok((self.builder.ins().iconst(types::I64, *val), TypeId::INT));
                 }
                 if let Some((_var_opt, slot_opt, _)) = self.variables.get(&name) {
                     if let Some(slot) = slot_opt {
-                        if ty.is_record() {
+                        if matches!(
+                            ty.kind(),
+                            crate::types::TypeKind::Struct(..) | crate::types::TypeKind::Union(..)
+                        ) {
                             return Ok((self.builder.ins().stack_addr(types::I64, slot, 0), ty));
                         }
-                        if let Type::Array(elem_ty, _, span) = &ty {
+                        if let crate::types::TypeKind::Array(elem_ty, _) = ty.kind() {
                             let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
-                            return Ok((addr, Type::Pointer(elem_ty.clone(), *span)));
+                            return Ok((addr, TypeId::pointer_to(elem_ty)));
                         }
-                        let loaded_val = self.load_variable(slot, &ty);
+                        let loaded_val = self.load_variable(slot, ty);
                         Ok((loaded_val, ty))
                     } else {
                         unreachable!("Cannot take address of SSA variable")
@@ -1553,8 +1826,11 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let local_callee = self.module.declare_func_in_func(callee, self.builder.func);
 
                 let mut arg_values = Vec::new();
-                if ret_ty.is_record() {
-                    let size = self.get_type_size(&ret_ty);
+                if matches!(
+                    ret_ty.kind(),
+                    crate::types::TypeKind::Struct(..) | crate::types::TypeKind::Union(..)
+                ) {
+                    let size = self.get_type_size(ret_ty);
                     let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
                         StackSlotKind::ExplicitSlot,
                         size,
@@ -1572,9 +1848,9 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let call = if is_variadic {
                     let mut sig = self.signatures.get(&name).unwrap().clone();
                     for arg in &args[sig.params.len()..] {
-                        let abi_param = match arg.ty() {
-                            Type::Float(_) => AbiParam::new(types::F32),
-                            Type::Double(_) => AbiParam::new(types::F64),
+                        let abi_param = match arg.ty().kind() {
+                            crate::types::TypeKind::Float => AbiParam::new(types::F32),
+                            crate::types::TypeKind::Double => AbiParam::new(types::F64),
                             _ => AbiParam::new(types::I64),
                         };
                         sig.params.push(abi_param);
@@ -1588,7 +1864,10 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                     self.builder.ins().call(local_callee, &arg_values)
                 };
 
-                if ret_ty.is_record() {
+                if matches!(
+                    ret_ty.kind(),
+                    crate::types::TypeKind::Struct(..) | crate::types::TypeKind::Union(..)
+                ) {
                     let addr = self.builder.inst_results(call)[0];
                     return Ok((addr, ret_ty));
                 }
@@ -1602,29 +1881,32 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     fn translate_initializer(
         &mut self,
         base_addr: Value,
-        ty: &Type,
+        ty: TypeId,
         initializer: &TypedInitializer,
     ) -> CodegenResult<()> {
         match initializer {
             TypedInitializer::Expr(expr) => {
                 if let TypedExpr::Comma(lhs, rhs, _, _) = *expr.clone() {
                     self.translate_initializer(base_addr, ty, &TypedInitializer::Expr(lhs))?;
-                    if let Type::Array(elem_ty, _, _) = ty {
-                        let elem_size = self.get_type_size(elem_ty);
+                    if let crate::types::TypeKind::Array(elem_ty, _) = ty.kind() {
+                        let elem_size = self.get_type_size(TypeId::intern(&elem_ty.kind()));
                         let next_addr = self.builder.ins().iadd_imm(base_addr, elem_size as i64);
                         self.translate_initializer(next_addr, ty, &TypedInitializer::Expr(rhs))?;
                     }
                 } else {
                     let (val, val_ty) = self.translate_typed_expr(*expr.clone())?;
-                    if val_ty.is_record() {
-                        let size = self.get_type_size(&val_ty);
+                    if matches!(
+                        val_ty.kind(),
+                        crate::types::TypeKind::Struct(..) | crate::types::TypeKind::Union(..)
+                    ) {
+                        let size = self.get_type_size(val_ty);
                         self.builder.emit_small_memory_copy(
                             self.module.target_config(),
                             base_addr,
                             val,
                             size as u64,
-                            self.get_type_alignment(&val_ty) as u8,
-                            self.get_type_alignment(&val_ty) as u8,
+                            self.get_type_alignment(val_ty) as u8,
+                            self.get_type_alignment(val_ty) as u8,
                             true,
                             MemFlags::new(),
                         );
@@ -1634,9 +1916,9 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 }
             }
             TypedInitializer::List(list) => {
-                let ty = self.get_real_type(ty)?;
+                let ty = ty.canonicalize().kind();
                 match ty {
-                    Type::Struct(_, ref members, _) => {
+                    TypeKind::Struct(_, ref members) => {
                         let mut member_index = 0;
                         for (designators, initializer) in list {
                             let (offset, member_ty) = if !designators.is_empty() {
@@ -1645,23 +1927,29 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                                 for designator in designators {
                                     match designator {
                                         TypedDesignator::Member(name) => {
-                                            let s = self.get_real_type(&current_ty)?;
-                                            if let Type::Struct(_, members, _) = s {
+                                            let s = current_ty.clone();
+                                            if let TypeKind::Struct(_, members) = s {
                                                 let mut found = false;
                                                 for (i, member) in members.iter().enumerate() {
                                                     let member_alignment =
-                                                        self.get_type_alignment(&member.ty);
+                                                        self.get_type_alignment(member.ty);
                                                     current_offset =
                                                         (current_offset + member_alignment - 1)
                                                             & !(member_alignment - 1);
                                                     if member.name == *name {
                                                         member_index = i;
-                                                        current_ty = member.ty.clone();
+                                                        current_ty =
+                                                            Self::get_real_type_from_type_id(
+                                                                member.ty,
+                                                                &self.structs,
+                                                                &self.unions,
+                                                            )
+                                                            .unwrap();
                                                         found = true;
                                                         break;
                                                     }
                                                     current_offset +=
-                                                        self.get_type_size(&member.ty);
+                                                        self.get_type_size(member.ty);
                                                 }
                                                 if !found {
                                                     return Err(CodegenError::UnknownField(
@@ -1673,12 +1961,14 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                                             }
                                         }
                                         TypedDesignator::Index(expr) => {
-                                            let s = self.get_real_type(&current_ty)?;
-                                            if let Type::Array(elem_ty, _, _) = s {
-                                                let elem_size = self.get_type_size(&elem_ty);
-                                                if let TypedExpr::Number(n, _, _) = **expr {
+                                            let s = current_ty;
+                                            if let TypeKind::Array(elem_ty, ..) = s {
+                                                let elem_size = self.get_type_size(
+                                                    TypeId::intern(&elem_ty.kind()),
+                                                );
+                                                if let TypedExpr::Number(n, ..) = **expr {
                                                     current_offset += n as u32 * elem_size;
-                                                    current_ty = *elem_ty.clone();
+                                                    current_ty = elem_ty.canonicalize().kind();
                                                 } else {
                                                     return Err(
                                                         CodegenError::NonConstantArrayIndex,
@@ -1690,27 +1980,39 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                                         }
                                     }
                                 }
-                                (current_offset, current_ty)
+                                (current_offset, current_ty.clone())
                             } else {
                                 if member_index >= members.len() {
                                     return Err(CodegenError::InitializerTooLong);
                                 }
                                 let mut offset = 0;
                                 for member in members.iter().take(member_index) {
-                                    let member_alignment = self.get_type_alignment(&member.ty);
+                                    let member_alignment = self.get_type_alignment(member.ty);
                                     offset =
                                         (offset + member_alignment - 1) & !(member_alignment - 1);
-                                    offset += self.get_type_size(&member.ty);
+                                    offset += self.get_type_size(member.ty);
                                 }
-                                (offset, members[member_index].ty.clone())
+                                (
+                                    offset,
+                                    Self::get_real_type_from_type_id(
+                                        members[member_index].ty,
+                                        &self.structs,
+                                        &self.unions,
+                                    )
+                                    .unwrap(),
+                                )
                             };
                             let member_addr = self.builder.ins().iadd_imm(base_addr, offset as i64);
-                            self.translate_initializer(member_addr, &member_ty, initializer)?;
+                            self.translate_initializer(
+                                member_addr,
+                                TypeId::intern(&member_ty),
+                                initializer,
+                            )?;
                             member_index += 1;
                         }
                     }
-                    Type::Array(elem_ty, _, _) => {
-                        let elem_size = self.get_type_size(&elem_ty);
+                    TypeKind::Array(elem_ty, ..) => {
+                        let elem_size = self.get_type_size(TypeId::intern(&elem_ty.kind()));
                         let mut index = 0;
                         for (designators, initializer) in list {
                             let current_index = if !designators.is_empty() {
@@ -1728,7 +2030,11 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                             };
                             let offset = current_index * elem_size;
                             let elem_addr = self.builder.ins().iadd_imm(base_addr, offset as i64);
-                            self.translate_initializer(elem_addr, &elem_ty, initializer)?;
+                            self.translate_initializer(
+                                elem_addr,
+                                TypeId::intern(&elem_ty.kind()),
+                                initializer,
+                            )?;
                             index = current_index + 1;
                         }
                     }

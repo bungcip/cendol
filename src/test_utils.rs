@@ -2,7 +2,7 @@ use crate::compiler::{Cli, Compiler, CompilerError};
 use crate::error::Report;
 use crate::file::{FileId, FileManager};
 use crate::parser::Parser;
-use crate::parser::ast::{Expr, Function, Stmt, TranslationUnit, Type};
+use crate::parser::ast::{Expr, Function, Stmt, TranslationUnit};
 use crate::preprocessor::Preprocessor;
 use crate::preprocessor::lexer::Lexer;
 use crate::preprocessor::token::{Token, TokenKind};
@@ -199,20 +199,6 @@ pub fn assert_tokens_equal(actual: &[Token], expected: &[TokenKind]) {
     assert_eq!(actual_kinds, expected.to_vec());
 }
 
-/// Asserts that two AST programs are equal
-pub fn assert_programs_equal(actual: &TranslationUnit, expected: &TranslationUnit) {
-    assert_eq!(actual.globals.len(), expected.globals.len());
-    assert_eq!(actual.functions.len(), expected.functions.len());
-    assert_eq!(actual.functions[0].name, expected.functions[0].name);
-    assert_eq!(
-        actual.functions[0].params.len(),
-        expected.functions[0].params.len()
-    );
-    assert_eq!(
-        actual.functions[0].body.len(),
-        expected.functions[0].body.len()
-    );
-}
 
 /// Compiles C code and returns a report on error
 pub fn compile_and_get_error(input: &str, filename: &str) -> Result<(), Report> {

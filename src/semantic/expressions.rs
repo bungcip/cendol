@@ -1,14 +1,15 @@
-use crate::parser::ast::{BinOp, Type, TypedExpr};
+use crate::parser::ast::{BinOp, TypedExpr};
+use crate::types::TypeId;
 
 pub(crate) struct TypedExpression {
     op: BinOp,
     lhs: TypedExpr,
     rhs: TypedExpr,
-    ty: Type,
+    ty: TypeId,
 }
 
 impl TypedExpression {
-    pub(crate) fn new(op: BinOp, lhs: TypedExpr, rhs: TypedExpr, ty: Type) -> Self {
+    pub(crate) fn new(op: BinOp, lhs: TypedExpr, rhs: TypedExpr, ty: TypeId) -> Self {
         Self { op, lhs, rhs, ty }
     }
 }

@@ -4,14 +4,14 @@ use crate::parser::string_interner::StringId;
 use cranelift_module::DataId;
 use std::collections::HashMap;
 
-use crate::parser::ast::Type;
+use crate::types::TypeId;
 
 /// Context needed for resolving addresses in static initializers
 pub struct StaticInitContext<'a> {
     /// Mapping from variable names to their data IDs
     pub global_variables: HashMap<StringId, DataId>,
-    pub structs: &'a HashMap<StringId, Type>,
-    pub unions: &'a HashMap<StringId, Type>,
+    pub structs: &'a HashMap<StringId, TypeId>,
+    pub unions: &'a HashMap<StringId, TypeId>,
 }
 
 /// The result of evaluating a static initializer.
@@ -60,30 +60,31 @@ use crate::codegen::translator::FunctionTranslator;
 use crate::parser::ast::TypedDesignator;
 
 pub fn evaluate_static_initializer(
-    ty: &Type,
+    ty: TypeId,
     initializer: &TypedInitializer,
     context: &StaticInitContext,
 ) -> Result<EvaluatedInitializer, CodegenError> {
     match initializer {
         TypedInitializer::Expr(expr) => evaluate_static_expr(expr, context),
         TypedInitializer::List(initializers) => {
+            let real_ty = crate::codegen::translator::FunctionTranslator::get_real_type_from_type_id(ty, context.structs, context.unions)?;
             let size =
-                FunctionTranslator::get_type_size_from_type(ty, context.structs, context.unions)
+                FunctionTranslator::get_type_size_from_type_id(ty, context.structs, context.unions)
                     as usize;
             let mut bytes = vec![0; size];
             let mut offset = 0;
 
-            if let Type::Struct(_, members, _) = ty {
+            if let crate::types::TypeKind::Struct(_, members) = ty.kind() {
                 let mut member_iter = members.iter();
                 for (designators, init) in initializers {
                     let (member_offset, member_ty) = if !designators.is_empty() {
                         if let TypedDesignator::Member(name) = &designators[0] {
                             let mut current_offset = 0;
                             let mut found = false;
-                            for member in members {
+                            for member in &members {
                                 let member_alignment =
-                                    FunctionTranslator::get_type_alignment_from_type(
-                                        &member.ty,
+                                    FunctionTranslator::get_type_alignment_from_type_id(
+                                        member.ty,
                                         context.structs,
                                         context.unions,
                                     );
@@ -93,8 +94,8 @@ pub fn evaluate_static_initializer(
                                     found = true;
                                     break;
                                 }
-                                current_offset += FunctionTranslator::get_type_size_from_type(
-                                    &member.ty,
+                                current_offset += FunctionTranslator::get_type_size_from_type_id(
+                                    member.ty,
                                     context.structs,
                                     context.unions,
                                 );
@@ -102,7 +103,7 @@ pub fn evaluate_static_initializer(
                             if found {
                                 (
                                     current_offset,
-                                    members.iter().find(|m| m.name == *name).unwrap().ty.clone(),
+                                    members.iter().find(|m| m.name == *name).unwrap().ty,
                                 )
                             } else {
                                 return Err(CodegenError::InvalidStaticInitializer);
@@ -112,17 +113,17 @@ pub fn evaluate_static_initializer(
                         }
                     } else {
                         let member = member_iter.next().unwrap();
-                        let member_alignment = FunctionTranslator::get_type_alignment_from_type(
-                            &member.ty,
+                        let member_alignment = FunctionTranslator::get_type_alignment_from_type_id(
+                            member.ty,
                             context.structs,
                             context.unions,
                         );
                         offset = (offset + member_alignment - 1) & !(member_alignment - 1);
-                        (offset, member.ty.clone())
+                        (offset, member.ty)
                     };
 
                     if let EvaluatedInitializer::Bytes(new_bytes) =
-                        evaluate_static_initializer(&member_ty, init, context)?
+                        evaluate_static_initializer(member_ty, init, context)?
                     {
                         bytes[member_offset as usize..member_offset as usize + new_bytes.len()]
                             .copy_from_slice(&new_bytes);
@@ -131,8 +132,8 @@ pub fn evaluate_static_initializer(
                     }
 
                     if designators.is_empty() {
-                        offset += FunctionTranslator::get_type_size_from_type(
-                            &member_ty,
+                        offset += FunctionTranslator::get_type_size_from_type_id(
+                            member_ty,
                             context.structs,
                             context.unions,
                         );

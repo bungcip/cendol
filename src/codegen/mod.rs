@@ -1,8 +1,9 @@
 use crate::codegen::error::CodegenError;
 use crate::parser::ast::{
-    Expr, Type, TypedExpr, TypedInitializer, TypedLValue, TypedStmt, TypedTranslationUnit,
+    Expr, TypedExpr, TypedInitializer, TypedLValue, TypedStmt, TypedTranslationUnit,
 };
 use crate::parser::string_interner::StringId;
+use crate::types::{TypeId, TypeKind};
 use cranelift::prelude::*;
 use cranelift_codegen::binemit::Reloc;
 use cranelift_codegen::ir::Function;
@@ -60,13 +61,13 @@ use cranelift_module::DataId;
 pub struct CodeGen {
     ctx: FunctionBuilderContext,
     module: ObjectModule,
-    variables: SymbolTable<StringId, (Option<Variable>, Option<StackSlot>, Type)>,
-    global_variables: HashMap<StringId, (DataId, Type)>,
-    static_local_variables: HashMap<StringId, (DataId, Type)>,
-    functions: HashMap<StringId, (FuncId, Type, bool)>,
+    variables: SymbolTable<StringId, (Option<Variable>, Option<StackSlot>, TypeId)>,
+    global_variables: HashMap<StringId, (DataId, TypeId)>,
+    static_local_variables: HashMap<StringId, (DataId, TypeId)>,
+    functions: HashMap<StringId, (FuncId, TypeId, bool)>,
     signatures: HashMap<StringId, cranelift::prelude::Signature>,
-    structs: HashMap<StringId, Type>,
-    unions: HashMap<StringId, Type>,
+    structs: HashMap<StringId, TypeId>,
+    unions: HashMap<StringId, TypeId>,
     pub enum_constants: HashMap<StringId, i64>,
     anonymous_string_count: usize,
 }
@@ -162,9 +163,9 @@ impl CodeGen {
                 } => {
                     let mut sig = self.module.make_signature();
                     for param in params {
-                        let abi_param = match param.ty {
-                            Type::Float(_) => AbiParam::new(types::F32),
-                            Type::Double(_) => AbiParam::new(types::F64),
+                        let abi_param = match param.ty.kind() {
+                            TypeKind::Float => AbiParam::new(types::F32),
+                            TypeKind::Double => AbiParam::new(types::F64),
                             _ => AbiParam::new(types::I64),
                         };
                         sig.params.push(abi_param);
@@ -178,21 +179,21 @@ impl CodeGen {
                     self.signatures.insert(*name, sig);
                 }
                 TypedStmt::Declaration(base_ty, declarators, _is_static) => {
-                    if let Type::Struct(Some(name), _, _) = &base_ty {
-                        self.structs.insert(*name, base_ty.clone());
-                    } else if let Type::Union(Some(name), _, _) = &base_ty {
-                        self.unions.insert(*name, base_ty.clone());
+                    if let crate::types::TypeKind::Struct(Some(name), _) = base_ty.kind() {
+                        self.structs.insert(name, base_ty.clone());
+                    } else if let crate::types::TypeKind::Union(Some(name), _) = base_ty.kind() {
+                        self.unions.insert(name, base_ty.clone());
                     }
                     for declarator in declarators {
-                        if let Type::Struct(Some(name), _, _) = &declarator.ty {
-                            self.structs.insert(*name, declarator.ty.clone());
-                        } else if let Type::Union(Some(name), _, _) = &declarator.ty {
-                            self.unions.insert(*name, declarator.ty.clone());
+                        if let crate::types::TypeKind::Struct(Some(name), _) = declarator.ty.kind() {
+                            self.structs.insert(name, declarator.ty.clone());
+                        } else if let crate::types::TypeKind::Union(Some(name), _) = declarator.ty.kind() {
+                            self.unions.insert(name, declarator.ty.clone());
                         }
 
                         // This is a global variable declaration.
-                        if !matches!(declarator.ty, Type::Enum(..)) {
-                            let is_const = matches!(declarator.ty, Type::Const(_, _));
+                        if !matches!(declarator.ty.kind(), TypeKind::Enum{..}) {
+                            let is_const = declarator.ty.is_const();
                             let id = self
                                 .module
                                 .declare_data(
@@ -207,8 +208,8 @@ impl CodeGen {
 
                             let mut data_desc = DataDescription::new();
 
-                            let size = FunctionTranslator::get_type_size_from_type(
-                                &declarator.ty,
+                            let size = FunctionTranslator::get_type_size_from_type_id(
+                                declarator.ty,
                                 &self.structs,
                                 &self.unions,
                             );
@@ -249,7 +250,7 @@ impl CodeGen {
                                         };
 
                                         match util::evaluate_static_initializer(
-                                            &declarator.ty,
+                                            declarator.ty,
                                             init,
                                             &context,
                                         )? {
@@ -286,7 +287,7 @@ impl CodeGen {
                                     };
 
                                     match util::evaluate_static_initializer(
-                                        &declarator.ty,
+                                        declarator.ty,
                                         init,
                                         &context,
                                     )? {
@@ -323,15 +324,35 @@ impl CodeGen {
         }
 
         // First, declare all functions
+        for global in &typed_unit.globals {
+            if let TypedStmt::FunctionDeclaration { name, ty, params, is_variadic, .. } = global {
+                let mut sig = self.module.make_signature();
+                for param in params {
+                    let abi_param = match param.ty.kind() {
+                        crate::types::TypeKind::Float => AbiParam::new(types::F32),
+                        crate::types::TypeKind::Double => AbiParam::new(types::F64),
+                        _ => AbiParam::new(types::I64),
+                    };
+                    sig.params.push(abi_param);
+                }
+                sig.returns.push(AbiParam::new(types::I64));
+                let id = self
+                    .module
+                    .declare_function(name.as_str(), Linkage::Import, &sig)
+                    .unwrap();
+                self.functions.insert(*name, (id, *ty, *is_variadic));
+                self.signatures.insert(*name, sig);
+            }
+        }
         for function in &typed_unit.functions {
             let mut sig = self.module.make_signature();
-            if let Type::Struct(_, _, _) = function.return_type {
+            if function.return_type.is_record() {
                 sig.params.push(AbiParam::new(types::I64));
             }
             for param in &function.params {
-                let abi_param = match param.ty {
-                    Type::Float(_) => AbiParam::new(types::F32),
-                    Type::Double(_) => AbiParam::new(types::F64),
+                let abi_param = match param.ty.kind() {
+                    crate::types::TypeKind::Float => AbiParam::new(types::F32),
+                    crate::types::TypeKind::Double => AbiParam::new(types::F64),
                     _ => AbiParam::new(types::I64),
                 };
                 sig.params.push(abi_param);
@@ -360,20 +381,12 @@ impl CodeGen {
         // Collect enum constants from global declarations
         for global in &typed_unit.globals {
             if let TypedStmt::Declaration(ty, _, _) = global
-                && let Type::Enum(_name, members, _) = ty
-                    && !members.is_empty() {
+                && let TypeKind::Enum{name: _, underlying_type: _, variants} = ty.kind()
+                    && !variants.is_empty() {
                         let mut next_value = 0;
-                        for (name, value, _span) in members {
-                            let val = if let Some(expr) = value {
-                                if let Expr::Number(num, _) = &**expr {
-                                    *num
-                                } else {
-                                    -1 // Dummy value
-                                }
-                            } else {
-                                next_value
-                            };
-                            self.enum_constants.insert(*name, val);
+                        for variant in variants {
+                            let val = variant.value;
+                            self.enum_constants.insert(variant.name, val);
                             next_value = val + 1;
                         }
                     }
@@ -417,7 +430,7 @@ impl CodeGen {
             // Add parameters to variables and store block params
             let block_params = translator.builder.block_params(entry_block).to_vec();
             for (i, param) in function_def.params.iter().enumerate() {
-                let size = translator.get_type_size(&param.ty);
+                let size = translator.get_type_size(param.ty);
                 let slot = translator.builder.create_sized_stack_slot(
                     cranelift::prelude::StackSlotData::new(
                         cranelift::prelude::StackSlotKind::ExplicitSlot,
@@ -427,7 +440,7 @@ impl CodeGen {
                 );
                 translator
                     .variables
-                    .insert(param.name, (None, Some(slot), param.ty.clone()));
+                    .insert(param.name, (None, Some(slot), param.ty));
                 // Store the block parameter into the stack slot
                 translator
                     .builder
@@ -491,20 +504,12 @@ impl CodeGen {
         for stmt in stmts {
             match stmt {
                 TypedStmt::Declaration(ty, _, _) => {
-                    if let Type::Enum(_name, members, _) = ty
-                        && !members.is_empty() {
+                    if let TypeKind::Enum{name: _, underlying_type: _, variants} = ty.kind()
+                        && !variants.is_empty() {
                             let mut next_value = 0;
-                            for (name, value, _span) in members {
-                                let val = if let Some(expr) = value {
-                                    if let Expr::Number(num, _) = &**expr {
-                                        *num
-                                    } else {
-                                        -1 // Dummy value
-                                    }
-                                } else {
-                                    next_value
-                                };
-                                self.enum_constants.insert(*name, val);
+                            for variant in variants {
+                                let val = variant.value;
+                                self.enum_constants.insert(variant.name, val);
                                 next_value = val + 1;
                             }
                         }

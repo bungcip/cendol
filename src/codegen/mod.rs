@@ -321,16 +321,18 @@ impl CodeGen {
     ) -> Result<(), CodegenError> {
         for stmt in stmts {
             match stmt {
-                TypedStmt::Declaration(ty, _, _) => {
-                    if let TypeKind::Enum{name: _, underlying_type: _, variants} = ty.kind()
-                        && !variants.is_empty() {
-                            let mut next_value = 0;
-                            for variant in variants {
-                                let val = variant.value;
-                                self.enum_constants.insert(variant.name, val);
-                                next_value = val + 1;
+                TypedStmt::Declaration(declarators) => {
+                    for declarator in declarators {
+                        if let TypeKind::Enum{name: _, underlying_type: _, variants} = declarator.ty.kind()
+                            && !variants.is_empty() {
+                                let mut next_value = 0;
+                                for variant in variants {
+                                    let val = variant.value;
+                                    self.enum_constants.insert(variant.name, val);
+                                    next_value = val + 1;
+                                }
                             }
-                        }
+                    }
                 }
                 TypedStmt::Block(stmts) => {
                     self.collect_enum_constants_from_stmts(stmts)?;

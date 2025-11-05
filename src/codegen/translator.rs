@@ -399,68 +399,25 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 self.current_block_state = BlockState::Filled;
                 Ok(true)
             }
-            TypedStmt::Declaration(_, declarators, is_static) => {
+            TypedStmt::Declaration(declarators) => {
                 for declarator in declarators {
-                    if is_static {
-                        let mangled_name = format!(
-                            "{}.{}",
-                            self.current_function_name.as_str(),
-                            declarator.name.as_str()
-                        );
-                        let id = self
-                            .module
-                            .declare_data(&mangled_name, Linkage::Local, true, false)
-                            .unwrap();
-                        self.static_local_variables
-                            .insert(declarator.name, (id, declarator.ty.clone()));
-
-                        let mut data_desc = cranelift_module::DataDescription::new();
-
-                        let size = self.get_type_size(declarator.ty);
-                        let global_vars: HashMap<StringId, DataId> = self
-                            .global_variables
-                            .iter()
-                            .map(|(k, v)| (*k, v.0))
-                            .collect();
-
-                        if let Some(init) = &declarator.initializer {
-                            let context = util::StaticInitContext {
-                                global_variables: global_vars,
-                                structs: self.structs,
-                                unions: self.unions,
-                            };
-                            match util::evaluate_static_initializer(TypeId::INT, init, &context)? {
-                                util::EvaluatedInitializer::Bytes(bytes) => {
-                                    data_desc.define(bytes.into_boxed_slice());
-                                }
-                                util::EvaluatedInitializer::Reloc { .. } => {
-                                    // Relocations are not supported for static local variables.
-                                    return Err(CodegenError::InvalidStaticInitializer);
-                                }
-                            }
-                        } else {
-                            data_desc.define(vec![0; size as usize].into_boxed_slice());
-                        }
-                        self.module.define_data(id, &data_desc).unwrap();
+                    let ty = declarator.ty;
+                    let size = self.get_type_size(ty);
+                    let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+                        StackSlotKind::ExplicitSlot,
+                        size,
+                        0,
+                    ));
+                    self.variables
+                        .insert(declarator.name, (None, Some(slot), ty.clone()));
+                    if let Some(initializer) = &declarator.initializer {
+                        let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
+                        self.translate_initializer(addr, ty, initializer)?;
                     } else {
-                        let ty = declarator.ty;
-                        let size = self.get_type_size(ty);
-                        let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-                            StackSlotKind::ExplicitSlot,
-                            size,
-                            0,
-                        ));
-                        self.variables
-                            .insert(declarator.name, (None, Some(slot), ty.clone()));
-                        if let Some(initializer) = &declarator.initializer {
-                            let addr = self.builder.ins().stack_addr(types::I64, slot, 0);
-                            self.translate_initializer(addr, ty, initializer)?;
-                        } else {
-                            // Initialize to zero for scalars
-                            if ty.is_aggregate() == false {
-                                let zero = self.builder.ins().iconst(types::I64, 0);
-                                self.builder.ins().stack_store(zero, slot, 0);
-                            }
+                        // Initialize to zero for scalars
+                        if ty.is_aggregate() == false {
+                            let zero = self.builder.ins().iconst(types::I64, 0);
+                            self.builder.ins().stack_store(zero, slot, 0);
                         }
                     }
                 }

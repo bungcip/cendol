@@ -153,9 +153,9 @@ pub enum TypedInitializer {
     List(TypedInitializerList),
 }
 
-/// Represents a typed declarator, which includes the type modifiers (pointers, arrays) and the identifier.
+/// Represents a typed variable declaration, which includes the resolved type and initializer.
 #[derive(Debug, PartialEq, Clone)]
-pub struct TypedDeclarator {
+pub struct TypedVarDecl {
     pub ty: TypeId,
     pub name: StringId,
     pub initializer: Option<TypedInitializer>,
@@ -199,7 +199,7 @@ pub enum TypedStmt {
     /// A `goto` statement.
     Goto(StringId),
     /// A variable declaration.
-    Declaration(TypeId, ThinVec<TypedDeclarator>, bool),
+    Declaration(ThinVec<TypedVarDecl>),
     /// A `break` statement.
     Break,
     /// A `continue` statement.

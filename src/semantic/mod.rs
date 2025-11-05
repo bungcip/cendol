@@ -15,7 +15,7 @@ use std::collections::hash_map::Entry::Vacant;
 use symbol_table::GlobalSymbol as StringId;
 pub mod error;
 pub mod typed_ast;
-use crate::semantic::typed_ast::{TypedExpr, TypedLValue, TypedStmt, TypedInitializer, TypedDesignator, TypedForInit, TypedTranslationUnit, TypedFunctionDecl, TypedParameter, TypedDeclarator};
+use crate::semantic::typed_ast::{TypedExpr, TypedLValue, TypedStmt, TypedInitializer, TypedDesignator, TypedForInit, TypedTranslationUnit, TypedFunctionDecl, TypedParameter, TypedVarDecl};
 
 /// Represents a symbol in the symbol table.
 #[derive(Debug, Clone)]
@@ -777,14 +777,13 @@ impl SemanticAnalyzer {
                                 .init.as_ref()
                                 .as_ref()
                                 .map(|init| self.convert_initializer_to_typed(Initializer::Expr((**init).clone())));
-                            typed_declarators.push(TypedDeclarator {
+                            typed_declarators.push(TypedVarDecl {
                                 ty: full_ty,
                                 name: name,
                                 initializer: typed_initializer,
                             });
                         }
-                        let base_ty = type_spec_to_type_id(&type_spec, SourceSpan::default());
-                        TypedStmt::Declaration(base_ty, typed_declarators, false)
+                        TypedStmt::Declaration(typed_declarators)
                     }
                     Decl::StaticAssert(expr, message) => {
                         // Evaluate static assert within function scope

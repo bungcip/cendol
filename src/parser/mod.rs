@@ -1137,7 +1137,7 @@ impl Parser {
             // Static assert in statements should be handled differently, but for now, we'll skip it
             let decl = self.parse_static_assert()?;
             if let Decl::StaticAssert(expr, msg) = decl {
-                return Ok(Stmt::StaticAssert(expr, msg));
+                return Ok(Stmt::Declaration(Decl::StaticAssert(expr, msg)));
             } else {
                 return Ok(Stmt::Empty);
             }
@@ -1157,7 +1157,7 @@ impl Parser {
                 }
             }
             self.expect_punct(TokenKind::Semicolon)?;
-            return Ok(Stmt::Empty);
+            return Ok(Stmt::Declaration(Decl::VarGroup(base_type_spec, declarators)));
         }
 
         if self.is_type_name() && self.peek()? != TokenKind::LeftParen {

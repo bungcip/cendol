@@ -245,8 +245,6 @@ pub enum Stmt {
     Expr(Box<Expr>),
     /// A declaration statement.
     Declaration(Decl),
-    /// A static assert statement.
-    StaticAssert(Box<Expr>, StringId),
 }
 
 impl Stmt {
@@ -286,7 +284,6 @@ impl Stmt {
             Stmt::Empty => SourceSpan::default(),
             Stmt::Expr(expr) => expr.span(),
             Stmt::Declaration(_) => SourceSpan::default(),
-            Stmt::StaticAssert(_, _) => SourceSpan::default(),
         }
     }
 }

@@ -822,18 +822,6 @@ impl SemanticAnalyzer {
                     _ => TypedStmt::Empty, // Handle other decl types if needed
                 }
             }
-            Stmt::StaticAssert(expr, msg) => {
-                let typed_expr = self.check_expression(*expr);
-                // Evaluate static assert at compile time
-                if let TypedExpr::Number(val, _, _) = &typed_expr {
-                    if *val == 0 {
-                        self.err(SemanticError::StaticAssertFailed(msg), typed_expr.span());
-                    }
-                } else {
-                    self.err(SemanticError::NotAConstantExpression, typed_expr.span());
-                }
-                TypedStmt::StaticAssert(Box::new(typed_expr), msg)
-            }
         }
     }
 

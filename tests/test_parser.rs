@@ -430,14 +430,14 @@ mod tests {
         }
     }
 
-    /// Test parsing of static_assert in statements
+    /// Test parsing of static_assert
     #[test]
-    fn test_static_assert_statement() {
+    fn test_static_assert() {
         let input = r#"
             _Static_assert(sizeof(int) == 4, "int must be 4 bytes");
         "#;
         let stmts = parse_c_body(input);
-        assert!(matches!(&stmts[0], Stmt::StaticAssert(..)));
+        assert!(matches!(&stmts[0], Stmt::Declaration(Decl::StaticAssert(..))));
     }
 
     /// Test parsing of goto and label statements

@@ -120,7 +120,18 @@ impl TypedLValue {
     }
 
     pub fn is_modifiable(&self) -> bool {
-        matches!(self, TypedLValue::String(_, _, _)) == false
+        // String literals are not modifiable
+        if matches!(self, TypedLValue::String(_, _, _)) {
+            return false;
+        }
+        
+        // Check if the type has const qualifier
+        let ty = self.ty();
+        if ty.unwrap_volatile().is_const() {
+            return false;
+        }
+        
+        true
     }
 }
 
@@ -207,8 +218,6 @@ pub enum TypedStmt {
     Empty,
     /// An expression statement.
     Expr(TypedExpr),
-    /// A `_Static_assert` declaration.
-    StaticAssert(Box<TypedExpr>, StringId),
 }
 
 /// Represents a typed function declaration with type information.

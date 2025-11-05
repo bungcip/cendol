@@ -684,5 +684,12 @@ mod tests {
                 ("ptr_to_arr", 1, 1)
             ]
         );
+
+        // function pointer declarator
+        assert_type_spec!(
+            "int (*func_ptr)(int, char);",
+            TypeKeyword::INT.bits(),
+            [("func_ptr", 1, 0)]
+        );
     }
 }

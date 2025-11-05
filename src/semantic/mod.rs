@@ -396,9 +396,25 @@ impl SemanticAnalyzer {
                             return;
                         }
                         Decl::StaticAssert(expr, message) => {
-                            // Handle static assert
-                            // For global static assert, we can evaluate it here
-                            // But for simplicity, we'll skip for now
+                            // Evaluate static assert - should be a constant expression
+                            let typed_expr = self.check_expression(*expr.clone());
+                            
+                            // Check if it's a constant expression and if it evaluates to non-zero
+                            if let TypedExpr::Number(val, _, _) = typed_expr {
+                                if val == 0 {
+                                    self.err(
+                                        SemanticError::StaticAssertFailed(*message),
+                                        typed_expr.span(),
+                                    );
+                                }
+                            } else {
+                                // For non-constant expressions, we can't evaluate at compile time
+                                // This should be a semantic error, but for now we'll report as invalid
+                                self.err(
+                                    SemanticError::NotAConstantExpression,
+                                    typed_expr.span(),
+                                );
+                            }
                             return;
                         }
                         _ => return,
@@ -804,20 +820,57 @@ impl SemanticAnalyzer {
             Stmt::Declaration(decl) => {
                 match decl {
                     Decl::VarGroup(type_spec, declarators) => {
-                        let ty = type_spec_to_type_id(&type_spec, SourceSpan::default());
                         let mut typed_declarators = ThinVec::new();
                         for declarator in declarators {
+                            let name = declarator.name.unwrap_or_else(|| StringInterner::intern(""));
+                            let full_ty = self.apply_declarator(&type_spec, &declarator);
+                            
+                            // Check for redeclaration before adding to symbol table
+                            if let Some(existing) = self.symbol_table.lookup(&name) {
+                                self.err(SemanticError::VariableRedeclaration(name), declarator.span);
+                            } else {
+                                // Register variable in symbol table with proper type and qualifiers
+                                self.symbol_table.insert(
+                                    name,
+                                    Symbol {
+                                        ty: full_ty,
+                                        is_function: false,
+                                        span: declarator.span,
+                                        is_builtin: false,
+                                    },
+                                );
+                            }
+                            
                             let typed_initializer = declarator
                                 .init.as_ref()
                                 .as_ref()
                                 .map(|init| self.convert_initializer_to_typed(Initializer::Expr((**init).clone())));
                             typed_declarators.push(TypedDeclarator {
-                                ty: ty,
-                                name: declarator.name.unwrap_or_else(|| StringInterner::intern("")),
+                                ty: full_ty,
+                                name: name,
                                 initializer: typed_initializer,
                             });
                         }
-                        TypedStmt::Declaration(ty, typed_declarators, false)
+                        let base_ty = type_spec_to_type_id(&type_spec, SourceSpan::default());
+                        TypedStmt::Declaration(base_ty, typed_declarators, false)
+                    }
+                    Decl::StaticAssert(expr, message) => {
+                        // Evaluate static assert within function scope
+                        let typed_expr = self.check_expression(*expr.clone());
+                        if let TypedExpr::Number(val, _, _) = typed_expr {
+                            if val == 0 {
+                                self.err(
+                                    SemanticError::StaticAssertFailed(message),
+                                    typed_expr.span(),
+                                );
+                            }
+                        } else {
+                            self.err(
+                                SemanticError::NotAConstantExpression,
+                                typed_expr.span(),
+                            );
+                        }
+                        TypedStmt::Empty // StaticAssert doesn't produce runtime code
                     }
                     _ => TypedStmt::Empty, // Handle other decl types if needed
                 }

@@ -579,7 +579,21 @@ impl Parser {
         ty.pointer_depth += declarator.pointer_depth;
         ty.array_sizes.extend(declarator.array_sizes.iter().cloned());
         ty.qualifiers |= TypeQualifiers::from_bits_truncate(declarator.qualifiers as u8);
+        if let Some(inner) = &declarator.inner {
+            ty = self.apply_declarator_modifiers(&ty, inner);
+        }
         ty
+    }
+
+    /// Helper function to recursively extract the name from the innermost declarator.
+    fn get_declarator_name(&self, declarator: &ast::Declarator) -> Option<StringId> {
+        if let Some(name) = declarator.name {
+            Some(name)
+        } else if let Some(inner) = &declarator.inner {
+            self.get_declarator_name(inner)
+        } else {
+            None
+        }
     }
 
     /// Parses declarator suffixes (pointers and arrays) and returns the base type and declarator.
@@ -614,6 +628,15 @@ impl Parser {
             }
         }
 
+        // Parse optional parenthesized inner declarator
+        let inner = if self.eat_token(&TokenKind::LeftParen)? {
+            let (_, inner_decl) = self.parse_declarator_suffix(base_type_spec.clone())?;
+            self.expect_punct(TokenKind::RightParen)?;
+            Some(Box::new(inner_decl))
+        } else {
+            None
+        };
+
         let id_token = self.current_token()?;
         let (name, span) = if let TokenKind::Identifier(id) = id_token.kind.clone() {
             self.eat()?;
@@ -621,6 +644,8 @@ impl Parser {
         } else {
             (None, id_token.span)
         };
+
+        // Function parameters are NOT parsed here - they are handled in parse_function_signature
 
         // Parse array dimensions
         let mut array_sizes = ThinVec::new();
@@ -640,16 +665,27 @@ impl Parser {
                 break;
             }
         }
-        let declarator = ast::Declarator {
+        let mut declarator = ast::Declarator {
             name,
             pointer_depth,
             array_sizes,
-            func_params: None,
+            func_params: None,  // Function parameters are handled separately
+            is_variadic: false, // Function parameters are handled separately
             qualifiers: qualifiers as u16,
-            inner: None,
+            inner,
             init: None,
             span,
         };
+
+        // Propagate name and pointer depth from inner declarator if outer has no name
+        if declarator.name.is_none() {
+            if let Some(inner) = &mut declarator.inner {
+                declarator.name = self.get_declarator_name(inner);
+                declarator.pointer_depth += inner.pointer_depth;
+                inner.pointer_depth = 0;
+            }
+        }
+
         Ok((base_type_spec, declarator))
     }
 
@@ -693,7 +729,7 @@ impl Parser {
         // The `is_type_name` function will handle backtracking if no identifier is found.
         let original_pos = self.position;
         if let Ok(kind) = self.current_kind()
-            && matches!(kind, TokenKind::Star | TokenKind::LeftBracket)
+            && matches!(kind, TokenKind::Star | TokenKind::LeftBracket | TokenKind::Identifier(_))
             && let Ok((base, declarator)) = self.parse_declarator_suffix(base_type_spec.clone())
         {
             let type_spec = self.apply_declarator_modifiers(&base, &declarator);

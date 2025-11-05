@@ -199,6 +199,7 @@ pub struct Declarator {
     pub pointer_depth: u8,
     pub array_sizes: ThinVec<Expr>,
     pub func_params: Option<ThinVec<ParamDecl>>,
+    pub is_variadic: bool,
     pub qualifiers: u16,
     pub inner: Option<Box<Declarator>>, // for nested declarators like (*b)(int)
     pub init: Option<Box<Expr>>,

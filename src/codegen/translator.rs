@@ -770,7 +770,6 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 Ok(true)
             }
             TypedStmt::FunctionDeclaration { .. } => Ok(false),
-            TypedStmt::StaticAssert(_, _) => Ok(false),
         }
     }
 

@@ -151,198 +151,28 @@ impl CodeGen {
     ///
     /// A `Result` containing the compiled byte vector, or a `CodegenError` if compilation fails.
     pub fn compile(mut self, typed_unit: TypedTranslationUnit) -> Result<Vec<u8>, CodegenError> {
-        for global in &typed_unit.globals {
-            match global {
-                TypedStmt::FunctionDeclaration {
-                    ty,
-                    name,
-                    params,
-                    is_variadic,
-                    ..
-                } => {
-                    let mut sig = self.module.make_signature();
-                    for param in params {
-                        let abi_param = match param.ty.kind() {
-                            TypeKind::Float => AbiParam::new(types::F32),
-                            TypeKind::Double => AbiParam::new(types::F64),
-                            _ => AbiParam::new(types::I64),
-                        };
-                        sig.params.push(abi_param);
-                    }
-                    sig.returns.push(AbiParam::new(types::I64));
-                    let id = self
-                        .module
-                        .declare_function(name.as_str(), Linkage::Import, &sig)
-                        .unwrap();
-                    self.functions.insert(*name, (id, ty.clone(), *is_variadic));
-                    self.signatures.insert(*name, sig);
-                }
-                TypedStmt::Declaration(base_ty, declarators, _is_static) => {
-                    if let crate::types::TypeKind::Struct(Some(name), _) = base_ty.kind() {
-                        self.structs.insert(name, base_ty.clone());
-                    } else if let crate::types::TypeKind::Union(Some(name), _) = base_ty.kind() {
-                        self.unions.insert(name, base_ty.clone());
-                    }
-                    for declarator in declarators {
-                        if let crate::types::TypeKind::Struct(Some(name), _) = declarator.ty.kind() {
-                            self.structs.insert(name, declarator.ty.clone());
-                        } else if let crate::types::TypeKind::Union(Some(name), _) = declarator.ty.kind() {
-                            self.unions.insert(name, declarator.ty.clone());
-                        }
-
-                        // This is a global variable declaration.
-                        if !matches!(declarator.ty.kind(), TypeKind::Enum{..}) {
-                            let is_const = declarator.ty.is_const();
-                            let id = self
-                                .module
-                                .declare_data(
-                                    declarator.name.as_str(),
-                                    Linkage::Export,
-                                    !is_const,
-                                    false,
-                                )
-                                .unwrap();
-                            self.global_variables
-                                .insert(declarator.name, (id, declarator.ty.clone()));
-
-                            let mut data_desc = DataDescription::new();
-
-                            let size = FunctionTranslator::get_type_size_from_type_id(
-                                declarator.ty,
-                                &self.structs,
-                                &self.unions,
-                            );
-
-                            let global_vars: HashMap<StringId, DataId> = self
-                                .global_variables
-                                .iter()
-                                .map(|(k, v)| (*k, v.0))
-                                .collect();
-
-                            if let Some(init) = &declarator.initializer {
-                                if let TypedInitializer::Expr(expr) = init {
-                                    if let TypedExpr::String(s, _, _) = **expr {
-                                        let name =
-                                            format!(".L.str.{}", self.anonymous_string_count);
-                                        self.anonymous_string_count += 1;
-                                        let mut val = util::unescape_string(s.as_str());
-                                        val.push(0); // Null terminator
-                                        let str_id = self
-                                            .module
-                                            .declare_data(&name, Linkage::Local, false, false)
-                                            .unwrap();
-                                        let mut str_desc = DataDescription::new();
-                                        str_desc.define(val.into_boxed_slice());
-                                        self.module.define_data(str_id, &str_desc).unwrap();
-
-                                        let offset = 0;
-                                        data_desc.define(vec![0; 8].into_boxed_slice());
-                                        let global_val = self
-                                            .module
-                                            .declare_data_in_data(str_id, &mut data_desc);
-                                        data_desc.write_data_addr(offset, global_val, 0);
-                                    } else {
-                                        let context = util::StaticInitContext {
-                                            global_variables: global_vars,
-                                            structs: &self.structs,
-                                            unions: &self.unions,
-                                        };
-
-                                        match util::evaluate_static_initializer(
-                                            declarator.ty,
-                                            init,
-                                            &context,
-                                        )? {
-                                            util::EvaluatedInitializer::Bytes(bytes) => {
-                                                data_desc.define(bytes.into_boxed_slice());
-                                            }
-                                            util::EvaluatedInitializer::Reloc { name, addend } => {
-                                                if let Some(var_id) =
-                                                    context.global_variables.get(&name)
-                                                {
-                                                    data_desc.define(
-                                                        vec![0; size as usize].into_boxed_slice(),
-                                                    );
-                                                    let global_val =
-                                                        self.module.declare_data_in_data(
-                                                            *var_id,
-                                                            &mut data_desc,
-                                                        );
-                                                    data_desc
-                                                        .write_data_addr(0, global_val, addend);
-                                                } else {
-                                                    return Err(
-                                                        CodegenError::InvalidStaticInitializer,
-                                                    );
-                                                }
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    let context = util::StaticInitContext {
-                                        global_variables: global_vars,
-                                        structs: &self.structs,
-                                        unions: &self.unions,
-                                    };
-
-                                    match util::evaluate_static_initializer(
-                                        declarator.ty,
-                                        init,
-                                        &context,
-                                    )? {
-                                        util::EvaluatedInitializer::Bytes(bytes) => {
-                                            data_desc.define(bytes.into_boxed_slice());
-                                        }
-                                        util::EvaluatedInitializer::Reloc { name, addend } => {
-                                            if let Some(var_id) =
-                                                context.global_variables.get(&name)
-                                            {
-                                                data_desc.define(
-                                                    vec![0; size as usize].into_boxed_slice(),
-                                                );
-                                                let global_val = self
-                                                    .module
-                                                    .declare_data_in_data(*var_id, &mut data_desc);
-                                                data_desc.write_data_addr(0, global_val, addend);
-                                            } else {
-                                                return Err(CodegenError::InvalidStaticInitializer);
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                data_desc.define(vec![0; size as usize].into_boxed_slice());
-                            }
-
-                            self.module.define_data(id, &data_desc).unwrap();
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
 
         // First, declare all functions
-        for global in &typed_unit.globals {
-            if let TypedStmt::FunctionDeclaration { name, ty, params, is_variadic, .. } = global {
-                let mut sig = self.module.make_signature();
-                for param in params {
-                    let abi_param = match param.ty.kind() {
-                        crate::types::TypeKind::Float => AbiParam::new(types::F32),
-                        crate::types::TypeKind::Double => AbiParam::new(types::F64),
-                        _ => AbiParam::new(types::I64),
-                    };
-                    sig.params.push(abi_param);
-                }
-                sig.returns.push(AbiParam::new(types::I64));
-                let id = self
-                    .module
-                    .declare_function(name.as_str(), Linkage::Import, &sig)
-                    .unwrap();
-                self.functions.insert(*name, (id, *ty, *is_variadic));
-                self.signatures.insert(*name, sig);
-            }
-        }
+        // for global in &typed_unit.globals {
+        //     if let TypedStmt::FunctionDeclaration { name, ty, params, is_variadic, .. } = global {
+        //         let mut sig = self.module.make_signature();
+        //         for param in params {
+        //             let abi_param = match param.ty.kind() {
+        //                 crate::types::TypeKind::Float => AbiParam::new(types::F32),
+        //                 crate::types::TypeKind::Double => AbiParam::new(types::F64),
+        //                 _ => AbiParam::new(types::I64),
+        //             };
+        //             sig.params.push(abi_param);
+        //         }
+        //         sig.returns.push(AbiParam::new(types::I64));
+        //         let id = self
+        //             .module
+        //             .declare_function(name.as_str(), Linkage::Import, &sig)
+        //             .unwrap();
+        //         self.functions.insert(*name, (id, *ty, *is_variadic));
+        //         self.signatures.insert(*name, sig);
+        //     }
+        // }
         for function in &typed_unit.functions {
             let mut sig = self.module.make_signature();
             if function.return_type.is_record() {
@@ -378,18 +208,7 @@ impl CodeGen {
         }
 
         // Collect enum constants from global declarations
-        for global in &typed_unit.globals {
-            if let TypedStmt::Declaration(ty, _, _) = global
-                && let TypeKind::Enum{name: _, underlying_type: _, variants} = ty.kind()
-                    && !variants.is_empty() {
-                        let mut next_value = 0;
-                        for variant in variants {
-                            let val = variant.value;
-                            self.enum_constants.insert(variant.name, val);
-                            next_value = val + 1;
-                        }
-                    }
-        }
+        // Note: Enum constants are now collected from function bodies only
 
         // Collect enum constants from function bodies
         for function in &typed_unit.functions {

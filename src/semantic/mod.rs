@@ -465,75 +465,7 @@ impl SemanticAnalyzer {
             }
         }
 
-        let mut typed_globals = Vec::new();
-        // for global in program.globals {
-        //     // Handle global declarations properly
-        //     match global {
-        //         Decl::Var(var_decl) => {
-        //             // Create a TypedStmt for variable declarations
-        //             // For now, we'll create a dummy TypedStmt::Empty
-        //             // In a full implementation, we might need to create a proper TypedStmt variant for declarations
-        //             typed_globals.push(TypedStmt::Empty);
-        //         }
-        //         Decl::Func(func_decl) => {
-        //             // Function declarations are handled separately in functions
-        //             // For now, create a dummy TypedStmt::Empty
-        //             typed_globals.push(TypedStmt::Empty);
-        //         }
-        //         Decl::Struct(_)
-        //         | Decl::Union(_)
-        //         | Decl::Enum(_)
-        //         | Decl::Typedef(_, _)
-        //         | Decl::StaticAssert(_, _) => {
-        //             // For now, create a dummy TypedStmt for other declarations
-        //             typed_globals.push(TypedStmt::Empty);
-        //         }
-        //     }
-        // }
-
-        // Add built-in function declarations to the typed AST
-        for name in &self.used_builtins {
-            if let Some(symbol) = self.symbol_table.lookup(name) {
-                typed_globals.push(TypedStmt::FunctionDeclaration {
-                    ty: symbol.ty,
-                    name: *name,
-                    params: ThinVec::new(), // Built-ins don't have specified params in this context
-                    is_variadic: true,      // Assume built-ins can be variadic
-                    is_inline: false,
-                    is_noreturn: false,
-                });
-            }
-        }
-
-        // Add built-in function declarations to the typed AST if they are used and not declared.
-        let declared_functions: std::collections::HashSet<_> = typed_globals
-            .iter()
-            .filter_map(|stmt| {
-                if let TypedStmt::FunctionDeclaration { name, .. } = stmt {
-                    Some(*name)
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        for name in &self.used_builtins {
-            if !declared_functions.contains(name)
-                && let Some(symbol) = self.symbol_table.lookup(name)
-            {
-                typed_globals.push(TypedStmt::FunctionDeclaration {
-                    ty: symbol.ty,
-                    name: *name,
-                    params: ThinVec::new(),
-                    is_variadic: true, // Assume variadic
-                    is_inline: false,
-                    is_noreturn: false,
-                });
-            }
-        }
-
         TypedTranslationUnit {
-            globals: typed_globals.into(),
             functions: typed_functions.into(),
         }
     }

@@ -200,14 +200,6 @@ pub enum TypedStmt {
     Goto(StringId),
     /// A variable declaration.
     Declaration(TypeId, ThinVec<TypedDeclarator>, bool),
-    FunctionDeclaration {
-        ty: TypeId,
-        name: StringId,
-        params: ThinVec<TypedParameter>,
-        is_variadic: bool,
-        is_inline: bool,
-        is_noreturn: bool,
-    },
     /// A `break` statement.
     Break,
     /// A `continue` statement.
@@ -242,8 +234,6 @@ pub struct TypedFunctionDecl {
 /// Represents a typed translation unit (program) with type information.
 #[derive(Debug, PartialEq, Clone, Default)]
 pub struct TypedTranslationUnit {
-    /// The global variables.
-    pub globals: ThinVec<TypedStmt>, // TODO: hapus ini karena kelihatannya cuma dipakai untuk builtins
     /// The functions in the program.
     pub functions: ThinVec<TypedFunctionDecl>,
 }

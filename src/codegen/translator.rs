@@ -769,7 +769,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
                 Ok(true)
             }
-            TypedStmt::FunctionDeclaration { .. } => Ok(false),
+            // TypedStmt::FunctionDeclaration { .. } => Ok(false),
         }
     }
 

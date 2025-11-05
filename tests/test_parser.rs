@@ -197,6 +197,7 @@ fn parse_c_body(input: &str) -> ThinVec<Stmt> {
             }
         })
         .unwrap();
+    // Note: globals field is still present in AST, but will be removed in semantic analysis
     func_def.body.clone().unwrap()
 }
 
@@ -594,6 +595,7 @@ mod tests {
         } else {
             panic!("Expected FunctionDeclaration");
         }
+        // Note: globals field is still present in AST, but will be removed in semantic analysis
     }
 
     /// Test parsing of `_Noreturn` function specifier
@@ -608,6 +610,7 @@ mod tests {
                 ..
             })
         ));
+        // Note: globals field is still present in AST, but will be removed in semantic analysis
     }
 
     /// Test parsing of pointer and address-of operator precedence

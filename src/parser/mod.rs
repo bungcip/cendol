@@ -3,7 +3,7 @@ use crate::parser::ast::{
     Decl, Designator, Expr, ForInit, FuncDecl, Initializer, InitializerList, Stmt, RecordFieldDecl, TranslationUnit
 };
 use crate::types::{TypeSpec, TypeSpecKind, TypeQualifiers, StorageClass, TypeKeywordMask};
-use crate::parser::ast::type_spec_to_type_id;
+use crate::semantic::type_spec_to_type_id;
 use crate::parser::error::ParserError;
 use crate::parser::string_interner::{StringId, StringInterner};
 use crate::parser::token::{KeywordKind, Token, TokenKind};

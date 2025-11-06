@@ -337,7 +337,7 @@ impl CodeGen {
                     for variable in variables {
                         let name = variable.name;
                         let ty = variable.ty;
-                        let initializer = variable.initializer;
+                        let _initializer = variable.initializer;
 
                         let data_id = self.module.declare_data(
                             &name.to_string(),
@@ -356,58 +356,4 @@ impl CodeGen {
         Ok(object_bytes)
     }
 
-    fn collect_enum_constants_from_stmts(
-        &mut self,
-        stmts: &[TypedStmt],
-    ) -> Result<(), CodegenError> {
-        for stmt in stmts {
-            match stmt {
-                TypedStmt::Declaration(declarators) => {
-                    for declarator in declarators {
-                        if let TypeKind::Enum{name: _, underlying_type: _, variants} = declarator.ty.kind()
-                            && !variants.is_empty() {
-                                let mut next_value = 0;
-                                for variant in variants {
-                                    let val = variant.value;
-                                    self.enum_constants.insert(variant.name, val);
-                                    next_value = val + 1;
-                                }
-                            }
-                    }
-                }
-                TypedStmt::Block(stmts) => {
-                    self.collect_enum_constants_from_stmts(stmts)?;
-                }
-                TypedStmt::If(_, then, otherwise) => {
-                    self.collect_enum_constants_from_stmts(&[*then.clone()])?;
-                    if let Some(otherwise) = otherwise {
-                        self.collect_enum_constants_from_stmts(&[*otherwise.clone()])?;
-                    }
-                }
-                TypedStmt::While(_, body) => {
-                    self.collect_enum_constants_from_stmts(&[*body.clone()])?;
-                }
-                TypedStmt::For(_, _, _, body) => {
-                    self.collect_enum_constants_from_stmts(&[*body.clone()])?;
-                }
-                TypedStmt::DoWhile(body, _) => {
-                    self.collect_enum_constants_from_stmts(&[*body.clone()])?;
-                }
-                TypedStmt::Switch(_, body) => {
-                    self.collect_enum_constants_from_stmts(&[*body.clone()])?;
-                }
-                TypedStmt::Case(_, body) => {
-                    self.collect_enum_constants_from_stmts(&[*body.clone()])?;
-                }
-                TypedStmt::Default(body) => {
-                    self.collect_enum_constants_from_stmts(&[*body.clone()])?;
-                }
-                TypedStmt::Label(_, body) => {
-                    self.collect_enum_constants_from_stmts(&[*body.clone()])?;
-                }
-                _ => {}
-            }
-        }
-        Ok(())
-    }
 }

@@ -730,10 +730,6 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         }
     }
 
-    /// Resolves the real type of a struct.
-    fn get_real_type(&self, ty: TypeId) -> TypeId {
-        ty.canonicalize()
-    }
 
     /// Translates an expression into a Cranelift `Value`.
     fn translate_lvalue(&mut self, expr: TypedLValue) -> Result<(Value, TypeId), CodegenError> {

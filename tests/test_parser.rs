@@ -4,7 +4,7 @@
 //! and generate the expected Abstract Syntax Tree (AST) structures.
 
 use cendol::parser::Parser;
-use cendol::parser::ast::{Decl, FuncDecl, Stmt, TranslationUnit};
+use cendol::parser::ast::{Decl, Stmt, TranslationUnit};
 use cendol::test_utils::{create_file_manager, create_preprocessor};
 use thin_vec::ThinVec;
 

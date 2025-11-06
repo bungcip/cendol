@@ -1,11 +1,11 @@
 use crate::SourceSpan;
 use crate::parser::ast::{
     AssignOp, BinOp, Decl, Designator, Expr, ForInit, FuncDecl, Initializer, 
-    Stmt, TranslationUnit, type_spec_to_type_id,
+    Stmt, TranslationUnit,
 };
 use crate::parser::string_interner::StringInterner;
 use crate::semantic::error::SemanticError;
-use crate::types::{TypeId, TypeKind, TypeQualifiers, TypeSpec};
+use crate::types::{TypeId, TypeKeywordMask, TypeKind, TypeQualifiers, TypeSpec, TypeSpecKind};
 use crate::parser::ast::Declarator;
 use std::collections::HashMap;
 use thin_vec::ThinVec;
@@ -16,6 +16,112 @@ use symbol_table::GlobalSymbol as StringId;
 pub mod error;
 pub mod typed_ast;
 use crate::semantic::typed_ast::{TypedExpr, TypedLValue, TypedStmt, TypedInitializer, TypedDesignator, TypedForInit, TypedTranslationUnit, TypedFunctionDecl, TypedParameter, TypedVarDecl};
+
+/// Converts a TypeSpec to a TypeId by building the corresponding TypeKind and interning it.
+pub fn type_spec_to_type_id(type_spec: &TypeSpec, _span: SourceSpan) -> TypeId {
+    let mut kind = match &type_spec.kind {
+        TypeSpecKind::Builtin(mask) => {
+            if *mask == 0 {
+                TypeKind::Int
+            } else {
+                // Determine the primary type based on the mask
+                if *mask & TypeKeywordMask::VOID.bits() != 0 {
+                    TypeKind::Void
+                } else if *mask & TypeKeywordMask::BOOL.bits() != 0 {
+                    TypeKind::Bool
+                } else if *mask & TypeKeywordMask::CHAR.bits() != 0 {
+                    if *mask & TypeKeywordMask::UNSIGNED.bits() != 0 {
+                        TypeKind::UnsignedChar
+                    } else {
+                        TypeKind::Char
+                    }
+                } else if *mask & TypeKeywordMask::SHORT.bits() != 0 {
+                    if *mask & TypeKeywordMask::UNSIGNED.bits() != 0 {
+                        TypeKind::UnsignedShort
+                    } else {
+                        TypeKind::Short
+                    }
+                } else if *mask & TypeKeywordMask::INT.bits() != 0 {
+                    if *mask & TypeKeywordMask::UNSIGNED.bits() != 0 {
+                        TypeKind::UnsignedInt
+                    } else {
+                        TypeKind::Int
+                    }
+                } else if *mask & TypeKeywordMask::LONG.bits() != 0 {
+                    if *mask & TypeKeywordMask::LONGLONG.bits() != 0 {
+                        if *mask & TypeKeywordMask::UNSIGNED.bits() != 0 {
+                            TypeKind::UnsignedLongLong
+                        } else {
+                            TypeKind::LongLong
+                        }
+                    } else {
+                        if *mask & TypeKeywordMask::UNSIGNED.bits() != 0 {
+                            TypeKind::UnsignedLong
+                        } else {
+                            TypeKind::Long
+                        }
+                    }
+                } else if *mask & TypeKeywordMask::FLOAT.bits() != 0 {
+                    TypeKind::Float
+                } else if *mask & TypeKeywordMask::DOUBLE.bits() != 0 {
+                    TypeKind::Double
+                } else {
+                    TypeKind::Int // Default fallback
+                }
+            }
+        }
+        TypeSpecKind::Struct(name_id) => {
+            // For struct types in TypeSpec, we don't have field information
+            // Field information is handled separately via Decl::Struct
+            TypeKind::Struct(Some(*name_id), thin_vec::ThinVec::new())
+        },
+        TypeSpecKind::Union(name_id) => {
+            // For union types in TypeSpec, we don't have field information
+            // Field information is handled separately via Decl::Union
+            TypeKind::Union(Some(*name_id), thin_vec::ThinVec::new())
+        },
+        TypeSpecKind::Enum(name_id) => TypeKind::Enum {
+            name: Some(*name_id),
+            underlying_type: TypeId::INT,
+            variants: thin_vec::ThinVec::new(),
+        },
+        TypeSpecKind::Typedef(_name_id) => TypeKind::Int, // Fallback for typedef
+    };
+
+    // Apply array sizes
+    for array_size in &type_spec.array_sizes {
+        if let Expr::Number(size, _) = array_size {
+            if *size > 0 {
+                kind = TypeKind::Array(TypeId::intern(&kind), *size as usize);
+            } else {
+                kind = TypeKind::Array(TypeId::intern(&kind), 0);
+            }
+        }
+    }
+
+    // Apply pointers
+    for _ in 0..type_spec.pointer_depth {
+        kind = TypeKind::Pointer(TypeId::intern(&kind));
+    }
+
+    // Apply qualifiers
+    let mut flags = kind.flags();
+    if type_spec.qualifiers.contains(TypeQualifiers::CONST) {
+        flags |= TypeId::FLAG_CONST;
+    }
+    if type_spec.qualifiers.contains(TypeQualifiers::VOLATILE) {
+        flags |= TypeId::FLAG_VOLATILE;
+    }
+    if type_spec.qualifiers.contains(TypeQualifiers::RESTRICT) {
+        flags |= TypeId::FLAG_RESTRICT;
+    }
+    if type_spec.qualifiers.contains(TypeQualifiers::ATOMIC) {
+        flags |= TypeId::FLAG_ATOMIC;
+    }
+
+    TypeId::intern_with_flags(&kind, flags)
+}
+
 
 /// Represents a symbol in the symbol table.
 #[derive(Debug, Clone)]

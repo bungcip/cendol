@@ -14,19 +14,20 @@ impl TypeSpec {
     }
 }
 
+
 /// Field in struct/union
 #[derive(Debug, Clone, PartialEq)]
-pub struct StructField {
+pub struct RecordFieldDecl {
     pub name: Option<StringId>,
     pub type_spec: TypeSpec,
     pub span: SourceSpan,
 }
 
-/// Struct declaration node
+/// Struct/Union declaration node
 #[derive(Debug, Clone, PartialEq)]
-pub struct StructDecl {
-    pub name: Option<StringId>,       // None = anonymous
-    pub fields: Vec<StructField>,     // empty if forward declaration
+pub struct RecordDecl {
+    pub name: Option<StringId>,             // None = anonymous
+    pub fields: ThinVec<RecordFieldDecl>,   // empty if forward declaration
     pub span: SourceSpan,
 }
 
@@ -63,8 +64,8 @@ pub struct FuncDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Decl {
     Func(FuncDecl),
-    Struct(StructDecl),
-    Union(StructDecl),
+    Struct(RecordDecl),
+    Union(RecordDecl),
     Enum(EnumDecl),
     Typedef(StringId, TypeSpec),
     StaticAssert(Box<Expr>, StringId),
@@ -192,6 +193,7 @@ pub struct ParamDecl {
     pub type_spec: TypeSpec,
     pub span: SourceSpan,
 }
+
 /// Represents a declarator, which includes the type modifiers (pointers, arrays) and the identifier.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Declarator {
@@ -579,17 +581,6 @@ pub enum Initializer {
     Expr(Box<Expr>),
     /// An initializer list, e.g., `{ [0] = 1, .x = 2 }`.
     List(InitializerList),
-}
-
-/// Represents a function parameter.
-#[derive(Debug, PartialEq, Clone)]
-pub struct Parameter {
-    /// The type of the parameter.
-    pub ty: TypeSpec,
-    /// The name of the parameter.
-    pub name: StringId,
-    /// The span of the parameter.
-    pub span: SourceSpan,
 }
 
 /// Represents a program.

@@ -1,6 +1,6 @@
 use crate::SourceSpan;
 use crate::parser::ast::{
-    AssignOp, BinOp, Decl, Designator, Expr, ForInit, FuncDecl, Initializer, Parameter,
+    AssignOp, BinOp, Decl, Designator, Expr, ForInit, FuncDecl, Initializer, 
     Stmt, TranslationUnit, type_spec_to_type_id,
 };
 use crate::parser::string_interner::StringInterner;

@@ -1,7 +1,6 @@
 use crate::SourceSpan;
 use crate::parser::ast::{
-    Decl, Designator, Expr, ForInit, FuncDecl, Initializer, InitializerList, Parameter, Stmt,
-    TranslationUnit,
+    Decl, Designator, Expr, ForInit, FuncDecl, Initializer, InitializerList, Stmt, RecordFieldDecl, TranslationUnit
 };
 use crate::types::{TypeSpec, TypeSpecKind, TypeQualifiers, StorageClass, TypeKeywordMask};
 use crate::parser::ast::type_spec_to_type_id;
@@ -417,26 +416,19 @@ impl Parser {
             KeywordKind::Struct => {
                 let name = self.maybe_name()?;
                 if self.eat_token(&TokenKind::LeftBrace)? {
-                    let members = self.parse_struct_or_union_members()?;
-                    let struct_decl = Decl::Struct(ast::StructDecl {
+                    let fields = self.parse_record_fields()?;
+                    let struct_decl = Decl::Struct(ast::RecordDecl {
                         name,
-                        fields: members
-                            .into_iter()
-                            .map(|p| ast::StructField {
-                                name: Some(p.name),
-                                type_spec: p.ty,
-                                span: p.span,
-                            })
-                            .collect(),
+                        fields,
                         span,
                     });
                     Ok((
-                        Parser::new_typespec(TypeSpecKind::Struct(name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id()))),
+                        Parser::new_typespec(TypeSpecKind::Struct(name.unwrap_or_else(|| StringInterner::empty_id()))),
                         Some(struct_decl),
                     ))
                 } else {
                     Ok((
-                        Parser::new_typespec(TypeSpecKind::Struct(name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id()))),
+                        Parser::new_typespec(TypeSpecKind::Struct(name.unwrap_or_else(|| StringInterner::empty_id()))),
                         None,
                     ))
                 }
@@ -444,17 +436,10 @@ impl Parser {
             KeywordKind::Union => {
                 let name = self.maybe_name()?;
                 if self.eat_token(&TokenKind::LeftBrace)? {
-                    let members = self.parse_struct_or_union_members()?;
-                    let union_decl = Decl::Union(ast::StructDecl {
+                    let fields = self.parse_record_fields()?;
+                    let union_decl = Decl::Union(ast::RecordDecl {
                         name,
-                        fields: members
-                            .into_iter()
-                            .map(|p| ast::StructField {
-                                name: Some(p.name),
-                                type_spec: p.ty,
-                                span: p.span,
-                            })
-                            .collect(),
+                        fields,
                         span,
                     });
                     Ok((
@@ -532,7 +517,7 @@ impl Parser {
         }
     }
     /// Parses members for struct or union.
-    fn parse_struct_or_union_members(&mut self) -> Result<ThinVec<Parameter>, ParserError> {
+    fn parse_record_fields(&mut self) -> Result<ThinVec<RecordFieldDecl>, ParserError> {
         let mut members = ThinVec::new();
 
         // Parse fields until we hit the closing brace
@@ -561,14 +546,14 @@ impl Parser {
     }
 
     /// Parses a single struct/union field
-    fn parse_struct_field(&mut self) -> Result<Parameter, ParserError> {
+    fn parse_struct_field(&mut self) -> Result<RecordFieldDecl, ParserError> {
         let (base_type_spec, _) = self.parse_type_specifier()?;
         let (base, declarator) = self.parse_declarator_suffix(base_type_spec)?;
         let ty = self.apply_declarator_modifiers(&base, &declarator);
         self.expect_punct(TokenKind::Semicolon)?;
-        Ok(Parameter {
-            ty,
-            name: declarator.name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id()),
+        Ok(RecordFieldDecl { 
+            type_spec: ty,
+            name: declarator.name,
             span: declarator.span,
         })
     }

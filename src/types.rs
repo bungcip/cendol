@@ -40,6 +40,7 @@ pub enum StorageClass {
 
 /// Compact enum for basic type category (8 bytes total with payload)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
 pub enum TypeSpecKind {
     Builtin(u16),           // bitmask of TypeKeyword flags
     Struct(StringId),       // refers to side-table AggregateDecl

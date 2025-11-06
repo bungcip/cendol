@@ -18,16 +18,16 @@ pub struct TypedParameter {
     pub span: SourceSpan,
 }
 
-impl TypedParameter {
-    pub fn from_parameter(param: crate::parser::ast::Parameter) -> Self {
-        let ty = crate::parser::ast::type_spec_to_type_id(&param.ty, SourceSpan::default());
-        Self {
-            ty: ty,
-            name: param.name,
-            span: param.span,
-        }
-    }
-}
+// impl TypedParameter {
+//     pub fn from_parameter(param: crate::parser::ast::RecordMemberDecl) -> Self {
+//         let ty = crate::parser::ast::type_spec_to_type_id(&param.type_spec, SourceSpan::default());
+//         Self {
+//             ty: ty,
+//             name: param.name,
+//             span: param.span,
+//         }
+//     }
+// }
 
 /// Represents a typed expression with type information.
 #[derive(Debug, PartialEq, Clone)]

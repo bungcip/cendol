@@ -63,9 +63,9 @@ pub enum StorageClass {
 #[repr(u8)]
 pub enum TypeSpecKind {
     Builtin(TypeKeywordMask),     // bitmask of TypeKeyword flags
-    Struct(DeclId),
-    Union(DeclId),
-    Enum(DeclId),
+    Struct(Option<DeclId>),
+    Union(Option<DeclId>),
+    Enum(Option<DeclId>),
     Typedef(DeclId),
 }
 

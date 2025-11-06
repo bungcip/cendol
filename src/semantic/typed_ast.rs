@@ -95,6 +95,8 @@ pub enum TypedLValue {
     Deref(Box<TypedExpr>, SourceSpan, TypeId),
     /// A member access of a struct/union expression.
     Member(Box<TypedExpr>, StringId, SourceSpan, TypeId),
+    /// A pointer member access, e.g., p->member.
+    PointerMember(Box<TypedExpr>, StringId, SourceSpan, TypeId),
     /// A string literal.
     String(StringId, SourceSpan, TypeId),
 }
@@ -105,6 +107,7 @@ impl TypedLValue {
             TypedLValue::Variable(_, _, ty) => *ty,
             TypedLValue::Deref(_, _, ty) => *ty,
             TypedLValue::Member(_, _, _, ty) => *ty,
+            TypedLValue::PointerMember(_, _, _, ty) => *ty,
             TypedLValue::String(_, _, ty) => *ty,
         }
     }

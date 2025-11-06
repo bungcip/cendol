@@ -73,9 +73,9 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let typed_members = members;
                 Ok(TypeKind::Struct(Some(name), typed_members))
             }
-            crate::types::TypeKind::Struct(None, _) => {
-                // Anonymous struct - not supported in this context
-                Ok(TypeKind::Void)
+            crate::types::TypeKind::Struct(None, members) => {
+                // Anonymous struct
+                Ok(TypeKind::Struct(None, members))
             }
             crate::types::TypeKind::Union(Some(name), members) => {
                 if members.is_empty() {
@@ -86,9 +86,9 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let typed_members = members;
                 Ok(TypeKind::Union(Some(name), typed_members))
             }
-            crate::types::TypeKind::Union(None, _) => {
-                // Anonymous union - not supported in this context
-                Ok(TypeKind::Void)
+            crate::types::TypeKind::Union(None, members) => {
+                // Anonymous union
+                Ok(TypeKind::Union(None, members))
             }
             crate::types::TypeKind::Enum {
                 name,
@@ -752,6 +752,18 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let member_addr = self.builder.ins().iadd_imm(ptr, offset as i64);
                 Ok((member_addr, member_ty))
             }
+            TypedLValue::PointerMember(expr, member, _, _ty) => {
+                let (ptr, ptr_ty) = self.translate_typed_expr(*expr)?;
+                if let crate::types::TypeKind::Pointer(base_ty) = ptr_ty.kind() {
+                    let (offset, member_ty) = self
+                        .find_member_offset_recursively(base_ty, &member)
+                        .unwrap();
+                    let addr = self.builder.ins().iadd_imm(ptr, offset as i64);
+                    Ok((addr, member_ty))
+                } else {
+                    Err(CodegenError::NotAPointer)
+                }
+            }
             TypedLValue::String(s, _, ty) => {
                 let string_value = s.as_str();
                 let unescaped = util::unescape_string(string_value);
@@ -884,6 +896,14 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 let val = self.builder.ins().load(types::I16, flags, addr, 0);
                 self.builder.ins().uextend(types::I64, val)
             }
+            crate::types::TypeKind::Int => {
+                let val = self.builder.ins().load(types::I32, flags, addr, 0);
+                self.builder.ins().sextend(types::I64, val)
+            }
+            crate::types::TypeKind::UnsignedInt => {
+                let val = self.builder.ins().load(types::I32, flags, addr, 0);
+                self.builder.ins().uextend(types::I64, val)
+            }
             crate::types::TypeKind::Float => self.builder.ins().load(types::F32, flags, addr, 0),
             crate::types::TypeKind::Double => self.builder.ins().load(types::F64, flags, addr, 0),
             _ => self.builder.ins().load(types::I64, flags, addr, 0),
@@ -904,7 +924,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         let (addr, lhs_ty) = self.translate_lvalue(lhs.clone())?;
         let (rhs_val, _) = self.translate_typed_expr(rhs.clone())?;
 
-        let lhs_val = self.load_lvalue(addr, TypeId::INT);
+        let lhs_val = self.load_lvalue(addr, lhs_ty.clone());
         let result_val = match op {
             AssignOp::Assign => rhs_val,
             AssignOp::Add => {
@@ -942,13 +962,36 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             AssignOp::LeftShift => self.builder.ins().ishl(lhs_val, rhs_val),
             AssignOp::RightShift => self.builder.ins().sshr(lhs_val, rhs_val),
         };
+        // Cast result_val to the correct type for storage
+        let store_val = match lhs_ty.kind() {
+            crate::types::TypeKind::Char | crate::types::TypeKind::Bool => {
+                self.builder.ins().ireduce(types::I8, result_val)
+            }
+            crate::types::TypeKind::UnsignedChar => {
+                self.builder.ins().ireduce(types::I8, result_val)
+            }
+            crate::types::TypeKind::Short => {
+                self.builder.ins().ireduce(types::I16, result_val)
+            }
+            crate::types::TypeKind::UnsignedShort => {
+                self.builder.ins().ireduce(types::I16, result_val)
+            }
+            crate::types::TypeKind::Int => {
+                self.builder.ins().ireduce(types::I32, result_val)
+            }
+            crate::types::TypeKind::UnsignedInt => {
+                self.builder.ins().ireduce(types::I32, result_val)
+            }
+            crate::types::TypeKind::Float => self.builder.ins().fdemote(types::F32, result_val),
+            _ => result_val,
+        };
         let is_volatile = lhs_ty.is_volatile();
         if is_volatile {
             self.builder.ins().fence();
         }
         self.builder
             .ins()
-            .store(MemFlags::new(), result_val, addr, 0);
+            .store(MemFlags::new(), store_val, addr, 0);
         if is_volatile {
             self.builder.ins().fence();
         }

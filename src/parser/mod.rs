@@ -463,44 +463,46 @@ impl Parser {
                         span,
                     });
                     let mut added = false;
-                    let index = if let Some(name) = name {
+                    let decl_id = if let Some(name) = name {
                         if let Some(&idx) = self.struct_defs.get(&name) {
-                            idx
+                            Some(DeclId::new(idx))
                         } else {
                             let idx = self.scope_stack[0].len();
                             self.struct_defs.insert(name, idx);
-                            self.scope_stack.last_mut().unwrap().push(struct_decl.clone());
                             added = true;
-                            idx
+                            Some(DeclId::new(idx))
                         }
                     } else {
+                        // Anonymous struct
                         let idx = self.scope_stack[0].len();
-                        self.scope_stack.last_mut().unwrap().push(struct_decl.clone());
                         added = true;
-                        idx
+                        None
                     };
                     if let Decl::Struct(rec) = &mut struct_decl {
-                        rec.id = Some(DeclId::new(index));
+                        rec.id = decl_id;
                     }
-                    let type_spec = Parser::new_typespec(TypeSpecKind::Struct(DeclId::new(index)));
+                    if added {
+                        self.scope_stack.last_mut().unwrap().push(struct_decl.clone());
+                    }
+                    let type_spec = Parser::new_typespec(TypeSpecKind::Struct(decl_id));
                     let struct_decl_opt = if added { None } else { Some(struct_decl) };
                     Ok((type_spec, struct_decl_opt))
                 } else {
                     // Forward declaration
-                    let index = if let Some(name) = name {
+                    let decl_id = if let Some(name) = name {
                         if let Some(&idx) = self.struct_defs.get(&name) {
-                            idx
+                            Some(DeclId::new(idx))
                         } else {
                             let idx = self.globals.len();
                             self.struct_defs.insert(name, idx);
                             // For forward, don't push yet
-                            idx
+                            Some(DeclId::new(idx))
                         }
                     } else {
                         // Anonymous forward? Not possible
-                        0
+                        None
                     };
-                    let type_spec = Parser::new_typespec(TypeSpecKind::Struct(DeclId::new(index)));
+                    let type_spec = Parser::new_typespec(TypeSpecKind::Struct(decl_id));
                     Ok((type_spec, None))
                 }
             }
@@ -515,44 +517,45 @@ impl Parser {
                         span,
                     });
                     let mut added = false;
-                    let index = if let Some(name) = name {
+                    let decl_id = if let Some(name) = name {
                         if let Some(&idx) = self.union_defs.get(&name) {
-                            idx
+                            Some(DeclId::new(idx))
                         } else {
                             let idx = self.scope_stack[0].len();
                             self.union_defs.insert(name, idx);
                             self.scope_stack.last_mut().unwrap().push(union_decl.clone());
                             added = true;
-                            idx
+                            Some(DeclId::new(idx))
                         }
                     } else {
+                        // Anonymous union
                         let idx = self.scope_stack[0].len();
                         self.scope_stack.last_mut().unwrap().push(union_decl.clone());
                         added = true;
-                        idx
+                        None
                     };
                     if let Decl::Union(rec) = &mut union_decl {
-                        rec.id = Some(DeclId::new(index));
+                        rec.id = decl_id;
                     }
-                    let type_spec = Parser::new_typespec(TypeSpecKind::Union(DeclId::new(index)));
+                    let type_spec = Parser::new_typespec(TypeSpecKind::Union(decl_id));
                     let union_decl_opt = if added { None } else { Some(union_decl) };
                     Ok((type_spec, union_decl_opt))
                 } else {
                     // Forward declaration
-                    let index = if let Some(name) = name {
+                    let decl_id = if let Some(name) = name {
                         if let Some(&idx) = self.union_defs.get(&name) {
-                            idx
+                            Some(DeclId::new(idx))
                         } else {
                             let idx = self.globals.len();
                             self.union_defs.insert(name, idx);
                             // For forward, don't push yet
-                            idx
+                            Some(DeclId::new(idx))
                         }
                     } else {
                         // Anonymous forward? Not possible
-                        0
+                        None
                     };
-                    let type_spec = Parser::new_typespec(TypeSpecKind::Union(DeclId::new(index)));
+                    let type_spec = Parser::new_typespec(TypeSpecKind::Union(decl_id));
                     Ok((type_spec, None))
                 }
             }
@@ -571,44 +574,52 @@ impl Parser {
                         span,
                     });
                     let mut added = false;
-                    let index = if let Some(name) = name {
+                    let decl_id = if let Some(name) = name {
                         if let Some(&idx) = self.enum_defs.get(&name) {
-                            idx
+                            Some(DeclId::new(idx))
                         } else {
                             let idx = self.scope_stack[0].len();
                             self.enum_defs.insert(name, idx);
                             self.scope_stack.last_mut().unwrap().push(enum_decl.clone());
                             added = true;
-                            idx
+                            Some(DeclId::new(idx))
                         }
                     } else {
                         let idx = self.scope_stack[0].len();
                         self.scope_stack.last_mut().unwrap().push(enum_decl.clone());
                         added = true;
-                        idx
+                        None
                     };
                     if let Decl::Enum(en) = &mut enum_decl {
-                        en.id = Some(DeclId::new(index));
+                        en.id = decl_id;
                     }
-                    let type_spec = Parser::new_typespec(TypeSpecKind::Enum(DeclId::new(index)));
-                    let enum_decl_opt = if added { None } else { Some(enum_decl) };
-                    Ok((type_spec, enum_decl_opt))
+                    let type_spec = Parser::new_typespec(TypeSpecKind::Enum(decl_id));
+                    let decl_opt = if let Ok(kind) = self.current_kind() {
+                        if matches!(kind, TokenKind::Identifier(_)) {
+                            None
+                        } else {
+                            Some(enum_decl)
+                        }
+                    } else {
+                        Some(enum_decl)
+                    };
+                    Ok((type_spec, decl_opt))
                 } else {
                     // Forward declaration
-                    let index = if let Some(name) = name {
+                    let decl_id = if let Some(name) = name {
                         if let Some(&idx) = self.enum_defs.get(&name) {
-                            idx
+                            Some(DeclId::new(idx))
                         } else {
                             let idx = self.globals.len();
                             self.enum_defs.insert(name, idx);
                             // For forward, don't push yet
-                            idx
+                            Some(DeclId::new(idx))
                         }
                     } else {
                         // Anonymous forward? Not possible
-                        0
+                        None
                     };
-                    let type_spec = Parser::new_typespec(TypeSpecKind::Enum(DeclId::new(index)));
+                    let type_spec = Parser::new_typespec(TypeSpecKind::Enum(decl_id));
                     Ok((type_spec, None))
                 }
             }
@@ -1609,11 +1620,12 @@ impl Parser {
             while self.eat_token(&TokenKind::RightBrace)? == false {
                 stmts.push(self.parse_stmt()?);
             }
-            self.scope_stack.pop();
+            // self.scope_stack.pop();
             Some(stmts)
         }else{
             None
         };
+        // self.scope_stack.pop(); // Don't pop to keep locals in scopes
         Ok(FuncDecl {
             return_type: return_type_spec,
             name,

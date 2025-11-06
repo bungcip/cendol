@@ -383,9 +383,27 @@ fn type_spec_to_string(ts: &TypeSpec) -> String {
             let builtin_name = builtin_mask_to_name(mask.bits());
             s.push_str(&builtin_name);
         },
-        TypeSpecKind::Struct(id) => write!(s, "struct #{}", id.to_usize_index()).unwrap(),
-        TypeSpecKind::Union(id) => write!(s, "union #{}", id.to_usize_index()).unwrap(),
-        TypeSpecKind::Enum(id) => write!(s, "enum #{}", id.to_usize_index()).unwrap(),
+        TypeSpecKind::Struct(id) => {
+            if let Some(id_val) = id {
+                write!(s, "struct #{}", id_val.to_usize_index()).unwrap();
+            } else {
+                write!(s, "struct").unwrap();
+            }
+        },
+        TypeSpecKind::Union(id) => {
+            if let Some(id_val) = id {
+                write!(s, "union #{}", id_val.to_usize_index()).unwrap();
+            } else {
+                write!(s, "union").unwrap();
+            }
+        },
+        TypeSpecKind::Enum(id) => {
+            if let Some(id_val) = id {
+                write!(s, "enum #{}", id_val.to_usize_index()).unwrap();
+            } else {
+                write!(s, "enum").unwrap();
+            }
+        },
         TypeSpecKind::Typedef(id) => write!(s, "Typedef #{}", id.to_usize_index()).unwrap(),
     }
 

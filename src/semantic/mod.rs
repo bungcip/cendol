@@ -93,9 +93,9 @@ pub struct SemaOutput(
 pub struct SemanticAnalyzer {
     pub symbol_table: SymbolTable,
     pub enum_constants: HashMap<StringId, i64>,
-    struct_definitions: HashMap<DeclId, TypeId>,
-    union_definitions: HashMap<DeclId, TypeId>,
-    enum_definitions: HashMap<DeclId, TypeId>,
+    struct_definitions: HashMap<Option<DeclId>, TypeId>,
+    union_definitions: HashMap<Option<DeclId>, TypeId>,
+    enum_definitions: HashMap<Option<DeclId>, TypeId>,
     current_function: Option<StringId>,
     labels: HashMap<StringId, SourceSpan>,
     errors: Vec<(SemanticError, SourceSpan)>, // (error, file, span)
@@ -150,9 +150,7 @@ impl SemanticAnalyzer {
                     "DEBUG_SEMANTIC: Adding enum variant: {} = {}",
                     variant.name, variant.value
                 );
-                if self.enum_constants.contains_key(&variant.name) {
-                    self.err(SemanticError::VariableRedeclaration(variant.name), span);
-                } else {
+                if !self.enum_constants.contains_key(&variant.name) {
                     self.enum_constants.insert(variant.name, variant.value);
                 }
             }
@@ -165,6 +163,9 @@ impl SemanticAnalyzer {
             TypedExpr::Deref(expr, span, ty) => Ok(TypedLValue::Deref(expr, span, ty)),
             TypedExpr::Member(expr, member, span, ty) => {
                 Ok(TypedLValue::Member(expr, member, span, ty))
+            }
+            TypedExpr::PointerMember(expr, member, span, ty) => {
+                Ok(TypedLValue::PointerMember(expr, member, span, ty))
             }
             TypedExpr::String(s, span, ty) => Ok(TypedLValue::String(s, span, ty)),
             _ => Err(SemanticError::NotAnLvalue),
@@ -289,19 +290,86 @@ impl SemanticAnalyzer {
     pub fn analyze(
         mut self,
         program: TranslationUnit,
-        _scopes: Vec<ThinVec<Decl>>,
+        scopes: Vec<ThinVec<Decl>>,
     ) -> Result<SemaOutput, Vec<(SemanticError, SourceSpan)>> {
         // First pass: collect all function definitions and global declarations
         self.collect_symbols(&program);
 
+        // Collect enum definitions from scopes
+        for scope in &scopes {
+            for decl in scope {
+                if let Decl::Enum(enum_decl) = decl {
+                    if !enum_decl.members.is_empty() {
+                        let mut next_value = 0;
+                        let mut variants = ThinVec::new();
+                        for member in &enum_decl.members {
+                            let val = if let Some(ref expr) = member.value {
+                                if let Expr::Number(num, _) = **expr {
+                                    num
+                                } else {
+                                    self.err(SemanticError::InvalidEnumInitializer(member.name), member.span);
+                                    -1
+                                }
+                            } else {
+                                next_value
+                            };
+                            variants.push(crate::types::EnumVariant {
+                                name: member.name,
+                                value: val,
+                            });
+                            next_value = val + 1;
+                        }
+                        let ty = TypeKind::Enum {
+                            name: enum_decl.id,
+                            underlying_type: TypeId::INT,
+                            variants: variants.clone(),
+                        };
+                        let enum_ty_id = TypeId::intern(&ty);
+                        self.enum_definitions.insert(enum_decl.id, enum_ty_id);
+                        self.add_enum_variants_to_constants(enum_ty_id, enum_decl.span);
+                    }
+                } else if let Decl::Struct(struct_decl) = decl {
+                    println!("DEBUG_SEMANTIC: Collecting struct from scopes: id={:?}, fields len={}", struct_decl.id, struct_decl.fields.len());
+                    if !struct_decl.fields.is_empty() {
+                        let mut members = ThinVec::new();
+                        for field in &struct_decl.fields {
+                            let field_ty =
+                                self.resolve_typespec(&field.type_spec, None, field.span);
+                            let field_name =
+                                field.name.unwrap_or_else(|| StringInterner::intern(""));
+                            members.push(ParamType {
+                                ty: field_ty,
+                                name: field_name,
+                            });
+                        }
+                        let ty = TypeKind::Struct(struct_decl.id, members);
+                        let converted_ty = TypeId::intern(&ty);
+                        self.struct_definitions.insert(struct_decl.id, converted_ty);
+                    }
+                } else if let Decl::Union(union_decl) = decl {
+                    if !union_decl.fields.is_empty() {
+                        let mut members = ThinVec::new();
+                        for field in &union_decl.fields {
+                            let field_ty =
+                                self.resolve_typespec(&field.type_spec, None, field.span);
+                            let field_name =
+                                field.name.unwrap_or_else(|| StringInterner::intern(""));
+                            members.push(ParamType {
+                                ty: field_ty,
+                                name: field_name,
+                            });
+                        }
+                        let ty = TypeKind::Union(union_decl.id, members);
+                        let converted_ty = TypeId::intern(&ty);
+                        self.union_definitions.insert(union_decl.id, converted_ty);
+                    }
+                }
+            }
+        }
+
         // Second pass: check all expressions and statements for semantic errors and build typed AST
         let typed_program = self.check_program(program);
 
-        // DEBUG: Print symbol table after semantic analysis
-        println!(
-            "DEBUG_SEMANTIC: Symbol table after semantic analysis: {:?}",
-            self.symbol_table
-        );
 
         if self.errors.is_empty() {
             Ok(SemaOutput(typed_program, self.warnings.clone(), self))
@@ -357,15 +425,16 @@ impl SemanticAnalyzer {
                         let span = declarator.span;
 
                         if let TypeKind::Struct(Some(decl_id), members) = &ty.kind() {
-                            if !members.is_empty() || !self.struct_definitions.contains_key(decl_id)
+                            println!("DEBUG_SEMANTIC: Global struct Some({:?}) with {} members", decl_id, members.len());
+                            if !members.is_empty() || !self.struct_definitions.contains_key(&Some(*decl_id))
                             {
-                                self.struct_definitions.insert(*decl_id, ty);
+                                self.struct_definitions.insert(Some(*decl_id), ty);
                             }
                         } else if let TypeKind::Union(Some(decl_id), members) = &ty.kind()
                             && (!members.is_empty()
-                                || !self.union_definitions.contains_key(decl_id))
+                                || !self.union_definitions.contains_key(&Some(*decl_id)))
                         {
-                            self.union_definitions.insert(*decl_id, ty);
+                            self.union_definitions.insert(Some(*decl_id), ty);
                         }
 
                         // Global variables can be redeclared (tentative definitions)
@@ -416,7 +485,7 @@ impl SemanticAnalyzer {
                                 let converted_ty = TypeId::intern(&ty);
                                 println!("DEBUG_SEMANTIC: Interned ty: {:?}", converted_ty);
                                 if let Some(id) = struct_decl.id {
-                                    self.struct_definitions.insert(id, converted_ty);
+                                    self.struct_definitions.insert(Some(id), converted_ty);
                                     println!("DEBUG_SEMANTIC: Inserted struct definition for id: {}", id.0);
                                 }
                                 converted_ty
@@ -441,7 +510,7 @@ impl SemanticAnalyzer {
                                 let ty = TypeKind::Union(union_decl.id, members);
                                 let converted_ty = TypeId::intern(&ty);
                                 if let Some(id) = union_decl.id {
-                                    self.union_definitions.insert(id, converted_ty);
+                                    self.union_definitions.insert(Some(id), converted_ty);
                                 }
                                 converted_ty
                             } else {
@@ -479,9 +548,7 @@ impl SemanticAnalyzer {
                                     variants,
                                 };
                                 let enum_ty_id = TypeId::intern(&ty);
-                                if let Some(id) = enum_decl.id {
-                                    self.enum_definitions.insert(id, enum_ty_id);
-                                }
+                                self.enum_definitions.insert(enum_decl.id, enum_ty_id);
                                 self.add_enum_variants_to_constants(enum_ty_id, enum_decl.span);
                                 enum_ty_id
                             } else {
@@ -521,11 +588,11 @@ impl SemanticAnalyzer {
                     if let TypeKind::Struct(name, _) = &converted_ty.kind() {
                         if let Some(name_id) = name {
                             self.struct_definitions
-                                .insert(name_id.clone(), converted_ty);
+                                .insert(Some(name_id.clone()), converted_ty);
                         }
                     } else if let TypeKind::Union(name, _) = &converted_ty.kind() {
                         if let Some(name_id) = name {
-                            self.union_definitions.insert(name_id.clone(), converted_ty);
+                            self.union_definitions.insert(Some(name_id.clone()), converted_ty);
                         }
                     }
                 }
@@ -859,6 +926,7 @@ impl SemanticAnalyzer {
                                 .unwrap_or_else(|| StringInterner::intern(""));
                             let full_ty = self.apply_declarator(&type_spec, &declarator);
 
+
                             // Check for redeclaration before adding to symbol table
                             if let Some(existing) = self.symbol_table.lookup(&name) {
                                 self.err(
@@ -889,6 +957,14 @@ impl SemanticAnalyzer {
                                 initializer: typed_initializer,
                             });
                         }
+
+                        // If the type_spec is an enum, add the enum constants to the symbol table
+                        if let TypeSpecKind::Enum(id) = &type_spec.kind {
+                            if let Some(ty) = self.enum_definitions.get(id) {
+                                self.add_enum_variants_to_constants(ty.clone(), SourceSpan::default());
+                            }
+                        }
+
                         TypedStmt::Declaration(typed_declarators)
                     }
                     Decl::Enum(enum_decl) => {
@@ -918,10 +994,7 @@ impl SemanticAnalyzer {
                                 variants,
                             };
                             let enum_ty_id = TypeId::intern(&ty);
-                            if let Some(id) = enum_decl.id {
-                                self.enum_definitions.insert(id, enum_ty_id);
-                            }
-                            self.add_enum_variants_to_constants(enum_ty_id, enum_decl.span);
+                            self.enum_definitions.insert(enum_decl.id, enum_ty_id);
                         }
                         TypedStmt::Empty
                     }
@@ -1058,6 +1131,7 @@ impl SemanticAnalyzer {
             TypedLValue::Variable(_, span, _) => *span,
             TypedLValue::Deref(expr, _, _) => expr.span(),
             TypedLValue::Member(expr, _, _, _) => expr.span(),
+            TypedLValue::PointerMember(expr, _, _, _) => expr.span(),
             TypedLValue::String(_, span, _) => *span,
         };
 
@@ -1314,18 +1388,15 @@ impl SemanticAnalyzer {
                     return TypedExpr::Number(0, SourceSpan::default(), TypeId::INT);
                 };
 
-                let deref_expr =
-                    TypedExpr::Deref(Box::new(typed_ptr), SourceSpan::default(), inner_ty);
-
                 let member_ty = self
-                    .find_member_recursively(deref_expr.ty(), member)
+                    .find_member_recursively(inner_ty, member)
                     .unwrap_or_else(|| {
-                        self.err(SemanticError::UndefinedMember(member), deref_expr.span());
+                        self.err(SemanticError::UndefinedMember(member), typed_ptr.span());
                         TypeId::INT
                     });
 
-                TypedExpr::Member(
-                    Box::new(deref_expr),
+                TypedExpr::PointerMember(
+                    Box::new(typed_ptr),
                     member,
                     SourceSpan::default(),
                     member_ty,
@@ -1656,11 +1727,14 @@ impl SemanticAnalyzer {
             }
             TypeSpecKind::Struct(decl_id) => {
                 if let Some(ty) = self.struct_definitions.get(decl_id) {
-                    return *ty;
+                    println!("DEBUG_SEMANTIC: Found struct type for {:?}: {:?}", decl_id, ty.kind());
+                    ty.kind()
+                } else {
+                    println!("DEBUG_SEMANTIC: Struct type not found for {:?}, creating empty", decl_id);
+                    // For struct types in TypeSpec, we don't have field information
+                    // Field information is handled separately via Decl::Struct
+                    TypeKind::Struct(*decl_id, thin_vec::ThinVec::new())
                 }
-                // For struct types in TypeSpec, we don't have field information
-                // Field information is handled separately via Decl::Struct
-                TypeKind::Struct(Some(*decl_id), thin_vec::ThinVec::new())
             }
             TypeSpecKind::Union(decl_id) => {
                 if let Some(ty) = self.union_definitions.get(decl_id) {
@@ -1668,14 +1742,14 @@ impl SemanticAnalyzer {
                 }
                 // For union types in TypeSpec, we don't have field information
                 // Field information is handled separately via Decl::Union
-                TypeKind::Union(Some(*decl_id), thin_vec::ThinVec::new())
+                TypeKind::Union(*decl_id, thin_vec::ThinVec::new())
             }
             TypeSpecKind::Enum(decl_id) => {
                 if let Some(ty) = self.enum_definitions.get(decl_id) {
                     return *ty;
                 }
                 TypeKind::Enum {
-                    name: Some(*decl_id),
+                    name: *decl_id,
                     underlying_type: TypeId::INT,
                     variants: thin_vec::ThinVec::new(),
                 }

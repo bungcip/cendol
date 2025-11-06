@@ -232,10 +232,16 @@ pub struct TypedFunctionDecl {
 }
 
 /// Represents a typed translation unit (program) with type information.
-#[derive(Debug, PartialEq, Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct TypedTranslationUnit {
     /// The functions in the program.
-    pub functions: ThinVec<TypedFunctionDecl>,
+    pub globals: ThinVec<TypedGlobalDecl>,
+}
+
+#[derive(Debug, Clone)]
+pub enum TypedGlobalDecl {
+    Function(TypedFunctionDecl),
+    Variable(ThinVec<TypedVarDecl>),
 }
 
 impl TypedExpr {

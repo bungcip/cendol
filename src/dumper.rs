@@ -184,7 +184,19 @@ impl Dumper {
                 self.indent.truncate(self.indent.len() - child_indent.len());
             }
             Stmt::Declaration(decl) => {
-                 self.dump_decl(decl, is_last);
+                 match decl {
+                     Decl::VarGroup(type_spec, declarators) => {
+                         println!("VarGroup '{}'", type_spec_to_string(type_spec));
+                         self.indent.push_str(child_indent);
+                         let mut decls_iter = declarators.iter().peekable();
+                         while let Some(declarator) = decls_iter.next() {
+                             let is_last_decl = decls_iter.peek().is_none();
+                             self.dump_declarator(declarator, is_last_decl);
+                         }
+                         self.indent.truncate(self.indent.len() - child_indent.len());
+                     }
+                     _ => self.dump_decl(decl, is_last),
+                 }
             }
             Stmt::Empty => {
                 println!("Empty");

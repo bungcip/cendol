@@ -2,7 +2,7 @@
 source: tests/bad_input.rs
 expression: err.unwrap_err()
 ---
-msg: "Cannot dereference non-pointer type `int`"
+msg: "Cannot dereference non-pointer type `T#4 (flags=0x40A0)`"
 span:
   start: 1027
   end: 1028

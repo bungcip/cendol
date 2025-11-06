@@ -142,6 +142,47 @@ macro_rules! assert_type_spec {
             panic!("Expected Declaration");
         }
     }};
+
+    // Case 3: simple case with storage class
+    ($input:expr, $type_keyword:expr, $storage:expr) => {{
+        let stmts = parse_c_body($input);
+        if let Stmt::Declaration(Decl::VarGroup(ty, declarators)) = &stmts[0] {
+            assert_eq!(declarators[0].name.unwrap().as_str(), "x");
+            assert!(
+                matches!(
+                    ty.kind,
+                    TypeSpecKind::Builtin(ref k) if *k == $type_keyword
+                ),
+                "Type keyword mismatch: expected {:?}, got {:?}",
+                $type_keyword,
+                ty.kind
+            );
+            assert_eq!(ty.storage, $storage);
+        } else {
+            panic!("Expected Declaration");
+        }
+    }};
+
+    // Case 4: simple case with qualifiers
+    ($input:expr, $type_keyword:expr, $storage:expr, $qualifiers:expr) => {{
+        let stmts = parse_c_body($input);
+        if let Stmt::Declaration(Decl::VarGroup(ty, declarators)) = &stmts[0] {
+            assert_eq!(declarators[0].name.unwrap().as_str(), "x");
+            assert!(
+                matches!(
+                    ty.kind,
+                    TypeSpecKind::Builtin(ref k) if *k == $type_keyword
+                ),
+                "Type keyword mismatch: expected {:?}, got {:?}",
+                $type_keyword,
+                ty.kind
+            );
+            assert_eq!(ty.storage, $storage);
+            assert_eq!(ty.qualifiers, $qualifiers);
+        } else {
+            panic!("Expected Declaration");
+        }
+    }};
 }
 
 
@@ -206,7 +247,7 @@ mod tests {
     use super::parse_c_code;
     use crate::parse_c_body;
     use cendol::parser::ast::{Decl, Declarator, Expr, FuncDecl, Initializer, Stmt};
-    use cendol::types::{TypeKeywordMask as TypeKeyword, TypeSpecKind};
+    use cendol::types::{TypeKeywordMask as TypeKeyword, TypeSpecKind, StorageClass, TypeQualifiers};
 
     #[test]
     fn test_return_stmt() {
@@ -674,6 +715,29 @@ mod tests {
             "unsigned long long x;",
             TypeKeyword::UNSIGNED.bits() | TypeKeyword::LONGLONG.bits()
         );
+
+        // modifier
+        assert_type_spec!("static int x;", TypeKeyword::INT.bits(), StorageClass::Static);
+
+        assert_type_spec!("const int x;", TypeKeyword::INT.bits(), StorageClass::None, TypeQualifiers::CONST);
+        assert_type_spec!("volatile int x;", TypeKeyword::INT.bits(), StorageClass::None, TypeQualifiers::VOLATILE);
+        assert_type_spec!("restrict int x;", TypeKeyword::INT.bits(), StorageClass::None, TypeQualifiers::RESTRICT);
+
+        // enum
+        {
+            let stmts = parse_c_body("enum{A,B} x;");
+            if let Stmt::Declaration(Decl::VarGroup(ty, declarators)) = &stmts[0] {
+                assert!(
+                    matches!(ty.kind, TypeSpecKind::Enum(_)),
+                    "Expected enum type, got {:?}",
+                    ty.kind
+                );
+                assert_eq!(declarators[0].name.unwrap().as_str(), "x");
+            } else {
+                panic!("Expected Declaration");
+            }
+        }
+
 
         // multi declaration with pointer and array
         assert_type_spec!(

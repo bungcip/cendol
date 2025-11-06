@@ -131,7 +131,7 @@ impl TypeId {
     }
 
     pub fn has_flag(self, flag: u16) -> bool {
-        (self.0 & flag as u32) != 0
+        (self.flags() & flag) != 0
     }
 
     pub fn is_const(self) -> bool {
@@ -476,7 +476,10 @@ impl TypeTable {
 // -----------------------------
 #[cfg(test)]
 mod tests {
+    use crate::parser::string_interner::StringInterner;
     use super::*;
+    use cranelift::prelude::Type;
+    use thin_vec::thin_vec;
 
     #[test]
     fn builtin_ids_match_interned() {
@@ -492,6 +495,20 @@ mod tests {
 
         let iptr = TypeId::intern(&TypeKind::Pointer(TypeId::INT));
         assert_eq!(iptr.index(), TypeId::INT_PTR.index());
+    }
+
+    #[test]
+    fn test_flags_in_struct(){
+        let name = StringInterner::intern("Martabak");
+        let field_name = StringInterner::intern("price");
+        let p = TypeId::intern(&TypeKind::Struct(Some(name), thin_vec![
+            ParamType {
+                ty: TypeId::INT,
+                name: field_name
+            }
+        ]));
+
+        assert!(p.has_flag(TypeId::FLAG_RECORD));
     }
 
 }

@@ -17,7 +17,6 @@ fn test_undefined_label() {
 }
 
 #[test]
-#[ignore="error after refactor"]
 fn test_assignment_to_const() {
     let err = compile_and_get_error(
         "int main() { const int x = 10; x = 20; return x; }",

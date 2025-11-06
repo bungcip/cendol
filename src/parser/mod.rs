@@ -2,9 +2,11 @@ use crate::SourceSpan;
 use crate::parser::ast::{
     Decl, Designator, Expr, ForInit, FuncDecl, Initializer, InitializerList, Stmt, RecordFieldDecl, TranslationUnit
 };
-use crate::types::{TypeSpec, TypeSpecKind, TypeQualifiers, StorageClass, TypeKeywordMask};
+use crate::types::{DeclId, TypeSpec, TypeSpecKind, TypeQual, StorageClass, TypeKeywordMask};
 use crate::semantic::type_spec_to_type_id;
 use crate::parser::error::ParserError;
+use crate::parser::expr_interner::ExprInterner;
+use crate::parser::array_expr_interner::ArrayExprListInterner;
 use crate::parser::string_interner::{StringId, StringInterner};
 use crate::parser::token::{KeywordKind, Token, TokenKind};
 use crate::preprocessor;
@@ -14,6 +16,8 @@ use thin_vec::ThinVec;
 pub mod ast;
 pub mod error;
 pub mod string_interner;
+pub mod expr_interner;
+pub mod array_expr_interner;
 pub mod token;
 
 pub struct FuncSignature(TypeSpec, StringId, ThinVec<ast::ParamDecl>, bool, bool, bool);
@@ -22,7 +26,11 @@ pub struct FuncSignature(TypeSpec, StringId, ThinVec<ast::ParamDecl>, bool, bool
 pub struct Parser {
     tokens: Vec<Token>,
     position: usize,
-    typedefs: HashMap<StringId, TypeSpec>,
+    typedefs: HashMap<StringId, (TypeSpec, DeclId)>,
+    struct_defs: HashMap<StringId, usize>,
+    union_defs: HashMap<StringId, usize>,
+    enum_defs: HashMap<StringId, usize>,
+    globals: ThinVec<Decl>,
 }
 
 impl Parser {
@@ -77,21 +85,25 @@ impl Parser {
             tokens: filtered_tokens,
             position: 0,
             typedefs: HashMap::new(),
+            struct_defs: HashMap::new(),
+            union_defs: HashMap::new(),
+            enum_defs: HashMap::new(),
+            globals: ThinVec::new(),
         };
         Ok(parser)
     }
 
     /// Creates a new TypeSpec with default values for common fields.
     fn new_typespec(kind: TypeSpecKind) -> crate::types::TypeSpec {
-        crate::types::TypeSpec {
+        // Use TypeSpec::new which handles packing header and setting align_expr/array_exprs to None.
+        // Assuming StorageClass::Auto is the default storage class (0).
+        crate::types::TypeSpec::new(
             kind,
-            qualifiers: TypeQualifiers::empty(),
-            storage: StorageClass::None,
-            pointer_depth: 0,
-            array_rank: 0,
-            alignas: None,
-            array_sizes: thin_vec::ThinVec::new(),
-        }
+            TypeQual::empty(),
+            StorageClass::Auto,
+            0,
+            0,
+        )
     }
 
     /// Returns the current token without consuming it.
@@ -185,94 +197,117 @@ impl Parser {
     /// Parses a type specifier (e.g., `int`, `struct S`, `long long`).
     /// Returns (TypeSpec, Option<Decl>) where Decl contains the full declaration for structs/unions/enums.
     fn parse_type_specifier(&mut self) -> Result<(crate::types::TypeSpec, Option<Decl>), ParserError> {
-        let token = self.current_token()?;
-        if let TokenKind::Keyword(k) = token.kind.clone() {
-            if k == KeywordKind::Const {
-                self.eat()?;
-                let (mut inner_type_spec, decl) = self.parse_type_specifier()?;
-                inner_type_spec.qualifiers |= TypeQualifiers::CONST;
-                return Ok((inner_type_spec, decl));
+        let mut modifiers: Vec<Box<dyn FnOnce(&mut crate::types::TypeSpec)>> = Vec::new();
+        loop {
+            let token = self.current_token()?.clone();
+            if let TokenKind::Keyword(k) = token.kind {
+                if k == KeywordKind::Const {
+                    self.eat()?;
+                    modifiers.push(Box::new(|ts: &mut crate::types::TypeSpec| {
+                        let current_qual = ts.qualifiers();
+                        let new_qual = current_qual | TypeQual::CONST;
+                        ts.header = (ts.header & !0xFF) | (new_qual.bits() as u32);
+                    }));
+                    continue;
+                }
+                if k == KeywordKind::Volatile {
+                    self.eat()?;
+                    modifiers.push(Box::new(|ts: &mut crate::types::TypeSpec| {
+                        let current_qual = ts.qualifiers();
+                        let new_qual = current_qual | TypeQual::VOLATILE;
+                        ts.header = (ts.header & !0xFF) | (new_qual.bits() as u32);
+                    }));
+                    continue;
+                }
+                if k == KeywordKind::Restrict {
+                    self.eat()?;
+                    modifiers.push(Box::new(|ts: &mut crate::types::TypeSpec| {
+                        let current_qual = ts.qualifiers();
+                        let new_qual = current_qual | TypeQual::RESTRICT;
+                        ts.header = (ts.header & !0xFF) | (new_qual.bits() as u32);
+                    }));
+                    continue;
+                }
+                if k == KeywordKind::Complex {
+                    self.eat()?;
+                    // no modifier
+                    continue;
+                }
+                if k == KeywordKind::Imaginary {
+                    self.eat()?;
+                    // no modifier
+                    continue;
+                }
+                if k == KeywordKind::_Alignas {
+                    self.eat()?;
+                    self.expect_punct(TokenKind::LeftParen)?;
+                    let alignment_expr = self.parse_expr()?;
+                    self.expect_punct(TokenKind::RightParen)?;
+                    let expr_id = ExprInterner::intern(alignment_expr);
+                    modifiers.push(Box::new(move |ts: &mut crate::types::TypeSpec| {
+                        *ts = ts.with_align(expr_id);
+                    }));
+                    continue;
+                }
+                if k == KeywordKind::Typedef {
+                    self.eat()?;
+                    modifiers.push(Box::new(|ts: &mut crate::types::TypeSpec| {
+                        ts.header = (ts.header & !0xFF00) | ((StorageClass::Typedef as u32) << 8);
+                    }));
+                    continue;
+                }
+                if k == KeywordKind::Extern {
+                    self.eat()?;
+                    modifiers.push(Box::new(|ts: &mut crate::types::TypeSpec| {
+                        ts.header = (ts.header & !0xFF00) | ((StorageClass::Extern as u32) << 8);
+                    }));
+                    continue;
+                }
+                if k == KeywordKind::Static {
+                    self.eat()?;
+                    modifiers.push(Box::new(|ts: &mut crate::types::TypeSpec| {
+                        ts.header = (ts.header & !0xFF00) | ((StorageClass::Static as u32) << 8);
+                    }));
+                    continue;
+                }
+                if k == KeywordKind::Auto {
+                    self.eat()?;
+                    modifiers.push(Box::new(|ts: &mut crate::types::TypeSpec| {
+                        ts.header = (ts.header & !0xFF00) | ((StorageClass::Auto as u32) << 8);
+                    }));
+                    continue;
+                }
+                if k == KeywordKind::Register {
+                    self.eat()?;
+                    modifiers.push(Box::new(|ts: &mut crate::types::TypeSpec| {
+                        ts.header = (ts.header & !0xFF00) | ((StorageClass::Register as u32) << 8);
+                    }));
+                    continue;
+                }
+                // _Thread_local is not in KeywordKind, skip for now
             }
-            if k == KeywordKind::Volatile {
+            break;
+        }
+        // now parse the base
+        let token = self.current_token()?.clone();
+        let (mut type_spec, decl) = if let TokenKind::Keyword(k) = token.kind {
+            self.parse_type_specifier_kind(k, token.span)?
+        } else if let TokenKind::Identifier(id) = token.kind {
+            let typedef_entry = self.typedefs.get(&id).cloned();
+            if let Some((_, decl_id)) = typedef_entry {
                 self.eat()?;
-                let (mut inner_type_spec, decl) = self.parse_type_specifier()?;
-                inner_type_spec.qualifiers |= TypeQualifiers::VOLATILE;
-                return Ok((inner_type_spec, decl));
-            }
-            if k == KeywordKind::Restrict {
-                self.eat()?;
-                let (mut inner_type_spec, decl) = self.parse_type_specifier()?;
-                inner_type_spec.qualifiers |= TypeQualifiers::RESTRICT;
-                return Ok((inner_type_spec, decl));
-            }
-            if k == KeywordKind::Complex {
-                self.eat()?;
-                let (mut inner_type_spec, decl) = self.parse_type_specifier()?;
-                // Handle _Complex - might need to add to TypeKeywordMask
-                return Ok((inner_type_spec, decl));
-            }
-            if k == KeywordKind::Imaginary {
-                self.eat()?;
-                let (mut inner_type_spec, decl) = self.parse_type_specifier()?;
-                // Handle _Imaginary - might need to add to TypeKeywordMask
-                return Ok((inner_type_spec, decl));
-            }
-            if k == KeywordKind::_Alignas {
-                self.eat()?;
-                self.expect_punct(TokenKind::LeftParen)?;
-                let alignment_expr = self.parse_expr()?;
-                self.expect_punct(TokenKind::RightParen)?;
-                let (mut inner_type_spec, decl) = self.parse_type_specifier()?;
-                inner_type_spec.alignas = Some(Box::new(alignment_expr));
-                return Ok((inner_type_spec, decl));
-            }
-            if k == KeywordKind::Typedef {
-                self.eat()?;
-                let (mut inner_type_spec, decl) = self.parse_type_specifier()?;
-                inner_type_spec.storage = StorageClass::Typedef;
-                return Ok((inner_type_spec, decl));
-            }
-            if k == KeywordKind::Extern {
-                self.eat()?;
-                let (mut inner_type_spec, decl) = self.parse_type_specifier()?;
-                inner_type_spec.storage = StorageClass::Extern;
-                return Ok((inner_type_spec, decl));
-            }
-            if k == KeywordKind::Static {
-                self.eat()?;
-                let (mut inner_type_spec, decl) = self.parse_type_specifier()?;
-                inner_type_spec.storage = StorageClass::Static;
-                return Ok((inner_type_spec, decl));
-            }
-            if k == KeywordKind::Auto {
-                self.eat()?;
-                let (mut inner_type_spec, decl) = self.parse_type_specifier()?;
-                inner_type_spec.storage = StorageClass::Auto;
-                return Ok((inner_type_spec, decl));
-            }
-            if k == KeywordKind::Register {
-                self.eat()?;
-                let (mut inner_type_spec, decl) = self.parse_type_specifier()?;
-                inner_type_spec.storage = StorageClass::Register;
-                return Ok((inner_type_spec, decl));
-            }
-            // _Thread_local is not in KeywordKind, skip for now
-            self.parse_type_specifier_kind(k, token.span)
-        } else if let TokenKind::Identifier(id) = token.kind.clone() {
-            if let Some(_) = self.typedefs.get(&id) {
-                self.eat()?;
-                Ok((
-                    Parser::new_typespec(TypeSpecKind::Typedef(id)),
-                    None,
-                ))
+                (Parser::new_typespec(TypeSpecKind::Typedef(decl_id)), None)
             } else {
-                // This might be a forward declaration or anonymous struct/union/enum
-                // Let the struct/union/enum handling in parse_type_specifier_kind deal with it
-                Err(ParserError::UnexpectedToken(token))
+                return Err(ParserError::UnexpectedToken(token));
             }
         } else {
-            Err(ParserError::UnexpectedToken(token))
+            return Err(ParserError::UnexpectedToken(token));
+        };
+        // apply modifiers in reverse order
+        for modifier in modifiers.into_iter().rev() {
+            modifier(&mut type_spec);
         }
+        Ok((type_spec, decl))
     }
 
     /// Parses a type specifier kind.
@@ -319,7 +354,7 @@ impl Parser {
                     }
                 }
                 Ok((
-                    Parser::new_typespec(TypeSpecKind::Builtin(mask.bits())),
+                    Parser::new_typespec(TypeSpecKind::Builtin(mask)),
                     None,
                 ))
             }
@@ -333,7 +368,7 @@ impl Parser {
                     mask |= TypeKeywordMask::INT;
                 }
                 Ok((
-                    Parser::new_typespec(TypeSpecKind::Builtin(mask.bits())),
+                    Parser::new_typespec(TypeSpecKind::Builtin(mask)),
                     None,
                 ))
             }
@@ -375,7 +410,7 @@ impl Parser {
                     }
                 }
                 Ok((
-                    Parser::new_typespec(TypeSpecKind::Builtin(mask.bits())),
+                    Parser::new_typespec(TypeSpecKind::Builtin(mask)),
                     None,
                 ))
             }
@@ -389,75 +424,140 @@ impl Parser {
                     mask |= TypeKeywordMask::LONG;
                 }
                 Ok((
-                    Parser::new_typespec(TypeSpecKind::Builtin(mask.bits())),
+                    Parser::new_typespec(TypeSpecKind::Builtin(mask)),
                     None,
                 ))
             }
             KeywordKind::Char => Ok((
-                Parser::new_typespec(TypeSpecKind::Builtin(TypeKeywordMask::CHAR.bits())),
+                Parser::new_typespec(TypeSpecKind::Builtin(TypeKeywordMask::CHAR)),
                 None,
             )),
             KeywordKind::Float => Ok((
-                Parser::new_typespec(TypeSpecKind::Builtin(TypeKeywordMask::FLOAT.bits())),
+                Parser::new_typespec(TypeSpecKind::Builtin(TypeKeywordMask::FLOAT)),
                 None,
             )),
             KeywordKind::Double => Ok((
-                Parser::new_typespec(TypeSpecKind::Builtin(TypeKeywordMask::DOUBLE.bits())),
+                Parser::new_typespec(TypeSpecKind::Builtin(TypeKeywordMask::DOUBLE)),
                 None,
             )),
             KeywordKind::Void => Ok((
-                Parser::new_typespec(TypeSpecKind::Builtin(TypeKeywordMask::VOID.bits())),
+                Parser::new_typespec(TypeSpecKind::Builtin(TypeKeywordMask::VOID)),
                 None,
             )),
             KeywordKind::Bool => Ok((
-                Parser::new_typespec(TypeSpecKind::Builtin(TypeKeywordMask::BOOL.bits())),
+                Parser::new_typespec(TypeSpecKind::Builtin(TypeKeywordMask::BOOL)),
                 None,
             )),
             KeywordKind::Struct => {
                 let name = self.maybe_name()?;
                 if self.eat_token(&TokenKind::LeftBrace)? {
                     let fields = self.parse_record_fields()?;
-                    let struct_decl = Decl::Struct(ast::RecordDecl {
+                    let mut struct_decl = Decl::Struct(ast::RecordDecl {
+                        id: None,
                         name,
                         fields,
                         span,
                     });
-                    Ok((
-                        Parser::new_typespec(TypeSpecKind::Struct(name.unwrap_or_else(|| StringInterner::empty_id()))),
-                        Some(struct_decl),
-                    ))
+                    let mut added = false;
+                    let index = if let Some(name) = name {
+                        if let Some(&idx) = self.struct_defs.get(&name) {
+                            idx
+                        } else {
+                            let idx = self.globals.len();
+                            self.struct_defs.insert(name, idx);
+                            self.globals.push(struct_decl.clone());
+                            added = true;
+                            idx
+                        }
+                    } else {
+                        let idx = self.globals.len();
+                        self.globals.push(struct_decl.clone());
+                        added = true;
+                        idx
+                    };
+                    if let Decl::Struct(rec) = &mut struct_decl {
+                        rec.id = Some(DeclId::new(index));
+                    }
+                    let type_spec = Parser::new_typespec(TypeSpecKind::Struct(DeclId::new(index)));
+                    let struct_decl_opt = if added { None } else { Some(struct_decl) };
+                    Ok((type_spec, struct_decl_opt))
                 } else {
-                    Ok((
-                        Parser::new_typespec(TypeSpecKind::Struct(name.unwrap_or_else(|| StringInterner::empty_id()))),
-                        None,
-                    ))
+                    // Forward declaration
+                    let index = if let Some(name) = name {
+                        if let Some(&idx) = self.struct_defs.get(&name) {
+                            idx
+                        } else {
+                            let idx = self.globals.len();
+                            self.struct_defs.insert(name, idx);
+                            // For forward, don't push yet
+                            idx
+                        }
+                    } else {
+                        // Anonymous forward? Not possible
+                        0
+                    };
+                    let type_spec = Parser::new_typespec(TypeSpecKind::Struct(DeclId::new(index)));
+                    Ok((type_spec, None))
                 }
             }
             KeywordKind::Union => {
                 let name = self.maybe_name()?;
                 if self.eat_token(&TokenKind::LeftBrace)? {
                     let fields = self.parse_record_fields()?;
-                    let union_decl = Decl::Union(ast::RecordDecl {
+                    let mut union_decl = Decl::Union(ast::RecordDecl {
+                        id: None,
                         name,
                         fields,
                         span,
                     });
-                    Ok((
-                        Parser::new_typespec(TypeSpecKind::Union(name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id()))),
-                        Some(union_decl),
-                    ))
+                    let mut added = false;
+                    let index = if let Some(name) = name {
+                        if let Some(&idx) = self.union_defs.get(&name) {
+                            idx
+                        } else {
+                            let idx = self.globals.len();
+                            self.union_defs.insert(name, idx);
+                            self.globals.push(union_decl.clone());
+                            added = true;
+                            idx
+                        }
+                    } else {
+                        let idx = self.globals.len();
+                        self.globals.push(union_decl.clone());
+                        added = true;
+                        idx
+                    };
+                    if let Decl::Union(rec) = &mut union_decl {
+                        rec.id = Some(DeclId::new(index));
+                    }
+                    let type_spec = Parser::new_typespec(TypeSpecKind::Union(DeclId::new(index)));
+                    let union_decl_opt = if added { None } else { Some(union_decl) };
+                    Ok((type_spec, union_decl_opt))
                 } else {
-                    Ok((
-                        Parser::new_typespec(TypeSpecKind::Union(name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id()))),
-                        None,
-                    ))
+                    // Forward declaration
+                    let index = if let Some(name) = name {
+                        if let Some(&idx) = self.union_defs.get(&name) {
+                            idx
+                        } else {
+                            let idx = self.globals.len();
+                            self.union_defs.insert(name, idx);
+                            // For forward, don't push yet
+                            idx
+                        }
+                    } else {
+                        // Anonymous forward? Not possible
+                        0
+                    };
+                    let type_spec = Parser::new_typespec(TypeSpecKind::Union(DeclId::new(index)));
+                    Ok((type_spec, None))
                 }
             }
             KeywordKind::Enum => {
                 let name = self.maybe_name()?;
                 if self.eat_token(&TokenKind::LeftBrace)? {
                     let enumerators = self.parse_enum_specifier_members()?;
-                    let enum_decl = Decl::Enum(ast::EnumDecl {
+                    let mut enum_decl = Decl::Enum(ast::EnumDecl {
+                        id: None,
                         name,
                         members: enumerators
                             .into_iter()
@@ -465,15 +565,46 @@ impl Parser {
                             .collect(),
                         span,
                     });
-                    Ok((
-                        Parser::new_typespec(TypeSpecKind::Enum(name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id()))),
-                        Some(enum_decl),
-                    ))
+                    let mut added = false;
+                    let index = if let Some(name) = name {
+                        if let Some(&idx) = self.enum_defs.get(&name) {
+                            idx
+                        } else {
+                            let idx = self.globals.len();
+                            self.enum_defs.insert(name, idx);
+                            self.globals.push(enum_decl.clone());
+                            added = true;
+                            idx
+                        }
+                    } else {
+                        let idx = self.globals.len();
+                        self.globals.push(enum_decl.clone());
+                        added = true;
+                        idx
+                    };
+                    if let Decl::Enum(en) = &mut enum_decl {
+                        en.id = Some(DeclId::new(index));
+                    }
+                    let type_spec = Parser::new_typespec(TypeSpecKind::Enum(DeclId::new(index)));
+                    let enum_decl_opt = if added { None } else { Some(enum_decl) };
+                    Ok((type_spec, enum_decl_opt))
                 } else {
-                    Ok((
-                        Parser::new_typespec(TypeSpecKind::Enum(name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id()))),
-                        None,
-                    ))
+                    // Forward declaration
+                    let index = if let Some(name) = name {
+                        if let Some(&idx) = self.enum_defs.get(&name) {
+                            idx
+                        } else {
+                            let idx = self.globals.len();
+                            self.enum_defs.insert(name, idx);
+                            // For forward, don't push yet
+                            idx
+                        }
+                    } else {
+                        // Anonymous forward? Not possible
+                        0
+                    };
+                    let type_spec = Parser::new_typespec(TypeSpecKind::Enum(DeclId::new(index)));
+                    Ok((type_spec, None))
                 }
             }
             _ => {
@@ -561,9 +692,31 @@ impl Parser {
     /// Applies declarator modifiers to a base type spec to produce the final type spec.
     fn apply_declarator_modifiers(&self, base: &TypeSpec, declarator: &ast::Declarator) -> TypeSpec {
         let mut ty = base.clone();
-        ty.pointer_depth += declarator.pointer_depth;
-        ty.array_sizes.extend(declarator.array_sizes.iter().cloned());
-        ty.qualifiers |= TypeQualifiers::from_bits_truncate(declarator.qualifiers as u8);
+
+        // 1. Update pointer depth (bits 16-23)
+        let current_ptr_depth = ty.pointer_depth();
+        let new_ptr_depth = current_ptr_depth.saturating_add(declarator.pointer_depth);
+        ty.header = (ty.header & !0xFF0000) | ((new_ptr_depth as u32) << 16);
+
+        // 2. Update qualifiers (bits 0-7)
+        let current_qual = ty.qualifiers();
+        let new_qual = current_qual | TypeQual::from_bits_truncate(declarator.qualifiers as u8);
+        ty.header = (ty.header & !0xFF) | (new_qual.bits() as u32);
+
+        // 3. Handle array dimensions (intern array_sizes and update array_exprs/array_rank)
+        if !declarator.array_sizes.is_empty() {
+            let array_id = ArrayExprListInterner::intern(declarator.array_sizes.clone());
+            let current_rank = ty.array_rank();
+            let new_rank = current_rank.saturating_add(declarator.array_sizes.len() as u8);
+            
+            // Update array_exprs
+            ty = ty.with_array_exprs(array_id);
+
+            // Update array_rank (bits 24-31)
+            ty.header = (ty.header & !0xFF000000) | ((new_rank as u32) << 24);
+        }
+
+        // 4. Recurse for inner declarator
         if let Some(inner) = &declarator.inner {
             ty = self.apply_declarator_modifiers(&ty, inner);
         }
@@ -597,13 +750,13 @@ impl Parser {
                 while let Ok(token) = self.current_token() {
                     if token.kind == TokenKind::Keyword(KeywordKind::Const) {
                         self.eat()?;
-                        qualifiers |= TypeQualifiers::CONST.bits();
+                        qualifiers |= TypeQual::CONST.bits();
                     } else if token.kind == TokenKind::Keyword(KeywordKind::Volatile) {
                         self.eat()?;
-                        qualifiers |= TypeQualifiers::VOLATILE.bits();
+                        qualifiers |= TypeQual::VOLATILE.bits();
                     } else if token.kind == TokenKind::Keyword(KeywordKind::Restrict) {
                         self.eat()?;
-                        qualifiers |= TypeQualifiers::RESTRICT.bits();
+                        qualifiers |= TypeQual::RESTRICT.bits();
                     } else {
                         break;
                     }
@@ -631,7 +784,7 @@ impl Parser {
         };
 
         // Function parameters are NOT parsed here - they are handled in parse_function_signature
-
+        
         // Parse array dimensions
         let mut array_sizes = ThinVec::new();
         while let Ok(token) = self.current_token() {
@@ -1345,7 +1498,7 @@ impl Parser {
                     let (base, declarator) = self.parse_declarator_suffix(base_type_spec.clone())?;
                     let type_spec = self.apply_declarator_modifiers(&base, &declarator);
                     let name = declarator.name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id());
-                    self.typedefs.insert(name, type_spec);
+                    self.typedefs.insert(name, (type_spec, DeclId::new(0)));
                     if !self.eat_token(&TokenKind::Comma)? {
                         break;
                     }
@@ -1467,18 +1620,43 @@ impl Parser {
     ///
     /// A `Result` containing the parsed `TranslationUnit`, or a `ParserError` if parsing fails.
     pub fn parse_translation_unit(&mut self) -> Result<TranslationUnit, ParserError> {
-        let mut globals = ThinVec::new();
+        self.globals.clear();
         while self.current_token()?.kind != TokenKind::Eof {
-            let (global, additional_decls) = self.parse_external_declaration()?;
-            globals.push(global);
-            
+            let (mut global, additional_decls) = self.parse_external_declaration()?;
+
+            // Assign DeclId based on current length of globals
+            let current_index = self.globals.len();
+            match &mut global {
+                ast::Decl::Struct(rec) => rec.id = Some(crate::types::DeclId::new(current_index)),
+                ast::Decl::Union(rec) => rec.id = Some(crate::types::DeclId::new(current_index)),
+                ast::Decl::Enum(en) => en.id = Some(crate::types::DeclId::new(current_index)),
+                ast::Decl::Typedef { id, .. } => *id = Some(crate::types::DeclId::new(current_index)),
+                _ => {}
+            }
+            self.globals.push(global);
+
+            // Update typedefs if it's a typedef
+            if let Some(Decl::Typedef { name, ty, id: Some(id) }) = self.globals.last() {
+                self.typedefs.insert(*name, (ty.clone(), *id));
+            }
+
             // If there are additional declarations (like variables after enum definition),
             // add them to the globals list
             if let Some(additional) = additional_decls {
-                globals.extend(additional.into_iter());
+                for mut decl in additional.into_iter() {
+                    let current_index = self.globals.len();
+                    match &mut decl {
+                        ast::Decl::Struct(rec) => rec.id = Some(crate::types::DeclId::new(current_index)),
+                        ast::Decl::Union(rec) => rec.id = Some(crate::types::DeclId::new(current_index)),
+                        ast::Decl::Enum(en) => en.id = Some(crate::types::DeclId::new(current_index)),
+                        ast::Decl::Typedef { id, .. } => *id = Some(crate::types::DeclId::new(current_index)),
+                        _ => {}
+                    }
+                    self.globals.push(decl);
+                }
             }
         }
-        Ok(TranslationUnit { globals })
+        Ok(TranslationUnit { globals: self.globals.clone() })
     }
 
     /// Parses an external declaration (function or variable declaration at global scope).
@@ -1540,7 +1718,7 @@ impl Parser {
                 let (base, declarator) = self.parse_declarator_suffix(base_type_spec.clone())?;
                 let type_spec = self.apply_declarator_modifiers(&base, &declarator);
                 let name = declarator.name.unwrap_or_else(|| crate::parser::string_interner::StringInterner::empty_id());
-                self.typedefs.insert(name, type_spec.clone());
+                self.typedefs.insert(name, (type_spec.clone(), DeclId::new(0))); // placeholder
                 typedefs.push((name, type_spec));
                 if !self.eat_token(&TokenKind::Comma)? {
                     break;
@@ -1549,12 +1727,13 @@ impl Parser {
             self.expect_punct(TokenKind::Semicolon)?;
             // Return the first typedef, or handle multiple
             if let Some((name, type_spec)) = typedefs.into_iter().next() {
-                return Ok((Decl::Typedef(name, type_spec), None));
+                return Ok((Decl::Typedef { name, ty: type_spec, id: None }, None));
             } else {
-                return Ok((Decl::Typedef(
-                    crate::parser::string_interner::StringInterner::empty_id(),
-                    base_type_spec,
-                ), None));
+                return Ok((Decl::Typedef {
+                    name: crate::parser::string_interner::StringInterner::empty_id(),
+                    ty: base_type_spec,
+                    id: None,
+                }, None));
             }
         }
 

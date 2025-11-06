@@ -73,6 +73,9 @@ impl CompilerError {
     pub fn new(reports: Vec<Report>) -> Self {
         Self { reports }
     }
+    pub fn semantic_error() -> Self { // Add this associated function
+        Self { reports: vec![] }
+    }
 }
 
 impl Compiler {
@@ -205,9 +208,9 @@ impl Compiler {
         }
 
         // Perform semantic analysis
-        let semantic_analyzer = SemanticAnalyzer::with_builtins();
+        let semantic_analyzer_instance = SemanticAnalyzer::with_builtins();
         let SemaOutput(typed_ast, warnings, semantic_analyzer) =
-            match semantic_analyzer.analyze(ast) {
+            match semantic_analyzer_instance.analyze(ast) {
                 Ok(output) => {
                     self.logger.log("Semantic analysis passed");
                     output
@@ -218,7 +221,7 @@ impl Compiler {
                         let report_data = Report::err(error.to_string(), Some(span));
                         reports.push(report_data);
                     }
-
+                    self.print_diagnostic(&reports);
                     return Err(CompilerError::new(reports));
                 }
             };
@@ -234,10 +237,8 @@ impl Compiler {
             return Err(CompilerError::new(vec![report]));
         }
 
-        let mut codegen = CodeGen::new();
-        codegen.enum_constants = semantic_analyzer.enum_constants;
-        codegen.used_builtins = semantic_analyzer.used_builtins;
-        let object_bytes = match codegen.compile(typed_ast, &semantic_analyzer.symbol_table) {
+        let codegen = CodeGen::new(semantic_analyzer); // Remove mut, as codegen is moved into compile
+        let object_bytes = match codegen.compile(typed_ast) { // Call compile with updated signature
             Ok(bytes) => bytes,
             Err(err) => {
                 let report = Report::err(err.to_string(), None);

@@ -3,25 +3,47 @@
 // - TypeId::new(kind, flags) -> interns into the table and returns TypeId
 // - TypeId::get() -> returns a cloned TypeKind so callers don't hold borrows
 
+use bitflags::bitflags;
 use paste::paste;
-use thin_vec::ThinVec;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
+use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::sync::{OnceLock, RwLock};
-use bitflags::bitflags;
+use thin_vec::ThinVec;
 
 use crate::StringId;
+use crate::parser::ast;
+use crate::parser::expr_interner::ExprId;
+
+// -----------------------------
+// Thread-local global table
+// -----------------------------
+// Use thread_local + RefCell: cheap and avoids borrow-checker friction for single-threaded compiler.
+thread_local! {
+    static THREAD_TABLE: RefCell<TypeTable> = RefCell::new(TypeTable::new_with_builtins());
+}
+
+include!("generated_types.rs");
+
+// -----------------------------
+// TypeTable (interning)
+// -----------------------------
+pub struct TypeTable {
+    types: Vec<TypeKind>,
+    map: HashMap<TypeKind, u16>,
+}
 
 bitflags::bitflags! {
     /// Bitflags for type qualifiers — 1 byte total
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    pub struct TypeQualifiers: u8 {
-        const CONST     = 0b0001;
-        const VOLATILE  = 0b0010;
-        const RESTRICT  = 0b0100;
-        const ATOMIC    = 0b1000;
+    pub struct TypeQual: u8 {
+        const CONST       = 1 << 0;
+        const VOLATILE    = 1 << 1;
+        const RESTRICT    = 1 << 2;
+        const ATOMIC      = 1 << 3;
+        const THREADLOCAL = 1 << 4; // new for C11
     }
 }
 
@@ -29,24 +51,22 @@ bitflags::bitflags! {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum StorageClass {
-    None,
-    Typedef,
-    Extern,
-    Static,
     Auto,
+    Static,
+    Extern,
     Register,
-    ThreadLocal,
+    Typedef,
 }
 
 /// Compact enum for basic type category (8 bytes total with payload)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum TypeSpecKind {
-    Builtin(u16),           // bitmask of TypeKeyword flags
-    Struct(StringId),       // refers to side-table AggregateDecl
-    Union(StringId),
-    Enum(StringId),
-    Typedef(StringId),
+    Builtin(TypeKeywordMask),     // bitmask of TypeKeyword flags
+    Struct(DeclId),
+    Union(DeclId),
+    Enum(DeclId),
+    Typedef(DeclId),
 }
 
 bitflags::bitflags! {
@@ -71,26 +91,41 @@ bitflags::bitflags! {
 }
 
 /// A lightweight syntactic type specification node
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TypeSpec {
-    pub kind: TypeSpecKind,           // 8 bytes
-    pub qualifiers: TypeQualifiers,   // 1 byte
-    pub storage: StorageClass,        // 1 byte
-    pub pointer_depth: u8,            // up to 255 levels
-    pub array_rank: u8,               // up to 255 dimensions
-    pub alignas: Option<Box<crate::parser::ast::Expr>>,   // optional, rarely used
-    pub array_sizes: ThinVec<crate::parser::ast::Expr>,
+    pub kind: TypeSpecKind,                   // 8 B
+    pub header: u32,                          // packed bits: qual | storage | pointer | rank
+    pub align_expr: Option<ExprId>,           // optional alignas() expression
+    pub array_exprs: Option<ArrayExprListId>, // optional array dimension list
 }
 
-// -----------------------------
-// Thread-local global table
-// -----------------------------
-// Use thread_local + RefCell: cheap and avoids borrow-checker friction for single-threaded compiler.
-thread_local! {
-    static THREAD_TABLE: RefCell<TypeTable> = RefCell::new(TypeTable::new_with_builtins());
+// -------------------------------------------------------
+// Compact ID types
+// -------------------------------------------------------
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct DeclId(pub NonZeroU32);
+
+impl DeclId {
+    /// Creates a new DeclId from a 0-based index (index + 1).
+    pub fn new(index: usize) -> Self {
+        // SAFETY: index is 0-based, so index + 1 is always > 0
+        let id = (index as u32) + 1;
+        DeclId(unsafe { NonZeroU32::new_unchecked(id) })
+    }
+
+    /// Returns the raw NonZeroU32 value (1-based ID).
+    pub fn get_raw_id(self) -> u32 {
+        self.0.get()
+    }
+
+    /// Returns the 0-based index (id - 1).
+    pub fn to_usize_index(self) -> usize {
+        (self.0.get() - 1) as usize
+    }
 }
 
-include!("generated_types.rs");
+pub type ArrayExprListId = NonZeroU32;
 
 // -----------------------------
 // TypeId (packed)
@@ -98,6 +133,105 @@ include!("generated_types.rs");
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct TypeId(u32);
+
+// TypeKind
+// -----------------------------
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum TypeKind {
+    Void,
+    Bool,
+    Char,
+    Short,
+    Int,
+    Long,
+    LongLong,
+    Float,
+    Double,
+    UnsignedChar,
+    UnsignedShort,
+    UnsignedInt,
+    UnsignedLong,
+    UnsignedLongLong,
+    Pointer(TypeId),
+    Array(TypeId, usize),
+
+    Struct(Option<DeclId>, ThinVec<ParamType>),
+    Union(Option<DeclId>, ThinVec<ParamType>),
+    Enum {
+        name: Option<DeclId>,
+        underlying_type: TypeId,
+        variants: ThinVec<EnumVariant>,
+    },
+
+    Function {
+        return_type: TypeId,
+        params: Vec<TypeId>,
+        is_variadic: bool,
+    },
+
+    Typedef(DeclId, TypeId),
+    // Error,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+pub struct EnumVariant {
+    pub name: StringId, // enumerator name
+    pub value: i64,     // integer value assigned
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+pub struct ParamType {
+    pub ty: TypeId,
+    pub name: StringId,
+}
+
+impl TypeSpec {
+    pub fn new(
+        kind: TypeSpecKind,
+        qual: TypeQual,
+        storage: StorageClass,
+        pointer_depth: u8,
+        array_rank: u8,
+    ) -> Self {
+        let header = (qual.bits() as u32)
+            | ((storage as u32) << 8)
+            | ((pointer_depth as u32) << 16)
+            | ((array_rank as u32) << 24);
+
+        TypeSpec {
+            kind,
+            header,
+            align_expr: None,
+            array_exprs: None,
+        }
+    }
+
+    pub fn qualifiers(&self) -> TypeQual {
+        TypeQual::from_bits_truncate((self.header & 0xFF) as u8)
+    }
+
+    pub fn storage(&self) -> StorageClass {
+        unsafe { std::mem::transmute(((self.header >> 8) & 0xFF) as u8) }
+    }
+
+    pub fn pointer_depth(&self) -> u8 {
+        ((self.header >> 16) & 0xFF) as u8
+    }
+
+    pub fn array_rank(&self) -> u8 {
+        ((self.header >> 24) & 0xFF) as u8
+    }
+
+    pub fn with_align(mut self, expr_id: ExprId) -> Self {
+        self.align_expr = Some(expr_id);
+        self
+    }
+
+    pub fn with_array_exprs(mut self, arr_id: ArrayExprListId) -> Self {
+        self.array_exprs = Some(arr_id);
+        self
+    }
+}
 
 impl TypeId {
     const MASK_INDEX: u32 = 0x0000_FFFF;
@@ -294,10 +428,16 @@ impl TypeId {
                 TypeKind::Pointer(inner) => TypeKind::Pointer(inner.canonicalize()),
                 TypeKind::Array(inner, size) => TypeKind::Array(inner.canonicalize(), size),
                 TypeKind::Struct(name, fields) => TypeKind::Struct(name, fields),
-                TypeKind::Union(name, fields) => {
-                    TypeKind::Union(name, fields)
-                }
-                TypeKind::Enum{name, underlying_type, variants} => TypeKind::Enum{name, underlying_type, variants},
+                TypeKind::Union(name, fields) => TypeKind::Union(name, fields),
+                TypeKind::Enum {
+                    name,
+                    underlying_type,
+                    variants,
+                } => TypeKind::Enum {
+                    name,
+                    underlying_type,
+                    variants,
+                },
                 _ => kind,
             };
 
@@ -325,64 +465,11 @@ impl TypeId {
 //     }
 // }
 
-// TypeKind
-// -----------------------------
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum TypeKind {
-    Void,
-    Bool,
-    Char,
-    Short,
-    Int,
-    Long,
-    LongLong,
-    Float,
-    Double,
-    UnsignedChar,
-    UnsignedShort,
-    UnsignedInt,
-    UnsignedLong,
-    UnsignedLongLong,
-    Pointer(TypeId),
-    Array(TypeId, usize),
-
-    Struct(Option<StringId>, ThinVec<ParamType>),
-    Union(Option<StringId>, ThinVec<ParamType>),
-    Enum {
-        name: Option<StringId>,
-        underlying_type: TypeId,
-        variants: ThinVec<EnumVariant>,
-    },
-
-    Function {
-        return_type: TypeId,
-        params: Vec<TypeId>,
-        is_variadic: bool,
-    },
-
-    Typedef(StringId, TypeId),
-    // Error,
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
-pub struct EnumVariant {
-    pub name: StringId,      // enumerator name
-    pub value: i64,          // integer value assigned
-}
-
-
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
-pub struct ParamType {
-    pub ty: TypeId,
-    pub name: StringId,
-}
-
-
 impl TypeKind {
     /// flag for TypeId
     pub fn flags(&self) -> u16 {
         match self {
-// ----- scalar types -----
+            // ----- scalar types -----
             TypeKind::Void => 0,
             TypeKind::Bool => TypeId::FLAG_INTEGER | TypeId::FLAG_UNSIGNED,
             TypeKind::Char => TypeId::FLAG_INTEGER | TypeId::FLAG_SIGNED,
@@ -405,18 +492,22 @@ impl TypeKind {
             TypeKind::Array(..) => TypeId::FLAG_ARRAY,
 
             // ----- aggregate / composite types -----
-            TypeKind::Struct(Some(_), ..) => TypeId::FLAG_RECORD | TypeId::FLAG_AGGREGATE | TypeId::FLAG_HAS_NAME,
+            TypeKind::Struct(Some(_), ..) => {
+                TypeId::FLAG_RECORD | TypeId::FLAG_AGGREGATE | TypeId::FLAG_HAS_NAME
+            }
             TypeKind::Struct(None, ..) => TypeId::FLAG_RECORD | TypeId::FLAG_AGGREGATE,
-            TypeKind::Union(Some(_), ..) => TypeId::FLAG_RECORD | TypeId::FLAG_AGGREGATE | TypeId::FLAG_HAS_NAME,
+            TypeKind::Union(Some(_), ..) => {
+                TypeId::FLAG_RECORD | TypeId::FLAG_AGGREGATE | TypeId::FLAG_HAS_NAME
+            }
             TypeKind::Union(None, ..) => TypeId::FLAG_RECORD | TypeId::FLAG_AGGREGATE,
-            TypeKind::Enum{name: Some(_), ..} => TypeId::FLAG_AGGREGATE | TypeId::FLAG_HAS_NAME,
-            TypeKind::Enum{name: None, ..} => TypeId::FLAG_AGGREGATE,
+            TypeKind::Enum { name: Some(_), .. } => TypeId::FLAG_AGGREGATE | TypeId::FLAG_HAS_NAME,
+            TypeKind::Enum { name: None, .. } => TypeId::FLAG_AGGREGATE,
 
             // ----- typedef -----
             TypeKind::Typedef(_, base) => base.flags(),
 
             // ----- function types -----
-            TypeKind::Function{..} => TypeId::FLAG_FUNCTION,
+            TypeKind::Function { .. } => TypeId::FLAG_FUNCTION,
         }
     }
 
@@ -444,14 +535,10 @@ impl TypeKind {
             _ => 0,
         }
     }
-}
 
-// -----------------------------
-// TypeTable (interning)
-// -----------------------------
-pub struct TypeTable {
-    types: Vec<TypeKind>,
-    map: HashMap<TypeKind, u16>,
+    pub fn is_enum(&self) -> bool {
+        matches!(self, TypeKind::Enum { .. })
+    }
 }
 
 impl TypeTable {
@@ -469,22 +556,27 @@ impl TypeTable {
         self.map.insert(kind.clone(), idx);
         idx
     }
-
 }
 
-// -----------------------------
-// Examples / tests
-// -----------------------------
 #[cfg(test)]
 mod tests {
-    use crate::parser::string_interner::StringInterner;
     use super::*;
+    use crate::parser::string_interner::StringInterner;
     use cranelift::prelude::Type;
     use thin_vec::thin_vec;
 
     #[test]
+    fn typespec_size() {
+        // this test is to make sure we don't acidentally make it bigger
+        assert_eq!(size_of::<TypeSpec>(), 20);
+    }
+
+    #[test]
     fn builtin_ids_match_interned() {
-        assert_eq!(TypeId::intern(&TypeKind::Bool).index(), TypeId::BOOL.index());
+        assert_eq!(
+            TypeId::intern(&TypeKind::Bool).index(),
+            TypeId::BOOL.index()
+        );
         assert_eq!(TypeId::intern(&TypeKind::Int).index(), TypeId::INT.index());
 
         // pointer
@@ -499,17 +591,56 @@ mod tests {
     }
 
     #[test]
-    fn test_flags_in_struct(){
+    fn test_flags_in_struct() {
         let name = StringInterner::intern("Martabak");
         let field_name = StringInterner::intern("price");
-        let p = TypeId::intern(&TypeKind::Struct(Some(name), thin_vec![
-            ParamType {
+        let p = TypeId::intern(&TypeKind::Struct(
+            Some(DeclId::new(0)),
+            thin_vec![ParamType {
                 ty: TypeId::INT,
                 name: field_name
-            }
-        ]));
+            }],
+        ));
 
         assert!(p.has_flag(TypeId::FLAG_RECORD));
     }
 
+    #[test]
+    fn test_bitpacking_roundtrip() {
+        let ty = TypeSpec::new(
+            TypeSpecKind::Builtin(TypeKeywordMask::INT),
+            TypeQual::CONST | TypeQual::VOLATILE,
+            StorageClass::Static,
+            2,
+            1,
+        );
+
+        assert_eq!(ty.qualifiers(), TypeQual::CONST | TypeQual::VOLATILE);
+        assert_eq!(ty.storage(), StorageClass::Static);
+        assert_eq!(ty.pointer_depth(), 2);
+        assert_eq!(ty.array_rank(), 1);
+
+        // Check deterministic packing
+        let expected_header = 0b00000001_00000010_00000001_00000011u32; // rank=1, ptr=2, storage=1, qual=3
+        assert_eq!(ty.header, expected_header);
+    }
+
+    #[test]
+    fn test_storage_enum_stability() {
+        // Ensure StorageClass discriminants are fixed
+        assert_eq!(StorageClass::Auto as u8, 0);
+        assert_eq!(StorageClass::Static as u8, 1);
+        assert_eq!(StorageClass::Extern as u8, 2);
+        assert_eq!(StorageClass::Register as u8, 3);
+        assert_eq!(StorageClass::Typedef as u8, 4);
+    }
+
+    #[test]
+    fn test_qualifiers_masking() {
+        let qual = TypeQual::CONST | TypeQual::RESTRICT;
+        assert!(qual.contains(TypeQual::CONST));
+        assert!(qual.contains(TypeQual::RESTRICT));
+        assert!(!qual.contains(TypeQual::VOLATILE));
+        assert!(!qual.contains(TypeQual::THREADLOCAL));
+    }
 }

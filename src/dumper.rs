@@ -2,7 +2,7 @@ use crate::parser::ast::{
     Decl, Declarator, Expr, ForInit, FuncDecl, Initializer, Stmt, TranslationUnit, BinOp, AssignOp
 };
 use crate::parser::string_interner::StringId;
-use crate::types::{TypeSpec, TypeSpecKind, TypeQualifiers};
+use crate::types::{TypeSpec, TypeSpecKind, TypeQual};
 use std::fmt::Write;
 
 pub struct Dumper {
@@ -55,7 +55,7 @@ impl Dumper {
                 let name = e.name.map_or("".to_string(), |id| id.as_str().to_string());
                 println!("EnumDecl '{}'", name);
             }
-            Decl::Typedef(name, type_spec) => {
+            Decl::Typedef { name, ty: type_spec, .. } => {
                 println!("Typedef '{}' '{}'", name.as_str(), type_spec_to_string(type_spec));
             }
             Decl::StaticAssert(expr, message) => {
@@ -333,30 +333,29 @@ impl Dumper {
 
 fn type_spec_to_string(ts: &TypeSpec) -> String {
     let mut s = String::new();
-    if ts.qualifiers.contains(TypeQualifiers::CONST) {
+    if ts.qualifiers().contains(TypeQual::CONST) {
         s.push_str("const ");
     }
-    if ts.qualifiers.contains(TypeQualifiers::VOLATILE) {
+    if ts.qualifiers().contains(TypeQual::VOLATILE) {
         s.push_str("volatile ");
     }
     match &ts.kind {
         TypeSpecKind::Builtin(mask) => {
-            let builtin_name = builtin_mask_to_name(*mask);
+            let builtin_name = builtin_mask_to_name(mask.bits());
             s.push_str(&builtin_name);
         },
-        TypeSpecKind::Struct(id) => write!(s, "struct {}", id.as_str()).unwrap(),
-        TypeSpecKind::Union(id) => write!(s, "union {}", id.as_str()).unwrap(),
-        TypeSpecKind::Enum(id) => write!(s, "enum {}", id.as_str()).unwrap(),
-        TypeSpecKind::Typedef(id) => write!(s, "{}", id.as_str()).unwrap(),
+        TypeSpecKind::Struct(id) => write!(s, "struct #{}", id.to_usize_index()).unwrap(),
+        TypeSpecKind::Union(id) => write!(s, "union #{}", id.to_usize_index()).unwrap(),
+        TypeSpecKind::Enum(id) => write!(s, "enum #{}", id.to_usize_index()).unwrap(),
+        TypeSpecKind::Typedef(id) => write!(s, "Typedef #{}", id.to_usize_index()).unwrap(),
     }
 
-    for _ in 0..ts.pointer_depth {
+    for _ in 0..ts.pointer_depth() {
         s.push('*');
     }
 
-    for size in &ts.array_sizes {
-        write!(s, "[{:?}]", size).unwrap();
-    }
+    // Note: Array sizes are stored in ArrayExprListId, which is not easily accessible here.
+    // We rely on the pointer depth and array rank in the header for basic dumping.
     s
 }
 

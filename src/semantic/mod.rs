@@ -5,8 +5,9 @@ use crate::parser::ast::{
 };
 use crate::parser::string_interner::StringInterner;
 use crate::semantic::error::SemanticError;
-use crate::types::{TypeId, TypeKeywordMask, TypeKind, TypeQualifiers, TypeSpec, TypeSpecKind};
+use crate::types::{DeclId, TypeId, TypeKeywordMask, TypeKind, TypeQual, TypeSpec, TypeSpecKind};
 use crate::parser::ast::Declarator;
+use crate::parser::array_expr_interner::ArrayExprListInterner;
 use std::collections::HashMap;
 use thin_vec::ThinVec;
 mod expressions;
@@ -21,101 +22,104 @@ use crate::semantic::typed_ast::{TypedExpr, TypedLValue, TypedStmt, TypedInitial
 pub fn type_spec_to_type_id(type_spec: &TypeSpec, _span: SourceSpan) -> TypeId {
     let mut kind = match &type_spec.kind {
         TypeSpecKind::Builtin(mask) => {
-            if *mask == 0 {
+            if mask.bits() == 0 {
                 TypeKind::Int
             } else {
                 // Determine the primary type based on the mask
-                if *mask & TypeKeywordMask::VOID.bits() != 0 {
+                if mask.contains(TypeKeywordMask::VOID) {
                     TypeKind::Void
-                } else if *mask & TypeKeywordMask::BOOL.bits() != 0 {
+                } else if mask.contains(TypeKeywordMask::BOOL) {
                     TypeKind::Bool
-                } else if *mask & TypeKeywordMask::CHAR.bits() != 0 {
-                    if *mask & TypeKeywordMask::UNSIGNED.bits() != 0 {
+                } else if mask.contains(TypeKeywordMask::CHAR) {
+                    if mask.contains(TypeKeywordMask::UNSIGNED) {
                         TypeKind::UnsignedChar
                     } else {
                         TypeKind::Char
                     }
-                } else if *mask & TypeKeywordMask::SHORT.bits() != 0 {
-                    if *mask & TypeKeywordMask::UNSIGNED.bits() != 0 {
+                } else if mask.contains(TypeKeywordMask::SHORT) {
+                    if mask.contains(TypeKeywordMask::UNSIGNED) {
                         TypeKind::UnsignedShort
                     } else {
                         TypeKind::Short
                     }
-                } else if *mask & TypeKeywordMask::INT.bits() != 0 {
-                    if *mask & TypeKeywordMask::UNSIGNED.bits() != 0 {
+                } else if mask.contains(TypeKeywordMask::INT) {
+                    if mask.contains(TypeKeywordMask::UNSIGNED) {
                         TypeKind::UnsignedInt
                     } else {
                         TypeKind::Int
                     }
-                } else if *mask & TypeKeywordMask::LONG.bits() != 0 {
-                    if *mask & TypeKeywordMask::LONGLONG.bits() != 0 {
-                        if *mask & TypeKeywordMask::UNSIGNED.bits() != 0 {
+                } else if mask.contains(TypeKeywordMask::LONG) {
+                    if mask.contains(TypeKeywordMask::LONGLONG) {
+                        if mask.contains(TypeKeywordMask::UNSIGNED) {
                             TypeKind::UnsignedLongLong
                         } else {
                             TypeKind::LongLong
                         }
                     } else {
-                        if *mask & TypeKeywordMask::UNSIGNED.bits() != 0 {
+                        if mask.contains(TypeKeywordMask::UNSIGNED) {
                             TypeKind::UnsignedLong
                         } else {
                             TypeKind::Long
                         }
                     }
-                } else if *mask & TypeKeywordMask::FLOAT.bits() != 0 {
+                } else if mask.contains(TypeKeywordMask::FLOAT) {
                     TypeKind::Float
-                } else if *mask & TypeKeywordMask::DOUBLE.bits() != 0 {
+                } else if mask.contains(TypeKeywordMask::DOUBLE) {
                     TypeKind::Double
                 } else {
                     TypeKind::Int // Default fallback
                 }
             }
         }
-        TypeSpecKind::Struct(name_id) => {
+        TypeSpecKind::Struct(decl_id) => {
             // For struct types in TypeSpec, we don't have field information
             // Field information is handled separately via Decl::Struct
-            TypeKind::Struct(Some(*name_id), thin_vec::ThinVec::new())
+            TypeKind::Struct(Some(*decl_id), thin_vec::ThinVec::new())
         },
-        TypeSpecKind::Union(name_id) => {
+        TypeSpecKind::Union(decl_id) => {
             // For union types in TypeSpec, we don't have field information
             // Field information is handled separately via Decl::Union
-            TypeKind::Union(Some(*name_id), thin_vec::ThinVec::new())
+            TypeKind::Union(Some(*decl_id), thin_vec::ThinVec::new())
         },
-        TypeSpecKind::Enum(name_id) => TypeKind::Enum {
-            name: Some(*name_id),
+        TypeSpecKind::Enum(decl_id) => TypeKind::Enum {
+            name: Some(*decl_id),
             underlying_type: TypeId::INT,
             variants: thin_vec::ThinVec::new(),
         },
-        TypeSpecKind::Typedef(_name_id) => TypeKind::Int, // Fallback for typedef
+        TypeSpecKind::Typedef(decl_id) => TypeKind::Typedef(*decl_id, TypeId::INT), // Fallback for typedef
     };
 
     // Apply array sizes
-    for array_size in &type_spec.array_sizes {
-        if let Expr::Number(size, _) = array_size {
-            if *size > 0 {
-                kind = TypeKind::Array(TypeId::intern(&kind), *size as usize);
-            } else {
-                kind = TypeKind::Array(TypeId::intern(&kind), 0);
+    if let Some(array_expr_list_id) = type_spec.array_exprs {
+        let array_exprs = ArrayExprListInterner::get(array_expr_list_id);
+        for array_size in array_exprs {
+            if let Expr::Number(size, _) = array_size {
+                if size > 0 {
+                    kind = TypeKind::Array(TypeId::intern(&kind), size as usize);
+                } else {
+                    kind = TypeKind::Array(TypeId::intern(&kind), 0);
+                }
             }
         }
     }
 
     // Apply pointers
-    for _ in 0..type_spec.pointer_depth {
+    for _ in 0..type_spec.pointer_depth() {
         kind = TypeKind::Pointer(TypeId::intern(&kind));
     }
 
     // Apply qualifiers
     let mut flags = kind.flags();
-    if type_spec.qualifiers.contains(TypeQualifiers::CONST) {
+    if type_spec.qualifiers().contains(TypeQual::CONST) {
         flags |= TypeId::FLAG_CONST;
     }
-    if type_spec.qualifiers.contains(TypeQualifiers::VOLATILE) {
+    if type_spec.qualifiers().contains(TypeQual::VOLATILE) {
         flags |= TypeId::FLAG_VOLATILE;
     }
-    if type_spec.qualifiers.contains(TypeQualifiers::RESTRICT) {
+    if type_spec.qualifiers().contains(TypeQual::RESTRICT) {
         flags |= TypeId::FLAG_RESTRICT;
     }
-    if type_spec.qualifiers.contains(TypeQualifiers::ATOMIC) {
+    if type_spec.qualifiers().contains(TypeQual::ATOMIC) {
         flags |= TypeId::FLAG_ATOMIC;
     }
 
@@ -194,8 +198,8 @@ pub struct SemaOutput(
 pub struct SemanticAnalyzer {
     pub symbol_table: SymbolTable,
     pub enum_constants: HashMap<StringId, i64>,
-    struct_definitions: HashMap<StringId, TypeId>,
-    union_definitions: HashMap<StringId, TypeId>,
+    struct_definitions: HashMap<DeclId, TypeId>,
+    union_definitions: HashMap<DeclId, TypeId>,
     current_function: Option<StringId>,
     labels: HashMap<StringId, SourceSpan>,
     errors: Vec<(SemanticError, SourceSpan)>, // (error, file, span)
@@ -240,6 +244,21 @@ impl SemanticAnalyzer {
         let mut analyzer = Self::new();
         analyzer.add_builtin_functions();
         analyzer
+    }
+
+    fn add_enum_variants_to_constants(&mut self, ty: TypeId, span: SourceSpan) {
+        if let TypeKind::Enum { variants, .. } = ty.kind() {
+            for variant in variants {
+                if self.enum_constants.contains_key(&variant.name) {
+                    self.err(
+                        SemanticError::VariableRedeclaration(variant.name),
+                        span,
+                    );
+                } else {
+                    self.enum_constants.insert(variant.name, variant.value);
+                }
+            }
+        }
     }
 
     fn check_lvalue(&mut self, expr: TypedExpr) -> Result<TypedLValue, SemanticError> {
@@ -383,6 +402,9 @@ impl SemanticAnalyzer {
         // Second pass: check all expressions and statements for semantic errors and build typed AST
         let typed_program = self.check_program(program);
 
+        // DEBUG: Print symbol table after semantic analysis
+        println!("DEBUG_SEMANTIC: Symbol table after semantic analysis: {:?}", self.symbol_table);
+
         if self.errors.is_empty() {
             Ok(SemaOutput(typed_program, self.warnings.clone(), self))
         } else {
@@ -434,32 +456,16 @@ impl SemanticAnalyzer {
                         let ty = self.apply_declarator(type_spec, declarator);
                         let span = declarator.span;
 
-                        if let TypeKind::Enum {
-                            name: _,
-                            underlying_type: _,
-                            variants,
-                        } = ty.kind()
-                            && !variants.is_empty()
-                        {
-                            for variant in variants {
-                                let val = variant.value;
-                                if self.enum_constants.contains_key(&variant.name) {
-                                    self.err(
-                                        SemanticError::VariableRedeclaration(variant.name),
-                                        SourceSpan::default(),
-                                    );
-                                } else {
-                                    self.enum_constants.insert(variant.name, val);
-                                }
+                        if ty.kind().is_enum() {
+                            self.add_enum_variants_to_constants(ty, span);
+                        } else if let TypeKind::Struct(Some(decl_id), members) = &ty.kind() {
+                            if !members.is_empty() || !self.struct_definitions.contains_key(decl_id) {
+                                self.struct_definitions.insert(*decl_id, ty);
                             }
-                        } else if let TypeKind::Struct(Some(name), members) = &ty.kind() {
-                            if !members.is_empty() || !self.struct_definitions.contains_key(name) {
-                                self.struct_definitions.insert(*name, ty);
-                            }
-                        } else if let TypeKind::Union(Some(name), members) = &ty.kind()
-                            && (!members.is_empty() || !self.union_definitions.contains_key(name))
+                        } else if let TypeKind::Union(Some(decl_id), members) = &ty.kind()
+                            && (!members.is_empty() || !self.union_definitions.contains_key(decl_id))
                         {
-                            self.union_definitions.insert(*name, ty);
+                            self.union_definitions.insert(*decl_id, ty);
                         }
 
                         // Global variables can be redeclared (tentative definitions)
@@ -484,7 +490,7 @@ impl SemanticAnalyzer {
                 Decl::Struct(_)
                 | Decl::Union(_)
                 | Decl::Enum(_)
-                | Decl::Typedef(_, _)
+                | Decl::Typedef{..}
                 | Decl::StaticAssert(_, _) => {
                     // Handle struct/union/enum declarations, typedefs, and static asserts
                     // For now, just collect struct/union/enum definitions
@@ -492,9 +498,7 @@ impl SemanticAnalyzer {
                         Decl::Struct(struct_decl) => {
                             if !struct_decl.fields.is_empty() {
                                 let ty = TypeKind::Struct(
-                                    Some(struct_decl.name.unwrap_or(
-                                        StringInterner::empty_id(),
-                                    )),
+                                    struct_decl.id,
                                     ThinVec::new(),
                                 );
                                 TypeId::intern(&ty)
@@ -505,9 +509,7 @@ impl SemanticAnalyzer {
                         Decl::Union(union_decl) => {
                             if !union_decl.fields.is_empty() {
                                 let ty = TypeKind::Union(
-                                    Some(union_decl.name.unwrap_or(
-                                        StringInterner::empty_id(),
-                                    )),
+                                    union_decl.id,
                                     ThinVec::new(),
                                 );
                                 TypeId::intern(&ty)
@@ -518,6 +520,7 @@ impl SemanticAnalyzer {
                         Decl::Enum(enum_decl) => {
                             if !enum_decl.members.is_empty() {
                                 let mut next_value = 0;
+                                let mut variants = ThinVec::new();
                                 for member in &enum_decl.members {
                                     let val = if let Some(ref expr) = member.value {
                                         if let Expr::Number(num, _) = **expr {
@@ -532,30 +535,25 @@ impl SemanticAnalyzer {
                                     } else {
                                         next_value
                                     };
-
-                                    if self.enum_constants.contains_key(&member.name) {
-                                        self.err(
-                                            SemanticError::VariableRedeclaration(member.name),
-                                            member.span,
-                                        );
-                                    } else {
-                                        self.enum_constants.insert(member.name, val);
-                                    }
+                                    variants.push(crate::types::EnumVariant {
+                                        name: member.name,
+                                        value: val,
+                                    });
                                     next_value = val + 1;
                                 }
                                 let ty = TypeKind::Enum {
-                                    name: Some(enum_decl.name.unwrap_or(
-                                        StringInterner::empty_id(),
-                                    )),
+                                    name: enum_decl.id,
                                     underlying_type: TypeId::INT,
-                                    variants: ThinVec::new(),
+                                    variants,
                                 };
-                                TypeId::intern(&ty)
+                                let enum_ty_id = TypeId::intern(&ty);
+                                self.add_enum_variants_to_constants(enum_ty_id, enum_decl.span);
+                                enum_ty_id
                             } else {
                                 return;
                             }
                         }
-                        Decl::Typedef(name, type_spec) => {
+                        Decl::Typedef { name: _, ty: _, id: _ } => {
                             // Handle typedef - typedefs are handled in the parser, no action needed here
                             return;
                         }
@@ -584,12 +582,16 @@ impl SemanticAnalyzer {
                         _ => return,
                     };
 
-                    if let TypeKind::Struct(Some(name), _) = &converted_ty.kind() {
-                        self.struct_definitions.insert(name.clone(), converted_ty);
-                    } else if let TypeKind::Union(Some(name), _) =
+                    if let TypeKind::Struct(name, _) = &converted_ty.kind() {
+                        if let Some(name_id) = name {
+                            self.struct_definitions.insert(name_id.clone(), converted_ty);
+                        }
+                    } else if let TypeKind::Union(name, _) =
                         &converted_ty.kind()
                     {
-                        self.union_definitions.insert(name.clone(), converted_ty);
+                        if let Some(name_id) = name {
+                            self.union_definitions.insert(name_id.clone(), converted_ty);
+                        }
                     }
                 }
                 _ => {}
@@ -936,6 +938,11 @@ impl SemanticAnalyzer {
                                 );
                             }
                             
+                            // Add enum variants to constants if the type is an enum
+                            if full_ty.kind().is_enum() {
+                                self.add_enum_variants_to_constants(full_ty, declarator.span);
+                            }
+
                             let typed_initializer = declarator
                                 .init.as_ref()
                                 .as_ref()
@@ -1641,16 +1648,16 @@ impl SemanticAnalyzer {
 
         // Apply declarator's qualifiers to the base type
         let mut flags = base_ty.flags();
-        if decl.qualifiers & TypeQualifiers::CONST.bits() as u16 != 0 {
+        if TypeQual::from_bits_truncate(decl.qualifiers as u8).contains(TypeQual::CONST) {
             flags |= TypeId::FLAG_CONST;
         }
-        if decl.qualifiers & TypeQualifiers::VOLATILE.bits() as u16 != 0 {
+        if TypeQual::from_bits_truncate(decl.qualifiers as u8).contains(TypeQual::VOLATILE) {
             flags |= TypeId::FLAG_VOLATILE;
         }
-        if decl.qualifiers & TypeQualifiers::RESTRICT.bits() as u16 != 0 {
+        if TypeQual::from_bits_truncate(decl.qualifiers as u8).contains(TypeQual::RESTRICT) {
             flags |= TypeId::FLAG_RESTRICT;
         }
-        if decl.qualifiers & TypeQualifiers::ATOMIC.bits() as u16 != 0 {
+        if TypeQual::from_bits_truncate(decl.qualifiers as u8).contains(TypeQual::ATOMIC) {
             flags |= TypeId::FLAG_ATOMIC;
         }
         base_ty = TypeId::intern_with_flags(&base_ty.kind(), flags);
@@ -1670,8 +1677,8 @@ impl SemanticAnalyzer {
         // as function types are handled separately in the symbol table.
 
         base_ty
-}
     }
+}
 
 fn is_const_initializer(initializer: &TypedInitializer) -> bool {
     match initializer {
@@ -1718,6 +1725,7 @@ impl SemanticAnalyzer {
                             if designators.is_empty() {
                                 // Non-designated initializers will be checked based on order
                             } else {
+                                let mut current_offset = 0;
                                 let mut current_ty = real_ty;
                                 for designator in designators {
                                     match designator {

@@ -4,14 +4,14 @@ use crate::parser::string_interner::StringId;
 use cranelift_module::DataId;
 use std::collections::HashMap;
 
-use crate::types::TypeId;
+use crate::types::{DeclId, TypeId};
 
 /// Context needed for resolving addresses in static initializers
 pub struct StaticInitContext<'a> {
     /// Mapping from variable names to their data IDs
     pub global_variables: HashMap<StringId, DataId>,
-    pub structs: &'a HashMap<StringId, TypeId>,
-    pub unions: &'a HashMap<StringId, TypeId>,
+    pub structs: &'a HashMap<DeclId, TypeId>,
+    pub unions: &'a HashMap<DeclId, TypeId>,
 }
 
 /// The result of evaluating a static initializer.

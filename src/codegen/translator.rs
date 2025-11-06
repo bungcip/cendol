@@ -3,7 +3,7 @@ use crate::codegen::error::{CodegenError, CodegenResult};
 use crate::parser::ast::{AssignOp, BinOp, Expr};
 use crate::semantic::typed_ast::{TypedDesignator, TypedExpr, TypedForInit, TypedInitializer, TypedLValue, TypedStmt};
 use crate::parser::string_interner::StringId;
-use crate::types::{ParamType, TypeId, TypeKind};
+use crate::types::{DeclId, ParamType, TypeId, TypeKind};
 use cranelift::prelude::*;
 use cranelift_codegen::ir::types;
 use cranelift_codegen::ir::{InstBuilder, Value};
@@ -36,8 +36,8 @@ pub(crate) struct FunctionTranslator<'a, 'b> {
         &'b mut SymbolTable<StringId, (Option<Variable>, Option<StackSlot>, TypeId)>,
     pub(crate) global_variables: &'b HashMap<StringId, (DataId, TypeId)>,
     pub(crate) static_local_variables: &'b mut HashMap<StringId, (DataId, TypeId)>,
-    pub(crate) structs: &'b HashMap<StringId, TypeId>,
-    pub(crate) unions: &'b HashMap<StringId, TypeId>,
+    pub(crate) structs: &'b HashMap<DeclId, TypeId>,
+    pub(crate) unions: &'b HashMap<DeclId, TypeId>,
     pub(crate) enum_constants: &'b HashMap<StringId, i64>,
     pub(crate) module: &'b mut ObjectModule,
     pub(crate) loop_context: Vec<(Block, Block)>,
@@ -51,15 +51,15 @@ pub(crate) struct FunctionTranslator<'a, 'b> {
 impl<'a, 'b> FunctionTranslator<'a, 'b> {
     pub(crate) fn get_real_type_from_type_id(
         ty: TypeId,
-        structs: &HashMap<StringId, TypeId>,
-        unions: &HashMap<StringId, TypeId>,
+        structs: &HashMap<DeclId, TypeId>,
+        unions: &HashMap<DeclId, TypeId>,
     ) -> Result<TypeKind, CodegenError> {
         let kind = ty.kind();
         match kind {
             crate::types::TypeKind::Struct(Some(name), members) => {
                 eprintln!(
                     "get_real_type_from_type_id: struct name={}, members.len={}",
-                    name.as_str(),
+                    name.to_usize_index(),
                     members.len()
                 );
                 if members.is_empty() {
@@ -67,7 +67,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         eprintln!("Found struct definition: {:?}", struct_def);
                         return Ok(struct_def.kind());
                     } else {
-                        eprintln!("Struct definition not found for name: {}", name.as_str());
+                        eprintln!("Struct definition not found for name: {}", name.to_usize_index());
                     }
                 }
                 // Reconstruct Type from TypeKind - convert ParamType to TypedParameter
@@ -165,8 +165,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
 
     pub fn get_type_alignment_from_type_id(
         ty: TypeId,
-        structs: &HashMap<StringId, TypeId>,
-        unions: &HashMap<StringId, TypeId>,
+        structs: &HashMap<DeclId, TypeId>,
+        unions: &HashMap<DeclId, TypeId>,
     ) -> u32 {
         let real_ty = ty.canonicalize();
         let real_ty_kind = real_ty.kind();
@@ -233,8 +233,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     /// Returns the size of a given type in bytes.
     pub fn get_type_size_from_type_id(
         ty: TypeId,
-        structs: &HashMap<StringId, TypeId>,
-        unions: &HashMap<StringId, TypeId>,
+        structs: &HashMap<DeclId, TypeId>,
+        unions: &HashMap<DeclId, TypeId>,
     ) -> u32 {
         let real_ty = ty.canonicalize();
         let real_ty_kind = real_ty.kind();

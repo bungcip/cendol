@@ -3,9 +3,9 @@ use crate::parser::ast::Expr;
 use crate::semantic::typed_ast::{
     TypedExpr, TypedFunctionDecl, TypedInitializer, TypedLValue, TypedStmt, TypedTranslationUnit,
 };
-use crate::semantic::SymbolTable as SemanticSymbolTable;
+use crate::semantic::SemanticAnalyzer; // Changed import
 use crate::parser::string_interner::StringId;
-use crate::types::{TypeId, TypeKind};
+use crate::types::{DeclId, TypeId, TypeKind};
 use cranelift::prelude::*;
 use cranelift_codegen::binemit::Reloc;
 use cranelift_codegen::ir::Function;
@@ -68,17 +68,16 @@ pub struct CodeGen {
     static_local_variables: HashMap<StringId, (DataId, TypeId)>,
     functions: HashMap<StringId, (FuncId, TypeId, bool)>,
     signatures: HashMap<StringId, cranelift::prelude::Signature>,
-    structs: HashMap<StringId, TypeId>,
-    unions: HashMap<StringId, TypeId>,
-    pub enum_constants: HashMap<StringId, i64>,
+    structs: HashMap<DeclId, TypeId>,
+    unions: HashMap<DeclId, TypeId>,
+    semantic_analyzer: SemanticAnalyzer, // CodeGen now owns SemanticAnalyzer
     anonymous_string_count: usize,
-    pub used_builtins: HashSet<StringId>,
 }
 
 impl Default for CodeGen {
     /// Creates a new `CodeGen` with default settings.
     fn default() -> Self {
-        Self::new()
+        Self::new(SemanticAnalyzer::new()) // Initialize with a default SemanticAnalyzer
     }
 }
 
@@ -136,7 +135,7 @@ impl CodeGen {
             static_local_variables: &mut self.static_local_variables,
             structs: &self.structs,
             unions: &self.unions,
-            enum_constants: &self.enum_constants,
+            enum_constants: &self.semantic_analyzer.enum_constants, // Access via owned SemanticAnalyzer
             module: &mut self.module,
             loop_context: Vec::new(),
             current_block_state: BlockState::Empty,
@@ -213,7 +212,7 @@ impl CodeGen {
         Ok(())
     }
     /// Creates a new `CodeGen`.
-    pub fn new() -> Self {
+    pub fn new(semantic_analyzer: SemanticAnalyzer) -> Self {
         let mut flag_builder = settings::builder();
         flag_builder.set("use_colocated_libcalls", "false").unwrap();
         flag_builder.set("is_pic", "false").unwrap();
@@ -238,9 +237,8 @@ impl CodeGen {
             signatures: HashMap::new(),
             structs: HashMap::new(),
             unions: HashMap::new(),
-            enum_constants: HashMap::new(),
+            semantic_analyzer, // Initialize with the passed-in SemanticAnalyzer
             anonymous_string_count: 0,
-            used_builtins: HashSet::new(),
         }
     }
 
@@ -256,10 +254,9 @@ impl CodeGen {
     pub fn compile(
         mut self,
         typed_unit: TypedTranslationUnit,
-        symbol_table: &SemanticSymbolTable,
     ) -> Result<Vec<u8>, CodegenError> {
-        for name in &self.used_builtins {
-            let symbol = symbol_table.lookup(name).unwrap();
+        for name in &self.semantic_analyzer.used_builtins { // Access via owned SemanticAnalyzer
+            let symbol = self.semantic_analyzer.symbol_table.lookup(name).unwrap();
             let mut sig = self.module.make_signature();
             if let TypeKind::Function {
                 return_type,

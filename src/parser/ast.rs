@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::SourceSpan;
 use crate::parser::string_interner::StringId;
-use crate::types::{TypeId, TypeKind, TypeSpec, TypeSpecKind, TypeQualifiers, StorageClass, TypeKeywordMask};
+use crate::types::{DeclId, TypeId, TypeKind, TypeSpec, TypeSpecKind, TypeQual, StorageClass, TypeKeywordMask};
 use thin_vec::ThinVec;
 
 /// Type alias for initializer lists.
@@ -26,6 +26,7 @@ pub struct RecordFieldDecl {
 /// Struct/Union declaration node
 #[derive(Debug, Clone, PartialEq)]
 pub struct RecordDecl {
+    pub id: Option<DeclId>, // New field for anonymous structs/unions
     pub name: Option<StringId>,             // None = anonymous
     pub fields: ThinVec<RecordFieldDecl>,   // empty if forward declaration
     pub span: SourceSpan,
@@ -42,8 +43,9 @@ pub struct EnumMember {
 /// Enum declaration
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumDecl {
-    pub name: Option<StringId>,
-    pub members: ThinVec<EnumMember>,
+    pub id: Option<DeclId>, // New field for anonymous enums
+    pub name: Option<StringId>,        // None = anonymous
+    pub members: ThinVec<EnumMember>,  // empty if forward declaration
     pub span: SourceSpan,
 }
 
@@ -67,9 +69,23 @@ pub enum Decl {
     Struct(RecordDecl),
     Union(RecordDecl),
     Enum(EnumDecl),
-    Typedef(StringId, TypeSpec),
+    Typedef { name: StringId, ty: TypeSpec, id: Option<DeclId> },
     StaticAssert(Box<Expr>, StringId),
     VarGroup(TypeSpec, ThinVec<Declarator>),
+}
+
+impl Decl {
+    pub fn get_id(&self) -> Option<DeclId> {
+        match self {
+            Decl::Func(_) => None, // Functions don't have a DeclId in this context
+            Decl::Struct(rec) => rec.id,
+            Decl::Union(rec) => rec.id,
+            Decl::Enum(en) => en.id,
+            Decl::Typedef { id, .. } => *id,
+            Decl::StaticAssert(_, _) => None, // StaticAsserts don't have a DeclId
+            Decl::VarGroup(_, _) => None, // VarGroups don't have a DeclId
+        }
+    }
 }
 
 /// Represents the initializer of a `for` loop.

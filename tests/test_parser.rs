@@ -157,7 +157,7 @@ macro_rules! assert_type_spec {
                 $type_keyword,
                 ty.kind
             );
-            assert_eq!(ty.storage, $storage);
+            assert_eq!(ty.storage(), $storage);
         } else {
             panic!("Expected Declaration");
         }
@@ -177,8 +177,8 @@ macro_rules! assert_type_spec {
                 $type_keyword,
                 ty.kind
             );
-            assert_eq!(ty.storage, $storage);
-            assert_eq!(ty.qualifiers, $qualifiers);
+            assert_eq!(ty.storage(), $storage);
+            assert_eq!(ty.qualifiers(), $qualifiers);
         } else {
             panic!("Expected Declaration");
         }
@@ -246,8 +246,8 @@ fn parse_c_body(input: &str) -> ThinVec<Stmt> {
 mod tests {
     use super::parse_c_code;
     use crate::parse_c_body;
-    use cendol::parser::ast::{Decl, Declarator, Expr, FuncDecl, Initializer, Stmt};
-    use cendol::types::{TypeKeywordMask as TypeKeyword, TypeSpecKind, StorageClass, TypeQualifiers};
+    use cendol::parser::ast::{Decl, Expr, FuncDecl, Stmt};
+    use cendol::types::{TypeKeywordMask as TypeKeyword, TypeSpecKind, StorageClass, TypeQual};
 
     #[test]
     fn test_return_stmt() {
@@ -341,21 +341,21 @@ mod tests {
             assert_eq!(declarators[0].name.unwrap().as_str(), "x");
             assert_eq!(declarators[0].pointer_depth, 0);
             assert!(
-                matches!(ty.kind, TypeSpecKind::Builtin(ref k) if *k == TypeKeyword::INT.bits())
+                matches!(ty.kind, TypeSpecKind::Builtin(ref k) if *k == TypeKeyword::INT)
             );
 
             // Check second declarator: int *p
             assert_eq!(declarators[1].name.unwrap().as_str(), "p");
             assert_eq!(declarators[1].pointer_depth, 1);
             assert!(
-                matches!(ty.kind, TypeSpecKind::Builtin(ref k) if *k == TypeKeyword::INT.bits())
+                matches!(ty.kind, TypeSpecKind::Builtin(ref k) if *k == TypeKeyword::INT)
             );
 
             // Check third declarator: int **pp
             assert_eq!(declarators[2].name.unwrap().as_str(), "pp");
             assert_eq!(declarators[2].pointer_depth, 2);
             assert!(
-                matches!(ty.kind, TypeSpecKind::Builtin(ref k) if *k == TypeKeyword::INT.bits())
+                matches!(ty.kind, TypeSpecKind::Builtin(ref k) if *k == TypeKeyword::INT)
             );
         } else {
             panic!("Expected a declaration statement");
@@ -556,7 +556,7 @@ mod tests {
             println!("stmt[{}]: {:?}", i, stmt);
         }
         if let Stmt::Declaration(Decl::VarGroup(ty, declarators)) = &stmts[0] {
-            assert!(ty.alignas.is_some());
+            assert!(ty.align_expr.is_some());
             assert_eq!(declarators[0].name.unwrap().as_str(), "x");
         } else {
             panic!("Expected Declaration");
@@ -676,52 +676,52 @@ mod tests {
     #[test]
     fn test_var_declaration() {
         // simple builtin with single keyword
-        assert_type_spec!("_Bool x;", TypeKeyword::BOOL.bits());
-        assert_type_spec!("char x;", TypeKeyword::CHAR.bits());
-        assert_type_spec!("short x;", TypeKeyword::SHORT.bits());
-        assert_type_spec!("int x;", TypeKeyword::INT.bits());
-        assert_type_spec!("long x;", TypeKeyword::LONG.bits());
-        assert_type_spec!("float x;", TypeKeyword::FLOAT.bits());
-        assert_type_spec!("double x;", TypeKeyword::DOUBLE.bits());
+        assert_type_spec!("_Bool x;", TypeKeyword::BOOL);
+        assert_type_spec!("char x;", TypeKeyword::CHAR);
+        assert_type_spec!("short x;", TypeKeyword::SHORT);
+        assert_type_spec!("int x;", TypeKeyword::INT);
+        assert_type_spec!("long x;", TypeKeyword::LONG);
+        assert_type_spec!("float x;", TypeKeyword::FLOAT);
+        assert_type_spec!("double x;", TypeKeyword::DOUBLE);
 
         // builtin with double keyword
         assert_type_spec!(
             "long unsigned x;",
-            TypeKeyword::UNSIGNED.bits() | TypeKeyword::LONG.bits()
+            TypeKeyword::UNSIGNED | TypeKeyword::LONG
         );
         assert_type_spec!(
             "unsigned long x;",
-            TypeKeyword::UNSIGNED.bits() | TypeKeyword::LONG.bits()
+            TypeKeyword::UNSIGNED | TypeKeyword::LONG
         );
         assert_type_spec!(
             "long int x;",
-            TypeKeyword::INT.bits() | TypeKeyword::LONG.bits()
+            TypeKeyword::INT | TypeKeyword::LONG
         );
         assert_type_spec!(
             "int long x;",
-            TypeKeyword::INT.bits() | TypeKeyword::LONG.bits()
+            TypeKeyword::INT | TypeKeyword::LONG
         );
 
         // builtin with triple keyword
         assert_type_spec!(
             "long long unsigned x;",
-            TypeKeyword::UNSIGNED.bits() | TypeKeyword::LONGLONG.bits()
+            TypeKeyword::UNSIGNED | TypeKeyword::LONGLONG
         );
         assert_type_spec!(
             "long unsigned long x;",
-            TypeKeyword::UNSIGNED.bits() | TypeKeyword::LONGLONG.bits()
+            TypeKeyword::UNSIGNED | TypeKeyword::LONGLONG
         );
         assert_type_spec!(
             "unsigned long long x;",
-            TypeKeyword::UNSIGNED.bits() | TypeKeyword::LONGLONG.bits()
+            TypeKeyword::UNSIGNED | TypeKeyword::LONGLONG
         );
 
         // modifier
-        assert_type_spec!("static int x;", TypeKeyword::INT.bits(), StorageClass::Static);
+        assert_type_spec!("static int x;", TypeKeyword::INT, StorageClass::Static);
 
-        assert_type_spec!("const int x;", TypeKeyword::INT.bits(), StorageClass::None, TypeQualifiers::CONST);
-        assert_type_spec!("volatile int x;", TypeKeyword::INT.bits(), StorageClass::None, TypeQualifiers::VOLATILE);
-        assert_type_spec!("restrict int x;", TypeKeyword::INT.bits(), StorageClass::None, TypeQualifiers::RESTRICT);
+        assert_type_spec!("const int x;", TypeKeyword::INT, StorageClass::Auto, TypeQual::CONST);
+        assert_type_spec!("volatile int x;", TypeKeyword::INT, StorageClass::Auto, TypeQual::VOLATILE);
+        assert_type_spec!("restrict int x;", TypeKeyword::INT, StorageClass::Auto, TypeQual::RESTRICT);
 
         // enum
         {
@@ -742,7 +742,7 @@ mod tests {
         // multi declaration with pointer and array
         assert_type_spec!(
             "int a, *b, **c, d[10], e[10][20], *f[10], (*ptr_to_arr)[5];",
-            TypeKeyword::INT.bits(),
+            TypeKeyword::INT,
             [
                 ("a", 0, 0),
                 ("b", 1, 0),
@@ -757,7 +757,7 @@ mod tests {
         // function pointer declarator not supported for now
         // assert_type_spec!(
         //     "int (*func_ptr)(int, char);",
-        //     TypeKeyword::INT.bits(),
+        //     TypeKeyword::INT,
         //     [("func_ptr", 1, 0)]
         // );
     }

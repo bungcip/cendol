@@ -340,7 +340,10 @@ fn type_spec_to_string(ts: &TypeSpec) -> String {
         s.push_str("volatile ");
     }
     match &ts.kind {
-        TypeSpecKind::Builtin(mask) => write!(s, "Builtin({:?})", mask).unwrap(),
+        TypeSpecKind::Builtin(mask) => {
+            let builtin_name = builtin_mask_to_name(*mask);
+            s.push_str(&builtin_name);
+        },
         TypeSpecKind::Struct(id) => write!(s, "struct {}", id.as_str()).unwrap(),
         TypeSpecKind::Union(id) => write!(s, "union {}", id.as_str()).unwrap(),
         TypeSpecKind::Enum(id) => write!(s, "enum {}", id.as_str()).unwrap(),
@@ -355,4 +358,99 @@ fn type_spec_to_string(ts: &TypeSpec) -> String {
         write!(s, "[{:?}]", size).unwrap();
     }
     s
+}
+
+fn builtin_mask_to_name(mask: u16) -> String {
+    use crate::types::TypeKeywordMask;
+    
+    // Handle compound types by checking for common combinations first
+    let has_unsigned = mask & TypeKeywordMask::UNSIGNED.bits() != 0;
+    let has_signed = mask & TypeKeywordMask::SIGNED.bits() != 0;
+    let has_void = mask & TypeKeywordMask::VOID.bits() != 0;
+    let has_bool = mask & TypeKeywordMask::BOOL.bits() != 0;
+    let has_char = mask & TypeKeywordMask::CHAR.bits() != 0;
+    let has_short = mask & TypeKeywordMask::SHORT.bits() != 0;
+    let has_int = mask & TypeKeywordMask::INT.bits() != 0;
+    let has_long = mask & TypeKeywordMask::LONG.bits() != 0;
+    let has_longlong = mask & TypeKeywordMask::LONGLONG.bits() != 0;
+    let has_float = mask & TypeKeywordMask::FLOAT.bits() != 0;
+    let has_double = mask & TypeKeywordMask::DOUBLE.bits() != 0;
+    let has_complex = mask & TypeKeywordMask::COMPLEX.bits() != 0;
+    let has_imaginary = mask & TypeKeywordMask::IMAGINARY.bits() != 0;
+    let has_atomic = mask & TypeKeywordMask::ATOMIC.bits() != 0;
+    
+    // Check for single-bit masks first (most common case)
+    if mask.count_ones() == 1 {
+        return match mask {
+            mask if mask == TypeKeywordMask::VOID.bits() => "void".to_string(),
+            mask if mask == TypeKeywordMask::BOOL.bits() => "_Bool".to_string(),
+            mask if mask == TypeKeywordMask::CHAR.bits() => "char".to_string(),
+            mask if mask == TypeKeywordMask::SHORT.bits() => "short".to_string(),
+            mask if mask == TypeKeywordMask::INT.bits() => "int".to_string(),
+            mask if mask == TypeKeywordMask::LONG.bits() => "long".to_string(),
+            mask if mask == TypeKeywordMask::LONGLONG.bits() => "long long".to_string(),
+            mask if mask == TypeKeywordMask::FLOAT.bits() => "float".to_string(),
+            mask if mask == TypeKeywordMask::DOUBLE.bits() => "double".to_string(),
+            mask if mask == TypeKeywordMask::SIGNED.bits() => "signed".to_string(),
+            mask if mask == TypeKeywordMask::UNSIGNED.bits() => "unsigned".to_string(),
+            mask if mask == TypeKeywordMask::COMPLEX.bits() => "_Complex".to_string(),
+            mask if mask == TypeKeywordMask::IMAGINARY.bits() => "_Imaginary".to_string(),
+            mask if mask == TypeKeywordMask::ATOMIC.bits() => "_Atomic".to_string(),
+            _ => format!("Builtin({})", mask),
+        };
+    }
+    
+    // Handle compound types - build the type name step by step
+    let mut parts = Vec::new();
+    
+    // Add sign modifier first
+    if has_unsigned {
+        parts.push("unsigned");
+    } else if has_signed {
+        parts.push("signed");
+    }
+    
+    // Add type specifier
+    if has_void {
+        parts.push("void");
+    } else if has_bool {
+        parts.push("_Bool");
+    } else if has_char {
+        parts.push("char");
+    } else if has_short {
+        parts.push("short");
+        if has_int {
+            parts.push("int");
+        }
+    } else if has_longlong {
+        parts.push("long long");
+    } else if has_long {
+        parts.push("long");
+        if has_int {
+            parts.push("int");
+        }
+    } else if has_int {
+        parts.push("int");
+    } else if has_float {
+        parts.push("float");
+    } else if has_double {
+        parts.push("double");
+    }
+    
+    // Add complex/imaginary modifiers
+    if has_complex {
+        parts.push("_Complex");
+    }
+    if has_imaginary {
+        parts.push("_Imaginary");
+    }
+    if has_atomic {
+        parts.push("_Atomic");
+    }
+    
+    if parts.is_empty() {
+        format!("Builtin({})", mask)
+    } else {
+        parts.join(" ")
+    }
 }

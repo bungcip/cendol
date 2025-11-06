@@ -891,6 +891,40 @@ impl SemanticAnalyzer {
                         }
                         TypedStmt::Declaration(typed_declarators)
                     }
+                    Decl::Enum(enum_decl) => {
+                        if !enum_decl.members.is_empty() {
+                            let mut next_value = 0;
+                            let mut variants = ThinVec::new();
+                            for member in &enum_decl.members {
+                                let val = if let Some(ref expr) = member.value {
+                                    if let Expr::Number(num, _) = **expr {
+                                        num
+                                    } else {
+                                        self.err(SemanticError::InvalidEnumInitializer(member.name), member.span);
+                                        -1
+                                    }
+                                } else {
+                                    next_value
+                                };
+                                variants.push(crate::types::EnumVariant {
+                                    name: member.name,
+                                    value: val,
+                                });
+                                next_value = val + 1;
+                            }
+                            let ty = TypeKind::Enum {
+                                name: enum_decl.id,
+                                underlying_type: TypeId::INT,
+                                variants,
+                            };
+                            let enum_ty_id = TypeId::intern(&ty);
+                            if let Some(id) = enum_decl.id {
+                                self.enum_definitions.insert(id, enum_ty_id);
+                            }
+                            self.add_enum_variants_to_constants(enum_ty_id, enum_decl.span);
+                        }
+                        TypedStmt::Empty
+                    }
                     Decl::StaticAssert(expr, message) => {
                         // Evaluate static assert within function scope
                         let typed_expr = self.check_expression(*expr.clone());

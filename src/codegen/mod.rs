@@ -3,6 +3,7 @@ use crate::parser::ast::Expr;
 use crate::semantic::typed_ast::{
     TypedExpr, TypedFunctionDecl, TypedInitializer, TypedLValue, TypedStmt, TypedTranslationUnit,
 };
+use crate::semantic::SymbolTable as SemanticSymbolTable;
 use crate::parser::string_interner::StringId;
 use crate::types::{TypeId, TypeKind};
 use cranelift::prelude::*;
@@ -71,6 +72,7 @@ pub struct CodeGen {
     unions: HashMap<StringId, TypeId>,
     pub enum_constants: HashMap<StringId, i64>,
     anonymous_string_count: usize,
+    pub used_builtins: HashSet<StringId>,
 }
 
 impl Default for CodeGen {
@@ -238,6 +240,7 @@ impl CodeGen {
             unions: HashMap::new(),
             enum_constants: HashMap::new(),
             anonymous_string_count: 0,
+            used_builtins: HashSet::new(),
         }
     }
 
@@ -250,7 +253,46 @@ impl CodeGen {
     /// # Returns
     ///
     /// A `Result` containing the compiled byte vector, or a `CodegenError` if compilation fails.
-    pub fn compile(mut self, typed_unit: TypedTranslationUnit) -> Result<Vec<u8>, CodegenError> {
+    pub fn compile(
+        mut self,
+        typed_unit: TypedTranslationUnit,
+        symbol_table: &SemanticSymbolTable,
+    ) -> Result<Vec<u8>, CodegenError> {
+        for name in &self.used_builtins {
+            let symbol = symbol_table.lookup(name).unwrap();
+            let mut sig = self.module.make_signature();
+            if let TypeKind::Function {
+                return_type,
+                params,
+                is_variadic,
+            } = symbol.ty.kind()
+            {
+                if return_type.is_record() {
+                    sig.params.push(AbiParam::new(types::I64));
+                }
+                for param in params {
+                    let abi_param = match param.kind() {
+                        TypeKind::Float => AbiParam::new(types::F32),
+                        TypeKind::Double => AbiParam::new(types::F64),
+                        _ => AbiParam::new(types::I64),
+                    };
+                    sig.params.push(abi_param);
+                }
+                let return_abi_param = match return_type.kind() {
+                    TypeKind::Float => AbiParam::new(types::F32),
+                    TypeKind::Double => AbiParam::new(types::F64),
+                    _ => AbiParam::new(types::I64),
+                };
+                sig.returns.push(return_abi_param);
+
+                let id = self
+                    .module
+                    .declare_function(name.as_str(), Linkage::Import, &sig)?;
+                self.functions
+                    .insert(*name, (id, return_type, is_variadic));
+                self.signatures.insert(*name, sig);
+            }
+        }
         // First, declare all functions
         for global in &typed_unit.globals {
             if let crate::semantic::typed_ast::TypedGlobalDecl::Function(function) = global {

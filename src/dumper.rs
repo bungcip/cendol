@@ -195,7 +195,46 @@ impl Dumper {
                          }
                          self.indent.truncate(self.indent.len() - child_indent.len());
                      }
-                     _ => self.dump_decl(decl, is_last),
+                     Decl::Struct(s) => {
+                         let name = s.name.map_or("".to_string(), |id| id.as_str().to_string());
+                         println!("StructDecl '{}'", name);
+                     }
+                     Decl::Union(u) => {
+                         let name = u.name.map_or("".to_string(), |id| id.as_str().to_string());
+                         println!("UnionDecl '{}'", name);
+                     }
+                     Decl::Enum(e) => {
+                         let name = e.name.map_or("".to_string(), |id| id.as_str().to_string());
+                         println!("EnumDecl '{}'", name);
+                         if !e.members.is_empty() {
+                             self.indent.push_str(child_indent);
+                             for (i, member) in e.members.iter().enumerate() {
+                                 let is_last = i == e.members.len() - 1;
+                                 let prefix = if is_last { "└─ " } else { "├─ " };
+                                 print!("{}{}", self.indent, prefix);
+                                 let member_name = member.name.as_str();
+                                 let value = member.value.as_ref().map_or("".to_string(), |v| {
+                                     if let Expr::Number(n, _) = **v {
+                                         format!(" = {}", n)
+                                     } else {
+                                         " = <expr>".to_string()
+                                     }
+                                 });
+                                 println!("EnumMember '{}'{}", member_name, value);
+                             }
+                             self.indent.truncate(self.indent.len() - child_indent.len());
+                         }
+                     }
+                     Decl::Typedef { name, ty, .. } => {
+                         println!("Typedef '{}' '{}'", name.as_str(), type_spec_to_string(ty));
+                     }
+                     Decl::StaticAssert(expr, message) => {
+                         println!("StaticAssert '{}'", message.as_str());
+                         self.indent.push_str(child_indent);
+                         self.dump_expr(expr, true);
+                         self.indent.truncate(self.indent.len() - child_indent.len());
+                     }
+                     Decl::Func(_) => unreachable!(),
                  }
             }
             Stmt::Empty => {

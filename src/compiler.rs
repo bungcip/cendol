@@ -191,8 +191,8 @@ impl Compiler {
                 return Err(CompilerError::new(vec![report]));
             }
         };
-        let ast = match parser.parse() {
-            Ok(ast) => ast,
+        let (ast, scopes) = match parser.parse() {
+            Ok(result) => result,
             Err(err) => {
                 let span = err.span();
                 let msg = err.to_string();
@@ -210,7 +210,7 @@ impl Compiler {
         // Perform semantic analysis
         let semantic_analyzer_instance = SemanticAnalyzer::with_builtins();
         let SemaOutput(typed_ast, warnings, semantic_analyzer) =
-            match semantic_analyzer_instance.analyze(ast) {
+            match semantic_analyzer_instance.analyze(ast, scopes) {
                 Ok(output) => {
                     self.logger.log("Semantic analysis passed");
                     output

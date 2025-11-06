@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::path::PathBuf;
 
 /// A unique identifier for a file.
@@ -50,7 +50,7 @@ impl SourceLocation {
 }
 
 /// Represents a span in a source file.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
 pub struct SourceSpan {
     pub start: SourceLocation,
     pub end: SourceLocation,
@@ -76,6 +76,12 @@ impl SourceSpan {
 
     pub fn end_offset(&self) -> u32 {
         self.end.offset()
+    }
+}
+
+impl Debug for SourceSpan {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SourceSpan(fileid={}, offset={}..{})", self.start.file_id().0, self.start.offset(), self.end.offset())
     }
 }
 
@@ -141,4 +147,26 @@ impl SourceMap {
             )
         })
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::source::{SourceLocation, FileId};
+
+    #[test]
+    fn source_loc_equality(){
+        // checking if implementation is right
+        let a = SourceLocation::new(FileId(0), 10);
+        let b = SourceLocation::new(FileId(0), 10);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn source_loc_offset(){
+        // checking if implementation is right
+        let a = SourceLocation::new(FileId(0), 10);
+        assert_eq!(a.file_id(), FileId(0));
+        assert_eq!(a.offset(), 10);
+    }
+
 }

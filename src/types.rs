@@ -590,6 +590,32 @@ mod tests {
         assert_eq!(iptr.index(), TypeId::INT_PTR.index());
     }
 
+    
+    #[test]
+    fn typeid_equality(){
+        let a = TypeId::intern(&TypeKind::Function {
+            return_type: TypeId::VOID_PTR,
+            params: vec![
+                TypeId::pointer_to(TypeId::VOID),
+                TypeId::const_pointer_to(TypeId::VOID),
+                TypeId::INT,
+            ],
+            is_variadic: false,
+        });
+        let b = TypeId::intern(&TypeKind::Function {
+            return_type: TypeId::VOID_PTR,
+            params: vec![
+                TypeId::pointer_to(TypeId::VOID),
+                TypeId::const_pointer_to(TypeId::VOID),
+                TypeId::INT,
+            ],
+            is_variadic: false,
+        });
+
+        /// must has same id
+        assert_eq!(a, b);
+    }
+
     #[test]
     fn test_flags_in_struct() {
         let name = StringInterner::intern("Martabak");

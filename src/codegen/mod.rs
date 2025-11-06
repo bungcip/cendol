@@ -141,7 +141,6 @@ impl CodeGen {
             current_block_state: BlockState::Empty,
             signatures: &self.signatures,
             label_blocks: HashMap::new(),
-            current_function_name: function_def.name,
             anonymous_string_count: &mut self.anonymous_string_count,
         };
 

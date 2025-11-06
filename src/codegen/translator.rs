@@ -44,12 +44,12 @@ pub(crate) struct FunctionTranslator<'a, 'b> {
     pub(crate) current_block_state: BlockState,
     pub(crate) signatures: &'b HashMap<StringId, Signature>,
     pub(crate) label_blocks: HashMap<StringId, Block>,
-    pub(crate) current_function_name: StringId,
     pub(crate) anonymous_string_count: &'b mut usize,
 }
 
 impl<'a, 'b> FunctionTranslator<'a, 'b> {
-    pub(crate) fn get_real_type_from_type_id(
+    /// get canonical TypeKind of some TypeId
+    pub(crate) fn resolve_type_id(
         ty: TypeId,
         structs: &HashMap<DeclId, TypeId>,
         unions: &HashMap<DeclId, TypeId>,
@@ -70,14 +70,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         eprintln!("Struct definition not found for name: {}", name.to_usize_index());
                     }
                 }
-                // Reconstruct Type from TypeKind - convert ParamType to TypedParameter
-                let typed_members = members
-                    .iter()
-                    .map(|p| ParamType {
-                        ty: p.ty,
-                        name: p.name,
-                    })
-                    .collect();
+                let typed_members = members;
                 Ok(TypeKind::Struct(Some(name), typed_members))
             }
             crate::types::TypeKind::Struct(None, _) => {
@@ -90,13 +83,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                         return Ok(union_def.kind());
                     }
                 }
-                let typed_members = members
-                    .iter()
-                    .map(|p| ParamType {
-                        ty: p.ty,
-                        name: p.name,
-                    })
-                    .collect();
+                let typed_members = members;
                 Ok(TypeKind::Union(Some(name), typed_members))
             }
             crate::types::TypeKind::Union(None, _) => {
@@ -113,8 +100,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 variants,
             }),
             crate::types::TypeKind::Pointer(base_ty) => {
-                let base_type = base_ty.canonicalize();
-                Ok(TypeKind::Pointer(base_ty))
+                let canon_ty = base_ty.canonicalize();
+                Ok(TypeKind::Pointer(canon_ty))
             }
             crate::types::TypeKind::Array(elem_ty, size) => {
                 Ok(TypeKind::Array(elem_ty, size))
@@ -135,7 +122,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             crate::types::TypeKind::Double => Ok(TypeKind::Double),
             crate::types::TypeKind::Function { .. } => Ok(TypeKind::Void), // Placeholder
             crate::types::TypeKind::Typedef(_, base) => {
-                Self::get_real_type_from_type_id(base, structs, unions)
+                Self::resolve_type_id(base, structs, unions)
             }
         }
     }
@@ -321,7 +308,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         ty: TypeId,
         member_name: &StringId,
     ) -> Option<(u32, TypeId)> {
-        let resolved_ty = Self::get_real_type_from_type_id(ty, self.structs, self.unions).unwrap();
+        let resolved_ty = Self::resolve_type_id(ty, self.structs, self.unions).unwrap();
         let members = match &resolved_ty {
             TypeKind::Struct(_, members) => members,
             TypeKind::Union(_, members) => {
@@ -336,7 +323,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         let mut current_offset = 0;
         let empty_name = StringInterner::intern("");
 
-        if let TypeKind::Struct(..) = resolved_ty {
+        if ty.is_record() {
             for member in members {
                 let member_alignment = self.get_type_alignment(member.ty);
                 current_offset = (current_offset + member_alignment - 1) & !(member_alignment - 1);
@@ -1442,7 +1429,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 Ok((addr, result_ty))
             }
             TypedExpr::PreIncrement(expr, _, ty) => {
-                let (addr, expr_ty) = self.translate_lvalue(*expr)?;
+                let (addr, _) = self.translate_lvalue(*expr)?;
                 let val = self.load_lvalue(addr, TypeId::INT);
                 let amount = self.get_increment_amount(TypeId::INT);
                 let inc = self.builder.ins().iconst(types::I64, amount);
@@ -1451,7 +1438,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 Ok((new_val, ty))
             }
             TypedExpr::PreDecrement(expr, _, ty) => {
-                let (addr, expr_ty) = self.translate_lvalue(*expr)?;
+                let (addr, _) = self.translate_lvalue(*expr)?;
                 let val = self.load_lvalue(addr, TypeId::INT);
                 let amount = self.get_increment_amount(TypeId::INT);
                 let dec = self.builder.ins().iconst(types::I64, amount);
@@ -1460,7 +1447,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 Ok((new_val, ty))
             }
             TypedExpr::PostIncrement(expr, _, ty) => {
-                let (addr, expr_ty) = self.translate_lvalue(*expr)?;
+                let (addr, _) = self.translate_lvalue(*expr)?;
                 let val = self.load_lvalue(addr, TypeId::INT);
                 let amount = self.get_increment_amount(TypeId::INT);
                 let inc = self.builder.ins().iconst(types::I64, amount);
@@ -1469,7 +1456,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                 Ok((val, ty))
             }
             TypedExpr::PostDecrement(expr, _, ty) => {
-                let (addr, expr_ty) = self.translate_lvalue(*expr)?;
+                let (addr, _) = self.translate_lvalue(*expr)?;
                 let val = self.load_lvalue(addr, TypeId::INT);
                 let amount = self.get_increment_amount(TypeId::INT);
                 let dec = self.builder.ins().iconst(types::I64, amount);
@@ -1737,7 +1724,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                                                     if member.name == *name {
                                                         member_index = i;
                                                         current_ty =
-                                                            Self::get_real_type_from_type_id(
+                                                            Self::resolve_type_id(
                                                                 member.ty,
                                                                 &self.structs,
                                                                 &self.unions,
@@ -1792,7 +1779,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
                                 }
                                 (
                                     offset,
-                                    Self::get_real_type_from_type_id(
+                                    Self::resolve_type_id(
                                         members[member_index].ty,
                                         &self.structs,
                                         &self.unions,

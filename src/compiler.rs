@@ -39,9 +39,14 @@ pub struct Cli {
     /// Verbose output
     #[arg(short, long)]
     pub verbose: bool,
+
+    /// Dump untyped AST
+    #[arg(long)]
+    pub dump_untyped_ast: bool,
 }
 
 use crate::codegen::CodeGen;
+use crate::dumper::Dumper;
 use crate::logger::Logger;
 use crate::parser::Parser;
 use crate::parser::error::ParserError;
@@ -192,6 +197,12 @@ impl Compiler {
                 return Err(CompilerError::new(vec![report]));
             }
         };
+
+        if self.cli.dump_untyped_ast {
+            let mut dumper = Dumper::new();
+            dumper.dump(&ast);
+            return Ok(());
+        }
 
         // Perform semantic analysis
         let semantic_analyzer = SemanticAnalyzer::with_builtins();

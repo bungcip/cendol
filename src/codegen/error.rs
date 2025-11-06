@@ -48,3 +48,9 @@ pub enum CodegenError {
     #[error("Continue outside loop")]
     ContinueOutsideLoop,
 }
+
+impl From<CraneliftModuleError> for CodegenError {
+    fn from(err: CraneliftModuleError) -> Self {
+        CodegenError::Module(Box::new(err))
+    }
+}

@@ -8,6 +8,9 @@ pub enum SemanticError {
     #[error("Undefined function `{0}` called")]
     UndefinedFunction(StringId),
 
+    #[error("Called object `{0}` is not a function")]
+    NotAFunction(StringId),
+
     /// An undefined variable was referenced.
     #[error("Undefined variable `{0}`")]
     UndefinedVariable(StringId),

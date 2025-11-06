@@ -150,21 +150,69 @@ impl SemanticAnalyzer {
 
     /// Adds built-in functions to the symbol table.
     fn add_builtin_functions(&mut self) {
-        // Add common C built-in functions that might be called
         let builtins = vec![
-            ("printf", TypeId::INT),
-            ("malloc", TypeId::VOID_PTR),
-            ("free", TypeId::VOID),
-            ("scanf", TypeId::INT),
-            ("strcmp", TypeId::INT),
-            ("memcpy", TypeId::VOID_PTR),
+            (
+                "printf",
+                TypeId::intern(&TypeKind::Function {
+                    return_type: TypeId::INT,
+                    params: vec![TypeId::const_pointer_to(TypeId::CHAR)],
+                    is_variadic: true,
+                }),
+            ),
+            (
+                "malloc",
+                TypeId::intern(&TypeKind::Function {
+                    return_type: TypeId::VOID_PTR,
+                    params: vec![TypeId::INT],
+                    is_variadic: false,
+                }),
+            ),
+            (
+                "free",
+                TypeId::intern(&TypeKind::Function {
+                    return_type: TypeId::VOID,
+                    params: vec![TypeId::VOID_PTR],
+                    is_variadic: false,
+                }),
+            ),
+            (
+                "scanf",
+                TypeId::intern(&TypeKind::Function {
+                    return_type: TypeId::INT,
+                    params: vec![TypeId::const_pointer_to(TypeId::CHAR)],
+                    is_variadic: true,
+                }),
+            ),
+            (
+                "strcmp",
+                TypeId::intern(&TypeKind::Function {
+                    return_type: TypeId::INT,
+                    params: vec![
+                        TypeId::const_pointer_to(TypeId::CHAR),
+                        TypeId::const_pointer_to(TypeId::CHAR),
+                    ],
+                    is_variadic: false,
+                }),
+            ),
+            (
+                "memcpy",
+                TypeId::intern(&TypeKind::Function {
+                    return_type: TypeId::VOID_PTR,
+                    params: vec![
+                        TypeId::pointer_to(TypeId::VOID),
+                        TypeId::const_pointer_to(TypeId::VOID),
+                        TypeId::INT,
+                    ],
+                    is_variadic: false,
+                }),
+            ),
         ];
 
-        for (name, return_type) in builtins {
+        for (name, ty) in builtins {
             self.symbol_table.insert(
                 StringInterner::intern(name),
                 Symbol {
-                    ty: return_type,
+                    ty,
                     is_function: true,
                     span: SourceSpan::default(),
                     is_builtin: true,
@@ -244,6 +292,7 @@ impl SemanticAnalyzer {
                     return_type,
                     name,
                     params,
+                    is_variadic,
                     ..
                 }) => {
                     let span = return_type.span();
@@ -252,7 +301,16 @@ impl SemanticAnalyzer {
                             self.err(SemanticError::FunctionRedeclaration(*name), span);
                         }
                     } else {
-                        let ty = type_spec_to_type_id(&return_type, span);
+                        let return_ty = type_spec_to_type_id(return_type, span);
+                        let param_types = params
+                            .iter()
+                            .map(|p| type_spec_to_type_id(&p.type_spec, p.span))
+                            .collect();
+                        let ty = TypeId::intern(&TypeKind::Function {
+                            return_type: return_ty,
+                            params: param_types,
+                            is_variadic: *is_variadic,
+                        });
                         self.symbol_table.insert(
                             *name,
                             Symbol {
@@ -435,38 +493,37 @@ impl SemanticAnalyzer {
 
     /// Second pass: check all statements and expressions for semantic correctness and build typed AST.
     fn check_program(&mut self, program: TranslationUnit) -> TypedTranslationUnit {
-        let mut typed_functions = Vec::new();
+        let mut typed_globals = ThinVec::new();
         for global in &program.globals {
-            if let Decl::Func(func_decl) = global {
-                // let function = Function {
-                //     return_type: func_decl.return_type.clone(),
-                //     name: func_decl.name,
-                //     params: func_decl
-                //         .params
-                //         .iter()
-                //         .map(|p| Parameter {
-                //             ty: TypeSpec {
-                //                 kind: TypeSpecKind::Builtin(vec![TypeKeyword::Int]), // Placeholder, need proper conversion
-                //                 pointer: 0,
-                //                 qualifiers: vec![],
-                //                 array_sizes: vec![],
-                //             },
-                //             name: p.name,
-                //             span: p.span,
-                //         })
-                //         .collect(),
-                //     body: func_decl.body.clone().unwrap(),
-                //     is_inline: func_decl.is_inline,
-                //     is_variadic: func_decl.is_variadic,
-                //     is_noreturn: func_decl.is_noreturn,
-                // };
-                self.current_function = Some(func_decl.name);
-                typed_functions.push(self.check_function(func_decl.clone()));
+            match global {
+                Decl::Func(func_decl) => {
+                    self.current_function = Some(func_decl.name);
+                    let typed_func = self.check_function(func_decl.clone());
+                    typed_globals.push(typed_ast::TypedGlobalDecl::Function(typed_func));
+                }
+                Decl::VarGroup(type_spec, declarators) => {
+                    let mut typed_vars = ThinVec::new();
+                    for declarator in declarators {
+                        let name = declarator.name.unwrap();
+                        let ty = self.apply_declarator(type_spec, declarator);
+                        let typed_init = declarator.init.as_ref().map(|init| {
+                            self.convert_initializer_to_typed(Initializer::Expr(init.clone()))
+                        });
+
+                        typed_vars.push(TypedVarDecl {
+                            name,
+                            ty,
+                            initializer: typed_init,
+                        });
+                    }
+                    typed_globals.push(typed_ast::TypedGlobalDecl::Variable(typed_vars));
+                }
+                _ => {}
             }
         }
 
         TypedTranslationUnit {
-            functions: typed_functions.into(),
+            globals: typed_globals,
         }
     }
 
@@ -1036,19 +1093,23 @@ impl SemanticAnalyzer {
             }
             Expr::Char(c, span) => TypedExpr::Char(c, span, TypeId::intern(&TypeKind::Char)),
             Expr::Call(name, args, location) => {
-                if let Some(symbol) = self.symbol_table.lookup(&name) {
+                let return_ty = if let Some(symbol) = self.symbol_table.lookup(&name) {
                     if symbol.is_builtin {
                         self.used_builtins.insert(name);
                     }
+                    if !symbol.is_function {
+                        self.err(SemanticError::NotAFunction(name), location);
+                        TypeId::INT // dummy
+                    } else if let TypeKind::Function { return_type, .. } = symbol.ty.kind() {
+                        return_type
+                    } else {
+                        TypeId::INT // dummy
+                    }
                 } else {
                     self.err(SemanticError::UndefinedFunction(name), location);
-                }
+                    TypeId::INT // dummy
+                };
 
-                let return_ty = self
-                    .symbol_table
-                    .lookup(&name)
-                    .map(|s| s.ty)
-                    .unwrap_or(TypeId::INT);
                 let typed_args = args
                     .into_iter()
                     .map(|arg| self.check_expression(arg))

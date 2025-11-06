@@ -1,6 +1,8 @@
 use crate::codegen::error::CodegenError;
 use crate::parser::ast::Expr;
-use crate::semantic::typed_ast::{TypedExpr, TypedInitializer, TypedLValue, TypedStmt, TypedTranslationUnit};
+use crate::semantic::typed_ast::{
+    TypedExpr, TypedFunctionDecl, TypedInitializer, TypedLValue, TypedStmt, TypedTranslationUnit,
+};
 use crate::parser::string_interner::StringId;
 use crate::types::{TypeId, TypeKind};
 use cranelift::prelude::*;
@@ -110,6 +112,104 @@ fn collect_label_names(stmt: &TypedStmt, set: &mut HashSet<StringId>) {
 }
 
 impl CodeGen {
+    fn translate_function(
+        &mut self,
+        function_def: TypedFunctionDecl,
+    ) -> Result<(), CodegenError> {
+        let (id, _, _) = self.functions.get(&function_def.name).unwrap();
+        let sig = self.signatures.get(&function_def.name).unwrap().clone();
+        let mut func = Function::new();
+        func.signature = sig;
+
+        let mut builder = FunctionBuilder::new(&mut func, &mut self.ctx);
+        let entry_block = builder.create_block();
+        builder.append_block_params_for_function_params(entry_block);
+        builder.switch_to_block(entry_block);
+
+        let mut translator = FunctionTranslator {
+            builder,
+            functions: &self.functions,
+            variables: &mut self.variables,
+            global_variables: &self.global_variables,
+            static_local_variables: &mut self.static_local_variables,
+            structs: &self.structs,
+            unions: &self.unions,
+            enum_constants: &self.enum_constants,
+            module: &mut self.module,
+            loop_context: Vec::new(),
+            current_block_state: BlockState::Empty,
+            signatures: &self.signatures,
+            label_blocks: HashMap::new(),
+            current_function_name: function_def.name,
+            anonymous_string_count: &mut self.anonymous_string_count,
+        };
+
+        // Add parameters to variables and store block params
+        let block_params = translator.builder.block_params(entry_block).to_vec();
+        for (i, param) in function_def.params.iter().enumerate() {
+            let size = translator.get_type_size(param.ty);
+            let slot = translator
+                .builder
+                .create_sized_stack_slot(cranelift::prelude::StackSlotData::new(
+                    cranelift::prelude::StackSlotKind::ExplicitSlot,
+                    size,
+                    0,
+                ));
+            translator
+                .variables
+                .insert(param.name, (None, Some(slot), param.ty));
+            // Store the block parameter into the stack slot
+            translator
+                .builder
+                .ins()
+                .stack_store(block_params[i], slot, 0);
+        }
+
+        // Predeclare label blocks
+        let mut label_names = HashSet::new();
+        for s in &function_def.body {
+            collect_label_names(s, &mut label_names);
+        }
+
+        for name in label_names {
+            let b = translator.builder.create_block();
+            translator.label_blocks.insert(name, b);
+            // eprintln!("predeclared label: {} -> {:?}", name, b);
+        }
+
+        let mut terminated = false;
+        for stmt in function_def.body {
+            if terminated {
+                // Only process labels after termination
+                if let TypedStmt::Label(..) = stmt {
+                    let _ = translator.translate_typed_stmt(stmt)?;
+                }
+                continue;
+            }
+            let term = translator.translate_typed_stmt(stmt)?;
+            terminated = term;
+        }
+
+        // Seal all label blocks that were created but not yet sealed
+        // Note: seal_all_blocks() will handle sealing all blocks, including labels
+        // So we don't need to manually seal them here
+
+        // Seal the entry block as well
+        translator.builder.seal_block(entry_block);
+
+        if !terminated {
+            let zero = translator.builder.ins().iconst(types::I64, 0);
+            translator.builder.ins().return_(&[zero]);
+        }
+        translator.builder.seal_all_blocks();
+        translator.builder.finalize();
+
+        let mut context = self.module.make_context();
+        context.func = func;
+        self.module.define_function(*id, &mut context).unwrap();
+
+        Ok(())
+    }
     /// Creates a new `CodeGen`.
     pub fn new() -> Self {
         let mut flag_builder = settings::builder();
@@ -151,46 +251,24 @@ impl CodeGen {
     ///
     /// A `Result` containing the compiled byte vector, or a `CodegenError` if compilation fails.
     pub fn compile(mut self, typed_unit: TypedTranslationUnit) -> Result<Vec<u8>, CodegenError> {
-
         // First, declare all functions
-        // for global in &typed_unit.globals {
-        //     if let TypedStmt::FunctionDeclaration { name, ty, params, is_variadic, .. } = global {
-        //         let mut sig = self.module.make_signature();
-        //         for param in params {
-        //             let abi_param = match param.ty.kind() {
-        //                 crate::types::TypeKind::Float => AbiParam::new(types::F32),
-        //                 crate::types::TypeKind::Double => AbiParam::new(types::F64),
-        //                 _ => AbiParam::new(types::I64),
-        //             };
-        //             sig.params.push(abi_param);
-        //         }
-        //         sig.returns.push(AbiParam::new(types::I64));
-        //         let id = self
-        //             .module
-        //             .declare_function(name.as_str(), Linkage::Import, &sig)
-        //             .unwrap();
-        //         self.functions.insert(*name, (id, *ty, *is_variadic));
-        //         self.signatures.insert(*name, sig);
-        //     }
-        // }
-        for function in &typed_unit.functions {
-            let mut sig = self.module.make_signature();
-            if function.return_type.is_record() {
-                sig.params.push(AbiParam::new(types::I64));
-            }
-            for param in &function.params {
-                let abi_param = match param.ty.kind() {
-                    crate::types::TypeKind::Float => AbiParam::new(types::F32),
-                    crate::types::TypeKind::Double => AbiParam::new(types::F64),
-                    _ => AbiParam::new(types::I64),
-                };
-                sig.params.push(abi_param);
-            }
-            sig.returns.push(AbiParam::new(types::I64));
+        for global in &typed_unit.globals {
+            if let crate::semantic::typed_ast::TypedGlobalDecl::Function(function) = global {
+                let mut sig = self.module.make_signature();
+                if function.return_type.is_record() {
+                    sig.params.push(AbiParam::new(types::I64));
+                }
+                for param in &function.params {
+                    let abi_param = match param.ty.kind() {
+                        crate::types::TypeKind::Float => AbiParam::new(types::F32),
+                        crate::types::TypeKind::Double => AbiParam::new(types::F64),
+                        _ => AbiParam::new(types::I64),
+                    };
+                    sig.params.push(abi_param);
+                }
+                sig.returns.push(AbiParam::new(types::I64));
 
-            let id = self
-                .module
-                .declare_function(
+                let id = self.module.declare_function(
                     function.name.as_str(),
                     if function.name.as_str() == "main" {
                         Linkage::Export
@@ -198,116 +276,37 @@ impl CodeGen {
                         Linkage::Local
                     },
                     &sig,
-                )
-                .unwrap();
-            self.functions.insert(
-                function.name,
-                (id, function.return_type.clone(), function.is_variadic),
-            );
-            self.signatures.insert(function.name, sig);
-        }
-
-        // Collect enum constants from global declarations
-        // Note: Enum constants are now collected from function bodies only
-
-        // Collect enum constants from function bodies
-        for function in &typed_unit.functions {
-            self.collect_enum_constants_from_stmts(&function.body)?;
-        }
-
-        // Then, define all functions
-        for function_def in typed_unit.functions {
-            let (id, _, _) = self.functions.get(&function_def.name).unwrap();
-            let sig = self.signatures.get(&function_def.name).unwrap().clone();
-            let mut func = Function::new();
-            func.signature = sig;
-
-            let mut builder = FunctionBuilder::new(&mut func, &mut self.ctx);
-            let entry_block = builder.create_block();
-            builder.append_block_params_for_function_params(entry_block);
-            builder.switch_to_block(entry_block);
-
-            let mut translator = FunctionTranslator {
-                builder,
-                functions: &self.functions,
-                variables: &mut self.variables,
-                global_variables: &self.global_variables,
-                static_local_variables: &mut self.static_local_variables,
-                structs: &self.structs,
-                unions: &self.unions,
-                enum_constants: &self.enum_constants,
-                module: &mut self.module,
-                loop_context: Vec::new(),
-                current_block_state: BlockState::Empty,
-                signatures: &self.signatures,
-                label_blocks: HashMap::new(),
-                current_function_name: function_def.name,
-                anonymous_string_count: &mut self.anonymous_string_count,
-            };
-
-            // Add parameters to variables and store block params
-            let block_params = translator.builder.block_params(entry_block).to_vec();
-            for (i, param) in function_def.params.iter().enumerate() {
-                let size = translator.get_type_size(param.ty);
-                let slot = translator.builder.create_sized_stack_slot(
-                    cranelift::prelude::StackSlotData::new(
-                        cranelift::prelude::StackSlotKind::ExplicitSlot,
-                        size,
-                        0,
-                    ),
+                )?;
+                self.functions.insert(
+                    function.name,
+                    (id, function.return_type.clone(), function.is_variadic),
                 );
-                translator
-                    .variables
-                    .insert(param.name, (None, Some(slot), param.ty));
-                // Store the block parameter into the stack slot
-                translator
-                    .builder
-                    .ins()
-                    .stack_store(block_params[i], slot, 0);
+                self.signatures.insert(function.name, sig);
             }
+        }
 
-            // Predeclare label blocks
-            let mut label_names = HashSet::new();
-            for s in &function_def.body {
-                collect_label_names(s, &mut label_names);
-            }
-
-            for name in label_names {
-                let b = translator.builder.create_block();
-                translator.label_blocks.insert(name, b);
-                // eprintln!("predeclared label: {} -> {:?}", name, b);
-            }
-
-            let mut terminated = false;
-            for stmt in function_def.body {
-                if terminated {
-                    // Only process labels after termination
-                    if let TypedStmt::Label(..) = stmt {
-                        let _ = translator.translate_typed_stmt(stmt)?;
-                    }
-                    continue;
+        // Then, define all functions and global variables
+        for global in typed_unit.globals {
+            match global {
+                crate::semantic::typed_ast::TypedGlobalDecl::Function(function) => {
+                    self.translate_function(function)?;
                 }
-                let term = translator.translate_typed_stmt(stmt)?;
-                terminated = term;
+                crate::semantic::typed_ast::TypedGlobalDecl::Variable(variables) => {
+                    for variable in variables {
+                        let name = variable.name;
+                        let ty = variable.ty;
+                        let initializer = variable.initializer;
+
+                        let data_id = self.module.declare_data(
+                            &name.to_string(),
+                            cranelift_module::Linkage::Local,
+                            true,
+                            false,
+                        )?;
+                        self.global_variables.insert(name, (data_id, ty));
+                    }
+                }
             }
-
-            // Seal all label blocks that were created but not yet sealed
-            // Note: seal_all_blocks() will handle sealing all blocks, including labels
-            // So we don't need to manually seal them here
-
-            // Seal the entry block as well
-            translator.builder.seal_block(entry_block);
-
-            if !terminated {
-                let zero = translator.builder.ins().iconst(types::I64, 0);
-                translator.builder.ins().return_(&[zero]);
-            }
-            translator.builder.seal_all_blocks();
-            translator.builder.finalize();
-
-            let mut context = self.module.make_context();
-            context.func = func;
-            self.module.define_function(*id, &mut context).unwrap();
         }
 
         let product = self.module.finish();

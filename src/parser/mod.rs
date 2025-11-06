@@ -167,10 +167,13 @@ impl Parser {
 
     /// Peeks if the current token sequence is a type name without consuming tokens.
     fn is_type_name(&mut self) -> bool {
-        let original_pos = self.position;
-        let result = self.parse_type().is_ok();
-        self.position = original_pos;
-        result
+        match self.current_kind() {
+            Ok(TokenKind::Keyword(k)) => matches!(k,
+                KeywordKind::Void | KeywordKind::Char | KeywordKind::Short | KeywordKind::Int | KeywordKind::Long | KeywordKind::Float | KeywordKind::Double | KeywordKind::Signed | KeywordKind::Unsigned | KeywordKind::Bool | KeywordKind::Struct | KeywordKind::Union | KeywordKind::Enum | KeywordKind::Const | KeywordKind::Volatile | KeywordKind::Restrict | KeywordKind::Complex | KeywordKind::Imaginary | KeywordKind::Typedef | KeywordKind::Extern | KeywordKind::Static | KeywordKind::Auto | KeywordKind::Register | KeywordKind::Inline | KeywordKind::_Noreturn | KeywordKind::_Alignas
+            ),
+            Ok(TokenKind::Identifier(id)) => self.typedefs.contains_key(&id),
+            _ => false,
+        }
     }
 
     /// Expects and consumes an optional identifier, returning its name if present.
@@ -197,7 +200,7 @@ impl Parser {
 
     /// Parses a type specifier (e.g., `int`, `struct S`, `long long`).
     /// Returns (TypeSpec, Option<Decl>) where Decl contains the full declaration for structs/unions/enums.
-    fn parse_type_specifier(&mut self, is_global: bool) -> Result<(crate::types::TypeSpec, Option<Decl>), ParserError> {
+    fn parse_type_specifier(&mut self) -> Result<(crate::types::TypeSpec, Option<Decl>), ParserError> {
         let mut modifiers: Vec<Box<dyn FnOnce(&mut crate::types::TypeSpec)>> = Vec::new();
         loop {
             let token = self.current_token()?.clone();
@@ -292,7 +295,7 @@ impl Parser {
         // now parse the base
         let token = self.current_token()?.clone();
         let (mut type_spec, decl) = if let TokenKind::Keyword(k) = token.kind {
-            self.parse_type_specifier_kind(k, token.span, is_global)?
+            self.parse_type_specifier_kind(k, token.span)?
         } else if let TokenKind::Identifier(id) = token.kind {
             let typedef_entry = self.typedefs.get(&id).cloned();
             if let Some((_, decl_id)) = typedef_entry {
@@ -316,7 +319,6 @@ impl Parser {
         &mut self,
         k: KeywordKind,
         span: SourceSpan,
-        is_global: bool,
     ) -> Result<(crate::types::TypeSpec, Option<Decl>), ParserError> {
         self.eat()?; // consume the keyword
         match k {
@@ -481,11 +483,7 @@ impl Parser {
                         rec.id = Some(DeclId::new(index));
                     }
                     let type_spec = Parser::new_typespec(TypeSpecKind::Struct(DeclId::new(index)));
-                    let struct_decl_opt = if is_global {
-                        if added { None } else { Some(struct_decl) }
-                    } else {
-                        Some(struct_decl)
-                    };
+                    let struct_decl_opt = if added { None } else { Some(struct_decl) };
                     Ok((type_spec, struct_decl_opt))
                 } else {
                     // Forward declaration
@@ -537,11 +535,7 @@ impl Parser {
                         rec.id = Some(DeclId::new(index));
                     }
                     let type_spec = Parser::new_typespec(TypeSpecKind::Union(DeclId::new(index)));
-                    let union_decl_opt = if is_global {
-                        if added { None } else { Some(union_decl) }
-                    } else {
-                        Some(union_decl)
-                    };
+                    let union_decl_opt = if added { None } else { Some(union_decl) };
                     Ok((type_spec, union_decl_opt))
                 } else {
                     // Forward declaration
@@ -597,11 +591,7 @@ impl Parser {
                         en.id = Some(DeclId::new(index));
                     }
                     let type_spec = Parser::new_typespec(TypeSpecKind::Enum(DeclId::new(index)));
-                    let enum_decl_opt = if is_global {
-                        if added { None } else { Some(enum_decl) }
-                    } else {
-                        Some(enum_decl)
-                    };
+                    let enum_decl_opt = if added { None } else { Some(enum_decl) };
                     Ok((type_spec, enum_decl_opt))
                 } else {
                     // Forward declaration
@@ -693,7 +683,7 @@ impl Parser {
 
     /// Parses a single struct/union field
     fn parse_struct_field(&mut self) -> Result<RecordFieldDecl, ParserError> {
-        let (base_type_spec, _) = self.parse_type_specifier(false)?;
+        let (base_type_spec, _) = self.parse_type_specifier()?;
         let (base, declarator) = self.parse_declarator_suffix(base_type_spec)?;
         let ty = self.apply_declarator_modifiers(&base, &declarator);
         self.expect_punct(TokenKind::Semicolon)?;
@@ -875,7 +865,7 @@ impl Parser {
 
     /// Parses a type. This function now orchestrates `parse_type_specifier` and `parse_declarator_suffix`.
     fn parse_type(&mut self) -> Result<crate::types::TypeSpec, ParserError> {
-        let (base_type_spec, _) = self.parse_type_specifier(false)?;
+        let (base_type_spec, _) = self.parse_type_specifier()?;
         // For abstract declarators (e.g., `int *`), there might not be an identifier immediately.
         // This function is primarily for parsing a full type with a declarator.
         // If we are just parsing a type for a cast or sizeof, we might not have an identifier.
@@ -1342,7 +1332,7 @@ impl Parser {
             }
         }
         if self.current_kind()? == TokenKind::Keyword(KeywordKind::Static) {
-            let (base_type_spec, _) = self.parse_type_specifier(false)?;
+            let (base_type_spec, _) = self.parse_type_specifier()?;
             if self.eat_token(&TokenKind::Semicolon)? {
                 return Ok(Stmt::Empty);
             }
@@ -1360,7 +1350,7 @@ impl Parser {
         }
 
         if self.is_type_name() && self.peek()? != TokenKind::LeftParen {
-            let (base_type_spec, decl_opt) = self.parse_type_specifier(false)?;
+            let (base_type_spec, decl_opt) = self.parse_type_specifier()?;
             if let Some(decl) = decl_opt {
                 // Type definition
                 self.expect_punct(TokenKind::Semicolon)?;
@@ -1395,7 +1385,7 @@ impl Parser {
             }
             return Ok(Stmt::Block(stmts));
         } else if self.eat_token(&TokenKind::Keyword(KeywordKind::Static))? {
-            let (base_type_spec, _) = self.parse_type_specifier(false)?;
+            let (base_type_spec, _) = self.parse_type_specifier()?;
             if self.eat_token(&TokenKind::Semicolon)? {
                 return Ok(Stmt::Empty);
             }
@@ -1413,7 +1403,7 @@ impl Parser {
         }
 
         if self.is_type_name() && self.peek()? != TokenKind::LeftParen {
-            let (base_type_spec, _) = self.parse_type_specifier(false)?;
+            let (base_type_spec, _) = self.parse_type_specifier()?;
             if self.eat_token(&TokenKind::Semicolon)? {
                 return Ok(Stmt::Empty);
             }
@@ -1461,7 +1451,7 @@ impl Parser {
                     if p.eat_token(&TokenKind::Keyword(KeywordKind::Static))? {
                         return Err(ParserError::UnexpectedToken(p.current_token()?));
                     }
-                    let result = if let Ok((type_spec, _)) = p.parse_type_specifier(false) {
+                    let result = if let Ok((type_spec, _)) = p.parse_type_specifier() {
                         let id = p.expect_name()?;
                         let initializer = p.parse_initializer_expr()?;
                         ForInit::Declaration(type_spec, id, initializer)
@@ -1518,7 +1508,7 @@ impl Parser {
                 return Ok(Stmt::DoWhile(Box::new(body), Box::new(cond)));
             } else if k == KeywordKind::Typedef {
                 self.eat()?;
-                let (base_type_spec, _) = self.parse_type_specifier(true)?;
+                let (base_type_spec, _) = self.parse_type_specifier()?;
                 loop {
                     let (base, declarator) = self.parse_declarator_suffix(base_type_spec)?;
                     let type_spec = self.apply_declarator_modifiers(&base, &declarator);
@@ -1562,7 +1552,7 @@ impl Parser {
 
     /// Parses a function signature.
     fn parse_function_signature(&mut self) -> Result<FuncSignature, ParserError> {
-        let (base_type_spec, _) = self.parse_type_specifier(true)?;
+        let (base_type_spec, _) = self.parse_type_specifier()?;
 
         // Parse declarator suffix (including pointers, arrays, and function name)
         let (base, declarator) = self.parse_declarator_suffix(base_type_spec)?;
@@ -1579,7 +1569,7 @@ impl Parser {
                 self.expect_punct(TokenKind::RightParen)?;
                 break;
             }
-            let (base_type, _) = self.parse_type_specifier(false)?;
+            let (base_type, _) = self.parse_type_specifier()?;
             let declarator = self.parse_declarator(base_type.clone())?;
             let ty = self.apply_declarator_modifiers(&base_type, &declarator);
             params.push(ast::ParamDecl {
@@ -1739,7 +1729,7 @@ impl Parser {
         self.position = pos;
 
         if self.eat_token(&TokenKind::Keyword(KeywordKind::Typedef))? {
-            let (base_type_spec, _) = self.parse_type_specifier(true)?;
+            let (base_type_spec, _) = self.parse_type_specifier()?;
             let mut typedefs = ThinVec::new();
             loop {
                 let (base, declarator) = self.parse_declarator_suffix(base_type_spec)?;
@@ -1765,7 +1755,7 @@ impl Parser {
         }
 
         let is_static = self.eat_token(&TokenKind::Keyword(KeywordKind::Static))?;
-        let (base_type_spec, decl_opt) = self.parse_type_specifier(true)?;
+        let (base_type_spec, decl_opt) = self.parse_type_specifier()?;
         if self.eat_token(&TokenKind::Semicolon)? {
             // Forward declaration or empty declaration
             if let Some(decl) = decl_opt {

@@ -199,7 +199,7 @@ fn parse_c_code(input: &str) -> Result<TranslationUnit, Box<dyn std::error::Erro
     let pp = create_preprocessor();
     let tokens = pp.preprocess_virtual_file(&mut fm, input, config::TEST_FILENAME)?;
     let mut parser = Parser::new(tokens)?;
-    let ast = parser.parse()?;
+    let (ast, _) = parser.parse()?;
     Ok(ast)
 }
 
@@ -222,7 +222,7 @@ fn parse_c_body(input: &str) -> ThinVec<Stmt> {
         .preprocess_virtual_file(&mut fm, &input, config::TEST_FILENAME)
         .unwrap();
     let mut parser = Parser::new(tokens).unwrap();
-    let ast = parser.parse().unwrap();
+    let (ast, _) = parser.parse().unwrap();
     let func_def = ast
         .globals
         .iter()

@@ -20,8 +20,8 @@ use crate::semantic::typed_ast::{TypedExpr, TypedLValue, TypedStmt, TypedInitial
 /// Represents a symbol in the symbol table.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-struct Symbol {
-    ty: TypeId,
+pub struct Symbol {
+    pub ty: TypeId,
     is_function: bool,
     span: SourceSpan,
     is_builtin: bool,
@@ -61,7 +61,7 @@ impl SymbolTable {
     }
 
     /// Looks up a symbol starting from the current scope and moving outwards.
-    fn lookup(&self, name: &StringId) -> Option<&Symbol> {
+    pub fn lookup(&self, name: &StringId) -> Option<&Symbol> {
         for scope in self.scopes.iter().rev() {
             if let Some(symbol) = scope.get(name) {
                 return Some(symbol);
@@ -86,7 +86,7 @@ pub struct SemaOutput(
 
 /// A semantic analyzer that checks for semantic errors in the AST.
 pub struct SemanticAnalyzer {
-    symbol_table: SymbolTable,
+    pub symbol_table: SymbolTable,
     pub enum_constants: HashMap<StringId, i64>,
     struct_definitions: HashMap<StringId, TypeId>,
     union_definitions: HashMap<StringId, TypeId>,
@@ -94,7 +94,7 @@ pub struct SemanticAnalyzer {
     labels: HashMap<StringId, SourceSpan>,
     errors: Vec<(SemanticError, SourceSpan)>, // (error, file, span)
     warnings: Vec<(SemanticError, SourceSpan)>, // (warning, file, span)
-    used_builtins: HashSet<StringId>,
+    pub used_builtins: HashSet<StringId>,
     used_variables: HashSet<StringId>,
     in_loop: bool,
     in_switch: bool,

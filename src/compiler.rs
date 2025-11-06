@@ -225,7 +225,8 @@ impl Compiler {
 
         let mut codegen = CodeGen::new();
         codegen.enum_constants = semantic_analyzer.enum_constants;
-        let object_bytes = match codegen.compile(typed_ast) {
+        codegen.used_builtins = semantic_analyzer.used_builtins;
+        let object_bytes = match codegen.compile(typed_ast, &semantic_analyzer.symbol_table) {
             Ok(bytes) => bytes,
             Err(err) => {
                 let report = Report::err(err.to_string(), None);

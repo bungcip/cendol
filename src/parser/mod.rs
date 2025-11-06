@@ -1484,8 +1484,14 @@ impl Parser {
     pub fn parse_translation_unit(&mut self) -> Result<TranslationUnit, ParserError> {
         let mut globals = ThinVec::new();
         while self.current_token()?.kind != TokenKind::Eof {
-            let global = self.parse_external_declaration()?;
+            let (global, additional_decls) = self.parse_external_declaration()?;
             globals.push(global);
+            
+            // If there are additional declarations (like variables after enum definition),
+            // add them to the globals list
+            if let Some(additional) = additional_decls {
+                globals.extend(additional.into_iter());
+            }
         }
         Ok(TranslationUnit { globals })
     }
@@ -1495,7 +1501,7 @@ impl Parser {
     /// # Returns
     ///
     /// A `Result` containing the parsed `Decl`, or a `ParserError` if parsing fails.
-    fn parse_external_declaration(&mut self) -> Result<Decl, ParserError> {
+    fn parse_external_declaration(&mut self) -> Result<(Decl, Option<ThinVec<Decl>>), ParserError> {
         // Try to parse function specifiers first
         let mut is_inline = false;
         let mut is_noreturn = false;
@@ -1512,29 +1518,32 @@ impl Parser {
         let pos = self.position;
         if let Ok(signature) = self.parse_function_signature() {
             if self.eat_token(&TokenKind::Semicolon)? {
-                return Ok(Decl::Func(FuncDecl {
-                    name: signature.1,
-                    return_type: signature.0,
-                    params: signature.2
-                        .into_iter()
-                        .map(|p| ast::ParamDecl {
-                            name: p.name,
-                            type_spec: p.type_spec,
-                            span: p.span,
-                        })
-                        .collect(),
-                    body: None,
-                    is_variadic: signature.5,
-                    is_inline: signature.3 || is_inline,
-                    is_noreturn: signature.4 || is_noreturn,
-                    span: SourceSpan::default(),
-                }));
+                return Ok((
+                    Decl::Func(FuncDecl {
+                        name: signature.1,
+                        return_type: signature.0,
+                        params: signature.2
+                            .into_iter()
+                            .map(|p| ast::ParamDecl {
+                                name: p.name,
+                                type_spec: p.type_spec,
+                                span: p.span,
+                            })
+                            .collect(),
+                        body: None,
+                        is_variadic: signature.5,
+                        is_inline: signature.3 || is_inline,
+                        is_noreturn: signature.4 || is_noreturn,
+                        span: SourceSpan::default(),
+                    }),
+                    None
+                ));
             } else {
                 // Function definition with body
                 let mut func = self.parse_function(signature)?;
                 func.is_inline |= is_inline;
                 func.is_noreturn |= is_noreturn;
-                return Ok(Decl::Func(func));
+                return Ok((Decl::Func(func), None));
             }
         }
         self.position = pos;
@@ -1555,12 +1564,12 @@ impl Parser {
             self.expect_punct(TokenKind::Semicolon)?;
             // Return the first typedef, or handle multiple
             if let Some((name, type_spec)) = typedefs.into_iter().next() {
-                return Ok(Decl::Typedef(name, type_spec));
+                return Ok((Decl::Typedef(name, type_spec), None));
             } else {
-                return Ok(Decl::Typedef(
+                return Ok((Decl::Typedef(
                     crate::parser::string_interner::StringInterner::empty_id(),
                     base_type_spec,
-                ));
+                ), None));
             }
         }
 
@@ -1569,11 +1578,11 @@ impl Parser {
         if self.eat_token(&TokenKind::Semicolon)? {
             // Forward declaration or empty declaration
             if let Some(decl) = decl_opt {
-                return Ok(decl);
+                return Ok((decl, None));
             } else {
                 // Empty variable declaration, but we need to create a Decl
                 // For now, we'll create a dummy VarGroup
-                return Ok(Decl::VarGroup(base_type_spec, thin_vec::ThinVec::new()));
+                return Ok((Decl::VarGroup(base_type_spec, thin_vec::ThinVec::new()), None));
             }
         }
         let mut declarators = ThinVec::new();
@@ -1586,7 +1595,16 @@ impl Parser {
             }
         }
         self.expect_punct(TokenKind::Semicolon)?;
-        Ok(Decl::VarGroup(base_type_spec, declarators))
+        
+        // Handle the case where we have an enum/struct/union definition followed by variables
+        // In this case, we need to return both the definition and the variable declarations
+        if let Some(definition_decl) = decl_opt {
+            // We have both a definition and declarators, so we need to return both
+            let var_group = Decl::VarGroup(base_type_spec, declarators);
+            return Ok((definition_decl, Some(ThinVec::from([var_group]))));
+        }
+        
+        Ok((Decl::VarGroup(base_type_spec, declarators), None))
     }
 
     pub fn parse(&mut self) -> Result<TranslationUnit, ParserError> {

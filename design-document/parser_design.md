@@ -93,117 +93,50 @@ pub static OPERATOR_PRECEDENCE: &[(TokenKind, BindingPower)] = &[
 ];
 ```
 
-### Expression Parsing (Pratt Parser)
+### Expression Parsing (Simplified Pratt Parser)
 
 ```rust
-/// Expression parser with Pratt algorithm
-pub struct ExpressionParser<'arena, 'src> {
-    parser: &'arena mut Parser<'arena, 'src>,
-    min_binding_power: BindingPower,
-}
-
 /// Pratt parser result
 pub enum ParseExprOutput<'arena> {
     /// Successful expression parse
     Expression(&'arena Node<'arena>),
     /// Incomplete expression (e.g., just identifier in declaration context)
-    Incomplete(Token<'src>),
+    Incomplete(Token<'static>),
     /// No expression (e.g., semicolon)
     Empty,
 }
 
-/// Nud (null denotation) function for prefix operators
-type NudFn<'arena, 'src> = fn(
-    parser: &mut Parser<'arena, 'src>,
-    token: Token<'src>,
-    binding_power: BindingPower,
-) -> Result<NodeKind<'arena>, ParseError>;
+/// Simplified Pratt parser implementation using match statements instead of function pointers
+pub struct PrattParser;
 
-/// Led (left denotation) function for infix/postfix operators
-type LedFn<'arena, 'src> = fn(
-    parser: &mut Parser<'arena, 'src>,
-    left: &'arena Node<'arena>,
-    token: Token<'src>,
-    binding_power: BindingPower,
-) -> Result<NodeKind<'arena>, ParseError>;
+impl PrattParser {
+    /// Get binding power for a token kind
+    pub fn get_binding_power(token_kind: TokenKind) -> Option<BindingPower> {
+        match token_kind {
+            TokenKind::Ellipsis => Some(BindingPower::COMMA),
+            TokenKind::Assign | TokenKind::PlusAssign | TokenKind::MinusAssign |
+            TokenKind::StarAssign | TokenKind::DivAssign | TokenKind::ModAssign |
+            TokenKind::AndAssign | TokenKind::OrAssign | TokenKind::XorAssign |
+            TokenKind::LeftShiftAssign | TokenKind::RightShiftAssign => Some(BindingPower::ASSIGN),
 
-/// Pratt parser table mapping token kinds to parsing functions
-use hashbrown::HashMap;
+            TokenKind::Question | TokenKind::Colon => Some(BindingPower::TERNARY),
 
-/// Pratt parser table mapping token kinds to parsing functions
-pub struct PrattTable<'arena, 'src> {
-    nud_functions: HashMap<TokenKind, NudFn<'arena, 'src>>,
-    led_functions: HashMap<TokenKind, LedFn<'arena, 'src>>,
-    binding_powers: HashMap<TokenKind, BindingPower>,
-}
+            TokenKind::LogicOr => Some(BindingPower::LOGICAL_OR),
+            TokenKind::LogicAnd => Some(BindingPower::LOGICAL_AND),
+            TokenKind::Xor => Some(BindingPower::BITWISE_XOR),
+            TokenKind::Or => Some(BindingPower::BITWISE_OR),
+            TokenKind::And => Some(BindingPower::BITWISE_AND),
+            TokenKind::Equal | TokenKind::NotEqual => Some(BindingPower::EQUALITY),
+            TokenKind::Less | TokenKind::Greater | TokenKind::LessEqual | TokenKind::GreaterEqual => Some(BindingPower::RELATIONAL),
+            TokenKind::LeftShift | TokenKind::RightShift => Some(BindingPower::SHIFT),
+            TokenKind::Plus | TokenKind::Minus => Some(BindingPower::ADDITIVE),
+            TokenKind::Star | TokenKind::Slash | TokenKind::Percent => Some(BindingPower::MULTIPLICATIVE),
 
-impl<'arena, 'src> PrattTable<'arena, 'src> {
-    pub fn new() -> Self {
-        Self {
-            nud_functions: Self::init_nud_functions(),
-            led_functions: Self::init_led_functions(),
-            binding_powers: Self::init_binding_powers(),
+            TokenKind::Increment | TokenKind::Decrement | TokenKind::LeftParen |
+            TokenKind::LeftBracket | TokenKind::Dot | TokenKind::Arrow => Some(BindingPower::POSTFIX),
+
+            _ => None,
         }
-    }
-    
-    fn init_nud_functions() -> HashMap<TokenKind, NudFn<'arena, 'src>> {
-        let mut table = HashMap::new();
-        table.insert(TokenKind::Identifier, Self::nud_identifier);
-        table.insert(TokenKind::IntegerConstant, Self::nud_literal);
-        table.insert(TokenKind::FloatConstant, Self::nud_literal);
-        table.insert(TokenKind::CharacterConstant, Self::nud_literal);
-        table.insert(TokenKind::StringLiteral, Self::nud_literal);
-        table.insert(TokenKind::LeftParen, Self::nud_paren_expr);
-        table.insert(TokenKind::Sizeof, Self::nud_sizeof);
-        table.insert(TokenKind::Alignof, Self::nud_alignof);
-        table.insert(TokenKind::Generic, Self::nud_generic);
-        // Unary operators
-        table.insert(TokenKind::Plus, Self::nud_unary_op);
-        table.insert(TokenKind::Minus, Self::nud_unary_op);
-        table.insert(TokenKind::Star, Self::nud_unary_op);
-        table.insert(TokenKind::And, Self::nud_unary_op);
-        table.insert(TokenKind::Not, Self::nud_unary_op);
-        table.insert(TokenKind::BitNot, Self::nud_unary_op);
-        table.insert(TokenKind::Increment, Self::nud_unary_op);
-        table.insert(TokenKind::Decrement, Self::nud_unary_op);
-        table
-    }
-    
-    fn init_led_functions() -> HashMap<TokenKind, LedFn<'arena, 'src>> {
-        let mut table = HashMap::new();
-        // Binary operators
-        for &(token_kind, _) in OPERATOR_PRECEDENCE {
-            if let Some(bp) = Self::get_binding_power(token_kind) {
-                if bp != BindingPower::PRIMARY && bp != BindingPower::UNARY {
-                    table.insert(token_kind, Self::led_binary_op);
-                }
-            }
-        }
-        // Postfix operators
-        table.insert(TokenKind::Increment, Self::led_postfix);
-        table.insert(TokenKind::Decrement, Self::led_postfix);
-        table.insert(TokenKind::LeftParen, Self::led_function_call);
-        table.insert(TokenKind::LeftBracket, Self::led_index);
-        table.insert(TokenKind::Dot, Self::led_member_access);
-        table.insert(TokenKind::Arrow, Self::led_member_access);
-        // Conditional operator
-        table.insert(TokenKind::Question, Self::led_ternary);
-        table
-    }
-    
-    fn init_binding_powers() -> HashMap<TokenKind, BindingPower> {
-        let mut table = HashMap::new();
-        for &(token_kind, binding_power) in OPERATOR_PRECEDENCE {
-            table.insert(token_kind, binding_power);
-        }
-        table.insert(TokenKind::Increment, BindingPower::POSTFIX);
-        table.insert(TokenKind::Decrement, BindingPower::POSTFIX);
-        table.insert(TokenKind::LeftParen, BindingPower::POSTFIX);
-        table.insert(TokenKind::LeftBracket, BindingPower::POSTFIX);
-        table.insert(TokenKind::Dot, BindingPower::POSTFIX);
-        table.insert(TokenKind::Arrow, BindingPower::POSTFIX);
-        table.insert(TokenKind::Question, BindingPower::TERNARY);
-        table
     }
 }
 ```

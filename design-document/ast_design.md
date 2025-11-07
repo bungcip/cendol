@@ -237,7 +237,7 @@ pub enum NodeKind<'arena> {
     PostDecrement(&'arena Node<'arena>),
 
     Assignment(BinaryOp, &'arena Node<'arena> /* lhs */, &'arena Node<'arena> /* rhs */),
-    FunctionCall(&'arena Node<'arena> /* func */, &'arena [Node<'arena>] /* args */),
+    FunctionCall(&'arena Node<'arena> /* func */, &'arena [&'arena Node<'arena>] /* args */),
     MemberAccess(&'arena Node<'arena> /* object */, Symbol /* field */, bool /* is_arrow */),
     IndexAccess(&'arena Node<'arena> /* array */, &'arena Node<'arena> /* index */),
 

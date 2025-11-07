@@ -3,13 +3,19 @@
 ## Error Types
 
 ```rust
-/// Comprehensive error types
+/// Main compiler error enum
+#[derive(Debug, thiserror::Error)]
 pub enum CompilerError {
-    Preprocessor(PreprocessorError),
-    Lexer(LexerError),
-    Parser(ParserError),
-    Semantic(SemanticError),
-    System(SystemError),
+    #[error("Preprocessor error: {0}")]
+    Preprocessor(#[from] PreprocessorError),
+    #[error("Lexer error: {0}")]
+    Lexer(#[from] LexerError),
+    #[error("Parser error: {0}")]
+    Parser(#[from] ParserError),
+    #[error("Semantic error: {0}")]
+    Semantic(#[from] SemanticError),
+    #[error("System error: {0}")]
+    System(#[from] SystemError),
 }
 
 /// Preprocessor errors

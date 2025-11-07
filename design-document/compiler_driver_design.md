@@ -113,25 +113,25 @@ struct SemanticOptions {
 
 ## Compiler Lifecycle Management
 
-The driver will manage the compiler's lifecycle through a series of sequential phases. The general flow will be:
+The driver manages the compiler's lifecycle through sequential phases. The current implementation processes only the first input file and runs through preprocessing, lexing, parsing, semantic analysis, and AST dumping.
 
 ```mermaid
 graph TD
-    A[Start] --> B{Parse CLI Options};
-    B --> C{Initialize Compiler Context};
-    C --> D[Preprocessor Phase];
-    D --> E[Lexer Phase];
-    E --> F[Parser Phase];
-    F --> G[Semantic Analysis Phase];
-    G --> H{Generate Output?};
-    H -- Yes --> I[AST Dumper / Code Generation];
-    H -- No --> J[End];
-    I --> J;
-    J --> K[Report Errors/Warnings];
-    K --> L[Exit];
+     A[Start] --> B{Parse CLI Options};
+     B --> C{Initialize Compiler Context};
+     C --> D[Preprocessor Phase];
+     D --> E[Lexer Phase];
+     E --> F[Parser Phase];
+     F --> G[Semantic Analysis Phase];
+     G --> H{Dump AST?};
+     H -- Yes --> I[AST Dumper];
+     H -- No --> J[End];
+     I --> J;
+     J --> K[Report Errors/Warnings];
+     K --> L[Exit];
 ```
 
-Each phase will be executed, and its output will serve as the input for the subsequent phase. The driver will be responsible for passing the necessary data structures and configurations between these phases.
+The `CompilerDriver::run` method orchestrates this flow, processing only the first input file and collecting diagnostics throughout.
 
 ## Error Handling and Reporting
 
@@ -155,50 +155,37 @@ The driver will integrate with existing compiler phases by:
 - Calling their respective `run` or `process` methods, passing the input from the previous phase and the relevant configuration.
 - Collecting any errors or warnings returned by each phase.
 
-Example integration (conceptual):
+The actual implementation in `CompilerDriver::run` follows this pattern but with some differences:
 
 ```rust
-fn main() -> Result<(), Box<dyn Error>> {
-    let cli = Cli::parse();
-    let config = CompilerConfig::from_cli(&cli);
-    let mut diagnostics = Diagnostics::new();
+pub fn run(&mut self, input_files: &[PathBuf]) -> Result<(), CompilerError> {
+    // Process only first file
+    let source_content = fs::read_to_string(&input_files[0])?;
+    let source_id = SourceId::new(0);
 
-    // 1. Preprocessor Phase
-    let preprocessed_source = Preprocessor::new(&config.preprocessor_config)
-        .run(&cli.input_files[0], &mut diagnostics)?;
+    // Phase 1: Preprocessing
+    let preprocessed_source = self.run_preprocessor(source_id, &source_content)?;
 
-    // 2. Lexer Phase
-    let token_stream = Lexer::new(&config.lexer_config)
-        .run(&preprocessed_source, &mut diagnostics)?;
+    // Phase 2: Lexing
+    let tokens = self.run_lexer(source_id, &preprocessed_source)?;
 
-    // 3. Parser Phase
-    let parse_result = Parser::new(&config.parser_config)
-        .run(&token_stream, &mut diagnostics)?;
+    // Phase 3: Parsing
+    let arena = Bump::new();
+    let ast = self.run_parser(&arena, &tokens)?;
 
-    // 4. Semantic Analysis Phase
-    let semantic_result = SemanticAnalyzer::new(&config.semantic_config)
-        .run(&parse_result.ast, &parse_result.symbol_table, &mut diagnostics)?;
+    // Phase 4: Semantic Analysis
+    let semantic_output = self.run_semantic_analysis(&arena, ast)?;
 
-    // 5. Output Generation (e.g., AST Dumper)
-    if let Some(format) = &cli.dump_ast {
-        let dumper_config = DumpConfig {
-            format: OutputFormat::from_str(format)?,
-            include_symbols: true,
-            include_types: true,
-            include_locations: true,
-            max_depth: None,
-            highlight_errors: false,
-        };
-        let dumper = HumanReadableDumper::new(); // Or JsonDumper, DotDumper
-        let dumped_ast = dumper.dump_node(semantic_result.annotated_ast.unwrap(), &dumper_config);
-        println!("{}", dumped_ast);
+    // Phase 5: Output Generation
+    if let Some(format) = &self.config.dump_ast {
+        self.run_ast_dumper(&semantic_output)?;
     }
 
-    // Report all collected diagnostics
-    diagnostics.report_all();
+    // Report diagnostics
+    self.diagnostics.report_all();
 
-    if diagnostics.has_errors() {
-        Err("Compilation failed with errors.".into())
+    if self.diagnostics.has_errors() {
+        Err(CompilerError::Semantic(/* ... */))
     } else {
         Ok(())
     }

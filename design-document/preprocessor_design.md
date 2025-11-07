@@ -125,6 +125,31 @@ pub struct SourceFile {
     /// Line start offsets for efficient line/column lookup.
     pub line_starts: Vec<usize>,
 }
+
+/// Manages all source files, including the main input file and included headers.
+/// It provides a unified way to access source code content and track file information.
+pub struct SourceManager {
+    /// A map from SourceId to SourceFile, storing all loaded source files.
+    files: hashbrown::HashMap<SourceId, SourceFile>,
+    /// The next available SourceId to assign to a new file.
+    next_source_id: SourceId,
+    /// List of directories to search for include files.
+    include_paths: Vec<PathBuf>,
+    /// List of system include directories.
+    system_include_paths: Vec<PathBuf>,
+}
+
+/// Represents a single source file, holding its content and metadata.
+pub struct SourceFile {
+    /// Unique identifier for this source file.
+    pub id: SourceId,
+    /// The original path of the file.
+    pub path: PathBuf,
+    /// The full content of the source file.
+    pub content: String,
+    /// Line start offsets for efficient line/column lookup.
+    pub line_starts: Vec<usize>,
+}
 ```
 
 ### Processing Algorithm

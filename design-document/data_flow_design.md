@@ -38,9 +38,9 @@ pub struct TokenStream<'src> {
 /// Parser output
 pub struct ParseOutput<'arena> {
     pub ast: Option<&'arena Node<'arena>>,
-    pub parse_errors: Vec<ParseError>,
+    pub parse_errors: Vec<ParserError>,
     pub warnings: Vec<ParseWarning>,
-    pub symbol_table: SymbolTable,
+    pub symbol_table: SymbolTable<'arena>,
 }
 
 /// Semantic analysis output
@@ -48,6 +48,6 @@ pub struct SemanticOutput<'arena> {
     pub annotated_ast: Option<&'arena Node<'arena>>,
     pub semantic_errors: Vec<SemanticError>,
     pub warnings: Vec<SemanticWarning>,
-    pub symbol_table: SymbolTable,
-    pub type_table: TypeTable,
+    pub symbol_table: SymbolTable<'arena>,
+    pub type_table: TypeTable<'arena>,
 }

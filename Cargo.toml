@@ -1,0 +1,15 @@
+[package]
+name = "cendol"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+bumpalo = "3.16"
+hashbrown = "0.15"
+thiserror = "2.0"
+anyhow = "1.0"
+log = "0.4"
+env_logger = "0.11"
+itertools = "0.13"
+chrono = "0.4"

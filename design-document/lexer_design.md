@@ -85,3 +85,5 @@ pub struct Token<'src> {
 - **Character encoding** support (UTF-8, UTF-16, wide chars)
 - **No Trigraph or Digraph Support**: For simplicity and modern C usage, trigraphs and digraphs will not be supported.
 - **UTF-8 Only**: The lexer will assume and only support UTF-8 encoded source files.
+- **Memory prefetching hints**: Implemented for performance optimization in string interning.
+- **SIMD considerations**: Architecture-specific SIMD intrinsics included for future batch operations.

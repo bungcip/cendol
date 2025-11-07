@@ -15,16 +15,16 @@ pub struct SemanticOutput<'arena> {
     pub annotated_ast: Option<&'arena Node<'arena>>,
     pub semantic_errors: Vec<SemanticError>,
     pub warnings: Vec<SemanticWarning>,
-    pub symbol_table: SymbolTable,
-    pub type_table: TypeTable,
+    pub symbol_table: SymbolTable<'arena>,
+    pub type_table: TypeTable<'arena>,
 }
 
 use hashbrown::HashMap;
 
 /// Symbol table entry
-pub struct SymbolEntry {
+pub struct SymbolEntry<'arena> {
     pub name: Symbol,
-    pub kind: SymbolKind,
+    pub kind: SymbolKind<'arena>,
     pub type_info: Option<&'arena Type<'arena>>,
     pub storage_class: Option<StorageClass>,
     pub scope: ScopeId,

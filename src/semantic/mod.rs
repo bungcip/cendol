@@ -570,7 +570,7 @@ impl SemanticAnalyzer {
                         }
                         Decl::StaticAssert(expr, message) => {
                             // Evaluate static assert - should be a constant expression
-                            let typed_expr = self.check_expression(*expr.clone());
+                let typed_expr = self.check_expression(*expr.clone(), None);
 
                             // Check if it's a constant expression and if it evaluates to non-zero
                             if let TypedExpr::Number(val, _, _) = typed_expr {
@@ -622,7 +622,7 @@ impl SemanticAnalyzer {
                         let name = declarator.name.unwrap();
                         let ty = self.apply_declarator(type_spec, declarator);
                         let typed_init = declarator.init.as_ref().map(|init| {
-                            self.convert_initializer_to_typed(Initializer::Expr(init.clone()))
+                            self.convert_initializer_to_typed(Initializer::Expr(init.clone()), Some(ty))
                         });
 
                         typed_vars.push(TypedVarDecl {
@@ -764,15 +764,15 @@ impl SemanticAnalyzer {
     fn check_statement(&mut self, stmt: Stmt) -> TypedStmt {
         match stmt {
             Stmt::Expr(expr) => {
-                let typed_expr = self.check_expression(*expr);
+                let typed_expr = self.check_expression(*expr, None);
                 TypedStmt::Expr(typed_expr)
             }
             Stmt::Return(expr) => {
-                let typed_expr = self.check_expression(*expr);
+                let typed_expr = self.check_expression(*expr, None);
                 TypedStmt::Return(typed_expr)
             }
             Stmt::If(cond, then, otherwise) => {
-                let typed_cond = self.check_expression(*cond);
+                let typed_cond = self.check_expression(*cond, None);
                 let typed_then = Box::new(self.check_statement(*then));
                 let typed_otherwise = otherwise.map(|o| Box::new(self.check_statement(*o)));
                 TypedStmt::If(typed_cond, typed_then, typed_otherwise)
@@ -780,7 +780,7 @@ impl SemanticAnalyzer {
             Stmt::While(cond, body) => {
                 let prev_in_loop = self.in_loop;
                 self.in_loop = true;
-                let typed_cond = self.check_expression(*cond);
+                let typed_cond = self.check_expression(*cond, None);
                 let typed_body = Box::new(self.check_statement(*body));
                 self.in_loop = prev_in_loop;
                 TypedStmt::While(typed_cond, typed_body)
@@ -808,20 +808,20 @@ impl SemanticAnalyzer {
                             );
                         }
                         let typed_initializer =
-                            initializer.map(|init| self.convert_initializer_to_typed(init));
+                            initializer.map(|init| self.convert_initializer_to_typed(init, None));
                         let ty = self.resolve_typespec(&type_spec, None, SourceSpan::default());
                         TypedForInit::Declaration(ty, name, typed_initializer)
                     }
                     ForInit::Expr(expr) => {
-                        let typed_expr = self.check_expression(expr);
+                        let typed_expr = self.check_expression(expr, None);
                         TypedForInit::Expr(typed_expr)
                     }
                 });
 
                 let prev_in_loop = self.in_loop;
                 self.in_loop = true;
-                let typed_cond = cond.map(|c| self.check_expression(*c));
-                let typed_inc = inc.map(|i| self.check_expression(*i));
+                let typed_cond = cond.map(|c| self.check_expression(*c, None));
+                let typed_inc = inc.map(|i| self.check_expression(*i, None));
                 let typed_body = Box::new(self.check_statement(*body));
                 self.in_loop = prev_in_loop;
 
@@ -847,7 +847,7 @@ impl SemanticAnalyzer {
                 self.case_labels.clear();
                 self.has_default = false;
 
-                let typed_expr = self.check_expression(*expr);
+                let typed_expr = self.check_expression(*expr, None);
                 if typed_expr.ty().get_integer_rank() == 0 {
                     self.err(SemanticError::SwitchConditionNotInteger, typed_expr.span());
                 }
@@ -865,7 +865,7 @@ impl SemanticAnalyzer {
                 if !self.in_switch {
                     self.err(SemanticError::CaseOutsideSwitch, span);
                 }
-                let typed_expr = self.check_expression(*expr);
+                let typed_expr = self.check_expression(*expr, None);
                 if let TypedExpr::Number(val, _, _) = typed_expr {
                     if !self.case_labels.insert(val) {
                         self.err(SemanticError::DuplicateCaseLabel(val), typed_expr.span());
@@ -916,7 +916,7 @@ impl SemanticAnalyzer {
                 let prev_in_loop = self.in_loop;
                 self.in_loop = true;
                 let typed_body = Box::new(self.check_statement(*body));
-                let typed_cond = self.check_expression(*cond);
+                let typed_cond = self.check_expression(*cond, None);
                 self.in_loop = prev_in_loop;
                 TypedStmt::DoWhile(typed_body, typed_cond)
             }
@@ -954,7 +954,7 @@ impl SemanticAnalyzer {
                             let typed_initializer = declarator.init.as_ref().as_ref().map(|init| {
                                 self.convert_initializer_to_typed(Initializer::Expr(
                                     (**init).clone(),
-                                ))
+                                ), Some(full_ty))
                             });
                             typed_declarators.push(TypedVarDecl {
                                 ty: full_ty,
@@ -1005,7 +1005,7 @@ impl SemanticAnalyzer {
                     }
                     Decl::StaticAssert(expr, message) => {
                         // Evaluate static assert within function scope
-                        let typed_expr = self.check_expression(*expr.clone());
+                        let typed_expr = self.check_expression(*expr.clone(), None);
                         if let TypedExpr::Number(val, _, _) = typed_expr {
                             if val == 0 {
                                 self.err(
@@ -1026,12 +1026,12 @@ impl SemanticAnalyzer {
 
     /// Checks a binary expression for semantic errors and returns a typed expression.
     fn check_binary_expression(&mut self, op: BinOp, lhs: &Expr, rhs: &Expr) -> TypedExpr {
-        let mut lhs_typed = self.check_expression(lhs.clone());
+        let mut lhs_typed = self.check_expression(lhs.clone(), None);
         if let TypeKind::Array(elem_ty, _) = lhs_typed.ty().kind() {
             lhs_typed = lhs_typed.implicit_cast(TypeId::pointer_to(elem_ty));
         }
 
-        let mut rhs_typed = self.check_expression(rhs.clone());
+        let mut rhs_typed = self.check_expression(rhs.clone(), None);
         if let TypeKind::Array(elem_ty, _) = rhs_typed.ty().kind() {
             rhs_typed = rhs_typed.implicit_cast(TypeId::pointer_to(elem_ty));
         }
@@ -1100,8 +1100,8 @@ impl SemanticAnalyzer {
     }
 
     fn check_assignment_expression(&mut self, op: AssignOp, lhs: &Expr, rhs: &Expr) -> TypedExpr {
-        let lhs_typed = self.check_expression(lhs.clone());
-        let rhs_typed = self.check_expression(rhs.clone());
+        let lhs_typed = self.check_expression(lhs.clone(), None);
+        let rhs_typed = self.check_expression(rhs.clone(), Some(lhs_typed.ty()));
 
         let lhs_lvalue = match self.check_lvalue(lhs_typed.clone()) {
             Ok(lvalue) => lvalue,
@@ -1220,7 +1220,7 @@ impl SemanticAnalyzer {
     }
 
     /// Checks an expression for semantic errors and returns a typed expression.
-    fn check_expression(&mut self, expr: Expr) -> TypedExpr {
+    fn check_expression(&mut self, expr: Expr, expected_ty: Option<TypeId>) -> TypedExpr {
         if let Some((op, lhs, rhs)) = expr.get_binary_expr() {
             return self.check_binary_expression(op, lhs, rhs);
         } else if let Some((op, lhs, rhs)) = expr.get_assign_expr() {
@@ -1271,12 +1271,12 @@ impl SemanticAnalyzer {
 
                 let typed_args = args
                     .into_iter()
-                    .map(|arg| self.check_expression(arg))
+                    .map(|arg| self.check_expression(arg, None))
                     .collect::<ThinVec<_>>();
                 TypedExpr::Call(name, typed_args, location, return_ty)
             }
             Expr::Neg(expr) => {
-                let typed = self.check_expression(*expr);
+                let typed = self.check_expression(*expr, None);
                 TypedExpr::Neg(
                     Box::new(typed.clone()),
                     SourceSpan::default(),
@@ -1284,23 +1284,23 @@ impl SemanticAnalyzer {
                 )
             }
             Expr::LogicalNot(expr) => {
-                let typed = self.check_expression(*expr);
+                let typed = self.check_expression(*expr, None);
                 TypedExpr::LogicalNot(Box::new(typed), SourceSpan::default(), TypeId::BOOL)
             }
             Expr::BitwiseNot(expr) => {
-                let typed = self.check_expression(*expr);
+                let typed = self.check_expression(*expr, None);
                 TypedExpr::BitwiseNot(Box::new(typed.clone()), SourceSpan::default(), typed.ty())
             }
             Expr::Sizeof(expr) => {
-                let _typed = self.check_expression(*expr);
+                let _typed = self.check_expression(*expr, None);
                 TypedExpr::Sizeof(Box::new(_typed), SourceSpan::default(), TypeId::INT)
             }
             Expr::Alignof(expr) => {
-                let _typed = self.check_expression(*expr);
+                let _typed = self.check_expression(*expr, None);
                 TypedExpr::Alignof(Box::new(_typed), SourceSpan::default(), TypeId::INT)
             }
             Expr::Deref(expr) => {
-                let typed = self.check_expression(*expr);
+                let typed = self.check_expression(*expr, None);
                 let result_ty = match typed.ty().unwrap_const().kind() {
                     TypeKind::Pointer(base_ty) => base_ty,
                     TypeKind::Array(elem_ty, _) => elem_ty,
@@ -1315,7 +1315,7 @@ impl SemanticAnalyzer {
                 TypedExpr::Deref(Box::new(typed), SourceSpan::default(), result_ty)
             }
             Expr::AddressOf(expr) => {
-                let typed_expr = self.check_expression(*expr);
+                let typed_expr = self.check_expression(*expr, None);
                 let lvalue = match self.check_lvalue(typed_expr.clone()) {
                     Ok(lvalue) => lvalue,
                     Err(err) => {
@@ -1352,9 +1352,9 @@ impl SemanticAnalyzer {
                 )
             }
             Expr::Ternary(cond, then_expr, else_expr) => {
-                let cond_typed = self.check_expression(*cond);
-                let then_typed = self.check_expression(*then_expr);
-                let else_typed = self.check_expression(*else_expr);
+                let cond_typed = self.check_expression(*cond, None);
+                let then_typed = self.check_expression(*then_expr, None);
+                let else_typed = self.check_expression(*else_expr, None);
                 let result_ty = if then_typed.ty() == else_typed.ty() {
                     then_typed.ty()
                 } else {
@@ -1369,7 +1369,7 @@ impl SemanticAnalyzer {
                 )
             }
             Expr::Member(expr, member) => {
-                let typed = self.check_expression(*expr);
+                let typed = self.check_expression(*expr, None);
                 let member_ty = self
                     .find_member_recursively(typed.ty(), member)
                     .unwrap_or_else(|| {
@@ -1379,7 +1379,7 @@ impl SemanticAnalyzer {
                 TypedExpr::Member(Box::new(typed), member, SourceSpan::default(), member_ty)
             }
             Expr::PointerMember(expr, member) => {
-                let typed_ptr = self.check_expression(*expr);
+                let typed_ptr = self.check_expression(*expr, None);
 
                 let inner_ty = if let TypeKind::Pointer(inner) =
                     typed_ptr.ty().clone().unwrap_const().kind()
@@ -1415,19 +1415,19 @@ impl SemanticAnalyzer {
                             .into_iter()
                             .map(|d| match d {
                                 Designator::Index(expr) => {
-                                    TypedDesignator::Index(Box::new(self.check_expression(*expr)))
+                                    TypedDesignator::Index(Box::new(self.check_expression(*expr, None)))
                                 }
                                 Designator::Member(name) => TypedDesignator::Member(name),
                             })
                             .collect();
-                        let typed_initializer = self.convert_initializer_to_typed(*initializer);
+                        let typed_initializer = self.convert_initializer_to_typed(*initializer, expected_ty);
                         (typed_designators, Box::new(typed_initializer))
                     })
                     .collect();
-                TypedExpr::InitializerList(typed_list, SourceSpan::default(), TypeId::INT)
+                TypedExpr::InitializerList(typed_list, SourceSpan::default(), expected_ty.unwrap_or(TypeId::INT))
             }
             Expr::ExplicitCast(ty, expr) => {
-                let typed_expr = self.check_expression(*expr);
+                let typed_expr = self.check_expression(*expr, None);
                 let converted_ty = self.resolve_typespec(&ty, None, SourceSpan::default());
                 TypedExpr::ExplicitCast(
                     converted_ty,
@@ -1437,7 +1437,7 @@ impl SemanticAnalyzer {
                 )
             }
             Expr::ImplicitCast(ty, expr) => {
-                let typed_expr = self.check_expression(*expr);
+                let typed_expr = self.check_expression(*expr, None);
                 let converted_ty = self.resolve_typespec(&ty, None, SourceSpan::default());
                 TypedExpr::ImplicitCast(
                     converted_ty,
@@ -1447,7 +1447,8 @@ impl SemanticAnalyzer {
                 )
             }
             Expr::CompoundLiteral(ty, initializer) => {
-                let typed_initializer = self.convert_initializer_to_typed(*initializer);
+                let final_ty = self.resolve_typespec(&ty, None, SourceSpan::default());
+                let typed_initializer = self.convert_initializer_to_typed(*initializer, Some(final_ty));
                 let mut final_ty = self.resolve_typespec(&ty, None, SourceSpan::default());
                 if let TypeKind::Array(elem_ty, 0) = final_ty.kind()
                     && let TypedInitializer::List(list) = &typed_initializer
@@ -1470,7 +1471,7 @@ impl SemanticAnalyzer {
                 typed_expr
             }
             Expr::PreIncrement(expr) => {
-                let typed_expr = self.check_expression(*expr);
+                let typed_expr = self.check_expression(*expr, None);
                 let lvalue = match self.check_lvalue(typed_expr.clone()) {
                     Ok(lvalue) => lvalue,
                     Err(err) => {
@@ -1489,7 +1490,7 @@ impl SemanticAnalyzer {
                 TypedExpr::PreIncrement(Box::new(lvalue), SourceSpan::default(), ty)
             }
             Expr::PreDecrement(expr) => {
-                let typed_expr = self.check_expression(*expr);
+                let typed_expr = self.check_expression(*expr, None);
                 let lvalue = match self.check_lvalue(typed_expr.clone()) {
                     Ok(lvalue) => lvalue,
                     Err(err) => {
@@ -1508,7 +1509,7 @@ impl SemanticAnalyzer {
                 TypedExpr::PreDecrement(Box::new(lvalue), SourceSpan::default(), ty)
             }
             Expr::PostIncrement(expr) => {
-                let typed_expr = self.check_expression(*expr);
+                let typed_expr = self.check_expression(*expr, None);
                 let lvalue = match self.check_lvalue(typed_expr.clone()) {
                     Ok(lvalue) => lvalue,
                     Err(err) => {
@@ -1527,7 +1528,7 @@ impl SemanticAnalyzer {
                 TypedExpr::PostIncrement(Box::new(lvalue), SourceSpan::default(), ty)
             }
             Expr::PostDecrement(expr) => {
-                let typed_expr = self.check_expression(*expr);
+                let typed_expr = self.check_expression(*expr, None);
                 let lvalue = match self.check_lvalue(typed_expr.clone()) {
                     Ok(lvalue) => lvalue,
                     Err(err) => {
@@ -1549,10 +1550,10 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn convert_initializer_to_typed(&mut self, initializer: Initializer) -> TypedInitializer {
+    fn convert_initializer_to_typed(&mut self, initializer: Initializer, expected_ty: Option<TypeId>) -> TypedInitializer {
         match initializer {
             Initializer::Expr(expr) => {
-                let typed_expr = self.check_expression(*expr);
+                let typed_expr = self.check_expression(*expr, expected_ty);
                 TypedInitializer::Expr(Box::new(typed_expr))
             }
             Initializer::List(list) => {
@@ -1563,12 +1564,12 @@ impl SemanticAnalyzer {
                             .into_iter()
                             .map(|d| match d {
                                 Designator::Index(expr) => {
-                                    TypedDesignator::Index(Box::new(self.check_expression(*expr)))
+                                    TypedDesignator::Index(Box::new(self.check_expression(*expr, None)))
                                 }
                                 Designator::Member(name) => TypedDesignator::Member(name),
                             })
                             .collect();
-                        let typed_initializer = self.convert_initializer_to_typed(*initializer);
+                        let typed_initializer = self.convert_initializer_to_typed(*initializer, None);
                         (typed_designators, Box::new(typed_initializer))
                     })
                     .collect();

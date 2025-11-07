@@ -31,6 +31,7 @@ pub struct Parser {
     enum_defs: HashMap<StringId, usize>,
     globals: ThinVec<Decl>,
     scope_stack: Vec<ThinVec<Decl>>,
+    next_anonymous_decl_id: u32,
 }
 
 impl Parser {
@@ -90,6 +91,7 @@ impl Parser {
             enum_defs: HashMap::new(),
             globals: ThinVec::new(),
             scope_stack: vec![ThinVec::new()],
+            next_anonymous_decl_id: u32::MAX / 2,
         };
         Ok(parser)
     }
@@ -105,6 +107,11 @@ impl Parser {
             0,
             0,
         )
+    }
+
+    fn next_anonymous_decl_id(&mut self) -> u32 {
+        self.next_anonymous_decl_id -= 1;
+        self.next_anonymous_decl_id
     }
 
     /// Returns the current token without consuming it.
@@ -474,9 +481,9 @@ impl Parser {
                         }
                     } else {
                         // Anonymous struct
-                        let idx = self.scope_stack[0].len();
+                        let idx = self.next_anonymous_decl_id();
                         added = true;
-                        None
+                        Some(DeclId(std::num::NonZeroU32::new(idx).unwrap()))
                     };
                     if let Decl::Struct(rec) = &mut struct_decl {
                         rec.id = decl_id;
@@ -529,10 +536,10 @@ impl Parser {
                         }
                     } else {
                         // Anonymous union
-                        let idx = self.scope_stack[0].len();
+                        let idx = self.next_anonymous_decl_id();
                         self.scope_stack.last_mut().unwrap().push(union_decl.clone());
                         added = true;
-                        None
+                        Some(DeclId(std::num::NonZeroU32::new(idx).unwrap()))
                     };
                     if let Decl::Union(rec) = &mut union_decl {
                         rec.id = decl_id;

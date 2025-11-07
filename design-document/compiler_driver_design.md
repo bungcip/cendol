@@ -1,196 +1,194 @@
 # Cendol - C11 Compiler Driver Design Document
 
-## Table of Contents
-1. [Overview](#overview)
-2. [Purpose and Responsibilities](#purpose-and-responsibilities)
-3. [CLI Options (using `clap`)](#cli-options-using-clap)
-4. [Compiler Lifecycle Management](#compiler-lifecycle-management)
-5. [Error Handling and Reporting](#error-handling-and-reporting)
-6. [Configuration Management](#configuration-management)
-7. [Integration with Compiler Phases](#integration-with-compiler-phases)
-8. [Future Considerations](#future-considerations)
-
 ## Overview
 
-This document outlines the design for the Cendol C11 Compiler Driver, a crucial component responsible for orchestrating the various phases of the Cendol C11 compiler. Written in Rust, the driver will provide a command-line interface for users to interact with the compiler, manage the compilation lifecycle, and handle overall configuration and error reporting.
+The Cendol compiler driver orchestrates the entire compilation pipeline, from source file input through preprocessing, lexing, parsing, semantic analysis, and AST dumping. It provides a command-line interface using `clap` for configuration and manages the flow of data between compiler phases.
 
-## Purpose and Responsibilities
+## Responsibilities
 
-The primary purpose of the compiler driver is to manage the end-to-end compilation process. Its key responsibilities include:
-- **CLI Option Parsing**: Interpreting user-provided command-line arguments to configure the compilation process.
-- **Compiler Phase Orchestration**: Managing the execution flow of the preprocessor, lexer, parser, semantic analyzer, and other future phases.
-- **Configuration Management**: Passing relevant configurations and options to each compiler phase.
-- **Error Aggregation and Reporting**: Collecting errors and warnings from all phases and presenting them to the user in a coherent manner.
-- **Input/Output Management**: Handling source file input and directing output (e.g., AST dumps, compiled artifacts).
-- **Lifecycle Management**: Ensuring proper setup and teardown of compiler resources.
+- **CLI Interface**: Parse command-line arguments and configure compilation options
+- **Phase Orchestration**: Coordinate execution of all compiler phases in correct order
+- **Resource Management**: Handle source file I/O, memory allocation, and cleanup
+- **Error Collection**: Aggregate diagnostics from all phases with rich formatting
+- **Output Generation**: Direct final output (HTML dumps, error reports) to appropriate destinations
+- **Configuration Distribution**: Pass phase-specific options to individual compiler components
 
-## CLI Options (using `clap`)
+## CLI Interface Design
 
-The compiler driver will utilize the `clap` crate for robust and user-friendly command-line argument parsing. Below is a preliminary design for the CLI options:
+The driver provides a comprehensive command-line interface using the `clap` crate:
 
 ```rust
 #[derive(Parser, Debug)]
-#[clap(author, version, about = "Cendol - C11 Compiler Driver", long_about = None)]
-struct Cli {
-    /// Input C source file(s)
-    #[clap(value_parser)]
-    input_files: Vec<PathBuf>,
+#[clap(name = "cendol", about = "C11 Compiler written in Rust")]
+pub struct Cli {
+    /// Input C source files
+    #[clap(value_parser, required = true)]
+    pub input_files: Vec<PathBuf>,
 
-    /// Output file path
-    #[clap(short, long, value_parser, value_name = "FILE")]
-    output: Option<PathBuf>,
+    /// Output file for AST dump
+    #[clap(short, long, value_name = "FILE")]
+    pub output: Option<PathBuf>,
 
-    /// Enable verbose output
+    /// Enable verbose diagnostic output
     #[clap(short, long)]
-    verbose: bool,
+    pub verbose: bool,
 
-    /// Dump AST to a specified format (e.g., "json", "dot", "human")
-    #[clap(long, value_parser, value_name = "FORMAT")]
-    dump_ast: Option<String>,
+    /// Generate HTML AST dump
+    #[clap(long)]
+    pub dump_ast: bool,
 
     /// Preprocessor options
     #[clap(flatten)]
-    preprocessor_opts: PreprocessorOptions,
+    pub preprocessor: PreprocessorOptions,
 
-    /// Lexer options
-    #[clap(flatten)]
-    lexer_opts: LexerOptions,
+    /// Include search paths
+    #[clap(short = 'I', long = "include-path", value_name = "DIR", action = clap::ArgAction::Append)]
+    pub include_paths: Vec<PathBuf>,
 
-    /// Parser options
-    #[clap(flatten)]
-    parser_opts: ParserOptions,
-
-    /// Semantic analysis options
-    #[clap(flatten)]
-    semantic_opts: SemanticOptions,
-
-    /// Target architecture (e.g., "x86_64", "arm64")
-    #[clap(long, value_parser, default_value = "x86_64")]
-    target: String,
-
-    /// Optimization level (0-3)
-    #[clap(short = 'O', long, value_parser = clap::value_parser!(u8).range(0..=3), default_value = "0")]
-    optimize: u8,
-
-    /// Emit assembly code
-    #[clap(long)]
-    emit_asm: bool,
-
+    /// Preprocessor macro definitions
+    #[clap(short = 'D', long = "define", value_name = "NAME[=VALUE]", action = clap::ArgAction::Append)]
+    pub defines: Vec<String>,
 }
 
 #[derive(Args, Debug)]
-struct PreprocessorOptions {
-    /// Define a macro
-    #[clap(short = 'D', long = "define", value_parser, value_name = "NAME[=VALUE]", action = clap::ArgAction::Append)]
-    defines: Vec<String>,
-
-    /// Add directory to include search path
-    #[clap(short = 'I', long = "include-path", value_parser, value_name = "DIR", action = clap::ArgAction::Append)]
-    include_paths: Vec<PathBuf>,
-}
-
-#[derive(Args, Debug)]
-struct LexerOptions {
-    /// Enable lexer debugging output
-    #[clap(long)]
-    debug_lexer: bool,
-}
-
-#[derive(Args, Debug)]
-struct ParserOptions {
-    /// Enable parser debugging output
-    #[clap(long)]
-    debug_parser: bool,
-}
-
-#[derive(Args, Debug)]
-struct SemanticOptions {
-    /// Enable semantic analysis debugging output
-    #[clap(long)]
-    debug_semantic: bool,
+pub struct PreprocessorOptions {
+    /// Maximum include depth
+    #[clap(long, default_value = "100")]
+    pub max_include_depth: usize,
 }
 ```
 
-## Compiler Lifecycle Management
-
-The driver manages the compiler's lifecycle through sequential phases. The current implementation processes only the first input file and runs through preprocessing, lexing, parsing, semantic analysis, and AST dumping.
-
-```mermaid
-graph TD
-     A[Start] --> B{Parse CLI Options};
-     B --> C{Initialize Compiler Context};
-     C --> D[Preprocessor Phase];
-     D --> E[Lexer Phase];
-     E --> F[Parser Phase];
-     F --> G[Semantic Analysis Phase];
-     G --> H{Dump AST?};
-     H -- Yes --> I[AST Dumper];
-     H -- No --> J[End];
-     I --> J;
-     J --> K[Report Errors/Warnings];
-     K --> L[Exit];
-```
-
-The `CompilerDriver::run` method orchestrates this flow, processing only the first input file and collecting diagnostics throughout.
-
-## Error Handling and Reporting
-
-The compiler driver will centralize error handling and reporting.
-- It will collect `CompilerError` instances from each phase.
-- Errors and warnings will be stored in a central `Diagnostics` struct.
-- The driver will format and print these diagnostics to the console, potentially using different verbosity levels based on CLI options.
-- The `ErrorFormatter` (as defined in `main.md`) will be used to provide rich, colored error messages with code snippets.
-
-## Configuration Management
-
-The `Cli` struct parsed by `clap` will serve as the primary configuration source.
-- The driver will create a `CompilerConfig` struct from the parsed `Cli` options.
-- This `CompilerConfig` will then be passed down to individual compiler phases (Preprocessor, Lexer, Parser, Semantic Analyzer) as needed.
-- Each phase will have its own specific configuration struct (e.g., `PreprocessorConfig`, `LexerConfig`) derived from the main `CompilerConfig`.
-
-## Integration with Compiler Phases
-
-The driver will integrate with existing compiler phases by:
-- Instantiating each phase (e.g., `Preprocessor`, `Lexer`, `Parser`, `SemanticAnalyzer`).
-- Calling their respective `run` or `process` methods, passing the input from the previous phase and the relevant configuration.
-- Collecting any errors or warnings returned by each phase.
-
-The actual implementation in `CompilerDriver::run` follows this pattern but with some differences:
+## Core Driver Architecture
 
 ```rust
-pub fn run(&mut self, input_files: &[PathBuf]) -> Result<(), CompilerError> {
-    // Process only first file
-    let source_content = fs::read_to_string(&input_files[0])?;
-    let source_id = SourceId::new(0);
+/// Main compiler driver
+pub struct CompilerDriver {
+    config: CompileConfig,
+    diagnostics: DiagnosticEngine,
+    source_manager: SourceManager,
+}
 
-    // Phase 1: Preprocessing
-    let preprocessed_source = self.run_preprocessor(source_id, &source_content)?;
-
-    // Phase 2: Lexing
-    let tokens = self.run_lexer(source_id, &preprocessed_source)?;
-
-    // Phase 3: Parsing
-    let arena = Bump::new();
-    let ast = self.run_parser(&arena, &tokens)?;
-
-    // Phase 4: Semantic Analysis
-    let semantic_output = self.run_semantic_analysis(&arena, ast)?;
-
-    // Phase 5: Output Generation
-    if let Some(format) = &self.config.dump_ast {
-        self.run_ast_dumper(&semantic_output)?;
+impl CompilerDriver {
+    pub fn new(cli: Cli) -> Self {
+        // Initialize with parsed CLI options
+        todo!()
     }
 
-    // Report diagnostics
-    self.diagnostics.report_all();
+    pub fn run(&mut self) -> Result<(), CompilerError> {
+        // Execute full compilation pipeline
+        todo!()
+    }
+}
+```
 
-    if self.diagnostics.has_errors() {
-        Err(CompilerError::Semantic(/* ... */))
-    } else {
+## Compilation Pipeline Execution
+
+The driver orchestrates the compilation pipeline with proper error handling and resource management:
+
+```rust
+impl CompilerDriver {
+    fn compile_file(&mut self, source_path: &Path) -> Result<(), CompilerError> {
+        // 1. Read source file
+        let content = fs::read_to_string(source_path)?;
+        let source_id = self.source_manager.add_file(source_path, &content);
+
+        // 2. Preprocessing phase
+        let preprocessor = Preprocessor::new(&self.source_manager, &self.diagnostics);
+        let pp_tokens = preprocessor.process(source_id, &self.config.preprocessor)?;
+
+        // 3. Lexing phase
+        let lexer = Lexer::new(&self.source_manager, &self.diagnostics);
+        let tokens = lexer.tokenize(&pp_tokens)?;
+
+        // 4. Parsing phase
+        let mut ast = Ast::new();
+        let parser = Parser::new(&self.source_manager, &self.diagnostics);
+        parser.parse(&tokens, &mut ast)?;
+
+        // 5. Semantic analysis phase
+        let mut analyzer = SemanticAnalyzer::new(&mut ast, &self.diagnostics);
+        analyzer.analyze()?;
+
+        // 6. AST dumping (if requested)
+        if self.config.dump_ast {
+            let dumper = AstDumper::new(&ast, &self.config.dump);
+            dumper.generate_html()?;
+        }
+
         Ok(())
     }
 }
 ```
+
+## Configuration Management
+
+The driver translates CLI options into a unified configuration structure:
+
+```rust
+#[derive(Debug)]
+pub struct CompileConfig {
+    pub input_files: Vec<PathBuf>,
+    pub output_path: Option<PathBuf>,
+    pub dump_ast: bool,
+    pub verbose: bool,
+    pub preprocessor: PreprocessorConfig,
+    pub include_paths: Vec<PathBuf>,
+    pub defines: Vec<(String, Option<String>)>, // NAME -> VALUE
+}
+
+#[derive(Debug)]
+pub struct PreprocessorConfig {
+    pub max_include_depth: usize,
+    pub system_include_paths: Vec<PathBuf>,
+}
+```
+
+## Error Handling Integration
+
+The driver integrates with the diagnostic system for comprehensive error reporting:
+
+```rust
+impl CompilerDriver {
+    fn report_errors(&self) -> Result<(), CompilerError> {
+        if self.diagnostics.has_errors() {
+            let formatter = ErrorFormatter {
+                show_source: true,
+                show_hints: true,
+                use_colors: true,
+                max_context: 3,
+            };
+
+            for diagnostic in &self.diagnostics.errors {
+                let formatted = formatter.format_diagnostic(diagnostic, &self.source_manager);
+                eprintln!("{}", formatted);
+            }
+
+            Err(CompilerError::CompilationFailed)
+        } else {
+            Ok(())
+        }
+    }
+}
+```
+
+## Resource Management
+
+The driver handles all resource lifecycle management:
+
+- **Source File Management**: Loading, caching, and tracking source files
+- **Memory Management**: Coordinating arena allocation for AST storage
+- **Diagnostic Collection**: Aggregating errors and warnings from all phases
+- **Output Generation**: Managing file I/O for HTML dumps and other outputs
+
+## Future Extensions
+
+The driver architecture supports future enhancements:
+
+- **Multiple File Compilation**: Process multiple source files with linking
+- **Incremental Compilation**: Track file changes for faster rebuilds
+- **Parallel Processing**: Compile independent files concurrently
+- **Build System Integration**: Support for make, ninja, and other build tools
+- **Code Generation**: Integration with Cranelift for machine code output
 
 ## Future Considerations
 

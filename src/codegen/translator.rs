@@ -11,6 +11,7 @@ use cranelift_codegen::ir::{StackSlot, StackSlotData, StackSlotKind};
 use cranelift_frontend::{FunctionBuilder, Variable};
 use cranelift_module::Module;
 use std::collections::HashMap;
+use thin_vec::ThinVec;
 
 use super::SymbolTable;
 use super::util;
@@ -38,6 +39,8 @@ pub(crate) struct FunctionTranslator<'a, 'b> {
     pub(crate) static_local_variables: &'b mut HashMap<StringId, (DataId, TypeId)>,
     pub(crate) structs: &'b HashMap<DeclId, TypeId>,
     pub(crate) unions: &'b HashMap<DeclId, TypeId>,
+    pub(crate) struct_members: &'b HashMap<Option<DeclId>, ThinVec<ParamType>>,
+    pub(crate) union_members: &'b HashMap<Option<DeclId>, ThinVec<ParamType>>,
     pub(crate) enum_constants: &'b HashMap<StringId, i64>,
     pub(crate) module: &'b mut ObjectModule,
     pub(crate) loop_context: Vec<(Block, Block)>,
@@ -310,12 +313,22 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
     ) -> Option<(u32, TypeId)> {
         let resolved_ty = Self::resolve_type_id(ty, self.structs, self.unions).unwrap();
         let members = match &resolved_ty {
-            TypeKind::Struct(_, members) => members,
-            TypeKind::Union(_, members) => {
-                if let Some(member) = members.iter().find(|p| p.name == *member_name) {
-                    return Some((0, member.ty));
+            TypeKind::Struct(id, _) => {
+                if let Some(members) = self.struct_members.get(id) {
+                    members.clone()
+                } else {
+                    ThinVec::new()
                 }
-                members
+            }
+            TypeKind::Union(id, _) => {
+                if let Some(union_members) = self.union_members.get(id) {
+                    if let Some(member) = union_members.iter().find(|p| p.name == *member_name) {
+                        return Some((0, member.ty));
+                    }
+                    union_members.clone()
+                } else {
+                    ThinVec::new()
+                }
             }
             _ => return None,
         };

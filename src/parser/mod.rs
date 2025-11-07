@@ -481,11 +481,11 @@ impl Parser {
                     if let Decl::Struct(rec) = &mut struct_decl {
                         rec.id = decl_id;
                     }
-                    if added {
+                    if added || self.scope_stack.len() > 1 {
                         self.scope_stack.last_mut().unwrap().push(struct_decl.clone());
                     }
                     let type_spec = Parser::new_typespec(TypeSpecKind::Struct(decl_id));
-                    let struct_decl_opt = if added { None } else { Some(struct_decl) };
+                    let struct_decl_opt = if added || self.scope_stack.len() > 1 { None } else { Some(struct_decl) };
                     Ok((type_spec, struct_decl_opt))
                 } else {
                     // Forward declaration
@@ -1363,10 +1363,27 @@ impl Parser {
         if self.is_type_name() && self.peek()? != TokenKind::LeftParen {
             let (base_type_spec, decl_opt) = self.parse_type_specifier()?;
             if let Some(decl) = decl_opt {
-                // Type definition
-                self.expect_punct(TokenKind::Semicolon)?;
-                self.scope_stack.last_mut().unwrap().push(decl.clone());
-                return Ok(Stmt::Declaration(decl));
+                // Type definition, but check if there are declarators
+                if self.eat_token(&TokenKind::Semicolon)? {
+                    self.scope_stack.last_mut().unwrap().push(decl.clone());
+                    return Ok(Stmt::Declaration(decl));
+                } else {
+                    // There are declarators, so this is a definition with variables
+                    self.scope_stack.last_mut().unwrap().push(decl.clone());
+                    let mut declarators = ThinVec::new();
+                    loop {
+                        let declarator = self.parse_declarator(base_type_spec)?;
+                        declarators.push(declarator);
+
+                        if !self.eat_token(&TokenKind::Comma)? {
+                            break;
+                        }
+                    }
+                    self.expect_punct(TokenKind::Semicolon)?;
+                    let var_group = Decl::VarGroup(base_type_spec, declarators);
+                    self.scope_stack.last_mut().unwrap().push(var_group.clone());
+                    return Ok(Stmt::Declaration(var_group));
+                }
             } else {
                 // Variable declaration
                 if self.eat_token(&TokenKind::Semicolon)? {
@@ -1413,23 +1430,6 @@ impl Parser {
             return Ok(Stmt::Declaration(Decl::VarGroup(base_type_spec, declarators)));
         }
 
-        if self.is_type_name() && self.peek()? != TokenKind::LeftParen {
-            let (base_type_spec, _) = self.parse_type_specifier()?;
-            if self.eat_token(&TokenKind::Semicolon)? {
-                return Ok(Stmt::Empty);
-            }
-            let mut declarators = ThinVec::new();
-            loop {
-                let declarator = self.parse_declarator(base_type_spec)?;
-                declarators.push(declarator);
-
-                if !self.eat_token(&TokenKind::Comma)? {
-                    break;
-                }
-            }
-            self.expect_punct(TokenKind::Semicolon)?;
-            return Ok(Stmt::Declaration(Decl::VarGroup(base_type_spec, declarators)));
-        }
 
         if let TokenKind::Keyword(k) = token.kind {
             if k == KeywordKind::Return {

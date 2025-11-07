@@ -70,6 +70,8 @@ pub struct CodeGen {
     signatures: HashMap<StringId, cranelift::prelude::Signature>,
     structs: HashMap<DeclId, TypeId>,
     unions: HashMap<DeclId, TypeId>,
+    struct_members: HashMap<DeclId, thin_vec::ThinVec<crate::types::ParamType>>,
+    union_members: HashMap<DeclId, thin_vec::ThinVec<crate::types::ParamType>>,
     semantic_analyzer: SemanticAnalyzer, // CodeGen now owns SemanticAnalyzer
     anonymous_string_count: usize,
 }
@@ -135,6 +137,8 @@ impl CodeGen {
             static_local_variables: &mut self.static_local_variables,
             structs: &self.structs,
             unions: &self.unions,
+            struct_members: &self.semantic_analyzer.struct_members,
+            union_members: &self.semantic_analyzer.union_members,
             enum_constants: &self.semantic_analyzer.enum_constants, // Access via owned SemanticAnalyzer
             module: &mut self.module,
             loop_context: Vec::new(),
@@ -236,6 +240,8 @@ impl CodeGen {
             signatures: HashMap::new(),
             structs: HashMap::new(),
             unions: HashMap::new(),
+            struct_members: HashMap::new(),
+            union_members: HashMap::new(),
             semantic_analyzer, // Initialize with the passed-in SemanticAnalyzer
             anonymous_string_count: 0,
         }

@@ -612,13 +612,13 @@ mod tests {
             is_variadic: false,
         });
 
-        /// must has same id
+        // must has same id
         assert_eq!(a, b);
     }
 
     #[test]
     fn test_flags_in_struct() {
-        let name = StringInterner::intern("Martabak");
+        // let name = StringInterner::intern("Martabak");
         let field_name = StringInterner::intern("price");
         let p = TypeId::intern(&TypeKind::Struct(
             Some(DeclId::new(0)),

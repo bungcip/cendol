@@ -96,6 +96,8 @@ pub struct SemanticAnalyzer {
     struct_definitions: HashMap<Option<DeclId>, TypeId>,
     union_definitions: HashMap<Option<DeclId>, TypeId>,
     enum_definitions: HashMap<Option<DeclId>, TypeId>,
+    pub struct_members: HashMap<Option<DeclId>, ThinVec<ParamType>>,
+    pub union_members: HashMap<Option<DeclId>, ThinVec<ParamType>>,
     current_function: Option<StringId>,
     labels: HashMap<StringId, SourceSpan>,
     errors: Vec<(SemanticError, SourceSpan)>, // (error, file, span)
@@ -123,6 +125,8 @@ impl SemanticAnalyzer {
             struct_definitions: HashMap::new(),
             union_definitions: HashMap::new(),
             enum_definitions: HashMap::new(),
+            struct_members: HashMap::new(),
+            union_members: HashMap::new(),
             current_function: None,
             labels: HashMap::new(),
             errors: Vec::new(),
@@ -251,9 +255,10 @@ impl SemanticAnalyzer {
     fn find_member_recursively(&self, ty: TypeId, member_name: StringId) -> Option<TypeId> {
         let resolved_ty = ty;
         let binding = resolved_ty.kind();
+        let empty_vec = ThinVec::new();
         let members = match &binding {
-            crate::types::TypeKind::Struct(_, members)
-            | crate::types::TypeKind::Union(_, members) => members,
+            TypeKind::Struct(id, _) => self.struct_members.get(id).unwrap_or(&empty_vec),
+            TypeKind::Union(id, _) => self.union_members.get(id).unwrap_or(&empty_vec),
             _ => return None,
         };
 
@@ -266,8 +271,7 @@ impl SemanticAnalyzer {
         let empty_name = StringInterner::intern("");
         for member in members {
             if member.name == empty_name
-                && let crate::types::TypeKind::Struct(_, _) | crate::types::TypeKind::Union(_, _) =
-                    &member.ty.kind()
+                && let TypeKind::Struct(_, _) | TypeKind::Union(_, _) = &member.ty.kind()
                 && let Some(found_ty) = self.find_member_recursively(member.ty, member_name)
             {
                 return Some(found_ty);
@@ -330,39 +334,40 @@ impl SemanticAnalyzer {
                     }
                 } else if let Decl::Struct(struct_decl) = decl {
                     println!("DEBUG_SEMANTIC: Collecting struct from scopes: id={:?}, fields len={}", struct_decl.id, struct_decl.fields.len());
-                    if !struct_decl.fields.is_empty() {
-                        let mut members = ThinVec::new();
-                        for field in &struct_decl.fields {
-                            let field_ty =
-                                self.resolve_typespec(&field.type_spec, None, field.span);
-                            let field_name =
-                                field.name.unwrap_or_else(|| StringInterner::intern(""));
-                            members.push(ParamType {
-                                ty: field_ty,
-                                name: field_name,
-                            });
-                        }
-                        let ty = TypeKind::Struct(struct_decl.id, members);
-                        let converted_ty = TypeId::intern(&ty);
-                        self.struct_definitions.insert(struct_decl.id, converted_ty);
+                    let mut members = ThinVec::new();
+                    for field in &struct_decl.fields {
+                        let field_ty =
+                            self.resolve_typespec(&field.type_spec, None, field.span);
+                        let field_name =
+                            field.name.unwrap_or_else(|| StringInterner::intern(""));
+                        members.push(ParamType {
+                            ty: field_ty,
+                            name: field_name,
+                        });
+                    }
+                    self.struct_members.insert(struct_decl.id, members.clone());
+                    let ty = TypeKind::Struct(struct_decl.id, members);
+                    let converted_ty = TypeId::intern(&ty);
+                    self.struct_definitions.insert(struct_decl.id, converted_ty);
+                    if let Some(id) = struct_decl.id {
+                        println!("DEBUG_SEMANTIC: Inserted struct definition for id: {}", id.0);
                     }
                 } else if let Decl::Union(union_decl) = decl {
-                    if !union_decl.fields.is_empty() {
-                        let mut members = ThinVec::new();
-                        for field in &union_decl.fields {
-                            let field_ty =
-                                self.resolve_typespec(&field.type_spec, None, field.span);
-                            let field_name =
-                                field.name.unwrap_or_else(|| StringInterner::intern(""));
-                            members.push(ParamType {
-                                ty: field_ty,
-                                name: field_name,
-                            });
-                        }
-                        let ty = TypeKind::Union(union_decl.id, members);
-                        let converted_ty = TypeId::intern(&ty);
-                        self.union_definitions.insert(union_decl.id, converted_ty);
+                    let mut members = ThinVec::new();
+                    for field in &union_decl.fields {
+                        let field_ty =
+                            self.resolve_typespec(&field.type_spec, None, field.span);
+                        let field_name =
+                            field.name.unwrap_or_else(|| StringInterner::intern(""));
+                        members.push(ParamType {
+                            ty: field_ty,
+                            name: field_name,
+                        });
                     }
+                    self.union_members.insert(union_decl.id, members.clone());
+                    let ty = TypeKind::Union(union_decl.id, members);
+                    let converted_ty = TypeId::intern(&ty);
+                    self.union_definitions.insert(union_decl.id, converted_ty);
                 }
             }
         }

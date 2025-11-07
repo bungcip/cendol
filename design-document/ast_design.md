@@ -144,9 +144,9 @@ pub struct Ast {
     pub initializers: Vec<Initializer>,
 }
 
-/// Node index type for referencing child nodes.
-pub type NodeIndex = u32;
-pub type InitializerIndex = u32;
+/// Node reference type for referencing child nodes.
+pub type NodeRef = NonZeroU32;
+pub type InitializerRef = NonZeroU32;
 
 /// Helper methods for Ast.
 impl Ast {
@@ -159,44 +159,44 @@ impl Ast {
         }
     }
 
-    pub fn push_node(&mut self, node: Node) -> NodeIndex {
-        let index = self.nodes.len() as NodeIndex;
+    pub fn push_node(&mut self, node: Node) -> NodeRef {
+        let index = self.nodes.len() as u32 + 1; // Start from 1 for NonZeroU32
         self.nodes.push(node);
-        index
+        NodeRef::new(index).expect("NodeRef overflow")
     }
 
-    pub fn get_node(&self, index: NodeIndex) -> &Node {
-        &self.nodes[index as usize]
+    pub fn get_node(&self, index: NodeRef) -> &Node {
+        &self.nodes[(index.get() - 1) as usize]
     }
 
-    pub fn push_type(&mut self, ty: Type) -> TypeIndex {
-        let index = self.types.len() as TypeIndex;
+    pub fn push_type(&mut self, ty: Type) -> TypeRef {
+        let index = self.types.len() as u32 + 1;
         self.types.push(ty);
-        index
+        TypeRef::new(index).expect("TypeRef overflow")
     }
 
-    pub fn get_type(&self, index: TypeIndex) -> &Type {
-        &self.types[index as usize]
+    pub fn get_type(&self, index: TypeRef) -> &Type {
+        &self.types[(index.get() - 1) as usize]
     }
 
-    pub fn push_symbol_entry(&mut self, entry: SymbolEntry) -> SymbolEntryIndex {
-        let index = self.symbol_entries.len() as SymbolEntryIndex;
+    pub fn push_symbol_entry(&mut self, entry: SymbolEntry) -> SymbolEntryRef {
+        let index = self.symbol_entries.len() as u32 + 1;
         self.symbol_entries.push(entry);
-        index
+        SymbolEntryRef::new(index).expect("SymbolEntryRef overflow")
     }
 
-    pub fn get_symbol_entry(&self, index: SymbolEntryIndex) -> &SymbolEntry {
-        &self.symbol_entries[index as usize]
+    pub fn get_symbol_entry(&self, index: SymbolEntryRef) -> &SymbolEntry {
+        &self.symbol_entries[(index.get() - 1) as usize]
     }
 
-    pub fn push_initializer(&mut self, init: Initializer) -> InitializerIndex {
-        let index = self.initializers.len() as InitializerIndex;
+    pub fn push_initializer(&mut self, init: Initializer) -> InitializerRef {
+        let index = self.initializers.len() as u32 + 1;
         self.initializers.push(init);
-        index
+        InitializerRef::new(index).expect("InitializerRef overflow")
     }
 
-    pub fn get_initializer(&self, index: InitializerIndex) -> &Initializer {
-        &self.initializers[index as usize]
+    pub fn get_initializer(&self, index: InitializerRef) -> &Initializer {
+        &self.initializers[(index.get() - 1) as usize]
     }
 }
 ```
@@ -223,9 +223,9 @@ pub struct Node {
     pub span: SourceSpan,
     // Uses Cell for Interior Mutability: allows type checking to annotate the AST
     // without requiring mutable access to the entire tree structure.
-    pub resolved_type: Cell<Option<TypeIndex>>, // Hot data, now index-based
+    pub resolved_type: Cell<Option<TypeRef>>, // Hot data, now ref-based
     // After semantic analysis, for Ident nodes, this will point to the resolved symbol entry.
-    pub resolved_symbol: Cell<Option<SymbolEntryIndex>>, // Hot data, now index-based
+    pub resolved_symbol: Cell<Option<SymbolEntryRef>>, // Hot data, now ref-based
 }
 
 /// Represents a resolved symbol entry from the symbol table.
@@ -237,7 +237,7 @@ pub type SymbolEntryIndex = u32;
 pub struct SymbolEntry {
     pub name: Symbol,
     pub kind: SymbolKind, // e.g., Variable, Function, Typedef
-    pub type_info: TypeIndex,
+    pub type_info: TypeRef,
     pub storage_class: Option<StorageClass>,
     pub scope_id: u32, // Reference to the scope where it's defined
     pub definition_span: SourceSpan,
@@ -255,7 +255,7 @@ pub enum SymbolKind {
         is_static: bool,
         is_extern: bool,
         // Initializer might be an AST node or a constant value
-        initializer: Option<NodeIndex>,
+        initializer: Option<NodeRef>,
     },
     Function {
         is_definition: bool,
@@ -264,7 +264,7 @@ pub enum SymbolKind {
         parameters: Vec<FunctionParameter>,
     },
     Typedef {
-        aliased_type: TypeIndex,
+        aliased_type: TypeRef,
     },
     EnumConstant {
         value: i64, // Resolved constant value
@@ -294,56 +294,56 @@ pub enum NodeKind {
 
     // --- Expressions ---
     // Ident now includes a Cell for resolved SymbolEntry after semantic analysis
-    Ident(Symbol, Cell<Option<SymbolEntryIndex>>),
-    UnaryOp(UnaryOp, NodeIndex),
-    BinaryOp(BinaryOp, NodeIndex, NodeIndex),
-    TernaryOp(NodeIndex, NodeIndex, NodeIndex),
+    Ident(Symbol, Cell<Option<SymbolEntryRef>>),
+    UnaryOp(UnaryOp, NodeRef),
+    BinaryOp(BinaryOp, NodeRef, NodeRef),
+    TernaryOp(NodeRef, NodeRef, NodeRef),
 
-    PostIncrement(NodeIndex),
-    PostDecrement(NodeIndex),
+    PostIncrement(NodeRef),
+    PostDecrement(NodeRef),
 
-    Assignment(BinaryOp, NodeIndex /* lhs */, NodeIndex /* rhs */),
-    FunctionCall(NodeIndex /* func */, Vec<NodeIndex> /* args */),
-    MemberAccess(NodeIndex /* object */, Symbol /* field */, bool /* is_arrow */),
-    IndexAccess(NodeIndex /* array */, NodeIndex /* index */),
+    Assignment(BinaryOp, NodeRef /* lhs */, NodeRef /* rhs */),
+    FunctionCall(NodeRef /* func */, Vec<NodeRef> /* args */),
+    MemberAccess(NodeRef /* object */, Symbol /* field */, bool /* is_arrow */),
+    IndexAccess(NodeRef /* array */, NodeRef /* index */),
 
-    Cast(TypeIndex, NodeIndex),
-    SizeOfExpr(NodeIndex),
-    SizeOfType(TypeIndex),
-    AlignOf(TypeIndex), // C11 _Alignof
+    Cast(TypeRef, NodeRef),
+    SizeOfExpr(NodeRef),
+    SizeOfType(TypeRef),
+    AlignOf(TypeRef), // C11 _Alignof
 
-    CompoundLiteral(TypeIndex, InitializerIndex),
-    GenericSelection(NodeIndex /* controlling_expr */, Vec<GenericAssociation>),
-    VaArg(NodeIndex /* va_list_expr */, TypeIndex), // va_arg macro expansion
+    CompoundLiteral(TypeRef, InitializerRef),
+    GenericSelection(NodeRef /* controlling_expr */, Vec<GenericAssociation>),
+    VaArg(NodeRef /* va_list_expr */, TypeRef), // va_arg macro expansion
 
     // --- Statements (Complex statements are separate structs) ---
-    CompoundStatement(Vec<NodeIndex> /* block items */),
+    CompoundStatement(Vec<NodeRef> /* block items */),
     If(IfStmt),
     While(WhileStmt),
-    DoWhile(NodeIndex /* body */, NodeIndex /* condition */),
+    DoWhile(NodeRef /* body */, NodeRef /* condition */),
     For(ForStmt),
 
-    Return(Option<NodeIndex>),
+    Return(Option<NodeRef>),
     Break,
     Continue,
     Goto(Symbol),
-    Label(Symbol, NodeIndex /* statement */),
+    Label(Symbol, NodeRef /* statement */),
 
-    Switch(NodeIndex /* condition */, NodeIndex /* body statement */),
-    Case(NodeIndex /* const_expr */, NodeIndex /* statement */),
-    CaseRange(NodeIndex /* start_expr */, NodeIndex /* end_expr */, NodeIndex /* statement */), // GNU Extension often supported
-    Default(NodeIndex /* statement */),
+    Switch(NodeRef /* condition */, NodeRef /* body statement */),
+    Case(NodeRef /* const_expr */, NodeRef /* statement */),
+    CaseRange(NodeRef /* start_expr */, NodeRef /* end_expr */, NodeRef /* statement */), // GNU Extension often supported
+    Default(NodeRef /* statement */),
 
     EmptyStatement, // ';'
 
     // --- Declarations & Definitions ---
     Declaration(DeclarationData),
     FunctionDef(FunctionDefData),
-    EnumConstant(Symbol, Option<NodeIndex> /* value expr */),
-    StaticAssert(NodeIndex /* condition */, Symbol /* message */),
+    EnumConstant(Symbol, Option<NodeRef> /* value expr */),
+    StaticAssert(NodeRef /* condition */, Symbol /* message */),
 
     // --- Top Level ---
-    TranslationUnit(Vec<NodeIndex> /* top-level declarations */),
+    TranslationUnit(Vec<NodeRef> /* top-level declarations */),
 }
 
 // Structs for Large/Indirect Variants (to keep NodeKind size small and cache-friendly)
@@ -351,23 +351,23 @@ pub enum NodeKind {
 
 #[derive(Debug)]
 pub struct IfStmt {
-    pub condition: NodeIndex,
-    pub then_branch: NodeIndex,
-    pub else_branch: Option<NodeIndex>,
+    pub condition: NodeRef,
+    pub then_branch: NodeRef,
+    pub else_branch: Option<NodeRef>,
 }
 
 #[derive(Debug)]
 pub struct WhileStmt {
-    pub condition: NodeIndex,
-    pub body: NodeIndex,
+    pub condition: NodeRef,
+    pub body: NodeRef,
 }
 
 #[derive(Debug)]
 pub struct ForStmt {
-    pub init: Option<NodeIndex>, // Can be Declaration or Expression
-    pub condition: Option<NodeIndex>,
-    pub increment: Option<NodeIndex>,
-    pub body: NodeIndex,
+    pub init: Option<NodeRef>, // Can be Declaration or Expression
+    pub condition: Option<NodeRef>,
+    pub increment: Option<NodeRef>,
+    pub body: NodeRef,
 }
 
 #[derive(Debug)]
@@ -386,7 +386,7 @@ pub struct InitDeclarator {
 pub struct FunctionDefData {
     pub specifiers: Vec<DeclSpecifier>,
     pub declarator: Declarator,
-    pub body: NodeIndex, // A CompoundStatement
+    pub body: NodeRef, // A CompoundStatement
 }
 
 #[derive(Debug)]
@@ -405,7 +405,7 @@ pub struct RecordDefData {
 #[derive(Debug)]
 pub struct EnumDefData {
     pub tag: Option<Symbol>,
-    pub enumerators: Option<Vec<NodeIndex>>, // List of EnumConstant nodes
+    pub enumerators: Option<Vec<NodeRef>>, // List of EnumConstant nodes
 }
 
 // Declaration Specifiers combine StorageClass, TypeQualifiers, and TypeSpecifiers
@@ -421,7 +421,7 @@ pub enum TypeSpecifier {
     Void, Char, Short, Int, Long, Float, Double, Signed, Unsigned,
     Bool, Complex, Atomic(TypeIndex), // _Bool, _Complex, _Atomic
     Record(bool /* is_union */, Option<Symbol> /* tag */, Option<RecordDefData> /* definition */),
-    Enum(Option<Symbol> /* tag */, Option<Vec<NodeIndex>> /* enumerators */),
+    Enum(Option<Symbol> /* tag */, Option<Vec<NodeRef>> /* enumerators */),
     TypedefName(Symbol),
 }
 
@@ -465,8 +465,8 @@ pub enum BinaryOp {
 // C11 _Generic Association
 #[derive(Debug)]
 pub struct GenericAssociation {
-    pub type_name: Option<TypeIndex>, // None for 'default:'
-    pub result_expr: NodeIndex,
+    pub type_name: Option<TypeRef>, // None for 'default:'
+    pub result_expr: NodeRef,
 }
 
 // Complex part of C declaration: the part that applies pointers, arrays, and functions
@@ -482,16 +482,16 @@ pub enum Declarator {
 // Defines array size (e.g., [10], [*], or [] for flexible array members)
 #[derive(Debug)]
 pub enum ArraySize {
-    Expression(NodeIndex),
+    Expression(NodeRef),
     Star,       // [*] VLA
     Incomplete, // []
-    VlaSpecifier(Option<NodeIndex> /* VLA size expr */), // `static` or `*` for VLA (C99)
+    VlaSpecifier(Option<NodeRef> /* VLA size expr */), // `static` or `*` for VLA (C99)
 }
 
 // Initializer structure for variables (e.g., int x = 5; or struct s = {1, 2};)
 #[derive(Debug)]
 pub enum Initializer {
-    Expression(NodeIndex), // = 5
+    Expression(NodeRef), // = 5
     List(Vec<DesignatedInitializer>), // = { .x = 1, [0] = 2 }
 }
 
@@ -506,13 +506,14 @@ pub struct DesignatedInitializer {
 #[derive(Debug)]
 pub enum Designator {
     FieldName(Symbol),
-    ArrayIndex(NodeIndex), // Index expression
+    ArrayIndex(NodeRef), // Index expression
 }
 
 // Type representation (for semantic analysis)
 // This is a canonical type, distinct from TypeSpecifier which is a syntax construct.
-// Types are stored in a separate Vec<Type> with TypeIndex references.
-pub type TypeIndex = u32;
+// Types are stored in a separate Vec<Type> with TypeRef references.
+pub type TypeRef = NonZeroU32;
+pub type SymbolEntryRef = NonZeroU32;
 
 #[derive(Debug)]
 pub struct Type {
@@ -532,12 +533,12 @@ pub enum TypeKind {
     Long { is_signed: bool, is_long_long: bool },
     Float,
     Double { is_long_double: bool },
-    Complex { base_type: TypeIndex }, // C11 _Complex
-    Atomic { base_type: TypeIndex }, // C11 _Atomic
-    Pointer { pointee: TypeIndex },
-    Array { element_type: TypeIndex, size: ArraySizeType },
+    Complex { base_type: TypeRef }, // C11 _Complex
+    Atomic { base_type: TypeRef }, // C11 _Atomic
+    Pointer { pointee: TypeRef },
+    Array { element_type: TypeRef, size: ArraySizeType },
     Function {
-        return_type: TypeIndex,
+        return_type: TypeRef,
         parameters: Vec<FunctionParameter>,
         is_variadic: bool,
     },
@@ -549,13 +550,13 @@ pub enum TypeKind {
     },
     Enum {
         tag: Option<Symbol>,
-        base_type: TypeIndex, // Underlying integer type
+        base_type: TypeRef, // Underlying integer type
         enumerators: Vec<EnumConstant>,
         is_complete: bool,
     },
     Typedef {
         name: Symbol,
-        aliased_type: TypeIndex,
+        aliased_type: TypeRef,
     },
     // Placeholder for incomplete types during semantic analysis
     Incomplete,
@@ -565,21 +566,21 @@ pub enum TypeKind {
 #[derive(Debug)]
 pub enum ArraySizeType {
     Constant(usize),
-    Variable(NodeIndex), // VLA
+    Variable(NodeRef), // VLA
     Incomplete,
     Star, // [*] for function parameters
 }
 
 #[derive(Debug)]
 pub struct FunctionParameter {
-    pub param_type: TypeIndex,
+    pub param_type: TypeRef,
     pub name: Option<Symbol>,
 }
 
 #[derive(Debug)]
 pub struct StructMember {
     pub name: Symbol,
-    pub member_type: TypeIndex,
+    pub member_type: TypeRef,
     pub bit_field_size: Option<usize>,
     pub location: SourceSpan,
 }

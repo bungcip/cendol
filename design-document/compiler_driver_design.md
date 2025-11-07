@@ -76,9 +76,6 @@ struct Cli {
     #[clap(long)]
     emit_asm: bool,
 
-    /// Emit LLVM IR
-    #[clap(long)]
-    emit_llvm: bool,
 }
 
 #[derive(Args, Debug)]
@@ -212,7 +209,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 - **Multiple Input Files**: Support compiling multiple C source files and linking them.
 - **Linker Integration**: Integrate with a linker to produce executable binaries.
-- **Intermediate Representation (IR) Generation**: Add phases for generating LLVM IR or other intermediate representations.
+- **Intermediate Representation (IR) Generation**: Add phases for generating Cranelift IR or other intermediate representations.
 - **Optimization Passes**: Implement various optimization passes on the IR.
 - **Target-Specific Code Generation**: Support different target architectures and operating systems.
 - **Build System Integration**: Provide options for integration with build systems like Make or Cargo.

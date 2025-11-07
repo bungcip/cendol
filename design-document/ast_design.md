@@ -1,28 +1,31 @@
-# C11 Compiler AST Design Document - Cache-Friendly & Efficient
+# C11 Compiler AST Design Document - Flattened & Cache-Friendly
 
 ## 1. Overview
 
-This document outlines the design for a highly optimized Abstract Syntax Tree (AST) for a new C11 compiler written in Rust. The primary goals for this AST design are:
+This document outlines the design for a highly optimized Abstract Syntax Tree (AST) for a new C11 compiler written in Rust. The AST uses a flattened storage approach inspired by https://www.cs.cornell.edu/~asampson/blog/flattening.html, where all nodes are stored in a contiguous array with index-based references. The primary goals for this AST design are:
 
-- **Extreme Performance**: Minimize CPU cycles spent on memory management, indirection, and cache misses.
-- **Cache-Friendliness**: Data layout must prioritize spatial locality to minimize CPU cache misses during traversal.
-- **Minimal Memory Footprint**: Reduce overall memory usage through compact data structures and efficient storage.
+- **Extreme Performance**: Minimize CPU cycles spent on memory management, indirection, and cache misses through flattened, contiguous storage.
+- **Cache-Friendliness**: Data layout prioritizes spatial locality with all nodes in a single contiguous array, minimizing CPU cache misses during traversal.
+- **Minimal Memory Footprint**: Reduce overall memory usage through compact data structures, efficient storage, and elimination of pointer overhead.
 - **C11 Compliance**: Accurately represent all C11 language constructs.
-- **Flexibility**: Allow for easy annotation during semantic analysis and transformation during optimization phases.
+- **Flexibility**: Allow for easy annotation during semantic analysis and transformation during optimization phases, leveraging index-based access.
 
 ## 2. Core Principles for Efficiency
 
 To achieve the design goals, the AST will adhere to the following core principles:
 
-1.  **Arena Allocation**: All AST nodes will be allocated within a single, contiguous memory region (an arena). This ensures excellent spatial locality, reducing cache misses during tree traversal.
-2.  **Symbol Interning**: All identifiers, string literals, and other frequently repeated strings will be "interned" into a global symbol table, represented by compact integer IDs (`Symbol`). This drastically reduces memory usage and enables `O(1)` string comparisons.
-3.  **Compressed Source Locations**: Source file and offset information will be packed into a single `u32` or `u64` to minimize the size of `SourceSpan` within each AST node.
-4.  **Hot/Cold Data Splitting**: Frequently accessed data (e.g., `NodeKind`, `SourceSpan`) will be kept directly within the `Node` struct, while less frequently accessed or larger data (e.g., lists of parameters, complex initializers) will be stored separately and referenced via arena-allocated slices or pointers.
-5.  **Struct-of-Arrays (SoA) for Collections**: For collections of similar items (e.g., function parameters, struct members), a SoA approach might be considered where appropriate to improve cache utilization over Array-of-Structs (AoS).
-6.  **Minimal Indirection**: Avoid excessive use of `Box`, `Rc`, `Arc`, or deep pointer chains. References (`&'arena T`) will be preferred.
-7.  **Inline Storage for Simple Types**: Primitive types and small enums will be stored directly within AST nodes.
+1.  **Flattened Storage**: All AST nodes are stored in a single `Vec<Node>`, providing contiguous memory layout and eliminating pointer indirection for superior cache performance.
+2.  **Index-Based References**: Child nodes and related data structures are referenced by `u32` indices into their respective storage vectors, enabling fast, predictable access patterns.
+3.  **Symbol Interning**: All identifiers, string literals, and other frequently repeated strings will be "interned" into a global symbol table, represented by compact integer IDs (`Symbol`). This drastically reduces memory usage and enables `O(1)` string comparisons.
+4.  **Compressed Source Locations**: Source file and offset information will be packed into a single `u32` or `u64` to minimize the size of `SourceSpan` within each AST node.
+5.  **Hot/Cold Data Splitting**: Frequently accessed data (e.g., `NodeKind`, `SourceSpan`) will be kept directly within the `Node` struct, while less frequently accessed or larger data (e.g., lists of parameters, complex initializers) will be stored separately and referenced via indices.
+6.  **Struct-of-Arrays (SoA) for Collections**: For collections of similar items (e.g., function parameters, struct members), a SoA approach might be considered where appropriate to improve cache utilization over Array-of-Structs (AoS).
+7.  **Minimal Indirection**: Avoid excessive use of `Box`, `Rc`, `Arc`, or deep pointer chains. Index-based access is preferred over references.
+8.  **Inline Storage for Simple Types**: Primitive types and small enums will be stored directly within AST nodes.
 
 ## 3. Fundamental Data Structures
+
+To achieve flattening, the AST will be stored in a single `Vec<Node>`, with all nodes allocated contiguously. Child nodes are referenced by their index (`u32`) in this vector, eliminating pointer indirection and improving cache locality. This approach allows for better vectorization during traversal and reduces memory fragmentation compared to arena allocation.
 
 ### 3.1. Symbol Interning
 
@@ -128,50 +131,113 @@ pub struct SourceSpan {
 -   **Compactness**: `SourceLoc` is 4 bytes, `SourceSpan` is 8 bytes.
 -   **Sufficient Capacity**: 1023 files and 4 MiB per file are ample for most C projects. Larger files/projects would require `u64` for `SourceLoc`.
 
-### 3.3. Arena Allocation
+### 3.3. Flattened AST Storage
 
-The `bumpalo` crate is an excellent choice for arena allocation in Rust.
+Instead of arena allocation, the AST is stored in a single `Vec<Node>`, providing contiguous memory layout.
 
 ```rust
-use bumpalo::Bump;
+/// The flattened AST storage.
+pub struct Ast {
+    pub nodes: Vec<Node>,
+    pub types: Vec<Type>,
+    pub symbol_entries: Vec<SymbolEntry>,
+    pub initializers: Vec<Initializer>,
+}
 
-/// The arena for allocating AST nodes.
-pub type Arena = Bump;
+/// Node index type for referencing child nodes.
+pub type NodeIndex = u32;
+pub type InitializerIndex = u32;
+
+/// Helper methods for Ast.
+impl Ast {
+    pub fn new() -> Self {
+        Ast {
+            nodes: Vec::new(),
+            types: Vec::new(),
+            symbol_entries: Vec::new(),
+            initializers: Vec::new(),
+        }
+    }
+
+    pub fn push_node(&mut self, node: Node) -> NodeIndex {
+        let index = self.nodes.len() as NodeIndex;
+        self.nodes.push(node);
+        index
+    }
+
+    pub fn get_node(&self, index: NodeIndex) -> &Node {
+        &self.nodes[index as usize]
+    }
+
+    pub fn push_type(&mut self, ty: Type) -> TypeIndex {
+        let index = self.types.len() as TypeIndex;
+        self.types.push(ty);
+        index
+    }
+
+    pub fn get_type(&self, index: TypeIndex) -> &Type {
+        &self.types[index as usize]
+    }
+
+    pub fn push_symbol_entry(&mut self, entry: SymbolEntry) -> SymbolEntryIndex {
+        let index = self.symbol_entries.len() as SymbolEntryIndex;
+        self.symbol_entries.push(entry);
+        index
+    }
+
+    pub fn get_symbol_entry(&self, index: SymbolEntryIndex) -> &SymbolEntry {
+        &self.symbol_entries[index as usize]
+    }
+
+    pub fn push_initializer(&mut self, init: Initializer) -> InitializerIndex {
+        let index = self.initializers.len() as InitializerIndex;
+        self.initializers.push(init);
+        index
+    }
+
+    pub fn get_initializer(&self, index: InitializerIndex) -> &Initializer {
+        &self.initializers[index as usize]
+    }
+}
 ```
 
 **Benefits:**
--   **Performance**: Extremely fast allocation (just a pointer bump).
--   **Cache Locality**: Nodes are allocated contiguously, improving cache hit rates during traversal.
--   **No Deallocation Overhead**: The entire arena is freed at once, avoiding per-node deallocation costs.
+-   **Superior Cache Locality**: All nodes are in a single contiguous array, minimizing cache misses.
+-   **Index-Based References**: Children are referenced by `u32` indices, eliminating pointer overhead.
+-   **Vectorization-Friendly**: Contiguous layout enables SIMD operations during traversal.
+-   **Simplified Memory Management**: Single vector allocation/deallocation.
 
-### 3.4. Node and NodeKind (Cache-Optimized)
+### 3.4. Node and NodeKind (Flattened and Cache-Optimized)
 
-The primary AST node structure is built for minimal size and indirection. It uses separate structs for complex statements (e.g., `IfStmt`, `ForStmt`) to keep the main `NodeKind` enum small and cache-friendly.
+The primary AST node structure is designed for the flattened storage. All references to child nodes use `NodeIndex` instead of arena references, enabling contiguous memory layout and index-based access.
 
 ```rust
 use std::cell::Cell; // For interior mutability (e.g., type annotation)
 
 /// The primary AST node structure.
-/// It is allocated in the arena and is a reference in most contexts.
+/// Stored in the flattened Vec<Node>, with index-based references.
 /// Designed to be small and cache-friendly.
 #[derive(Debug)]
-pub struct Node<'arena> {
-    pub kind: NodeKind<'arena>,
+pub struct Node {
+    pub kind: NodeKind,
     pub span: SourceSpan,
     // Uses Cell for Interior Mutability: allows type checking to annotate the AST
     // without requiring mutable access to the entire tree structure.
-    pub resolved_type: Cell<Option<&'arena Type<'arena>>>, // Hot data
+    pub resolved_type: Cell<Option<TypeIndex>>, // Hot data, now index-based
     // After semantic analysis, for Ident nodes, this will point to the resolved symbol entry.
-    pub resolved_symbol: Cell<Option<&'arena SymbolEntry<'arena>>>, // Hot data
+    pub resolved_symbol: Cell<Option<SymbolEntryIndex>>, // Hot data, now index-based
 }
 
 /// Represents a resolved symbol entry from the symbol table.
 /// This structure is typically populated during the semantic analysis phase.
+/// Symbol entries are stored in a separate Vec<SymbolEntry> with SymbolEntryIndex references.
+pub type SymbolEntryIndex = u32;
+
 #[derive(Debug)]
-pub struct SymbolEntry<'arena> {
+pub struct SymbolEntry {
     pub name: Symbol,
-    pub kind: SymbolKind<'arena>, // e.g., Variable, Function, Typedef
-    pub type_info: &'arena Type<'arena>,
+    pub kind: SymbolKind, // e.g., Variable, Function, Typedef
+    pub type_info: TypeIndex,
     pub storage_class: Option<StorageClass>,
     pub scope_id: u32, // Reference to the scope where it's defined
     pub definition_span: SourceSpan,
@@ -183,22 +249,22 @@ pub struct SymbolEntry<'arena> {
 
 /// Defines the kind of symbol.
 #[derive(Debug)]
-pub enum SymbolKind<'arena> {
+pub enum SymbolKind {
     Variable {
         is_global: bool,
         is_static: bool,
         is_extern: bool,
         // Initializer might be an AST node or a constant value
-        initializer: Option<&'arena Node<'arena>>,
+        initializer: Option<NodeIndex>,
     },
     Function {
         is_definition: bool,
         is_inline: bool,
         is_variadic: bool,
-        parameters: &'arena [FunctionParameter<'arena>],
+        parameters: Vec<FunctionParameter>,
     },
     Typedef {
-        aliased_type: &'arena Type<'arena>,
+        aliased_type: TypeIndex,
     },
     EnumConstant {
         value: i64, // Resolved constant value
@@ -209,7 +275,7 @@ pub enum SymbolKind<'arena> {
     },
     Record {
         is_complete: bool,
-        members: &'arena [StructMember<'arena>],
+        members: Vec<StructMember>,
         size: Option<usize>,
         alignment: Option<usize>,
     },
@@ -217,9 +283,9 @@ pub enum SymbolKind<'arena> {
 }
 
 /// The core enum defining all possible AST node types for C11.
-/// Variants are kept small; larger data is referenced via arena-allocated structs.
+/// Variants use NodeIndex for child references, enabling flattened storage.
 #[derive(Debug)]
-pub enum NodeKind<'arena> {
+pub enum NodeKind {
     // --- Literals (Inline storage for common types) ---
     LiteralInt(i64),
     LiteralFloat(f64),
@@ -228,134 +294,134 @@ pub enum NodeKind<'arena> {
 
     // --- Expressions ---
     // Ident now includes a Cell for resolved SymbolEntry after semantic analysis
-    Ident(Symbol, Cell<Option<&'arena SymbolEntry<'arena>>>),
-    UnaryOp(UnaryOp, &'arena Node<'arena>),
-    BinaryOp(BinaryOp, &'arena Node<'arena>, &'arena Node<'arena>),
-    TernaryOp(&'arena Node<'arena>, &'arena Node<'arena>, &'arena Node<'arena>),
+    Ident(Symbol, Cell<Option<SymbolEntryIndex>>),
+    UnaryOp(UnaryOp, NodeIndex),
+    BinaryOp(BinaryOp, NodeIndex, NodeIndex),
+    TernaryOp(NodeIndex, NodeIndex, NodeIndex),
 
-    PostIncrement(&'arena Node<'arena>),
-    PostDecrement(&'arena Node<'arena>),
+    PostIncrement(NodeIndex),
+    PostDecrement(NodeIndex),
 
-    Assignment(BinaryOp, &'arena Node<'arena> /* lhs */, &'arena Node<'arena> /* rhs */),
-    FunctionCall(&'arena Node<'arena> /* func */, &'arena [&'arena Node<'arena>] /* args */),
-    MemberAccess(&'arena Node<'arena> /* object */, Symbol /* field */, bool /* is_arrow */),
-    IndexAccess(&'arena Node<'arena> /* array */, &'arena Node<'arena> /* index */),
+    Assignment(BinaryOp, NodeIndex /* lhs */, NodeIndex /* rhs */),
+    FunctionCall(NodeIndex /* func */, Vec<NodeIndex> /* args */),
+    MemberAccess(NodeIndex /* object */, Symbol /* field */, bool /* is_arrow */),
+    IndexAccess(NodeIndex /* array */, NodeIndex /* index */),
 
-    Cast(&'arena Type<'arena>, &'arena Node<'arena>),
-    SizeOfExpr(&'arena Node<'arena>),
-    SizeOfType(&'arena Type<'arena>),
-    AlignOf(&'arena Type<'arena>), // C11 _Alignof
+    Cast(TypeIndex, NodeIndex),
+    SizeOfExpr(NodeIndex),
+    SizeOfType(TypeIndex),
+    AlignOf(TypeIndex), // C11 _Alignof
 
-    CompoundLiteral(&'arena Type<'arena>, &'arena Initializer<'arena>),
-    GenericSelection(&'arena Node<'arena> /* controlling_expr */, &'arena [GenericAssociation<'arena>]), // C11 _Generic
-    VaArg(&'arena Node<'arena> /* va_list_expr */, &'arena Type<'arena>), // va_arg macro expansion
+    CompoundLiteral(TypeIndex, InitializerIndex),
+    GenericSelection(NodeIndex /* controlling_expr */, Vec<GenericAssociation>),
+    VaArg(NodeIndex /* va_list_expr */, TypeIndex), // va_arg macro expansion
 
     // --- Statements (Complex statements are separate structs) ---
-    CompoundStatement(&'arena [Node<'arena>] /* block items */),
-    If(&'arena IfStmt<'arena>),
-    While(&'arena WhileStmt<'arena>),
-    DoWhile(&'arena Node<'arena> /* body */, &'arena Node<'arena> /* condition */),
-    For(&'arena ForStmt<'arena>),
+    CompoundStatement(Vec<NodeIndex> /* block items */),
+    If(IfStmt),
+    While(WhileStmt),
+    DoWhile(NodeIndex /* body */, NodeIndex /* condition */),
+    For(ForStmt),
 
-    Return(Option<&'arena Node<'arena>>),
+    Return(Option<NodeIndex>),
     Break,
     Continue,
     Goto(Symbol),
-    Label(Symbol, &'arena Node<'arena> /* statement */),
+    Label(Symbol, NodeIndex /* statement */),
 
-    Switch(&'arena Node<'arena> /* condition */, &'arena Node<'arena> /* body statement */),
-    Case(&'arena Node<'arena> /* const_expr */, &'arena Node<'arena> /* statement */),
-    CaseRange(&'arena Node<'arena> /* start_expr */, &'arena Node<'arena> /* end_expr */, &'arena Node<'arena> /* statement */), // GNU Extension often supported
-    Default(&'arena Node<'arena> /* statement */),
+    Switch(NodeIndex /* condition */, NodeIndex /* body statement */),
+    Case(NodeIndex /* const_expr */, NodeIndex /* statement */),
+    CaseRange(NodeIndex /* start_expr */, NodeIndex /* end_expr */, NodeIndex /* statement */), // GNU Extension often supported
+    Default(NodeIndex /* statement */),
 
     EmptyStatement, // ';'
 
     // --- Declarations & Definitions ---
-    Declaration(&'arena DeclarationData<'arena>),
-    FunctionDef(&'arena FunctionDefData<'arena>),
-    EnumConstant(Symbol, Option<&'arena Node<'arena>> /* value expr */),
-    StaticAssert(&'arena Node<'arena> /* condition */, Symbol /* message */),
+    Declaration(DeclarationData),
+    FunctionDef(FunctionDefData),
+    EnumConstant(Symbol, Option<NodeIndex> /* value expr */),
+    StaticAssert(NodeIndex /* condition */, Symbol /* message */),
 
     // --- Top Level ---
-    TranslationUnit(&'arena [Node<'arena>] /* top-level declarations */),
+    TranslationUnit(Vec<NodeIndex> /* top-level declarations */),
 }
 
 // Structs for Large/Indirect Variants (to keep NodeKind size small and cache-friendly)
-// These are allocated in the arena and referenced by NodeKind.
+// These are stored separately with index-based references.
 
 #[derive(Debug)]
-pub struct IfStmt<'arena> {
-    pub condition: &'arena Node<'arena>,
-    pub then_branch: &'arena Node<'arena>,
-    pub else_branch: Option<&'arena Node<'arena>>,
+pub struct IfStmt {
+    pub condition: NodeIndex,
+    pub then_branch: NodeIndex,
+    pub else_branch: Option<NodeIndex>,
 }
 
 #[derive(Debug)]
-pub struct WhileStmt<'arena> {
-    pub condition: &'arena Node<'arena>,
-    pub body: &'arena Node<'arena>,
+pub struct WhileStmt {
+    pub condition: NodeIndex,
+    pub body: NodeIndex,
 }
 
 #[derive(Debug)]
-pub struct ForStmt<'arena> {
-    pub init: Option<&'arena Node<'arena>>, // Can be Declaration or Expression
-    pub condition: Option<&'arena Node<'arena>>,
-    pub increment: Option<&'arena Node<'arena>>,
-    pub body: &'arena Node<'arena>,
+pub struct ForStmt {
+    pub init: Option<NodeIndex>, // Can be Declaration or Expression
+    pub condition: Option<NodeIndex>,
+    pub increment: Option<NodeIndex>,
+    pub body: NodeIndex,
 }
 
 #[derive(Debug)]
-pub struct DeclarationData<'arena> {
-    pub specifiers: &'arena [DeclSpecifier<'arena>],
-    pub init_declarators: &'arena [InitDeclarator<'arena>],
+pub struct DeclarationData {
+    pub specifiers: Vec<DeclSpecifier>,
+    pub init_declarators: Vec<InitDeclarator>,
 }
 
 #[derive(Debug)]
-pub struct InitDeclarator<'arena> {
-    pub declarator: &'arena Declarator<'arena>,
-    pub initializer: Option<&'arena Initializer<'arena>>,
+pub struct InitDeclarator {
+    pub declarator: Declarator,
+    pub initializer: Option<Initializer>,
 }
 
 #[derive(Debug)]
-pub struct FunctionDefData<'arena> {
-    pub specifiers: &'arena [DeclSpecifier<'arena>],
-    pub declarator: &'arena Declarator<'arena>,
-    pub body: &'arena Node<'arena>, // A CompoundStatement
+pub struct FunctionDefData {
+    pub specifiers: Vec<DeclSpecifier>,
+    pub declarator: Declarator,
+    pub body: NodeIndex, // A CompoundStatement
 }
 
 #[derive(Debug)]
-pub struct ParamData<'arena> {
-    pub specifiers: &'arena [DeclSpecifier<'arena>],
-    pub declarator: Option<&'arena Declarator<'arena>>, // Optional name for abstract declarator
+pub struct ParamData {
+    pub specifiers: Vec<DeclSpecifier>,
+    pub declarator: Option<Declarator>, // Optional name for abstract declarator
 }
 
 #[derive(Debug)]
-pub struct RecordDefData<'arena> {
+pub struct RecordDefData {
     pub tag: Option<Symbol>, // None if anonymous
-    pub members: Option<&'arena [DeclarationData<'arena>]>, // Field declarations
+    pub members: Option<Vec<DeclarationData>>, // Field declarations
     pub is_union: bool,
 }
 
 #[derive(Debug)]
-pub struct EnumDefData<'arena> {
+pub struct EnumDefData {
     pub tag: Option<Symbol>,
-    pub enumerators: Option<&'arena [Node<'arena>]>, // List of EnumConstant nodes
+    pub enumerators: Option<Vec<NodeIndex>>, // List of EnumConstant nodes
 }
 
 // Declaration Specifiers combine StorageClass, TypeQualifiers, and TypeSpecifiers
 #[derive(Debug)]
-pub struct DeclSpecifier<'arena> {
+pub struct DeclSpecifier {
     pub storage_class: Option<StorageClass>,
-    pub type_specifier: TypeSpecifier<'arena>,
+    pub type_specifier: TypeSpecifier,
 }
 
 // Type Specifiers (C11)
 #[derive(Debug)]
-pub enum TypeSpecifier<'arena> {
+pub enum TypeSpecifier {
     Void, Char, Short, Int, Long, Float, Double, Signed, Unsigned,
-    Bool, Complex, Atomic(&'arena Type<'arena>), // _Bool, _Complex, _Atomic
-    Record(bool /* is_union */, Option<Symbol> /* tag */, Option<&'arena RecordDefData<'arena>> /* definition */),
-    Enum(Option<Symbol> /* tag */, Option<&'arena [Node<'arena>]> /* enumerators */),
+    Bool, Complex, Atomic(TypeIndex), // _Bool, _Complex, _Atomic
+    Record(bool /* is_union */, Option<Symbol> /* tag */, Option<RecordDefData> /* definition */),
+    Enum(Option<Symbol> /* tag */, Option<Vec<NodeIndex>> /* enumerators */),
     TypedefName(Symbol),
 }
 
@@ -398,63 +464,66 @@ pub enum BinaryOp {
 
 // C11 _Generic Association
 #[derive(Debug)]
-pub struct GenericAssociation<'arena> {
-    pub type_name: Option<&'arena Type<'arena>>, // None for 'default:'
-    pub result_expr: &'arena Node<'arena>,
+pub struct GenericAssociation {
+    pub type_name: Option<TypeIndex>, // None for 'default:'
+    pub result_expr: NodeIndex,
 }
 
 // Complex part of C declaration: the part that applies pointers, arrays, and functions
 // This recursive structure allows for declarations like `int (*(*fp)())[10];`
 #[derive(Debug)]
-pub enum Declarator<'arena> {
-    Identifier(Symbol, TypeQualifiers, Option<&'arena Declarator<'arena>>), // Base case: name (e.g., `x`)
-    Pointer(TypeQualifiers, Option<&'arena Declarator<'arena>>), // e.g., `*`
-    Array(&'arena Declarator<'arena>, &'arena ArraySize<'arena>), // e.g., `[10]`
-    Function(&'arena Declarator<'arena>, &'arena [ParamData<'arena>] /* parameters */), // e.g., `(int x)`
+pub enum Declarator {
+    Identifier(Symbol, TypeQualifiers, Option<Box<Declarator>>), // Base case: name (e.g., `x`)
+    Pointer(TypeQualifiers, Option<Box<Declarator>>), // e.g., `*`
+    Array(Box<Declarator>, ArraySize), // e.g., `[10]`
+    Function(Box<Declarator>, Vec<ParamData> /* parameters */), // e.g., `(int x)`
 }
 
 // Defines array size (e.g., [10], [*], or [] for flexible array members)
 #[derive(Debug)]
-pub enum ArraySize<'arena> {
-    Expression(&'arena Node<'arena>),
+pub enum ArraySize {
+    Expression(NodeIndex),
     Star,       // [*] VLA
     Incomplete, // []
-    VlaSpecifier(Option<&'arena Node<'arena>> /* VLA size expr */), // `static` or `*` for VLA (C99)
+    VlaSpecifier(Option<NodeIndex> /* VLA size expr */), // `static` or `*` for VLA (C99)
 }
 
 // Initializer structure for variables (e.g., int x = 5; or struct s = {1, 2};)
 #[derive(Debug)]
-pub enum Initializer<'arena> {
-    Expression(&'arena Node<'arena>), // = 5
-    List(&'arena [DesignatedInitializer<'arena>]), // = { .x = 1, [0] = 2 }
+pub enum Initializer {
+    Expression(NodeIndex), // = 5
+    List(Vec<DesignatedInitializer>), // = { .x = 1, [0] = 2 }
 }
 
 // Designated initializer for array/struct lists (C99/C11)
 #[derive(Debug)]
-pub struct DesignatedInitializer<'arena> {
-    pub designation: &'arena [Designator<'arena>],
-    pub initializer: &'arena Initializer<'arena>,
+pub struct DesignatedInitializer {
+    pub designation: Vec<Designator>,
+    pub initializer: Initializer,
 }
 
 // A single designator in a list (.field or [index])
 #[derive(Debug)]
-pub enum Designator<'arena> {
+pub enum Designator {
     FieldName(Symbol),
-    ArrayIndex(&'arena Node<'arena>), // Index expression
+    ArrayIndex(NodeIndex), // Index expression
 }
 
 // Type representation (for semantic analysis)
 // This is a canonical type, distinct from TypeSpecifier which is a syntax construct.
+// Types are stored in a separate Vec<Type> with TypeIndex references.
+pub type TypeIndex = u32;
+
 #[derive(Debug)]
-pub struct Type<'arena> {
-    pub kind: TypeKind<'arena>,
+pub struct Type {
+    pub kind: TypeKind,
     pub qualifiers: TypeQualifiers,
     pub size: Option<usize>, // Computed during semantic analysis
     pub alignment: Option<usize>, // Computed during semantic analysis
 }
 
 #[derive(Debug)]
-pub enum TypeKind<'arena> {
+pub enum TypeKind {
     Void,
     Bool,
     Char { is_signed: bool },
@@ -463,30 +532,30 @@ pub enum TypeKind<'arena> {
     Long { is_signed: bool, is_long_long: bool },
     Float,
     Double { is_long_double: bool },
-    Complex { base_type: &'arena Type<'arena> }, // C11 _Complex
-    Atomic { base_type: &'arena Type<'arena> }, // C11 _Atomic
-    Pointer { pointee: &'arena Type<'arena> },
-    Array { element_type: &'arena Type<'arena>, size: ArraySizeType<'arena> },
+    Complex { base_type: TypeIndex }, // C11 _Complex
+    Atomic { base_type: TypeIndex }, // C11 _Atomic
+    Pointer { pointee: TypeIndex },
+    Array { element_type: TypeIndex, size: ArraySizeType },
     Function {
-        return_type: &'arena Type<'arena>,
-        parameters: &'arena [FunctionParameter<'arena>],
+        return_type: TypeIndex,
+        parameters: Vec<FunctionParameter>,
         is_variadic: bool,
     },
     Record { // Represents both struct and union
         tag: Option<Symbol>,
-        members: &'arena [StructMember<'arena>],
+        members: Vec<StructMember>,
         is_complete: bool,
         is_union: bool, // Differentiate between struct and union
     },
     Enum {
         tag: Option<Symbol>,
-        base_type: &'arena Type<'arena>, // Underlying integer type
-        enumerators: &'arena [EnumConstant<'arena>],
+        base_type: TypeIndex, // Underlying integer type
+        enumerators: Vec<EnumConstant>,
         is_complete: bool,
     },
     Typedef {
         name: Symbol,
-        aliased_type: &'arena Type<'arena>,
+        aliased_type: TypeIndex,
     },
     // Placeholder for incomplete types during semantic analysis
     Incomplete,
@@ -494,29 +563,29 @@ pub enum TypeKind<'arena> {
 }
 
 #[derive(Debug)]
-pub enum ArraySizeType<'arena> {
+pub enum ArraySizeType {
     Constant(usize),
-    Variable(&'arena Node<'arena>), // VLA
+    Variable(NodeIndex), // VLA
     Incomplete,
     Star, // [*] for function parameters
 }
 
 #[derive(Debug)]
-pub struct FunctionParameter<'arena> {
-    pub param_type: &'arena Type<'arena>,
+pub struct FunctionParameter {
+    pub param_type: TypeIndex,
     pub name: Option<Symbol>,
 }
 
 #[derive(Debug)]
-pub struct StructMember<'arena> {
+pub struct StructMember {
     pub name: Symbol,
-    pub member_type: &'arena Type<'arena>,
+    pub member_type: TypeIndex,
     pub bit_field_size: Option<usize>,
     pub location: SourceSpan,
 }
 
 #[derive(Debug)]
-pub struct EnumConstant<'arena> {
+pub struct EnumConstant {
     pub name: Symbol,
     pub value: i64, // Resolved value
     pub location: SourceSpan,
@@ -525,14 +594,20 @@ pub struct EnumConstant<'arena> {
 
 ## 4. Cache-Friendly Traversal and Operations
 
--   **Iterators**: Provide custom iterators that leverage the arena's contiguous memory for faster traversal.
--   **Visitor Pattern**: Implement a visitor pattern for AST traversal (e.g., for semantic analysis, code generation) that can be optimized for cache access.
--   **Data-Oriented Design (DOD)**: Where possible, consider separating data into flat arrays for specific passes (e.g., a pass that only needs `NodeKind` and `SourceSpan` could iterate over arrays of these, rather than full `Node` structs).
+The flattened AST enables highly efficient traversal and operations:
+
+-   **Linear Traversal**: The contiguous `Vec<Node>` allows for sequential memory access, maximizing cache hits during depth-first or breadth-first traversals.
+-   **Index-Based Navigation**: Child nodes are accessed via simple array indexing (`nodes[index]`), avoiding pointer dereferences and improving branch prediction.
+-   **SIMD-Enabled Operations**: The linear layout supports SIMD instructions for batch processing of node properties (e.g., checking node kinds or spans).
+-   **Visitor Pattern**: Implement a visitor that iterates through the node array, using indices to navigate the tree structure efficiently.
+-   **Data-Oriented Design (DOD)**: The flattened structure naturally supports DOD patterns - passes can iterate over slices of the node array, processing only relevant data contiguously.
+-   **Parallel Processing**: The index-based references make it easier to parallelize traversals across subtrees without complex pointer management.
 
 ## 5. Future Optimizations
 
--   **Memory Prefetching**: Explicitly use `core::arch::x86_64::_mm_prefetch` or similar intrinsics for critical traversal paths.
--   **SIMD for Batch Operations**: If applicable, use SIMD instructions for batch processing of AST nodes (e.g., during certain analysis passes).
--   **Custom Allocators**: Explore custom arena allocators that are even more specialized for AST node sizes.
+-   **Memory Prefetching**: Explicitly use `core::arch::x86_64::_mm_prefetch` or similar intrinsics for critical traversal paths, leveraging the predictable access patterns of the flattened array.
+-   **SIMD for Batch Operations**: The contiguous layout naturally supports SIMD instructions for batch processing of AST nodes (e.g., during certain analysis passes), enabling parallel processing of multiple nodes.
+-   **Custom Allocators**: While the standard `Vec` provides excellent performance, explore custom allocators optimized for the specific size distributions of AST nodes and related structures.
+-   **Traversal Parallelization**: The index-based structure makes it straightforward to parallelize traversals across independent subtrees or implement work-stealing algorithms for large ASTs.
 
 This AST design prioritizes performance and cache efficiency, providing a robust and fast foundation for the C11 compiler.

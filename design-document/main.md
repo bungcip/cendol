@@ -1,20 +1,22 @@
-# C11 Compiler Design Document
+# Cendol - C11 Compiler Design Document
 
 ## Table of Contents
 1. [Overview](#overview)
 2. [Architecture Overview](#architecture-overview)
+    2.1. [Compiler Driver Design](compiler_driver_design.md)
 3. [Preprocessor Phase](preprocessor_design.md)
 4. [Lexer Phase](lexer_design.md)
 5. [Parser Phase](parser_design.md)
-6. [Semantic Analysis Phase](#semantic-analysis-phase)
-7. [AST Dumper Phase](#ast-dumper-phase)
-8. [Data Flow and Integration](#data-flow-and-integration)
-9. [Performance Considerations](#performance-considerations)
-10. [Error Handling Strategy](#error-handling-strategy)
+6. [Abstract Syntax Tree (AST) Design](ast_design.md)
+7. [Semantic Analysis Phase](#semantic-analysis-phase)
+8. [AST Dumper Phase](ast_dumper_design.md)
+9. [Data Flow and Integration](#data-flow-and-integration)
+10. [Performance Considerations](#performance-considerations)
+11. [Error Handling Strategy](#error-handling-strategy)
 
 ## Overview
 
-This document outlines the design for a high-performance C11 compiler written in Rust. The compiler follows a traditional multi-phase architecture optimized for performance, cache efficiency, and comprehensive C11 standard compliance.
+This document outlines the design for Cendol, a high-performance C11 compiler written in Rust. The compiler follows a traditional multi-phase architecture optimized for performance, cache efficiency, and comprehensive C11 standard compliance.
 
 ### Design Goals
 - **Performance**: Minimize memory allocations and maximize cache locality

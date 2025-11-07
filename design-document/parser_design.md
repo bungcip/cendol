@@ -26,6 +26,7 @@ pub struct Parser<'arena, 'src> {
     // Error recovery
     error_recovery_stack: Vec<ErrorRecoveryPoint>,
     synchronized_tokens: HashSet<TokenKind>,
+    // Parser errors and warnings are defined in error_handling_design.md
 }
 
 /// Binding power system for C operators
@@ -102,7 +103,7 @@ pub struct ExpressionParser<'arena, 'src> {
 }
 
 /// Pratt parser result
-pub enum ParseExprResult<'arena> {
+pub enum ParseExprOutput<'arena> {
     /// Successful expression parse
     Expression(&'arena Node<'arena>),
     /// Incomplete expression (e.g., just identifier in declaration context)
@@ -125,6 +126,9 @@ type LedFn<'arena, 'src> = fn(
     token: Token<'src>,
     binding_power: BindingPower,
 ) -> Result<NodeKind<'arena>, ParseError>;
+
+/// Pratt parser table mapping token kinds to parsing functions
+use hashbrown::HashMap;
 
 /// Pratt parser table mapping token kinds to parsing functions
 pub struct PrattTable<'arena, 'src> {
@@ -247,7 +251,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     pub fn parse_expression(
         &mut self,
         min_binding_power: BindingPower,
-    ) -> Result<ParseExprResult<'arena>, ParseError> {
+    ) -> Result<ParseExprOutput<'arena>, ParseError> {
         let mut left = self.parse_prefix()?;
         
         loop {
@@ -277,18 +281,18 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             });
         }
         
-        Ok(ParseExprResult::Expression(left))
+        Ok(ParseExprOutput::Expression(left))
     }
     
     /// Parse primary expression
-    fn parse_primary(&mut self) -> Result<ParseExprResult<'arena>, ParseError> {
+    fn parse_primary(&mut self) -> Result<ParseExprOutput<'arena>, ParseError> {
         let token = self.current_token()?;
         
         match token.kind {
             TokenKind::Identifier => {
                 let symbol = self.intern_identifier(token.text)?;
                 self.advance()?;
-                Ok(ParseExprResult::Expression(self.arena.alloc(Node {
+                Ok(ParseExprOutput::Expression(self.arena.alloc(Node {
                     kind: NodeKind::Ident(symbol),
                     span: token.location.into(),
                     resolved_type: Cell::new(None),
@@ -297,7 +301,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             TokenKind::IntegerConstant => {
                 let value = self.parse_integer_constant(token.text)?;
                 self.advance()?;
-                Ok(ParseExprResult::Expression(self.arena.alloc(Node {
+                Ok(ParseExprOutput::Expression(self.arena.alloc(Node {
                     kind: NodeKind::LiteralInt(value),
                     span: token.location.into(),
                     resolved_type: Cell::new(None),
@@ -332,7 +336,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     pub fn parse_expression(
         &mut self,
         min_binding_power: BindingPower,
-    ) -> Result<ParseExprResult<'arena>, ParseError> {
+    ) -> Result<ParseExprOutput<'arena>, ParseError> {
         let mut left = self.parse_prefix()?;
         
         loop {
@@ -362,18 +366,18 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             });
         }
         
-        Ok(ParseExprResult::Expression(left))
+        Ok(ParseExprOutput::Expression(left))
     }
     
     /// Parse primary expression
-    fn parse_primary(&mut self) -> Result<ParseExprResult<'arena>, ParseError> {
+    fn parse_primary(&mut self) -> Result<ParseExprOutput<'arena>, ParseError> {
         let token = self.current_token()?;
         
         match token.kind {
             TokenKind::Identifier => {
                 let symbol = self.intern_identifier(token.text)?;
                 self.advance()?;
-                Ok(ParseExprResult::Expression(self.arena.alloc(Node {
+                Ok(ParseExprOutput::Expression(self.arena.alloc(Node {
                     kind: NodeKind::Ident(symbol),
                     span: token.location.into(),
                     resolved_type: Cell::new(None),
@@ -382,7 +386,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             TokenKind::IntegerConstant => {
                 let value = self.parse_integer_constant(token.text)?;
                 self.advance()?;
-                Ok(ParseExprResult::Expression(self.arena.alloc(Node {
+                Ok(ParseExprOutput::Expression(self.arena.alloc(Node {
                     kind: NodeKind::LiteralInt(value),
                     span: token.location.into(),
                     resolved_type: Cell::new(None),
@@ -517,7 +521,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 // Assume it's an expression for the size
                 let expr_result = self.parse_expression(BindingPower::MIN)?;
                 match expr_result {
-                    ParseExprResult::Expression(expr_node) => Ok(self.arena.alloc(ArraySize::Expression(expr_node))),
+                    ParseExprOutput::Expression(expr_node) => Ok(self.arena.alloc(ArraySize::Expression(expr_node))),
                     _ => Err(ParseError::SyntaxError { message: "Expected array size expression".to_string(), location: self.current_token()?.location }),
                 }
             }
@@ -580,7 +584,7 @@ The `parse_declarator` function works by first parsing any leading pointers, the
 - **Compound literal** support `(type){initializer}`
 - **Function pointer** declaration parsing
 - **Complex declarator** syntax support (`*(*(*fp)())[10]`)
-- **C11 features**: `_Alignas`, `_Atomic`, `_Noreturn`, etc.
+- **C11 features**: `_Alignas` (as a declaration specifier), `_Atomic` (as a type specifier and qualifier), `_Noreturn` (as a function specifier), etc.
 
 ### Error Handling and Recovery Examples
 

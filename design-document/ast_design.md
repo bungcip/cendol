@@ -30,7 +30,7 @@ All unique strings (identifiers, string literals, etc.) are interned.
 
 ```rust
 use std::num::NonZeroU32;
-use std::collections::HashMap;
+use hashbrown::HashMap;
 
 /// Represents an interned string.
 /// Uses NonZeroU32 for compact Option<Symbol> (0 is reserved for None).
@@ -207,7 +207,7 @@ pub enum SymbolKind<'arena> {
         is_defined: bool,
         is_used: bool,
     },
-    StructOrUnion {
+    Record {
         is_complete: bool,
         members: &'arena [StructMember<'arena>],
         size: Option<usize>,
@@ -472,15 +472,11 @@ pub enum TypeKind<'arena> {
         parameters: &'arena [FunctionParameter<'arena>],
         is_variadic: bool,
     },
-    Struct {
+    Record { // Represents both struct and union
         tag: Option<Symbol>,
         members: &'arena [StructMember<'arena>],
         is_complete: bool,
-    },
-    Union {
-        tag: Option<Symbol>,
-        members: &'arena [StructMember<'arena>],
-        is_complete: bool,
+        is_union: bool, // Differentiate between struct and union
     },
     Enum {
         tag: Option<Symbol>,

@@ -54,6 +54,30 @@ pub enum ParserError {
     // ... more variants
 }
 
+/// Parser warnings
+pub enum ParseWarning {
+    /// Warning for unused labels, etc.
+    UnusedLabel { name: Symbol, location: SourceSpan },
+    /// Warning for implicit function declarations (C90 compatibility)
+    ImplicitFunctionDeclaration { name: Symbol, location: SourceSpan },
+    /// Warning for deprecated features
+    DeprecatedFeature { message: String, location: SourceSpan },
+    // ... more variants
+}
+
+/// Semantic warnings
+pub enum SemanticWarning {
+    /// Warning for unused variables, functions, or labels
+    UnusedDeclaration { name: Symbol, location: SourceSpan },
+    /// Warning for implicit type conversions that might lead to data loss
+    ImplicitConversion { from_type: String, to_type: String, location: SourceSpan },
+    /// Warning for unreachable code
+    UnreachableCode { location: SourceSpan },
+    /// Warning for deprecated features or constructs
+    DeprecatedFeature { message: String, location: SourceSpan },
+    // ... more variants
+}
+
 /// Semantic errors
 pub enum SemanticError {
     UndeclaredIdentifier { name: Symbol, location: SourceSpan },

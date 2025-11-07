@@ -10,7 +10,17 @@
 
 ## Data Structures
 
-```rust
+/// Semantic analysis output
+pub struct SemanticOutput<'arena> {
+    pub annotated_ast: Option<&'arena Node<'arena>>,
+    pub semantic_errors: Vec<SemanticError>,
+    pub warnings: Vec<SemanticWarning>,
+    pub symbol_table: SymbolTable,
+    pub type_table: TypeTable,
+}
+
+use hashbrown::HashMap;
+
 /// Symbol table entry
 pub struct SymbolEntry {
     pub name: Symbol,
@@ -48,7 +58,7 @@ pub enum SymbolKind {
         is_defined: bool,
         is_used: bool,
     },
-    StructOrUnion {
+    Record {
         is_complete: bool,
         members: Option<Vec<MemberInfo>>,
         size: Option<usize>,
@@ -83,6 +93,27 @@ pub struct Type<'arena> {
     pub qualifiers: TypeQualifiers,
     pub size: Option<usize>,
     pub alignment: Option<usize>,
+}
+
+/// Manages symbols and their associated information within different scopes.
+/// This is the primary data structure for tracking declarations and definitions.
+pub struct SymbolTable<'arena> {
+    /// A vector of scopes, where each scope contains a map of symbols to their entries.
+    scopes: Vec<Scope<'arena>>,
+    /// The ID of the currently active scope.
+    current_scope_id: ScopeId,
+    /// A global counter for assigning unique ScopeIds.
+    next_scope_id: ScopeId,
+}
+
+/// Manages and canonicalizes types, ensuring type equivalence and efficient storage.
+/// All types are allocated in an arena to prevent redundant allocations and enable fast comparisons.
+pub struct TypeTable<'arena> {
+    /// Arena for allocating Type instances.
+    arena: &'arena Arena,
+    /// A map to store canonicalized types, preventing duplicates.
+    /// The key could be a hash of the TypeKind and qualifiers, or a more complex structure.
+    canonical_types: HashMap<TypeKind<'arena>, &'arena Type<'arena>>,
 }
 ```
 

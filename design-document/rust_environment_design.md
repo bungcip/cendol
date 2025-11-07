@@ -28,8 +28,8 @@ Cendol utilizes several external crates to streamline development, enhance funct
 ### 3. `hashbrown`
 
 - **Purpose**: High-performance hash map implementation.
-- **Explanation**: Used for symbol interning and potentially other hash-map-intensive operations where performance is critical. `hashbrown` is known for its excellent performance characteristics.
-- **Reference**: Used internally for `StringInterner` and `SymbolTable` in [Abstract Syntax Tree (AST) Design](ast_design.md) and [Semantic Analysis Phase](semantic_analysis_design.md).
+- **Explanation**: Used for symbol interning, type canonicalization, and other hash-map-intensive operations where performance is critical. `hashbrown` is a drop-in replacement for `std::collections::HashMap` but offers superior performance, especially in scenarios with many insertions and lookups, making it ideal for compiler data structures.
+- **Reference**: Used internally for `StringInterner` in [Abstract Syntax Tree (AST) Design](ast_design.md), `macro_table` in [Preprocessor Design Document](preprocessor_design.md), `PrattTable` in [Parser Design Document](parser_design.md), and `SymbolTable` and `TypeTable` in [Semantic Analysis Phase](semantic_analysis_design.md).
 
 ### 4. `thiserror`
 

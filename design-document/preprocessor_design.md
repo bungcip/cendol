@@ -12,6 +12,8 @@
 ### Data Structures
 
 ```rust
+use hashbrown::HashMap;
+
 /// Preprocessor context
 pub struct Preprocessor<'src> {
     source: &'src str,
@@ -21,7 +23,7 @@ pub struct Preprocessor<'src> {
     current_file: SourceId,
     
     // Macro management
-    macro_table: HashMap<Symbol, MacroDef>,
+    macro_table: hashbrown::HashMap<Symbol, MacroDef>,
     include_paths: Vec<PathBuf>,
     system_include_paths: Vec<PathBuf>,
     
@@ -69,6 +71,61 @@ struct ConditionalContext {
     nested_taken: bool,
 }
 ```
+/// Represents a mapping from a preprocessed source location back to its original source file and line.
+/// This is crucial for accurate error reporting and debugging.
+pub struct SourceMapping {
+    pub original_file: SourceId,
+    pub original_line: u32,
+    pub preprocessed_span: SourceSpan, // Span in the preprocessed output
+}
+
+/// Represents a parsed `#line` directive.
+pub struct LineDirective {
+    pub line_number: u32,
+    pub file_name: Option<Symbol>, // Optional new file name
+    pub span: SourceSpan, // Span of the #line directive itself
+}
+```
+/// Represents a mapping from a preprocessed source location back to its original source file and line.
+/// This is crucial for accurate error reporting and debugging.
+pub struct SourceMapping {
+    pub original_file: SourceId,
+    pub original_line: u32,
+    pub preprocessed_span: SourceSpan, // Span in the preprocessed output
+}
+
+/// Represents a parsed `#line` directive.
+pub struct LineDirective {
+    pub line_number: u32,
+    pub file_name: Option<Symbol>, // Optional new file name
+    pub span: SourceSpan, // Span of the #line directive itself
+}
+
+/// Manages all source files, including the main input file and included headers.
+/// It provides a unified way to access source code content and track file information.
+pub struct SourceManager {
+    /// A map from SourceId to SourceFile, storing all loaded source files.
+    files: hashbrown::HashMap<SourceId, SourceFile>,
+    /// The next available SourceId to assign to a new file.
+    next_source_id: SourceId,
+    /// List of directories to search for include files.
+    include_paths: Vec<PathBuf>,
+    /// List of system include directories.
+    system_include_paths: Vec<PathBuf>,
+}
+
+/// Represents a single source file, holding its content and metadata.
+pub struct SourceFile {
+    /// Unique identifier for this source file.
+    pub id: SourceId,
+    /// The original path of the file.
+    pub path: PathBuf,
+    /// The full content of the source file.
+    pub content: String,
+    /// Line start offsets for efficient line/column lookup.
+    pub line_starts: Vec<usize>,
+}
+```
 
 ### Processing Algorithm
 
@@ -105,7 +162,7 @@ The preprocessor will implement a robust macro expansion algorithm, aiming for b
 - **_Pragma operator** in expressions
 - **Empty macro argument** handling
 - **Stringification and charification** operators
-- **__DATE__, __TIME__, __FILE__, __LINE__** expansion
+- **__DATE__, __TIME__, __FILE__, __LINE__** expansion (using `chrono` crate for date/time, see [Rust Environment and External Crates](rust_environment_design.md))
 - **Feature test macro** support for conditional feature enabling
 - **No Trigraph or Digraph Support**: For simplicity and modern C usage, trigraphs and digraphs will not be supported.
 - **UTF-8 Only**: The preprocessor will assume and only support UTF-8 encoded source files.

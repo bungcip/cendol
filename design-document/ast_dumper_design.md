@@ -35,7 +35,7 @@ The AST Dumper will receive the following outputs from the Semantic Analysis pha
 1.  **Annotated AST**: The root node of the Abstract Syntax Tree, where each node has been enriched with semantic information (e.g., resolved types, symbol references, constant values).
 2.  **Symbol Table**: A complete table containing all declared symbols, their kinds, types, storage classes, scopes, and definition locations.
 3.  **Scope Manager/Table**: Information about the scope hierarchy, including parent-child relationships and symbols defined within each scope.
-4.  **Type Table**: A registry of all unique types encountered, including complex types like structs, unions, enums, and function types.
+4.  **Type Table**: A registry of all unique types encountered, including complex types like records (structs and unions), enums, and function types.
 5.  **Source Code Mapping**: (Optional but highly recommended) A way to map source spans back to actual lines of code for displaying context.
 
 ## Outputs
@@ -196,7 +196,7 @@ The Scope Table will also be an HTML table.
 
 The Type Table will be an HTML table, detailing all unique types.
 
-*   **Columns**: `Type ID`, `Kind (e.g., Primitive, Pointer, Array, Struct, Union, Enum, Function)`, `Base Type (if applicable)`, `Qualifiers`, `Size`, `Alignment`, `Details (e.g., struct members, function parameters)`.
+*   **Columns**: `Type ID`, `Kind (e.g., Primitive, Pointer, Array, Record, Enum, Function)`, `Base Type (if applicable)`, `Qualifiers`, `Size`, `Alignment`, `Details (e.g., record members, function parameters)`.
 *   **Cross-referencing**: `Type ID` column will have an anchor (`id="type_..."`) for direct linking from AST nodes and Symbol Table entries. `Base Type` should link to other type entries.
 
 **Example Snippet:**
@@ -225,9 +225,9 @@ The Type Table will be an HTML table, detailing all unique types.
             <td>-</td>
             <td>{"parameters": []}</td>
         </tr>
-        <tr id="type_struct_my_struct">
-            <td>type_struct_my_struct</td>
-            <td>Struct</td>
+        <tr id="type_record_my_record">
+            <td>type_record_my_record</td>
+            <td>Record</td>
             <td>-</td>
             <td>-</td>
             <td>12</td>
@@ -279,4 +279,4 @@ The AST Dumper will be the final phase of the C11 compiler pipeline.
 
 *   It will receive the `SemanticResult` struct (or similar) as its input.
 *   It will output the generated HTML content to a specified file path.
-*   The `DumpConfig` struct (as defined in `c11_compiler_design.md`) will be extended to include HTML-specific options (e.g., `pretty_print_html`, `include_javascript_interactivity`).
+*   The `DumpConfig` struct (as defined in `main.md`) will be extended to include HTML-specific options (e.g., `pretty_print_html`, `include_javascript_interactivity`).

@@ -1,136 +1,160 @@
 # Semantic Analysis Phase Design Document
 
+## Overview
+
+The semantic analysis phase processes the flattened AST from the parser and performs comprehensive analysis to ensure the program is semantically correct according to C11 rules. It builds symbol tables, resolves types, checks semantic constraints, and annotates the AST with additional information for code generation.
+
 ## Responsibilities
-- Symbol table management and scope resolution
-- Type checking and type equivalence
-- Constant expression evaluation
-- Declaration checking and validity
-- _Static_assert evaluation
-- _Generic selection resolution
 
-## Data Structures
+- **Symbol Resolution**: Build and manage symbol tables with scope resolution
+- **Type Checking**: Verify type compatibility and constraints
+- **Declaration Validation**: Check declaration completeness and validity
+- **Constant Evaluation**: Evaluate constant expressions for static assertions and initializers
+- **Type Canonicalization**: Ensure consistent type representations
+- **Semantic Annotation**: Annotate AST nodes with resolved types and symbols
 
-/// Semantic analysis output
-pub struct SemanticOutput<'arena> {
-    pub annotated_ast: Option<&'arena Node<'arena>>,
-    pub semantic_errors: Vec<SemanticError>,
-    pub warnings: Vec<SemanticWarning>,
-    pub symbol_table: SymbolTable<'arena>,
-    pub type_table: TypeTable<'arena>,
-}
+## Core Data Structures
 
-use hashbrown::HashMap;
+```rust
+/// Main semantic analyzer
+pub struct SemanticAnalyzer<'arena, 'src> {
+    ast: &'arena mut Ast,
+    diag: &'src DiagnosticEngine,
 
-/// Symbol table entry
-pub struct SymbolEntry<'arena> {
-    pub name: Symbol,
-    pub kind: SymbolKind<'arena>,
-    pub type_info: Option<&'arena Type<'arena>>,
-    pub storage_class: Option<StorageClass>,
-    pub scope: ScopeId,
-    pub definition_location: SourceSpan,
-    pub is_defined: bool,
-    pub is_referenced: bool,
-    pub is_completed: bool,
-}
-
-/// Symbol kinds
-pub enum SymbolKind {
-    Variable {
-        is_global: bool,
-        is_static: bool,
-        is_extern: bool,
-        initializer: Option<ConstantExpression>,
-    },
-    Function {
-        is_definition: bool,
-        is_inline: bool,
-        is_variadic: bool,
-        parameters: Vec<ParameterInfo>,
-    },
-    Typedef {
-        underlying_type: &'arena Type<'arena>,
-    },
-    EnumConstant {
-        value: Option<i64>,
-    },
-    Label {
-        is_defined: bool,
-        is_used: bool,
-    },
-    Record {
-        is_complete: bool,
-        members: Option<Vec<MemberInfo>>,
-        size: Option<usize>,
-        alignment: Option<usize>,
-    },
-    Macro {
-        definition: MacroDef,
-        is_builtin: bool,
-    },
-}
-
-/// Scope management
-pub struct ScopeManager {
-    scopes: Vec<Scope>,
-    current_scope: ScopeId,
-    global_scope: ScopeId,
-    // For file scope variables
-    translation_unit_scope: ScopeId,
-}
-
-/// Scope structure
-pub struct Scope {
-    pub parent: Option<ScopeId>,
-    pub symbols: HashMap<Symbol, SymbolEntry>,
-    pub is_block_scope: bool,
-    pub function_scope: Option<FunctionScopeId>,
-}
-
-/// Type representation (from AST design)
-pub struct Type<'arena> {
-    pub kind: TypeKind<'arena>,
-    pub qualifiers: TypeQualifiers,
-    pub size: Option<usize>,
-    pub alignment: Option<usize>,
-}
-
-/// Manages symbols and their associated information within different scopes.
-/// This is the primary data structure for tracking declarations and definitions.
-pub struct SymbolTable<'arena> {
-    /// A vector of scopes, where each scope contains a map of symbols to their entries.
-    scopes: Vec<Scope<'arena>>,
-    /// The ID of the currently active scope.
+    // Analysis state
     current_scope_id: ScopeId,
-    /// A global counter for assigning unique ScopeIds.
-    next_scope_id: ScopeId,
+    function_scope: Option<ScopeId>,
+    loop_nest_depth: u32,
+    switch_nest_depth: u32,
 }
 
-/// Manages and canonicalizes types, ensuring type equivalence and efficient storage.
-/// All types are allocated in an arena to prevent redundant allocations and enable fast comparisons.
-pub struct TypeTable<'arena> {
-    /// Arena for allocating Type instances.
-    arena: &'arena Arena,
-    /// A map to store canonicalized types, preventing duplicates.
-    /// The key could be a hash of the TypeKind and qualifiers, or a more complex structure.
-    canonical_types: HashMap<TypeKind<'arena>, &'arena Type<'arena>>,
+/// Semantic analysis result
+pub struct SemanticOutput {
+    pub errors: Vec<SemanticError>,
+    pub warnings: Vec<SemanticWarning>,
 }
 ```
 
-## Semantic Analysis Algorithm
+### Symbol Table Management
 
-1. **First pass**: Collect all declarations and build symbol table
-2. **Second pass**: Complete type information and resolve forward references
-3. **Third pass**: Check semantics and generate warnings/errors
-4. **Fourth pass**: Final validation and optimization preparation
+```rust
+/// Symbol table using flattened storage
+pub struct SymbolTable {
+    entries: Vec<SymbolEntry>,
+    scopes: Vec<Scope>,
+    current_scope_id: ScopeId,
+}
 
-## Type System Features
+/// Individual symbol entry (matches AST design)
+pub type SymbolEntry = crate::ast::SymbolEntry;
 
-- **Complete type checking** for C11 standard compliance
-- **Atomic types** (_Atomic) with proper synchronization semantics
-- **Complex types** (_Complex)
-- **Alignment specifiers** (_Alignas)
-- **Type qualifiers** (const, volatile, restrict, _Atomic)
-- **Pointer arithmetic** validation
-- **Function type** checking with parameter and return types
-- **Array bounds** checking (flexible array members)
+/// Scope ID for efficient scope references
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ScopeId(NonZeroU32);
+
+impl ScopeId {
+    pub const GLOBAL: Self = Self(unsafe { NonZeroU32::new_unchecked(1) });
+
+    pub fn new(id: u32) -> Option<Self> {
+        NonZeroU32::new(id).map(Self)
+    }
+
+    pub fn get(self) -> u32 {
+        self.0.get()
+    }
+}
+
+/// Scope information
+#[derive(Debug)]
+pub struct Scope {
+    pub parent: Option<ScopeId>,
+    pub symbols: HashMap<Symbol, SymbolEntryRef>,
+    pub kind: ScopeKind,
+    pub level: u32,
+}
+
+/// Scope types
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScopeKind {
+    Global,
+    File,
+    Function,
+    Block,
+    FunctionPrototype,
+}
+```
+
+### Type System
+
+```rust
+/// Type table for canonicalization (matches AST design)
+pub type TypeTable = crate::ast::Ast; // Types are stored in the same flattened AST
+
+/// Type operations
+impl TypeTable {
+    pub fn canonicalize_type(&mut self, ty: Type) -> TypeRef {
+        // Implementation for type canonicalization
+        // Returns existing type if equivalent, creates new one otherwise
+        todo!()
+    }
+
+    pub fn types_compatible(&self, left: TypeRef, right: TypeRef) -> bool {
+        // C11 type compatibility rules
+        todo!()
+    }
+}
+```
+
+## Analysis Algorithm
+
+The semantic analyzer performs a multi-pass traversal of the flattened AST:
+
+1. **Symbol Collection Pass**:
+   - Traverse AST to collect all declarations
+   - Build symbol table with scopes
+   - Handle forward declarations and prototypes
+   - Detect redeclarations and conflicts
+
+2. **Type Resolution Pass**:
+   - Resolve typedef names to underlying types
+   - Complete incomplete types (structs, unions, enums)
+   - Canonicalize all types for efficient comparison
+   - Validate type completeness for definitions
+
+3. **Semantic Validation Pass**:
+   - Type check all expressions and assignments
+   - Validate function calls and argument compatibility
+   - Check control flow constraints (return statements, etc.)
+   - Evaluate constant expressions for static assertions
+   - Resolve _Generic selections
+
+4. **Annotation Pass**:
+   - Annotate AST nodes with resolved types and symbols
+   - Mark symbol references and definitions
+   - Prepare AST for code generation
+
+## Key Analysis Features
+
+### Symbol Resolution
+- **Scope Management**: Hierarchical scope resolution (global → file → function → block)
+- **Name Lookup**: Efficient symbol resolution with proper shadowing rules
+- **Label Resolution**: Track goto labels and their definitions within function scope
+- **Declaration Checking**: Validate declaration syntax and semantics
+
+### Type System
+- **Type Equivalence**: C11 type compatibility and equivalence rules
+- **Qualifier Propagation**: Handle const/volatile/restrict/_Atomic qualifiers
+- **Pointer Types**: Validate pointer arithmetic and conversions
+- **Function Types**: Check parameter and return type compatibility
+- **Array Types**: Handle VLA and flexible array members
+
+### Constant Evaluation
+- **Integer Constants**: Evaluate arithmetic expressions at compile time
+- **Static Assertions**: Validate _Static_assert conditions
+- **Initializer Constants**: Check constant initializers for static storage
+- **Enumeration Values**: Resolve enum constant values
+
+### Error Recovery
+- **Continue Analysis**: Attempt to continue analysis after errors
+- **Error Propagation**: Track error locations and provide detailed diagnostics
+- **Partial Results**: Generate partial results even with semantic errors

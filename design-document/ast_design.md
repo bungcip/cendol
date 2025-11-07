@@ -35,10 +35,9 @@ All unique strings (identifiers, string literals, etc.) are interned.
 use std::num::NonZeroU32;
 use hashbrown::HashMap;
 
-/// Represents an interned string.
-/// Uses NonZeroU32 for compact Option<Symbol> (0 is reserved for None).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Symbol(NonZeroU32);
+/// Represents an interned string using symbol_table crate.
+/// Alias for GlobalSymbol from symbol_table crate with global feature.
+pub type Symbol = symbol_table::GlobalSymbol;
 
 /// The string interner.
 pub struct StringInterner {
@@ -431,16 +430,15 @@ pub enum StorageClass {
     Typedef, Extern, Static, Auto, Register, ThreadLocal, // C11 _Thread_local
 }
 
-// Type Qualifiers (bitflags for compactness)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TypeQualifiers(u8); // Using u8 for bitflags
-
-impl TypeQualifiers {
-    pub const CONST: Self = Self(1 << 0);
-    pub const VOLATILE: Self = Self(1 << 1);
-    pub const RESTRICT: Self = Self(1 << 2);
-    pub const ATOMIC: Self = Self(1 << 3); // C11 _Atomic
-    // Add methods for checking/setting flags
+// Type Qualifiers (using bitflags crate for consistency)
+bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    pub struct TypeQualifiers: u8 {
+        const CONST = 1 << 0;
+        const VOLATILE = 1 << 1;
+        const RESTRICT = 1 << 2;
+        const ATOMIC = 1 << 3; // C11 _Atomic
+    }
 }
 
 // Unary Operators

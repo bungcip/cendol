@@ -28,38 +28,92 @@ This document outlines the design for Cendol, a high-performance C11 compiler wr
 
 ## Architecture Overview
 
-```
-Source Code (.c files)
-    ↓
-[Preprocessor] → Preprocessed Source
-    ↓
-[Lexer] → Token Stream
-    ↓
-[Parser] → AST
-    ↓
-[Semantic Analysis] → Annotated AST
-    ↓
-[Code Generation (Cranelift)] → Intermediate Representation (IR)
-    ↓
-[AST Dumper] → Output (debug/logging)
+```mermaid
+graph TD
+    Source[Source Files] --> Preprocessor
+    Preprocessor --> PPTokenStream[PPToken Stream]
+    PPTokenStream --> Lexer
+    Lexer --> TokenStream[Token Stream]
+    TokenStream --> Parser
+    Parser --> FlattenedAST[Flattened AST]
+    FlattenedAST --> SemanticAnalyzer[Semantic Analysis]
+    SemanticAnalyzer --> AnnotatedAST[Annotated AST + Symbol Table]
+    AnnotatedAST --> ASTDumper[AST Dumper]
+    ASTDumper --> HTML[HTML Output]
 ```
 
 ### Key Design Decisions
 
-1. **Arena Allocation**: All AST nodes allocated in arena for cache locality
-2. **Symbol Interning**: String deduplication using integer IDs
-3. **Source Location Tracking**: Packed source location for efficient span management
-4. **Zero-Copy Parsing**: Minimize intermediate allocations
-5. **Streaming Processing**: Process data in chunks to reduce memory pressure
+1. **Flattened AST Storage**: All AST nodes in contiguous vectors for superior cache performance
+2. **Global Symbol Interning**: Thread-safe symbol interning using `symbol_table` crate
+3. **Packed Source Locations**: Efficient `SourceLoc` (4 bytes) and `SourceSpan` (8 bytes)
+4. **Index-based References**: `NodeRef`, `TypeRef`, `SymbolEntryRef` for fast access
+5. **Bit Flags**: Compact boolean storage using `bitflags` crate for flags
+6. **Rich Diagnostics**: IDE-quality error reporting with `annotate_snippets`
 
-## Preprocessor Phase
+## Compiler Pipeline Phases
 
-Refer to the [Preprocessor Design Document](preprocessor_design.md) for detailed information.
+### 1. Preprocessor Phase
+Transforms C source code by handling macro expansion, conditional compilation, and file inclusion. Produces a stream of preprocessing tokens (`PPToken`) that represent the preprocessed source.
 
-## Lexer Phase
+**Key Features:**
+- Clang-inspired modular architecture with separate components
+- Macro expansion with argument rescanning and token pasting
+- Include file resolution with guard detection
+- Packed bit flags for macro properties
 
-Refer to the [Lexer Design Document](lexer_design.md) for detailed information.
+### 2. Lexer Phase
+Tokenizes the preprocessing token stream into lexical tokens with pre-interned keywords. Converts `PPToken` stream to `Token` stream ready for parsing.
 
-## Parser Phase
+**Key Features:**
+- UTF-8 only support with efficient character handling
+- Global symbol interning for identifiers
+- Packed token flags for lexical properties
+- Memory prefetching hints for performance
 
-Refer to the [Parser Design Document](parser_design.md) for detailed information.
+### 3. Parser Phase
+Constructs a flattened Abstract Syntax Tree from the token stream using Pratt parsing for expressions and recursive descent for statements.
+
+**Key Features:**
+- Flattened AST storage in contiguous vectors
+- Pratt parser with full C11 operator precedence
+- Index-based node references for cache efficiency
+- Complex declarator parsing for C's type system
+
+### 4. Semantic Analysis Phase
+Performs comprehensive analysis of the AST to ensure semantic correctness, building symbol tables and resolving types.
+
+**Key Features:**
+- Multi-pass analysis (collection, resolution, validation, annotation)
+- Hierarchical scope management with efficient lookups
+- Type canonicalization and compatibility checking
+- Label resolution and control flow validation
+
+### 5. AST Dumper Phase
+Generates interactive HTML visualization of the compiler's internal state for debugging and analysis.
+
+**Key Features:**
+- Cross-referenced tables (AST nodes, symbols, types, scopes)
+- Interactive HTML with collapsible trees and search
+- Source code integration with syntax highlighting
+- Comprehensive debugging information
+
+## Supporting Infrastructure
+
+### Error Handling
+- Rich diagnostic system with `annotate_snippets` for beautiful error messages
+- Phase-specific error recovery strategies
+- IDE integration with structured error output
+- Non-blocking compilation that continues despite errors
+
+### Data Flow
+- Clear interfaces between all compiler phases
+- Efficient memory management with arena allocation
+- Global symbol interning for fast identifier comparison
+- Packed data structures for optimal cache usage
+
+### Performance Optimizations
+- Flattened data structures for cache-friendly access
+- Index-based references instead of pointers
+- Bit flags for compact boolean storage
+- Streaming processing to minimize memory pressure

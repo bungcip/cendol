@@ -58,7 +58,31 @@ Cendol utilizes several external crates to streamline development, enhance funct
 - **Explanation**: Used for expanding the `__DATE__` and `__TIME__` preprocessor macros, providing accurate and locale-aware date and time information during compilation.
 - **Reference**: Relevant for the [Preprocessor Design Document](preprocessor_design.md).
 
-### 9. `cranelift` (Future Integration)
+### 9. `bitflags`
+
+- **Purpose**: Macro to generate types for bit flags.
+- **Explanation**: Used for compact storage of boolean flags in data structures, improving cache efficiency and memory usage.
+- **Reference**: Used for `MacroFlags` and `PPTokenFlags` in [Preprocessor Design Document](preprocessor_design.md).
+
+### 10. `target-lexicon`
+
+- **Purpose**: Cross-platform target information.
+- **Explanation**: Provides target triple parsing and platform-specific information needed for preprocessor target-dependent behavior.
+- **Reference**: Used for `TargetTriple` in [Preprocessor Design Document](preprocessor_design.md).
+
+### 11. `symbol_table`
+
+- **Purpose**: Global symbol interning with thread-safe global symbol table.
+- **Explanation**: Provides efficient string interning with global symbol table using the `global` feature. Enables fast symbol comparisons and memory-efficient storage of identifiers.
+- **Reference**: Used for `GlobalSymbol` type aliased as `Symbol` throughout the compiler for identifier management.
+
+### 12. `annotate_snippets`
+
+- **Purpose**: Rich diagnostic error reporting with source code snippets.
+- **Explanation**: Provides beautiful, annotated error messages with source code context, colors, and structured formatting. Enables IDE-quality error reporting with syntax highlighting and precise location indicators.
+- **Reference**: Used in the error handling system for formatting diagnostics with source code snippets and contextual information.
+
+### 11. `cranelift` (Future Integration)
 
 - **Purpose**: Code generation backend.
 - **Explanation**: In future phases, Cranelift will be used to generate machine code from an intermediate representation. It is a fast, secure, and portable code generator.

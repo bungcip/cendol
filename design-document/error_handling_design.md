@@ -1,128 +1,220 @@
 # Error Handling Strategy Design Document
 
-## Error Types
+## Overview
 
+The Cendol compiler implements a comprehensive error handling strategy that ensures robust compilation even in the presence of errors. Errors are collected throughout the pipeline and reported with precise source locations, enabling good developer experience and IDE integration.
+
+## Error Classification
+
+### Error Severity Levels
+- **Errors**: Fatal issues that prevent successful compilation
+- **Warnings**: Potential issues that should be addressed but don't block compilation
+- **Notes**: Additional information to help understand errors/warnings
+
+### Error Categories by Phase
+
+#### Preprocessor Errors
 ```rust
-/// Main compiler error enum
 #[derive(Debug, thiserror::Error)]
-pub enum CompilerError {
-    #[error("Preprocessor error: {0}")]
-    Preprocessor(#[from] PreprocessorError),
-    #[error("Lexer error: {0}")]
-    Lexer(#[from] LexerError),
-    #[error("Parser error: {0}")]
-    Parser(#[from] ParserError),
-    #[error("Semantic error: {0}")]
-    Semantic(#[from] SemanticError),
-    #[error("System error: {0}")]
-    System(#[from] SystemError),
-}
-
-/// Preprocessor errors
 pub enum PreprocessorError {
-    MacroRedefinition { name: Symbol, first_def: SourceSpan, second_def: SourceSpan },
+    #[error("Macro '{name}' redefined")]
+    MacroRedefinition {
+        name: Symbol,
+        first_def: SourceSpan,
+        second_def: SourceSpan
+    },
+    #[error("Undefined macro '{name}'")]
     UndefinedMacro { name: Symbol, location: SourceSpan },
+    #[error("Include file not found: {path}")]
     IncludeFileNotFound { path: String, location: SourceSpan },
+    #[error("Recursive include detected")]
     RecursiveInclude { file: SourceId, location: SourceSpan },
+    #[error("Invalid pragma directive: {directive}")]
     InvalidPragma { directive: String, location: SourceSpan },
-    // Pratt parser specific errors
-    UnclosedParenthesis { location: SourceSpan },
-    InvalidExpression { context: String, location: SourceSpan },
-    IncompleteDeclaration { expected: String, location: SourceSpan },
-    UnterminatedGeneric { location: SourceSpan },
-    // ... more variants
-}
-
-/// Lexer errors
-pub enum LexerError {
-    InvalidCharacter { ch: char, location: SourceSpan },
-    UnterminatedString { location: SourceSpan },
-    UnterminatedComment { location: SourceSpan },
-    InvalidNumber { text: String, location: SourceSpan },
-    // Pratt parser specific errors
-    UnclosedParenthesis { location: SourceSpan },
-    InvalidExpression { context: String, location: SourceSpan },
-    IncompleteDeclaration { expected: String, location: SourceSpan },
-    UnterminatedGeneric { location: SourceSpan },
-    // ... more variants
-}
-
-/// Parser errors
-pub enum ParserError {
-    UnexpectedToken { expected: Vec<TokenKind>, found: Token, location: SourceSpan },
-    MissingToken { expected: TokenKind, location: SourceSpan },
-    SyntaxError { message: String, location: SourceSpan },
-    // Pratt parser specific errors
-    UnclosedParenthesis { location: SourceSpan },
-    InvalidExpression { context: String, location: SourceSpan },
-    IncompleteDeclaration { expected: String, location: SourceSpan },
-    UnterminatedGeneric { location: SourceSpan },
-    // ... more variants
-}
-
-/// Parser warnings
-pub enum ParseWarning {
-    /// Warning for unused labels, etc.
-    UnusedLabel { name: Symbol, location: SourceSpan },
-    /// Warning for implicit function declarations (C90 compatibility)
-    ImplicitFunctionDeclaration { name: Symbol, location: SourceSpan },
-    /// Warning for deprecated features
-    DeprecatedFeature { message: String, location: SourceSpan },
-    // ... more variants
-}
-
-/// Semantic warnings
-pub enum SemanticWarning {
-    /// Warning for unused variables, functions, or labels
-    UnusedDeclaration { name: Symbol, location: SourceSpan },
-    /// Warning for implicit type conversions that might lead to data loss
-    ImplicitConversion { from_type: String, to_type: String, location: SourceSpan },
-    /// Warning for unreachable code
-    UnreachableCode { location: SourceSpan },
-    /// Warning for deprecated features or constructs
-    DeprecatedFeature { message: String, location: SourceSpan },
-    // ... more variants
-}
-
-/// Semantic errors
-pub enum SemanticError {
-    UndeclaredIdentifier { name: Symbol, location: SourceSpan },
-    Redefinition { name: Symbol, first_def: SourceSpan, second_def: SourceSpan },
-    TypeMismatch { expected: String, found: String, location: SourceSpan },
-    IncompleteType { name: Symbol, location: SourceSpan },
-    // Pratt parser specific errors
-    UnclosedParenthesis { location: SourceSpan },
-    InvalidExpression { context: String, location: SourceSpan },
-    IncompleteDeclaration { expected: String, location: SourceSpan },
-    UnterminatedGeneric { location: SourceSpan },
-    // ... more variants
 }
 ```
 
-## Error Recovery
-
-1. **Pratt parser error recovery** - stop at minimum binding power
-2. **Declaration context recovery** - reset to neutral declaration state
-3. **Synchronization points** to resume parsing (semicolons, braces)
-4. **Error symbol insertion** to continue processing
-5. **Incremental error reporting** to show all errors
-6. **Context preservation** for better error messages
-
-## Error Reporting
-
+#### Lexer Errors
 ```rust
-/// Error context for better error messages
-pub struct ErrorContext {
-    pub current_function: Option<Symbol>,
-    pub current_file: SourceId,
-    pub current_line: u32,
-    pub stack_trace: Vec<SourceLocation>,
+#[derive(Debug, thiserror::Error)]
+pub enum LexerError {
+    #[error("Invalid character '{ch}' in source")]
+    InvalidCharacter { ch: char, location: SourceSpan },
+    #[error("Unterminated string literal")]
+    UnterminatedString { location: SourceSpan },
+    #[error("Unterminated comment")]
+    UnterminatedComment { location: SourceSpan },
+    #[error("Invalid number literal: {text}")]
+    InvalidNumber { text: String, location: SourceSpan },
+}
+```
+
+#### Parser Errors
+```rust
+#[derive(Debug, thiserror::Error)]
+pub enum ParserError {
+    #[error("Unexpected token")]
+    UnexpectedToken {
+        expected: Vec<TokenKind>,
+        found: Token,
+        location: SourceSpan
+    },
+    #[error("Missing token: expected {expected}")]
+    MissingToken { expected: TokenKind, location: SourceSpan },
+    #[error("Syntax error: {message}")]
+    SyntaxError { message: String, location: SourceSpan },
+}
+```
+
+#### Semantic Errors
+```rust
+#[derive(Debug, thiserror::Error)]
+pub enum SemanticError {
+    #[error("Undeclared identifier '{name}'")]
+    UndeclaredIdentifier { name: Symbol, location: SourceSpan },
+    #[error("Redefinition of '{name}'")]
+    Redefinition {
+        name: Symbol,
+        first_def: SourceSpan,
+        second_def: SourceSpan
+    },
+    #[error("Type mismatch: expected {expected}, found {found}")]
+    TypeMismatch {
+        expected: String,
+        found: String,
+        location: SourceSpan
+    },
+    #[error("Incomplete type '{name}'")]
+    IncompleteType { name: Symbol, location: SourceSpan },
+}
+```
+
+#### Warnings
+```rust
+#[derive(Debug, thiserror::Error)]
+pub enum SemanticWarning {
+    #[error("Unused declaration '{name}'")]
+    UnusedDeclaration { name: Symbol, location: SourceSpan },
+    #[error("Implicit conversion from {from_type} to {to_type}")]
+    ImplicitConversion {
+        from_type: String,
+        to_type: String,
+        location: SourceSpan
+    },
+    #[error("Unreachable code")]
+    UnreachableCode { location: SourceSpan },
+}
+```
+
+## Error Recovery Strategies
+
+### Preprocessor Recovery
+- **Include Errors**: Skip failed includes, continue with next tokens
+- **Macro Errors**: Treat undefined macros as empty, report warnings
+- **Pragma Errors**: Skip invalid pragmas, continue processing
+
+### Lexer Recovery
+- **Invalid Characters**: Skip and report, continue tokenization
+- **Unterminated Literals**: Close at end of line, report error
+- **Encoding Issues**: Replace invalid UTF-8 with replacement character
+
+### Parser Recovery
+- **Unexpected Tokens**: Skip to synchronization points (semicolons, braces)
+- **Missing Tokens**: Insert synthetic tokens, continue parsing
+- **Declaration Errors**: Skip to next declaration or statement boundary
+
+### Semantic Recovery
+- **Undefined Symbols**: Create error entries, continue analysis
+- **Type Errors**: Use error types, propagate through expressions
+- **Scope Errors**: Maintain scope stack, report violations
+
+## Error Reporting System
+
+### Diagnostic Engine
+```rust
+/// Central diagnostic collection and reporting
+pub struct DiagnosticEngine {
+    errors: Vec<Diagnostic>,
+    warnings: Vec<Diagnostic>,
+    notes: Vec<Diagnostic>,
 }
 
-/// Error formatter
-pub struct ErrorFormatter {
-    pub show_code_snippets: bool,
-    pub show_stack_trace: bool,
-    pub use_colors: bool,
-    pub max_context_lines: usize,
+/// Individual diagnostic with rich context
+pub struct Diagnostic {
+    pub level: DiagnosticLevel,
+    pub message: String,
+    pub location: SourceSpan,
+    pub code: Option<String>, // Error code like "E001"
+    pub hints: Vec<String>, // Suggestions for fixing
+    pub related: Vec<SourceSpan>, // Related locations
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiagnosticLevel {
+    Error,
+    Warning,
+    Note,
+}
+```
+
+### Error Formatting with annotate_snippets
+```rust
+/// Configurable error formatter using annotate_snippets
+pub struct ErrorFormatter {
+    pub show_source: bool,
+    pub show_hints: bool,
+    pub use_colors: bool,
+    pub max_context: usize,
+}
+
+impl ErrorFormatter {
+    pub fn format_diagnostic(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
+        use annotate_snippets::{Level, Renderer, Snippet};
+
+        let level = match diag.level {
+            DiagnosticLevel::Error => Level::Error,
+            DiagnosticLevel::Warning => Level::Warning,
+            DiagnosticLevel::Note => Level::Info,
+        };
+
+        let snippet = if self.show_source {
+            self.create_snippet(diag, source_manager)
+        } else {
+            Snippet::source(diag.message.as_str())
+                .fold(true)
+        };
+
+        let renderer = Renderer::styled();
+        renderer.render(level.title(&diag.message), snippet).to_string()
+    }
+
+    fn create_snippet(&self, diag: &Diagnostic, source_manager: &SourceManager) -> Snippet {
+        // Create annotated snippet with source code context
+        // Implementation uses annotate_snippets API for rich formatting
+        todo!()
+    }
+}
+```
+
+## Integration with Compiler Pipeline
+
+### Error Collection
+Each phase contributes to the global diagnostic collection:
+
+1. **Preprocessor**: Include path resolution, macro validation
+2. **Lexer**: Token validity, encoding issues
+3. **Parser**: Syntax correctness, grammar violations
+4. **Semantic**: Type safety, symbol resolution, scope rules
+5. **Dumper**: Output generation issues
+
+### Error Propagation
+- **Non-blocking**: Errors don't stop compilation unless fatal
+- **Accumulation**: All errors collected and reported together
+- **Context Preservation**: Source locations maintained throughout pipeline
+- **Cross-phase References**: Errors can reference locations from earlier phases
+
+### IDE Integration
+- **Structured Output**: JSON format available for tools
+- **Source Maps**: Precise location mapping for editors
+- **Error Codes**: Standardized codes for tool integration
+- **Recovery Hints**: Suggestions for common error patterns

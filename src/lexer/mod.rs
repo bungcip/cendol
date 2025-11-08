@@ -2,14 +2,7 @@ use symbol_table::GlobalSymbol as Symbol;
 use target_lexicon::Triple as TargetTriple;
 use crate::source_manager::{SourceManager, SourceId, SourceSpan, SourceLoc};
 use crate::preprocessor::{PPToken, PPTokenKind, PPTokenFlags};
-
-/// Language options affecting compilation behavior
-#[derive(Clone)]
-pub struct LangOptions {
-    pub c11: bool,              // C11 standard compliance
-    pub gnu_mode: bool,         // GNU extensions
-    pub ms_extensions: bool,    // Microsoft extensions
-}
+use crate::lang_options::LangOptions;
 
 // Re-export DiagnosticEngine from diagnostic module for convenience
 pub use crate::diagnostic::DiagnosticEngine;

@@ -6,6 +6,7 @@ use target_lexicon::Triple as TargetInfo;
 use chrono::{DateTime, Datelike, Timelike, Utc};
 use bitflags::bitflags;
 use crate::diagnostic::DiagnosticEngine;
+use crate::lang_options::LangOptions;
 
 // Packed token flags for preprocessor tokens
 bitflags::bitflags! {
@@ -57,14 +58,6 @@ pub struct PPToken {
     pub flags: PPTokenFlags,
     pub location: SourceLoc, // Contains file ID and byte offset
     pub length: u16, // Maximum token length (64KB should be sufficient for any token)
-}
-
-/// Language options affecting preprocessor behavior
-#[derive(Clone)]
-pub struct LangOptions {
-    pub c11: bool,              // C11 standard compliance
-    pub gnu_mode: bool,         // GNU extensions
-    pub ms_extensions: bool,    // Microsoft extensions
 }
 
 /// Packed boolean flags for macro properties

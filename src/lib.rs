@@ -1,3 +1,4 @@
+pub mod lang_options;
 pub mod preprocessor;
 pub mod lexer;
 pub mod parser;

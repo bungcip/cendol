@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 use std::fs;
-use clap::{Parser, Args};
+use clap::{Parser as CliParser, Args};
 use symbol_table::GlobalSymbol as Symbol;
 
 use crate::ast::{Ast, Node, NodeKind, FunctionDefData, Declarator, TypeQualifiers};
@@ -10,14 +10,15 @@ use crate::semantic::SemanticAnalyzer;
 use crate::diagnostic::{DiagnosticEngine, SemanticOutput};
 use crate::ast_dumper::{AstDumper, DumpConfig};
 use crate::source_manager::{SourceManager, SourceId, SourceSpan, SourceLoc};
-use crate::lexer::{LangOptions};
-// Preprocessor types are not yet implemented in the preprocessor module
-// use crate::preprocessor::{Preprocessor, PreprocessorConfig, PreprocessorError};
+use crate::lang_options::LangOptions;
+use crate::preprocessor::{Preprocessor, PreprocessorConfig, PreprocessorError};
+use crate::parser::Parser;
+
 // Remove duplicate PreprocessorConfig definition
 use std::cell::Cell;
 
 /// CLI interface using clap
-#[derive(Parser, Debug)]
+#[derive(CliParser, Debug)]
 #[clap(name = "cendol", about = "C11 Compiler written in Rust")]
 pub struct Cli {
     /// Input C source files
@@ -63,7 +64,7 @@ pub struct CompileConfig {
     pub output_path: Option<PathBuf>,
     pub dump_ast: bool,
     pub verbose: bool,
-    pub preprocessor: crate::preprocessor::PreprocessorConfig,
+    pub preprocessor: PreprocessorConfig,
     pub include_paths: Vec<PathBuf>,
     pub defines: Vec<(String, Option<String>)>, // NAME -> VALUE
 }
@@ -99,7 +100,7 @@ impl CompilerDriver {
             verbose: cli.verbose,
             include_paths: cli.include_paths,
             defines,
-            preprocessor: crate::preprocessor::PreprocessorConfig {
+            preprocessor: PreprocessorConfig {
                 max_include_depth: cli.preprocessor.max_include_depth,
                 system_include_paths: Vec::new(), // TODO: Add system include paths
             },
@@ -132,10 +133,10 @@ impl CompilerDriver {
         let source_id = self.source_manager.add_file(source_path.to_str().unwrap(), &content);
 
         // 2. Preprocessing phase
-        let mut preprocessor = crate::preprocessor::Preprocessor::new(
+        let mut preprocessor = Preprocessor::new(
             &mut self.source_manager,
             &self.diagnostics,
-            crate::preprocessor::LangOptions { c11: true, gnu_mode: false, ms_extensions: false },
+            LangOptions { c11: true, gnu_mode: false, ms_extensions: false },
             target_lexicon::Triple::host(),
             &self.config.preprocessor,
         );
@@ -156,19 +157,18 @@ impl CompilerDriver {
 
         // 4. Parsing phase
         let mut ast = Ast::new();
-        let mut parser_diag = DiagnosticEngine::new();
-        let mut parser = crate::parser::Parser::new(&tokens, &mut ast, &mut parser_diag);
+        let mut compiler_diag = DiagnosticEngine::new();
+        let mut parser = Parser::new(&tokens, &mut ast, &mut compiler_diag);
         let translation_unit = parser.parse_translation_unit()
             .map_err(|e| CompilerError::ParserError(format!("Parsing failed: {:?}", e)))?;
 
         // Check for parser errors and merge them into main diagnostics
-        for diag in parser_diag.diagnostics() {
+        for diag in compiler_diag.diagnostics() {
             self.diagnostics.report_diagnostic(diag.clone());
         }
 
         // 5. Semantic analysis phase
-        let mut semantic_diag = DiagnosticEngine::new();
-        let mut analyzer = SemanticAnalyzer::new(&mut ast, &mut semantic_diag);
+        let mut analyzer = SemanticAnalyzer::new(&mut ast, &mut compiler_diag);
         let semantic_output = analyzer.analyze();
 
         // Merge semantic diagnostics into main diagnostics

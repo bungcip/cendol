@@ -13,3 +13,7 @@ log = "0.4"
 env_logger = "0.11"
 itertools = "0.13"
 chrono = "0.4"
+bitflags = "2.6"
+target-lexicon = "0.12"
+symbol_table = { version = "0.3", features = ["global"] }
+annotate-snippets = "0.9"

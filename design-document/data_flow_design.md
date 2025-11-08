@@ -79,9 +79,8 @@ graph TD
 /// Global symbol interning (from symbol_table crate)
 pub type Symbol = symbol_table::GlobalSymbol;
 
-/// Source location tracking
-pub struct SourceLoc(u32); // Packed file ID + offset
-pub struct SourceSpan { start: SourceLoc, end: SourceLoc }
+/// Source location tracking (imported from source_manager)
+pub use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
 
 /// Flattened AST storage
 pub struct Ast {

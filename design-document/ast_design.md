@@ -29,101 +29,27 @@ To achieve flattening, the AST will be stored in a single `Vec<Node>`, with all 
 
 ### 3.1. Symbol Interning
 
-All unique strings (identifiers, string literals, etc.) are interned.
+All unique strings (identifiers, string literals, etc.) are interned using the `symbol_table` crate with global symbol table feature.
 
 ```rust
-use std::num::NonZeroU32;
-use hashbrown::HashMap;
-
 /// Represents an interned string using symbol_table crate.
 /// Alias for GlobalSymbol from symbol_table crate with global feature.
 pub type Symbol = symbol_table::GlobalSymbol;
-
-/// The string interner.
-pub struct StringInterner {
-    map: HashMap<String, Symbol>,
-    strings: Vec<String>, // Stores the actual strings, indexed by Symbol.0 - 1
-    next_id: u32,
-}
-
-impl StringInterner {
-    pub fn new() -> Self {
-        StringInterner {
-            map: HashMap::new(),
-            strings: Vec::new(),
-            next_id: 1, // Start from 1 for NonZeroU32
-        }
-    }
-
-    pub fn get_or_intern(&mut self, s: &str) -> Symbol {
-        if let Some(&symbol) = self.map.get(s) {
-            return symbol;
-        }
-
-        let id = self.next_id;
-        self.next_id += 1;
-        let symbol = Symbol(NonZeroU32::new(id).expect("Symbol ID overflow"));
-
-        self.map.insert(s.to_string(), symbol);
-        self.strings.push(s.to_string()); // Store a copy
-        symbol
-    }
-
-    pub fn resolve(&self, symbol: Symbol) -> &str {
-        &self.strings[(symbol.0.get() - 1) as usize]
-    }
-}
 ```
 
 **Benefits:**
--   **Deduplication**: Only one copy of each unique string is stored.
+-   **Deduplication**: Only one copy of each unique string is stored globally.
 -   **Cache-Friendly AST**: AST nodes only store a `Symbol` (4 bytes), dramatically reducing the size of identifier nodes.
 -   **Fast Comparisons**: `O(1)` integer comparison for symbol equality.
 -   **Compact Option**: `NonZeroU32` allows `Option<Symbol>` to be the same size as `Symbol`.
+-   **Global Interning**: Uses thread-safe global symbol table for efficient interning across the compiler.
 
 ### 3.2. Source Location Tracking
 
-Efficiently stores file ID and byte offset.
+Efficiently stores file ID and byte offset, imported from the source_manager module.
 
 ```rust
-/// Identifies a specific source file/module.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SourceId(NonZeroU32);
-
-/// Represents a packed file ID and byte offset in a single u32.
-/// Designed to be 4 bytes.
-/// - Bits 0-21: Byte Offset (max 4 MiB file size)
-/// - Bits 22-31: Source ID Index (max 1023 unique source files)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SourceLoc(u32);
-
-impl SourceLoc {
-    const OFFSET_MASK: u32 = (1 << 22) - 1; // 22 bits for offset
-    const ID_SHIFT: u32 = 22; // Shift for SourceId
-
-    pub fn new(source_id: SourceId, offset: u32) -> Self {
-        assert!(offset <= Self::OFFSET_MASK, "Offset exceeds 4 MiB limit");
-        assert!(source_id.0.get() <= (1 << (32 - Self::ID_SHIFT)) - 1, "SourceId exceeds 1023 limit");
-        
-        let packed = (offset & Self::OFFSET_MASK) | (source_id.0.get() << Self::ID_SHIFT);
-        SourceLoc(packed)
-    }
-
-    pub fn source_id(&self) -> SourceId {
-        SourceId(NonZeroU32::new((self.0 >> Self::ID_SHIFT) & ((1 << (32 - Self::ID_SHIFT)) - 1)).expect("Invalid SourceId"))
-    }
-
-    pub fn offset(&self) -> u32 {
-        self.0 & Self::OFFSET_MASK
-    }
-}
-
-/// Represents a range in the source file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SourceSpan {
-    pub start: SourceLoc,
-    pub end: SourceLoc,
-}
+pub use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
 ```
 
 **Rationale for SourceLoc Packing:**
@@ -407,10 +333,13 @@ pub struct EnumDefData {
     pub enumerators: Option<Vec<NodeRef>>, // List of EnumConstant nodes
 }
 
-// Declaration Specifiers combine StorageClass, TypeQualifiers, and TypeSpecifiers
+// Declaration Specifiers combine StorageClass, TypeQualifiers, FunctionSpecifiers, AlignmentSpecifier, and TypeSpecifiers
 #[derive(Debug)]
 pub struct DeclSpecifier {
     pub storage_class: Option<StorageClass>,
+    pub type_qualifiers: TypeQualifiers,
+    pub function_specifiers: FunctionSpecifiers,
+    pub alignment_specifier: Option<AlignmentSpecifier>,
     pub type_specifier: TypeSpecifier,
 }
 
@@ -418,7 +347,7 @@ pub struct DeclSpecifier {
 #[derive(Debug)]
 pub enum TypeSpecifier {
     Void, Char, Short, Int, Long, Float, Double, Signed, Unsigned,
-    Bool, Complex, Atomic(TypeIndex), // _Bool, _Complex, _Atomic
+    Bool, Complex, Atomic(TypeRef), // _Bool, _Complex, _Atomic
     Record(bool /* is_union */, Option<Symbol> /* tag */, Option<RecordDefData> /* definition */),
     Enum(Option<Symbol> /* tag */, Option<Vec<NodeRef>> /* enumerators */),
     TypedefName(Symbol),
@@ -439,6 +368,22 @@ bitflags::bitflags! {
         const RESTRICT = 1 << 2;
         const ATOMIC = 1 << 3; // C11 _Atomic
     }
+}
+
+// Function Specifiers (C11)
+bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    pub struct FunctionSpecifiers: u8 {
+        const INLINE = 1 << 0;
+        const NORETURN = 1 << 1; // C11 _Noreturn
+    }
+}
+
+// Alignment Specifiers (C11 _Alignas)
+#[derive(Debug)]
+pub enum AlignmentSpecifier {
+    Type(TypeRef),     // _Alignas(type-name)
+    Expr(NodeRef),     // _Alignas(constant-expression)
 }
 
 // Unary Operators

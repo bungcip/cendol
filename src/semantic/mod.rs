@@ -208,9 +208,9 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
         // 4. Annotation Pass
         self.annotate_ast(&symbol_table);
 
+        // Return diagnostics directly
         SemanticOutput {
-            errors: std::mem::take(&mut self.diag.errors),
-            warnings: std::mem::take(&mut self.diag.warnings),
+            diagnostics: self.diag.diagnostics.clone(),
         }
     }
 
@@ -252,6 +252,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
         };
         annotator.annotate_ast_impl();
     }
+
 }
 
 impl<'ast, 'diag> SymbolCollector<'ast, 'diag> {

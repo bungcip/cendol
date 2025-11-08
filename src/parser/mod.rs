@@ -4,40 +4,9 @@ use crate::lexer::{Token, TokenKind};
 use crate::source_manager::{SourceSpan, SourceLoc};
 use symbol_table::GlobalSymbol as Symbol;
 use bitflags::bitflags;
+use crate::diagnostic::{DiagnosticEngine, ParseError};
 
-/// Parser error types
-#[derive(Debug, thiserror::Error)]
-pub enum ParseError {
-    #[error("Unexpected token: expected {expected:?}, found {found:?} at {location:?}")]
-    UnexpectedToken {
-        expected: Vec<TokenKind>,
-        found: Token,
-        location: SourceSpan,
-    },
-
-    #[error("Missing token: expected {expected:?} at {location:?}")]
-    MissingToken {
-        expected: TokenKind,
-        location: SourceSpan,
-    },
-
-    #[error("Syntax error: {message} at {location:?}")]
-    SyntaxError {
-        message: String,
-        location: SourceSpan,
-    },
-
-    #[error("Invalid integer constant: {text} at {location:?}")]
-    InvalidIntegerConstant {
-        text: String,
-        location: SourceSpan,
-    },
-
-    #[error("Invalid declarator at {location:?}")]
-    InvalidDeclarator {
-        location: SourceSpan,
-    },
-}
+// ParseError is now defined in diagnostic.rs
 
 /// Binding power for Pratt parser operator precedence
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -134,7 +103,7 @@ pub struct Parser<'arena, 'src> {
     tokens: &'src [Token],
     current_idx: usize,
     ast: &'arena mut Ast,
-    diag: &'src crate::lexer::DiagnosticEngine,
+    diag: &'src mut DiagnosticEngine,
 
     // Parsing context
     in_function_body: bool,
@@ -162,7 +131,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     pub fn new(
         tokens: &'src [Token],
         ast: &'arena mut Ast,
-        diag: &'src crate::lexer::DiagnosticEngine,
+        diag: &'src mut DiagnosticEngine,
     ) -> Self {
         Parser {
             tokens,
@@ -219,7 +188,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             } else {
                 Err(ParseError::UnexpectedToken {
                     expected: vec![expected],
-                    found: token,
+                    found: token.kind,
                     location: token.location,
                 })
             }
@@ -401,7 +370,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                     TokenKind::CharacterConstant(0),
                     TokenKind::LeftParen,
                 ],
-                found: token,
+                found: token.kind,
                 location: token.location,
             }),
         }
@@ -620,7 +589,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             TokenKind::Identifier(symbol) => symbol,
             _ => return Err(ParseError::UnexpectedToken {
                 expected: vec![TokenKind::Identifier(Symbol::new(""))],
-                found: member_token,
+                found: member_token.kind,
                 location: member_token.location,
             }),
         };
@@ -971,7 +940,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                     TokenKind::Struct, TokenKind::Union, TokenKind::Enum,
                     TokenKind::Identifier(Symbol::new("")),
                 ],
-                found: token,
+                found: token.kind,
                 location: token.location,
             }),
         }
@@ -1111,7 +1080,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             TokenKind::Identifier(symbol) => symbol,
             _ => return Err(ParseError::UnexpectedToken {
                 expected: vec![TokenKind::Identifier(Symbol::new(""))],
-                found: token,
+                found: token.kind,
                 location: token.location,
             }),
         };
@@ -1229,7 +1198,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                     TokenKind::Identifier(symbol) => symbol,
                     _ => return Err(ParseError::UnexpectedToken {
                         expected: vec![TokenKind::Identifier(Symbol::new(""))],
-                        found: token,
+                        found: token.kind,
                         location: token.location,
                     }),
                 };
@@ -1285,7 +1254,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             } else {
                 return Err(ParseError::UnexpectedToken {
                     expected: vec![TokenKind::Star, TokenKind::LeftParen, TokenKind::Identifier(Symbol::new(""))],
-                    found: token,
+                    found: token.kind,
                     location: token.location,
                 });
             }
@@ -1759,7 +1728,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             TokenKind::Identifier(symbol) => symbol,
             _ => return Err(ParseError::UnexpectedToken {
                 expected: vec![TokenKind::Identifier(Symbol::new(""))],
-                found: token,
+                found: token.kind,
                 location: self.current_token().unwrap().location,
             }),
         };
@@ -2017,14 +1986,47 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         let start_span = self.current_token().map(|t| t.location.start).unwrap_or(SourceLoc(0));
 
         let mut top_level_declarations = Vec::new();
+        let mut iteration_count = 0;
+        const MAX_ITERATIONS: usize = 10000; // Prevent infinite loops
 
-        while !self.matches(&[TokenKind::EndOfFile]) {
+        while let Some(token) = self.current_token() {
+            if token.kind == TokenKind::EndOfFile {
+                break;
+            }
+
+            // Prevent infinite loops by limiting iterations
+            iteration_count += 1;
+            if iteration_count > MAX_ITERATIONS {
+                return Err(ParseError::SyntaxError {
+                    message: "Parser exceeded maximum iteration limit - possible infinite loop".to_string(),
+                    location: token.location,
+                });
+            }
+
+            let initial_idx = self.current_idx;
+
             if self.is_function_definition_start() {
-                let func_def = self.parse_function_definition()?;
-                top_level_declarations.push(func_def);
+                match self.parse_function_definition() {
+                    Ok(func_def) => top_level_declarations.push(func_def),
+                    Err(e) => {
+                        self.diag.report_parse_error(e);
+                        self.synchronize();
+                    }
+                }
             } else {
-                let declaration = self.parse_declaration()?;
-                top_level_declarations.push(declaration);
+                match self.parse_declaration() {
+                    Ok(declaration) => top_level_declarations.push(declaration),
+                    Err(e) => {
+                        self.diag.report_parse_error(e);
+                        self.synchronize();
+                    }
+                }
+            }
+
+            // Ensure we made progress - if we didn't advance, force advance to prevent infinite loop
+            if self.current_idx == initial_idx {
+                // Skip the current token to make progress
+                self.advance();
             }
         }
 
@@ -2170,7 +2172,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             TokenKind::StringLiteral(symbol) => symbol,
             _ => return Err(ParseError::UnexpectedToken {
                 expected: vec![TokenKind::StringLiteral(Symbol::new(""))],
-                found: token,
+                found: token.kind,
                 location: token.location,
             }),
         };

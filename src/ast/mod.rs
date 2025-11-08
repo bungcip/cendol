@@ -6,47 +6,8 @@ use bitflags::bitflags;
 /// Alias for GlobalSymbol from symbol_table crate with global feature.
 pub type Symbol = symbol_table::GlobalSymbol;
 
-
 pub use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
 
-// /// Represents a packed file ID and byte offset in a single u32.
-// /// Designed to be 4 bytes.
-// /// - Bits 0-21: Byte Offset (max 4 MiB file size)
-// /// - Bits 22-31: Source ID Index (max 1023 unique source files)
-// #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-// pub struct SourceLoc(pub u32);
-
-// impl SourceLoc {
-//     const OFFSET_MASK: u32 = (1 << 22) - 1; // 22 bits for offset
-//     const ID_SHIFT: u32 = 22; // Shift for SourceId
-
-//     pub fn new(source_id: SourceId, offset: u32) -> Self {
-//         assert!(offset <= Self::OFFSET_MASK, "Offset exceeds 4 MiB limit");
-//         assert!(source_id.0.get() <= (1 << (32 - Self::ID_SHIFT)) - 1, "SourceId exceeds 1023 limit");
-
-//         let packed = (offset & Self::OFFSET_MASK) | (source_id.0.get() << Self::ID_SHIFT);
-//         SourceLoc(packed)
-//     }
-
-//     pub fn source_id(&self) -> SourceId {
-//         SourceId(NonZeroU32::new((self.0 >> Self::ID_SHIFT) & ((1 << (32 - Self::ID_SHIFT)) - 1)).expect("Invalid SourceId"))
-//     }
-
-//     pub fn offset(&self) -> u32 {
-//         self.0 & Self::OFFSET_MASK
-//     }
-
-//     pub fn source_id_value(&self) -> u32 {
-//         (self.0 >> Self::ID_SHIFT) & ((1 << (32 - Self::ID_SHIFT)) - 1)
-//     }
-// }
-
-// /// Represents a range in the source file.
-// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// pub struct SourceSpan {
-//     pub start: SourceLoc,
-//     pub end: SourceLoc,
-// }
 
 /// The flattened AST storage.
 pub struct Ast {

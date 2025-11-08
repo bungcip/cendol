@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fmt::Write;
 use std::path::PathBuf;
 
@@ -750,10 +749,10 @@ impl<'src> AstDumper<'src> {
     }
 
     fn escape_html(&self, text: &str) -> String {
-        text.replace("&", "&")
-            .replace("<", "<")
-            .replace(">", ">")
-            .replace("\"", "\"")
+        text.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
             .replace("'", "&#x27;")
     }
 }

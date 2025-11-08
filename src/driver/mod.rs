@@ -156,65 +156,25 @@ impl CompilerDriver {
 
         // 4. Parsing phase
         let mut ast = Ast::new();
-        let parser_diag = DiagnosticEngine::new();
-        let mut parser = crate::parser::Parser::new(&tokens, &mut ast, &parser_diag);
-        parser.parse_translation_unit()
+        let mut parser_diag = DiagnosticEngine::new();
+        let mut parser = crate::parser::Parser::new(&tokens, &mut ast, &mut parser_diag);
+        let translation_unit = parser.parse_translation_unit()
             .map_err(|e| CompilerError::ParserError(format!("Parsing failed: {:?}", e)))?;
 
-        // For now, manually create AST nodes for the simple input.c
-        // int main(){ return 0; }
-
-        // Create source spans (simplified) - use proper SourceLoc construction
-        let source_span = SourceSpan::new(
-            SourceLoc(0), // start
-            SourceLoc(content.len() as u32) // end
-        );
-
-        // Create function body (compound statement with return)
-        let return_expr = ast.push_node(Node {
-            kind: NodeKind::LiteralInt(0),
-            span: source_span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
-
-        let return_stmt = ast.push_node(Node {
-            kind: NodeKind::Return(Some(return_expr)),
-            span: source_span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
-
-        let compound_stmt = ast.push_node(Node {
-            kind: NodeKind::CompoundStatement(vec![return_stmt]),
-            span: source_span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
-
-        // Create function definition
-        let func_def = ast.push_node(Node {
-            kind: NodeKind::FunctionDef(FunctionDefData {
-                specifiers: vec![], // int specifier would go here
-                declarator: Declarator::Identifier(Symbol::new("main"), TypeQualifiers::empty(), None),
-                body: compound_stmt,
-            }),
-            span: source_span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
-
-        // Create translation unit
-        let translation_unit = ast.push_node(Node {
-            kind: NodeKind::TranslationUnit(vec![func_def]),
-            span: source_span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
+        // Check for parser errors and merge them into main diagnostics
+        for diag in parser_diag.diagnostics() {
+            self.diagnostics.report_diagnostic(diag.clone());
+        }
 
         // 5. Semantic analysis phase
-        let mut analyzer = SemanticAnalyzer::new(&mut ast, &mut self.diagnostics);
+        let mut semantic_diag = DiagnosticEngine::new();
+        let mut analyzer = SemanticAnalyzer::new(&mut ast, &mut semantic_diag);
         let semantic_output = analyzer.analyze();
+
+        // Merge semantic diagnostics into main diagnostics
+        for diag in semantic_output.diagnostics {
+            self.diagnostics.report_diagnostic(diag);
+        }
 
         // 6. AST dumping (if requested)
         if self.config.dump_ast {
@@ -240,16 +200,13 @@ impl CompilerDriver {
 
     fn report_errors(&self) -> Result<(), CompilerError> {
         if self.diagnostics.has_errors() {
-            let formatter = ErrorFormatter {
-                show_source: true,
-                show_hints: true,
-                use_colors: true,
-                max_context: 3,
-            };
+            let formatter = crate::diagnostic::ErrorFormatter::default();
 
-            for error in &self.diagnostics.errors {
-                let formatted = formatter.format_diagnostic(error, &self.source_manager);
-                eprintln!("{}", formatted);
+            for diag in self.diagnostics.diagnostics() {
+                if diag.level == crate::diagnostic::DiagnosticLevel::Error {
+                    let formatted = formatter.format_diagnostic(diag, &self.source_manager);
+                    eprintln!("{}", formatted);
+                }
             }
 
             return Err(CompilerError::CompilationFailed);
@@ -276,19 +233,4 @@ pub enum CompilerError {
     AstDumpError(String),
     #[error("Compilation failed due to errors")]
     CompilationFailed,
-}
-
-/// Error formatter using annotate_snippets
-pub struct ErrorFormatter {
-    pub show_source: bool,
-    pub show_hints: bool,
-    pub use_colors: bool,
-    pub max_context: usize,
-}
-
-impl ErrorFormatter {
-    pub fn format_diagnostic(&self, diag: &crate::semantic::SemanticError, source_manager: &SourceManager) -> String {
-        // Simple error formatting for now - TODO: Implement full annotate_snippets integration
-        format!("Error: {}", diag)
-    }
 }

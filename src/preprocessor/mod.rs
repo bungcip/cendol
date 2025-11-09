@@ -491,7 +491,7 @@ impl PPLexer {
     }
 
     pub fn next_token(&mut self) -> Option<PPToken> {
-        self.skip_whitespace();
+        self.skip_whitespace_and_comments();
 
         if self.position >= self.buffer.len() {
             return None;
@@ -969,6 +969,44 @@ impl PPLexer {
                 self.position += 1;
             } else {
                 break;
+            }
+        }
+    }
+
+    fn skip_whitespace_and_comments(&mut self) {
+        loop {
+            self.skip_whitespace();
+
+            if self.position >= self.buffer.len() {
+                break;
+            }
+
+            let ch = self.buffer[self.position];
+            if ch == b'/' && self.position + 1 < self.buffer.len() {
+                let next_ch = self.buffer[self.position + 1];
+                if next_ch == b'/' {
+                    // Line comment: skip to end of line
+                    self.position += 2;
+                    while self.position < self.buffer.len() && self.buffer[self.position] != b'\n' {
+                        self.position += 1;
+                    }
+                    // Continue the loop to skip more whitespace/comments
+                } else if next_ch == b'*' {
+                    // Block comment: skip to */
+                    self.position += 2;
+                    while self.position + 1 < self.buffer.len() {
+                        if self.buffer[self.position] == b'*' && self.buffer[self.position + 1] == b'/' {
+                            self.position += 2;
+                            break;
+                        }
+                        self.position += 1;
+                    }
+                    // Continue the loop to skip more whitespace/comments
+                } else {
+                    break; // Not a comment, exit loop
+                }
+            } else {
+                break; // Not whitespace or comment start, exit loop
             }
         }
     }

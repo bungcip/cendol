@@ -215,7 +215,7 @@ impl CompilerDriver {
                 max_depth: None,
                 output_path: output_path.clone(),
             };
-            let dumper = AstDumper::new(&ast, &symbol_table, &self.diagnostics, dump_config);
+            let dumper = AstDumper::new(&ast, &symbol_table, &self.diagnostics, &self.source_manager, dump_config);
             let html = dumper.generate_html()
                 .map_err(|e| CompilerError::AstDumpError(format!("HTML generation error: {:?}", e)))?;
 

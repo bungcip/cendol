@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use crate::ast::*;
 use crate::diagnostic::*;
 use crate::semantic::*;
+use crate::source_manager::*;
 
 /// Configuration for AST dump output
 #[derive(Debug, Clone)]
@@ -30,6 +31,7 @@ pub struct AstDumper<'src> {
     ast: &'src Ast,
     symbol_table: &'src SymbolTable,
     diag: &'src DiagnosticEngine,
+    source_manager: &'src SourceManager,
     config: DumpConfig,
 }
 
@@ -39,12 +41,14 @@ impl<'src> AstDumper<'src> {
         ast: &'src Ast,
         symbol_table: &'src SymbolTable,
         diag: &'src DiagnosticEngine,
+        source_manager: &'src SourceManager,
         config: DumpConfig,
     ) -> Self {
         AstDumper {
             ast,
             symbol_table,
             diag,
+            source_manager,
             config,
         }
     }
@@ -60,11 +64,15 @@ impl<'src> AstDumper<'src> {
         writeln!(html, "<body>")?;
         writeln!(html, "<h1>Cendol Compiler AST Dump</h1>")?;
 
+        // Generate table of contents
+        self.generate_table_of_contents(&mut html)?;
+
         // Generate sections
         self.generate_ast_section(&mut html)?;
         self.generate_symbol_table_section(&mut html)?;
         self.generate_scope_table_section(&mut html)?;
         self.generate_type_table_section(&mut html)?;
+        self.generate_diagnostics_section(&mut html)?;
 
         // Body end
         writeln!(html, "</body>")?;
@@ -119,10 +127,34 @@ impl<'src> AstDumper<'src> {
 
             .semantic-info {{
                 background: #ecf0f1;
-                padding: 5px;
+                padding: 8px;
                 margin: 5px 0;
-                border-radius: 3px;
-                font-size: 0.9em;
+                border-radius: 4px;
+                font-size: 0.85em;
+                border-left: 3px solid #3498db;
+                line-height: 1.4;
+            }}
+
+            .semantic-info a {{
+                color: #2980b9;
+                text-decoration: none;
+                font-weight: bold;
+            }}
+
+            .semantic-info a:hover {{
+                text-decoration: underline;
+            }}
+
+            .source-code {{
+                background-color: #f8f9fa;
+                border: 1px solid #e9ecef;
+                border-radius: 4px;
+                padding: 8px;
+                margin: 5px 0;
+                font-family: 'Courier New', monospace;
+                font-size: 0.85em;
+                color: #495057;
+                white-space: pre-wrap;
             }}
 
             .ast-tree {{
@@ -150,6 +182,66 @@ impl<'src> AstDumper<'src> {
 
             .ast-tree li:only-child:before {{
                 display: none;
+            }}
+
+            .ast-controls {{
+                display: flex;
+                gap: 20px;
+                margin-bottom: 20px;
+                align-items: center;
+            }}
+
+            .tree-controls {{
+                display: flex;
+                gap: 10px;
+            }}
+
+            .tree-controls button {{
+                padding: 8px 16px;
+                background-color: #3498db;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 14px;
+            }}
+
+            .tree-controls button:hover {{
+                background-color: #2980b9;
+            }}
+
+            .ast-tree li.collapsed > ul {{
+                display: none;
+            }}
+
+            .ast-tree li.expanded > ul {{
+                display: block;
+            }}
+
+            .ast-tree .node-content {{
+                display: flex;
+                align-items: center;
+                cursor: pointer;
+                padding: 2px 0;
+            }}
+
+            .ast-tree .node-content:hover {{
+                background-color: #f0f8ff;
+            }}
+
+            .ast-tree .toggle-icon {{
+                margin-right: 5px;
+                font-size: 12px;
+                color: #666;
+                transition: transform 0.2s;
+            }}
+
+            .ast-tree li.collapsed .toggle-icon {{
+                transform: rotate(0deg);
+            }}
+
+            .ast-tree li.expanded .toggle-icon {{
+                transform: rotate(90deg);
             }}
 
             table {{
@@ -235,6 +327,68 @@ impl<'src> AstDumper<'src> {
             a:hover {{
                 text-decoration: underline;
             }}
+
+            #table-of-contents {{
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                width: 200px;
+                background-color: white;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                padding: 15px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                max-height: 80vh;
+                overflow-y: auto;
+                z-index: 1000;
+            }}
+
+            #table-of-contents h2 {{
+                font-size: 1.1em;
+                margin-top: 0;
+                margin-bottom: 10px;
+                color: #2c3e50;
+            }}
+
+            #table-of-contents ul {{
+                list-style-type: none;
+                padding: 0;
+                margin: 0;
+            }}
+
+            #table-of-contents li {{
+                margin: 5px 0;
+            }}
+
+            #table-of-contents a {{
+                color: #3498db;
+                text-decoration: none;
+                font-size: 0.9em;
+            }}
+
+            #table-of-contents a:hover {{
+                text-decoration: underline;
+            }}
+
+            /* Node type filtering */
+            .node-filter {{
+                margin: 10px 0;
+                padding: 10px;
+                background-color: #f8f9fa;
+                border-radius: 4px;
+            }}
+
+            .node-filter select {{
+                padding: 5px;
+                border: 1px solid #ddd;
+                border-radius: 3px;
+                margin-left: 5px;
+            }}
+
+            .node-filter label {{
+                font-weight: bold;
+                color: #2c3e50;
+            }}
         "#)?;
         Ok(())
     }
@@ -290,6 +444,76 @@ impl<'src> AstDumper<'src> {
                 tableSelect.addEventListener('change', performSearch);
             }}
 
+            function toggleAstNode(element) {{
+                const li = element.parentElement;
+                const isCollapsed = li.classList.contains('collapsed');
+
+                if (isCollapsed) {{
+                    li.classList.remove('collapsed');
+                    li.classList.add('expanded');
+                }} else {{
+                    li.classList.remove('expanded');
+                    li.classList.add('collapsed');
+                }}
+            }}
+
+            function expandAllAst() {{
+                const collapsedNodes = document.querySelectorAll('#ast-tree li.collapsed');
+                collapsedNodes.forEach(node => {{
+                    node.classList.remove('collapsed');
+                    node.classList.add('expanded');
+                }});
+            }}
+
+            function collapseAllAst() {{
+                const expandedNodes = document.querySelectorAll('#ast-tree li.expanded');
+                expandedNodes.forEach(node => {{
+                    node.classList.remove('expanded');
+                    node.classList.add('collapsed');
+                }});
+            }}
+
+            function searchAst(query) {{
+                const lowerQuery = query.toLowerCase();
+                const allNodes = document.querySelectorAll('#ast-tree li');
+
+                allNodes.forEach(node => {{
+                    const nodeType = node.querySelector('.node-type');
+                    const spanInfo = node.querySelector('.span-info');
+                    const text = (nodeType ? nodeType.textContent : '') + (spanInfo ? spanInfo.textContent : '');
+
+                    if (text.toLowerCase().includes(lowerQuery)) {{
+                        node.style.display = '';
+                        // Expand parent nodes to show this result
+                        let parent = node.parentElement;
+                        while (parent && parent.id !== 'ast-tree') {{
+                            if (parent.tagName === 'LI') {{
+                                parent.classList.remove('collapsed');
+                                parent.classList.add('expanded');
+                            }}
+                            parent = parent.parentElement;
+                        }}
+                    }} else {{
+                        node.style.display = 'none';
+                    }}
+                }});
+            }}
+
+            function filterAstByType(nodeType) {{
+                const allNodes = document.querySelectorAll('#ast-tree li');
+
+                allNodes.forEach(node => {{
+                    const nodeTypeSpan = node.querySelector('.node-type');
+                    const nodeTypeText = nodeTypeSpan ? nodeTypeSpan.textContent : '';
+
+                    if (!nodeType || nodeTypeText === nodeType) {{
+                        node.style.display = '';
+                    }} else {{
+                        node.style.display = 'none';
+                    }}
+                }});
+            }}
+
             document.addEventListener('DOMContentLoaded', function() {{
                 setupSearch();
 
@@ -300,18 +524,75 @@ impl<'src> AstDumper<'src> {
                         toggleCollapse(this);
                     }});
                 }}
+
+                // Setup AST search
+                const astSearchInput = document.getElementById('ast-search');
+                if (astSearchInput) {{
+                    astSearchInput.addEventListener('input', function() {{
+                        searchAst(this.value);
+                    }});
+                }}
+
+                // Setup node type filtering
+                const nodeTypeFilter = document.getElementById('node-type-filter');
+                if (nodeTypeFilter) {{
+                    nodeTypeFilter.addEventListener('change', function() {{
+                        filterAstByType(this.value);
+                    }});
+                }}
             }});
         "#)?;
+        Ok(())
+    }
+
+    fn generate_table_of_contents(&self, html: &mut String) -> Result<(), std::fmt::Error> {
+        writeln!(html, "<nav id=\"table-of-contents\">")?;
+        writeln!(html, "<h2>Table of Contents</h2>")?;
+        writeln!(html, "<ul>")?;
+        writeln!(html, "<li><a href=\"#ast-section\">Abstract Syntax Tree</a></li>")?;
+        writeln!(html, "<li><a href=\"#symbols-section\">Symbol Table</a></li>")?;
+        writeln!(html, "<li><a href=\"#scopes-section\">Scope Table</a></li>")?;
+        writeln!(html, "<li><a href=\"#types-section\">Type Table</a></li>")?;
+        writeln!(html, "<li><a href=\"#diagnostics-section\">Diagnostics</a></li>")?;
+        writeln!(html, "</ul>")?;
+        writeln!(html, "</nav>")?;
         Ok(())
     }
 
     fn generate_ast_section(&self, html: &mut String) -> Result<(), std::fmt::Error> {
         writeln!(html, "<section id=\"ast-section\">")?;
         writeln!(html, "<h2>Abstract Syntax Tree</h2>")?;
+
+        // Add controls for AST tree
+        writeln!(html, "<div class=\"ast-controls\">")?;
+        writeln!(html, "<div class=\"search-container\">")?;
+        writeln!(html, "<input type=\"text\" id=\"ast-search\" placeholder=\"Search AST nodes...\">")?;
+        writeln!(html, "</div>")?;
+        writeln!(html, "<div class=\"tree-controls\">")?;
+        writeln!(html, "<button onclick=\"expandAllAst()\">Expand All</button>")?;
+        writeln!(html, "<button onclick=\"collapseAllAst()\">Collapse All</button>")?;
+        writeln!(html, "</div>")?;
+        writeln!(html, "<div class=\"node-filter\">")?;
+        writeln!(html, "<label for=\"node-type-filter\">Filter by type:</label>")?;
+        writeln!(html, "<select id=\"node-type-filter\">")?;
+        writeln!(html, "<option value=\"\">All Types</option>")?;
+        writeln!(html, "<option value=\"FunctionDef\">FunctionDef</option>")?;
+        writeln!(html, "<option value=\"Declaration\">Declaration</option>")?;
+        writeln!(html, "<option value=\"BinaryOp\">BinaryOp</option>")?;
+        writeln!(html, "<option value=\"UnaryOp\">UnaryOp</option>")?;
+        writeln!(html, "<option value=\"If\">If</option>")?;
+        writeln!(html, "<option value=\"While\">While</option>")?;
+        writeln!(html, "<option value=\"For\">For</option>")?;
+        writeln!(html, "<option value=\"Return\">Return</option>")?;
+        writeln!(html, "<option value=\"CompoundStatement\">CompoundStatement</option>")?;
+        writeln!(html, "</select>")?;
+        writeln!(html, "</div>")?;
+        writeln!(html, "</div>")?;
+
         writeln!(html, "<div id=\"ast-tree\">")?;
 
         // Find the root node (TranslationUnit)
-        if let Some(root_node) = self.ast.nodes.first() {
+        if let Some(root_node) = self.ast.nodes.last() {
             self.generate_ast_tree(html, root_node, 0)?;
         } else {
             writeln!(html, "<p class=\"error\">No AST nodes found</p>")?;
@@ -336,10 +617,26 @@ impl<'src> AstDumper<'src> {
             node.span.end.offset()
         );
 
+        let has_children = self.node_has_children(node);
+        let collapsed_class = if depth > 0 { " collapsed" } else { "" };
+
         writeln!(html, "<ul class=\"ast-tree\">")?;
-        writeln!(html, "<li class=\"ast-node\">")?;
+        writeln!(html, "<li class=\"ast-node{}\" id=\"node_{}\">", collapsed_class, node.span.start.offset())?;
+        if has_children {
+            writeln!(html, "<div class=\"node-content\" onclick=\"toggleAstNode(this)\">")?;
+            writeln!(html, "<span class=\"toggle-icon\">▶</span>")?;
+        } else {
+            writeln!(html, "<div class=\"node-content\">")?;
+        }
         writeln!(html, "<span class=\"node-type\">{}</span>", self.escape_html(&node_type))?;
         writeln!(html, "<span class=\"span-info\">{}</span>", self.escape_html(&span_info))?;
+        writeln!(html, "</div>")?;
+
+        // Add source code snippet if enabled
+        if self.config.include_source {
+            let source_text = self.get_formatted_source_text(node.span);
+            writeln!(html, "<div class=\"source-code\">{}</div>", source_text)?;
+        }
 
         // Add semantic information
         self.generate_semantic_info(html, node)?;
@@ -364,17 +661,38 @@ impl<'src> AstDumper<'src> {
             NodeKind::LiteralChar(_) => "LiteralChar".to_string(),
             NodeKind::BinaryOp(op, _, _) => format!("BinaryOp({:?})", op),
             NodeKind::UnaryOp(op, _) => format!("UnaryOp({:?})", op),
+            NodeKind::TernaryOp(_, _, _) => "TernaryOp".to_string(),
+            NodeKind::PostIncrement(_) => "PostIncrement".to_string(),
+            NodeKind::PostDecrement(_) => "PostDecrement".to_string(),
             NodeKind::Assignment(op, _, _) => format!("Assignment({:?})", op),
             NodeKind::FunctionCall(_, _) => "FunctionCall".to_string(),
+            NodeKind::MemberAccess(_, _, _) => "MemberAccess".to_string(),
+            NodeKind::IndexAccess(_, _) => "IndexAccess".to_string(),
+            NodeKind::Cast(_, _) => "Cast".to_string(),
+            NodeKind::SizeOfExpr(_) => "SizeOfExpr".to_string(),
+            NodeKind::SizeOfType(_) => "SizeOfType".to_string(),
+            NodeKind::AlignOf(_) => "AlignOf".to_string(),
+            NodeKind::CompoundLiteral(_, _) => "CompoundLiteral".to_string(),
+            NodeKind::GenericSelection(_, _) => "GenericSelection".to_string(),
+            NodeKind::VaArg(_, _) => "VaArg".to_string(),
             NodeKind::CompoundStatement(_) => "CompoundStatement".to_string(),
             NodeKind::If(_) => "If".to_string(),
             NodeKind::While(_) => "While".to_string(),
+            NodeKind::DoWhile(_, _) => "DoWhile".to_string(),
             NodeKind::For(_) => "For".to_string(),
             NodeKind::Return(_) => "Return".to_string(),
             NodeKind::Break => "Break".to_string(),
             NodeKind::Continue => "Continue".to_string(),
+            NodeKind::Goto(_) => "Goto".to_string(),
+            NodeKind::Label(_, _) => "Label".to_string(),
+            NodeKind::Switch(_, _) => "Switch".to_string(),
+            NodeKind::Case(_, _) => "Case".to_string(),
+            NodeKind::CaseRange(_, _, _) => "CaseRange".to_string(),
+            NodeKind::Default(_) => "Default".to_string(),
             NodeKind::ExpressionStatement(_) => "ExpressionStatement".to_string(),
             NodeKind::EmptyStatement => "EmptyStatement".to_string(),
+            NodeKind::EnumConstant(_, _) => "EnumConstant".to_string(),
+            NodeKind::StaticAssert(_, _) => "StaticAssert".to_string(),
             _ => format!("{:?}", kind).split('(').next().unwrap_or("Unknown").to_string(),
         }
     }
@@ -383,23 +701,31 @@ impl<'src> AstDumper<'src> {
         let mut info_parts = Vec::new();
 
         if let Some(type_ref) = node.resolved_type.get() {
+            let type_display = self.get_enhanced_type_display_name(type_ref);
             info_parts.push(format!("Type: <a href=\"#type_{}\">{}</a>",
                 type_ref.get(),
-                self.get_type_display_name(type_ref)
+                type_display
             ));
         }
 
         if let Some(symbol_ref) = node.resolved_symbol.get() {
             let symbol = self.symbol_table.get_symbol_entry(symbol_ref);
-            info_parts.push(format!("Symbol: <a href=\"#sym_{}\">{}</a>",
+            let symbol_info = self.get_enhanced_symbol_info(symbol_ref, symbol);
+            info_parts.push(format!("Symbol: <a href=\"#sym_{}\">{}</a>{}",
                 symbol_ref.get(),
-                self.escape_html(&symbol.name.to_string())
+                self.escape_html(&symbol.name.to_string()),
+                symbol_info
             ));
         }
 
         if !info_parts.is_empty() {
             writeln!(html, "<div class=\"semantic-info\">")?;
-            writeln!(html, "{}", info_parts.join(", "))?;
+            for (i, part) in info_parts.iter().enumerate() {
+                if i > 0 {
+                    writeln!(html, "<br>")?;
+                }
+                writeln!(html, "{}", part)?;
+            }
             writeln!(html, "</div>")?;
         }
 
@@ -419,6 +745,15 @@ impl<'src> AstDumper<'src> {
                 let body_node = self.ast.get_node(func_def.body);
                 self.generate_ast_tree(html, body_node, depth + 1)?;
             }
+            NodeKind::Declaration(decl) => {
+                // Handle declarators and initializers
+                for init_decl in &decl.init_declarators {
+                    self.generate_declarator_children(html, &init_decl.declarator, depth + 1)?;
+                    if let Some(initializer) = &init_decl.initializer {
+                        self.generate_initializer_children(html, initializer, depth + 1)?;
+                    }
+                }
+            }
             NodeKind::CompoundStatement(nodes) => {
                 for &node_ref in nodes {
                     let child = self.ast.get_node(node_ref);
@@ -432,6 +767,18 @@ impl<'src> AstDumper<'src> {
                 self.generate_ast_tree(html, right_node, depth + 1)?;
             }
             NodeKind::UnaryOp(_, operand) => {
+                let operand_node = self.ast.get_node(*operand);
+                self.generate_ast_tree(html, operand_node, depth + 1)?;
+            }
+            NodeKind::TernaryOp(cond, then_expr, else_expr) => {
+                let cond_node = self.ast.get_node(*cond);
+                let then_node = self.ast.get_node(*then_expr);
+                let else_node = self.ast.get_node(*else_expr);
+                self.generate_ast_tree(html, cond_node, depth + 1)?;
+                self.generate_ast_tree(html, then_node, depth + 1)?;
+                self.generate_ast_tree(html, else_node, depth + 1)?;
+            }
+            NodeKind::PostIncrement(operand) | NodeKind::PostDecrement(operand) => {
                 let operand_node = self.ast.get_node(*operand);
                 self.generate_ast_tree(html, operand_node, depth + 1)?;
             }
@@ -449,6 +796,40 @@ impl<'src> AstDumper<'src> {
                     self.generate_ast_tree(html, arg_node, depth + 1)?;
                 }
             }
+            NodeKind::MemberAccess(object, _, _) => {
+                let object_node = self.ast.get_node(*object);
+                self.generate_ast_tree(html, object_node, depth + 1)?;
+            }
+            NodeKind::IndexAccess(array, index) => {
+                let array_node = self.ast.get_node(*array);
+                let index_node = self.ast.get_node(*index);
+                self.generate_ast_tree(html, array_node, depth + 1)?;
+                self.generate_ast_tree(html, index_node, depth + 1)?;
+            }
+            NodeKind::Cast(_, expr) => {
+                let expr_node = self.ast.get_node(*expr);
+                self.generate_ast_tree(html, expr_node, depth + 1)?;
+            }
+            NodeKind::SizeOfExpr(expr) => {
+                let expr_node = self.ast.get_node(*expr);
+                self.generate_ast_tree(html, expr_node, depth + 1)?;
+            }
+            NodeKind::CompoundLiteral(_, init_ref) => {
+                let initializer = self.ast.get_initializer(*init_ref);
+                self.generate_initializer_children(html, initializer, depth + 1)?;
+            }
+            NodeKind::GenericSelection(ctrl_expr, associations) => {
+                let ctrl_node = self.ast.get_node(*ctrl_expr);
+                self.generate_ast_tree(html, ctrl_node, depth + 1)?;
+                for assoc in associations {
+                    let result_node = self.ast.get_node(assoc.result_expr);
+                    self.generate_ast_tree(html, result_node, depth + 1)?;
+                }
+            }
+            NodeKind::VaArg(va_list_expr, _) => {
+                let expr_node = self.ast.get_node(*va_list_expr);
+                self.generate_ast_tree(html, expr_node, depth + 1)?;
+            }
             NodeKind::If(if_stmt) => {
                 let condition = self.ast.get_node(if_stmt.condition);
                 let then_branch = self.ast.get_node(if_stmt.then_branch);
@@ -464,6 +845,12 @@ impl<'src> AstDumper<'src> {
                 let body = self.ast.get_node(while_stmt.body);
                 self.generate_ast_tree(html, condition, depth + 1)?;
                 self.generate_ast_tree(html, body, depth + 1)?;
+            }
+            NodeKind::DoWhile(body, condition) => {
+                let body_node = self.ast.get_node(*body);
+                let cond_node = self.ast.get_node(*condition);
+                self.generate_ast_tree(html, body_node, depth + 1)?;
+                self.generate_ast_tree(html, cond_node, depth + 1)?;
             }
             NodeKind::For(for_stmt) => {
                 if let Some(init) = for_stmt.init {
@@ -485,12 +872,111 @@ impl<'src> AstDumper<'src> {
                 let expr_node = self.ast.get_node(*expr);
                 self.generate_ast_tree(html, expr_node, depth + 1)?;
             }
+            NodeKind::Goto(_) => {} // No children
+            NodeKind::Label(_, stmt) => {
+                let stmt_node = self.ast.get_node(*stmt);
+                self.generate_ast_tree(html, stmt_node, depth + 1)?;
+            }
+            NodeKind::Switch(condition, body) => {
+                let cond_node = self.ast.get_node(*condition);
+                let body_node = self.ast.get_node(*body);
+                self.generate_ast_tree(html, cond_node, depth + 1)?;
+                self.generate_ast_tree(html, body_node, depth + 1)?;
+            }
+            NodeKind::Case(expr, stmt) => {
+                let expr_node = self.ast.get_node(*expr);
+                let stmt_node = self.ast.get_node(*stmt);
+                self.generate_ast_tree(html, expr_node, depth + 1)?;
+                self.generate_ast_tree(html, stmt_node, depth + 1)?;
+            }
+            NodeKind::CaseRange(start, end, stmt) => {
+                let start_node = self.ast.get_node(*start);
+                let end_node = self.ast.get_node(*end);
+                let stmt_node = self.ast.get_node(*stmt);
+                self.generate_ast_tree(html, start_node, depth + 1)?;
+                self.generate_ast_tree(html, end_node, depth + 1)?;
+                self.generate_ast_tree(html, stmt_node, depth + 1)?;
+            }
+            NodeKind::Default(stmt) => {
+                let stmt_node = self.ast.get_node(*stmt);
+                self.generate_ast_tree(html, stmt_node, depth + 1)?;
+            }
             NodeKind::ExpressionStatement(Some(expr)) => {
                 let expr_node = self.ast.get_node(*expr);
                 self.generate_ast_tree(html, expr_node, depth + 1)?;
             }
-            // Add more cases as needed
-            _ => {} // Leaf nodes or unhandled cases
+            NodeKind::EnumConstant(_, Some(value_expr)) => {
+                let value_node = self.ast.get_node(*value_expr);
+                self.generate_ast_tree(html, value_node, depth + 1)?;
+            }
+            NodeKind::StaticAssert(condition, _) => {
+                let cond_node = self.ast.get_node(*condition);
+                self.generate_ast_tree(html, cond_node, depth + 1)?;
+            }
+            // Leaf nodes or unhandled cases
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn generate_declarator_children(&self, html: &mut String, declarator: &Declarator, depth: usize) -> Result<(), std::fmt::Error> {
+        match declarator {
+            Declarator::Identifier(_, _, next) => {
+                if let Some(next_decl) = next {
+                    self.generate_declarator_children(html, next_decl, depth)?;
+                }
+            }
+            Declarator::Pointer(_, next) => {
+                if let Some(next_decl) = next {
+                    self.generate_declarator_children(html, next_decl, depth)?;
+                }
+            }
+            Declarator::Array(decl, size) => {
+                match size {
+                    ArraySize::Expression(expr) => {
+                        let expr_node = self.ast.get_node(*expr);
+                        self.generate_ast_tree(html, expr_node, depth)?;
+                    }
+                    ArraySize::VlaSpecifier(Some(expr)) => {
+                        let expr_node = self.ast.get_node(*expr);
+                        self.generate_ast_tree(html, expr_node, depth)?;
+                    }
+                    _ => {}
+                }
+                self.generate_declarator_children(html, decl, depth)?;
+            }
+            Declarator::Function(decl, params) => {
+                for param in params {
+                    if let Some(declarator) = &param.declarator {
+                        self.generate_declarator_children(html, declarator, depth)?;
+                    }
+                }
+                self.generate_declarator_children(html, decl, depth)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn generate_initializer_children(&self, html: &mut String, initializer: &Initializer, depth: usize) -> Result<(), std::fmt::Error> {
+        match initializer {
+            Initializer::Expression(expr) => {
+                let expr_node = self.ast.get_node(*expr);
+                self.generate_ast_tree(html, expr_node, depth)?;
+            }
+            Initializer::List(designated_inits) => {
+                for designated in designated_inits {
+                    for designator in &designated.designation {
+                        match designator {
+                            Designator::ArrayIndex(index_expr) => {
+                                let index_node = self.ast.get_node(*index_expr);
+                                self.generate_ast_tree(html, index_node, depth)?;
+                            }
+                            _ => {}
+                        }
+                    }
+                    self.generate_initializer_children(html, &designated.initializer, depth)?;
+                }
+            }
         }
         Ok(())
     }
@@ -627,6 +1113,57 @@ impl<'src> AstDumper<'src> {
         Ok(())
     }
 
+    fn generate_diagnostics_section(&self, html: &mut String) -> Result<(), std::fmt::Error> {
+        writeln!(html, "<section id=\"diagnostics-section\">")?;
+        writeln!(html, "<h2>Diagnostics</h2>")?;
+        writeln!(html, "<table id=\"diagnostics-table\">")?;
+        writeln!(html, "<thead>")?;
+        writeln!(html, "<tr>")?;
+        writeln!(html, "<th>Level</th>")?;
+        writeln!(html, "<th>Message</th>")?;
+        writeln!(html, "<th>Location</th>")?;
+        writeln!(html, "<th>Code</th>")?;
+        writeln!(html, "<th>Hints</th>")?;
+        writeln!(html, "</tr>")?;
+        writeln!(html, "</thead>")?;
+        writeln!(html, "<tbody>")?;
+
+        for (i, diag) in self.diag.diagnostics().iter().enumerate() {
+            let id = i + 1;
+            let level = match diag.level {
+                crate::diagnostic::DiagnosticLevel::Error => "<span class=\"error\">Error</span>",
+                crate::diagnostic::DiagnosticLevel::Warning => "<span class=\"warning\">Warning</span>",
+                crate::diagnostic::DiagnosticLevel::Note => "Note",
+            };
+            let message = self.escape_html(&diag.message);
+            let location = format!("[{}:{}-{}:{}]",
+                diag.location.start.source_id(),
+                diag.location.start.offset(),
+                diag.location.end.source_id(),
+                diag.location.end.offset()
+            );
+            let code = diag.code.as_ref().map(|c| self.escape_html(c)).unwrap_or_else(|| "-".to_string());
+            let hints = if diag.hints.is_empty() {
+                "-".to_string()
+            } else {
+                diag.hints.iter().map(|h| self.escape_html(h)).collect::<Vec<_>>().join("<br>")
+            };
+
+            writeln!(html, "<tr id=\"diag_{}\">", id)?;
+            writeln!(html, "<td>{}</td>", level)?;
+            writeln!(html, "<td>{}</td>", message)?;
+            writeln!(html, "<td>{}</td>", location)?;
+            writeln!(html, "<td>{}</td>", code)?;
+            writeln!(html, "<td>{}</td>", hints)?;
+            writeln!(html, "</tr>")?;
+        }
+
+        writeln!(html, "</tbody>")?;
+        writeln!(html, "</table>")?;
+        writeln!(html, "</section>")?;
+        Ok(())
+    }
+
     fn get_symbol_kind_display(&self, kind: &SymbolKind) -> String {
         match kind {
             SymbolKind::Variable { is_global, is_static, is_extern, .. } => {
@@ -682,6 +1219,92 @@ impl<'src> AstDumper<'src> {
             TypeKind::Incomplete => "incomplete".to_string(),
             TypeKind::Error => "error".to_string(),
             _ => "unknown".to_string(),
+        }
+    }
+
+    fn get_enhanced_type_display_name(&self, type_ref: TypeRef) -> String {
+        let ty = self.ast.get_type(type_ref);
+        let mut display = self.get_type_display_name(type_ref);
+
+        // Add qualifiers if present
+        if !ty.qualifiers.is_empty() {
+            let qual_str = format!("{:?}", ty.qualifiers).to_lowercase();
+            display = format!("{} {}", qual_str, display);
+        }
+
+        // Add size information if available
+        if let Some(size) = ty.size {
+            display = format!("{} ({} bytes)", display, size);
+        }
+
+        display
+    }
+
+    fn get_enhanced_symbol_info(&self, symbol_ref: SymbolEntryRef, symbol: &SymbolEntry) -> String {
+        let mut info_parts = Vec::new();
+
+        // Add definition/referenced status
+        let def_status = if symbol.is_defined { "defined" } else { "declared" };
+        let ref_status = if symbol.is_referenced { "referenced" } else { "unused" };
+        info_parts.push(format!("({} {})", def_status, ref_status));
+
+        // Add storage class if present
+        if let Some(storage_class) = symbol.storage_class {
+            info_parts.push(format!("storage: {:?}", storage_class));
+        }
+
+        // Add symbol kind specific information
+        match &symbol.kind {
+            SymbolKind::Variable { is_global, is_static, is_extern, initializer } => {
+                let mut attrs = Vec::new();
+                if *is_global { attrs.push("global"); }
+                if *is_static { attrs.push("static"); }
+                if *is_extern { attrs.push("extern"); }
+                if !attrs.is_empty() {
+                    info_parts.push(format!("attrs: {}", attrs.join(", ")));
+                }
+                if let Some(init_ref) = initializer {
+                    info_parts.push(format!("initializer: node {}", init_ref.get()));
+                }
+            }
+            SymbolKind::Function { is_definition, is_inline, is_variadic, parameters } => {
+                let mut attrs = Vec::new();
+                if *is_definition { attrs.push("definition"); }
+                if *is_inline { attrs.push("inline"); }
+                if *is_variadic { attrs.push("variadic"); }
+                if !attrs.is_empty() {
+                    info_parts.push(format!("attrs: {}", attrs.join(", ")));
+                }
+                info_parts.push(format!("params: {}", parameters.len()));
+            }
+            SymbolKind::Typedef { aliased_type } => {
+                let aliased_name = self.get_type_display_name(*aliased_type);
+                info_parts.push(format!("aliased: {}", aliased_name));
+            }
+            SymbolKind::EnumConstant { value } => {
+                info_parts.push(format!("value: {}", value));
+            }
+            SymbolKind::Label { is_defined, is_used } => {
+                let def_status = if *is_defined { "defined" } else { "undeclared" };
+                let use_status = if *is_used { "used" } else { "unused" };
+                info_parts.push(format!("label: {} {}", def_status, use_status));
+            }
+            SymbolKind::Record { is_complete, members, size, alignment } => {
+                let complete_status = if *is_complete { "complete" } else { "incomplete" };
+                info_parts.push(format!("record: {} ({} members)", complete_status, members.len()));
+                if let Some(size) = size {
+                    info_parts.push(format!("size: {} bytes", size));
+                }
+                if let Some(align) = alignment {
+                    info_parts.push(format!("align: {} bytes", align));
+                }
+            }
+        }
+
+        if !info_parts.is_empty() {
+            format!(" {}", info_parts.join(", "))
+        } else {
+            String::new()
         }
     }
 
@@ -747,6 +1370,17 @@ impl<'src> AstDumper<'src> {
             _ => "-".to_string(),
         }
     }
+    /// Format source text for display, escaping HTML and handling newlines
+    fn format_source_text(&self, text: &str) -> String {
+        let escaped = self.escape_html(text);
+        escaped.replace("\n", "<br>").replace("\t", "&nbsp;&nbsp;&nbsp;&nbsp;")
+    }
+
+    /// Get source text for a span, formatted for HTML display
+    fn get_formatted_source_text(&self, span: SourceSpan) -> String {
+        let source_text = self.source_manager.get_source_text(span);
+        self.format_source_text(source_text)
+    }
 
     fn escape_html(&self, text: &str) -> String {
         text.replace("&", "&amp;")
@@ -754,5 +1388,42 @@ impl<'src> AstDumper<'src> {
             .replace(">", "&gt;")
             .replace("\"", "&quot;")
             .replace("'", "&#x27;")
+    }
+
+    fn node_has_children(&self, node: &Node) -> bool {
+        match &node.kind {
+            NodeKind::TranslationUnit(nodes) => !nodes.is_empty(),
+            NodeKind::FunctionDef(_) => true, // Has body
+            NodeKind::Declaration(decl) => !decl.init_declarators.is_empty(),
+            NodeKind::CompoundStatement(nodes) => !nodes.is_empty(),
+            NodeKind::BinaryOp(_, _, _) => true,
+            NodeKind::UnaryOp(_, _) => true,
+            NodeKind::TernaryOp(_, _, _) => true,
+            NodeKind::PostIncrement(_) | NodeKind::PostDecrement(_) => true,
+            NodeKind::Assignment(_, _, _) => true,
+            NodeKind::FunctionCall(_, args) => !args.is_empty(),
+            NodeKind::MemberAccess(_, _, _) => true,
+            NodeKind::IndexAccess(_, _) => true,
+            NodeKind::Cast(_, _) => true,
+            NodeKind::SizeOfExpr(_) => true,
+            NodeKind::CompoundLiteral(_, _) => true,
+            NodeKind::GenericSelection(_, associations) => !associations.is_empty(),
+            NodeKind::VaArg(_, _) => true,
+            NodeKind::If(_) => true,
+            NodeKind::While(_) => true,
+            NodeKind::DoWhile(_, _) => true,
+            NodeKind::For(_) => true,
+            NodeKind::Return(Some(_)) => true,
+            NodeKind::Goto(_) => false, // No children
+            NodeKind::Label(_, _) => true,
+            NodeKind::Switch(_, _) => true,
+            NodeKind::Case(_, _) => true,
+            NodeKind::CaseRange(_, _, _) => true,
+            NodeKind::Default(_) => true,
+            NodeKind::ExpressionStatement(Some(_)) => true,
+            NodeKind::EnumConstant(_, Some(_)) => true,
+            NodeKind::StaticAssert(_, _) => true,
+            _ => false,
+        }
     }
 }

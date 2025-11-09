@@ -2007,7 +2007,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
             if self.is_function_definition_start() {
                 match self.parse_function_definition() {
-                    Ok(func_def) => top_level_declarations.push(func_def),
+                    Ok(func_def) => {
+                        top_level_declarations.push(func_def);
+                    }
                     Err(e) => {
                         self.diag.report_parse_error(e);
                         self.synchronize();
@@ -2015,7 +2017,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 }
             } else {
                 match self.parse_declaration() {
-                    Ok(declaration) => top_level_declarations.push(declaration),
+                    Ok(declaration) => {
+                        top_level_declarations.push(declaration);
+                    }
                     Err(e) => {
                         self.diag.report_parse_error(e);
                         self.synchronize();

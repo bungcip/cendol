@@ -59,6 +59,7 @@ pub enum TokenKind {
     Complex,
     Generic,
     Noreturn,
+    Pragma,
     StaticAssert,
     ThreadLocal,
 
@@ -170,6 +171,7 @@ pub struct KeywordTable {
     complex: Symbol,
     generic: Symbol,
     noreturn: Symbol,
+    pragma: Symbol,
     static_assert: Symbol,
     thread_local: Symbol,
 }
@@ -219,6 +221,7 @@ impl KeywordTable {
             complex: Symbol::new("_Complex"),
             generic: Symbol::new("_Generic"),
             noreturn: Symbol::new("_Noreturn"),
+            pragma: Symbol::new("_Pragma"),
             static_assert: Symbol::new("_Static_assert"),
             thread_local: Symbol::new("_Thread_local"),
         }
@@ -308,6 +311,8 @@ impl KeywordTable {
             Some(TokenKind::Generic)
         } else if symbol == self.noreturn {
             Some(TokenKind::Noreturn)
+        } else if symbol == self.pragma {
+            Some(TokenKind::Pragma)
         } else if symbol == self.static_assert {
             Some(TokenKind::StaticAssert)
         } else if symbol == self.thread_local {
@@ -459,6 +464,8 @@ impl<'src> Lexer<'src> {
             PPTokenKind::Include => TokenKind::Unknown, // Not used in lexer
             PPTokenKind::Line => TokenKind::Unknown,  // Not used in lexer
             PPTokenKind::Pragma => TokenKind::Unknown, // Not used in lexer
+            PPTokenKind::Error => TokenKind::Unknown, // Not used in lexer
+            PPTokenKind::Warning => TokenKind::Unknown, // Not used in lexer
             PPTokenKind::Hash => TokenKind::Unknown,  // # not used in lexer
             PPTokenKind::HashHash => TokenKind::Unknown, // ## not used in lexer
             PPTokenKind::Unknown => TokenKind::Unknown,
@@ -490,3 +497,6 @@ impl<'src> Lexer<'src> {
         tokens
     }
 }
+
+#[cfg(test)]
+mod tests;

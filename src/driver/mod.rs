@@ -1,6 +1,7 @@
 // Compiler driver module
 
 use clap::{Args, Parser as CliParser};
+use target_lexicon::Triple;
 use std::fs;
 use std::path::{Path, PathBuf};
 use symbol_table::GlobalSymbol as Symbol;
@@ -37,6 +38,10 @@ pub struct Cli {
     #[clap(long)]
     pub dump_ast: bool,
 
+    /// Preprocess only, output preprocessed source to stdout
+    #[clap(short = 'E')]
+    pub preprocess_only: bool,
+
     /// Preprocessor options
     #[clap(flatten)]
     pub preprocessor: PreprocessorOptions,
@@ -63,6 +68,7 @@ pub struct CompileConfig {
     pub input_files: Vec<PathBuf>,
     pub output_path: Option<PathBuf>,
     pub dump_ast: bool,
+    pub preprocess_only: bool,
     pub verbose: bool,
     pub preprocessor: PreprocessorConfig,
     pub include_paths: Vec<PathBuf>,
@@ -99,6 +105,7 @@ impl CompilerDriver {
             input_files: cli.input_files,
             output_path: cli.output,
             dump_ast: cli.dump_ast,
+            preprocess_only: cli.preprocess_only,
             verbose: cli.verbose,
             include_paths: cli.include_paths,
             defines,
@@ -128,6 +135,13 @@ impl CompilerDriver {
     }
 
     fn compile_file(&mut self, source_path: &Path) -> Result<(), CompilerError> {
+        let lang_options = LangOptions {
+            c11: true,
+            gnu_mode: false,
+            ms_extensions: false,
+        };
+        let target_triple = Triple::host();
+
         // 1. Load source file through SourceManager
         let source_id = self
             .source_manager
@@ -141,12 +155,8 @@ impl CompilerDriver {
             let mut preprocessor = Preprocessor::new(
                 &mut self.source_manager,
                 &mut self.diagnostics,
-                LangOptions {
-                    c11: true,
-                    gnu_mode: false,
-                    ms_extensions: false,
-                },
-                target_lexicon::Triple::host(),
+                lang_options.clone(), // TODO: make it to just borrow
+                target_triple.clone(), // TODO: make it to just borrow
                 &self.config.preprocessor,
             );
             let result = preprocessor
@@ -163,17 +173,18 @@ impl CompilerDriver {
             return Ok(()); // Stop processing this file
         }
 
+        // If preprocess only, dump the preprocessed output
+        if self.config.preprocess_only {
+            self.dump_preprocessed_output(&pp_tokens)?;
+            return Ok(());
+        }
+
         // 3. Lexing phase
         let tokens = {
-            let target_triple = target_lexicon::Triple::host();
             let mut lexer = crate::lexer::Lexer::new(
                 &self.source_manager,
                 &mut self.diagnostics,
-                &LangOptions {
-                    c11: true,
-                    gnu_mode: false,
-                    ms_extensions: false,
-                },
+                &lang_options,
                 &target_triple,
                 &pp_tokens,
             );
@@ -251,6 +262,46 @@ impl CompilerDriver {
                 .map_err(|e| CompilerError::IoError(format!("Failed to write AST dump: {}", e)))?;
         }
 
+        Ok(())
+    }
+
+    fn dump_preprocessed_output(
+        &self,
+        pp_tokens: &[crate::preprocessor::PPToken],
+    ) -> Result<(), CompilerError> {
+        use std::io::Write;
+
+        for i in 0..pp_tokens.len() {
+            let token = &pp_tokens[i];
+            if token.kind == crate::preprocessor::PPTokenKind::Eof {
+                break;
+            }
+
+            // Get token text from source manager
+            let buffer = self.source_manager.get_buffer(token.location.source_id());
+            let start = token.location.offset() as usize;
+            let end = start + token.length as usize;
+            if end <= buffer.len() {
+                let text = unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) };
+                print!("{}", text);
+            }
+
+            // Print gap to next token, preserving newlines and whitespace
+            if i + 1 < pp_tokens.len() {
+                let next_token = &pp_tokens[i + 1];
+                let next_start = if next_token.kind == crate::preprocessor::PPTokenKind::Eof {
+                    buffer.len()
+                } else {
+                    next_token.location.offset() as usize
+                };
+                let gap_start = end;
+                if next_start > gap_start {
+                    let gap = &buffer[gap_start..next_start];
+                    let gap_str = unsafe { std::str::from_utf8_unchecked(gap) };
+                    print!("{}", gap_str);
+                }
+            }
+        }
         Ok(())
     }
 

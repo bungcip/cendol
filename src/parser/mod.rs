@@ -2560,6 +2560,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             NodeKind::TranslationUnit(top_level_declarations),
             span,
         ));
+        
+        self.ast.set_root_node(node);
+        
         Ok(node)
     }
 

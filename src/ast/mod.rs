@@ -14,6 +14,7 @@ pub struct Ast {
     pub types: Vec<Type>,
     pub symbol_entries: Vec<SymbolEntry>,
     pub initializers: Vec<Initializer>,
+    pub root: Option<NodeRef>,
 }
 
 /// Node reference type for referencing child nodes.
@@ -30,7 +31,16 @@ impl Ast {
             types: Vec::new(),
             symbol_entries: Vec::new(),
             initializers: Vec::new(),
+            root: None,
         }
+    }
+
+    pub fn get_root_node(&self) -> Option<&Node> {
+        self.root.map(|node_ref| self.get_node(node_ref))
+    }
+
+    pub fn set_root_node(&mut self, node_ref: NodeRef) {
+        self.root = Some(node_ref);
     }
 
     pub fn push_node(&mut self, node: Node) -> NodeRef {
@@ -50,7 +60,11 @@ impl Ast {
     }
 
     pub fn get_type(&self, index: TypeRef) -> &Type {
-        &self.types[(index.get() - 1) as usize]
+        let idx = (index.get() - 1) as usize;
+        if idx >= self.types.len() {
+            panic!("Type index {} out of bounds: types vector has {} elements", index.get(), self.types.len());
+        }
+        &self.types[idx]
     }
 
     pub fn push_symbol_entry(&mut self, entry: SymbolEntry) -> SymbolEntryRef {
@@ -153,7 +167,7 @@ pub enum SymbolKind {
 
 /// The core enum defining all possible AST node types for C11.
 /// Variants use NodeIndex for child references, enabling flattened storage.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum NodeKind {
     // --- Literals (Inline storage for common types) ---
     LiteralInt(Symbol), // Raw integer literal text for parsing
@@ -230,20 +244,20 @@ pub enum NodeKind {
 // Structs for Large/Indirect Variants (to keep NodeKind size small and cache-friendly)
 // These are stored separately with index-based references.
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IfStmt {
     pub condition: NodeRef,
     pub then_branch: NodeRef,
     pub else_branch: Option<NodeRef>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct WhileStmt {
     pub condition: NodeRef,
     pub body: NodeRef,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ForStmt {
     pub init: Option<NodeRef>, // Can be Declaration or Expression
     pub condition: Option<NodeRef>,
@@ -251,46 +265,46 @@ pub struct ForStmt {
     pub body: NodeRef,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DeclarationData {
     pub specifiers: Vec<DeclSpecifier>,
     pub init_declarators: Vec<InitDeclarator>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct InitDeclarator {
     pub declarator: Declarator,
     pub initializer: Option<Initializer>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FunctionDefData {
     pub specifiers: Vec<DeclSpecifier>,
     pub declarator: Declarator,
     pub body: NodeRef, // A CompoundStatement
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ParamData {
     pub specifiers: Vec<DeclSpecifier>,
     pub declarator: Option<Declarator>, // Optional name for abstract declarator
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RecordDefData {
     pub tag: Option<Symbol>,                   // None if anonymous
     pub members: Option<Vec<DeclarationData>>, // Field declarations
     pub is_union: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EnumDefData {
     pub tag: Option<Symbol>,
     pub enumerators: Option<Vec<NodeRef>>, // List of EnumConstant nodes
 }
 
 // Declaration Specifiers combine StorageClass, TypeQualifiers, FunctionSpecifiers, and TypeSpecifiers
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DeclSpecifier {
     pub storage_class: Option<StorageClass>,
     pub type_qualifiers: TypeQualifiers,
@@ -300,7 +314,7 @@ pub struct DeclSpecifier {
 }
 
 // Type Specifiers (C11)
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TypeSpecifier {
     Void,
     Char,
@@ -358,7 +372,7 @@ bitflags! {
 }
 
 // Alignment Specifiers (C11 _Alignas)
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AlignmentSpecifier {
     Type(TypeRef), // _Alignas(type-name)
     Expr(NodeRef), // _Alignas(constant-expression)
@@ -413,7 +427,7 @@ pub enum BinaryOp {
 }
 
 // C11 _Generic Association
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GenericAssociation {
     pub type_name: Option<TypeRef>, // None for 'default:'
     pub result_expr: NodeRef,
@@ -421,7 +435,7 @@ pub struct GenericAssociation {
 
 // Complex part of C declaration: the part that applies pointers, arrays, and functions
 // This recursive structure allows for declarations like `int (*(*fp)())[10];`
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Declarator {
     Identifier(Symbol, TypeQualifiers, Option<Box<Declarator>>), // Base case: name (e.g., `x`)
     Abstract,                                                    // for abstract declarator
@@ -435,7 +449,7 @@ pub enum Declarator {
 }
 
 // Defines array size (e.g., [10], [*], or [] for flexible array members)
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ArraySize {
     Expression(NodeRef),
     Star,                                              // [*] VLA
@@ -444,21 +458,21 @@ pub enum ArraySize {
 }
 
 // Initializer structure for variables (e.g., int x = 5; or struct s = {1, 2};)
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Initializer {
     Expression(NodeRef),              // = 5
     List(Vec<DesignatedInitializer>), // = { .x = 1, [0] = 2 }
 }
 
 // Designated initializer for array/struct lists (C99/C11)
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DesignatedInitializer {
     pub designation: Vec<Designator>,
     pub initializer: Initializer,
 }
 
 // A single designator in a list (.field or [index])
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Designator {
     FieldName(Symbol),
     ArrayIndex(NodeRef), // Index expression
@@ -545,7 +559,7 @@ pub enum ArraySizeType {
     Star, // [*] for function parameters
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FunctionParameter {
     pub param_type: TypeRef,
     pub name: Option<Symbol>,

@@ -679,10 +679,10 @@ impl<'src> AstDumper<'src> {
         writeln!(html, "<div id=\"ast-tree\">")?;
 
         // Find the root node (TranslationUnit)
-        if let Some(root_node) = self.ast.nodes.last() {
+        if let Some(root_node) = self.ast.get_root_node() {
             self.generate_ast_tree(html, root_node, 0)?;
         } else {
-            writeln!(html, "<p class=\"error\">No AST nodes found</p>")?;
+            writeln!(html, "<p class=\"error\">No root AST node found</p>")?;
         }
 
         writeln!(html, "</div>")?;

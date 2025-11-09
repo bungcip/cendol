@@ -5,6 +5,7 @@ use target_lexicon::Triple;
 use std::fs;
 use std::path::{Path, PathBuf};
 use symbol_table::GlobalSymbol as Symbol;
+use log::{debug, info, trace, warn};
 
 use crate::ast::{Ast, Declarator, FunctionDefData, Node, NodeKind, TypeQualifiers};
 use crate::ast_dumper::{AstDumper, DumpConfig};
@@ -135,6 +136,7 @@ impl CompilerDriver {
     }
 
     fn compile_file(&mut self, source_path: &Path) -> Result<(), CompilerError> {
+        debug!("Starting compilation of file: {}", source_path.display());
         let lang_options = LangOptions {
             c11: true,
             gnu_mode: false,

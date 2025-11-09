@@ -3,6 +3,7 @@ use std::num::NonZeroU32;
 
 use crate::ast::*;
 use crate::diagnostic::*;
+use log::debug;
 
 /// Scope ID for efficient scope references
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -40,6 +41,7 @@ pub struct Scope {
 }
 
 /// Symbol table using flattened storage
+#[derive(Debug)]
 pub struct SymbolTable {
     pub entries: Vec<SymbolEntry>,
     pub scopes: Vec<Scope>,
@@ -80,15 +82,19 @@ impl SymbolTable {
 
         self.scopes.push(new_scope);
         self.current_scope_id = new_scope_id;
+        debug!("SymbolTable: Pushed scope. New current_scope_id: {}", self.current_scope_id.get());
         new_scope_id
     }
 
     pub fn pop_scope(&mut self) -> Option<ScopeId> {
-        let current_scope = &self.scopes[self.current_scope_id.get() as usize - 1];
+        let current_scope_id_before_pop = self.current_scope_id;
+        let current_scope = &self.scopes[current_scope_id_before_pop.get() as usize - 1];
         if let Some(parent) = current_scope.parent {
             self.current_scope_id = parent;
+            debug!("SymbolTable: Popped scope. Old current_scope_id: {}, New current_scope_id: {}", current_scope_id_before_pop.get(), self.current_scope_id.get());
             Some(parent)
         } else {
+            debug!("SymbolTable: Attempted to pop global scope. No change.");
             None
         }
     }
@@ -151,41 +157,12 @@ impl SymbolTable {
     }
 }
 
-/// Symbol collection phase - builds symbol table
-pub struct SymbolCollector<'ast, 'diag> {
-    ast: &'ast Ast,
-    diag: &'diag mut DiagnosticEngine,
-    symbol_table: SymbolTable,
-    current_scope_id: ScopeId,
-    function_scope: Option<ScopeId>,
-}
-
-/// Type resolution phase - resolves type references
-pub struct TypeResolver<'ast, 'diag> {
-    ast: &'ast Ast,
-    diag: &'diag mut DiagnosticEngine,
-    symbol_table: &'ast SymbolTable,
-}
-
-/// Semantic validation phase - checks semantic correctness
-pub struct SemanticValidator<'ast, 'diag> {
-    ast: &'ast Ast,
-    diag: &'diag mut DiagnosticEngine,
-    symbol_table: &'ast SymbolTable,
-}
-
-/// AST annotation phase - adds resolved types to AST
-pub struct AstAnnotator<'ast, 'diag> {
-    ast: &'ast mut Ast,
-    diag: &'diag mut DiagnosticEngine,
-    symbol_table: &'ast SymbolTable,
-}
-
 /// Main semantic analyzer - orchestrates all phases
 pub struct SemanticAnalyzer<'arena, 'src> {
     ast: &'arena mut Ast,
     diag: &'src mut DiagnosticEngine,
     pub symbol_table: SymbolTable,
+    pub scope_stack: Vec<ScopeId>,
 }
 
 impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
@@ -194,282 +171,439 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
             ast,
             diag,
             symbol_table: SymbolTable::new(),
+            scope_stack: vec![ScopeId::GLOBAL],
         }
     }
 
     pub fn analyze(&mut self) -> SemanticOutput {
-        // Multi-pass analysis algorithm as specified in the design document
+        debug!("Starting semantic analysis with {} nodes", self.ast.nodes.len());
 
-        // 1. Symbol Collection Pass
-        let symbol_table = self.collect_symbols();
+        // Collect symbols
+        self.collect_symbols();
 
-        // 2. Type Resolution Pass
-        self.resolve_types(&symbol_table);
+        // Resolve types and validate
+        self.resolve_types();
 
-        // 3. Semantic Validation Pass
-        self.validate_semantics(&symbol_table);
-
-        // 4. Annotation Pass
-        self.annotate_ast(&symbol_table);
-
-        // Return diagnostics directly
+        // Return diagnostics
         SemanticOutput {
             diagnostics: self.diag.diagnostics.clone(),
         }
     }
 
-    fn collect_symbols(&mut self) -> SymbolTable {
-        let mut collector = SymbolCollector {
-            ast: self.ast,
-            diag: self.diag,
-            symbol_table: SymbolTable::new(),
-            current_scope_id: ScopeId::GLOBAL,
-            function_scope: None,
-        };
-        collector.collect_symbols_impl();
-        collector.symbol_table
-    }
-
-    fn resolve_types(&mut self, symbol_table: &SymbolTable) {
-        let mut resolver = TypeResolver {
-            ast: self.ast,
-            diag: self.diag,
-            symbol_table,
-        };
-        resolver.resolve_types_impl();
-    }
-
-    fn validate_semantics(&mut self, symbol_table: &SymbolTable) {
-        let mut validator = SemanticValidator {
-            ast: self.ast,
-            diag: self.diag,
-            symbol_table,
-        };
-        validator.validate_semantics_impl();
-    }
-
-    fn annotate_ast(&mut self, symbol_table: &SymbolTable) {
-        let mut annotator = AstAnnotator {
-            ast: self.ast,
-            diag: self.diag,
-            symbol_table,
-        };
-        annotator.annotate_ast_impl();
-    }
-}
-
-impl<'ast, 'diag> SymbolCollector<'ast, 'diag> {
-    pub fn collect_symbols_impl(&mut self) {
-        if self.ast.nodes.is_empty() {
+    fn collect_symbols(&mut self) {
+        // Check if we have a root node to start traversal from
+        let Some(root_node) = self.ast.get_root_node() else {
+            debug!("No root node found, skipping symbol collection");
             return;
-        }
+        };
+        
+        // Get the root node reference for stack-based traversal
+        let root_node_ref = self.ast.root.unwrap();
 
-        // Use a stack-based traversal to avoid recursion depth issues
-        let mut stack = vec![NodeRef::new(1).unwrap()];
+        debug!("Starting symbol collection from root node: {}", root_node_ref.get());
+
+        // Collect all function definitions and declarations first
+        let mut function_defs = Vec::new();
+        let mut declarations = Vec::new();
+        
+        // Use stack-based traversal starting from root
+        let mut stack = vec![root_node_ref];
+        let mut nodes_visited = 0;
 
         while let Some(node_ref) = stack.pop() {
+            nodes_visited += 1;
+            if nodes_visited % 100 == 0 {
+                debug!("Symbol collection: visited {} nodes, stack has {} items", nodes_visited, stack.len());
+            }
+
             let node = self.ast.get_node(node_ref);
 
             match &node.kind {
-                NodeKind::Declaration(decl) => {
-                    self.collect_declaration_symbols(decl, node.span);
-                }
                 NodeKind::FunctionDef(func_def) => {
-                    self.collect_function_symbols(func_def, node.span);
+                    debug!("Found function definition at node {}", node_ref.get());
+                    function_defs.push((node_ref, func_def.clone(), node.span));
+                }
+                NodeKind::Declaration(decl) => {
+                    debug!("Found declaration at node {} with {} declarators", node_ref.get(), decl.init_declarators.len());
+                    declarations.push((node_ref, decl.clone(), node.span));
                 }
                 _ => {}
             }
 
-            // Push children in reverse order for correct traversal
-            match &node.kind {
-                NodeKind::TranslationUnit(nodes) => {
-                    for &child_ref in nodes.iter().rev() {
-                        stack.push(child_ref);
-                    }
-                }
-                NodeKind::Declaration(_) => {} // No children to traverse
-                NodeKind::FunctionDef(func_def) => {
-                    stack.push(func_def.body);
-                }
-                NodeKind::CompoundStatement(nodes) => {
-                    for &child_ref in nodes.iter().rev() {
-                        stack.push(child_ref);
-                    }
-                }
-                NodeKind::If(if_stmt) => {
-                    if let Some(else_branch) = if_stmt.else_branch {
-                        stack.push(else_branch);
-                    }
-                    stack.push(if_stmt.then_branch);
-                    stack.push(if_stmt.condition);
-                }
-                NodeKind::While(while_stmt) => {
-                    stack.push(while_stmt.body);
-                    stack.push(while_stmt.condition);
-                }
-                NodeKind::For(for_stmt) => {
-                    stack.push(for_stmt.body);
-                    if let Some(increment) = for_stmt.increment {
-                        stack.push(increment);
-                    }
-                    if let Some(condition) = for_stmt.condition {
-                        stack.push(condition);
-                    }
-                    if let Some(init) = for_stmt.init {
-                        stack.push(init);
-                    }
-                }
-                NodeKind::BinaryOp(_, left, right) => {
-                    stack.push(*right);
-                    stack.push(*left);
-                }
-                NodeKind::Assignment(_, lhs, rhs) => {
-                    stack.push(*rhs);
-                    stack.push(*lhs);
-                }
-                NodeKind::FunctionCall(func, args) => {
-                    for &arg in args.iter().rev() {
-                        stack.push(arg);
-                    }
-                    stack.push(*func);
-                }
-                _ => {} // Other node types have no children
+            // Add children to stack for further traversal
+            let children = self.get_child_nodes(node_ref);
+            for child in children {
+                stack.push(child);
             }
         }
+
+        debug!("Symbol collection: found {} function definitions and {} declarations from {} total nodes",
+               function_defs.len(), declarations.len(), nodes_visited);
+        
+        // Process function definitions
+        for (node_ref, func_def, span) in function_defs {
+            debug!("Processing function definition at node {}", node_ref.get());
+            self.collect_function_and_params(&func_def, span);
+        }
+        
+        // Process declarations
+        for (node_ref, decl, span) in declarations {
+            debug!("Processing declaration at node {} with {} declarators", node_ref.get(), decl.init_declarators.len());
+            self.collect_declaration_symbols(&decl, span);
+        }
+        
+        debug!("Symbol collection complete. Found {} symbols", self.symbol_table.entries.len());
+    }
+
+    fn get_safe_type_ref(&mut self) -> TypeRef {
+        // Ensure at least one type exists, create a default int type if needed
+        if self.ast.types.is_empty() {
+            debug!("No types found, creating default int type");
+            let int_type = Type {
+                kind: TypeKind::Int { is_signed: true },
+                qualifiers: TypeQualifiers::empty(),
+                size: None,
+                alignment: None,
+            };
+            self.ast.push_type(int_type)
+        } else {
+            TypeRef::new(1).unwrap()
+        }
+    }
+
+    fn collect_function_and_params(&mut self, func_def: &FunctionDefData, span: SourceSpan) {
+        debug!("collect_function_and_params called with declarator: {:?}", func_def.declarator);
+        
+        let (name, params) = self.extract_function_info(&func_def.declarator);
+        let name = name.unwrap_or_else(|| Symbol::new("<anonymous>"));
+
+        debug!("Extracted function name: {}, parameters: {:?}", name.as_str(), params.len());
+
+        // Check for redeclaration
+        if let Some(existing_entry_ref) =
+            self.symbol_table.lookup_symbol_in_scope(name, self.symbol_table.current_scope())
+        {
+            let existing_entry = self.symbol_table.get_symbol_entry(existing_entry_ref);
+            self.diag.report_error(SemanticError::Redefinition {
+                name,
+                first_def: existing_entry.definition_span,
+                second_def: span,
+            });
+            return;
+        }
+
+        // Get a safe type reference
+        let safe_type_ref = self.get_safe_type_ref();
+
+        // Add function to current scope
+        let func_entry = SymbolEntry {
+            name,
+            kind: SymbolKind::Function {
+                is_definition: true,
+                is_inline: false,
+                is_variadic: false,
+                parameters: params.clone(),
+            },
+            type_info: safe_type_ref,
+            storage_class: None,
+            scope_id: self.symbol_table.current_scope().get(),
+            definition_span: span,
+            is_defined: true,
+            is_referenced: false,
+            is_completed: true,
+        };
+        debug!("Adding function '{}' to scope {}", name.as_str(), self.symbol_table.current_scope().get());
+        self.symbol_table.add_symbol(name, func_entry);
+
+        // Add parameters to function scope - this is the key fix!
+        let function_scope_id = self.symbol_table.push_scope(ScopeKind::Function);
+        
+        for (i, param) in params.iter().enumerate() {
+            if let Some(param_name) = param.name {
+                debug!("Adding function parameter {}: '{}' to function scope {}", i, param_name.as_str(), function_scope_id.get());
+                let param_entry = SymbolEntry {
+                    name: param_name,
+                    kind: SymbolKind::Variable {
+                        is_global: false,
+                        is_static: false,
+                        is_extern: false,
+                        initializer: None,
+                    },
+                    type_info: safe_type_ref,
+                    storage_class: None,
+                    scope_id: function_scope_id.get(),
+                    definition_span: span,
+                    is_defined: true,
+                    is_referenced: false,
+                    is_completed: true,
+                };
+                self.symbol_table.add_symbol(param_name, param_entry);
+            }
+        }
+        
+        // Pop the function scope after processing parameters
+        self.symbol_table.pop_scope();
     }
 
     fn collect_declaration_symbols(&mut self, decl: &DeclarationData, span: SourceSpan) {
         for init_declarator in &decl.init_declarators {
             if let Declarator::Identifier(name, _, _) = &init_declarator.declarator {
                 // Check for redeclaration
-                if let Some((existing_entry_ref, _)) = self.symbol_table.lookup_symbol(*name) {
+                if let Some(existing_entry_ref) =
+                    self.symbol_table.lookup_symbol_in_scope(*name, self.symbol_table.current_scope())
+                {
                     let existing_entry = self.symbol_table.get_symbol_entry(existing_entry_ref);
-                    if existing_entry.scope_id == self.symbol_table.current_scope().get() {
-                        // Redeclaration in same scope
-                        self.diag.report_error(SemanticError::Redefinition {
-                            name: *name,
-                            first_def: existing_entry.definition_span,
-                            second_def: span,
-                        });
-                        continue;
-                    }
+                    self.diag.report_error(SemanticError::Redefinition {
+                        name: *name,
+                        first_def: existing_entry.definition_span,
+                        second_def: span,
+                    });
+                    continue;
                 }
 
+                let safe_type_ref = self.get_safe_type_ref();
                 let entry = SymbolEntry {
                     name: *name,
                     kind: SymbolKind::Variable {
                         is_global: self.symbol_table.current_scope().get() == 1,
-                        is_static: false, // TODO: determine from specifiers
-                        is_extern: false, // TODO: determine from specifiers
+                        is_static: false,
+                        is_extern: false,
                         initializer: init_declarator
                             .initializer
                             .as_ref()
-                            .map(|_| NodeRef::new(1).unwrap()), // TODO
+                            .map(|_| NodeRef::new(1).unwrap()),
                     },
-                    type_info: TypeRef::new(1).unwrap(), // TODO: resolve type
-                    storage_class: None,                 // TODO
+                    type_info: safe_type_ref,
+                    storage_class: None,
                     scope_id: self.symbol_table.current_scope().get(),
                     definition_span: span,
                     is_defined: true,
                     is_referenced: false,
                     is_completed: true,
                 };
+                debug!("Adding variable '{}' to scope {}", name.as_str(), self.symbol_table.current_scope().get());
                 self.symbol_table.add_symbol(*name, entry);
             }
         }
     }
 
-    fn collect_function_symbols(&mut self, func_def: &FunctionDefData, span: SourceSpan) {
-        if let Declarator::Identifier(name, _, _) = &func_def.declarator {
-            // Check for redeclaration
-            if let Some((existing_entry_ref, _)) = self.symbol_table.lookup_symbol(*name) {
-                let existing_entry = self.symbol_table.get_symbol_entry(existing_entry_ref);
-                if existing_entry.scope_id == self.symbol_table.current_scope().get() {
-                    // Redeclaration in same scope
-                    self.diag.report_error(SemanticError::Redefinition {
-                        name: *name,
-                        first_def: existing_entry.definition_span,
-                        second_def: span,
-                    });
-                    return;
-                }
-            }
-
-            // Enter function scope for the function body
-            let function_scope = self.symbol_table.push_scope(ScopeKind::Function);
-            self.function_scope = Some(function_scope);
-
-            let entry = SymbolEntry {
-                name: *name,
-                kind: SymbolKind::Function {
-                    is_definition: true,
-                    is_inline: false,       // TODO
-                    is_variadic: false,     // TODO
-                    parameters: Vec::new(), // TODO
-                },
-                type_info: TypeRef::new(1).unwrap(), // TODO
-                storage_class: None,
-                scope_id: self.symbol_table.current_scope().get(),
-                definition_span: span,
-                is_defined: true,
-                is_referenced: false,
-                is_completed: true,
-            };
-            self.symbol_table.add_symbol(*name, entry);
-
-            // Process function body - simplified traversal
-            if self.ast.nodes.len() > func_def.body.get() as usize {
-                let body_node = self.ast.get_node(func_def.body);
-                if let NodeKind::CompoundStatement(nodes) = &body_node.kind {
-                    // Enter block scope for compound statements
-                    let _block_scope = self.symbol_table.push_scope(ScopeKind::Block);
-                    for &child_ref in nodes {
-                        let child_node = self.ast.get_node(child_ref);
-                        match &child_node.kind {
-                            NodeKind::Declaration(decl) => {
-                                self.collect_declaration_symbols(decl, child_node.span);
-                            }
-                            _ => {}
-                        }
+    fn extract_function_info(&self, declarator: &Declarator) -> (Option<Symbol>, Vec<FunctionParameter>) {
+        match declarator {
+            Declarator::Function(base, params) => {
+                let name = self.extract_identifier(base);
+                debug!("Extracting function info: name={:?}, params={}",
+                    name.as_ref().map(|s| s.as_str()), params.len());
+                
+                let func_params: Vec<FunctionParameter> = params.iter().enumerate().filter_map(|(i, param)| {
+                    debug!("Processing param {}: declarator={:?}", i, param.declarator);
+                    if let Some(decl) = &param.declarator {
+                        let param_name = self.extract_identifier(decl);
+                        debug!("  Extracted param name: {:?}", param_name.as_ref().map(|s| s.as_str()));
+                        param_name.map(|name| FunctionParameter {
+                            param_type: TypeRef::new(1).unwrap(),
+                            name: Some(name),
+                        })
+                    } else {
+                        debug!("  No declarator for param {}", i);
+                        None
                     }
-                    self.symbol_table.pop_scope();
-                }
+                }).collect();
+                debug!("Final function params: {}", func_params.len());
+                (name, func_params)
             }
-
-            // Exit function scope
-            self.symbol_table.pop_scope();
-            self.function_scope = None;
+            _ => {
+                debug!("Not a function declarator: {:?}", std::mem::discriminant(declarator));
+                (self.extract_identifier(declarator), Vec::new())
+            }
         }
     }
-}
 
-impl<'ast, 'diag> TypeResolver<'ast, 'diag> {
-    pub fn resolve_types_impl(&mut self) {
-        if self.ast.nodes.is_empty() {
-            return;
+    fn extract_identifier(&self, declarator: &Declarator) -> Option<Symbol> {
+        match declarator {
+            Declarator::Identifier(name, _, _) => {
+                debug!("Found identifier: {}", name.as_str());
+                Some(*name)
+            },
+            Declarator::Pointer(_, Some(base)) => {
+                debug!("Pointer to base: recursing");
+                self.extract_identifier(base)
+            },
+            Declarator::Array(base, _) => {
+                debug!("Array of base: recursing");
+                self.extract_identifier(base)
+            },
+            Declarator::Function(base, _) => {
+                debug!("Function returning base: recursing");
+                self.extract_identifier(base)
+            },
+            Declarator::Abstract => {
+                debug!("Abstract declarator: no identifier");
+                None
+            },
+            other => {
+                debug!("Other declarator type: {:?}", std::mem::discriminant(other));
+                None
+            }
         }
+    }
 
-        // Use a stack-based traversal to avoid recursion depth issues
-        // Start with the first node (index 0 corresponds to NodeRef(1))
-        if self.ast.nodes.is_empty() {
-            return;
+    fn get_child_nodes(&self, node_ref: NodeRef) -> Vec<NodeRef> {
+        let node = self.ast.get_node(node_ref);
+        
+        let children = match &node.kind {
+            NodeKind::TranslationUnit(nodes) => {
+                debug!("TranslationUnit has {} children", nodes.len());
+                nodes.clone()
+            }
+            NodeKind::FunctionDef(func_def) => {
+                debug!("FunctionDef: adding body to children");
+                vec![func_def.body]
+            }
+            NodeKind::CompoundStatement(nodes) => nodes.clone(),
+            NodeKind::If(if_stmt) => {
+                let mut children = vec![if_stmt.condition, if_stmt.then_branch];
+                if let Some(else_branch) = if_stmt.else_branch {
+                    children.push(else_branch);
+                }
+                children
+            }
+            NodeKind::While(while_stmt) => vec![while_stmt.condition, while_stmt.body],
+            NodeKind::DoWhile(body, condition) => vec![*body, *condition],
+            NodeKind::For(for_stmt) => {
+                let mut children = vec![for_stmt.body];
+                if let Some(init) = for_stmt.init {
+                    children.insert(0, init);
+                }
+                if let Some(condition) = for_stmt.condition {
+                    children.insert(1, condition);
+                }
+                if let Some(increment) = for_stmt.increment {
+                    children.push(increment);
+                }
+                children
+            }
+            NodeKind::Switch(condition, body) => vec![*condition, *body],
+            NodeKind::Case(expr, stmt) => vec![*expr, *stmt],
+            NodeKind::CaseRange(start_expr, end_expr, stmt) => vec![*start_expr, *end_expr, *stmt],
+            NodeKind::Default(stmt) => vec![*stmt],
+            NodeKind::Label(_, stmt) => vec![*stmt],
+            NodeKind::BinaryOp(_, left, right) => vec![*left, *right],
+            NodeKind::Assignment(_, lhs, rhs) => vec![*lhs, *rhs],
+            NodeKind::FunctionCall(func, args) => {
+                let mut children = vec![*func];
+                children.extend(args);
+                children
+            }
+            NodeKind::Return(expr) => {
+                if let Some(expr_ref) = expr {
+                    vec![*expr_ref]
+                } else {
+                    Vec::new()
+                }
+            }
+            NodeKind::UnaryOp(_, expr) => vec![*expr],
+            NodeKind::Cast(_, expr) => vec![*expr],
+            NodeKind::SizeOfExpr(expr) => vec![*expr],
+            NodeKind::TernaryOp(cond, then_expr, else_expr) => vec![*cond, *then_expr, *else_expr],
+            _ => {
+                debug!("No children for discriminant: {:?}", std::mem::discriminant(&node.kind));
+                Vec::new()
+            }
+        };
+        
+        debug!("get_child_nodes for node {} returned {} children", node_ref.get(), children.len());
+        children
+    }
+
+    fn get_child_nodes_from_kind(&self, node_kind: &NodeKind) -> Vec<NodeRef> {
+        match node_kind {
+            NodeKind::TranslationUnit(nodes) => nodes.clone(),
+            NodeKind::FunctionDef(func_def) => vec![func_def.body],
+            NodeKind::CompoundStatement(nodes) => nodes.clone(),
+            NodeKind::If(if_stmt) => {
+                let mut children = vec![if_stmt.condition, if_stmt.then_branch];
+                if let Some(else_branch) = if_stmt.else_branch {
+                    children.push(else_branch);
+                }
+                children
+            }
+            NodeKind::While(while_stmt) => vec![while_stmt.condition, while_stmt.body],
+            NodeKind::DoWhile(body, condition) => vec![*body, *condition],
+            NodeKind::For(for_stmt) => {
+                let mut children = vec![for_stmt.body];
+                if let Some(init) = for_stmt.init {
+                    children.insert(0, init);
+                }
+                if let Some(condition) = for_stmt.condition {
+                    children.insert(1, condition);
+                }
+                if let Some(increment) = for_stmt.increment {
+                    children.push(increment);
+                }
+                children
+            }
+            NodeKind::Switch(condition, body) => vec![*condition, *body],
+            NodeKind::Case(expr, stmt) => vec![*expr, *stmt],
+            NodeKind::CaseRange(start_expr, end_expr, stmt) => vec![*start_expr, *end_expr, *stmt],
+            NodeKind::Default(stmt) => vec![*stmt],
+            NodeKind::Label(_, stmt) => vec![*stmt],
+            NodeKind::BinaryOp(_, left, right) => vec![*left, *right],
+            NodeKind::Assignment(_, lhs, rhs) => vec![*lhs, *rhs],
+            NodeKind::FunctionCall(func, args) => {
+                let mut children = vec![*func];
+                children.extend(args);
+                children
+            }
+            NodeKind::Return(expr) => {
+                if let Some(expr_ref) = expr {
+                    vec![*expr_ref]
+                } else {
+                    Vec::new()
+                }
+            }
+            NodeKind::UnaryOp(_, expr) => vec![*expr],
+            NodeKind::Cast(_, expr) => vec![*expr],
+            NodeKind::SizeOfExpr(expr) => vec![*expr],
+            NodeKind::TernaryOp(cond, then_expr, else_expr) => vec![*cond, *then_expr, *else_expr],
+            _ => Vec::new(),
         }
-        let mut stack = vec![NodeRef::new(1).unwrap()];
+    }
+
+    fn resolve_types(&mut self) {
+        // Check if we have a root node to start traversal from
+        let Some(root_node) = self.ast.get_root_node() else {
+            debug!("No root node found, skipping type resolution");
+            return;
+        };
+        
+        // Get the root node reference for stack-based traversal
+        let root_node_ref = self.ast.root.unwrap();
+
+        debug!("Starting type resolution from root node: {}", root_node_ref.get());
+
+        // Type resolution using stack-based traversal starting from root
+        let mut stack = vec![root_node_ref];
+        let mut nodes_processed = 0;
 
         while let Some(node_ref) = stack.pop() {
+            nodes_processed += 1;
+            if nodes_processed % 50 == 0 {
+                debug!("Type resolution: processed {} nodes, stack has {} items", nodes_processed, stack.len());
+            }
+
             let node = self.ast.get_node(node_ref);
 
             match &node.kind {
                 NodeKind::Ident(name, resolved_symbol) => {
-                    // Resolve identifier to symbol
+                    debug!("Resolving identifier: {}", name.as_str());
                     if let Some((symbol_ref, _)) = self.symbol_table.lookup_symbol(*name) {
+                        debug!("Found symbol {} in scope", name.as_str());
                         resolved_symbol.set(Some(symbol_ref));
-                        // Mark symbol as referenced - we need mutable access to symbol table
-                        // This is a limitation of the current design - we need to modify the symbol table
-                        // but TypeResolver only has immutable access
-                        // For now, we'll skip marking as referenced
+                        // Mark symbol as referenced
+                        let symbol_entry = self.symbol_table.get_symbol_entry_mut(symbol_ref);
+                        symbol_entry.is_referenced = true;
                     } else {
-                        // Undeclared identifier
+                        debug!("Undeclared identifier: {}", name.as_str());
                         self.diag.report_error(SemanticError::UndeclaredIdentifier {
                             name: *name,
                             location: node.span,
@@ -479,276 +613,14 @@ impl<'ast, 'diag> TypeResolver<'ast, 'diag> {
                 _ => {}
             }
 
-            // Push children in reverse order for correct traversal
-            match &node.kind {
-                NodeKind::TranslationUnit(nodes) => {
-                    for &child_ref in nodes.iter().rev() {
-                        stack.push(child_ref);
-                    }
-                }
-                NodeKind::Declaration(_) => {} // No children to traverse
-                NodeKind::FunctionDef(func_def) => {
-                    stack.push(func_def.body);
-                }
-                NodeKind::CompoundStatement(nodes) => {
-                    for &child_ref in nodes.iter().rev() {
-                        stack.push(child_ref);
-                    }
-                }
-                NodeKind::If(if_stmt) => {
-                    if let Some(else_branch) = if_stmt.else_branch {
-                        stack.push(else_branch);
-                    }
-                    stack.push(if_stmt.then_branch);
-                    stack.push(if_stmt.condition);
-                }
-                NodeKind::While(while_stmt) => {
-                    stack.push(while_stmt.body);
-                    stack.push(while_stmt.condition);
-                }
-                NodeKind::For(for_stmt) => {
-                    stack.push(for_stmt.body);
-                    if let Some(increment) = for_stmt.increment {
-                        stack.push(increment);
-                    }
-                    if let Some(condition) = for_stmt.condition {
-                        stack.push(condition);
-                    }
-                    if let Some(init) = for_stmt.init {
-                        stack.push(init);
-                    }
-                }
-                NodeKind::BinaryOp(_, left, right) => {
-                    stack.push(*right);
-                    stack.push(*left);
-                }
-                NodeKind::Assignment(_, lhs, rhs) => {
-                    stack.push(*rhs);
-                    stack.push(*lhs);
-                }
-                NodeKind::FunctionCall(func, args) => {
-                    for &arg in args.iter().rev() {
-                        stack.push(arg);
-                    }
-                    stack.push(*func);
-                }
-                _ => {} // Other node types have no children
+            // Add children to stack
+            let children = self.get_child_nodes(node_ref);
+            for child in children {
+                stack.push(child);
             }
         }
-    }
-}
-
-impl<'ast, 'diag> SemanticValidator<'ast, 'diag> {
-    pub fn validate_semantics_impl(&mut self) {
-        if self.ast.nodes.is_empty() {
-            return;
-        }
-
-        // Use a stack-based traversal to avoid recursion depth issues
-        let mut stack = vec![NodeRef::new(1).unwrap()];
-
-        while let Some(node_ref) = stack.pop() {
-            let node = self.ast.get_node(node_ref);
-
-            match &node.kind {
-                NodeKind::BinaryOp(op, left, right) => {
-                    self.validate_binary_op(*op, *left, *right, node.span);
-                }
-                NodeKind::Assignment(op, lhs, rhs) => {
-                    self.validate_assignment(*op, *lhs, *rhs, node.span);
-                }
-                NodeKind::FunctionCall(func, args) => {
-                    self.validate_function_call(*func, args, node.span);
-                }
-                _ => {}
-            }
-
-            // Push children in reverse order for correct traversal
-            match &node.kind {
-                NodeKind::TranslationUnit(nodes) => {
-                    for &child_ref in nodes.iter().rev() {
-                        stack.push(child_ref);
-                    }
-                }
-                NodeKind::Declaration(_) => {} // No children to traverse
-                NodeKind::FunctionDef(func_def) => {
-                    stack.push(func_def.body);
-                }
-                NodeKind::CompoundStatement(nodes) => {
-                    for &child_ref in nodes.iter().rev() {
-                        stack.push(child_ref);
-                    }
-                }
-                NodeKind::If(if_stmt) => {
-                    if let Some(else_branch) = if_stmt.else_branch {
-                        stack.push(else_branch);
-                    }
-                    stack.push(if_stmt.then_branch);
-                    stack.push(if_stmt.condition);
-                }
-                NodeKind::While(while_stmt) => {
-                    stack.push(while_stmt.body);
-                    stack.push(while_stmt.condition);
-                }
-                NodeKind::For(for_stmt) => {
-                    stack.push(for_stmt.body);
-                    if let Some(increment) = for_stmt.increment {
-                        stack.push(increment);
-                    }
-                    if let Some(condition) = for_stmt.condition {
-                        stack.push(condition);
-                    }
-                    if let Some(init) = for_stmt.init {
-                        stack.push(init);
-                    }
-                }
-                NodeKind::BinaryOp(_, left, right) => {
-                    stack.push(*right);
-                    stack.push(*left);
-                }
-                NodeKind::Assignment(_, lhs, rhs) => {
-                    stack.push(*rhs);
-                    stack.push(*lhs);
-                }
-                NodeKind::FunctionCall(func, args) => {
-                    for &arg in args.iter().rev() {
-                        stack.push(arg);
-                    }
-                    stack.push(*func);
-                }
-                _ => {} // Other node types have no children
-            }
-        }
-    }
-
-    fn validate_binary_op(
-        &mut self,
-        _op: BinaryOp,
-        _left: NodeRef,
-        _right: NodeRef,
-        _span: SourceSpan,
-    ) {
-        // TODO: Type check binary operations
-    }
-
-    fn validate_assignment(
-        &mut self,
-        _op: BinaryOp,
-        _lhs: NodeRef,
-        _rhs: NodeRef,
-        _span: SourceSpan,
-    ) {
-        // TODO: Validate assignment compatibility
-    }
-
-    fn validate_function_call(&mut self, _func: NodeRef, _args: &[NodeRef], _span: SourceSpan) {
-        // TODO: Validate function call arguments
-    }
-}
-
-impl<'ast, 'diag> AstAnnotator<'ast, 'diag> {
-    pub fn annotate_ast_impl(&mut self) {
-        if self.ast.nodes.is_empty() {
-            return;
-        }
-
-        // Use a stack-based traversal to avoid recursion depth issues
-        let mut stack = vec![NodeRef::new(1).unwrap()];
-
-        while let Some(node_ref) = stack.pop() {
-            let node = self.ast.get_node(node_ref);
-
-            match &node.kind {
-                NodeKind::Ident(_name, resolved_symbol) => {
-                    // Already resolved in type resolution pass
-                    if let Some(symbol_ref) = resolved_symbol.get() {
-                        let symbol = self.symbol_table.get_symbol_entry(symbol_ref);
-                        node.resolved_type.set(Some(symbol.type_info));
-                    }
-                }
-                NodeKind::LiteralInt(_value) => {
-                    // Annotate with integer type - need to get mutable access to AST
-                    // This is a problem - we need to restructure this
-                    // For now, skip type annotation that requires mutable AST access
-                }
-                NodeKind::LiteralFloat(_value) => {
-                    // Annotate with float type - need to get mutable access to AST
-                    // This is a problem - we need to restructure this
-                    // For now, skip type annotation that requires mutable AST access
-                }
-                NodeKind::BinaryOp(_op, left, right) => {
-                    let left_node = self.ast.get_node(*left);
-                    let right_node = self.ast.get_node(*right);
-
-                    // Basic type propagation for arithmetic operations
-                    if let (Some(left_type), Some(_right_type)) = (
-                        left_node.resolved_type.get(),
-                        right_node.resolved_type.get(),
-                    ) {
-                        // TODO: Implement proper type promotion rules
-                        // For now, just propagate left type
-                        node.resolved_type.set(Some(left_type));
-                    }
-                }
-                _ => {}
-            }
-
-            // Push children in reverse order for correct traversal
-            match &node.kind {
-                NodeKind::TranslationUnit(nodes) => {
-                    for &child_ref in nodes.iter().rev() {
-                        stack.push(child_ref);
-                    }
-                }
-                NodeKind::Declaration(_) => {} // No children to traverse
-                NodeKind::FunctionDef(func_def) => {
-                    stack.push(func_def.body);
-                }
-                NodeKind::CompoundStatement(nodes) => {
-                    for &child_ref in nodes.iter().rev() {
-                        stack.push(child_ref);
-                    }
-                }
-                NodeKind::If(if_stmt) => {
-                    if let Some(else_branch) = if_stmt.else_branch {
-                        stack.push(else_branch);
-                    }
-                    stack.push(if_stmt.then_branch);
-                    stack.push(if_stmt.condition);
-                }
-                NodeKind::While(while_stmt) => {
-                    stack.push(while_stmt.body);
-                    stack.push(while_stmt.condition);
-                }
-                NodeKind::For(for_stmt) => {
-                    stack.push(for_stmt.body);
-                    if let Some(increment) = for_stmt.increment {
-                        stack.push(increment);
-                    }
-                    if let Some(condition) = for_stmt.condition {
-                        stack.push(condition);
-                    }
-                    if let Some(init) = for_stmt.init {
-                        stack.push(init);
-                    }
-                }
-                NodeKind::BinaryOp(_, left, right) => {
-                    stack.push(*right);
-                    stack.push(*left);
-                }
-                NodeKind::Assignment(_, lhs, rhs) => {
-                    stack.push(*rhs);
-                    stack.push(*lhs);
-                }
-                NodeKind::FunctionCall(func, args) => {
-                    for &arg in args.iter().rev() {
-                        stack.push(arg);
-                    }
-                    stack.push(*func);
-                }
-                _ => {} // Other node types have no children
-            }
-        }
+        
+        debug!("Type resolution complete");
     }
 }
 

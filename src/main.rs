@@ -2,6 +2,7 @@ use cendol::driver::{Cli, CompilerDriver};
 use clap::Parser;
 
 fn main() {
+    env_logger::init();
     let cli = Cli::parse();
 
     match CompilerDriver::new(cli) {

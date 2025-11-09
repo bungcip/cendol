@@ -1,5 +1,5 @@
-use clap::Parser;
 use cendol::driver::{Cli, CompilerDriver};
+use clap::Parser;
 
 fn main() {
     let cli = Cli::parse();

@@ -1,7 +1,7 @@
-use crate::source_manager::{SourceManager, SourceSpan, SourceLoc};
-use symbol_table::GlobalSymbol as Symbol;
-use annotate_snippets::{Level, Renderer, Snippet};
 use crate::lexer::TokenKind;
+use crate::source_manager::{SourceLoc, SourceManager, SourceSpan};
+use annotate_snippets::{Level, Renderer, Snippet};
+use symbol_table::GlobalSymbol as Symbol;
 
 /// Diagnostic severity levels
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,8 +17,8 @@ pub struct Diagnostic {
     pub level: DiagnosticLevel,
     pub message: String,
     pub location: SourceSpan,
-    pub code: Option<String>, // Error code like "E001"
-    pub hints: Vec<String>, // Suggestions for fixing
+    pub code: Option<String>,     // Error code like "E001"
+    pub hints: Vec<String>,       // Suggestions for fixing
     pub related: Vec<SourceSpan>, // Related locations
 }
 
@@ -50,15 +50,10 @@ pub enum ParseError {
     },
 
     #[error("Invalid integer constant: {text}")]
-    InvalidIntegerConstant {
-        text: String,
-        location: SourceSpan,
-    },
+    InvalidIntegerConstant { text: String, location: SourceSpan },
 
     #[error("Invalid declarator")]
-    InvalidDeclarator {
-        location: SourceSpan,
-    },
+    InvalidDeclarator { location: SourceSpan },
 }
 
 /// Diagnostic engine for collecting and reporting semantic errors and warnings
@@ -78,12 +73,19 @@ impl DiagnosticEngine {
             SemanticError::UndeclaredIdentifier { name, location } => {
                 (format!("Undeclared identifier '{}'", name), location)
             }
-            SemanticError::Redefinition { name, first_def, second_def } => {
-                (format!("Redefinition of '{}'", name), second_def)
-            }
-            SemanticError::TypeMismatch { expected, found, location } => {
-                (format!("Type mismatch: expected {}, found {}", expected, found), location)
-            }
+            SemanticError::Redefinition {
+                name,
+                first_def,
+                second_def,
+            } => (format!("Redefinition of '{}'", name), second_def),
+            SemanticError::TypeMismatch {
+                expected,
+                found,
+                location,
+            } => (
+                format!("Type mismatch: expected {}, found {}", expected, found),
+                location,
+            ),
             SemanticError::IncompleteType { name, location } => {
                 (format!("Incomplete type '{}'", name), location)
             }
@@ -104,9 +106,14 @@ impl DiagnosticEngine {
             SemanticWarning::UnusedDeclaration { name, location } => {
                 (format!("Unused declaration '{}'", name), location)
             }
-            SemanticWarning::ImplicitConversion { from_type, to_type, location } => {
-                (format!("Implicit conversion from {} to {}", from_type, to_type), location)
-            }
+            SemanticWarning::ImplicitConversion {
+                from_type,
+                to_type,
+                location,
+            } => (
+                format!("Implicit conversion from {} to {}", from_type, to_type),
+                location,
+            ),
             SemanticWarning::UnreachableCode { location } => {
                 ("Unreachable code".to_string(), location)
             }
@@ -124,15 +131,21 @@ impl DiagnosticEngine {
 
     pub fn report_parse_error(&mut self, error: ParseError) {
         let (message, location) = match error {
-            ParseError::UnexpectedToken { expected, found, location } => {
-                (format!("Unexpected token: expected {:?}, found {:?}", expected, found), location)
-            }
+            ParseError::UnexpectedToken {
+                expected,
+                found,
+                location,
+            } => (
+                format!(
+                    "Unexpected token: expected {:?}, found {:?}",
+                    expected, found
+                ),
+                location,
+            ),
             ParseError::MissingToken { expected, location } => {
                 (format!("Missing token: expected {:?}", expected), location)
             }
-            ParseError::SyntaxError { message, location } => {
-                (message, location)
-            }
+            ParseError::SyntaxError { message, location } => (message, location),
             ParseError::InvalidIntegerConstant { text, location } => {
                 (format!("Invalid integer constant: {}", text), location)
             }
@@ -168,19 +181,30 @@ impl DiagnosticEngine {
     }
 
     pub fn has_errors(&self) -> bool {
-        self.diagnostics.iter().any(|d| d.level == DiagnosticLevel::Error)
+        self.diagnostics
+            .iter()
+            .any(|d| d.level == DiagnosticLevel::Error)
     }
 
     pub fn error_count(&self) -> usize {
-        self.diagnostics.iter().filter(|d| d.level == DiagnosticLevel::Error).count()
+        self.diagnostics
+            .iter()
+            .filter(|d| d.level == DiagnosticLevel::Error)
+            .count()
     }
 
     pub fn warning_count(&self) -> usize {
-        self.diagnostics.iter().filter(|d| d.level == DiagnosticLevel::Warning).count()
+        self.diagnostics
+            .iter()
+            .filter(|d| d.level == DiagnosticLevel::Warning)
+            .count()
     }
 
     pub fn note_count(&self) -> usize {
-        self.diagnostics.iter().filter(|d| d.level == DiagnosticLevel::Note).count()
+        self.diagnostics
+            .iter()
+            .filter(|d| d.level == DiagnosticLevel::Note)
+            .count()
     }
 
     pub fn diagnostics(&self) -> &[Diagnostic] {
@@ -197,13 +221,13 @@ pub enum SemanticError {
     Redefinition {
         name: Symbol,
         first_def: SourceSpan,
-        second_def: SourceSpan
+        second_def: SourceSpan,
     },
     #[error("Type mismatch: expected {expected}, found {found}")]
     TypeMismatch {
         expected: String,
         found: String,
-        location: SourceSpan
+        location: SourceSpan,
     },
     #[error("Incomplete type '{name}'")]
     IncompleteType { name: Symbol, location: SourceSpan },
@@ -218,7 +242,7 @@ pub enum SemanticWarning {
     ImplicitConversion {
         from_type: String,
         to_type: String,
-        location: SourceSpan
+        location: SourceSpan,
     },
     #[error("Unreachable code")]
     UnreachableCode { location: SourceSpan },
@@ -257,7 +281,12 @@ impl ErrorFormatter {
         // Add source location if available
         if let Some(file_info) = source_manager.get_file_info(diag.location.source_id()) {
             if let Some((line, col)) = source_manager.get_line_column(diag.location.start) {
-                result.push_str(&format!(" at {}:{}:{}", file_info.path.display(), line, col));
+                result.push_str(&format!(
+                    " at {}:{}:{}",
+                    file_info.path.display(),
+                    line,
+                    col
+                ));
             }
         }
 
@@ -271,15 +300,23 @@ impl ErrorFormatter {
         // Add source code snippet if enabled
         if self.show_source {
             let source_text = source_manager.get_source_text(diag.location);
-            result.push_str(&format!("\n  |\n  | {}\n  |", source_text.replace('\n', "\n  | ")));
+            result.push_str(&format!(
+                "\n  |\n  | {}\n  |",
+                source_text.replace('\n', "\n  | ")
+            ));
         }
 
         result
     }
 
     /// Format multiple diagnostics
-    pub fn format_diagnostics(&self, diagnostics: &[Diagnostic], source_manager: &SourceManager) -> String {
-        diagnostics.iter()
+    pub fn format_diagnostics(
+        &self,
+        diagnostics: &[Diagnostic],
+        source_manager: &SourceManager,
+    ) -> String {
+        diagnostics
+            .iter()
             .map(|diag| self.format_diagnostic(diag, source_manager))
             .collect::<Vec<_>>()
             .join("\n\n")

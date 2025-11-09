@@ -97,7 +97,9 @@ impl<'src> AstDumper<'src> {
     }
 
     fn write_css_styles(&self, html: &mut String) -> Result<(), std::fmt::Error> {
-        writeln!(html, r#"
+        writeln!(
+            html,
+            r#"
             body {{
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
                 margin: 20px;
@@ -389,12 +391,15 @@ impl<'src> AstDumper<'src> {
                 font-weight: bold;
                 color: #2c3e50;
             }}
-        "#)?;
+        "#
+        )?;
         Ok(())
     }
 
     fn write_javascript(&self, html: &mut String) -> Result<(), std::fmt::Error> {
-        writeln!(html, r#"
+        writeln!(
+            html,
+            r#"
             function toggleCollapse(element) {{
                 const content = element.nextElementSibling;
                 const isCollapsed = content.classList.contains('collapsed');
@@ -541,7 +546,8 @@ impl<'src> AstDumper<'src> {
                     }});
                 }}
             }});
-        "#)?;
+        "#
+        )?;
         Ok(())
     }
 
@@ -549,11 +555,20 @@ impl<'src> AstDumper<'src> {
         writeln!(html, "<nav id=\"table-of-contents\">")?;
         writeln!(html, "<h2>Table of Contents</h2>")?;
         writeln!(html, "<ul>")?;
-        writeln!(html, "<li><a href=\"#ast-section\">Abstract Syntax Tree</a></li>")?;
-        writeln!(html, "<li><a href=\"#symbols-section\">Symbol Table</a></li>")?;
+        writeln!(
+            html,
+            "<li><a href=\"#ast-section\">Abstract Syntax Tree</a></li>"
+        )?;
+        writeln!(
+            html,
+            "<li><a href=\"#symbols-section\">Symbol Table</a></li>"
+        )?;
         writeln!(html, "<li><a href=\"#scopes-section\">Scope Table</a></li>")?;
         writeln!(html, "<li><a href=\"#types-section\">Type Table</a></li>")?;
-        writeln!(html, "<li><a href=\"#diagnostics-section\">Diagnostics</a></li>")?;
+        writeln!(
+            html,
+            "<li><a href=\"#diagnostics-section\">Diagnostics</a></li>"
+        )?;
         writeln!(html, "</ul>")?;
         writeln!(html, "</nav>")?;
         Ok(())
@@ -566,14 +581,26 @@ impl<'src> AstDumper<'src> {
         // Add controls for AST tree
         writeln!(html, "<div class=\"ast-controls\">")?;
         writeln!(html, "<div class=\"search-container\">")?;
-        writeln!(html, "<input type=\"text\" id=\"ast-search\" placeholder=\"Search AST nodes...\">")?;
+        writeln!(
+            html,
+            "<input type=\"text\" id=\"ast-search\" placeholder=\"Search AST nodes...\">"
+        )?;
         writeln!(html, "</div>")?;
         writeln!(html, "<div class=\"tree-controls\">")?;
-        writeln!(html, "<button onclick=\"expandAllAst()\">Expand All</button>")?;
-        writeln!(html, "<button onclick=\"collapseAllAst()\">Collapse All</button>")?;
+        writeln!(
+            html,
+            "<button onclick=\"expandAllAst()\">Expand All</button>"
+        )?;
+        writeln!(
+            html,
+            "<button onclick=\"collapseAllAst()\">Collapse All</button>"
+        )?;
         writeln!(html, "</div>")?;
         writeln!(html, "<div class=\"node-filter\">")?;
-        writeln!(html, "<label for=\"node-type-filter\">Filter by type:</label>")?;
+        writeln!(
+            html,
+            "<label for=\"node-type-filter\">Filter by type:</label>"
+        )?;
         writeln!(html, "<select id=\"node-type-filter\">")?;
         writeln!(html, "<option value=\"\">All Types</option>")?;
         writeln!(html, "<option value=\"FunctionDef\">FunctionDef</option>")?;
@@ -584,7 +611,10 @@ impl<'src> AstDumper<'src> {
         writeln!(html, "<option value=\"While\">While</option>")?;
         writeln!(html, "<option value=\"For\">For</option>")?;
         writeln!(html, "<option value=\"Return\">Return</option>")?;
-        writeln!(html, "<option value=\"CompoundStatement\">CompoundStatement</option>")?;
+        writeln!(
+            html,
+            "<option value=\"CompoundStatement\">CompoundStatement</option>"
+        )?;
         writeln!(html, "</select>")?;
         writeln!(html, "</div>")?;
         writeln!(html, "</div>")?;
@@ -603,7 +633,12 @@ impl<'src> AstDumper<'src> {
         Ok(())
     }
 
-    fn generate_ast_tree(&self, html: &mut String, node: &Node, depth: usize) -> Result<(), std::fmt::Error> {
+    fn generate_ast_tree(
+        &self,
+        html: &mut String,
+        node: &Node,
+        depth: usize,
+    ) -> Result<(), std::fmt::Error> {
         if let Some(max_depth) = self.config.max_depth {
             if depth > max_depth {
                 writeln!(html, "<li class=\"ast-node\">... (truncated)</li>")?;
@@ -612,7 +647,8 @@ impl<'src> AstDumper<'src> {
         }
 
         let node_type = self.get_node_type_name(&node.kind);
-        let span_info = format!("[0:{}-0:{}]",
+        let span_info = format!(
+            "[0:{}-0:{}]",
             node.span.start.offset(),
             node.span.end.offset()
         );
@@ -621,15 +657,31 @@ impl<'src> AstDumper<'src> {
         let collapsed_class = if depth > 0 { " collapsed" } else { "" };
 
         writeln!(html, "<ul class=\"ast-tree\">")?;
-        writeln!(html, "<li class=\"ast-node{}\" id=\"node_{}\">", collapsed_class, node.span.start.offset())?;
+        writeln!(
+            html,
+            "<li class=\"ast-node{}\" id=\"node_{}\">",
+            collapsed_class,
+            node.span.start.offset()
+        )?;
         if has_children {
-            writeln!(html, "<div class=\"node-content\" onclick=\"toggleAstNode(this)\">")?;
+            writeln!(
+                html,
+                "<div class=\"node-content\" onclick=\"toggleAstNode(this)\">"
+            )?;
             writeln!(html, "<span class=\"toggle-icon\">▶</span>")?;
         } else {
             writeln!(html, "<div class=\"node-content\">")?;
         }
-        writeln!(html, "<span class=\"node-type\">{}</span>", self.escape_html(&node_type))?;
-        writeln!(html, "<span class=\"span-info\">{}</span>", self.escape_html(&span_info))?;
+        writeln!(
+            html,
+            "<span class=\"node-type\">{}</span>",
+            self.escape_html(&node_type)
+        )?;
+        writeln!(
+            html,
+            "<span class=\"span-info\">{}</span>",
+            self.escape_html(&span_info)
+        )?;
         writeln!(html, "</div>")?;
 
         // Add source code snippet if enabled
@@ -693,16 +745,20 @@ impl<'src> AstDumper<'src> {
             NodeKind::EmptyStatement => "EmptyStatement".to_string(),
             NodeKind::EnumConstant(_, _) => "EnumConstant".to_string(),
             NodeKind::StaticAssert(_, _) => "StaticAssert".to_string(),
-            _ => format!("{:?}", kind).split('(').next().unwrap_or("Unknown").to_string(),
         }
     }
 
-    fn generate_semantic_info(&self, html: &mut String, node: &Node) -> Result<(), std::fmt::Error> {
+    fn generate_semantic_info(
+        &self,
+        html: &mut String,
+        node: &Node,
+    ) -> Result<(), std::fmt::Error> {
         let mut info_parts = Vec::new();
 
         if let Some(type_ref) = node.resolved_type.get() {
             let type_display = self.get_enhanced_type_display_name(type_ref);
-            info_parts.push(format!("Type: <a href=\"#type_{}\">{}</a>",
+            info_parts.push(format!(
+                "Type: <a href=\"#type_{}\">{}</a>",
                 type_ref.get(),
                 type_display
             ));
@@ -711,7 +767,8 @@ impl<'src> AstDumper<'src> {
         if let Some(symbol_ref) = node.resolved_symbol.get() {
             let symbol = self.symbol_table.get_symbol_entry(symbol_ref);
             let symbol_info = self.get_enhanced_symbol_info(symbol_ref, symbol);
-            info_parts.push(format!("Symbol: <a href=\"#sym_{}\">{}</a>{}",
+            info_parts.push(format!(
+                "Symbol: <a href=\"#sym_{}\">{}</a>{}",
                 symbol_ref.get(),
                 self.escape_html(&symbol.name.to_string()),
                 symbol_info
@@ -732,7 +789,12 @@ impl<'src> AstDumper<'src> {
         Ok(())
     }
 
-    fn generate_child_nodes(&self, html: &mut String, node: &Node, depth: usize) -> Result<(), std::fmt::Error> {
+    fn generate_child_nodes(
+        &self,
+        html: &mut String,
+        node: &Node,
+        depth: usize,
+    ) -> Result<(), std::fmt::Error> {
         match &node.kind {
             NodeKind::TranslationUnit(nodes) => {
                 for &node_ref in nodes {
@@ -919,7 +981,12 @@ impl<'src> AstDumper<'src> {
         Ok(())
     }
 
-    fn generate_declarator_children(&self, html: &mut String, declarator: &Declarator, depth: usize) -> Result<(), std::fmt::Error> {
+    fn generate_declarator_children(
+        &self,
+        html: &mut String,
+        declarator: &Declarator,
+        depth: usize,
+    ) -> Result<(), std::fmt::Error> {
         match declarator {
             Declarator::Identifier(_, _, next) => {
                 if let Some(next_decl) = next {
@@ -957,7 +1024,12 @@ impl<'src> AstDumper<'src> {
         Ok(())
     }
 
-    fn generate_initializer_children(&self, html: &mut String, initializer: &Initializer, depth: usize) -> Result<(), std::fmt::Error> {
+    fn generate_initializer_children(
+        &self,
+        html: &mut String,
+        initializer: &Initializer,
+        depth: usize,
+    ) -> Result<(), std::fmt::Error> {
         match initializer {
             Initializer::Expression(expr) => {
                 let expr_node = self.ast.get_node(*expr);
@@ -1002,12 +1074,17 @@ impl<'src> AstDumper<'src> {
             let id = i + 1;
             let name = self.escape_html(&entry.name.to_string());
             let kind = self.get_symbol_kind_display(&entry.kind);
-            let type_link = format!("<a href=\"#type_{}\">{}</a>",
+            let type_link = format!(
+                "<a href=\"#type_{}\">{}</a>",
                 entry.type_info.get(),
                 self.get_type_display_name(entry.type_info)
             );
-            let scope_link = format!("<a href=\"#scope_{}\">{}</a>", entry.scope_id, entry.scope_id);
-            let location = format!("[{}:{}-{}:{}]",
+            let scope_link = format!(
+                "<a href=\"#scope_{}\">{}</a>",
+                entry.scope_id, entry.scope_id
+            );
+            let location = format!(
+                "[{}:{}-{}:{}]",
                 entry.definition_span.start.source_id(),
                 entry.definition_span.start.offset(),
                 entry.definition_span.end.source_id(),
@@ -1047,14 +1124,24 @@ impl<'src> AstDumper<'src> {
 
         for (i, scope) in self.symbol_table.scopes.iter().enumerate() {
             let id = i + 1;
-            let parent = scope.parent.map(|p| p.get().to_string()).unwrap_or_else(|| "None".to_string());
+            let parent = scope
+                .parent
+                .map(|p| p.get().to_string())
+                .unwrap_or_else(|| "None".to_string());
             let kind = format!("{:?}", scope.kind);
             let level = scope.level;
-            let symbols: Vec<String> = scope.symbols.values()
-                .map(|&ref_| format!("<a href=\"#sym_{}\">{}</a>",
-                    ref_.get(),
-                    self.escape_html(&self.symbol_table.get_symbol_entry(ref_).name.to_string())
-                ))
+            let symbols: Vec<String> = scope
+                .symbols
+                .values()
+                .map(|&ref_| {
+                    format!(
+                        "<a href=\"#sym_{}\">{}</a>",
+                        ref_.get(),
+                        self.escape_html(
+                            &self.symbol_table.get_symbol_entry(ref_).name.to_string()
+                        )
+                    )
+                })
                 .collect();
             let symbols_str = symbols.join(", ");
 
@@ -1094,7 +1181,10 @@ impl<'src> AstDumper<'src> {
             let kind = self.get_type_kind_display(&ty.kind);
             let base = self.get_type_base_display(&ty.kind);
             let qualifiers = format!("{:?}", ty.qualifiers);
-            let size = ty.size.map(|s| s.to_string()).unwrap_or_else(|| "Unknown".to_string());
+            let size = ty
+                .size
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "Unknown".to_string());
             let details = self.get_type_details(&ty.kind);
 
             writeln!(html, "<tr id=\"type_{}\">", id)?;
@@ -1132,21 +1222,32 @@ impl<'src> AstDumper<'src> {
             let id = i + 1;
             let level = match diag.level {
                 crate::diagnostic::DiagnosticLevel::Error => "<span class=\"error\">Error</span>",
-                crate::diagnostic::DiagnosticLevel::Warning => "<span class=\"warning\">Warning</span>",
+                crate::diagnostic::DiagnosticLevel::Warning => {
+                    "<span class=\"warning\">Warning</span>"
+                }
                 crate::diagnostic::DiagnosticLevel::Note => "Note",
             };
             let message = self.escape_html(&diag.message);
-            let location = format!("[{}:{}-{}:{}]",
+            let location = format!(
+                "[{}:{}-{}:{}]",
                 diag.location.start.source_id(),
                 diag.location.start.offset(),
                 diag.location.end.source_id(),
                 diag.location.end.offset()
             );
-            let code = diag.code.as_ref().map(|c| self.escape_html(c)).unwrap_or_else(|| "-".to_string());
+            let code = diag
+                .code
+                .as_ref()
+                .map(|c| self.escape_html(c))
+                .unwrap_or_else(|| "-".to_string());
             let hints = if diag.hints.is_empty() {
                 "-".to_string()
             } else {
-                diag.hints.iter().map(|h| self.escape_html(h)).collect::<Vec<_>>().join("<br>")
+                diag.hints
+                    .iter()
+                    .map(|h| self.escape_html(h))
+                    .collect::<Vec<_>>()
+                    .join("<br>")
             };
 
             writeln!(html, "<tr id=\"diag_{}\">", id)?;
@@ -1166,18 +1267,40 @@ impl<'src> AstDumper<'src> {
 
     fn get_symbol_kind_display(&self, kind: &SymbolKind) -> String {
         match kind {
-            SymbolKind::Variable { is_global, is_static, is_extern, .. } => {
+            SymbolKind::Variable {
+                is_global,
+                is_static,
+                is_extern,
+                ..
+            } => {
                 let mut parts = vec!["Variable"];
-                if *is_global { parts.push("global"); }
-                if *is_static { parts.push("static"); }
-                if *is_extern { parts.push("extern"); }
+                if *is_global {
+                    parts.push("global");
+                }
+                if *is_static {
+                    parts.push("static");
+                }
+                if *is_extern {
+                    parts.push("extern");
+                }
                 parts.join(" ")
             }
-            SymbolKind::Function { is_definition, is_inline, is_variadic, .. } => {
+            SymbolKind::Function {
+                is_definition,
+                is_inline,
+                is_variadic,
+                ..
+            } => {
                 let mut parts = vec!["Function"];
-                if *is_definition { parts.push("definition"); }
-                if *is_inline { parts.push("inline"); }
-                if *is_variadic { parts.push("variadic"); }
+                if *is_definition {
+                    parts.push("definition");
+                }
+                if *is_inline {
+                    parts.push("inline");
+                }
+                if *is_variadic {
+                    parts.push("variadic");
+                }
                 parts.join(" ")
             }
             SymbolKind::Typedef { .. } => "Typedef".to_string(),
@@ -1198,23 +1321,42 @@ impl<'src> AstDumper<'src> {
             TypeKind::Short { is_signed: false } => "unsigned short".to_string(),
             TypeKind::Int { is_signed: true } => "int".to_string(),
             TypeKind::Int { is_signed: false } => "unsigned int".to_string(),
-            TypeKind::Long { is_signed: true, is_long_long: false } => "long".to_string(),
-            TypeKind::Long { is_signed: true, is_long_long: true } => "long long".to_string(),
-            TypeKind::Long { is_signed: false, is_long_long: false } => "unsigned long".to_string(),
-            TypeKind::Long { is_signed: false, is_long_long: true } => "unsigned long long".to_string(),
+            TypeKind::Long {
+                is_signed: true,
+                is_long_long: false,
+            } => "long".to_string(),
+            TypeKind::Long {
+                is_signed: true,
+                is_long_long: true,
+            } => "long long".to_string(),
+            TypeKind::Long {
+                is_signed: false,
+                is_long_long: false,
+            } => "unsigned long".to_string(),
+            TypeKind::Long {
+                is_signed: false,
+                is_long_long: true,
+            } => "unsigned long long".to_string(),
             TypeKind::Float => "float".to_string(),
-            TypeKind::Double { is_long_double: false } => "double".to_string(),
-            TypeKind::Double { is_long_double: true } => "long double".to_string(),
-            TypeKind::Pointer { .. } => format!("{}*", self.get_type_display_name(TypeRef::new(1).unwrap())), // Simplified
+            TypeKind::Double {
+                is_long_double: false,
+            } => "double".to_string(),
+            TypeKind::Double {
+                is_long_double: true,
+            } => "long double".to_string(),
+            TypeKind::Pointer { .. } => {
+                format!("{}*", self.get_type_display_name(TypeRef::new(1).unwrap()))
+            } // Simplified
             TypeKind::Array { .. } => "array".to_string(),
             TypeKind::Function { .. } => "function".to_string(),
             TypeKind::Record { tag, is_union, .. } => {
                 let kind = if *is_union { "union" } else { "struct" };
-                tag.map(|t| format!("{} {}", kind, t)).unwrap_or_else(|| kind.to_string())
+                tag.map(|t| format!("{} {}", kind, t))
+                    .unwrap_or_else(|| kind.to_string())
             }
-            TypeKind::Enum { tag, .. } => {
-                tag.map(|t| format!("enum {}", t)).unwrap_or_else(|| "enum".to_string())
-            }
+            TypeKind::Enum { tag, .. } => tag
+                .map(|t| format!("enum {}", t))
+                .unwrap_or_else(|| "enum".to_string()),
             TypeKind::Typedef { name, .. } => name.to_string(),
             TypeKind::Incomplete => "incomplete".to_string(),
             TypeKind::Error => "error".to_string(),
@@ -1244,8 +1386,16 @@ impl<'src> AstDumper<'src> {
         let mut info_parts = Vec::new();
 
         // Add definition/referenced status
-        let def_status = if symbol.is_defined { "defined" } else { "declared" };
-        let ref_status = if symbol.is_referenced { "referenced" } else { "unused" };
+        let def_status = if symbol.is_defined {
+            "defined"
+        } else {
+            "declared"
+        };
+        let ref_status = if symbol.is_referenced {
+            "referenced"
+        } else {
+            "unused"
+        };
         info_parts.push(format!("({} {})", def_status, ref_status));
 
         // Add storage class if present
@@ -1255,11 +1405,22 @@ impl<'src> AstDumper<'src> {
 
         // Add symbol kind specific information
         match &symbol.kind {
-            SymbolKind::Variable { is_global, is_static, is_extern, initializer } => {
+            SymbolKind::Variable {
+                is_global,
+                is_static,
+                is_extern,
+                initializer,
+            } => {
                 let mut attrs = Vec::new();
-                if *is_global { attrs.push("global"); }
-                if *is_static { attrs.push("static"); }
-                if *is_extern { attrs.push("extern"); }
+                if *is_global {
+                    attrs.push("global");
+                }
+                if *is_static {
+                    attrs.push("static");
+                }
+                if *is_extern {
+                    attrs.push("extern");
+                }
                 if !attrs.is_empty() {
                     info_parts.push(format!("attrs: {}", attrs.join(", ")));
                 }
@@ -1267,11 +1428,22 @@ impl<'src> AstDumper<'src> {
                     info_parts.push(format!("initializer: node {}", init_ref.get()));
                 }
             }
-            SymbolKind::Function { is_definition, is_inline, is_variadic, parameters } => {
+            SymbolKind::Function {
+                is_definition,
+                is_inline,
+                is_variadic,
+                parameters,
+            } => {
                 let mut attrs = Vec::new();
-                if *is_definition { attrs.push("definition"); }
-                if *is_inline { attrs.push("inline"); }
-                if *is_variadic { attrs.push("variadic"); }
+                if *is_definition {
+                    attrs.push("definition");
+                }
+                if *is_inline {
+                    attrs.push("inline");
+                }
+                if *is_variadic {
+                    attrs.push("variadic");
+                }
                 if !attrs.is_empty() {
                     info_parts.push(format!("attrs: {}", attrs.join(", ")));
                 }
@@ -1284,14 +1456,30 @@ impl<'src> AstDumper<'src> {
             SymbolKind::EnumConstant { value } => {
                 info_parts.push(format!("value: {}", value));
             }
-            SymbolKind::Label { is_defined, is_used } => {
+            SymbolKind::Label {
+                is_defined,
+                is_used,
+            } => {
                 let def_status = if *is_defined { "defined" } else { "undeclared" };
                 let use_status = if *is_used { "used" } else { "unused" };
                 info_parts.push(format!("label: {} {}", def_status, use_status));
             }
-            SymbolKind::Record { is_complete, members, size, alignment } => {
-                let complete_status = if *is_complete { "complete" } else { "incomplete" };
-                info_parts.push(format!("record: {} ({} members)", complete_status, members.len()));
+            SymbolKind::Record {
+                is_complete,
+                members,
+                size,
+                alignment,
+            } => {
+                let complete_status = if *is_complete {
+                    "complete"
+                } else {
+                    "incomplete"
+                };
+                info_parts.push(format!(
+                    "record: {} ({} members)",
+                    complete_status,
+                    members.len()
+                ));
                 if let Some(size) = size {
                     info_parts.push(format!("size: {} bytes", size));
                 }
@@ -1346,25 +1534,43 @@ impl<'src> AstDumper<'src> {
 
     fn get_type_details(&self, kind: &TypeKind) -> String {
         match kind {
-            TypeKind::Array { size, .. } => {
-                match size {
-                    ArraySizeType::Constant(size) => format!("size: {}", size),
-                    ArraySizeType::Variable(_) => "variable size".to_string(),
-                    ArraySizeType::Incomplete => "incomplete".to_string(),
-                    ArraySizeType::Star => "*".to_string(),
-                }
-            }
-            TypeKind::Function { parameters, is_variadic, .. } => {
+            TypeKind::Array { size, .. } => match size {
+                ArraySizeType::Constant(size) => format!("size: {}", size),
+                ArraySizeType::Variable(_) => "variable size".to_string(),
+                ArraySizeType::Incomplete => "incomplete".to_string(),
+                ArraySizeType::Star => "*".to_string(),
+            },
+            TypeKind::Function {
+                parameters,
+                is_variadic,
+                ..
+            } => {
                 let param_count = parameters.len();
                 let variadic = if *is_variadic { ", ..." } else { "" };
                 format!("{} parameters{}", param_count, variadic)
             }
-            TypeKind::Record { members, is_complete, .. } => {
-                let complete = if *is_complete { "complete" } else { "incomplete" };
+            TypeKind::Record {
+                members,
+                is_complete,
+                ..
+            } => {
+                let complete = if *is_complete {
+                    "complete"
+                } else {
+                    "incomplete"
+                };
                 format!("{} members, {}", members.len(), complete)
             }
-            TypeKind::Enum { enumerators, is_complete, .. } => {
-                let complete = if *is_complete { "complete" } else { "incomplete" };
+            TypeKind::Enum {
+                enumerators,
+                is_complete,
+                ..
+            } => {
+                let complete = if *is_complete {
+                    "complete"
+                } else {
+                    "incomplete"
+                };
                 format!("{} enumerators, {}", enumerators.len(), complete)
             }
             _ => "-".to_string(),
@@ -1373,7 +1579,9 @@ impl<'src> AstDumper<'src> {
     /// Format source text for display, escaping HTML and handling newlines
     fn format_source_text(&self, text: &str) -> String {
         let escaped = self.escape_html(text);
-        escaped.replace("\n", "<br>").replace("\t", "&nbsp;&nbsp;&nbsp;&nbsp;")
+        escaped
+            .replace("\n", "<br>")
+            .replace("\t", "&nbsp;&nbsp;&nbsp;&nbsp;")
     }
 
     /// Get source text for a span, formatted for HTML display

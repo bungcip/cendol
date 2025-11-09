@@ -128,7 +128,11 @@ impl SymbolTable {
         None
     }
 
-    pub fn lookup_symbol_in_scope(&self, name: Symbol, scope_id: ScopeId) -> Option<SymbolEntryRef> {
+    pub fn lookup_symbol_in_scope(
+        &self,
+        name: Symbol,
+        scope_id: ScopeId,
+    ) -> Option<SymbolEntryRef> {
         self.get_scope(scope_id).symbols.get(&name).copied()
     }
 
@@ -252,7 +256,6 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
         };
         annotator.annotate_ast_impl();
     }
-
 }
 
 impl<'ast, 'diag> SymbolCollector<'ast, 'diag> {
@@ -358,10 +361,13 @@ impl<'ast, 'diag> SymbolCollector<'ast, 'diag> {
                         is_global: self.symbol_table.current_scope().get() == 1,
                         is_static: false, // TODO: determine from specifiers
                         is_extern: false, // TODO: determine from specifiers
-                        initializer: init_declarator.initializer.as_ref().map(|_| NodeRef::new(1).unwrap()), // TODO
+                        initializer: init_declarator
+                            .initializer
+                            .as_ref()
+                            .map(|_| NodeRef::new(1).unwrap()), // TODO
                     },
                     type_info: TypeRef::new(1).unwrap(), // TODO: resolve type
-                    storage_class: None, // TODO
+                    storage_class: None,                 // TODO
                     scope_id: self.symbol_table.current_scope().get(),
                     definition_span: span,
                     is_defined: true,
@@ -397,8 +403,8 @@ impl<'ast, 'diag> SymbolCollector<'ast, 'diag> {
                 name: *name,
                 kind: SymbolKind::Function {
                     is_definition: true,
-                    is_inline: false, // TODO
-                    is_variadic: false, // TODO
+                    is_inline: false,       // TODO
+                    is_variadic: false,     // TODO
                     parameters: Vec::new(), // TODO
                 },
                 type_info: TypeRef::new(1).unwrap(), // TODO
@@ -615,11 +621,23 @@ impl<'ast, 'diag> SemanticValidator<'ast, 'diag> {
         }
     }
 
-    fn validate_binary_op(&mut self, _op: BinaryOp, _left: NodeRef, _right: NodeRef, _span: SourceSpan) {
+    fn validate_binary_op(
+        &mut self,
+        _op: BinaryOp,
+        _left: NodeRef,
+        _right: NodeRef,
+        _span: SourceSpan,
+    ) {
         // TODO: Type check binary operations
     }
 
-    fn validate_assignment(&mut self, _op: BinaryOp, _lhs: NodeRef, _rhs: NodeRef, _span: SourceSpan) {
+    fn validate_assignment(
+        &mut self,
+        _op: BinaryOp,
+        _lhs: NodeRef,
+        _rhs: NodeRef,
+        _span: SourceSpan,
+    ) {
         // TODO: Validate assignment compatibility
     }
 
@@ -663,7 +681,10 @@ impl<'ast, 'diag> AstAnnotator<'ast, 'diag> {
                     let right_node = self.ast.get_node(*right);
 
                     // Basic type propagation for arithmetic operations
-                    if let (Some(left_type), Some(_right_type)) = (left_node.resolved_type.get(), right_node.resolved_type.get()) {
+                    if let (Some(left_type), Some(_right_type)) = (
+                        left_node.resolved_type.get(),
+                        right_node.resolved_type.get(),
+                    ) {
                         // TODO: Implement proper type promotion rules
                         // For now, just propagate left type
                         node.resolved_type.set(Some(left_type));
@@ -730,10 +751,6 @@ impl<'ast, 'diag> AstAnnotator<'ast, 'diag> {
         }
     }
 }
-
-
-
-
 
 // Re-export diagnostic types for convenience
 pub use crate::diagnostic::*;

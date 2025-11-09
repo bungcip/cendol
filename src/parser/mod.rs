@@ -1,10 +1,10 @@
-use std::cell::Cell;
 use crate::ast::*;
-use crate::lexer::{Token, TokenKind};
-use crate::source_manager::{SourceSpan, SourceLoc};
-use symbol_table::GlobalSymbol as Symbol;
-use bitflags::bitflags;
 use crate::diagnostic::{DiagnosticEngine, ParseError};
+use crate::lexer::{Token, TokenKind};
+use crate::source_manager::{SourceLoc, SourceSpan};
+use bitflags::bitflags;
+use std::cell::Cell;
+use symbol_table::GlobalSymbol as Symbol;
 
 // ParseError is now defined in diagnostic.rs
 
@@ -45,11 +45,17 @@ impl PrattParser {
     pub fn get_binding_power(token_kind: TokenKind) -> Option<(BindingPower, Associativity)> {
         match token_kind {
             // Assignment operators (right-associative)
-            TokenKind::Assign | TokenKind::PlusAssign | TokenKind::MinusAssign |
-            TokenKind::StarAssign | TokenKind::DivAssign | TokenKind::ModAssign |
-            TokenKind::AndAssign | TokenKind::OrAssign | TokenKind::XorAssign |
-            TokenKind::LeftShiftAssign | TokenKind::RightShiftAssign =>
-                Some((BindingPower::ASSIGNMENT, Associativity::Right)),
+            TokenKind::Assign
+            | TokenKind::PlusAssign
+            | TokenKind::MinusAssign
+            | TokenKind::StarAssign
+            | TokenKind::DivAssign
+            | TokenKind::ModAssign
+            | TokenKind::AndAssign
+            | TokenKind::OrAssign
+            | TokenKind::XorAssign
+            | TokenKind::LeftShiftAssign
+            | TokenKind::RightShiftAssign => Some((BindingPower::ASSIGNMENT, Associativity::Right)),
 
             // Conditional operator (right-associative)
             TokenKind::Question => Some((BindingPower::CONDITIONAL, Associativity::Right)),
@@ -64,27 +70,36 @@ impl PrattParser {
             TokenKind::And => Some((BindingPower::BITWISE_AND, Associativity::Left)),
 
             // Comparison operators (left-associative)
-            TokenKind::Equal | TokenKind::NotEqual =>
-                Some((BindingPower::EQUALITY, Associativity::Left)),
-            TokenKind::Less | TokenKind::Greater | TokenKind::LessEqual | TokenKind::GreaterEqual =>
-                Some((BindingPower::RELATIONAL, Associativity::Left)),
+            TokenKind::Equal | TokenKind::NotEqual => {
+                Some((BindingPower::EQUALITY, Associativity::Left))
+            }
+            TokenKind::Less
+            | TokenKind::Greater
+            | TokenKind::LessEqual
+            | TokenKind::GreaterEqual => Some((BindingPower::RELATIONAL, Associativity::Left)),
 
             // Shift operators (left-associative)
-            TokenKind::LeftShift | TokenKind::RightShift =>
-                Some((BindingPower::SHIFT, Associativity::Left)),
+            TokenKind::LeftShift | TokenKind::RightShift => {
+                Some((BindingPower::SHIFT, Associativity::Left))
+            }
 
             // Additive operators (left-associative)
-            TokenKind::Plus | TokenKind::Minus =>
-                Some((BindingPower::ADDITIVE, Associativity::Left)),
+            TokenKind::Plus | TokenKind::Minus => {
+                Some((BindingPower::ADDITIVE, Associativity::Left))
+            }
 
             // Multiplicative operators (left-associative)
-            TokenKind::Star | TokenKind::Slash | TokenKind::Percent =>
-                Some((BindingPower::MULTIPLICATIVE, Associativity::Left)),
+            TokenKind::Star | TokenKind::Slash | TokenKind::Percent => {
+                Some((BindingPower::MULTIPLICATIVE, Associativity::Left))
+            }
 
             // Postfix operators
-            TokenKind::Increment | TokenKind::Decrement | TokenKind::LeftParen |
-            TokenKind::LeftBracket | TokenKind::Dot | TokenKind::Arrow =>
-                Some((BindingPower::POSTFIX, Associativity::Left)),
+            TokenKind::Increment
+            | TokenKind::Decrement
+            | TokenKind::LeftParen
+            | TokenKind::LeftBracket
+            | TokenKind::Dot
+            | TokenKind::Arrow => Some((BindingPower::POSTFIX, Associativity::Left)),
 
             _ => None,
         }
@@ -202,7 +217,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Check if current token matches any of the given kinds
     fn matches(&self, kinds: &[TokenKind]) -> bool {
-        self.current_token_kind().map(|k| kinds.contains(&k)).unwrap_or(false)
+        self.current_token_kind()
+            .map(|k| kinds.contains(&k))
+            .unwrap_or(false)
     }
 
     /// Skip tokens until we find a synchronization point
@@ -227,10 +244,11 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         let token = self.current_token().unwrap();
         // Simple integer parsing - in a real implementation this would handle
         // different bases (decimal, octal, hex) and suffixes (u, l, ll, etc.)
-        text.parse::<i64>().map_err(|_| ParseError::InvalidIntegerConstant {
-            text: text.to_string(),
-            location: token.location,
-        })
+        text.parse::<i64>()
+            .map_err(|_| ParseError::InvalidIntegerConstant {
+                text: text.to_string(),
+                location: token.location,
+            })
     }
 
     /// Intern an identifier
@@ -251,7 +269,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 None => break,
             };
 
-            let Some((binding_power, associativity)) = PrattParser::get_binding_power(current_token.kind) else {
+            let Some((binding_power, associativity)) =
+                PrattParser::get_binding_power(current_token.kind)
+            else {
                 break;
             };
 
@@ -274,7 +294,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             let right = self.parse_infix(left, op_token, next_min_bp)?;
             let left_span = self.ast.get_node(left).span;
             let right_span = self.ast.get_node(right).span;
-            let span = SourceSpan { start: left_span.start, end: right_span.end };
+            let span = SourceSpan::new(left_span.start, right_span.end);
             left = self.ast.push_node(Node {
                 kind: NodeKind::BinaryOp(BinaryOp::Add, left, right), // Placeholder, will be fixed
                 span,
@@ -288,10 +308,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse prefix expression
     fn parse_prefix(&mut self) -> Result<NodeRef, ParseError> {
-        let token = self.current_token().ok_or_else(|| ParseError::SyntaxError {
-            message: "Unexpected end of input".to_string(),
-            location: SourceSpan::empty(),
-        })?;
+        let token = self
+            .current_token()
+            .ok_or_else(|| ParseError::SyntaxError {
+                message: "Unexpected end of input".to_string(),
+                location: SourceSpan::empty(),
+            })?;
 
         match token.kind {
             TokenKind::Identifier(symbol) => {
@@ -357,10 +379,13 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                     }),
                 }
             }
-            TokenKind::Plus | TokenKind::Minus | TokenKind::Not | TokenKind::Increment |
-            TokenKind::Decrement | TokenKind::Star | TokenKind::And => {
-                self.parse_unary_operator(token)
-            }
+            TokenKind::Plus
+            | TokenKind::Minus
+            | TokenKind::Not
+            | TokenKind::Increment
+            | TokenKind::Decrement
+            | TokenKind::Star
+            | TokenKind::And => self.parse_unary_operator(token),
             _ => Err(ParseError::UnexpectedToken {
                 expected: vec![
                     TokenKind::Identifier(Symbol::new("")),
@@ -387,20 +412,24 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             TokenKind::Decrement => UnaryOp::PreDecrement,
             TokenKind::Star => UnaryOp::Deref,
             TokenKind::And => UnaryOp::AddrOf,
-            _ => return Err(ParseError::SyntaxError {
-                message: "Invalid unary operator".to_string(),
-                location: token.location,
-            }),
+            _ => {
+                return Err(ParseError::SyntaxError {
+                    message: "Invalid unary operator".to_string(),
+                    location: token.location,
+                });
+            }
         };
 
         self.advance();
         let operand = self.parse_expression(BindingPower::UNARY)?;
         let operand_node = match operand {
             ParseExprOutput::Expression(node) => node,
-            _ => return Err(ParseError::SyntaxError {
-                message: "Expected expression after unary operator".to_string(),
-                location: token.location,
-            }),
+            _ => {
+                return Err(ParseError::SyntaxError {
+                    message: "Expected expression after unary operator".to_string(),
+                    location: token.location,
+                });
+            }
         };
 
         let span = SourceSpan::new(
@@ -418,14 +447,21 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Parse infix operator
-    fn parse_infix(&mut self, left: NodeRef, operator_token: Token, min_bp: BindingPower) -> Result<NodeRef, ParseError> {
+    fn parse_infix(
+        &mut self,
+        left: NodeRef,
+        operator_token: Token,
+        min_bp: BindingPower,
+    ) -> Result<NodeRef, ParseError> {
         let right = self.parse_expression(min_bp)?;
         let right_node = match right {
             ParseExprOutput::Expression(node) => node,
-            _ => return Err(ParseError::SyntaxError {
-                message: "Expected expression after operator".to_string(),
-                location: operator_token.location
-            }),
+            _ => {
+                return Err(ParseError::SyntaxError {
+                    message: "Expected expression after operator".to_string(),
+                    location: operator_token.location,
+                });
+            }
         };
 
         let op = match operator_token.kind {
@@ -466,16 +502,18 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             TokenKind::Arrow => return self.parse_member_access(left, true),
             TokenKind::Increment => return self.parse_postfix_increment(left),
             TokenKind::Decrement => return self.parse_postfix_decrement(left),
-            _ => return Err(ParseError::SyntaxError {
-                message: "Invalid binary operator".to_string(),
-                location: operator_token.location,
-            }),
+            _ => {
+                return Err(ParseError::SyntaxError {
+                    message: "Invalid binary operator".to_string(),
+                    location: operator_token.location,
+                });
+            }
         };
 
-        let span = SourceSpan {
-            start: self.ast.get_node(left).span.start,
-            end: self.ast.get_node(right_node).span.end,
-        };
+        let span = SourceSpan::new(
+            self.ast.get_node(left).span.start,
+            self.ast.get_node(right_node).span.end,
+        );
 
         let node = self.ast.push_node(Node {
             kind: NodeKind::BinaryOp(op, left, right_node),
@@ -487,21 +525,27 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Parse ternary operator
-    fn parse_ternary(&mut self, condition: NodeRef, true_expr: NodeRef) -> Result<NodeRef, ParseError> {
+    fn parse_ternary(
+        &mut self,
+        condition: NodeRef,
+        true_expr: NodeRef,
+    ) -> Result<NodeRef, ParseError> {
         self.expect(TokenKind::Colon)?;
         let false_expr_result = self.parse_expression(BindingPower::CONDITIONAL)?;
         let false_expr = match false_expr_result {
             ParseExprOutput::Expression(node) => node,
-            _ => return Err(ParseError::SyntaxError {
-                message: "Expected expression in ternary false branch".to_string(),
-                location: self.current_token().unwrap().location,
-            }),
+            _ => {
+                return Err(ParseError::SyntaxError {
+                    message: "Expected expression in ternary false branch".to_string(),
+                    location: self.current_token().unwrap().location,
+                });
+            }
         };
 
-        let span = SourceSpan {
-            start: self.ast.get_node(condition).span.start,
-            end: self.ast.get_node(false_expr).span.end,
-        };
+        let span = SourceSpan::new(
+            self.ast.get_node(condition).span.start,
+            self.ast.get_node(false_expr).span.end,
+        );
 
         let node = self.ast.push_node(Node {
             kind: NodeKind::TernaryOp(condition, true_expr, false_expr),
@@ -521,10 +565,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 let arg_result = self.parse_expression(BindingPower::MIN)?;
                 let arg = match arg_result {
                     ParseExprOutput::Expression(node) => node,
-                    _ => return Err(ParseError::SyntaxError {
-                        message: "Expected expression in function call argument".to_string(),
-                        location: self.current_token().unwrap().location,
-                    }),
+                    _ => {
+                        return Err(ParseError::SyntaxError {
+                            message: "Expected expression in function call argument".to_string(),
+                            location: self.current_token().unwrap().location,
+                        });
+                    }
                 };
                 args.push(arg);
 
@@ -537,10 +583,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
         self.expect(TokenKind::RightParen)?;
 
-        let span = SourceSpan {
-            start: self.ast.get_node(function).span.start,
-            end: self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0)),
-        };
+        let span = SourceSpan::new(
+            self.ast.get_node(function).span.start,
+            self.current_token()
+                .map(|t| t.location.end)
+                .unwrap_or(SourceLoc(0)),
+        );
 
         let node = self.ast.push_node(Node {
             kind: NodeKind::FunctionCall(function, args),
@@ -556,18 +604,22 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         let index_result = self.parse_expression(BindingPower::MIN)?;
         let index = match index_result {
             ParseExprOutput::Expression(node) => node,
-            _ => return Err(ParseError::SyntaxError {
-                message: "Expected expression in array index".to_string(),
-                location: self.current_token().unwrap().location,
-            }),
+            _ => {
+                return Err(ParseError::SyntaxError {
+                    message: "Expected expression in array index".to_string(),
+                    location: self.current_token().unwrap().location,
+                });
+            }
         };
 
         self.expect(TokenKind::RightBracket)?;
 
-        let span = SourceSpan {
-            start: self.ast.get_node(array).span.start,
-            end: self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0)),
-        };
+        let span = SourceSpan::new(
+            self.ast.get_node(array).span.start,
+            self.current_token()
+                .map(|t| t.location.end)
+                .unwrap_or(SourceLoc(0)),
+        );
 
         let node = self.ast.push_node(Node {
             kind: NodeKind::IndexAccess(array, index),
@@ -579,27 +631,35 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Parse member access
-    fn parse_member_access(&mut self, object: NodeRef, is_arrow: bool) -> Result<NodeRef, ParseError> {
-        let member_token = self.current_token().ok_or_else(|| ParseError::SyntaxError {
-            message: "Expected member name".to_string(),
-            location: SourceSpan::empty(),
-        })?;
+    fn parse_member_access(
+        &mut self,
+        object: NodeRef,
+        is_arrow: bool,
+    ) -> Result<NodeRef, ParseError> {
+        let member_token = self
+            .current_token()
+            .ok_or_else(|| ParseError::SyntaxError {
+                message: "Expected member name".to_string(),
+                location: SourceSpan::empty(),
+            })?;
 
         let member_symbol = match member_token.kind {
             TokenKind::Identifier(symbol) => symbol,
-            _ => return Err(ParseError::UnexpectedToken {
-                expected: vec![TokenKind::Identifier(Symbol::new(""))],
-                found: member_token.kind,
-                location: member_token.location,
-            }),
+            _ => {
+                return Err(ParseError::UnexpectedToken {
+                    expected: vec![TokenKind::Identifier(Symbol::new(""))],
+                    found: member_token.kind,
+                    location: member_token.location,
+                });
+            }
         };
 
         self.advance();
 
-        let span = SourceSpan {
-            start: self.ast.get_node(object).span.start,
-            end: member_token.location.end,
-        };
+        let span = SourceSpan::new(
+            self.ast.get_node(object).span.start,
+            member_token.location.end,
+        );
 
         let node = self.ast.push_node(Node {
             kind: NodeKind::MemberAccess(object, member_symbol, is_arrow),
@@ -612,39 +672,36 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse postfix increment
     fn parse_postfix_increment(&mut self, operand: NodeRef) -> Result<NodeRef, ParseError> {
-        let span = SourceSpan {
-            start: self.ast.get_node(operand).span.start,
-            end: self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0)),
-        };
+        let span = SourceSpan::new(
+            self.ast.get_node(operand).span.start,
+            self.current_token()
+                .map(|t| t.location.end)
+                .unwrap_or(SourceLoc(0)),
+        );
 
-        let node = self.ast.push_node(Node {
-            kind: NodeKind::PostIncrement(operand),
-            span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
+        let node = self.ast.push_node(Node::new(NodeKind::PostIncrement(operand), span));
         Ok(node)
     }
 
     /// Parse postfix decrement
     fn parse_postfix_decrement(&mut self, operand: NodeRef) -> Result<NodeRef, ParseError> {
-        let span = SourceSpan {
-            start: self.ast.get_node(operand).span.start,
-            end: self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0)),
-        };
+        let span = SourceSpan::new(
+            self.ast.get_node(operand).span.start,
+            self.current_token()
+                .map(|t| t.location.end)
+                .unwrap_or(SourceLoc(0)),
+        );
 
-        let node = self.ast.push_node(Node {
-            kind: NodeKind::PostDecrement(operand),
-            span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
+        let node = self.ast.push_node(Node::new(NodeKind::PostDecrement(operand), span));
         Ok(node)
     }
 
     /// Parse a declaration
     pub fn parse_declaration(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self.current_token().map(|t| t.location.start).unwrap_or(SourceLoc(0));
+        let start_span = self
+            .current_token()
+            .map(|t| t.location.start)
+            .unwrap_or(SourceLoc(0));
 
         // Parse declaration specifiers
         let specifiers = self.parse_declaration_specifiers()?;
@@ -677,24 +734,19 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
         self.expect(TokenKind::Semicolon)?;
 
-        let end_span = self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0));
+        let end_span = self
+            .current_token()
+            .map(|t| t.location.end)
+            .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan {
-            start: start_span,
-            end: end_span,
-        };
+        let span = SourceSpan::new(start_span, end_span);
 
         let declaration_data = DeclarationData {
             specifiers,
             init_declarators,
         };
 
-        let node = self.ast.push_node(Node {
-            kind: NodeKind::Declaration(declaration_data),
-            span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
+        let node = self.ast.push_node(Node::new(NodeKind::Declaration(declaration_data), span));
         Ok(node)
     }
 
@@ -710,8 +762,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
             match token.kind {
                 // Storage class specifiers
-                TokenKind::Typedef | TokenKind::Extern | TokenKind::Static |
-                TokenKind::Auto | TokenKind::Register | TokenKind::ThreadLocal => {
+                TokenKind::Typedef
+                | TokenKind::Extern
+                | TokenKind::Static
+                | TokenKind::Auto
+                | TokenKind::Register
+                | TokenKind::ThreadLocal => {
                     let storage_class = match token.kind {
                         TokenKind::Typedef => StorageClass::Typedef,
                         TokenKind::Extern => StorageClass::Extern,
@@ -732,8 +788,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 }
 
                 // Type qualifiers
-                TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict |
-                TokenKind::Atomic => {
+                TokenKind::Const
+                | TokenKind::Volatile
+                | TokenKind::Restrict
+                | TokenKind::Atomic => {
                     let mut qualifiers = TypeQualifiers::empty();
                     while let Some(token) = self.current_token() {
                         match token.kind {
@@ -775,10 +833,20 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 }
 
                 // Type specifiers
-                TokenKind::Void | TokenKind::Char | TokenKind::Short | TokenKind::Int |
-                TokenKind::Long | TokenKind::Float | TokenKind::Double | TokenKind::Signed |
-                TokenKind::Unsigned | TokenKind::Bool | TokenKind::Complex |
-                TokenKind::Struct | TokenKind::Union | TokenKind::Enum => {
+                TokenKind::Void
+                | TokenKind::Char
+                | TokenKind::Short
+                | TokenKind::Int
+                | TokenKind::Long
+                | TokenKind::Float
+                | TokenKind::Double
+                | TokenKind::Signed
+                | TokenKind::Unsigned
+                | TokenKind::Bool
+                | TokenKind::Complex
+                | TokenKind::Struct
+                | TokenKind::Union
+                | TokenKind::Enum => {
                     let type_specifier = self.parse_type_specifier()?;
                     specifiers.push(DeclSpecifier {
                         storage_class: None,
@@ -819,10 +887,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                             let expr_result = self.parse_expression(BindingPower::MIN)?;
                             let expr = match expr_result {
                                 ParseExprOutput::Expression(node) => node,
-                                _ => return Err(ParseError::SyntaxError {
-                                    message: "Expected expression in _Alignas".to_string(),
-                                    location: self.current_token().unwrap().location,
-                                }),
+                                _ => {
+                                    return Err(ParseError::SyntaxError {
+                                        message: "Expected expression in _Alignas".to_string(),
+                                        location: self.current_token().unwrap().location,
+                                    });
+                                }
                             };
                             self.expect(TokenKind::RightParen)?;
                             AlignmentSpecifier::Expr(expr)
@@ -859,10 +929,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse type specifier
     fn parse_type_specifier(&mut self) -> Result<TypeSpecifier, ParseError> {
-        let token = self.current_token().ok_or_else(|| ParseError::SyntaxError {
-            message: "Expected type specifier".to_string(),
-            location: SourceSpan::empty(),
-        })?;
+        let token = self
+            .current_token()
+            .ok_or_else(|| ParseError::SyntaxError {
+                message: "Expected type specifier".to_string(),
+                location: SourceSpan::empty(),
+            })?;
 
         match token.kind {
             TokenKind::Void => {
@@ -934,10 +1006,21 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             }
             _ => Err(ParseError::UnexpectedToken {
                 expected: vec![
-                    TokenKind::Void, TokenKind::Char, TokenKind::Short, TokenKind::Int,
-                    TokenKind::Long, TokenKind::Float, TokenKind::Double, TokenKind::Signed,
-                    TokenKind::Unsigned, TokenKind::Bool, TokenKind::Complex, TokenKind::Atomic,
-                    TokenKind::Struct, TokenKind::Union, TokenKind::Enum,
+                    TokenKind::Void,
+                    TokenKind::Char,
+                    TokenKind::Short,
+                    TokenKind::Int,
+                    TokenKind::Long,
+                    TokenKind::Float,
+                    TokenKind::Double,
+                    TokenKind::Signed,
+                    TokenKind::Unsigned,
+                    TokenKind::Bool,
+                    TokenKind::Complex,
+                    TokenKind::Atomic,
+                    TokenKind::Struct,
+                    TokenKind::Union,
+                    TokenKind::Enum,
                     TokenKind::Identifier(Symbol::new("")),
                 ],
                 found: token.kind,
@@ -947,7 +1030,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Parse struct or union specifier
-    fn parse_struct_or_union_specifier(&mut self, is_union: bool) -> Result<TypeSpecifier, ParseError> {
+    fn parse_struct_or_union_specifier(
+        &mut self,
+        is_union: bool,
+    ) -> Result<TypeSpecifier, ParseError> {
         let tag = if let Some(token) = self.current_token() {
             if let TokenKind::Identifier(symbol) = token.kind {
                 self.advance();
@@ -981,10 +1067,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             if let TokenKind::Identifier(symbol) = token.kind {
                 self.advance().ok_or_else(|| ParseError::SyntaxError {
                     message: "Unexpected end of input".to_string(),
-                    location: SourceSpan {
-                        start: SourceLoc(0),
-                        end: SourceLoc(0),
-                    },
+                    location: SourceSpan::empty(),
                 })?;
                 Some(symbol)
             } else {
@@ -1068,21 +1151,22 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse enumerator
     fn parse_enumerator(&mut self) -> Result<NodeRef, ParseError> {
-        let token = self.current_token().ok_or_else(|| ParseError::SyntaxError {
-            message: "Expected enumerator name".to_string(),
-            location: SourceSpan {
-                start: SourceLoc(0),
-                end: SourceLoc(0),
-            },
-        })?;
+        let token = self
+            .current_token()
+            .ok_or_else(|| ParseError::SyntaxError {
+                message: "Expected enumerator name".to_string(),
+                location: SourceSpan::empty(),
+            })?;
 
         let name = match token.kind {
             TokenKind::Identifier(symbol) => symbol,
-            _ => return Err(ParseError::UnexpectedToken {
-                expected: vec![TokenKind::Identifier(Symbol::new(""))],
-                found: token.kind,
-                location: token.location,
-            }),
+            _ => {
+                return Err(ParseError::UnexpectedToken {
+                    expected: vec![TokenKind::Identifier(Symbol::new(""))],
+                    found: token.kind,
+                    location: token.location,
+                });
+            }
         };
 
         self.advance().ok_or_else(|| ParseError::SyntaxError {
@@ -1095,19 +1179,23 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             let expr_result = self.parse_expression(BindingPower::MIN)?;
             match expr_result {
                 ParseExprOutput::Expression(node) => Some(node),
-                _ => return Err(ParseError::SyntaxError {
-                    message: "Expected expression for enumerator value".to_string(),
-                    location: self.current_token().unwrap().location,
-                }),
+                _ => {
+                    return Err(ParseError::SyntaxError {
+                        message: "Expected expression for enumerator value".to_string(),
+                        location: self.current_token().unwrap().location,
+                    });
+                }
             }
         } else {
             None
         };
 
-        let span = SourceSpan {
-            start: token.location.start,
-            end: self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0)),
-        };
+        let span = SourceSpan::new(
+            token.location.start,
+            self.current_token()
+                .map(|t| t.location.end)
+                .unwrap_or(SourceLoc(0)),
+        );
 
         let node = self.ast.push_node(Node {
             kind: NodeKind::EnumConstant(name, value),
@@ -1164,11 +1252,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse designated initializer
     fn parse_designated_initializer(&mut self) -> Result<DesignatedInitializer, ParseError> {
-        let designation = if self.matches(&[TokenKind::Dot]) || self.matches(&[TokenKind::LeftBracket]) {
-            self.parse_designation()?
-        } else {
-            Vec::new()
-        };
+        let designation =
+            if self.matches(&[TokenKind::Dot]) || self.matches(&[TokenKind::LeftBracket]) {
+                self.parse_designation()?
+            } else {
+                Vec::new()
+            };
 
         self.expect(TokenKind::Assign)?;
         let initializer = self.parse_initializer()?;
@@ -1186,21 +1275,22 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         while self.matches(&[TokenKind::Dot]) || self.matches(&[TokenKind::LeftBracket]) {
             if self.matches(&[TokenKind::Dot]) {
                 self.advance(); // consume '.'
-                let token = self.current_token().ok_or_else(|| ParseError::SyntaxError {
-                    message: "Expected field name".to_string(),
-                    location: SourceSpan {
-                        start: SourceLoc(0),
-                        end: SourceLoc(0),
-                    },
-                })?;
+                let token = self
+                    .current_token()
+                    .ok_or_else(|| ParseError::SyntaxError {
+                        message: "Expected field name".to_string(),
+                        location: SourceSpan::empty(),
+                    })?;
 
                 let field_name = match token.kind {
                     TokenKind::Identifier(symbol) => symbol,
-                    _ => return Err(ParseError::UnexpectedToken {
-                        expected: vec![TokenKind::Identifier(Symbol::new(""))],
-                        found: token.kind,
-                        location: token.location,
-                    }),
+                    _ => {
+                        return Err(ParseError::UnexpectedToken {
+                            expected: vec![TokenKind::Identifier(Symbol::new(""))],
+                            found: token.kind,
+                            location: token.location,
+                        });
+                    }
                 };
 
                 self.advance().ok_or_else(|| ParseError::SyntaxError {
@@ -1213,10 +1303,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 let expr_result = self.parse_expression(BindingPower::MIN)?;
                 let index_expr = match expr_result {
                     ParseExprOutput::Expression(node) => node,
-                    _ => return Err(ParseError::SyntaxError {
-                        message: "Expected expression in array designator".to_string(),
-                        location: self.current_token().unwrap().location,
-                    }),
+                    _ => {
+                        return Err(ParseError::SyntaxError {
+                            message: "Expected expression in array designator".to_string(),
+                            location: self.current_token().unwrap().location,
+                        });
+                    }
                 };
                 self.expect(TokenKind::RightBracket)?;
                 designators.push(Designator::ArrayIndex(index_expr));
@@ -1227,7 +1319,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Parse declarator
-    fn parse_declarator(&mut self, initial_declarator: Option<Symbol>) -> Result<Declarator, ParseError> {
+    fn parse_declarator(
+        &mut self,
+        initial_declarator: Option<Symbol>,
+    ) -> Result<Declarator, ParseError> {
         let mut declarator_chain: Vec<DeclaratorComponent> = Vec::new();
         let mut current_qualifiers = TypeQualifiers::empty();
 
@@ -1253,7 +1348,11 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 Declarator::Identifier(symbol, TypeQualifiers::empty(), None)
             } else {
                 return Err(ParseError::UnexpectedToken {
-                    expected: vec![TokenKind::Star, TokenKind::LeftParen, TokenKind::Identifier(Symbol::new(""))],
+                    expected: vec![
+                        TokenKind::Star,
+                        TokenKind::LeftParen,
+                        TokenKind::Identifier(Symbol::new("")),
+                    ],
                     found: token.kind,
                     location: token.location,
                 });
@@ -1261,10 +1360,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         } else {
             return Err(ParseError::SyntaxError {
                 message: "Expected declarator".to_string(),
-                location: SourceSpan {
-                    start: SourceLoc(0),
-                    end: SourceLoc(0),
-                },
+                location: SourceSpan::empty(),
             });
         };
 
@@ -1292,7 +1388,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         let mut final_declarator = current_base;
         for component in declarator_chain.into_iter().rev() {
             final_declarator = match component {
-                DeclaratorComponent::Pointer(qualifiers) => Declarator::Pointer(qualifiers, Some(Box::new(final_declarator))),
+                DeclaratorComponent::Pointer(qualifiers) => {
+                    Declarator::Pointer(qualifiers, Some(Box::new(final_declarator)))
+                }
             };
         }
 
@@ -1364,7 +1462,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                     }
 
                     let specifiers = self.parse_declaration_specifiers()?;
-                    let declarator = if !self.matches(&[TokenKind::Comma]) && !self.matches(&[TokenKind::RightParen]) {
+                    let declarator = if !self.matches(&[TokenKind::Comma])
+                        && !self.matches(&[TokenKind::RightParen])
+                    {
                         Some(self.parse_declarator(None)?)
                     } else {
                         None
@@ -1388,10 +1488,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse a statement
     pub fn parse_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let token = self.current_token().ok_or_else(|| ParseError::SyntaxError {
-            message: "Expected statement".to_string(),
-            location: SourceSpan::empty(),
-        })?;
+        let token = self
+            .current_token()
+            .ok_or_else(|| ParseError::SyntaxError {
+                message: "Expected statement".to_string(),
+                location: SourceSpan::empty(),
+            })?;
 
         match token.kind {
             TokenKind::LeftBrace => self.parse_compound_statement(),
@@ -1413,7 +1515,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse compound statement (block)
     fn parse_compound_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self.current_token().map(|t| t.location.start).unwrap_or(SourceLoc(0));
+        let start_span = self
+            .current_token()
+            .map(|t| t.location.start)
+            .unwrap_or(SourceLoc(0));
         self.expect(TokenKind::LeftBrace)?;
 
         let mut block_items = Vec::new();
@@ -1429,19 +1534,14 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         }
 
         self.expect(TokenKind::RightBrace)?;
-        let end_span = self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0));
+        let end_span = self
+            .current_token()
+            .map(|t| t.location.end)
+            .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan {
-            start: start_span,
-            end: end_span,
-        };
+        let span = SourceSpan::new(start_span, end_span);
 
-        let node = self.ast.push_node(Node {
-            kind: NodeKind::CompoundStatement(block_items),
-            span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
+        let node = self.ast.push_node(Node::new(NodeKind::CompoundStatement(block_items), span));
         Ok(node)
     }
 
@@ -1449,15 +1549,33 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     fn is_declaration_start(&self) -> bool {
         if let Some(token) = self.current_token() {
             match token.kind {
-                TokenKind::Typedef | TokenKind::Extern | TokenKind::Static |
-                TokenKind::Auto | TokenKind::Register | TokenKind::ThreadLocal |
-                TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict |
-                TokenKind::Atomic | TokenKind::Inline | TokenKind::Noreturn |
-                TokenKind::Void | TokenKind::Char | TokenKind::Short | TokenKind::Int |
-                TokenKind::Long | TokenKind::Float | TokenKind::Double | TokenKind::Signed |
-                TokenKind::Unsigned | TokenKind::Bool | TokenKind::Complex |
-                TokenKind::Struct | TokenKind::Union | TokenKind::Enum |
-                TokenKind::Alignas => true,
+                TokenKind::Typedef
+                | TokenKind::Extern
+                | TokenKind::Static
+                | TokenKind::Auto
+                | TokenKind::Register
+                | TokenKind::ThreadLocal
+                | TokenKind::Const
+                | TokenKind::Volatile
+                | TokenKind::Restrict
+                | TokenKind::Atomic
+                | TokenKind::Inline
+                | TokenKind::Noreturn
+                | TokenKind::Void
+                | TokenKind::Char
+                | TokenKind::Short
+                | TokenKind::Int
+                | TokenKind::Long
+                | TokenKind::Float
+                | TokenKind::Double
+                | TokenKind::Signed
+                | TokenKind::Unsigned
+                | TokenKind::Bool
+                | TokenKind::Complex
+                | TokenKind::Struct
+                | TokenKind::Union
+                | TokenKind::Enum
+                | TokenKind::Alignas => true,
                 TokenKind::Identifier(symbol) => {
                     // Check if it's a typedef name (placeholder - would need symbol table)
                     false // For now, assume identifiers start expressions
@@ -1471,17 +1589,22 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse if statement
     fn parse_if_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self.current_token().map(|t| t.location.start).unwrap_or(SourceLoc(0));
+        let start_span = self
+            .current_token()
+            .map(|t| t.location.start)
+            .unwrap_or(SourceLoc(0));
         self.expect(TokenKind::If)?;
         self.expect(TokenKind::LeftParen)?;
 
         let condition_result = self.parse_expression(BindingPower::MIN)?;
         let condition = match condition_result {
             ParseExprOutput::Expression(node) => node,
-            _ => return Err(ParseError::SyntaxError {
-                message: "Expected expression in if condition".to_string(),
-                location: self.current_token().unwrap().location,
-            }),
+            _ => {
+                return Err(ParseError::SyntaxError {
+                    message: "Expected expression in if condition".to_string(),
+                    location: self.current_token().unwrap().location,
+                });
+            }
         };
 
         self.expect(TokenKind::RightParen)?;
@@ -1495,12 +1618,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             None
         };
 
-        let end_span = self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0));
+        let end_span = self
+            .current_token()
+            .map(|t| t.location.end)
+            .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan {
-            start: start_span,
-            end: end_span,
-        };
+        let span = SourceSpan::new(start_span, end_span);
 
         let if_stmt = IfStmt {
             condition,
@@ -1508,40 +1631,40 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             else_branch,
         };
 
-        let node = self.ast.push_node(Node {
-            kind: NodeKind::If(if_stmt),
-            span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
+        let node = self.ast.push_node(Node::new(NodeKind::If(if_stmt), span));
         Ok(node)
     }
 
     /// Parse switch statement
     fn parse_switch_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self.current_token().map(|t| t.location.start).unwrap_or(SourceLoc(0));
+        let start_span = self
+            .current_token()
+            .map(|t| t.location.start)
+            .unwrap_or(SourceLoc(0));
         self.expect(TokenKind::Switch)?;
         self.expect(TokenKind::LeftParen)?;
 
         let condition_result = self.parse_expression(BindingPower::MIN)?;
         let condition = match condition_result {
             ParseExprOutput::Expression(node) => node,
-            _ => return Err(ParseError::SyntaxError {
-                message: "Expected expression in switch condition".to_string(),
-                location: self.current_token().unwrap().location,
-            }),
+            _ => {
+                return Err(ParseError::SyntaxError {
+                    message: "Expected expression in switch condition".to_string(),
+                    location: self.current_token().unwrap().location,
+                });
+            }
         };
 
         self.expect(TokenKind::RightParen)?;
 
         let body = self.parse_statement()?;
 
-        let end_span = self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0));
+        let end_span = self
+            .current_token()
+            .map(|t| t.location.end)
+            .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan {
-            start: start_span,
-            end: end_span,
-        };
+        let span = SourceSpan::new(start_span, end_span);
 
         let node = self.ast.push_node(Node {
             kind: NodeKind::Switch(condition, body),
@@ -1554,47 +1677,47 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse while statement
     fn parse_while_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self.current_token().map(|t| t.location.start).unwrap_or(SourceLoc(0));
+        let start_span = self
+            .current_token()
+            .map(|t| t.location.start)
+            .unwrap_or(SourceLoc(0));
         self.expect(TokenKind::While)?;
         self.expect(TokenKind::LeftParen)?;
 
         let condition_result = self.parse_expression(BindingPower::MIN)?;
         let condition = match condition_result {
             ParseExprOutput::Expression(node) => node,
-            _ => return Err(ParseError::SyntaxError {
-                message: "Expected expression in while condition".to_string(),
-                location: self.current_token().unwrap().location,
-            }),
+            _ => {
+                return Err(ParseError::SyntaxError {
+                    message: "Expected expression in while condition".to_string(),
+                    location: self.current_token().unwrap().location,
+                });
+            }
         };
 
         self.expect(TokenKind::RightParen)?;
 
         let body = self.parse_statement()?;
 
-        let end_span = self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0));
+        let end_span = self
+            .current_token()
+            .map(|t| t.location.end)
+            .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan {
-            start: start_span,
-            end: end_span,
-        };
+        let span = SourceSpan::new(start_span, end_span);
 
-        let while_stmt = WhileStmt {
-            condition,
-            body,
-        };
+        let while_stmt = WhileStmt { condition, body };
 
-        let node = self.ast.push_node(Node {
-            kind: NodeKind::While(while_stmt),
-            span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
+        let node = self.ast.push_node(Node::new(NodeKind::While(while_stmt), span));
         Ok(node)
     }
 
     /// Parse do-while statement
     fn parse_do_while_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self.current_token().map(|t| t.location.start).unwrap_or(SourceLoc(0));
+        let start_span = self
+            .current_token()
+            .map(|t| t.location.start)
+            .unwrap_or(SourceLoc(0));
         self.expect(TokenKind::Do)?;
 
         let body = self.parse_statement()?;
@@ -1605,21 +1728,23 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         let condition_result = self.parse_expression(BindingPower::MIN)?;
         let condition = match condition_result {
             ParseExprOutput::Expression(node) => node,
-            _ => return Err(ParseError::SyntaxError {
-                message: "Expected expression in do-while condition".to_string(),
-                location: self.current_token().unwrap().location,
-            }),
+            _ => {
+                return Err(ParseError::SyntaxError {
+                    message: "Expected expression in do-while condition".to_string(),
+                    location: self.current_token().unwrap().location,
+                });
+            }
         };
 
         self.expect(TokenKind::RightParen)?;
         self.expect(TokenKind::Semicolon)?;
 
-        let end_span = self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0));
+        let end_span = self
+            .current_token()
+            .map(|t| t.location.end)
+            .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan {
-            start: start_span,
-            end: end_span,
-        };
+        let span = SourceSpan::new(start_span, end_span);
 
         let node = self.ast.push_node(Node {
             kind: NodeKind::DoWhile(body, condition),
@@ -1632,7 +1757,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse for statement
     fn parse_for_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self.current_token().map(|t| t.location.start).unwrap_or(SourceLoc(0));
+        let start_span = self
+            .current_token()
+            .map(|t| t.location.start)
+            .unwrap_or(SourceLoc(0));
         self.expect(TokenKind::For)?;
         self.expect(TokenKind::LeftParen)?;
 
@@ -1645,10 +1773,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             let expr_result = self.parse_expression(BindingPower::MIN)?;
             match expr_result {
                 ParseExprOutput::Expression(node) => Some(node),
-                _ => return Err(ParseError::SyntaxError {
-                    message: "Expected expression or declaration in for init".to_string(),
-                    location: self.current_token().unwrap().location,
-                }),
+                _ => {
+                    return Err(ParseError::SyntaxError {
+                        message: "Expected expression or declaration in for init".to_string(),
+                        location: self.current_token().unwrap().location,
+                    });
+                }
             }
         };
 
@@ -1661,10 +1791,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             let expr_result = self.parse_expression(BindingPower::MIN)?;
             match expr_result {
                 ParseExprOutput::Expression(node) => Some(node),
-                _ => return Err(ParseError::SyntaxError {
-                    message: "Expected expression in for condition".to_string(),
-                    location: self.current_token().unwrap().location,
-                }),
+                _ => {
+                    return Err(ParseError::SyntaxError {
+                        message: "Expected expression in for condition".to_string(),
+                        location: self.current_token().unwrap().location,
+                    });
+                }
             }
         };
 
@@ -1677,10 +1809,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             let expr_result = self.parse_expression(BindingPower::MIN)?;
             match expr_result {
                 ParseExprOutput::Expression(node) => Some(node),
-                _ => return Err(ParseError::SyntaxError {
-                    message: "Expected expression in for increment".to_string(),
-                    location: self.current_token().unwrap().location,
-                }),
+                _ => {
+                    return Err(ParseError::SyntaxError {
+                        message: "Expected expression in for increment".to_string(),
+                        location: self.current_token().unwrap().location,
+                    });
+                }
             }
         };
 
@@ -1688,12 +1822,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
         let body = self.parse_statement()?;
 
-        let end_span = self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0));
+        let end_span = self
+            .current_token()
+            .map(|t| t.location.end)
+            .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan {
-            start: start_span,
-            end: end_span,
-        };
+        let span = SourceSpan::new(start_span,end_span);
 
         let for_stmt = ForStmt {
             init,
@@ -1702,103 +1836,96 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             body,
         };
 
-        let node = self.ast.push_node(Node {
-            kind: NodeKind::For(for_stmt),
-            span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
+        let node = self.ast.push_node(Node::new(NodeKind::For(for_stmt), span));
         Ok(node)
     }
 
     /// Parse goto statement
     fn parse_goto_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self.current_token().map(|t| t.location.start).unwrap_or(SourceLoc(0));
+        let start_span = self
+            .current_token()
+            .map(|t| t.location.start)
+            .unwrap_or(SourceLoc(0));
         self.expect(TokenKind::Goto)?;
 
-        let token = self.current_token().ok_or_else(|| ParseError::SyntaxError {
-            message: "Expected label name".to_string(),
-            location: SourceSpan {
-                start: SourceLoc(0),
-                end: SourceLoc(0),
-            },
-        })?;
+        let token = self
+            .current_token()
+            .ok_or_else(|| ParseError::SyntaxError {
+                message: "Expected label name".to_string(),
+                location: SourceSpan::empty(),
+            })?;
 
         let label = match token.kind {
             TokenKind::Identifier(symbol) => symbol,
-            _ => return Err(ParseError::UnexpectedToken {
-                expected: vec![TokenKind::Identifier(Symbol::new(""))],
-                found: token.kind,
-                location: self.current_token().unwrap().location,
-            }),
+            _ => {
+                return Err(ParseError::UnexpectedToken {
+                    expected: vec![TokenKind::Identifier(Symbol::new(""))],
+                    found: token.kind,
+                    location: self.current_token().unwrap().location,
+                });
+            }
         };
 
         self.advance();
         self.expect(TokenKind::Semicolon)?;
 
-        let end_span = self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0));
+        let end_span = self
+            .current_token()
+            .map(|t| t.location.end)
+            .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan {
-            start: start_span,
-            end: end_span,
-        };
+        let span = SourceSpan::new(start_span,end_span);
 
-        let node = self.ast.push_node(Node {
-            kind: NodeKind::Goto(label),
-            span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
+        let node = self.ast.push_node(Node::new(NodeKind::Goto(label), span));
         Ok(node)
     }
 
     /// Parse continue statement
     fn parse_continue_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self.current_token().map(|t| t.location.start).unwrap_or(SourceLoc(0));
+        let start_span = self
+            .current_token()
+            .map(|t| t.location.start)
+            .unwrap_or(SourceLoc(0));
         self.expect(TokenKind::Continue)?;
         self.expect(TokenKind::Semicolon)?;
 
-        let end_span = self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0));
+        let end_span = self
+            .current_token()
+            .map(|t| t.location.end)
+            .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan {
-            start: start_span,
-            end: end_span,
-        };
+        let span = SourceSpan::new(start_span,end_span);
 
-        let node = self.ast.push_node(Node {
-            kind: NodeKind::Continue,
-            span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
+        let node = self.ast.push_node(Node::new(NodeKind::Continue, span));
         Ok(node)
     }
 
     /// Parse break statement
     fn parse_break_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self.current_token().map(|t| t.location.start).unwrap_or(SourceLoc(0));
+        let start_span = self
+            .current_token()
+            .map(|t| t.location.start)
+            .unwrap_or(SourceLoc(0));
         self.expect(TokenKind::Break)?;
         self.expect(TokenKind::Semicolon)?;
 
-        let end_span = self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0));
+        let end_span = self
+            .current_token()
+            .map(|t| t.location.end)
+            .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan {
-            start: start_span,
-            end: end_span,
-        };
+        let span = SourceSpan::new(start_span,end_span);
 
-        let node = self.ast.push_node(Node {
-            kind: NodeKind::Break,
-            span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
+        let node = self.ast.push_node(Node::new(NodeKind::Break, span));
         Ok(node)
     }
 
     /// Parse return statement
     fn parse_return_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self.current_token().map(|t| t.location.start).unwrap_or(SourceLoc(0));
+        let start_span = self
+            .current_token()
+            .map(|t| t.location.start)
+            .unwrap_or(SourceLoc(0));
         self.expect(TokenKind::Return)?;
 
         let value = if self.matches(&[TokenKind::Semicolon]) {
@@ -1807,76 +1934,76 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             let expr_result = self.parse_expression(BindingPower::MIN)?;
             match expr_result {
                 ParseExprOutput::Expression(node) => Some(node),
-                _ => return Err(ParseError::SyntaxError {
-                    message: "Expected expression in return statement".to_string(),
-                    location: self.current_token().unwrap().location,
-                }),
+                _ => {
+                    return Err(ParseError::SyntaxError {
+                        message: "Expected expression in return statement".to_string(),
+                        location: self.current_token().unwrap().location,
+                    });
+                }
             }
         };
 
         self.expect(TokenKind::Semicolon)?;
 
-        let end_span = self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0));
+        let end_span = self
+            .current_token()
+            .map(|t| t.location.end)
+            .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan {
-            start: start_span,
-            end: end_span,
-        };
+        let span = SourceSpan::new(start_span,end_span);
 
-        let node = self.ast.push_node(Node {
-            kind: NodeKind::Return(value),
-            span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
+        let node = self.ast.push_node(Node::new(NodeKind::Return(value), span));
         Ok(node)
     }
 
     /// Parse empty statement
     fn parse_empty_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self.current_token().map(|t| t.location.start).unwrap_or(SourceLoc(0));
+        let start_span = self
+            .current_token()
+            .map(|t| t.location.start)
+            .unwrap_or(SourceLoc(0));
         self.expect(TokenKind::Semicolon)?;
 
-        let end_span = self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0));
+        let end_span = self
+            .current_token()
+            .map(|t| t.location.end)
+            .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan {
-            start: start_span,
-            end: end_span,
-        };
+        let span = SourceSpan::new(start_span,end_span);
 
-        let node = self.ast.push_node(Node {
-            kind: NodeKind::EmptyStatement,
-            span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
+        let node = self.ast.push_node(Node::new(NodeKind::EmptyStatement, span));
         Ok(node)
     }
 
     /// Parse case statement
     fn parse_case_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self.current_token().map(|t| t.location.start).unwrap_or(SourceLoc(0));
+        let start_span = self
+            .current_token()
+            .map(|t| t.location.start)
+            .unwrap_or(SourceLoc(0));
         self.expect(TokenKind::Case)?;
 
         let const_expr_result = self.parse_expression(BindingPower::MIN)?;
         let const_expr = match const_expr_result {
             ParseExprOutput::Expression(node) => node,
-            _ => return Err(ParseError::SyntaxError {
-                message: "Expected constant expression in case".to_string(),
-                location: self.current_token().unwrap().location,
-            }),
+            _ => {
+                return Err(ParseError::SyntaxError {
+                    message: "Expected constant expression in case".to_string(),
+                    location: self.current_token().unwrap().location,
+                });
+            }
         };
 
         self.expect(TokenKind::Colon)?;
 
         let statement = self.parse_statement()?;
 
-        let end_span = self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0));
+        let end_span = self
+            .current_token()
+            .map(|t| t.location.end)
+            .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan {
-            start: start_span,
-            end: end_span,
-        };
+        let span = SourceSpan::new(start_span,end_span);
 
         let node = self.ast.push_node(Node {
             kind: NodeKind::Case(const_expr, statement),
@@ -1889,31 +2016,32 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse default statement
     fn parse_default_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self.current_token().map(|t| t.location.start).unwrap_or(SourceLoc(0));
+        let start_span = self
+            .current_token()
+            .map(|t| t.location.start)
+            .unwrap_or(SourceLoc(0));
         self.expect(TokenKind::Default)?;
         self.expect(TokenKind::Colon)?;
 
         let statement = self.parse_statement()?;
 
-        let end_span = self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0));
+        let end_span = self
+            .current_token()
+            .map(|t| t.location.end)
+            .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan {
-            start: start_span,
-            end: end_span,
-        };
+        let span = SourceSpan::new(start_span,end_span);
 
-        let node = self.ast.push_node(Node {
-            kind: NodeKind::Default(statement),
-            span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
+        let node = self.ast.push_node(Node::new(NodeKind::Default(statement), span));
         Ok(node)
     }
 
     /// Parse expression statement
     fn parse_expression_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self.current_token().map(|t| t.location.start).unwrap_or(SourceLoc(0));
+        let start_span = self
+            .current_token()
+            .map(|t| t.location.start)
+            .unwrap_or(SourceLoc(0));
 
         let expression = if self.matches(&[TokenKind::Semicolon]) {
             None
@@ -1921,34 +2049,34 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             let expr_result = self.parse_expression(BindingPower::MIN)?;
             match expr_result {
                 ParseExprOutput::Expression(node) => Some(node),
-                _ => return Err(ParseError::SyntaxError {
-                    message: "Expected expression in expression statement".to_string(),
-                    location: self.current_token().unwrap().location,
-                }),
+                _ => {
+                    return Err(ParseError::SyntaxError {
+                        message: "Expected expression in expression statement".to_string(),
+                        location: self.current_token().unwrap().location,
+                    });
+                }
             }
         };
 
         self.expect(TokenKind::Semicolon)?;
 
-        let end_span = self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0));
+        let end_span = self
+            .current_token()
+            .map(|t| t.location.end)
+            .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan {
-            start: start_span,
-            end: end_span,
-        };
+        let span = SourceSpan::new(start_span,end_span);
 
-        let node = self.ast.push_node(Node {
-            kind: NodeKind::ExpressionStatement(expression),
-            span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
+        let node = self.ast.push_node(Node::new(NodeKind::ExpressionStatement(expression), span));
         Ok(node)
     }
 
     /// Parse function definition
     pub fn parse_function_definition(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self.current_token().map(|t| t.location.start).unwrap_or(SourceLoc(0));
+        let start_span = self
+            .current_token()
+            .map(|t| t.location.start)
+            .unwrap_or(SourceLoc(0));
 
         // Parse declaration specifiers
         let specifiers = self.parse_declaration_specifiers()?;
@@ -1959,12 +2087,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         // Parse function body
         let body = self.parse_compound_statement()?;
 
-        let end_span = self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0));
+        let end_span = self
+            .current_token()
+            .map(|t| t.location.end)
+            .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan {
-            start: start_span,
-            end: end_span,
-        };
+        let span = SourceSpan::new(start_span,end_span);
 
         let function_def = FunctionDefData {
             specifiers,
@@ -1972,18 +2100,16 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             body,
         };
 
-        let node = self.ast.push_node(Node {
-            kind: NodeKind::FunctionDef(function_def),
-            span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
+        let node = self.ast.push_node(Node::new(NodeKind::FunctionDef(function_def), span));
         Ok(node)
     }
 
     /// Parse translation unit (top level)
     pub fn parse_translation_unit(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self.current_token().map(|t| t.location.start).unwrap_or(SourceLoc(0));
+        let start_span = self
+            .current_token()
+            .map(|t| t.location.start)
+            .unwrap_or(SourceLoc(0));
 
         let mut top_level_declarations = Vec::new();
         let mut iteration_count = 0;
@@ -1998,7 +2124,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             iteration_count += 1;
             if iteration_count > MAX_ITERATIONS {
                 return Err(ParseError::SyntaxError {
-                    message: "Parser exceeded maximum iteration limit - possible infinite loop".to_string(),
+                    message: "Parser exceeded maximum iteration limit - possible infinite loop"
+                        .to_string(),
                     location: token.location,
                 });
             }
@@ -2034,19 +2161,14 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             }
         }
 
-        let end_span = self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0));
+        let end_span = self
+            .current_token()
+            .map(|t| t.location.end)
+            .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan {
-            start: start_span,
-            end: end_span,
-        };
+        let span = SourceSpan::new(start_span,end_span);
 
-        let node = self.ast.push_node(Node {
-            kind: NodeKind::TranslationUnit(top_level_declarations),
-            span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
+        let node = self.ast.push_node(Node::new(NodeKind::TranslationUnit(top_level_declarations), span));
         Ok(node)
     }
 
@@ -2059,17 +2181,22 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse _Generic selection (C11)
     pub fn parse_generic_selection(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self.current_token().map(|t| t.location.start).unwrap_or(SourceLoc(0));
+        let start_span = self
+            .current_token()
+            .map(|t| t.location.start)
+            .unwrap_or(SourceLoc(0));
         self.expect(TokenKind::Generic)?;
         self.expect(TokenKind::LeftParen)?;
 
         let controlling_expr_result = self.parse_expression(BindingPower::MIN)?;
         let controlling_expr = match controlling_expr_result {
             ParseExprOutput::Expression(node) => node,
-            _ => return Err(ParseError::SyntaxError {
-                message: "Expected expression in _Generic controlling expression".to_string(),
-                location: self.current_token().unwrap().location,
-            }),
+            _ => {
+                return Err(ParseError::SyntaxError {
+                    message: "Expected expression in _Generic controlling expression".to_string(),
+                    location: self.current_token().unwrap().location,
+                });
+            }
         };
 
         self.expect(TokenKind::Comma)?;
@@ -2089,10 +2216,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             let result_expr_result = self.parse_expression(BindingPower::MIN)?;
             let result_expr = match result_expr_result {
                 ParseExprOutput::Expression(node) => node,
-                _ => return Err(ParseError::SyntaxError {
-                    message: "Expected expression in _Generic association".to_string(),
-                    location: self.current_token().unwrap().location,
-                }),
+                _ => {
+                    return Err(ParseError::SyntaxError {
+                        message: "Expected expression in _Generic association".to_string(),
+                        location: self.current_token().unwrap().location,
+                    });
+                }
             };
 
             associations.push(GenericAssociation {
@@ -2108,12 +2237,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
         self.expect(TokenKind::RightParen)?;
 
-        let end_span = self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0));
+        let end_span = self
+            .current_token()
+            .map(|t| t.location.end)
+            .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan {
-            start: start_span,
-            end: end_span,
-        };
+        let span = SourceSpan::new(start_span,end_span);
 
         let node = self.ast.push_node(Node {
             kind: NodeKind::GenericSelection(controlling_expr, associations),
@@ -2134,7 +2263,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
         let span = SourceSpan {
             start: SourceLoc(0), // Would need to track start properly
-            end: self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0)),
+            end: self
+                .current_token()
+                .map(|t| t.location.end)
+                .unwrap_or(SourceLoc(0)),
         };
 
         let initializer = self.ast.push_initializer(initializer);
@@ -2149,48 +2281,54 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse static assert (C11)
     pub fn parse_static_assert(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self.current_token().map(|t| t.location.start).unwrap_or(SourceLoc(0));
+        let start_span = self
+            .current_token()
+            .map(|t| t.location.start)
+            .unwrap_or(SourceLoc(0));
         self.expect(TokenKind::StaticAssert)?;
         self.expect(TokenKind::LeftParen)?;
 
         let condition_result = self.parse_expression(BindingPower::MIN)?;
         let condition = match condition_result {
             ParseExprOutput::Expression(node) => node,
-            _ => return Err(ParseError::SyntaxError {
-                message: "Expected expression in _Static_assert condition".to_string(),
-                location: self.current_token().unwrap().location,
-            }),
+            _ => {
+                return Err(ParseError::SyntaxError {
+                    message: "Expected expression in _Static_assert condition".to_string(),
+                    location: self.current_token().unwrap().location,
+                });
+            }
         };
 
         self.expect(TokenKind::Comma)?;
 
-        let token = self.current_token().ok_or_else(|| ParseError::SyntaxError {
-            message: "Expected string literal in _Static_assert".to_string(),
-            location: SourceSpan {
-                start: SourceLoc(0),
-                end: SourceLoc(0),
-            },
-        })?;
+        let token = self
+            .current_token()
+            .ok_or_else(|| ParseError::SyntaxError {
+                message: "Expected string literal in _Static_assert".to_string(),
+                location: SourceSpan::empty(),
+            })?;
 
         let message = match token.kind {
             TokenKind::StringLiteral(symbol) => symbol,
-            _ => return Err(ParseError::UnexpectedToken {
-                expected: vec![TokenKind::StringLiteral(Symbol::new(""))],
-                found: token.kind,
-                location: token.location,
-            }),
+            _ => {
+                return Err(ParseError::UnexpectedToken {
+                    expected: vec![TokenKind::StringLiteral(Symbol::new(""))],
+                    found: token.kind,
+                    location: token.location,
+                });
+            }
         };
 
         self.advance();
         self.expect(TokenKind::RightParen)?;
         self.expect(TokenKind::Semicolon)?;
 
-        let end_span = self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0));
+        let end_span = self
+            .current_token()
+            .map(|t| t.location.end)
+            .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan {
-            start: start_span,
-            end: end_span,
-        };
+        let span = SourceSpan::new(start_span,end_span);
 
         let node = self.ast.push_node(Node {
             kind: NodeKind::StaticAssert(condition, message),
@@ -2203,7 +2341,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse sizeof expression or type
     pub fn parse_sizeof(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self.current_token().map(|t| t.location.start).unwrap_or(SourceLoc(0));
+        let start_span = self
+            .current_token()
+            .map(|t| t.location.start)
+            .unwrap_or(SourceLoc(0));
         self.expect(TokenKind::Sizeof)?;
 
         let node = if self.matches(&[TokenKind::LeftParen]) {
@@ -2213,64 +2354,50 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 let type_ref = self.parse_type_name()?;
                 self.expect(TokenKind::RightParen)?;
 
-                let end_span = self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0));
-                let span = SourceSpan {
-                    start: start_span,
-                    end: end_span,
-                };
+                let end_span = self
+                    .current_token()
+                    .map(|t| t.location.end)
+                    .unwrap_or(SourceLoc(0));
+                let span = SourceSpan::new(start_span,end_span);
 
-                self.ast.push_node(Node {
-                    kind: NodeKind::SizeOfType(type_ref),
-                    span,
-                    resolved_type: Cell::new(None),
-                    resolved_symbol: Cell::new(None),
-                })
+                self.ast.push_node(Node::new(NodeKind::SizeOfType(type_ref), span))
             } else {
                 let expr_result = self.parse_expression(BindingPower::MIN)?;
                 let expr = match expr_result {
                     ParseExprOutput::Expression(node) => node,
-                    _ => return Err(ParseError::SyntaxError {
-                        message: "Expected expression in sizeof".to_string(),
-                        location: self.current_token().unwrap().location,
-                    }),
+                    _ => {
+                        return Err(ParseError::SyntaxError {
+                            message: "Expected expression in sizeof".to_string(),
+                            location: self.current_token().unwrap().location,
+                        });
+                    }
                 };
                 self.expect(TokenKind::RightParen)?;
 
-                let end_span = self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0));
-                let span = SourceSpan {
-                    start: start_span,
-                    end: end_span,
-                };
+                let end_span = self
+                    .current_token()
+                    .map(|t| t.location.end)
+                    .unwrap_or(SourceLoc(0));
+                let span = SourceSpan::new(start_span,end_span);
 
-                self.ast.push_node(Node {
-                    kind: NodeKind::SizeOfExpr(expr),
-                    span,
-                    resolved_type: Cell::new(None),
-                    resolved_symbol: Cell::new(None),
-                })
+                self.ast.push_node(Node::new(NodeKind::SizeOfExpr(expr), span))
             }
         } else {
             let expr_result = self.parse_expression(BindingPower::UNARY)?;
             let expr = match expr_result {
                 ParseExprOutput::Expression(node) => node,
-                _ => return Err(ParseError::SyntaxError {
-                    message: "Expected expression in sizeof".to_string(),
-                    location: self.current_token().unwrap().location,
-                }),
+                _ => {
+                    return Err(ParseError::SyntaxError {
+                        message: "Expected expression in sizeof".to_string(),
+                        location: self.current_token().unwrap().location,
+                    });
+                }
             };
 
             let end_span = self.ast.get_node(expr).span.end;
-            let span = SourceSpan {
-                start: start_span,
-                end: end_span,
-            };
+            let span = SourceSpan::new(start_span,end_span);
 
-            self.ast.push_node(Node {
-                kind: NodeKind::SizeOfExpr(expr),
-                span,
-                resolved_type: Cell::new(None),
-                resolved_symbol: Cell::new(None),
-            })
+            self.ast.push_node(Node::new(NodeKind::SizeOfExpr(expr), span))
         };
 
         Ok(node)
@@ -2278,26 +2405,24 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse _Alignof (C11)
     pub fn parse_alignof(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self.current_token().map(|t| t.location.start).unwrap_or(SourceLoc(0));
+        let start_span = self
+            .current_token()
+            .map(|t| t.location.start)
+            .unwrap_or(SourceLoc(0));
         self.expect(TokenKind::Alignof)?;
         self.expect(TokenKind::LeftParen)?;
 
         let type_ref = self.parse_type_name()?;
         self.expect(TokenKind::RightParen)?;
 
-        let end_span = self.current_token().map(|t| t.location.end).unwrap_or(SourceLoc(0));
+        let end_span = self
+            .current_token()
+            .map(|t| t.location.end)
+            .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan {
-            start: start_span,
-            end: end_span,
-        };
+        let span = SourceSpan::new(start_span,end_span);
 
-        let node = self.ast.push_node(Node {
-            kind: NodeKind::AlignOf(type_ref),
-            span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
+        let node = self.ast.push_node(Node::new(NodeKind::AlignOf(type_ref), span));
         Ok(node)
     }
 
@@ -2305,12 +2430,25 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     fn is_type_name_start(&self) -> bool {
         if let Some(token) = self.current_token() {
             match token.kind {
-                TokenKind::Void | TokenKind::Char | TokenKind::Short | TokenKind::Int |
-                TokenKind::Long | TokenKind::Float | TokenKind::Double | TokenKind::Signed |
-                TokenKind::Unsigned | TokenKind::Bool | TokenKind::Complex |
-                TokenKind::Struct | TokenKind::Union | TokenKind::Enum |
-                TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict |
-                TokenKind::Atomic | TokenKind::Identifier(_) => true,
+                TokenKind::Void
+                | TokenKind::Char
+                | TokenKind::Short
+                | TokenKind::Int
+                | TokenKind::Long
+                | TokenKind::Float
+                | TokenKind::Double
+                | TokenKind::Signed
+                | TokenKind::Unsigned
+                | TokenKind::Bool
+                | TokenKind::Complex
+                | TokenKind::Struct
+                | TokenKind::Union
+                | TokenKind::Enum
+                | TokenKind::Const
+                | TokenKind::Volatile
+                | TokenKind::Restrict
+                | TokenKind::Atomic
+                | TokenKind::Identifier(_) => true,
                 _ => false,
             }
         } else {

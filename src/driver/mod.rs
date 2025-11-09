@@ -1,18 +1,18 @@
 // Compiler driver module
 
-use std::path::{Path, PathBuf};
+use clap::{Args, Parser as CliParser};
 use std::fs;
-use clap::{Parser as CliParser, Args};
+use std::path::{Path, PathBuf};
 use symbol_table::GlobalSymbol as Symbol;
 
-use crate::ast::{Ast, Node, NodeKind, FunctionDefData, Declarator, TypeQualifiers};
-use crate::semantic::{SemanticAnalyzer, SymbolTable};
-use crate::diagnostic::{DiagnosticEngine, SemanticOutput};
+use crate::ast::{Ast, Declarator, FunctionDefData, Node, NodeKind, TypeQualifiers};
 use crate::ast_dumper::{AstDumper, DumpConfig};
-use crate::source_manager::{SourceManager, SourceId, SourceSpan, SourceLoc};
+use crate::diagnostic::{DiagnosticEngine, SemanticOutput};
 use crate::lang_options::LangOptions;
-use crate::preprocessor::{Preprocessor, PreprocessorConfig, PreprocessorError};
 use crate::parser::Parser;
+use crate::preprocessor::{Preprocessor, PreprocessorConfig, PreprocessorError};
+use crate::semantic::{SemanticAnalyzer, SymbolTable};
+use crate::source_manager::{SourceId, SourceLoc, SourceManager, SourceSpan};
 
 // Remove duplicate PreprocessorConfig definition
 use std::cell::Cell;
@@ -81,7 +81,9 @@ pub struct CompilerDriver {
 impl CompilerDriver {
     pub fn new(cli: Cli) -> Result<Self, String> {
         // Parse defines
-        let defines = cli.defines.iter()
+        let defines = cli
+            .defines
+            .iter()
             .map(|def| {
                 if let Some(eq_pos) = def.find('=') {
                     let name = def[..eq_pos].to_string();
@@ -127,20 +129,31 @@ impl CompilerDriver {
 
     fn compile_file(&mut self, source_path: &Path) -> Result<(), CompilerError> {
         // 1. Load source file through SourceManager
-        let source_id = self.source_manager.add_file_from_path(source_path)
-            .map_err(|e| CompilerError::IoError(format!("Failed to read {}: {}", source_path.display(), e)))?;
+        let source_id = self
+            .source_manager
+            .add_file_from_path(source_path)
+            .map_err(|e| {
+                CompilerError::IoError(format!("Failed to read {}: {}", source_path.display(), e))
+            })?;
 
         // 2. Preprocessing phase
         let pp_tokens = {
             let mut preprocessor = Preprocessor::new(
                 &mut self.source_manager,
                 &mut self.diagnostics,
-                LangOptions { c11: true, gnu_mode: false, ms_extensions: false },
+                LangOptions {
+                    c11: true,
+                    gnu_mode: false,
+                    ms_extensions: false,
+                },
                 target_lexicon::Triple::host(),
                 &self.config.preprocessor,
             );
-            let result = preprocessor.process(source_id, &self.config.preprocessor)
-                .map_err(|e| CompilerError::PreprocessorError(format!("Preprocessing failed: {:?}", e)))?;
+            let result = preprocessor
+                .process(source_id, &self.config.preprocessor)
+                .map_err(|e| {
+                    CompilerError::PreprocessorError(format!("Preprocessing failed: {:?}", e))
+                })?;
             // Preprocessor is dropped here, releasing the borrow on diagnostics
             result
         };
@@ -156,7 +169,11 @@ impl CompilerDriver {
             let mut lexer = crate::lexer::Lexer::new(
                 &self.source_manager,
                 &mut self.diagnostics,
-                &LangOptions { c11: true, gnu_mode: false, ms_extensions: false },
+                &LangOptions {
+                    c11: true,
+                    gnu_mode: false,
+                    ms_extensions: false,
+                },
                 &target_triple,
                 &pp_tokens,
             );
@@ -175,7 +192,8 @@ impl CompilerDriver {
             let mut temp_ast = Ast::new();
             {
                 let mut parser = Parser::new(&tokens, &mut temp_ast, &mut self.diagnostics);
-                let _translation_unit = parser.parse_translation_unit()
+                let _translation_unit = parser
+                    .parse_translation_unit()
                     .map_err(|e| CompilerError::ParserError(format!("Parsing failed: {:?}", e)))?;
                 // Parser is dropped here, releasing the borrow on diagnostics
             }
@@ -207,7 +225,10 @@ impl CompilerDriver {
 
         // 6. AST dumping (if requested)
         if self.config.dump_ast {
-            let output_path = self.config.output_path.clone()
+            let output_path = self
+                .config
+                .output_path
+                .clone()
                 .unwrap_or_else(|| PathBuf::from("ast_dump.html"));
             let dump_config = DumpConfig {
                 pretty_print: true,
@@ -215,9 +236,16 @@ impl CompilerDriver {
                 max_depth: None,
                 output_path: output_path.clone(),
             };
-            let dumper = AstDumper::new(&ast, &symbol_table, &self.diagnostics, &self.source_manager, dump_config);
-            let html = dumper.generate_html()
-                .map_err(|e| CompilerError::AstDumpError(format!("HTML generation error: {:?}", e)))?;
+            let dumper = AstDumper::new(
+                &ast,
+                &symbol_table,
+                &self.diagnostics,
+                &self.source_manager,
+                dump_config,
+            );
+            let html = dumper.generate_html().map_err(|e| {
+                CompilerError::AstDumpError(format!("HTML generation error: {:?}", e))
+            })?;
 
             fs::write(&output_path, html)
                 .map_err(|e| CompilerError::IoError(format!("Failed to write AST dump: {}", e)))?;

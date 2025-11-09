@@ -1,11 +1,11 @@
-use std::path::PathBuf;
-use std::collections::HashMap;
-use symbol_table::GlobalSymbol as Symbol;
-use crate::source_manager::{SourceManager, SourceId, SourceSpan, SourceLoc};
-use target_lexicon::Triple as TargetInfo;
-use chrono::{DateTime, Datelike, Timelike, Utc};
 use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::LangOptions;
+use crate::source_manager::{SourceId, SourceLoc, SourceManager, SourceSpan};
+use chrono::{DateTime, Datelike, Timelike, Utc};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use symbol_table::GlobalSymbol as Symbol;
+use target_lexicon::Triple as TargetInfo;
 
 // Packed token flags for preprocessor tokens
 bitflags::bitflags! {
@@ -21,33 +21,74 @@ bitflags::bitflags! {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PPTokenKind {
     // Keywords
-    If, Ifdef, Ifndef, Elif, Else, Endif, Define, Undef, Include, Line, Pragma,
+    If,
+    Ifdef,
+    Ifndef,
+    Elif,
+    Else,
+    Endif,
+    Define,
+    Undef,
+    Include,
+    Line,
+    Pragma,
     // Punctuation and operators
-    Plus, Minus, Star, Slash, Percent, // + - * / %
-    And, Or, Xor, Not, Tilde, // & | ^ ! ~
-    Less, Greater, LessEqual, GreaterEqual, Equal, NotEqual, // < > <= >= == !=
-    LeftShift, RightShift, // << >>
-    Assign, PlusAssign, MinusAssign, // = += -=
-    StarAssign, DivAssign, ModAssign, // *= /= %=
-    AndAssign, OrAssign, XorAssign, // &= |= ^=
-    LeftShiftAssign, RightShiftAssign, // <<= >>=
-    Increment, Decrement, // ++ --
-    Arrow, Dot, // -> .
-    Question, Colon, // ? :
-    Comma, Semicolon, // , ;
-    LeftParen, RightParen, // ( )
-    LeftBracket, RightBracket, // [ ]
-    LeftBrace, RightBrace, // { }
-    Ellipsis, // ...
-    LogicAnd, LogicOr, // && ||
-    Hash, HashHash, // # ##
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percent, // + - * / %
+    And,
+    Or,
+    Xor,
+    Not,
+    Tilde, // & | ^ ! ~
+    Less,
+    Greater,
+    LessEqual,
+    GreaterEqual,
+    Equal,
+    NotEqual, // < > <= >= == !=
+    LeftShift,
+    RightShift, // << >>
+    Assign,
+    PlusAssign,
+    MinusAssign, // = += -=
+    StarAssign,
+    DivAssign,
+    ModAssign, // *= /= %=
+    AndAssign,
+    OrAssign,
+    XorAssign, // &= |= ^=
+    LeftShiftAssign,
+    RightShiftAssign, // <<= >>=
+    Increment,
+    Decrement, // ++ --
+    Arrow,
+    Dot, // -> .
+    Question,
+    Colon, // ? :
+    Comma,
+    Semicolon, // , ;
+    LeftParen,
+    RightParen, // ( )
+    LeftBracket,
+    RightBracket, // [ ]
+    LeftBrace,
+    RightBrace, // { }
+    Ellipsis,   // ...
+    LogicAnd,
+    LogicOr, // && ||
+    Hash,
+    HashHash, // # ##
     // Literals and identifiers
     Identifier(Symbol),    // Interned identifier
     StringLiteral(Symbol), // Interned string literal
     CharLiteral(u32),      // Unicode codepoint value
     Number(i64),           // Parsed numeric value for preprocessor evaluation
     // Special
-    Eof, Unknown,
+    Eof,
+    Unknown,
 }
 
 /// Token structure for preprocessor tokens
@@ -56,10 +97,10 @@ pub struct PPToken {
     pub kind: PPTokenKind,
     pub flags: PPTokenFlags,
     pub location: SourceLoc, // Contains file ID and byte offset
-    pub length: u16, // Maximum token length (64KB should be sufficient for any token)
+    pub length: u16,         // Maximum token length (64KB should be sufficient for any token)
 }
 
-/// Packed boolean flags for macro properties
+// Packed boolean flags for macro properties
 bitflags::bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     pub struct MacroFlags: u8 {
@@ -113,7 +154,7 @@ pub struct FileInfo {
     pub file_id: SourceId,
     pub path: PathBuf,
     pub size: u32,
-    pub buffer_index: usize, // Index into buffers Vec
+    pub buffer_index: usize,   // Index into buffers Vec
     pub line_starts: Vec<u32>, // Line start offsets for efficient line lookup
 }
 
@@ -206,10 +247,14 @@ impl<'src> Preprocessor<'src> {
         config: &PreprocessorConfig,
     ) -> Self {
         let header_search = HeaderSearch {
-            search_path: config.system_include_paths.iter().map(|p| SearchPath {
-                path: p.clone(),
-                is_system: true,
-            }).collect(),
+            search_path: config
+                .system_include_paths
+                .iter()
+                .map(|p| SearchPath {
+                    path: p.clone(),
+                    is_system: true,
+                })
+                .collect(),
             system_path: Vec::new(),
             framework_path: Vec::new(),
             quoted_includes: Vec::new(),
@@ -241,36 +286,46 @@ impl<'src> Preprocessor<'src> {
         let now: DateTime<Utc> = Utc::now();
 
         // __DATE__
-        let date_str = format!("\"{:02} {:02} {}\"",
+        let date_str = format!(
+            "\"{:02} {:02} {}\"",
             now.format("%b"),
             now.day(),
-            now.year());
+            now.year()
+        );
         let date_tokens = self.tokenize_string(&date_str);
         self.define_builtin_macro("__DATE__", date_tokens);
 
         // __TIME__
-        let time_str = format!("\"{:02}:{:02}:{:02}\"",
+        let time_str = format!(
+            "\"{:02}:{:02}:{:02}\"",
             now.hour(),
             now.minute(),
-            now.second());
+            now.second()
+        );
         let time_tokens = self.tokenize_string(&time_str);
         self.define_builtin_macro("__TIME__", time_tokens);
 
         // Other built-ins
-        self.define_builtin_macro("__STDC__", vec![PPToken {
-            kind: PPTokenKind::Number(1),
-            flags: PPTokenFlags::empty(),
-            location: SourceLoc(0),
-            length: 1,
-        }]);
-
-        if self.lang_opts.c11 {
-            self.define_builtin_macro("__STDC_VERSION__", vec![PPToken {
-                kind: PPTokenKind::Number(201112),
+        self.define_builtin_macro(
+            "__STDC__",
+            vec![PPToken {
+                kind: PPTokenKind::Number(1),
                 flags: PPTokenFlags::empty(),
                 location: SourceLoc(0),
-                length: 6,
-            }]);
+                length: 1,
+            }],
+        );
+
+        if self.lang_opts.c11 {
+            self.define_builtin_macro(
+                "__STDC_VERSION__",
+                vec![PPToken {
+                    kind: PPTokenKind::Number(201112),
+                    flags: PPTokenFlags::empty(),
+                    location: SourceLoc(0),
+                    length: 6,
+                }],
+            );
         }
     }
 
@@ -298,7 +353,11 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Process source file and return preprocessed tokens
-    pub fn process(&mut self, source_id: SourceId, _config: &PreprocessorConfig) -> Result<Vec<PPToken>, PreprocessorError> {
+    pub fn process(
+        &mut self,
+        source_id: SourceId,
+        _config: &PreprocessorConfig,
+    ) -> Result<Vec<PPToken>, PreprocessorError> {
         // Initialize lexer for main file
         let buffer = self.source_manager.get_buffer(source_id);
         let buffer_len = buffer.len() as u32;
@@ -351,7 +410,9 @@ impl<'src> Preprocessor<'src> {
 
     /// Handle preprocessor directives
     fn handle_directive(&mut self) -> Result<(), PreprocessorError> {
-        let token = self.lex_token().ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+        let token = self
+            .lex_token()
+            .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
 
         match token.kind {
             PPTokenKind::Define => self.handle_define()?,
@@ -372,20 +433,46 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Placeholder implementations for directive handlers
-    fn handle_define(&mut self) -> Result<(), PreprocessorError> { Ok(()) }
-    fn handle_undef(&mut self) -> Result<(), PreprocessorError> { Ok(()) }
-    fn handle_include(&mut self) -> Result<(), PreprocessorError> { Ok(()) }
-    fn handle_if(&mut self) -> Result<(), PreprocessorError> { Ok(()) }
-    fn handle_ifdef(&mut self) -> Result<(), PreprocessorError> { Ok(()) }
-    fn handle_ifndef(&mut self) -> Result<(), PreprocessorError> { Ok(()) }
-    fn handle_elif(&mut self) -> Result<(), PreprocessorError> { Ok(()) }
-    fn handle_else(&mut self) -> Result<(), PreprocessorError> { Ok(()) }
-    fn handle_endif(&mut self) -> Result<(), PreprocessorError> { Ok(()) }
-    fn handle_line(&mut self) -> Result<(), PreprocessorError> { Ok(()) }
-    fn handle_pragma(&mut self) -> Result<(), PreprocessorError> { Ok(()) }
+    fn handle_define(&mut self) -> Result<(), PreprocessorError> {
+        Ok(())
+    }
+    fn handle_undef(&mut self) -> Result<(), PreprocessorError> {
+        Ok(())
+    }
+    fn handle_include(&mut self) -> Result<(), PreprocessorError> {
+        Ok(())
+    }
+    fn handle_if(&mut self) -> Result<(), PreprocessorError> {
+        Ok(())
+    }
+    fn handle_ifdef(&mut self) -> Result<(), PreprocessorError> {
+        Ok(())
+    }
+    fn handle_ifndef(&mut self) -> Result<(), PreprocessorError> {
+        Ok(())
+    }
+    fn handle_elif(&mut self) -> Result<(), PreprocessorError> {
+        Ok(())
+    }
+    fn handle_else(&mut self) -> Result<(), PreprocessorError> {
+        Ok(())
+    }
+    fn handle_endif(&mut self) -> Result<(), PreprocessorError> {
+        Ok(())
+    }
+    fn handle_line(&mut self) -> Result<(), PreprocessorError> {
+        Ok(())
+    }
+    fn handle_pragma(&mut self) -> Result<(), PreprocessorError> {
+        Ok(())
+    }
 
     /// Placeholder for macro expansion
-    fn expand_macro(&mut self, _symbol: Symbol, _location: SourceLoc) -> Result<Option<Vec<PPToken>>, PreprocessorError> {
+    fn expand_macro(
+        &mut self,
+        _symbol: Symbol,
+        _location: SourceLoc,
+    ) -> Result<Option<Vec<PPToken>>, PreprocessorError> {
         Ok(None)
     }
 }
@@ -752,8 +839,11 @@ impl PPLexer {
             }
             b'.' => {
                 self.position += 1;
-                if self.position < self.buffer.len() && self.buffer[self.position] == b'.' &&
-                   self.position + 1 < self.buffer.len() && self.buffer[self.position + 1] == b'.' {
+                if self.position < self.buffer.len()
+                    && self.buffer[self.position] == b'.'
+                    && self.position + 1 < self.buffer.len()
+                    && self.buffer[self.position + 1] == b'.'
+                {
                     self.position += 2;
                     Some(PPToken {
                         kind: PPTokenKind::Ellipsis,
@@ -885,8 +975,10 @@ impl PPLexer {
 
     fn lex_identifier(&mut self, start_pos: usize) -> PPToken {
         self.position += 1;
-        while self.position < self.buffer.len() &&
-              (self.buffer[self.position].is_ascii_alphanumeric() || self.buffer[self.position] == b'_') {
+        while self.position < self.buffer.len()
+            && (self.buffer[self.position].is_ascii_alphanumeric()
+                || self.buffer[self.position] == b'_')
+        {
             self.position += 1;
         }
 
@@ -919,11 +1011,12 @@ impl PPLexer {
 
     fn lex_number(&mut self, start_pos: usize) -> PPToken {
         self.position += 1;
-        while self.position < self.buffer.len() &&
-              (self.buffer[self.position].is_ascii_digit() ||
-               self.buffer[self.position] == b'.' ||
-               self.buffer[self.position].is_ascii_alphabetic() ||
-               self.buffer[self.position] == b'_') {
+        while self.position < self.buffer.len()
+            && (self.buffer[self.position].is_ascii_digit()
+                || self.buffer[self.position] == b'.'
+                || self.buffer[self.position].is_ascii_alphabetic()
+                || self.buffer[self.position] == b'_')
+        {
             self.position += 1;
         }
 

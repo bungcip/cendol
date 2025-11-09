@@ -1,13 +1,12 @@
-use std::num::NonZeroU32;
-use std::cell::Cell;
 use bitflags::bitflags;
+use std::cell::Cell;
+use std::num::NonZeroU32;
 
 /// Represents an interned string using symbol_table crate.
 /// Alias for GlobalSymbol from symbol_table crate with global feature.
 pub type Symbol = symbol_table::GlobalSymbol;
 
 pub use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
-
 
 /// The flattened AST storage.
 pub struct Ast {
@@ -89,6 +88,17 @@ pub struct Node {
     pub resolved_symbol: Cell<Option<SymbolEntryRef>>, // Hot data, now ref-based
 }
 
+impl Node {
+    pub fn new(kind: NodeKind, span: SourceSpan) -> Self {
+        Node {
+            kind,
+            span,
+            resolved_symbol: Cell::new(None),
+            resolved_type: Cell::new(None),
+        }
+    }
+}
+
 /// Represents a resolved symbol entry from the symbol table.
 /// This structure is typically populated during the semantic analysis phase.
 /// Symbol entries are stored in a separate Vec<SymbolEntry> with SymbolEntryIndex references.
@@ -163,7 +173,11 @@ pub enum NodeKind {
 
     Assignment(BinaryOp, NodeRef /* lhs */, NodeRef /* rhs */),
     FunctionCall(NodeRef /* func */, Vec<NodeRef> /* args */),
-    MemberAccess(NodeRef /* object */, Symbol /* field */, bool /* is_arrow */),
+    MemberAccess(
+        NodeRef, /* object */
+        Symbol,  /* field */
+        bool,    /* is_arrow */
+    ),
     IndexAccess(NodeRef /* array */, NodeRef /* index */),
 
     Cast(TypeRef, NodeRef),
@@ -188,13 +202,20 @@ pub enum NodeKind {
     Goto(Symbol),
     Label(Symbol, NodeRef /* statement */),
 
-    Switch(NodeRef /* condition */, NodeRef /* body statement */),
+    Switch(
+        NodeRef, /* condition */
+        NodeRef, /* body statement */
+    ),
     Case(NodeRef /* const_expr */, NodeRef /* statement */),
-    CaseRange(NodeRef /* start_expr */, NodeRef /* end_expr */, NodeRef /* statement */), // GNU Extension often supported
+    CaseRange(
+        NodeRef, /* start_expr */
+        NodeRef, /* end_expr */
+        NodeRef, /* statement */
+    ), // GNU Extension often supported
     Default(NodeRef /* statement */),
 
     ExpressionStatement(Option<NodeRef> /* expression */), // Expression followed by ';'
-    EmptyStatement, // ';'
+    EmptyStatement,                                        // ';'
 
     // --- Declarations & Definitions ---
     Declaration(DeclarationData),
@@ -257,7 +278,7 @@ pub struct ParamData {
 
 #[derive(Debug)]
 pub struct RecordDefData {
-    pub tag: Option<Symbol>, // None if anonymous
+    pub tag: Option<Symbol>,                   // None if anonymous
     pub members: Option<Vec<DeclarationData>>, // Field declarations
     pub is_union: bool,
 }
@@ -281,17 +302,39 @@ pub struct DeclSpecifier {
 // Type Specifiers (C11)
 #[derive(Debug)]
 pub enum TypeSpecifier {
-    Void, Char, Short, Int, Long, Float, Double, Signed, Unsigned,
-    Bool, Complex, Atomic(TypeRef), // _Bool, _Complex, _Atomic
-    Record(bool /* is_union */, Option<Symbol> /* tag */, Option<RecordDefData> /* definition */),
-    Enum(Option<Symbol> /* tag */, Option<Vec<NodeRef>> /* enumerators */),
+    Void,
+    Char,
+    Short,
+    Int,
+    Long,
+    Float,
+    Double,
+    Signed,
+    Unsigned,
+    Bool,
+    Complex,
+    Atomic(TypeRef), // _Bool, _Complex, _Atomic
+    Record(
+        bool,                  /* is_union */
+        Option<Symbol>,        /* tag */
+        Option<RecordDefData>, /* definition */
+    ),
+    Enum(
+        Option<Symbol>,       /* tag */
+        Option<Vec<NodeRef>>, /* enumerators */
+    ),
     TypedefName(Symbol),
 }
 
 // Storage Class Specifiers
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StorageClass {
-    Typedef, Extern, Static, Auto, Register, ThreadLocal, // C11 _Thread_local
+    Typedef,
+    Extern,
+    Static,
+    Auto,
+    Register,
+    ThreadLocal, // C11 _Thread_local
 }
 
 // Type Qualifiers (using bitflags crate for consistency)
@@ -317,27 +360,56 @@ bitflags! {
 // Alignment Specifiers (C11 _Alignas)
 #[derive(Debug)]
 pub enum AlignmentSpecifier {
-    Type(TypeRef),     // _Alignas(type-name)
-    Expr(NodeRef),     // _Alignas(constant-expression)
+    Type(TypeRef), // _Alignas(type-name)
+    Expr(NodeRef), // _Alignas(constant-expression)
 }
 
 // Unary Operators
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOp {
-    Plus, Minus, Deref, AddrOf, BitNot, LogicNot,
-    PreIncrement, PreDecrement,
+    Plus,
+    Minus,
+    Deref,
+    AddrOf,
+    BitNot,
+    LogicNot,
+    PreIncrement,
+    PreDecrement,
 }
 
 // Binary Operators (includes assignment types)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
-    Add, Sub, Mul, Div, Mod,
-    BitAnd, BitOr, BitXor, LShift, RShift,
-    Equal, NotEqual, Less, LessEqual, Greater, GreaterEqual,
-    LogicAnd, LogicOr,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    BitAnd,
+    BitOr,
+    BitXor,
+    LShift,
+    RShift,
+    Equal,
+    NotEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    LogicAnd,
+    LogicOr,
     Comma,
-    Assign, AssignAdd, AssignSub, AssignMul, AssignDiv, AssignMod,
-    AssignBitAnd, AssignBitOr, AssignBitXor, AssignLShift, AssignRShift,
+    Assign,
+    AssignAdd,
+    AssignSub,
+    AssignMul,
+    AssignDiv,
+    AssignMod,
+    AssignBitAnd,
+    AssignBitOr,
+    AssignBitXor,
+    AssignLShift,
+    AssignRShift,
 }
 
 // C11 _Generic Association
@@ -352,24 +424,24 @@ pub struct GenericAssociation {
 #[derive(Debug)]
 pub enum Declarator {
     Identifier(Symbol, TypeQualifiers, Option<Box<Declarator>>), // Base case: name (e.g., `x`)
-    Pointer(TypeQualifiers, Option<Box<Declarator>>), // e.g., `*`
-    Array(Box<Declarator>, ArraySize), // e.g., `[10]`
-    Function(Box<Declarator>, Vec<ParamData> /* parameters */), // e.g., `(int x)`
+    Pointer(TypeQualifiers, Option<Box<Declarator>>),            // e.g., `*`
+    Array(Box<Declarator>, ArraySize),                           // e.g., `[10]`
+    Function(Box<Declarator>, Vec<ParamData> /* parameters */),  // e.g., `(int x)`
 }
 
 // Defines array size (e.g., [10], [*], or [] for flexible array members)
 #[derive(Debug)]
 pub enum ArraySize {
     Expression(NodeRef),
-    Star,       // [*] VLA
-    Incomplete, // []
+    Star,                                              // [*] VLA
+    Incomplete,                                        // []
     VlaSpecifier(Option<NodeRef> /* VLA size expr */), // `static` or `*` for VLA (C99)
 }
 
 // Initializer structure for variables (e.g., int x = 5; or struct s = {1, 2};)
 #[derive(Debug)]
 pub enum Initializer {
-    Expression(NodeRef), // = 5
+    Expression(NodeRef),              // = 5
     List(Vec<DesignatedInitializer>), // = { .x = 1, [0] = 2 }
 }
 
@@ -395,7 +467,7 @@ pub enum Designator {
 pub struct Type {
     pub kind: TypeKind,
     pub qualifiers: TypeQualifiers,
-    pub size: Option<usize>, // Computed during semantic analysis
+    pub size: Option<usize>,      // Computed during semantic analysis
     pub alignment: Option<usize>, // Computed during semantic analysis
 }
 
@@ -403,22 +475,43 @@ pub struct Type {
 pub enum TypeKind {
     Void,
     Bool,
-    Char { is_signed: bool },
-    Short { is_signed: bool },
-    Int { is_signed: bool },
-    Long { is_signed: bool, is_long_long: bool },
+    Char {
+        is_signed: bool,
+    },
+    Short {
+        is_signed: bool,
+    },
+    Int {
+        is_signed: bool,
+    },
+    Long {
+        is_signed: bool,
+        is_long_long: bool,
+    },
     Float,
-    Double { is_long_double: bool },
-    Complex { base_type: TypeRef }, // C11 _Complex
-    Atomic { base_type: TypeRef }, // C11 _Atomic
-    Pointer { pointee: TypeRef },
-    Array { element_type: TypeRef, size: ArraySizeType },
+    Double {
+        is_long_double: bool,
+    },
+    Complex {
+        base_type: TypeRef,
+    }, // C11 _Complex
+    Atomic {
+        base_type: TypeRef,
+    }, // C11 _Atomic
+    Pointer {
+        pointee: TypeRef,
+    },
+    Array {
+        element_type: TypeRef,
+        size: ArraySizeType,
+    },
     Function {
         return_type: TypeRef,
         parameters: Vec<FunctionParameter>,
         is_variadic: bool,
     },
-    Record { // Represents both struct and union
+    Record {
+        // Represents both struct and union
         tag: Option<Symbol>,
         members: Vec<StructMember>,
         is_complete: bool,

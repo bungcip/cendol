@@ -22,14 +22,20 @@ impl SourceLoc {
 
     pub fn new(source_id: SourceId, offset: u32) -> Self {
         assert!(offset <= Self::OFFSET_MASK, "Offset exceeds 4 MiB limit");
-        assert!(source_id.0.get() <= (1 << (32 - Self::ID_SHIFT)) - 1, "SourceId exceeds 1023 limit");
+        assert!(
+            source_id.0.get() <= (1 << (32 - Self::ID_SHIFT)) - 1,
+            "SourceId exceeds 1023 limit"
+        );
 
         let packed = (offset & Self::OFFSET_MASK) | (source_id.0.get() << Self::ID_SHIFT);
         SourceLoc(packed)
     }
 
     pub fn source_id(&self) -> SourceId {
-        SourceId(NonZeroU32::new((self.0 >> Self::ID_SHIFT) & ((1 << (32 - Self::ID_SHIFT)) - 1)).expect("Invalid SourceId"))
+        SourceId(
+            NonZeroU32::new((self.0 >> Self::ID_SHIFT) & ((1 << (32 - Self::ID_SHIFT)) - 1))
+                .expect("Invalid SourceId"),
+        )
     }
 
     pub fn offset(&self) -> u32 {
@@ -67,7 +73,7 @@ pub struct FileInfo {
     pub file_id: SourceId,
     pub path: PathBuf,
     pub size: u32,
-    pub buffer_index: usize, // Index into buffers Vec
+    pub buffer_index: usize,   // Index into buffers Vec
     pub line_starts: Vec<u32>, // Line start offsets for efficient line lookup
 }
 
@@ -93,7 +99,10 @@ impl SourceManager {
 
     /// Add a file to the source manager from a file path
     /// Since we only support UTF-8, we can read directly as bytes and assume validity
-    pub fn add_file_from_path(&mut self, path: &std::path::Path) -> Result<SourceId, std::io::Error> {
+    pub fn add_file_from_path(
+        &mut self,
+        path: &std::path::Path,
+    ) -> Result<SourceId, std::io::Error> {
         let buffer = std::fs::read(path)?;
         let path_str = path.to_str().unwrap_or("<invalid-utf8>");
         Ok(self.add_file_bytes(path_str, buffer))

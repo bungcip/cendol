@@ -17,3 +17,4 @@ bitflags = "2.6"
 target-lexicon = "0.12"
 symbol_table = { version = "0.3", features = ["global"] }
 annotate-snippets = "0.12"
+

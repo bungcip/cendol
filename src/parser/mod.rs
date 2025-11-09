@@ -963,12 +963,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             }
         }
 
-        self.expect(TokenKind::Semicolon)?;
+        let semicolon_token = self.expect(TokenKind::Semicolon)?;
 
-        let end_span = self
-            .current_token()
-            .map(|t| t.location.end)
-            .unwrap_or(SourceLoc(0));
+        let end_span = semicolon_token.location.end;
 
         let span = SourceSpan::new(start_span, end_span);
 
@@ -1784,7 +1781,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             })?;
 
         match token.kind {
-            TokenKind::LeftBrace => self.parse_compound_statement(),
+            TokenKind::LeftBrace => {
+                let (node, _) = self.parse_compound_statement()?;
+                Ok(node)
+            }
             TokenKind::If => self.parse_if_statement(),
             TokenKind::Switch => self.parse_switch_statement(),
             TokenKind::While => self.parse_while_statement(),
@@ -1802,7 +1802,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Parse compound statement (block)
-    fn parse_compound_statement(&mut self) -> Result<NodeRef, ParseError> {
+    fn parse_compound_statement(&mut self) -> Result<(NodeRef, SourceLoc), ParseError> {
         let start_span = self
             .current_token()
             .map(|t| t.location.start)
@@ -1821,18 +1821,15 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             }
         }
 
-        self.expect(TokenKind::RightBrace)?;
-        let end_span = self
-            .current_token()
-            .map(|t| t.location.end)
-            .unwrap_or(SourceLoc(0));
+        let right_brace_token = self.expect(TokenKind::RightBrace)?;
+        let end_span = right_brace_token.location.end;
 
         let span = SourceSpan::new(start_span, end_span);
 
         let node = self
             .ast
             .push_node(Node::new(NodeKind::CompoundStatement(block_items), span));
-        Ok(node)
+        Ok((node, end_span))
     }
 
     /// Check if current tokens indicate start of a declaration
@@ -2410,14 +2407,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         let declarator = self.parse_declarator(None)?;
 
         // Parse function body
-        let body = self.parse_compound_statement()?;
+        let (body, body_end_span) = self.parse_compound_statement()?;
 
-        let end_span = self
-            .current_token()
-            .map(|t| t.location.end)
-            .unwrap_or(SourceLoc(0));
-
-        let span = SourceSpan::new(start_span, end_span);
+        let span = SourceSpan::new(start_span, body_end_span);
 
         let function_def = FunctionDefData {
             specifiers,

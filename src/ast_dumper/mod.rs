@@ -3,8 +3,12 @@ use std::path::PathBuf;
 
 use crate::ast::*;
 use crate::diagnostic::*;
+use crate::lang_options::LangOptions;
+use crate::lexer::{Lexer, TokenKind};
+use crate::preprocessor::{Preprocessor, PreprocessorConfig};
 use crate::semantic::*;
 use crate::source_manager::*;
+use target_lexicon::Triple as TargetTriple;
 
 /// Configuration for AST dump output
 #[derive(Debug, Clone)]
@@ -12,6 +16,7 @@ pub struct DumpConfig {
     pub pretty_print: bool,
     pub include_source: bool,
     pub max_depth: Option<usize>,
+    pub max_source_lines: Option<usize>,
     pub output_path: PathBuf,
 }
 
@@ -21,6 +26,7 @@ impl Default for DumpConfig {
             pretty_print: true,
             include_source: false,
             max_depth: None,
+            max_source_lines: None,
             output_path: PathBuf::from("ast_dump.html"),
         }
     }
@@ -30,8 +36,10 @@ impl Default for DumpConfig {
 pub struct AstDumper<'src> {
     ast: &'src Ast,
     symbol_table: &'src SymbolTable,
-    diag: &'src DiagnosticEngine,
-    source_manager: &'src SourceManager,
+    diag: &'src mut DiagnosticEngine,
+    source_manager: &'src mut SourceManager,
+    lang_opts: &'src LangOptions,
+    target_info: &'src TargetTriple,
     config: DumpConfig,
 }
 
@@ -40,8 +48,10 @@ impl<'src> AstDumper<'src> {
     pub fn new(
         ast: &'src Ast,
         symbol_table: &'src SymbolTable,
-        diag: &'src DiagnosticEngine,
-        source_manager: &'src SourceManager,
+        diag: &'src mut DiagnosticEngine,
+        source_manager: &'src mut SourceManager,
+        lang_opts: &'src LangOptions,
+        target_info: &'src TargetTriple,
         config: DumpConfig,
     ) -> Self {
         AstDumper {
@@ -49,12 +59,14 @@ impl<'src> AstDumper<'src> {
             symbol_table,
             diag,
             source_manager,
+            lang_opts,
+            target_info,
             config,
         }
     }
 
     /// Generate the complete HTML dump
-    pub fn generate_html(&self) -> Result<String, std::fmt::Error> {
+    pub fn generate_html(&mut self) -> Result<String, std::fmt::Error> {
         let mut html = String::new();
 
         // HTML header
@@ -157,6 +169,52 @@ impl<'src> AstDumper<'src> {
                 font-size: 0.85em;
                 color: #495057;
                 white-space: pre-wrap;
+                line-height: 1.4;
+            }}
+
+            /* Syntax highlighting classes */
+            .c-keyword {{
+                color: #0000ff;
+                font-weight: bold;
+            }}
+
+            .c-type {{
+                color: #267f99;
+                font-weight: bold;
+            }}
+
+            .c-operator {{
+                color: #000000;
+                font-weight: bold;
+            }}
+
+            .c-literal {{
+                color: #09885a;
+            }}
+
+            .c-string {{
+                color: #a31515;
+            }}
+
+            .c-comment {{
+                color: #008000;
+                font-style: italic;
+            }}
+
+            .c-preprocessor {{
+                color: #af00db;
+            }}
+
+            .c-identifier {{
+                color: #001080;
+            }}
+
+            .c-number {{
+                color: #09885a;
+            }}
+
+            .c-punctuation {{
+                color: #000000;
             }}
 
             .ast-tree {{
@@ -436,17 +494,16 @@ impl<'src> AstDumper<'src> {
             }}
 
             function setupSearch() {{
-                const searchInput = document.getElementById('search-input');
-                const tableSelect = document.getElementById('table-select');
+                const searchInput = document.getElementById('ast-search');
 
                 function performSearch() {{
                     const query = searchInput.value;
-                    const tableId = tableSelect.value;
-                    searchTable(tableId, query);
+                    searchAst(query);
                 }}
 
-                searchInput.addEventListener('input', performSearch);
-                tableSelect.addEventListener('change', performSearch);
+                if (searchInput) {{
+                    searchInput.addEventListener('input', performSearch);
+                }}
             }}
 
             function toggleAstNode(element) {{
@@ -574,7 +631,7 @@ impl<'src> AstDumper<'src> {
         Ok(())
     }
 
-    fn generate_ast_section(&self, html: &mut String) -> Result<(), std::fmt::Error> {
+    fn generate_ast_section(&mut self, html: &mut String) -> Result<(), std::fmt::Error> {
         writeln!(html, "<section id=\"ast-section\">")?;
         writeln!(html, "<h2>Abstract Syntax Tree</h2>")?;
 
@@ -634,7 +691,7 @@ impl<'src> AstDumper<'src> {
     }
 
     fn generate_ast_tree(
-        &self,
+        &mut self,
         html: &mut String,
         node: &Node,
         depth: usize,
@@ -686,8 +743,40 @@ impl<'src> AstDumper<'src> {
 
         // Add source code snippet if enabled
         if self.config.include_source {
-            let source_text = self.get_formatted_source_text(node.span);
-            writeln!(html, "<div class=\"source-code\">{}</div>", source_text)?;
+            let raw_text = self.source_manager.get_source_text(node.span);
+            let escaped_text = self.escape_html(&raw_text);
+            let lines: Vec<&str> = escaped_text.split('\n').collect();
+            let (start_line, _) = self.source_manager.get_line_column(node.span.start).unwrap_or((1, 1));
+            let mut text_with_lines = String::new();
+
+            // Apply truncation if max_source_lines is set
+            if let Some(max_lines) = self.config.max_source_lines {
+                if lines.len() > max_lines {
+                    // Show first max_lines - 1 lines, then "..."
+                    for (i, line) in lines.iter().enumerate().take(max_lines - 1) {
+                        let line_num = start_line + i as u32;
+                        text_with_lines.push_str(&format!("{}: {}\n", line_num, line));
+                    }
+                    text_with_lines.push_str("...\n");
+                } else {
+                    for (i, line) in lines.iter().enumerate() {
+                        let line_num = start_line + i as u32;
+                        text_with_lines.push_str(&format!("{}: {}\n", line_num, line));
+                    }
+                }
+            } else {
+                for (i, line) in lines.iter().enumerate() {
+                    let line_num = start_line + i as u32;
+                    text_with_lines.push_str(&format!("{}: {}\n", line_num, line));
+                }
+            }
+
+            if text_with_lines.ends_with('\n') {
+                text_with_lines.pop();
+            }
+            let highlighted_text = self.highlight_source_code(&text_with_lines, node.span);
+            let html_text = highlighted_text.replace('\n', "<br>");
+            writeln!(html, "<div class=\"source-code\">{}</div>", html_text)?;
         }
 
         // Add semantic information
@@ -771,7 +860,7 @@ impl<'src> AstDumper<'src> {
                 "Symbol: <a href=\"#sym_{}\">{}</a>{}",
                 symbol_ref.get(),
                 self.escape_html(&symbol.name.to_string()),
-                symbol_info
+                self.escape_html(&symbol_info)
             ));
         }
 
@@ -790,7 +879,7 @@ impl<'src> AstDumper<'src> {
     }
 
     fn generate_child_nodes(
-        &self,
+        &mut self,
         html: &mut String,
         node: &Node,
         depth: usize,
@@ -982,7 +1071,7 @@ impl<'src> AstDumper<'src> {
     }
 
     fn generate_declarator_children(
-        &self,
+        &mut self,
         html: &mut String,
         declarator: &Declarator,
         depth: usize,
@@ -1038,7 +1127,7 @@ impl<'src> AstDumper<'src> {
     }
 
     fn generate_initializer_children(
-        &self,
+        &mut self,
         html: &mut String,
         initializer: &Initializer,
         depth: usize,
@@ -1141,7 +1230,7 @@ impl<'src> AstDumper<'src> {
                 .parent
                 .map(|p| p.get().to_string())
                 .unwrap_or_else(|| "None".to_string());
-            let kind = format!("{:?}", scope.kind);
+            let kind = self.escape_html(&format!("{:?}", scope.kind));
             let level = scope.level;
             let symbols: Vec<String> = scope
                 .symbols
@@ -1156,6 +1245,7 @@ impl<'src> AstDumper<'src> {
                     )
                 })
                 .collect();
+            let symbols_str = self.escape_html(&symbols.join(", "));
             let symbols_str = symbols.join(", ");
 
             writeln!(html, "<tr id=\"scope_{}\">", id)?;
@@ -1193,7 +1283,7 @@ impl<'src> AstDumper<'src> {
             let id = i + 1;
             let kind = self.get_type_kind_display(&ty.kind);
             let base = self.get_type_base_display(&ty.kind);
-            let qualifiers = format!("{:?}", ty.qualifiers);
+            let qualifiers = self.escape_html(&format!("{:?}", ty.qualifiers));
             let size = ty
                 .size
                 .map(|s| s.to_string())
@@ -1413,7 +1503,7 @@ impl<'src> AstDumper<'src> {
 
         // Add storage class if present
         if let Some(storage_class) = symbol.storage_class {
-            info_parts.push(format!("storage: {:?}", storage_class));
+            info_parts.push(format!("storage: {}", self.escape_html(&format!("{:?}", storage_class))));
         }
 
         // Add symbol kind specific information
@@ -1435,7 +1525,7 @@ impl<'src> AstDumper<'src> {
                     attrs.push("extern");
                 }
                 if !attrs.is_empty() {
-                    info_parts.push(format!("attrs: {}", attrs.join(", ")));
+                    info_parts.push(format!("attrs: {}", self.escape_html(&attrs.join(", "))));
                 }
                 if let Some(init_ref) = initializer {
                     info_parts.push(format!("initializer: node {}", init_ref.get()));
@@ -1458,13 +1548,13 @@ impl<'src> AstDumper<'src> {
                     attrs.push("variadic");
                 }
                 if !attrs.is_empty() {
-                    info_parts.push(format!("attrs: {}", attrs.join(", ")));
+                    info_parts.push(format!("attrs: {}", self.escape_html(&attrs.join(", "))));
                 }
                 info_parts.push(format!("params: {}", parameters.len()));
             }
             SymbolKind::Typedef { aliased_type } => {
                 let aliased_name = self.get_type_display_name(*aliased_type);
-                info_parts.push(format!("aliased: {}", aliased_name));
+                info_parts.push(format!("aliased: {}", self.escape_html(&aliased_name)));
             }
             SymbolKind::EnumConstant { value } => {
                 info_parts.push(format!("value: {}", value));
@@ -1475,7 +1565,7 @@ impl<'src> AstDumper<'src> {
             } => {
                 let def_status = if *is_defined { "defined" } else { "undeclared" };
                 let use_status = if *is_used { "used" } else { "unused" };
-                info_parts.push(format!("label: {} {}", def_status, use_status));
+                info_parts.push(format!("label: {} {}", self.escape_html(def_status), self.escape_html(use_status)));
             }
             SymbolKind::Record {
                 is_complete,
@@ -1490,7 +1580,7 @@ impl<'src> AstDumper<'src> {
                 };
                 info_parts.push(format!(
                     "record: {} ({} members)",
-                    complete_status,
+                    self.escape_html(complete_status),
                     members.len()
                 ));
                 if let Some(size) = size {
@@ -1595,6 +1685,121 @@ impl<'src> AstDumper<'src> {
         escaped
             .replace("\n", "<br>")
             .replace("\t", "&nbsp;&nbsp;&nbsp;&nbsp;")
+    }
+
+    /// Apply syntax highlighting to source code using the lexer
+    fn highlight_source_code(&mut self, text: &str, span: SourceSpan) -> String {
+        // Add the text as a temporary source for tokenization
+        let temp_source_id = self.source_manager.add_file("<highlight>", text);
+
+        // Create preprocessor config
+        let pp_config = PreprocessorConfig {
+            max_include_depth: 10, // Small limit for highlighting
+            system_include_paths: Vec::new(),
+        };
+
+        // Preprocess the temporary source
+        let mut preprocessor = Preprocessor::new(
+            self.source_manager,
+            self.diag,
+            self.lang_opts.clone(),
+            self.target_info.clone(),
+            &pp_config,
+        );
+
+        let pp_tokens = match preprocessor.process(temp_source_id, &pp_config) {
+            Ok(tokens) => tokens,
+            Err(_) => return self.escape_html(text), // Fallback to plain text on error
+        };
+
+        // Create lexer and tokenize
+        let mut lexer = Lexer::new(
+            self.source_manager,
+            self.diag,
+            self.lang_opts,
+            self.target_info,
+            &pp_tokens,
+        );
+
+        let tokens = lexer.tokenize_all();
+
+        // Build highlighted text
+        let mut highlighted = String::new();
+        let mut last_end = 0;
+
+        for token in tokens {
+            if matches!(token.kind, TokenKind::EndOfFile) {
+                break;
+            }
+
+            // Calculate relative positions in the text
+            let token_start = token.location.start.offset() as usize;
+            let token_end = token.location.end.offset() as usize;
+
+            // Skip if token is outside the span (though it shouldn't be)
+            if token_start < last_end || token_end > text.len() {
+                continue;
+            }
+
+            // Add unhighlighted text before this token
+            if token_start > last_end {
+                highlighted.push_str(&self.escape_html(&text[last_end..token_start]));
+            }
+
+            // Add highlighted token
+            let token_text = &text[token_start..token_end];
+            let css_class = self.token_kind_to_css_class(&token.kind);
+            highlighted.push_str(&format!("<span class=\"{}\">{}</span>", css_class, self.escape_html(token_text)));
+
+            last_end = token_end;
+        }
+
+        // Add any remaining text
+        if last_end < text.len() {
+            highlighted.push_str(&self.escape_html(&text[last_end..]));
+        }
+
+        highlighted
+    }
+
+    /// Map TokenKind to CSS class for highlighting
+    fn token_kind_to_css_class(&self, kind: &TokenKind) -> &'static str {
+        match kind {
+            TokenKind::Auto | TokenKind::Break | TokenKind::Case | TokenKind::Char | TokenKind::Const |
+            TokenKind::Continue | TokenKind::Default | TokenKind::Do | TokenKind::Double | TokenKind::Else |
+            TokenKind::Enum | TokenKind::Extern | TokenKind::Float | TokenKind::For | TokenKind::Goto |
+            TokenKind::If | TokenKind::Inline | TokenKind::Int | TokenKind::Long | TokenKind::Register |
+            TokenKind::Restrict | TokenKind::Return | TokenKind::Short | TokenKind::Signed | TokenKind::Sizeof |
+            TokenKind::Static | TokenKind::Struct | TokenKind::Switch | TokenKind::Typedef | TokenKind::Union |
+            TokenKind::Unsigned | TokenKind::Void | TokenKind::Volatile | TokenKind::While |
+            TokenKind::Alignas | TokenKind::Alignof | TokenKind::Atomic | TokenKind::Bool |
+            TokenKind::Complex | TokenKind::Generic | TokenKind::Noreturn | TokenKind::Pragma |
+            TokenKind::StaticAssert | TokenKind::ThreadLocal => "c-keyword",
+
+            TokenKind::Identifier(_) => "c-identifier",
+
+            TokenKind::IntegerConstant(_) | TokenKind::FloatConstant(_) => "c-number",
+
+            TokenKind::CharacterConstant(_) => "c-literal",
+
+            TokenKind::StringLiteral(_) => "c-string",
+
+            TokenKind::Plus | TokenKind::Minus | TokenKind::Star | TokenKind::Slash | TokenKind::Percent |
+            TokenKind::And | TokenKind::Or | TokenKind::Xor | TokenKind::Not | TokenKind::Tilde |
+            TokenKind::Less | TokenKind::Greater | TokenKind::LessEqual | TokenKind::GreaterEqual |
+            TokenKind::Equal | TokenKind::NotEqual | TokenKind::LeftShift | TokenKind::RightShift |
+            TokenKind::Assign | TokenKind::PlusAssign | TokenKind::MinusAssign | TokenKind::StarAssign |
+            TokenKind::DivAssign | TokenKind::ModAssign | TokenKind::AndAssign | TokenKind::OrAssign |
+            TokenKind::XorAssign | TokenKind::LeftShiftAssign | TokenKind::RightShiftAssign |
+            TokenKind::Increment | TokenKind::Decrement | TokenKind::Arrow | TokenKind::Dot |
+            TokenKind::Question | TokenKind::Colon | TokenKind::Comma | TokenKind::Semicolon |
+            TokenKind::LeftParen | TokenKind::RightParen | TokenKind::LeftBracket | TokenKind::RightBracket |
+            TokenKind::LeftBrace | TokenKind::RightBrace | TokenKind::Ellipsis | TokenKind::LogicAnd |
+            TokenKind::LogicOr => "c-operator",
+
+            TokenKind::Unknown => "c-unknown",
+            TokenKind::EndOfFile => "",
+        }
     }
 
     /// Get source text for a span, formatted for HTML display

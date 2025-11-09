@@ -245,19 +245,23 @@ impl CompilerDriver {
                 pretty_print: true,
                 include_source: true,
                 max_depth: None,
+                max_source_lines: None,
                 output_path: output_path.clone(),
             };
-            let dumper = AstDumper::new(
+            let mut dumper = AstDumper::new(
                 &ast,
                 &symbol_table,
-                &self.diagnostics,
-                &self.source_manager,
+                &mut self.diagnostics,
+                &mut self.source_manager,
+                &lang_options,
+                &target_triple,
                 dump_config,
             );
             let html = dumper.generate_html().map_err(|e| {
                 CompilerError::AstDumpError(format!("HTML generation error: {:?}", e))
             })?;
 
+            println!("Dumping AST to {}...", output_path.display());
             fs::write(&output_path, html)
                 .map_err(|e| CompilerError::IoError(format!("Failed to write AST dump: {}", e)))?;
         }

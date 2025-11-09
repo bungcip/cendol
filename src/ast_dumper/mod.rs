@@ -993,6 +993,9 @@ impl<'src> AstDumper<'src> {
                     self.generate_declarator_children(html, next_decl, depth)?;
                 }
             }
+            Declarator::Abstract => {
+                // Abstract declarator has no children
+            }
             Declarator::Pointer(_, next) => {
                 if let Some(next_decl) = next {
                     self.generate_declarator_children(html, next_decl, depth)?;
@@ -1019,6 +1022,16 @@ impl<'src> AstDumper<'src> {
                     }
                 }
                 self.generate_declarator_children(html, decl, depth)?;
+            }
+            Declarator::AnonymousRecord(_, members) => {
+                for member in members {
+                    for init_decl in &member.init_declarators {
+                        self.generate_declarator_children(html, &init_decl.declarator, depth)?;
+                        if let Some(initializer) = &init_decl.initializer {
+                            self.generate_initializer_children(html, initializer, depth)?;
+                        }
+                    }
+                }
             }
         }
         Ok(())

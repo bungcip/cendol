@@ -85,7 +85,7 @@ pub enum PPTokenKind {
     Identifier(Symbol),    // Interned identifier
     StringLiteral(Symbol), // Interned string literal
     CharLiteral(u32),      // Unicode codepoint value
-    Number(i64),           // Parsed numeric value for preprocessor evaluation
+    Number(Symbol),         // Raw numeric literal text for parser
     // Special
     Eof,
     Unknown,
@@ -309,7 +309,7 @@ impl<'src> Preprocessor<'src> {
         self.define_builtin_macro(
             "__STDC__",
             vec![PPToken {
-                kind: PPTokenKind::Number(1),
+                kind: PPTokenKind::Number(Symbol::new("1")),
                 flags: PPTokenFlags::empty(),
                 location: SourceLoc(0),
                 length: 1,
@@ -320,7 +320,7 @@ impl<'src> Preprocessor<'src> {
             self.define_builtin_macro(
                 "__STDC_VERSION__",
                 vec![PPToken {
-                    kind: PPTokenKind::Number(201112),
+                    kind: PPTokenKind::Number(Symbol::new("201112")),
                     flags: PPTokenFlags::empty(),
                     location: SourceLoc(0),
                     length: 6,
@@ -1021,10 +1021,10 @@ impl PPLexer {
         }
 
         let text = std::str::from_utf8(&self.buffer[start_pos..self.position]).unwrap();
-        let value = text.parse::<i64>().unwrap_or(0);
+        let symbol = Symbol::new(text);
 
         PPToken {
-            kind: PPTokenKind::Number(value),
+            kind: PPTokenKind::Number(symbol),
             flags: PPTokenFlags::empty(),
             location: SourceLoc::new(self.source_id, start_pos as u32),
             length: (self.position - start_pos) as u16,

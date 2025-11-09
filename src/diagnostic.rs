@@ -52,6 +52,9 @@ pub enum ParseError {
     #[error("Invalid integer constant: {text}")]
     InvalidIntegerConstant { text: String, location: SourceSpan },
 
+    #[error("Invalid float constant: {text}")]
+    InvalidFloatConstant { text: String, location: SourceSpan },
+
     #[error("Invalid declarator")]
     InvalidDeclarator { location: SourceSpan },
 }
@@ -148,6 +151,9 @@ impl DiagnosticEngine {
             ParseError::SyntaxError { message, location } => (message, location),
             ParseError::InvalidIntegerConstant { text, location } => {
                 (format!("Invalid integer constant: {}", text), location)
+            }
+            ParseError::InvalidFloatConstant { text, location } => {
+                (format!("Invalid float constant: {}", text), location)
             }
             ParseError::InvalidDeclarator { location } => {
                 ("Invalid declarator".to_string(), location)

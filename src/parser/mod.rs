@@ -4,6 +4,7 @@ use crate::lexer::{Token, TokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
 use bitflags::bitflags;
 use std::cell::Cell;
+use std::collections::HashSet;
 use symbol_table::GlobalSymbol as Symbol;
 
 // ParseError is now defined in diagnostic.rs
@@ -127,6 +128,9 @@ pub struct Parser<'arena, 'src> {
 
     // Error recovery state
     error_recovery_points: Vec<ErrorRecoveryPoint>,
+
+    // Typedef symbol table for disambiguation
+    typedef_names: HashSet<Symbol>,
 }
 
 /// Result of parsing an expression
@@ -157,6 +161,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             in_struct_declaration: false,
             in_enum_declaration: false,
             error_recovery_points: Vec::new(),
+            typedef_names: HashSet::new(),
         }
     }
 
@@ -240,15 +245,95 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Parse an integer constant from token text
-    fn parse_integer_constant(&self, text: &str) -> Result<i64, ParseError> {
+    fn parse_integer_constant(&self, text: Symbol) -> Result<i64, ParseError> {
         let token = self.current_token().unwrap();
-        // Simple integer parsing - in a real implementation this would handle
-        // different bases (decimal, octal, hex) and suffixes (u, l, ll, etc.)
-        text.parse::<i64>()
-            .map_err(|_| ParseError::InvalidIntegerConstant {
-                text: text.to_string(),
+        // C11 integer literal parsing: handle bases (decimal, octal, hex) and suffixes (u, l, ll)
+        self.parse_c11_integer_literal(text)
+    }
+
+    /// Parse C11 integer literal syntax
+    fn parse_c11_integer_literal(&self, text: Symbol) -> Result<i64, ParseError> {
+        let text_str = text.as_str();
+        let token = self.current_token().unwrap();
+
+        // C11 integer literal format: [0[xX]][digits][suffix]
+        // Suffixes: u/U (unsigned), l/L (long), ll/LL (long long)
+        // Can be combined: ul, ull, etc.
+
+        // Find where the suffix starts (if any)
+        let mut end_of_digits = text_str.len();
+        let mut has_unsigned = false;
+        let mut has_long = false;
+        let mut has_long_long = false;
+
+        // Check for suffixes (case insensitive)
+        let lower_text = text_str.to_lowercase();
+        if lower_text.ends_with("ull") || lower_text.ends_with("llu") {
+            end_of_digits = text_str.len() - 3;
+            has_long_long = true;
+            has_unsigned = lower_text.ends_with("ull");
+        } else if lower_text.ends_with("ul") || lower_text.ends_with("lu") {
+            end_of_digits = text_str.len() - 2;
+            has_long = true;
+            has_unsigned = lower_text.ends_with("ul");
+        } else if lower_text.ends_with("u") {
+            end_of_digits = text_str.len() - 1;
+            has_unsigned = true;
+        } else if lower_text.ends_with("ll") {
+            end_of_digits = text_str.len() - 2;
+            has_long_long = true;
+        } else if lower_text.ends_with("l") {
+            end_of_digits = text_str.len() - 1;
+            has_long = true;
+        }
+
+        let digits_part = &text_str[..end_of_digits];
+
+        // Determine base
+        let (base, digits) = if digits_part.starts_with("0x") || digits_part.starts_with("0X") {
+            (16, &digits_part[2..])
+        } else if digits_part.starts_with("0") && digits_part.len() > 1 {
+            (8, &digits_part[1..])
+        } else {
+            (10, digits_part)
+        };
+
+        // Parse the number
+        let value = match base {
+            16 => i64::from_str_radix(digits, 16),
+            8 => i64::from_str_radix(digits, 8),
+            10 => digits.parse::<i64>(),
+            _ => unreachable!(),
+        };
+
+        match value {
+            Ok(val) => Ok(val),
+            Err(_) => Err(ParseError::InvalidIntegerConstant {
+                text: text_str.to_string(),
                 location: token.location,
-            })
+            }),
+        }
+    }
+
+    /// Parse C11 floating-point literal syntax
+    fn parse_c11_float_literal(&self, text: Symbol) -> Result<f64, ParseError> {
+        let text_str = text.as_str();
+        let token = self.current_token().unwrap();
+
+        // C11 floating-point literal format:
+        // [digits][.digits][e|E[+|-]digits][f|F|l|L]
+        // or [digits][e|E[+|-]digits][f|F|l|L]
+        // or 0[xX][hexdigits][.hexdigits][p|P[+|-]digits][f|F|l|L]
+
+        // For now, use Rust's built-in parsing which handles most cases
+        // In a full implementation, we'd need custom parsing for hex floats
+        match text_str.parse::<f64>() {
+            Ok(val) => Ok(val),
+            Err(_) => Err(ParseError::SyntaxError {
+                message: format!("Invalid floating-point constant: {}", text_str),
+                location: token.location,
+            }),
+        }
     }
 
     /// Intern an identifier
@@ -326,21 +411,22 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 });
                 Ok(node)
             }
-            TokenKind::IntegerConstant(value) => {
+            TokenKind::IntegerConstant(text) => {
                 self.advance();
+                let value = self.parse_integer_constant(text)?;
                 let node = self.ast.push_node(Node {
-                    kind: NodeKind::LiteralInt(value),
+                    kind: NodeKind::LiteralInt(text),
                     span: token.location,
                     resolved_type: Cell::new(None),
                     resolved_symbol: Cell::new(None),
                 });
                 Ok(node)
             }
-            TokenKind::FloatConstant(_) => {
-                // Placeholder for float parsing
+            TokenKind::FloatConstant(text) => {
                 self.advance();
+                let value = self.parse_c11_float_literal(text)?;
                 let node = self.ast.push_node(Node {
-                    kind: NodeKind::LiteralFloat(0.0),
+                    kind: NodeKind::LiteralFloat(value),
                     span: token.location,
                     resolved_type: Cell::new(None),
                     resolved_symbol: Cell::new(None),
@@ -386,11 +472,13 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             | TokenKind::Decrement
             | TokenKind::Star
             | TokenKind::And => self.parse_unary_operator(token),
+            TokenKind::Generic => return self.parse_generic_selection(),
+            TokenKind::Alignof => return self.parse_alignof(),
             _ => Err(ParseError::UnexpectedToken {
                 expected: vec![
                     TokenKind::Identifier(Symbol::new("")),
-                    TokenKind::IntegerConstant(0),
-                    TokenKind::FloatConstant(0),
+                    TokenKind::IntegerConstant(Symbol::new("0")),
+                    TokenKind::FloatConstant(Symbol::new("0.0")),
                     TokenKind::StringLiteral(Symbol::new("")),
                     TokenKind::CharacterConstant(0),
                     TokenKind::LeftParen,
@@ -703,6 +791,11 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .map(|t| t.location.start)
             .unwrap_or(SourceLoc(0));
 
+        // Check for _Static_assert (C11)
+        if self.matches(&[TokenKind::StaticAssert]) {
+            return self.parse_static_assert();
+        }
+
         // Parse declaration specifiers
         let specifiers = self.parse_declaration_specifiers()?;
 
@@ -740,6 +833,17 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .unwrap_or(SourceLoc(0));
 
         let span = SourceSpan::new(start_span, end_span);
+
+        // Track typedef names for disambiguation
+        for specifier in &specifiers {
+            if specifier.storage_class == Some(StorageClass::Typedef) {
+                for init_declarator in &init_declarators {
+                    if let Declarator::Identifier(name, _, _) = &init_declarator.declarator {
+                        self.typedef_names.insert(*name);
+                    }
+                }
+            }
+        }
 
         let declaration_data = DeclarationData {
             specifiers,
@@ -1107,11 +1211,26 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         let mut declarators = Vec::new();
 
         while !self.matches(&[TokenKind::Semicolon]) {
-            let declarator = self.parse_declarator(None)?;
-            declarators.push(InitDeclarator {
-                declarator,
-                initializer: None, // Struct members can't have initializers
-            });
+            // Check for anonymous struct/union (C11)
+            if self.matches(&[TokenKind::Struct, TokenKind::Union]) {
+                // Anonymous struct/union member
+                let is_union = self.matches(&[TokenKind::Union]);
+                self.advance(); // consume struct/union
+                self.expect(TokenKind::LeftBrace)?;
+                let members = self.parse_struct_declaration_list()?;
+                self.expect(TokenKind::RightBrace)?;
+                // Create a synthetic declarator for anonymous member
+                declarators.push(InitDeclarator {
+                    declarator: Declarator::AnonymousRecord(is_union, members),
+                    initializer: None,
+                });
+            } else {
+                let declarator = self.parse_declarator(None)?;
+                declarators.push(InitDeclarator {
+                    declarator,
+                    initializer: None, // Struct members can't have initializers
+                });
+            }
 
             if !self.matches(&[TokenKind::Comma]) {
                 break;
@@ -1208,8 +1327,18 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse type name (for casts, sizeof, etc.)
     fn parse_type_name(&mut self) -> Result<TypeRef, ParseError> {
+        // Parse declaration specifiers
+        let specifiers = self.parse_declaration_specifiers()?;
+
+        // Parse abstract declarator (optional)
+        let declarator = if self.is_abstract_declarator_start() {
+            Some(self.parse_abstract_declarator()?)
+        } else {
+            None
+        };
+
+        // TODO: Build the type from specifiers and declarator
         // For now, return a placeholder type
-        // In a full implementation, this would parse specifiers and declarator
         Ok(self.ast.push_type(Type {
             kind: TypeKind::Void,
             qualifiers: TypeQualifiers::empty(),
@@ -1577,8 +1706,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 | TokenKind::Enum
                 | TokenKind::Alignas => true,
                 TokenKind::Identifier(symbol) => {
-                    // Check if it's a typedef name (placeholder - would need symbol table)
-                    false // For now, assume identifiers start expressions
+                    // Check if it's a typedef name
+                    self.is_type_name(symbol)
                 }
                 _ => false,
             }
@@ -2132,24 +2261,23 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
             let initial_idx = self.current_idx;
 
-            if self.is_function_definition_start() {
-                match self.parse_function_definition() {
-                    Ok(func_def) => {
-                        top_level_declarations.push(func_def);
-                    }
-                    Err(e) => {
-                        self.diag.report_parse_error(e);
-                        self.synchronize();
-                    }
+            // Try parsing as declaration first
+            match self.parse_declaration() {
+                Ok(declaration) => {
+                    top_level_declarations.push(declaration);
                 }
-            } else {
-                match self.parse_declaration() {
-                    Ok(declaration) => {
-                        top_level_declarations.push(declaration);
-                    }
-                    Err(e) => {
-                        self.diag.report_parse_error(e);
-                        self.synchronize();
+                Err(_) => {
+                    // If declaration parsing failed, try function definition
+                    // Reset to initial position for backtracking
+                    self.current_idx = initial_idx;
+                    match self.parse_function_definition() {
+                        Ok(func_def) => {
+                            top_level_declarations.push(func_def);
+                        }
+                        Err(e) => {
+                            self.diag.report_parse_error(e);
+                            self.synchronize();
+                        }
                     }
                 }
             }
@@ -2174,9 +2302,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Check if current tokens indicate start of a function definition
     fn is_function_definition_start(&self) -> bool {
-        // Look ahead to see if we have specifiers followed by a declarator with parameters
-        // This is a simplified check - in practice, we'd need more sophisticated lookahead
-        self.is_declaration_start()
+        // Function definitions start with declaration specifiers like declarations,
+        // but we distinguish them during parsing by trying declaration first
+        false // Always try declaration first, then function definition if failed
     }
 
     /// Parse _Generic selection (C11)
@@ -2456,13 +2584,80 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         }
     }
 
+    /// Check if current token starts an abstract declarator
+    fn is_abstract_declarator_start(&self) -> bool {
+        if let Some(token) = self.current_token() {
+            match token.kind {
+                TokenKind::Star => true, // pointer
+                TokenKind::LeftParen => true, // parenthesized abstract declarator
+                TokenKind::LeftBracket => true, // array
+                _ => false,
+            }
+        } else {
+            false
+        }
+    }
+
+    /// Parse abstract declarator (for type names without identifiers)
+    fn parse_abstract_declarator(&mut self) -> Result<Declarator, ParseError> {
+        let mut declarator_chain: Vec<DeclaratorComponent> = Vec::new();
+        let mut current_qualifiers = TypeQualifiers::empty();
+
+        // Parse leading pointers and their qualifiers
+        while self.matches(&[TokenKind::Star]) {
+            self.advance(); // Consume '*'
+            current_qualifiers = self.parse_type_qualifiers()?;
+            declarator_chain.push(DeclaratorComponent::Pointer(current_qualifiers));
+            current_qualifiers = TypeQualifiers::empty(); // Reset for next component
+        }
+
+        // Parse direct abstract declarator (parenthesized or array/function)
+        let base_declarator = if self.matches(&[TokenKind::LeftParen]) {
+            self.advance(); // Consume '('
+            let inner_declarator = self.parse_abstract_declarator()?;
+            self.expect(TokenKind::RightParen)?; // Consume ')'
+            inner_declarator
+        } else {
+            Declarator::Abstract
+        };
+
+        // Parse trailing array and function declarators
+        let mut current_base = base_declarator;
+        loop {
+            if self.matches(&[TokenKind::LeftBracket]) {
+                // Array declarator
+                self.advance(); // Consume '['
+                let array_size = self.parse_array_size()?;
+                self.expect(TokenKind::RightBracket)?; // Consume ']'
+                current_base = Declarator::Array(Box::new(current_base), array_size);
+            } else if self.matches(&[TokenKind::LeftParen]) {
+                // Function declarator
+                self.advance(); // Consume '('
+                let parameters = self.parse_function_parameters()?;
+                self.expect(TokenKind::RightParen)?; // Consume ')'
+                current_base = Declarator::Function(Box::new(current_base), parameters);
+            } else {
+                break;
+            }
+        }
+
+        // Reconstruct the declarator chain in reverse order
+        let mut final_declarator = current_base;
+        for component in declarator_chain.into_iter().rev() {
+            final_declarator = match component {
+                DeclaratorComponent::Pointer(qualifiers) => {
+                    Declarator::Pointer(qualifiers, Some(Box::new(final_declarator)))
+                }
+            };
+        }
+
+        Ok(final_declarator)
+    }
+
     /// Disambiguates between a type name and an identifier in ambiguous contexts.
     /// This is crucial for parsing C's "declaration-specifier-list" vs "expression" ambiguity.
-    fn is_type_name(&self, _symbol: Symbol) -> bool {
-        // This function would query the symbol table (from semantic analysis)
-        // to check if 'symbol' is currently known as a typedef name or a type specifier.
-        // For parsing, a simpler heuristic might be used, or a full tentative parse.
-        // For now, assume a placeholder.
-        false // Placeholder
+    fn is_type_name(&self, symbol: Symbol) -> bool {
+        // Check if the symbol is in our typedef names set
+        self.typedef_names.contains(&symbol)
     }
 }

@@ -11,8 +11,8 @@ pub use crate::diagnostic::DiagnosticEngine;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TokenKind {
     // Literals
-    IntegerConstant(i64),   // Parsed integer value
-    FloatConstant(u64),     // Parsed float value (bit representation)
+    IntegerConstant(Symbol), // Raw integer literal text
+    FloatConstant(Symbol),   // Raw float literal text
     CharacterConstant(u32), // Unicode codepoint
     StringLiteral(Symbol),  // Interned string literal
 

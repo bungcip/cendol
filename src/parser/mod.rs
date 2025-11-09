@@ -804,13 +804,11 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             }
         }
 
-        self.expect(TokenKind::RightParen)?;
+        let right_paren_token = self.expect(TokenKind::RightParen)?;
 
         let span = SourceSpan::new(
             self.ast.get_node(function).span.start,
-            self.current_token()
-                .map(|t| t.location.end)
-                .unwrap_or(SourceLoc(0)),
+            right_paren_token.location.end,
         );
 
         let node = self.ast.push_node(Node {
@@ -835,13 +833,11 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             }
         };
 
-        self.expect(TokenKind::RightBracket)?;
+        let right_bracket_token = self.expect(TokenKind::RightBracket)?;
 
         let span = SourceSpan::new(
             self.ast.get_node(array).span.start,
-            self.current_token()
-                .map(|t| t.location.end)
-                .unwrap_or(SourceLoc(0)),
+            right_bracket_token.location.end,
         );
 
         let node = self.ast.push_node(Node {
@@ -1453,9 +1449,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
         let span = SourceSpan::new(
             token.location.start,
-            self.current_token()
-                .map(|t| t.location.end)
-                .unwrap_or(SourceLoc(0)),
+            token.location.end,
         );
 
         let node = self.ast.push_node(Node {
@@ -1911,10 +1905,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             None
         };
 
-        let end_span = self
-            .current_token()
-            .map(|t| t.location.end)
-            .unwrap_or(SourceLoc(0));
+        let end_span = match &else_branch {
+            Some(else_stmt) => self.ast.get_node(*else_stmt).span.end,
+            None => self.ast.get_node(then_branch).span.end,
+        };
 
         let span = SourceSpan::new(start_span, end_span);
 
@@ -1954,10 +1948,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
         let body = self.parse_statement()?;
 
-        let end_span = self
-            .current_token()
-            .map(|t| t.location.end)
-            .unwrap_or(SourceLoc(0));
+        let end_span = self.ast.get_node(body).span.end;
 
         let span = SourceSpan::new(start_span, end_span);
 
@@ -1994,10 +1985,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
         let body = self.parse_statement()?;
 
-        let end_span = self
-            .current_token()
-            .map(|t| t.location.end)
-            .unwrap_or(SourceLoc(0));
+        let end_span = self.ast.get_node(body).span.end;
 
         let span = SourceSpan::new(start_span, end_span);
 
@@ -2015,6 +2003,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .current_token()
             .map(|t| t.location.start)
             .unwrap_or(SourceLoc(0));
+        
         self.expect(TokenKind::Do)?;
 
         let body = self.parse_statement()?;
@@ -2034,12 +2023,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         };
 
         self.expect(TokenKind::RightParen)?;
-        self.expect(TokenKind::Semicolon)?;
-
-        let end_span = self
-            .current_token()
-            .map(|t| t.location.end)
-            .unwrap_or(SourceLoc(0));
+        let semicolon_token = self.expect(TokenKind::Semicolon)?;
+        let end_span = semicolon_token.location.end;
 
         let span = SourceSpan::new(start_span, end_span);
 
@@ -2090,11 +2075,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 init_declarators: vec![init_declarator],
             };
 
+            let semicolon_token = self.expect(TokenKind::Semicolon)?;
             let span = SourceSpan::new(
                 start_span,
-                self.current_token()
-                    .map(|t| t.location.end)
-                    .unwrap_or(SourceLoc(0)),
+                semicolon_token.location.end,
             );
 
             Some(self.ast.push_node(Node::new(NodeKind::Declaration(declaration_data), span)))
@@ -2156,10 +2140,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
         let body = self.parse_statement()?;
 
-        let end_span = self
-            .current_token()
-            .map(|t| t.location.end)
-            .unwrap_or(SourceLoc(0));
+        let end_span = self.ast.get_node(body).span.end;
 
         let span = SourceSpan::new(start_span, end_span);
 
@@ -2180,6 +2161,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .current_token()
             .map(|t| t.location.start)
             .unwrap_or(SourceLoc(0));
+        
         self.expect(TokenKind::Goto)?;
 
         let token = self
@@ -2201,12 +2183,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         };
 
         self.advance();
-        self.expect(TokenKind::Semicolon)?;
-
-        let end_span = self
-            .current_token()
-            .map(|t| t.location.end)
-            .unwrap_or(SourceLoc(0));
+        let semicolon_token = self.expect(TokenKind::Semicolon)?;
+        let end_span = semicolon_token.location.end;
 
         let span = SourceSpan::new(start_span, end_span);
 
@@ -2220,13 +2198,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .current_token()
             .map(|t| t.location.start)
             .unwrap_or(SourceLoc(0));
+        
         self.expect(TokenKind::Continue)?;
-        self.expect(TokenKind::Semicolon)?;
-
-        let end_span = self
-            .current_token()
-            .map(|t| t.location.end)
-            .unwrap_or(SourceLoc(0));
+        let semicolon_token = self.expect(TokenKind::Semicolon)?;
+        let end_span = semicolon_token.location.end;
 
         let span = SourceSpan::new(start_span, end_span);
 
@@ -2240,13 +2215,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .current_token()
             .map(|t| t.location.start)
             .unwrap_or(SourceLoc(0));
+        
         self.expect(TokenKind::Break)?;
-        self.expect(TokenKind::Semicolon)?;
-
-        let end_span = self
-            .current_token()
-            .map(|t| t.location.end)
-            .unwrap_or(SourceLoc(0));
+        let semicolon_token = self.expect(TokenKind::Semicolon)?;
+        let end_span = semicolon_token.location.end;
 
         let span = SourceSpan::new(start_span, end_span);
 
@@ -2260,7 +2232,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .current_token()
             .map(|t| t.location.start)
             .unwrap_or(SourceLoc(0));
-        self.expect(TokenKind::Return)?;
+        
+        let return_token = self.expect(TokenKind::Return)?;
 
         let value = if self.matches(&[TokenKind::Semicolon]) {
             None
@@ -2277,12 +2250,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             }
         };
 
-        self.expect(TokenKind::Semicolon)?;
-
-        let end_span = self
-            .current_token()
-            .map(|t| t.location.end)
-            .unwrap_or(SourceLoc(0));
+        let semicolon_token = self.expect(TokenKind::Semicolon)?;
+        let end_span = semicolon_token.location.end;
 
         let span = SourceSpan::new(start_span, end_span);
 
@@ -2296,12 +2265,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .current_token()
             .map(|t| t.location.start)
             .unwrap_or(SourceLoc(0));
-        self.expect(TokenKind::Semicolon)?;
-
-        let end_span = self
-            .current_token()
-            .map(|t| t.location.end)
-            .unwrap_or(SourceLoc(0));
+        
+        let semicolon_token = self.expect(TokenKind::Semicolon)?;
+        let end_span = semicolon_token.location.end;
 
         let span = SourceSpan::new(start_span, end_span);
 
@@ -2317,6 +2283,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .current_token()
             .map(|t| t.location.start)
             .unwrap_or(SourceLoc(0));
+        
         self.expect(TokenKind::Case)?;
 
         let start_expr_result = self.parse_expression(BindingPower::MIN)?;
@@ -2352,10 +2319,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
         let statement = self.parse_statement()?;
 
-        let end_span = self
-            .current_token()
-            .map(|t| t.location.end)
-            .unwrap_or(SourceLoc(0));
+        let end_span = self.ast.get_node(statement).span.end;
 
         let span = SourceSpan::new(start_span, end_span);
 
@@ -2383,15 +2347,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .current_token()
             .map(|t| t.location.start)
             .unwrap_or(SourceLoc(0));
+        
         self.expect(TokenKind::Default)?;
         self.expect(TokenKind::Colon)?;
 
         let statement = self.parse_statement()?;
-
-        let end_span = self
-            .current_token()
-            .map(|t| t.location.end)
-            .unwrap_or(SourceLoc(0));
+        let end_span = self.ast.get_node(statement).span.end;
 
         let span = SourceSpan::new(start_span, end_span);
 
@@ -2407,15 +2368,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .current_token()
             .map(|t| t.location.start)
             .unwrap_or(SourceLoc(0));
+        
         self.advance(); // consume the identifier
         self.expect(TokenKind::Colon)?; // consume the colon
 
         let statement = self.parse_statement()?;
-
-        let end_span = self
-            .current_token()
-            .map(|t| t.location.end)
-            .unwrap_or(SourceLoc(0));
+        let end_span = self.ast.get_node(statement).span.end;
 
         let span = SourceSpan::new(start_span, end_span);
 
@@ -2448,12 +2406,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             }
         };
 
-        self.expect(TokenKind::Semicolon)?;
-
-        let end_span = self
-            .current_token()
-            .map(|t| t.location.end)
-            .unwrap_or(SourceLoc(0));
+        let semicolon_token = self.expect(TokenKind::Semicolon)?;
+        let end_span = semicolon_token.location.end;
 
         let span = SourceSpan::new(start_span, end_span);
 
@@ -2629,12 +2583,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             self.advance(); // consume comma
         }
 
-        self.expect(TokenKind::RightParen)?;
+        let right_paren_token = self.expect(TokenKind::RightParen)?;
 
-        let end_span = self
-            .current_token()
-            .map(|t| t.location.end)
-            .unwrap_or(SourceLoc(0));
+        let end_span = right_paren_token.location.end;
 
         let span = SourceSpan::new(start_span, end_span);
 
@@ -2655,12 +2606,11 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
         let initializer = self.parse_initializer()?;
 
+        let initializer = self.parse_initializer()?;
+
         let span = SourceSpan {
             start: SourceLoc(0), // Would need to track start properly
-            end: self
-                .current_token()
-                .map(|t| t.location.end)
-                .unwrap_or(SourceLoc(0)),
+            end: SourceLoc(0), // This needs proper tracking
         };
 
         let initializer = self.ast.push_initializer(initializer);
@@ -2679,6 +2629,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .current_token()
             .map(|t| t.location.start)
             .unwrap_or(SourceLoc(0));
+        
         self.expect(TokenKind::StaticAssert)?;
         self.expect(TokenKind::LeftParen)?;
 
@@ -2715,12 +2666,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
         self.advance();
         self.expect(TokenKind::RightParen)?;
-        self.expect(TokenKind::Semicolon)?;
-
-        let end_span = self
-            .current_token()
-            .map(|t| t.location.end)
-            .unwrap_or(SourceLoc(0));
+        let semicolon_token = self.expect(TokenKind::Semicolon)?;
+        let end_span = semicolon_token.location.end;
 
         let span = SourceSpan::new(start_span, end_span);
 
@@ -2746,12 +2693,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             // Check if it's a type name or expression
             if self.is_type_name_start() {
                 let type_ref = self.parse_type_name()?;
-                self.expect(TokenKind::RightParen)?;
+                let right_paren_token = self.expect(TokenKind::RightParen)?;
 
-                let end_span = self
-                    .current_token()
-                    .map(|t| t.location.end)
-                    .unwrap_or(SourceLoc(0));
+                let end_span = right_paren_token.location.end;
                 let span = SourceSpan::new(start_span, end_span);
 
                 self.ast
@@ -2767,12 +2711,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                         });
                     }
                 };
-                self.expect(TokenKind::RightParen)?;
+                let right_paren_token = self.expect(TokenKind::RightParen)?;
 
-                let end_span = self
-                    .current_token()
-                    .map(|t| t.location.end)
-                    .unwrap_or(SourceLoc(0));
+                let end_span = right_paren_token.location.end;
                 let span = SourceSpan::new(start_span, end_span);
 
                 self.ast
@@ -2810,12 +2751,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         self.expect(TokenKind::LeftParen)?;
 
         let type_ref = self.parse_type_name()?;
-        self.expect(TokenKind::RightParen)?;
+        let right_paren_token = self.expect(TokenKind::RightParen)?;
 
-        let end_span = self
-            .current_token()
-            .map(|t| t.location.end)
-            .unwrap_or(SourceLoc(0));
+        let end_span = right_paren_token.location.end;
 
         let span = SourceSpan::new(start_span, end_span);
 

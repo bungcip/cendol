@@ -2,7 +2,6 @@ use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, ParseError};
 use crate::lexer::{Token, TokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
-use bitflags::bitflags;
 use std::cell::Cell;
 use std::collections::HashSet;
 use symbol_table::GlobalSymbol as Symbol;
@@ -229,18 +228,35 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Skip tokens until we find a synchronization point
     fn synchronize(&mut self) {
+        let mut brace_depth = 0;
+        let mut paren_depth = 0;
+
         while let Some(token) = self.current_token() {
             match token.kind {
+                TokenKind::LeftBrace => brace_depth += 1,
+                TokenKind::RightBrace => {
+                    brace_depth -= 1;
+                    if brace_depth < 0 {
+                        break; // Unmatched brace, stop here
+                    }
+                }
+                TokenKind::LeftParen => paren_depth += 1,
+                TokenKind::RightParen => {
+                    paren_depth -= 1;
+                    if paren_depth < 0 {
+                        break; // Unmatched paren, stop here
+                    }
+                }
                 TokenKind::Semicolon => {
-                    self.advance();
-                    break;
+                    if brace_depth == 0 && paren_depth == 0 {
+                        self.advance();
+                        break;
+                    }
                 }
-                TokenKind::RightBrace => break,
                 TokenKind::EndOfFile => break,
-                _ => {
-                    self.advance();
-                }
+                _ => {}
             }
+            self.advance();
         }
     }
 
@@ -325,15 +341,135 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         // or [digits][e|E[+|-]digits][f|F|l|L]
         // or 0[xX][hexdigits][.hexdigits][p|P[+|-]digits][f|F|l|L]
 
-        // For now, use Rust's built-in parsing which handles most cases
-        // In a full implementation, we'd need custom parsing for hex floats
-        match text_str.parse::<f64>() {
-            Ok(val) => Ok(val),
-            Err(_) => Err(ParseError::SyntaxError {
-                message: format!("Invalid floating-point constant: {}", text_str),
-                location: token.location,
-            }),
+        // Handle hexadecimal floating-point literals (C99/C11)
+        if text_str.starts_with("0x") || text_str.starts_with("0X") {
+            self.parse_hex_float_literal(text_str, token.location)
+        } else {
+            // Use Rust's built-in parsing for decimal floats
+            match text_str.parse::<f64>() {
+                Ok(val) => Ok(val),
+                Err(_) => Err(ParseError::SyntaxError {
+                    message: format!("Invalid floating-point constant: {}", text_str),
+                    location: token.location,
+                }),
+            }
         }
+    }
+
+    /// Parse hexadecimal floating-point literal (C99/C11)
+    fn parse_hex_float_literal(&self, text: &str, location: SourceSpan) -> Result<f64, ParseError> {
+        // Format: 0[xX][hexdigits][.hexdigits][pP[+|-]digits][fFlL]
+        // Example: 0x1.2p3, 0x1p-5f, 0x.8p10L
+
+        let mut chars = text.chars().peekable();
+        let mut result = 0.0f64;
+        let mut exponent = 0i32;
+        let mut is_negative = false;
+        let mut seen_dot = false;
+        let mut fraction_digits = 0;
+
+        // Skip "0x" or "0X"
+        chars.next(); // '0'
+        chars.next(); // 'x' or 'X'
+
+        // Parse hexadecimal digits before decimal point
+        while let Some(&c) = chars.peek() {
+            if c.is_ascii_hexdigit() {
+                let digit = c.to_digit(16).unwrap() as f64;
+                result = result * 16.0 + digit;
+                chars.next();
+            } else if c == '.' && !seen_dot {
+                seen_dot = true;
+                chars.next();
+                break;
+            } else if c == 'p' || c == 'P' {
+                break;
+            } else {
+                return Err(ParseError::SyntaxError {
+                    message: format!("Invalid character '{}' in hexadecimal float literal", c),
+                    location,
+                });
+            }
+        }
+
+        // Parse hexadecimal digits after decimal point
+        if seen_dot {
+            while let Some(&c) = chars.peek() {
+                if c.is_ascii_hexdigit() {
+                    let digit = c.to_digit(16).unwrap() as f64;
+                    result = result * 16.0 + digit;
+                    fraction_digits += 1;
+                    chars.next();
+                } else if c == 'p' || c == 'P' {
+                    break;
+                } else {
+                    return Err(ParseError::SyntaxError {
+                        message: format!("Invalid character '{}' in hexadecimal float literal", c),
+                        location,
+                    });
+                }
+            }
+        }
+
+        // Parse binary exponent
+        if let Some(&c) = chars.peek() {
+            if c == 'p' || c == 'P' {
+                chars.next(); // consume 'p' or 'P'
+
+                // Parse optional sign
+                let mut exp_negative = false;
+                if let Some(&sign) = chars.peek() {
+                    if sign == '+' {
+                        chars.next();
+                    } else if sign == '-' {
+                        exp_negative = true;
+                        chars.next();
+                    }
+                }
+
+                // Parse exponent digits
+                let mut exp_str = String::new();
+                while let Some(&c) = chars.peek() {
+                    if c.is_ascii_digit() {
+                        exp_str.push(c);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+
+                if exp_str.is_empty() {
+                    return Err(ParseError::SyntaxError {
+                        message: "Missing exponent digits in hexadecimal float literal".to_string(),
+                        location,
+                    });
+                }
+
+                exponent = exp_str.parse().map_err(|_| ParseError::SyntaxError {
+                    message: format!("Invalid exponent '{}' in hexadecimal float literal", exp_str),
+                    location,
+                })?;
+
+                if exp_negative {
+                    exponent = -exponent;
+                }
+            }
+        }
+
+        // Apply fractional adjustment
+        if fraction_digits > 0 {
+            result /= 16.0f64.powi(fraction_digits);
+        }
+
+        // Apply binary exponent
+        if exponent != 0 {
+            result *= 2.0f64.powi(exponent);
+        }
+
+        // Handle suffix (f, F, l, L) - for now we ignore and return double
+        // In a full implementation, we'd return different types based on suffix
+
+        Ok(result)
     }
 
     /// Intern an identifier
@@ -380,12 +516,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             let left_span = self.ast.get_node(left).span;
             let right_span = self.ast.get_node(right).span;
             let span = SourceSpan::new(left_span.start, right_span.end);
-            left = self.ast.push_node(Node {
-                kind: NodeKind::BinaryOp(BinaryOp::Add, left, right), // Placeholder, will be fixed
+            left = self.ast.push_node(Node::new(
+                NodeKind::BinaryOp(BinaryOp::Add, left, right), // Placeholder, will be fixed
                 span,
-                resolved_type: Cell::new(None),
-                resolved_symbol: Cell::new(None),
-            });
+            ));
         }
 
         Ok(ParseExprOutput::Expression(left))
@@ -1089,6 +1223,14 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             }
             TokenKind::Complex => {
                 self.advance();
+                // Parse optional base type for _Complex (C11 allows _Complex float, _Complex double, etc.)
+                if self.matches(&[TokenKind::Float, TokenKind::Double, TokenKind::Long]) {
+                    // For now, just consume the base type - full implementation would create proper type
+                    self.advance();
+                    if self.matches(&[TokenKind::Double]) {
+                        self.advance(); // consume double for long double
+                    }
+                }
                 Ok(TypeSpecifier::Complex)
             }
             TokenKind::Atomic => {
@@ -1561,7 +1703,18 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Helper to parse array size
     fn parse_array_size(&mut self) -> Result<ArraySize, ParseError> {
-        if self.matches(&[TokenKind::Star]) {
+        if self.matches(&[TokenKind::Static]) {
+            // VLA specifier: static [expression]
+            self.advance();
+            let expr_result = self.parse_expression(BindingPower::MIN)?;
+            match expr_result {
+                ParseExprOutput::Expression(expr_node) => Ok(ArraySize::VlaSpecifier(Some(expr_node))),
+                _ => Err(ParseError::SyntaxError {
+                    message: "Expected expression after 'static' in VLA specifier".to_string(),
+                    location: self.current_token().unwrap().location,
+                }),
+            }
+        } else if self.matches(&[TokenKind::Star]) {
             self.advance();
             Ok(ArraySize::Star)
         } else if self.matches(&[TokenKind::RightBracket]) {
@@ -2116,7 +2269,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         Ok(node)
     }
 
-    /// Parse case statement
+    /// Parse case statement (including GNU case ranges)
     fn parse_case_statement(&mut self) -> Result<NodeRef, ParseError> {
         let start_span = self
             .current_token()
@@ -2124,8 +2277,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .unwrap_or(SourceLoc(0));
         self.expect(TokenKind::Case)?;
 
-        let const_expr_result = self.parse_expression(BindingPower::MIN)?;
-        let const_expr = match const_expr_result {
+        let start_expr_result = self.parse_expression(BindingPower::MIN)?;
+        let start_expr = match start_expr_result {
             ParseExprOutput::Expression(node) => node,
             _ => {
                 return Err(ParseError::SyntaxError {
@@ -2133,6 +2286,24 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                     location: self.current_token().unwrap().location,
                 });
             }
+        };
+
+        // Check for GNU case range extension: case 1 ... 10:
+        let (end_expr, is_range) = if self.matches(&[TokenKind::Ellipsis]) {
+            self.advance(); // consume '...'
+            let end_expr_result = self.parse_expression(BindingPower::MIN)?;
+            let end_expr = match end_expr_result {
+                ParseExprOutput::Expression(node) => node,
+                _ => {
+                    return Err(ParseError::SyntaxError {
+                        message: "Expected constant expression after '...' in case range".to_string(),
+                        location: self.current_token().unwrap().location,
+                    });
+                }
+            };
+            (Some(end_expr), true)
+        } else {
+            (None, false)
         };
 
         self.expect(TokenKind::Colon)?;
@@ -2146,12 +2317,21 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
         let span = SourceSpan::new(start_span, end_span);
 
-        let node = self.ast.push_node(Node {
-            kind: NodeKind::Case(const_expr, statement),
-            span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
+        let node = if is_range {
+            self.ast.push_node(Node {
+                kind: NodeKind::CaseRange(start_expr, end_expr.unwrap(), statement),
+                span,
+                resolved_type: Cell::new(None),
+                resolved_symbol: Cell::new(None),
+            })
+        } else {
+            self.ast.push_node(Node {
+                kind: NodeKind::Case(start_expr, statement),
+                span,
+                resolved_type: Cell::new(None),
+                resolved_symbol: Cell::new(None),
+            })
+        };
         Ok(node)
     }
 
@@ -2684,6 +2864,14 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     /// This is crucial for parsing C's "declaration-specifier-list" vs "expression" ambiguity.
     fn is_type_name(&self, symbol: Symbol) -> bool {
         // Check if the symbol is in our typedef names set
-        self.typedef_names.contains(&symbol)
+        self.typedef_names.contains(&symbol) ||
+        // Also check built-in types that might be typedef'd
+        matches!(symbol.as_str(), "size_t" | "ptrdiff_t" | "intmax_t" | "uintmax_t" |
+                 "intptr_t" | "uintptr_t" | "int8_t" | "int16_t" | "int32_t" | "int64_t" |
+                 "uint8_t" | "uint16_t" | "uint32_t" | "uint64_t" | "int_least8_t" |
+                 "int_least16_t" | "int_least32_t" | "int_least64_t" | "uint_least8_t" |
+                 "uint_least16_t" | "uint_least32_t" | "uint_least64_t" | "int_fast8_t" |
+                 "int_fast16_t" | "int_fast32_t" | "int_fast64_t" | "uint_fast8_t" |
+                 "uint_fast16_t" | "uint_fast32_t" | "uint_fast64_t")
     }
 }

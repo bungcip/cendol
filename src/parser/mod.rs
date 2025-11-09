@@ -5,6 +5,7 @@ use crate::source_manager::{SourceLoc, SourceSpan};
 use std::cell::Cell;
 use std::collections::HashSet;
 use symbol_table::GlobalSymbol as Symbol;
+use log::{debug, info, trace, warn};
 
 // ParseError is now defined in diagnostic.rs
 
@@ -482,6 +483,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         &mut self,
         min_binding_power: BindingPower,
     ) -> Result<ParseExprOutput, ParseError> {
+        trace!("parse_expression: min_binding_power={}", min_binding_power.0);
         let mut left = self.parse_prefix()?;
 
         loop {
@@ -512,14 +514,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 message: "Expected operator".to_string(),
                 location: SourceSpan::empty(),
             })?;
+            trace!("parse_expression: parsing infix operator {:?}", op_token.kind);
             let right = self.parse_infix(left, op_token, next_min_bp)?;
-            let left_span = self.ast.get_node(left).span;
-            let right_span = self.ast.get_node(right).span;
-            let span = SourceSpan::new(left_span.start, right_span.end);
-            left = self.ast.push_node(Node::new(
-                NodeKind::BinaryOp(BinaryOp::Add, left, right), // Placeholder, will be fixed
-                span,
-            ));
+            left = right;
         }
 
         Ok(ParseExprOutput::Expression(left))
@@ -534,6 +531,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 location: SourceSpan::empty(),
             })?;
 
+        trace!("parse_prefix: token={:?}", token.kind);
         match token.kind {
             TokenKind::Identifier(symbol) => {
                 self.advance();
@@ -675,6 +673,13 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         operator_token: Token,
         min_bp: BindingPower,
     ) -> Result<NodeRef, ParseError> {
+        // Handle postfix operators (no right operand)
+        match operator_token.kind {
+            TokenKind::Increment => return self.parse_postfix_increment(left, operator_token),
+            TokenKind::Decrement => return self.parse_postfix_decrement(left, operator_token),
+            _ => {}
+        }
+
         let right = self.parse_expression(min_bp)?;
         let right_node = match right {
             ParseExprOutput::Expression(node) => node,
@@ -722,8 +727,6 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             TokenKind::LeftBracket => return self.parse_index_access(left),
             TokenKind::Dot => return self.parse_member_access(left, false),
             TokenKind::Arrow => return self.parse_member_access(left, true),
-            TokenKind::Increment => return self.parse_postfix_increment(left),
-            TokenKind::Decrement => return self.parse_postfix_decrement(left),
             _ => {
                 return Err(ParseError::SyntaxError {
                     message: "Invalid binary operator".to_string(),
@@ -737,12 +740,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             self.ast.get_node(right_node).span.end,
         );
 
-        let node = self.ast.push_node(Node {
-            kind: NodeKind::BinaryOp(op, left, right_node),
+        let node = self.ast.push_node(Node::new(
+            NodeKind::BinaryOp(op, left, right_node),
             span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        });
+        ));
         Ok(node)
     }
 
@@ -893,12 +894,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Parse postfix increment
-    fn parse_postfix_increment(&mut self, operand: NodeRef) -> Result<NodeRef, ParseError> {
+    fn parse_postfix_increment(&mut self, operand: NodeRef, operator_token: Token) -> Result<NodeRef, ParseError> {
         let span = SourceSpan::new(
             self.ast.get_node(operand).span.start,
-            self.current_token()
-                .map(|t| t.location.end)
-                .unwrap_or(SourceLoc(0)),
+            operator_token.location.end,
         );
 
         let node = self
@@ -908,12 +907,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Parse postfix decrement
-    fn parse_postfix_decrement(&mut self, operand: NodeRef) -> Result<NodeRef, ParseError> {
+    fn parse_postfix_decrement(&mut self, operand: NodeRef, operator_token: Token) -> Result<NodeRef, ParseError> {
         let span = SourceSpan::new(
             self.ast.get_node(operand).span.start,
-            self.current_token()
-                .map(|t| t.location.end)
-                .unwrap_or(SourceLoc(0)),
+            operator_token.location.end,
         );
 
         let node = self
@@ -1482,8 +1479,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             None
         };
 
-        // TODO: Build the type from specifiers and declarator
-        // For now, return a placeholder type
+        // Build the type from specifiers and declarator
+        // TODO: Implement proper type construction from specifiers and declarator
         Ok(self.ast.push_type(Type {
             kind: TypeKind::Void,
             qualifiers: TypeQualifiers::empty(),
@@ -1780,6 +1777,15 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 location: SourceSpan::empty(),
             })?;
 
+        // Check for label: identifier :
+        if let TokenKind::Identifier(label_symbol) = token.kind {
+            if let Some(next_token) = self.peek_token() {
+                if next_token.kind == TokenKind::Colon {
+                    return self.parse_label_statement(label_symbol);
+                }
+            }
+        }
+
         match token.kind {
             TokenKind::LeftBrace => {
                 let (node, _) = self.parse_compound_statement()?;
@@ -1944,6 +1950,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
         self.expect(TokenKind::RightParen)?;
 
+        trace!("parse_for_statement: parsing body");
+
         let body = self.parse_statement()?;
 
         let end_span = self
@@ -2053,12 +2061,45 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         self.expect(TokenKind::For)?;
         self.expect(TokenKind::LeftParen)?;
 
+        trace!("parse_for_statement: parsing initialization");
+
         // Parse initialization
         let init = if self.matches(&[TokenKind::Semicolon]) {
             None
         } else if self.is_declaration_start() {
-            Some(self.parse_declaration()?)
+            trace!("parse_for_statement: parsing declaration in init");
+            // Parse declaration specifiers
+            let specifiers = self.parse_declaration_specifiers()?;
+            // Parse declarator
+            let declarator = self.parse_declarator(None)?;
+            // Parse initializer if present
+            let initializer = if self.matches(&[TokenKind::Assign]) {
+                self.advance(); // consume '='
+                Some(self.parse_initializer()?)
+            } else {
+                None
+            };
+
+            let init_declarator = InitDeclarator {
+                declarator,
+                initializer,
+            };
+
+            let declaration_data = DeclarationData {
+                specifiers,
+                init_declarators: vec![init_declarator],
+            };
+
+            let span = SourceSpan::new(
+                start_span,
+                self.current_token()
+                    .map(|t| t.location.end)
+                    .unwrap_or(SourceLoc(0)),
+            );
+
+            Some(self.ast.push_node(Node::new(NodeKind::Declaration(declaration_data), span)))
         } else {
+            trace!("parse_for_statement: parsing expression in init");
             let expr_result = self.parse_expression(BindingPower::MIN)?;
             match expr_result {
                 ParseExprOutput::Expression(node) => Some(node),
@@ -2072,6 +2113,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         };
 
         self.expect(TokenKind::Semicolon)?;
+
+        trace!("parse_for_statement: parsing condition");
 
         // Parse condition
         let condition = if self.matches(&[TokenKind::Semicolon]) {
@@ -2090,6 +2133,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         };
 
         self.expect(TokenKind::Semicolon)?;
+
+        trace!("parse_for_statement: parsing increment");
 
         // Parse increment
         let increment = if self.matches(&[TokenKind::RightParen]) {
@@ -2353,6 +2398,31 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         let node = self
             .ast
             .push_node(Node::new(NodeKind::Default(statement), span));
+        Ok(node)
+    }
+
+    /// Parse label statement
+    fn parse_label_statement(&mut self, label_symbol: Symbol) -> Result<NodeRef, ParseError> {
+        let start_span = self
+            .current_token()
+            .map(|t| t.location.start)
+            .unwrap_or(SourceLoc(0));
+        self.advance(); // consume the identifier
+        self.expect(TokenKind::Colon)?; // consume the colon
+
+        let statement = self.parse_statement()?;
+
+        let end_span = self
+            .current_token()
+            .map(|t| t.location.end)
+            .unwrap_or(SourceLoc(0));
+
+        let span = SourceSpan::new(start_span, end_span);
+
+        let node = self.ast.push_node(Node::new(
+            NodeKind::Label(label_symbol, statement),
+            span,
+        ));
         Ok(node)
     }
 

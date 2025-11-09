@@ -2075,10 +2075,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 init_declarators: vec![init_declarator],
             };
 
-            let semicolon_token = self.expect(TokenKind::Semicolon)?;
+            // Don't consume semicolon here - it will be consumed by the normal for loop flow
             let span = SourceSpan::new(
                 start_span,
-                semicolon_token.location.end,
+                self.current_token().unwrap().location.end,
             );
 
             Some(self.ast.push_node(Node::new(NodeKind::Declaration(declaration_data), span)))

@@ -85,7 +85,7 @@ pub enum PPTokenKind {
     Identifier(Symbol),    // Interned identifier
     StringLiteral(Symbol), // Interned string literal
     CharLiteral(u32),      // Unicode codepoint value
-    Number(Symbol),         // Raw numeric literal text for parser
+    Number(Symbol),        // Raw numeric literal text for parser
     // Special
     Eof,
     Unknown,
@@ -995,7 +995,9 @@ impl PPLexer {
                     // Block comment: skip to */
                     self.position += 2;
                     while self.position + 1 < self.buffer.len() {
-                        if self.buffer[self.position] == b'*' && self.buffer[self.position + 1] == b'/' {
+                        if self.buffer[self.position] == b'*'
+                            && self.buffer[self.position + 1] == b'/'
+                        {
                             self.position += 2;
                             break;
                         }

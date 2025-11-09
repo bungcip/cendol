@@ -767,7 +767,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 .unwrap_or(SourceLoc(0)),
         );
 
-        let node = self.ast.push_node(Node::new(NodeKind::PostIncrement(operand), span));
+        let node = self
+            .ast
+            .push_node(Node::new(NodeKind::PostIncrement(operand), span));
         Ok(node)
     }
 
@@ -780,7 +782,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 .unwrap_or(SourceLoc(0)),
         );
 
-        let node = self.ast.push_node(Node::new(NodeKind::PostDecrement(operand), span));
+        let node = self
+            .ast
+            .push_node(Node::new(NodeKind::PostDecrement(operand), span));
         Ok(node)
     }
 
@@ -850,7 +854,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             init_declarators,
         };
 
-        let node = self.ast.push_node(Node::new(NodeKind::Declaration(declaration_data), span));
+        let node = self
+            .ast
+            .push_node(Node::new(NodeKind::Declaration(declaration_data), span));
         Ok(node)
     }
 
@@ -1670,7 +1676,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
         let span = SourceSpan::new(start_span, end_span);
 
-        let node = self.ast.push_node(Node::new(NodeKind::CompoundStatement(block_items), span));
+        let node = self
+            .ast
+            .push_node(Node::new(NodeKind::CompoundStatement(block_items), span));
         Ok(node)
     }
 
@@ -1837,7 +1845,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
         let while_stmt = WhileStmt { condition, body };
 
-        let node = self.ast.push_node(Node::new(NodeKind::While(while_stmt), span));
+        let node = self
+            .ast
+            .push_node(Node::new(NodeKind::While(while_stmt), span));
         Ok(node)
     }
 
@@ -1956,7 +1966,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .map(|t| t.location.end)
             .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan::new(start_span,end_span);
+        let span = SourceSpan::new(start_span, end_span);
 
         let for_stmt = ForStmt {
             init,
@@ -2003,7 +2013,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .map(|t| t.location.end)
             .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan::new(start_span,end_span);
+        let span = SourceSpan::new(start_span, end_span);
 
         let node = self.ast.push_node(Node::new(NodeKind::Goto(label), span));
         Ok(node)
@@ -2023,7 +2033,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .map(|t| t.location.end)
             .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan::new(start_span,end_span);
+        let span = SourceSpan::new(start_span, end_span);
 
         let node = self.ast.push_node(Node::new(NodeKind::Continue, span));
         Ok(node)
@@ -2043,7 +2053,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .map(|t| t.location.end)
             .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan::new(start_span,end_span);
+        let span = SourceSpan::new(start_span, end_span);
 
         let node = self.ast.push_node(Node::new(NodeKind::Break, span));
         Ok(node)
@@ -2079,7 +2089,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .map(|t| t.location.end)
             .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan::new(start_span,end_span);
+        let span = SourceSpan::new(start_span, end_span);
 
         let node = self.ast.push_node(Node::new(NodeKind::Return(value), span));
         Ok(node)
@@ -2098,9 +2108,11 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .map(|t| t.location.end)
             .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan::new(start_span,end_span);
+        let span = SourceSpan::new(start_span, end_span);
 
-        let node = self.ast.push_node(Node::new(NodeKind::EmptyStatement, span));
+        let node = self
+            .ast
+            .push_node(Node::new(NodeKind::EmptyStatement, span));
         Ok(node)
     }
 
@@ -2132,7 +2144,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .map(|t| t.location.end)
             .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan::new(start_span,end_span);
+        let span = SourceSpan::new(start_span, end_span);
 
         let node = self.ast.push_node(Node {
             kind: NodeKind::Case(const_expr, statement),
@@ -2159,9 +2171,11 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .map(|t| t.location.end)
             .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan::new(start_span,end_span);
+        let span = SourceSpan::new(start_span, end_span);
 
-        let node = self.ast.push_node(Node::new(NodeKind::Default(statement), span));
+        let node = self
+            .ast
+            .push_node(Node::new(NodeKind::Default(statement), span));
         Ok(node)
     }
 
@@ -2194,9 +2208,11 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .map(|t| t.location.end)
             .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan::new(start_span,end_span);
+        let span = SourceSpan::new(start_span, end_span);
 
-        let node = self.ast.push_node(Node::new(NodeKind::ExpressionStatement(expression), span));
+        let node = self
+            .ast
+            .push_node(Node::new(NodeKind::ExpressionStatement(expression), span));
         Ok(node)
     }
 
@@ -2221,7 +2237,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .map(|t| t.location.end)
             .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan::new(start_span,end_span);
+        let span = SourceSpan::new(start_span, end_span);
 
         let function_def = FunctionDefData {
             specifiers,
@@ -2229,7 +2245,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             body,
         };
 
-        let node = self.ast.push_node(Node::new(NodeKind::FunctionDef(function_def), span));
+        let node = self
+            .ast
+            .push_node(Node::new(NodeKind::FunctionDef(function_def), span));
         Ok(node)
     }
 
@@ -2294,9 +2312,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .map(|t| t.location.end)
             .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan::new(start_span,end_span);
+        let span = SourceSpan::new(start_span, end_span);
 
-        let node = self.ast.push_node(Node::new(NodeKind::TranslationUnit(top_level_declarations), span));
+        let node = self.ast.push_node(Node::new(
+            NodeKind::TranslationUnit(top_level_declarations),
+            span,
+        ));
         Ok(node)
     }
 
@@ -2370,7 +2391,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .map(|t| t.location.end)
             .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan::new(start_span,end_span);
+        let span = SourceSpan::new(start_span, end_span);
 
         let node = self.ast.push_node(Node {
             kind: NodeKind::GenericSelection(controlling_expr, associations),
@@ -2456,7 +2477,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .map(|t| t.location.end)
             .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan::new(start_span,end_span);
+        let span = SourceSpan::new(start_span, end_span);
 
         let node = self.ast.push_node(Node {
             kind: NodeKind::StaticAssert(condition, message),
@@ -2486,9 +2507,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                     .current_token()
                     .map(|t| t.location.end)
                     .unwrap_or(SourceLoc(0));
-                let span = SourceSpan::new(start_span,end_span);
+                let span = SourceSpan::new(start_span, end_span);
 
-                self.ast.push_node(Node::new(NodeKind::SizeOfType(type_ref), span))
+                self.ast
+                    .push_node(Node::new(NodeKind::SizeOfType(type_ref), span))
             } else {
                 let expr_result = self.parse_expression(BindingPower::MIN)?;
                 let expr = match expr_result {
@@ -2506,9 +2528,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                     .current_token()
                     .map(|t| t.location.end)
                     .unwrap_or(SourceLoc(0));
-                let span = SourceSpan::new(start_span,end_span);
+                let span = SourceSpan::new(start_span, end_span);
 
-                self.ast.push_node(Node::new(NodeKind::SizeOfExpr(expr), span))
+                self.ast
+                    .push_node(Node::new(NodeKind::SizeOfExpr(expr), span))
             }
         } else {
             let expr_result = self.parse_expression(BindingPower::UNARY)?;
@@ -2523,9 +2546,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             };
 
             let end_span = self.ast.get_node(expr).span.end;
-            let span = SourceSpan::new(start_span,end_span);
+            let span = SourceSpan::new(start_span, end_span);
 
-            self.ast.push_node(Node::new(NodeKind::SizeOfExpr(expr), span))
+            self.ast
+                .push_node(Node::new(NodeKind::SizeOfExpr(expr), span))
         };
 
         Ok(node)
@@ -2548,9 +2572,11 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             .map(|t| t.location.end)
             .unwrap_or(SourceLoc(0));
 
-        let span = SourceSpan::new(start_span,end_span);
+        let span = SourceSpan::new(start_span, end_span);
 
-        let node = self.ast.push_node(Node::new(NodeKind::AlignOf(type_ref), span));
+        let node = self
+            .ast
+            .push_node(Node::new(NodeKind::AlignOf(type_ref), span));
         Ok(node)
     }
 
@@ -2588,8 +2614,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     fn is_abstract_declarator_start(&self) -> bool {
         if let Some(token) = self.current_token() {
             match token.kind {
-                TokenKind::Star => true, // pointer
-                TokenKind::LeftParen => true, // parenthesized abstract declarator
+                TokenKind::Star => true,        // pointer
+                TokenKind::LeftParen => true,   // parenthesized abstract declarator
                 TokenKind::LeftBracket => true, // array
                 _ => false,
             }

@@ -13,8 +13,8 @@ pub enum TokenKind {
     // Literals
     IntegerConstant(Symbol), // Raw integer literal text
     FloatConstant(Symbol),   // Raw float literal text
-    CharacterConstant(u32), // Unicode codepoint
-    StringLiteral(Symbol),  // Interned string literal
+    CharacterConstant(u32),  // Unicode codepoint
+    StringLiteral(Symbol),   // Interned string literal
 
     // Keywords (C11)
     Auto,

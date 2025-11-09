@@ -424,11 +424,14 @@ pub struct GenericAssociation {
 #[derive(Debug)]
 pub enum Declarator {
     Identifier(Symbol, TypeQualifiers, Option<Box<Declarator>>), // Base case: name (e.g., `x`)
-    Abstract, // for abstract declarator
+    Abstract,                                                    // for abstract declarator
     Pointer(TypeQualifiers, Option<Box<Declarator>>),            // e.g., `*`
     Array(Box<Declarator>, ArraySize),                           // e.g., `[10]`
     Function(Box<Declarator>, Vec<ParamData> /* parameters */),  // e.g., `(int x)`
-    AnonymousRecord(bool /* is_union */, Vec<DeclarationData> /* members */), // C11 anonymous struct/union
+    AnonymousRecord(
+        bool,                 /* is_union */
+        Vec<DeclarationData>, /* members */
+    ), // C11 anonymous struct/union
 }
 
 // Defines array size (e.g., [10], [*], or [] for flexible array members)

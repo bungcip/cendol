@@ -134,7 +134,7 @@ impl Ast {
 
 ### 3.4. Node and NodeKind (Flattened and Cache-Optimized)
 
-The primary AST node structure is designed for the flattened storage. All references to child nodes use `NodeIndex` instead of arena references, enabling contiguous memory layout and index-based access.
+The primary AST node structure is designed for the flattened storage. All references to child nodes use `NodeRef` instead of arena references, enabling contiguous memory layout and index-based access.
 
 ```rust
 use std::cell::Cell; // For interior mutability (e.g., type annotation)

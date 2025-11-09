@@ -91,6 +91,39 @@ impl SourceManager {
         }
     }
 
+    /// Add a file to the source manager from a file path
+    /// Since we only support UTF-8, we can read directly as bytes and assume validity
+    pub fn add_file_from_path(&mut self, path: &std::path::Path) -> Result<SourceId, std::io::Error> {
+        let buffer = std::fs::read(path)?;
+        let path_str = path.to_str().unwrap_or("<invalid-utf8>");
+        Ok(self.add_file_bytes(path_str, buffer))
+    }
+
+    /// Add a file to the source manager with raw bytes (UTF-8 assumed)
+    pub fn add_file_bytes(&mut self, path: &str, buffer: Vec<u8>) -> SourceId {
+        let file_id = SourceId(NonZeroU32::new(self.next_file_id).expect("File ID overflow"));
+        self.next_file_id += 1;
+
+        let size = buffer.len() as u32;
+        let buffer_index = self.buffers.len();
+        self.buffers.push(buffer);
+
+        // Calculate line starts
+        let line_starts = self.calculate_line_starts(&self.buffers[buffer_index]);
+
+        let file_info = FileInfo {
+            file_id,
+            path: PathBuf::from(path),
+            size,
+            buffer_index,
+            line_starts,
+        };
+
+        self.file_infos.insert(file_id, file_info);
+
+        file_id
+    }
+
     /// Add a file to the source manager
     pub fn add_file(&mut self, path: &str, content: &str) -> SourceId {
         let file_id = SourceId(NonZeroU32::new(self.next_file_id).expect("File ID overflow"));
@@ -119,15 +152,17 @@ impl SourceManager {
     }
 
     /// Get the buffer for a given source ID
-    pub fn get_buffer(&self, source_id: SourceId) -> Option<&[u8]> {
-        self.file_infos.get(&source_id).map(|info| &self.buffers[info.buffer_index][..])
+    /// Since SourceId is always valid (we panic if not found), we can use indexing
+    pub fn get_buffer(&self, source_id: SourceId) -> &[u8] {
+        let info = self.file_infos.get(&source_id).expect("Invalid SourceId");
+        &self.buffers[info.buffer_index][..]
     }
 
     /// Get file content as string for a given source ID
-    pub fn get_file_content(&self, source_id: SourceId) -> Option<String> {
-        self.get_buffer(source_id)
-            .and_then(|buffer| std::str::from_utf8(buffer).ok())
-            .map(|s| s.to_string())
+    /// Since we only support UTF-8, we can assume the bytes are valid UTF-8
+    pub fn get_file_content(&self, source_id: SourceId) -> String {
+        let buffer = self.get_buffer(source_id);
+        unsafe { String::from_utf8_unchecked(buffer.to_vec()) }
     }
 
     /// Get file info for a given source ID
@@ -136,15 +171,16 @@ impl SourceManager {
     }
 
     /// Get the source text for a given span
-    pub fn get_source_text(&self, span: SourceSpan) -> Option<&str> {
-        let buffer = self.get_buffer(span.source_id())?;
+    /// Since we only support UTF-8, we can assume the bytes are valid UTF-8
+    pub fn get_source_text(&self, span: SourceSpan) -> &str {
+        let buffer = self.get_buffer(span.source_id());
         let start = span.start.offset() as usize;
         let end = span.end.offset() as usize;
 
         if start <= end && end <= buffer.len() {
-            std::str::from_utf8(&buffer[start..end]).ok()
+            unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) }
         } else {
-            None
+            panic!("Invalid span range");
         }
     }
 

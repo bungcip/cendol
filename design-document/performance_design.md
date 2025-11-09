@@ -45,6 +45,7 @@
 - **AST Storage**: < 2x source file size for typical C code
 - **Symbol Table**: Efficient storage with global interning
 - **Type Table**: Canonicalized types prevent duplication
+- **File Loading**: Direct byte reading with unsafe UTF-8 conversion for performance
 
 ### Compilation Speed Goals
 - **Linear Scaling**: O(n) performance for all phases
@@ -63,3 +64,5 @@
 - **Parallel Analysis**: Independent analysis of different scopes
 - **Lazy Evaluation**: Defer expensive computations until needed
 - **Streaming I/O**: Process large files without full memory load
+- **Unsafe UTF-8 Operations**: Skip validation for assumed UTF-8 input
+- **Direct Buffer Access**: Eliminate string conversions in preprocessor

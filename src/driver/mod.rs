@@ -6,7 +6,7 @@ use clap::{Parser as CliParser, Args};
 use symbol_table::GlobalSymbol as Symbol;
 
 use crate::ast::{Ast, Node, NodeKind, FunctionDefData, Declarator, TypeQualifiers};
-use crate::semantic::SemanticAnalyzer;
+use crate::semantic::{SemanticAnalyzer, SymbolTable};
 use crate::diagnostic::{DiagnosticEngine, SemanticOutput};
 use crate::ast_dumper::{AstDumper, DumpConfig};
 use crate::source_manager::{SourceManager, SourceId, SourceSpan, SourceLoc};
@@ -126,54 +126,83 @@ impl CompilerDriver {
     }
 
     fn compile_file(&mut self, source_path: &Path) -> Result<(), CompilerError> {
-        // 1. Read source file
-        let content = fs::read_to_string(source_path)
+        // 1. Load source file through SourceManager
+        let source_id = self.source_manager.add_file_from_path(source_path)
             .map_err(|e| CompilerError::IoError(format!("Failed to read {}: {}", source_path.display(), e)))?;
 
-        let source_id = self.source_manager.add_file(source_path.to_str().unwrap(), &content);
-
         // 2. Preprocessing phase
-        let mut preprocessor = Preprocessor::new(
-            &mut self.source_manager,
-            &self.diagnostics,
-            LangOptions { c11: true, gnu_mode: false, ms_extensions: false },
-            target_lexicon::Triple::host(),
-            &self.config.preprocessor,
-        );
-        let pp_tokens = preprocessor.process(source_id, &self.config.preprocessor)
-            .map_err(|e| CompilerError::PreprocessorError(format!("Preprocessing failed: {:?}", e)))?;
+        let pp_tokens = {
+            let mut preprocessor = Preprocessor::new(
+                &mut self.source_manager,
+                &mut self.diagnostics,
+                LangOptions { c11: true, gnu_mode: false, ms_extensions: false },
+                target_lexicon::Triple::host(),
+                &self.config.preprocessor,
+            );
+            let result = preprocessor.process(source_id, &self.config.preprocessor)
+                .map_err(|e| CompilerError::PreprocessorError(format!("Preprocessing failed: {:?}", e)))?;
+            // Preprocessor is dropped here, releasing the borrow on diagnostics
+            result
+        };
+
+        // Check for preprocessing errors and stop if any
+        if self.diagnostics.has_errors() {
+            return Ok(()); // Stop processing this file
+        }
 
         // 3. Lexing phase
-        let lexer_diag = DiagnosticEngine::new();
-        let target_triple = target_lexicon::Triple::host();
-        let mut lexer = crate::lexer::Lexer::new(
-            &self.source_manager,
-            &lexer_diag,
-            &LangOptions { c11: true, gnu_mode: false, ms_extensions: false },
-            &target_triple,
-            &pp_tokens,
-        );
-        let tokens = lexer.tokenize_all();
+        let tokens = {
+            let target_triple = target_lexicon::Triple::host();
+            let mut lexer = crate::lexer::Lexer::new(
+                &self.source_manager,
+                &mut self.diagnostics,
+                &LangOptions { c11: true, gnu_mode: false, ms_extensions: false },
+                &target_triple,
+                &pp_tokens,
+            );
+            let result = lexer.tokenize_all();
+            // Lexer is dropped here, releasing the borrow on diagnostics
+            result
+        };
+
+        // Check for lexing errors and stop if any
+        if self.diagnostics.has_errors() {
+            return Ok(()); // Stop processing this file
+        }
 
         // 4. Parsing phase
-        let mut ast = Ast::new();
-        let mut compiler_diag = DiagnosticEngine::new();
-        let mut parser = Parser::new(&tokens, &mut ast, &mut compiler_diag);
-        let translation_unit = parser.parse_translation_unit()
-            .map_err(|e| CompilerError::ParserError(format!("Parsing failed: {:?}", e)))?;
+        let mut ast = {
+            let mut temp_ast = Ast::new();
+            {
+                let mut parser = Parser::new(&tokens, &mut temp_ast, &mut self.diagnostics);
+                let _translation_unit = parser.parse_translation_unit()
+                    .map_err(|e| CompilerError::ParserError(format!("Parsing failed: {:?}", e)))?;
+                // Parser is dropped here, releasing the borrow on diagnostics
+            }
+            // Return the AST for use in next phases
+            temp_ast
+        };
 
-        // Check for parser errors and merge them into main diagnostics
-        for diag in compiler_diag.diagnostics() {
-            self.diagnostics.report_diagnostic(diag.clone());
+        // Check for parsing errors and stop if any
+        if self.diagnostics.has_errors() {
+            return Ok(()); // Stop processing this file
         }
 
         // 5. Semantic analysis phase
-        let mut analyzer = SemanticAnalyzer::new(&mut ast, &mut compiler_diag);
-        let semantic_output = analyzer.analyze();
+        let symbol_table = {
+            let mut analyzer = SemanticAnalyzer::new(&mut ast, &mut self.diagnostics);
+            let _semantic_output = analyzer.analyze();
+            // Analyzer is dropped here, releasing the borrow on diagnostics
+            // We need to restructure to get the symbol table out
+            // For now, we'll create a new empty one and move the data
+            let mut new_table = SymbolTable::new();
+            std::mem::swap(&mut new_table, &mut analyzer.symbol_table);
+            new_table
+        };
 
-        // Merge semantic diagnostics into main diagnostics
-        for diag in semantic_output.diagnostics {
-            self.diagnostics.report_diagnostic(diag);
+        // Check for semantic analysis errors and stop if any
+        if self.diagnostics.has_errors() {
+            return Ok(()); // Stop processing this file
         }
 
         // 6. AST dumping (if requested)
@@ -186,8 +215,7 @@ impl CompilerDriver {
                 max_depth: None,
                 output_path: output_path.clone(),
             };
-            let symbol_table = &analyzer.symbol_table;
-            let dumper = AstDumper::new(&ast, symbol_table, &self.diagnostics, dump_config);
+            let dumper = AstDumper::new(&ast, &symbol_table, &self.diagnostics, dump_config);
             let html = dumper.generate_html()
                 .map_err(|e| CompilerError::AstDumpError(format!("HTML generation error: {:?}", e)))?;
 
@@ -201,14 +229,7 @@ impl CompilerDriver {
     fn report_errors(&self) -> Result<(), CompilerError> {
         if self.diagnostics.has_errors() {
             let formatter = crate::diagnostic::ErrorFormatter::default();
-
-            for diag in self.diagnostics.diagnostics() {
-                if diag.level == crate::diagnostic::DiagnosticLevel::Error {
-                    let formatted = formatter.format_diagnostic(diag, &self.source_manager);
-                    eprintln!("{}", formatted);
-                }
-            }
-
+            formatter.print_diagnostics(self.diagnostics.diagnostics(), &self.source_manager);
             return Err(CompilerError::CompilationFailed);
         }
 

@@ -88,9 +88,8 @@ The driver orchestrates the compilation pipeline with proper error handling and 
 ```rust
 impl CompilerDriver {
     fn compile_file(&mut self, source_path: &Path) -> Result<(), CompilerError> {
-        // 1. Read source file
-        let content = fs::read_to_string(source_path)?;
-        let source_id = self.source_manager.add_file(source_path, &content);
+        // 1. Load source file through SourceManager
+        let source_id = self.source_manager.add_file_from_path(source_path)?;
 
         // 2. Preprocessing phase
         let preprocessor = Preprocessor::new(&self.source_manager, &self.diagnostics);

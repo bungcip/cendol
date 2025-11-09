@@ -180,7 +180,7 @@ impl KeywordTable {
 /// Lexer state machine
 pub struct Lexer<'src> {
     source_manager: &'src SourceManager,
-    diag: &'src DiagnosticEngine,
+    diag: &'src mut DiagnosticEngine,
     lang_opts: &'src LangOptions,
     target_info: &'src TargetTriple,
 
@@ -199,7 +199,7 @@ impl<'src> Lexer<'src> {
     /// Create a new lexer with the given preprocessor token stream
     pub fn new(
         source_manager: &'src SourceManager,
-        diag: &'src DiagnosticEngine,
+        diag: &'src mut DiagnosticEngine,
         lang_opts: &'src LangOptions,
         target_info: &'src TargetTriple,
         tokens: &'src [PPToken],

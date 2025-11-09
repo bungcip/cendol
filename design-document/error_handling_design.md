@@ -168,30 +168,37 @@ pub struct ErrorFormatter {
 }
 
 impl ErrorFormatter {
+    /// Format a single diagnostic with rich source code context
     pub fn format_diagnostic(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
-        use annotate_snippets::{Level, Renderer, Snippet};
-
-        let level = match diag.level {
-            DiagnosticLevel::Error => Level::Error,
-            DiagnosticLevel::Warning => Level::Warning,
-            DiagnosticLevel::Note => Level::Info,
+        let level_str = match diag.level {
+            DiagnosticLevel::Error => "error",
+            DiagnosticLevel::Warning => "warning",
+            DiagnosticLevel::Note => "note",
         };
 
-        let snippet = if self.show_source {
-            self.create_snippet(diag, source_manager)
-        } else {
-            Snippet::source(diag.message.as_str())
-                .fold(true)
-        };
+        let mut result = format!("{}: {}", level_str, diag.message);
 
-        let renderer = Renderer::styled();
-        renderer.render(level.title(&diag.message), snippet).to_string()
-    }
+        // Add source location if available
+        if let Some(file_info) = source_manager.get_file_info(diag.location.source_id()) {
+            if let Some((line, col)) = source_manager.get_line_column(diag.location.start) {
+                result.push_str(&format!(" at {}:{}:{}", file_info.path.display(), line, col));
+            }
+        }
 
-    fn create_snippet(&self, diag: &Diagnostic, source_manager: &SourceManager) -> Snippet {
-        // Create annotated snippet with source code context
-        // Implementation uses annotate_snippets API for rich formatting
-        todo!()
+        // Add hints if enabled
+        if self.show_hints && !diag.hints.is_empty() {
+            for hint in &diag.hints {
+                result.push_str(&format!("\n  hint: {}", hint));
+            }
+        }
+
+        // Add source code snippet if enabled
+        if self.show_source {
+            let source_text = source_manager.get_source_text(diag.location);
+            result.push_str(&format!("\n  |\n  | {}\n  |", source_text.replace('\n', "\n  | ")));
+        }
+
+        result
     }
 }
 ```

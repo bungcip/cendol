@@ -4,7 +4,6 @@ use symbol_table::GlobalSymbol as Symbol;
 use crate::source_manager::{SourceManager, SourceId, SourceSpan, SourceLoc};
 use target_lexicon::Triple as TargetInfo;
 use chrono::{DateTime, Datelike, Timelike, Utc};
-use bitflags::bitflags;
 use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::LangOptions;
 
@@ -135,7 +134,7 @@ pub struct PreprocessorConfig {
 /// Main preprocessor structure
 pub struct Preprocessor<'src> {
     source_manager: &'src mut SourceManager,
-    diag: &'src DiagnosticEngine,
+    diag: &'src mut DiagnosticEngine,
     lang_opts: LangOptions,
     target_info: TargetInfo,
 
@@ -201,7 +200,7 @@ impl<'src> Preprocessor<'src> {
     /// Create a new preprocessor
     pub fn new(
         source_manager: &'src mut SourceManager,
-        diag: &'src DiagnosticEngine,
+        diag: &'src mut DiagnosticEngine,
         lang_opts: LangOptions,
         target_info: TargetInfo,
         config: &PreprocessorConfig,
@@ -301,10 +300,10 @@ impl<'src> Preprocessor<'src> {
     /// Process source file and return preprocessed tokens
     pub fn process(&mut self, source_id: SourceId, _config: &PreprocessorConfig) -> Result<Vec<PPToken>, PreprocessorError> {
         // Initialize lexer for main file
-        let content = self.source_manager.get_file_content(source_id)
-            .ok_or(PreprocessorError::FileNotFound)?;
+        let buffer = self.source_manager.get_buffer(source_id);
+        let buffer_len = buffer.len() as u32;
 
-        let lexer = PPLexer::new(source_id, content.as_bytes().to_vec());
+        let lexer = PPLexer::new(source_id, buffer.to_vec());
         self.cur_lexer = Some(Box::new(lexer));
 
         let mut result_tokens = Vec::new();
@@ -334,7 +333,7 @@ impl<'src> Preprocessor<'src> {
         result_tokens.push(PPToken {
             kind: PPTokenKind::Eof,
             flags: PPTokenFlags::empty(),
-            location: SourceLoc::new(source_id, content.len() as u32),
+            location: SourceLoc::new(source_id, buffer_len),
             length: 0,
         });
 

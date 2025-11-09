@@ -1,4 +1,4 @@
-use crate::source_manager::{SourceManager, SourceSpan};
+use crate::source_manager::{SourceManager, SourceSpan, SourceLoc};
 use symbol_table::GlobalSymbol as Symbol;
 use annotate_snippets::{Level, Renderer, Snippet};
 use crate::lexer::TokenKind;
@@ -244,8 +244,8 @@ impl Default for ErrorFormatter {
 }
 
 impl ErrorFormatter {
+    /// Format a single diagnostic with rich source code context
     pub fn format_diagnostic(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
-        // Simple implementation for now - just format the message with level
         let level_str = match diag.level {
             DiagnosticLevel::Error => "error",
             DiagnosticLevel::Warning => "warning",
@@ -268,13 +268,32 @@ impl ErrorFormatter {
             }
         }
 
+        // Add source code snippet if enabled
+        if self.show_source {
+            let source_text = source_manager.get_source_text(diag.location);
+            result.push_str(&format!("\n  |\n  | {}\n  |", source_text.replace('\n', "\n  | ")));
+        }
+
         result
     }
 
+    /// Format multiple diagnostics
     pub fn format_diagnostics(&self, diagnostics: &[Diagnostic], source_manager: &SourceManager) -> String {
         diagnostics.iter()
             .map(|diag| self.format_diagnostic(diag, source_manager))
             .collect::<Vec<_>>()
             .join("\n\n")
+    }
+
+    /// Print a diagnostic directly to stderr
+    pub fn print_diagnostic(&self, diag: &Diagnostic, source_manager: &SourceManager) {
+        eprintln!("{}", self.format_diagnostic(diag, source_manager));
+    }
+
+    /// Print all diagnostics to stderr
+    pub fn print_diagnostics(&self, diagnostics: &[Diagnostic], source_manager: &SourceManager) {
+        for diag in diagnostics {
+            self.print_diagnostic(diag, source_manager);
+        }
     }
 }

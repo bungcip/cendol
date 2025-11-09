@@ -170,15 +170,16 @@ pub struct HeaderSearch {
 ### Processing Algorithm
 
 1. **Initialization**:
-   - Set up source managers and diagnostic engines
-   - Initialize built-in macros (__DATE__, __TIME__, __FILE__, etc.)
-   - Configure include search paths
+    - Set up source managers and diagnostic engines
+    - Initialize built-in macros (__DATE__, __TIME__, __FILE__, etc.)
+    - Configure include search paths
 
 2. **Token Stream Processing**:
-   - Read tokens from the current lexer
-   - Handle directives (#define, #include, #if, etc.)
-   - Perform macro expansion on non-directive tokens
-   - Manage conditional compilation state
+    - Access source buffer directly from SourceManager (no string conversion)
+    - Read tokens from the current lexer
+    - Handle directives (#define, #include, #if, etc.)
+    - Perform macro expansion on non-directive tokens
+    - Manage conditional compilation state
 
 3. **Directive Handling**:
    - **#define**: Parse macro definition and store in macro table
@@ -353,7 +354,9 @@ The `#include` directive processes file inclusion with protection against infini
 - **Diagnostic Integration**: Comprehensive error and warning reporting
 - **Built-in Macro Support**: Automatic handling of standard predefined macros
 - **Include Guard Optimization**: Fast detection of header guards
-- **UTF-8 Only**: The preprocessor assumes and only supports UTF-8 encoded source files
+- **UTF-8 Only**: The preprocessor assumes and only supports UTF-8 encoded source files (no validation performed for performance)
+- **Direct Buffer Access**: Works directly with byte buffers from SourceManager, avoiding string conversions
+- **Unsafe UTF-8 Operations**: Uses `unsafe` operations assuming UTF-8 validity for maximum performance
 - **No Trigraph or Digraph Support**: For simplicity and modern C usage, trigraphs and digraphs will not be supported
 
 ### Integration with Compiler Pipeline

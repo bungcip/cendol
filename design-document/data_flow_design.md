@@ -103,10 +103,11 @@ pub struct SemanticOutput {
 
 ## Memory Management Strategy
 
-- **Arena Allocation**: AST nodes allocated in bump allocator for cache efficiency
-- **Global Symbol Interning**: Identifiers interned globally to avoid duplication
+- **Direct File Reading**: Files read as raw bytes (`std::fs::read`) assuming UTF-8 validity
+- **Unsafe UTF-8 Conversion**: `String::from_utf8_unchecked()` and `str::from_utf8_unchecked()` for performance
 - **Flattened Storage**: All AST data in contiguous vectors for spatial locality
 - **Index-based References**: `NodeRef`, `TypeRef`, `SymbolEntryRef` for efficient access
+- **Panic on Invalid SourceId**: SourceManager methods panic on invalid IDs for performance
 
 ## Error Propagation
 

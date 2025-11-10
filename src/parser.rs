@@ -2372,6 +2372,10 @@ TokenKind::Generic => self.parse_generic_selection(),
                     debug!("is_declaration_start: identifier {:?}, is_type_name={}", symbol, is_type);
                     is_type
                 }
+                // Exclude sizeof and other expression-only keywords that might be mistaken for type names
+                TokenKind::Sizeof
+                | TokenKind::Alignof
+                | TokenKind::Generic => false,
                 _ => false,
             }
         } else {
@@ -3251,11 +3255,20 @@ TokenKind::Generic => self.parse_generic_selection(),
                     | TokenKind::Volatile
                     | TokenKind::Restrict
                     | TokenKind::Atomic
-                    | TokenKind::Identifier(_)
             );
             
-            debug!("is_type_name_start: token {:?} is type name start: {}", token.kind, result);
-            result
+            // For identifiers, only consider them type name starts if they are actually typedef names
+            let is_identifier_type = if let TokenKind::Identifier(symbol) = token.kind {
+                self.is_type_name(symbol)
+            } else {
+                false
+            };
+            
+            let final_result = result || is_identifier_type;
+            
+            debug!("is_type_name_start: token {:?} is type name start: {} (direct: {}, identifier: {})",
+                   token.kind, final_result, result, is_identifier_type);
+            final_result
         } else {
             debug!("is_type_name_start: no token available");
             false

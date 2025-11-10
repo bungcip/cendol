@@ -589,6 +589,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             | TokenKind::And => self.parse_unary_operator(token),
             TokenKind::Generic => self.parse_generic_selection(),
             TokenKind::Alignof => self.parse_alignof(),
+            TokenKind::Sizeof => self.parse_sizeof(),
             _ => Err(ParseError::UnexpectedToken {
                 expected: vec![
                     TokenKind::Identifier(Symbol::new("")),

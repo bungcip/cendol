@@ -1039,7 +1039,7 @@ TokenKind::Generic => self.parse_generic_selection(),
             // by looking at the last parsed specifier
             if let Some(last_specifier) = specifiers.last() {
                 match &last_specifier.type_specifier {
-                    TypeSpecifier::Record(_, tag, definition) => {
+                    TypeSpecifier::Record(_, _tag, _definition) => {
                         // This is a struct/union definition - it's valid C
                         // Consume the semicolon
                         self.expect(TokenKind::Semicolon)?;
@@ -1104,7 +1104,7 @@ TokenKind::Generic => self.parse_generic_selection(),
                 }
             };
             
-            let initializer_start_idx = self.current_idx;
+            let _initializer_start_idx = self.current_idx;
             let initializer = if self.matches(&[TokenKind::Assign]) {
                 self.advance(); // consume '='
                 debug!("parse_declaration: found '=', parsing initializer at position {}", self.current_idx);
@@ -1576,8 +1576,20 @@ TokenKind::Generic => self.parse_generic_selection(),
                 let members = self.parse_struct_declaration_list()?;
                 self.expect(TokenKind::RightBrace)?;
                 
-                // Parse the declarator (the member name)
-                let declarator = self.parse_declarator(None)?;
+                // After parsing { members }, check the next token
+                // If the next token is ';', treat it as an anonymous struct member (no declarator needed)
+                // If the next token is an identifier or declarator start, continue with variable declaration parsing
+                let init_declarators = if self.matches(&[TokenKind::Semicolon]) {
+                    // Anonymous struct member: struct { members };
+                    self.expect(TokenKind::Semicolon)?;
+                    Vec::new()
+                } else {
+                    // Variable declaration with anonymous struct type: struct { members } variable;
+                    vec![InitDeclarator {
+                        declarator: self.parse_declarator(None)?,
+                        initializer: None,
+                    }]
+                };
                 
                 let type_specifier = TypeSpecifier::Record(is_union, None, Some(RecordDefData {
                     tag: None,
@@ -1593,14 +1605,14 @@ TokenKind::Generic => self.parse_generic_selection(),
                     type_specifier,
                 }];
                 
-                self.expect(TokenKind::Semicolon)?;
+                // Only expect semicolon if we haven't already consumed it in the anonymous case
+                if !init_declarators.is_empty() {
+                    self.expect(TokenKind::Semicolon)?;
+                }
                 
                 return Ok(DeclarationData {
                     specifiers,
-                    init_declarators: vec![InitDeclarator {
-                        declarator,
-                        initializer: None,
-                    }],
+                    init_declarators,
                 });
             } else {
                 // Named struct - read the tag first
@@ -1622,8 +1634,18 @@ TokenKind::Generic => self.parse_generic_selection(),
                     let members = self.parse_struct_declaration_list()?;
                     self.expect(TokenKind::RightBrace)?;
                     
-                    // Parse the declarator
-                    let declarator = self.parse_declarator(None)?;
+                    // After parsing { members }, check the next token
+                    let init_declarators = if self.matches(&[TokenKind::Semicolon]) {
+                        // Named struct definition: struct tag { members };
+                        self.expect(TokenKind::Semicolon)?;
+                        Vec::new()
+                    } else {
+                        // Variable declaration with named struct type: struct tag { members } variable;
+                        vec![InitDeclarator {
+                            declarator: self.parse_declarator(None)?,
+                            initializer: None,
+                        }]
+                    };
                     
                     let type_specifier = TypeSpecifier::Record(is_union, tag, Some(RecordDefData {
                         tag,
@@ -1639,14 +1661,14 @@ TokenKind::Generic => self.parse_generic_selection(),
                         type_specifier,
                     }];
                     
-                    self.expect(TokenKind::Semicolon)?;
+                    // Only expect semicolon if we haven't already consumed it
+                    if !init_declarators.is_empty() {
+                        self.expect(TokenKind::Semicolon)?;
+                    }
                     
                     return Ok(DeclarationData {
                         specifiers,
-                        init_declarators: vec![InitDeclarator {
-                            declarator,
-                            initializer: None,
-                        }],
+                        init_declarators,
                     });
                 } else {
                     // Just a forward declaration or reference to named struct
@@ -2058,7 +2080,7 @@ TokenKind::Generic => self.parse_generic_selection(),
                             debug!("parse_function_parameters: successfully parsed specifiers, current token: {:?}", self.current_token_kind());
                             specifiers
                         },
-                        Err(e) => {
+                        Err(_e) => {
                             // If specifier parsing fails, we might be at a position where we need
                             // to fall back to parsing without a proper declarator
                             debug!("parse_function_parameters: specifier parsing failed, rolling back");
@@ -2171,7 +2193,7 @@ TokenKind::Generic => self.parse_generic_selection(),
                   self.current_token_kind(), initial_idx);
             
             // Try parsing as declaration first, but only if it looks like a declaration start
-            let mut should_try_declaration = self.is_declaration_start();
+            let should_try_declaration = self.is_declaration_start();
             let mut declaration_attempt: Option<Result<NodeRef, ParseError>> = None;
             
             if should_try_declaration {

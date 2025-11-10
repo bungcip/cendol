@@ -195,7 +195,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Peek at the next token without consuming it
     fn peek_token(&self, next_index: u32) -> Option<&Token> {
-        self.tokens.get(self.current_idx + next_index as usize + 1)
+        self.tokens.get(self.current_idx + 1 + next_index as usize)
     }
 
     /// Advance to the next token and return previous token
@@ -636,13 +636,19 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             operator_token.kind, operator_token.location
         );
 
-        // Handle postfix operators (no right operand)
+        // Handle postfix operators (no right operand) - these should NOT recursively parse expressions
         match operator_token.kind {
             TokenKind::Increment => return self.parse_postfix_increment(left, operator_token),
             TokenKind::Decrement => return self.parse_postfix_decrement(left, operator_token),
+            // These operators call special parsing functions that handle their own parsing
+            TokenKind::LeftParen => return self.parse_function_call(left),
+            TokenKind::LeftBracket => return self.parse_index_access(left),
+            TokenKind::Dot => return self.parse_member_access(left, false),
+            TokenKind::Arrow => return self.parse_member_access(left, true),
             _ => {}
         }
 
+        // For all other operators, parse the right operand
         let right = self.parse_expression(min_bp)?;
         let right_node = match right {
             ParseExprOutput::Expression(node) => node,
@@ -743,9 +749,14 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse function call
     fn parse_function_call(&mut self, function: NodeRef) -> Result<NodeRef, ParseError> {
+        debug!("parse_function_call: parsing function call with LeftParen");
         let mut args = Vec::new();
 
-        if self.accept(TokenKind::RightParen) == None {
+        // Handle empty argument list: foo()
+        if self.accept(TokenKind::RightParen).is_some() {
+            debug!("parse_function_call: empty argument list");
+        } else {
+            debug!("parse_function_call: parsing arguments");
             loop {
                 let arg_result = self.parse_expression(BindingPower::MIN)?;
                 let arg = match arg_result {
@@ -758,15 +769,20 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                     }
                 };
                 args.push(arg);
+                debug!("parse_function_call: parsed argument, count: {}", args.len());
 
-                if self.accept(TokenKind::Comma) == None {
+                if self.accept(TokenKind::Comma).is_some() {
+                    debug!("parse_function_call: found comma, continuing to next argument");
+                    // Continue to next argument - the loop will parse it
+                } else {
+                    debug!("parse_function_call: no comma found, expecting RightParen");
                     break;
                 }
-                self.advance(); // consume comma
             }
         }
 
         let right_paren_token = self.expect(TokenKind::RightParen)?;
+        debug!("parse_function_call: successfully parsed function call with {} arguments", args.len());
 
         let span = SourceSpan::new(
             self.ast.get_node(function).span.start,
@@ -925,42 +941,121 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     /// Parse a declaration
     pub fn parse_declaration(&mut self) -> Result<NodeRef, ParseError> {
         let start_span = self.current_token()?.location.start;
+        let initial_idx = self.current_idx; // Save initial position for potential rollback
+        let saved_diagnostic_count = self.diag.diagnostics.len();
+
+        debug!("parse_declaration: starting at position {}, token {:?}", initial_idx, self.current_token_kind());
 
         // Check for _Static_assert (C11)
         if let Some(token) = self.accept(TokenKind::StaticAssert) {
             return self.parse_static_assert(token);
         }
 
-        // Parse declaration specifiers
-        let specifiers = self.parse_declaration_specifiers()?;
+        // Try to parse declaration specifiers
+        let specifiers = match self.parse_declaration_specifiers() {
+            Ok(specifiers) => {
+                debug!("parse_declaration: parsed specifiers, now at position {} with token {:?}", self.current_idx, self.current_token_kind());
+                specifiers
+            },
+            Err(e) => {
+                // If declaration specifiers parsing fails, roll back completely
+                self.current_idx = initial_idx;
+                self.diag.diagnostics.truncate(saved_diagnostic_count);
+                debug!("parse_declaration: specifier parsing failed, rolled back to {}", initial_idx);
+                return Err(e);
+            }
+        };
+
+        // Check if we have declarators (not just specifiers like "int;")
+        let has_declarators = !self.matches(&[TokenKind::Semicolon]);
+        
+        // If no declarators but we have specifiers, this could be:
+        // 1. A pure declaration like "int;" (which is actually invalid C)
+        // 2. An expression statement that starts with a type name
+        // We need to differentiate this by checking if this is likely a valid declaration
+        
+        if !has_declarators {
+            // This is "type_specifier;" which is usually an error in C
+            // But it could be a statement that starts with a type name
+            // Let's rollback and let the statement parser handle it
+            self.current_idx = initial_idx;
+            self.diag.diagnostics.truncate(saved_diagnostic_count);
+            debug!("parse_declaration: no declarators found, rolled back to {}", initial_idx);
+            return Err(ParseError::SyntaxError {
+                message: "Expected declarator or identifier after type specifier".to_string(),
+                location: self.current_token()?.location,
+            });
+        }
 
         // Parse init declarators
         let mut init_declarators = Vec::new();
 
-        // Check if we have declarators (not just specifiers like "int;")
-        if !self.matches(&[TokenKind::Semicolon]) {
-            loop {
-                let declarator = self.parse_declarator(None)?;
-                let initializer = if self.matches(&[TokenKind::Assign]) {
-                    self.advance(); // consume '='
-                    Some(self.parse_initializer()?)
-                } else {
-                    None
-                };
-
-                init_declarators.push(InitDeclarator {
-                    declarator,
-                    initializer,
-                });
-
-                if !self.matches(&[TokenKind::Comma]) {
-                    break;
+        loop {
+            let declarator_start_idx = self.current_idx;
+            debug!("parse_declaration: parsing declarator at position {}, token {:?}", declarator_start_idx, self.current_token_kind());
+            
+            let declarator = match self.parse_declarator(None) {
+                Ok(declarator) => {
+                    debug!("parse_declaration: parsed declarator, now at position {} with token {:?}", self.current_idx, self.current_token_kind());
+                    declarator
+                },
+                Err(e) => {
+                    // If declarator parsing fails, roll back completely
+                    self.current_idx = initial_idx;
+                    self.diag.diagnostics.truncate(saved_diagnostic_count);
+                    debug!("parse_declaration: declarator parsing failed, rolled back to {}", initial_idx);
+                    return Err(e);
                 }
-                self.advance(); // consume comma
+            };
+            
+            let initializer_start_idx = self.current_idx;
+            let initializer = if self.matches(&[TokenKind::Assign]) {
+                self.advance(); // consume '='
+                debug!("parse_declaration: found '=', parsing initializer at position {}", self.current_idx);
+                match self.parse_initializer() {
+                    Ok(initializer) => {
+                        debug!("parse_declaration: parsed initializer, now at position {} with token {:?}", self.current_idx, self.current_token_kind());
+                        Some(initializer)
+                    },
+                    Err(e) => {
+                        // If initializer parsing fails, roll back completely
+                        self.current_idx = initial_idx;
+                        self.diag.diagnostics.truncate(saved_diagnostic_count);
+                        debug!("parse_declaration: initializer parsing failed, rolled back to {}", initial_idx);
+                        return Err(e);
+                    }
+                }
+            } else {
+                None
+            };
+
+            init_declarators.push(InitDeclarator {
+                declarator,
+                initializer,
+            });
+
+            if !self.matches(&[TokenKind::Comma]) {
+                break;
             }
+            self.advance(); // consume comma
         }
 
-        let semicolon_token = self.expect(TokenKind::Semicolon)?;
+        // Check for semicolon at current position
+        let semicolon_token = if self.matches(&[TokenKind::Semicolon]) {
+            self.advance().ok_or_else(|| ParseError::SyntaxError {
+                message: "Unexpected end of input".to_string(),
+                location: SourceSpan::empty(),
+            })?
+        } else {
+            // If semicolon is missing, roll back completely
+            self.current_idx = initial_idx;
+            self.diag.diagnostics.truncate(saved_diagnostic_count);
+            debug!("parse_declaration: missing semicolon, rolled back to {}", initial_idx);
+            return Err(ParseError::SyntaxError {
+                message: "Expected ';' after declaration".to_string(),
+                location: self.current_token()?.location,
+            });
+        };
 
         let end_span = semicolon_token.location.end;
 
@@ -985,6 +1080,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         let node = self
             .ast
             .push_node(Node::new(NodeKind::Declaration(declaration_data), span));
+        debug!("parse_declaration: successfully parsed declaration, node_id={}", node.get());
         Ok(node)
     }
 
@@ -1806,12 +1902,62 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         let mut block_items = Vec::new();
 
         while !self.matches(&[TokenKind::RightBrace]) {
-            if self.is_declaration_start() {
-                let declaration = self.parse_declaration()?;
-                block_items.push(declaration);
-            } else {
-                let statement = self.parse_statement()?;
-                block_items.push(statement);
+            let initial_idx = self.current_idx;
+            
+            debug!("parse_compound_statement: parsing block item, current token {:?}, position {}", 
+                  self.current_token_kind(), initial_idx);
+            
+            // Try parsing as declaration first, but only if it looks like a declaration start
+            let mut should_try_declaration = self.is_declaration_start();
+            let mut declaration_attempt: Option<Result<NodeRef, ParseError>> = None;
+            
+            if should_try_declaration {
+                // Save state before attempting declaration parsing
+                let saved_idx = self.current_idx;
+                let saved_error_state = self.diag.diagnostics.len();
+                
+                debug!("parse_compound_statement: trying declaration parsing at position {}", saved_idx);
+                match self.parse_declaration() {
+                    Ok(declaration) => {
+                        debug!("parse_compound_statement: successfully parsed declaration");
+                        block_items.push(declaration);
+                    }
+                    Err(decl_error) => {
+                        debug!("parse_compound_statement: declaration parsing failed: {:?}, rolling back from {} to {}", decl_error, self.current_idx, saved_idx);
+                        // Reset state and try as statement
+                        self.current_idx = saved_idx;
+                        // Remove any diagnostics added during failed declaration parsing
+                        self.diag.diagnostics.truncate(saved_error_state);
+                        declaration_attempt = Some(Err(decl_error));
+                    }
+                }
+            }
+
+            // If declaration failed or wasn't attempted, try as statement
+            if declaration_attempt.is_some() || !should_try_declaration {
+                if declaration_attempt.is_some() {
+                    debug!("parse_compound_statement: reset to position {}, trying statement", initial_idx);
+                } else {
+                    debug!("parse_compound_statement: not a declaration start, trying statement");
+                }
+                
+                match self.parse_statement() {
+                    Ok(statement) => {
+                        debug!("parse_compound_statement: successfully parsed statement");
+                        block_items.push(statement);
+                    }
+                    Err(stmt_error) => {
+                        debug!("parse_compound_statement: statement parsing also failed: {:?}", stmt_error);
+                        // Both declaration and statement parsing failed
+                        // Report the declaration error and try to synchronize
+                        if let Some(Err(decl_error)) = declaration_attempt {
+                            self.diag.report_parse_error(decl_error);
+                        } else {
+                            self.diag.report_parse_error(stmt_error);
+                        }
+                        self.synchronize();
+                    }
+                }
             }
         }
 
@@ -1828,6 +1974,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Check if current tokens indicate start of a declaration
     fn is_declaration_start(&self) -> bool {
+        debug!("is_declaration_start: checking token {:?}", self.current_token_kind());
         if let Some(token) = self.try_current_token() {
             match token.kind {
                 TokenKind::Typedef
@@ -2350,18 +2497,28 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         let expression = if self.matches(&[TokenKind::Semicolon]) {
             None
         } else {
-            let expr_result = self.parse_expression(BindingPower::MIN)?;
-            match expr_result {
-                ParseExprOutput::Expression(node) => Some(node),
-                _ => {
+            // Try to parse expression, but handle parsing failures gracefully
+            match self.parse_expression(BindingPower::MIN) {
+                Ok(ParseExprOutput::Expression(node)) => Some(node),
+                Ok(_) => {
                     return Err(ParseError::SyntaxError {
                         message: "Expected expression in expression statement".to_string(),
                         location: self.current_token().unwrap().location,
                     });
                 }
+                Err(e) => {
+                    // If expression parsing fails, try to at least consume the semicolon
+                    // to avoid infinite loops
+                    if self.matches(&[TokenKind::Semicolon]) {
+                        None
+                    } else {
+                        return Err(e);
+                    }
+                }
             }
         };
 
+        // Always expect a semicolon
         let semicolon_token = self.expect(TokenKind::Semicolon)?;
         let end_span = semicolon_token.location.end;
 
@@ -2418,9 +2575,11 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             // Prevent infinite loops by limiting iterations
             iteration_count += 1;
             if iteration_count > MAX_ITERATIONS {
+                debug!("Parser exceeded maximum iteration limit at token {:?}, position {}", 
+                      token.kind, self.current_idx);
                 return Err(ParseError::SyntaxError {
-                    message: "Parser exceeded maximum iteration limit - possible infinite loop"
-                        .to_string(),
+                    message: format!("Parser exceeded maximum iteration limit - possible infinite loop at token {:?}",
+                                   token.kind),
                     location: token.location,
                 });
             }

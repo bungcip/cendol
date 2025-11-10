@@ -1,5 +1,0 @@
----
-source: tests/c11_features.rs
-expression: stdout
----
-

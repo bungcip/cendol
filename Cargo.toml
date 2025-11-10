@@ -17,8 +17,12 @@ bitflags = "2.6"
 target-lexicon = "0.12"
 symbol_table = { version = "0.3", features = ["global"] }
 annotate-snippets = "0.12"
+bitvec = "1.0"
 
 [dev-dependencies]
 insta = { version = "1.40", features = ["yaml"] }
 serde_yaml = "0.9"
+
+[features]
+insta = []
 

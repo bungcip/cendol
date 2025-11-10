@@ -593,9 +593,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             | TokenKind::Decrement
             | TokenKind::Star
             | TokenKind::And => self.parse_unary_operator(token),
-            TokenKind::Generic => self.parse_generic_selection(),
+TokenKind::Generic => self.parse_generic_selection(),
             TokenKind::Alignof => self.parse_alignof(),
-            TokenKind::Sizeof => self.parse_sizeof(),
+            TokenKind::Sizeof => {
+                debug!("parse_prefix: parsing sizeof expression at position {}", self.current_idx);
+                self.parse_sizeof()
+            },
             _ => Err(ParseError::UnexpectedToken {
                 expected: vec![
                     TokenKind::Identifier(Symbol::new("")),
@@ -1015,25 +1018,69 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             }
         };
 
-        // Check if we have declarators (not just specifiers like "int;")
-        let has_declarators = !self.matches(&[TokenKind::Semicolon]);
+        // Check if we have declarators
+        let has_declarators = if self.matches(&[TokenKind::Semicolon]) {
+            // Definitely no declarators
+            false
+        } else {
+            // Check if we have a declarator-starting token
+            // This includes: identifier, star, or left paren
+            matches!(self.current_token_kind(),
+                Some(TokenKind::Identifier(_)) | Some(TokenKind::Star) | Some(TokenKind::LeftParen))
+        };
         
         // If no declarators but we have specifiers, this could be:
-        // 1. A pure declaration like "int;" (which is actually invalid C)
-        // 2. An expression statement that starts with a type name
-        // We need to differentiate this by checking if this is likely a valid declaration
+        // 1. A struct/union definition like "struct foo { ... };" (valid C)
+        // 2. A pure declaration like "int;" (which is actually invalid C)
+        // 3. An expression statement that starts with a type name
         
         if !has_declarators {
-            // This is "type_specifier;" which is usually an error in C
-            // But it could be a statement that starts with a type name
-            // Let's rollback and let the statement parser handle it
-            self.current_idx = initial_idx;
-            self.diag.diagnostics.truncate(saved_diagnostic_count);
-            debug!("parse_declaration: no declarators found, rolled back to {}", initial_idx);
-            return Err(ParseError::SyntaxError {
-                message: "Expected declarator or identifier after type specifier".to_string(),
-                location: self.current_token()?.location,
-            });
+            // Check if this looks like a struct/union definition
+            // by looking at the last parsed specifier
+            if let Some(last_specifier) = specifiers.last() {
+                match &last_specifier.type_specifier {
+                    TypeSpecifier::Record(_, tag, definition) => {
+                        // This is a struct/union definition - it's valid C
+                        // Consume the semicolon
+                        self.expect(TokenKind::Semicolon)?;
+                        
+                        // Create a declaration with no declarators
+                        let declaration_data = DeclarationData {
+                            specifiers,
+                            init_declarators: Vec::new(),
+                        };
+                        
+                        let end_span = self.current_token()?.location.end;
+                        let span = SourceSpan::new(start_span, end_span);
+                        
+                        let node = self
+                            .ast
+                            .push_node(Node::new(NodeKind::Declaration(declaration_data), span));
+                        debug!("parse_declaration: successfully parsed struct/union definition, node_id={}", node.get());
+                        return Ok(node);
+                    }
+                    _ => {
+                        // Not a struct/union definition, this is likely an error
+                        // But let's rollback and let the statement parser handle it
+                        self.current_idx = initial_idx;
+                        self.diag.diagnostics.truncate(saved_diagnostic_count);
+                        debug!("parse_declaration: no declarators found, rolled back to {}", initial_idx);
+                        return Err(ParseError::SyntaxError {
+                            message: "Expected declarator or identifier after type specifier".to_string(),
+                            location: self.current_token()?.location,
+                        });
+                    }
+                }
+            } else {
+                // No specifiers at all - this shouldn't happen
+                self.current_idx = initial_idx;
+                self.diag.diagnostics.truncate(saved_diagnostic_count);
+                debug!("parse_declaration: no specifiers, rolled back to {}", initial_idx);
+                return Err(ParseError::SyntaxError {
+                    message: "Expected type specifiers".to_string(),
+                    location: self.current_token()?.location,
+                });
+            }
         }
 
         // Parse init declarators
@@ -1319,6 +1366,11 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse type specifier
     fn parse_type_specifier(&mut self) -> Result<TypeSpecifier, ParseError> {
+        self.parse_type_specifier_with_context(false)
+    }
+
+    /// Parse type specifier with context
+    fn parse_type_specifier_with_context(&mut self, in_struct_member: bool) -> Result<TypeSpecifier, ParseError> {
         let token = self
             .try_current_token()
             .ok_or_else(|| ParseError::SyntaxError {
@@ -1388,11 +1440,11 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             }
             TokenKind::Struct => {
                 self.advance();
-                self.parse_record_specifier(false)
+                self.parse_record_specifier_with_context(false, in_struct_member)
             }
             TokenKind::Union => {
                 self.advance();
-                self.parse_record_specifier(true)
+                self.parse_record_specifier_with_context(true, in_struct_member)
             }
             TokenKind::Enum => {
                 self.advance();
@@ -1432,6 +1484,15 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         &mut self,
         is_union: bool,
     ) -> Result<TypeSpecifier, ParseError> {
+        self.parse_record_specifier_with_context(is_union, false)
+    }
+
+    /// Parse struct or union specifier with context
+    fn parse_record_specifier_with_context(
+        &mut self,
+        is_union: bool,
+        in_struct_member: bool,
+    ) -> Result<TypeSpecifier, ParseError> {
         let tag = if let Some(token) = self.try_current_token() {
             if let TokenKind::Identifier(symbol) = token.kind {
                 self.advance();
@@ -1443,7 +1504,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             None
         };
 
-        let definition = if self.matches(&[TokenKind::LeftBrace]) {
+        // In struct member context, only parse members if we have a specific tag
+        // to avoid confusion with anonymous nested structs
+        let definition = if self.matches(&[TokenKind::LeftBrace]) && (!in_struct_member || tag.is_some()) {
             self.advance(); // consume '{'
             let members = self.parse_struct_declaration_list()?;
             self.expect(TokenKind::RightBrace)?;
@@ -1501,43 +1564,137 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse struct declaration
     fn parse_struct_declaration(&mut self) -> Result<DeclarationData, ParseError> {
-        let specifiers = self.parse_declaration_specifiers()?;
-        let mut declarators = Vec::new();
-
-        while !self.matches(&[TokenKind::Semicolon]) {
-            // Check for anonymous struct/union (C11)
-            if self.matches(&[TokenKind::Struct, TokenKind::Union]) {
-                // Anonymous struct/union member
-                let is_union = self.matches(&[TokenKind::Union]);
-                self.advance(); // consume struct/union
+        // Check if we have an anonymous struct/union
+        if self.matches(&[TokenKind::Struct, TokenKind::Union]) {
+            let is_union = self.matches(&[TokenKind::Union]);
+            self.advance(); // consume struct/union
+            
+            // Check if this is an anonymous struct
+            if self.matches(&[TokenKind::LeftBrace]) {
+                // Anonymous struct definition
                 self.expect(TokenKind::LeftBrace)?;
                 let members = self.parse_struct_declaration_list()?;
                 self.expect(TokenKind::RightBrace)?;
-                // Create a synthetic declarator for anonymous member
-                declarators.push(InitDeclarator {
-                    declarator: Declarator::AnonymousRecord(is_union, members),
-                    initializer: None,
+                
+                // Parse the declarator (the member name)
+                let declarator = self.parse_declarator(None)?;
+                
+                let type_specifier = TypeSpecifier::Record(is_union, None, Some(RecordDefData {
+                    tag: None,
+                    members: Some(members),
+                    is_union,
+                }));
+                
+                let specifiers = vec![DeclSpecifier {
+                    storage_class: None,
+                    type_qualifiers: TypeQualifiers::empty(),
+                    function_specifiers: FunctionSpecifiers::empty(),
+                    alignment_specifier: None,
+                    type_specifier,
+                }];
+                
+                self.expect(TokenKind::Semicolon)?;
+                
+                return Ok(DeclarationData {
+                    specifiers,
+                    init_declarators: vec![InitDeclarator {
+                        declarator,
+                        initializer: None,
+                    }],
                 });
             } else {
-                let declarator = self.parse_declarator(None)?;
-                declarators.push(InitDeclarator {
+                // Named struct - read the tag first
+                let tag = if let Some(token) = self.try_current_token() {
+                    if let TokenKind::Identifier(symbol) = token.kind {
+                        self.advance();
+                        Some(symbol)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                
+                // Check if it's defined inline
+                if self.matches(&[TokenKind::LeftBrace]) {
+                    // Named struct with definition
+                    self.expect(TokenKind::LeftBrace)?;
+                    let members = self.parse_struct_declaration_list()?;
+                    self.expect(TokenKind::RightBrace)?;
+                    
+                    // Parse the declarator
+                    let declarator = self.parse_declarator(None)?;
+                    
+                    let type_specifier = TypeSpecifier::Record(is_union, tag, Some(RecordDefData {
+                        tag,
+                        members: Some(members),
+                        is_union,
+                    }));
+                    
+                    let specifiers = vec![DeclSpecifier {
+                        storage_class: None,
+                        type_qualifiers: TypeQualifiers::empty(),
+                        function_specifiers: FunctionSpecifiers::empty(),
+                        alignment_specifier: None,
+                        type_specifier,
+                    }];
+                    
+                    self.expect(TokenKind::Semicolon)?;
+                    
+                    return Ok(DeclarationData {
+                        specifiers,
+                        init_declarators: vec![InitDeclarator {
+                            declarator,
+                            initializer: None,
+                        }],
+                    });
+                } else {
+                    // Just a forward declaration or reference to named struct
+                    let type_specifier = TypeSpecifier::Record(is_union, tag, None);
+                    let declarator = self.parse_declarator(None)?;
+                    
+                    let specifiers = vec![DeclSpecifier {
+                        storage_class: None,
+                        type_qualifiers: TypeQualifiers::empty(),
+                        function_specifiers: FunctionSpecifiers::empty(),
+                        alignment_specifier: None,
+                        type_specifier,
+                    }];
+                    
+                    self.expect(TokenKind::Semicolon)?;
+                    
+                    return Ok(DeclarationData {
+                        specifiers,
+                        init_declarators: vec![InitDeclarator {
+                            declarator,
+                            initializer: None,
+                        }],
+                    });
+                }
+            }
+        } else {
+            // Regular member: type specifier + declarator
+            let type_specifier = self.parse_type_specifier_with_context(true)?;
+            let declarator = self.parse_declarator(None)?;
+            
+            let specifiers = vec![DeclSpecifier {
+                storage_class: None,
+                type_qualifiers: TypeQualifiers::empty(),
+                function_specifiers: FunctionSpecifiers::empty(),
+                alignment_specifier: None,
+                type_specifier,
+            }];
+            
+            self.expect(TokenKind::Semicolon)?;
+            
+            return Ok(DeclarationData {
+                specifiers,
+                init_declarators: vec![InitDeclarator {
                     declarator,
-                    initializer: None, // Struct members can't have initializers
-                });
-            }
-
-            if !self.matches(&[TokenKind::Comma]) {
-                break;
-            }
-            self.advance(); // consume comma
+                    initializer: None,
+                }],
+            });
         }
-
-        self.expect(TokenKind::Semicolon)?;
-
-        Ok(DeclarationData {
-            specifiers,
-            init_declarators: declarators,
-        })
     }
 
     /// Parse enumerator list
@@ -2883,21 +3040,31 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     /// Parse sizeof expression or type
     pub fn parse_sizeof(&mut self) -> Result<NodeRef, ParseError> {
         let start_span = self.current_token()?.location.start;
+        debug!("parse_sizeof: starting at position {}, token {:?}", self.current_idx, self.current_token_kind());
+        
         self.expect(TokenKind::Sizeof)?;
+        debug!("parse_sizeof: consumed sizeof token, now at position {}, token {:?}", self.current_idx, self.current_token_kind());
 
         let node = if self.matches(&[TokenKind::LeftParen]) {
             self.advance(); // consume '('
+            debug!("parse_sizeof: found '(', now at position {}, token {:?}", self.current_idx, self.current_token_kind());
+            
             // Check if it's a type name or expression
             if self.is_type_name_start() {
+                debug!("parse_sizeof: detected type name start, parsing type name");
                 let type_ref = self.parse_type_name()?;
+                debug!("parse_sizeof: parsed type name, now at position {}, token {:?}", self.current_idx, self.current_token_kind());
+                
                 let right_paren_token = self.expect(TokenKind::RightParen)?;
 
                 let end_span = right_paren_token.location.end;
                 let span = SourceSpan::new(start_span, end_span);
 
+                debug!("parse_sizeof: successfully parsed sizeof(type)");
                 self.ast
                     .push_node(Node::new(NodeKind::SizeOfType(type_ref), span))
             } else {
+                debug!("parse_sizeof: detected expression, parsing expression");
                 let expr_result = self.parse_expression(BindingPower::MIN)?;
                 let expr = match expr_result {
                     ParseExprOutput::Expression(node) => node,
@@ -2913,10 +3080,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 let end_span = right_paren_token.location.end;
                 let span = SourceSpan::new(start_span, end_span);
 
+                debug!("parse_sizeof: successfully parsed sizeof(expression)");
                 self.ast
                     .push_node(Node::new(NodeKind::SizeOfExpr(expr), span))
             }
         } else {
+            debug!("parse_sizeof: no '(', parsing unary expression");
             let expr_result = self.parse_expression(BindingPower::UNARY)?;
             let expr = match expr_result {
                 ParseExprOutput::Expression(node) => node,
@@ -2931,6 +3100,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             let end_span = self.ast.get_node(expr).span.end;
             let span = SourceSpan::new(start_span, end_span);
 
+            debug!("parse_sizeof: successfully parsed sizeof unary expression");
             self.ast
                 .push_node(Node::new(NodeKind::SizeOfExpr(expr), span))
         };
@@ -2959,8 +3129,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Check if current token starts a type name
     fn is_type_name_start(&self) -> bool {
+        debug!("is_type_name_start: checking token {:?} at position {}", self.current_token_kind(), self.current_idx);
+        
         if let Some(token) = self.try_current_token() {
-            matches!(
+            let result = matches!(
                 token.kind,
                 TokenKind::Void
                     | TokenKind::Char
@@ -2981,8 +3153,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                     | TokenKind::Restrict
                     | TokenKind::Atomic
                     | TokenKind::Identifier(_)
-            )
+            );
+            
+            debug!("is_type_name_start: token {:?} is type name start: {}", token.kind, result);
+            result
         } else {
+            debug!("is_type_name_start: no token available");
             false
         }
     }
@@ -3115,9 +3291,13 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                     debug!("is_cast_expression_start: found identifier {:?}, is_type={}", symbol, is_type);
                     is_type
                 }
-                _ => false,
+                _ => {
+                    debug!("is_cast_expression_start: token {:?} not recognized as cast start", token.kind);
+                    false
+                }
             }
         } else {
+            debug!("is_cast_expression_start: no token available");
             false
         }
     }

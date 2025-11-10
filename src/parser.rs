@@ -253,32 +253,57 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     fn synchronize(&mut self) {
         let mut brace_depth = 0;
         let mut paren_depth = 0;
+        let mut any_advance = false;
 
         while let Some(token) = self.try_current_token() {
             match token.kind {
-                TokenKind::LeftBrace => brace_depth += 1,
+                TokenKind::LeftBrace => {
+                    brace_depth += 1;
+                    self.advance();
+                    any_advance = true;
+                }
                 TokenKind::RightBrace => {
                     brace_depth -= 1;
+                    self.advance();
+                    any_advance = true;
                     if brace_depth < 0 {
                         break; // Unmatched brace, stop here
                     }
                 }
-                TokenKind::LeftParen => paren_depth += 1,
+                TokenKind::LeftParen => {
+                    paren_depth += 1;
+                    self.advance();
+                    any_advance = true;
+                }
                 TokenKind::RightParen => {
                     paren_depth -= 1;
+                    self.advance();
+                    any_advance = true;
                     if paren_depth < 0 {
                         break; // Unmatched paren, stop here
                     }
                 }
                 TokenKind::Semicolon => {
+                    self.advance();
+                    any_advance = true;
                     if brace_depth == 0 && paren_depth == 0 {
-                        self.advance();
                         break;
                     }
                 }
-                TokenKind::EndOfFile => break,
-                _ => {}
+                TokenKind::EndOfFile => {
+                    self.advance();
+                    any_advance = true;
+                    break;
+                }
+                _ => {
+                    self.advance();
+                    any_advance = true;
+                }
             }
+        }
+
+        // If we didn't advance at all, force advance to avoid infinite loop
+        if !any_advance {
             self.advance();
         }
     }
@@ -755,6 +780,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         // Handle empty argument list: foo()
         if self.accept(TokenKind::RightParen).is_some() {
             debug!("parse_function_call: empty argument list");
+            // Empty argument list - RightParen already consumed, no need to expect it again
+            debug!("parse_function_call: successfully parsed function call with {} arguments", args.len());
         } else {
             debug!("parse_function_call: parsing arguments");
             loop {
@@ -779,14 +806,29 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                     break;
                 }
             }
+
+            let right_paren_token = self.expect(TokenKind::RightParen)?;
+            debug!("parse_function_call: successfully parsed function call with {} arguments", args.len());
+
+            let span = SourceSpan::new(
+                self.ast.get_node(function).span.start,
+                right_paren_token.location.end,
+            );
+
+            let node = self.ast.push_node(Node {
+                kind: NodeKind::FunctionCall(function, args),
+                span,
+                resolved_type: Cell::new(None),
+                resolved_symbol: Cell::new(None),
+            });
+            return Ok(node);
         }
 
-        let right_paren_token = self.expect(TokenKind::RightParen)?;
-        debug!("parse_function_call: successfully parsed function call with {} arguments", args.len());
-
+        // Handle the empty argument case - create the node here
         let span = SourceSpan::new(
             self.ast.get_node(function).span.start,
-            right_paren_token.location.end,
+            // Use the current token location since we don't have the right paren token
+            self.current_token_span()?.start,
         );
 
         let node = self.ast.push_node(Node {

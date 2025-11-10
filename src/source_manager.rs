@@ -275,4 +275,4 @@ impl Default for SourceManager {
 }
 
 #[cfg(test)]
-mod tests;
+mod tests_source_manager;

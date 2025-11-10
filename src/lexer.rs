@@ -576,4 +576,4 @@ impl<'src> Lexer<'src> {
 }
 
 #[cfg(test)]
-mod tests;
+mod tests_lexer;

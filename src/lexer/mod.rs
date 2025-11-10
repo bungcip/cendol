@@ -11,10 +11,10 @@ pub use crate::diagnostic::DiagnosticEngine;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TokenKind {
     // Literals
-    IntegerConstant(Symbol), // Raw integer literal text
-    FloatConstant(Symbol),   // Raw float literal text
-    CharacterConstant(u32),  // Unicode codepoint
-    StringLiteral(Symbol),   // Interned string literal
+    IntegerConstant(i64),   // Parsed integer literal value
+    FloatConstant(Symbol),  // Raw float literal text
+    CharacterConstant(u32), // Unicode codepoint
+    StringLiteral(Symbol),  // Interned string literal
 
     // Keywords (C11)
     Auto,
@@ -375,6 +375,66 @@ impl<'src> Lexer<'src> {
         }
     }
 
+    /// Parse C11 integer literal syntax
+    fn parse_c11_integer_literal(&self, text: Symbol) -> Result<i64, ()> {
+        let text_str = text.as_str();
+
+        // C11 integer literal format: [0[xX]][digits][suffix]
+        // Suffixes: u/U (unsigned), l/L (long), ll/LL (long long)
+        // Can be combined: ul, ull, etc.
+
+        // Find where the suffix starts (if any)
+        let mut end_of_digits = text_str.len();
+        let mut _has_unsigned = false;
+        let mut _has_long = false;
+        let mut _has_long_long = false;
+
+        // Check for suffixes (case insensitive)
+        let lower_text = text_str.to_lowercase();
+        if lower_text.ends_with("ull") || lower_text.ends_with("llu") {
+            end_of_digits = text_str.len() - 3;
+            _has_long_long = true;
+            _has_unsigned = lower_text.ends_with("ull");
+        } else if lower_text.ends_with("ul") || lower_text.ends_with("lu") {
+            end_of_digits = text_str.len() - 2;
+            _has_long = true;
+            _has_unsigned = lower_text.ends_with("ul");
+        } else if lower_text.ends_with("u") {
+            end_of_digits = text_str.len() - 1;
+            _has_unsigned = true;
+        } else if lower_text.ends_with("ll") {
+            end_of_digits = text_str.len() - 2;
+            _has_long_long = true;
+        } else if lower_text.ends_with("l") {
+            end_of_digits = text_str.len() - 1;
+            _has_long = true;
+        }
+
+        let digits_part = &text_str[..end_of_digits];
+
+        // Determine base
+        let (base, digits) = if digits_part.starts_with("0x") || digits_part.starts_with("0X") {
+            (16, &digits_part[2..])
+        } else if digits_part.starts_with("0") && digits_part.len() > 1 {
+            (8, &digits_part[1..])
+        } else {
+            (10, digits_part)
+        };
+
+        // Parse the number
+        let value = match base {
+            16 => i64::from_str_radix(digits, 16),
+            8 => i64::from_str_radix(digits, 8),
+            10 => digits.parse::<i64>(),
+            _ => unreachable!(),
+        };
+
+        match value {
+            Ok(val) => Ok(val),
+            Err(_) => Err(()), // Invalid integer constant
+        }
+    }
+
     /// Get the next token from the stream
     pub fn next_token(&mut self) -> Option<Token> {
         if self.current_index >= self.tokens.len() {
@@ -414,7 +474,13 @@ impl<'src> Lexer<'src> {
             }
             PPTokenKind::StringLiteral(symbol) => TokenKind::StringLiteral(symbol),
             PPTokenKind::CharLiteral(codepoint) => TokenKind::CharacterConstant(codepoint),
-            PPTokenKind::Number(value) => TokenKind::IntegerConstant(value),
+            PPTokenKind::Number(value) => {
+                // Parse the integer literal into i64 with C11 support
+                match self.parse_c11_integer_literal(value) {
+                    Ok(parsed_value) => TokenKind::IntegerConstant(parsed_value),
+                    Err(_) => TokenKind::Unknown, // Handle parsing errors gracefully
+                }
+            }
             PPTokenKind::Eof => TokenKind::EndOfFile,
             // Map preprocessor punctuation to lexer tokens
             PPTokenKind::Plus => TokenKind::Plus,

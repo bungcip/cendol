@@ -1,3 +1,4 @@
+use bitvec::prelude::*;
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 
@@ -483,13 +484,17 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
 
         // Traverse the function body with proper scope management
         let mut stack = vec![(body_node, function_scope_id)];
-        let mut visited = std::collections::HashSet::new();
+        let mut visited: BitVec = BitVec::new();
 
         while let Some((node_ref, expected_scope)) = stack.pop() {
-            if visited.contains(&node_ref.get()) {
+            let node_id = node_ref.get() as usize;
+            if node_id < visited.len() && visited[node_id] {
                 continue;
             }
-            visited.insert(node_ref.get());
+            if node_id >= visited.len() {
+                visited.resize(node_id + 1, false);
+            }
+            visited.set(node_id, true);
 
             let node = self.ast.get_node(node_ref);
 
@@ -798,14 +803,18 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
         // Simplified single-pass approach: resolve identifiers as we encounter them
         let mut stack = vec![_root_node_ref];
         let mut nodes_processed = 0;
-        let mut visited_nodes = std::collections::HashSet::new();
+        let mut visited_nodes: BitVec = BitVec::new();
 
         while let Some(node_ref) = stack.pop() {
             // Skip already visited nodes to prevent infinite loops
-            if visited_nodes.contains(&node_ref.get()) {
+            let node_id = node_ref.get() as usize;
+            if node_id < visited_nodes.len() && visited_nodes[node_id] {
                 continue;
             }
-            visited_nodes.insert(node_ref.get());
+            if node_id >= visited_nodes.len() {
+                visited_nodes.resize(node_id + 1, false);
+            }
+            visited_nodes.set(node_id, true);
 
             nodes_processed += 1;
             if nodes_processed % 50 == 0 {

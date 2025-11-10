@@ -180,7 +180,7 @@ pub enum SymbolKind {
 #[derive(Debug, Clone)]
 pub enum NodeKind {
     // --- Literals (Inline storage for common types) ---
-    LiteralInt(Symbol), // Raw integer literal text for parsing
+    LiteralInt(i64), // Parsed integer literal value
     LiteralFloat(f64),
     LiteralString(Symbol),
     LiteralChar(char),

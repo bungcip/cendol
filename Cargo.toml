@@ -18,3 +18,7 @@ target-lexicon = "0.12"
 symbol_table = { version = "0.3", features = ["global"] }
 annotate-snippets = "0.12"
 
+[dev-dependencies]
+insta = { version = "1.40", features = ["yaml"] }
+serde_yaml = "0.9"
+

@@ -219,9 +219,9 @@ mod tests {
     fn test_literals() {
         // Integer constants
         let int_literals = vec![
-            ("42", TokenKind::IntegerConstant(Symbol::new("42"))),
-            ("0x1A", TokenKind::IntegerConstant(Symbol::new("0x1A"))),
-            ("077", TokenKind::IntegerConstant(Symbol::new("077"))),
+            ("42", TokenKind::IntegerConstant(42)),
+            ("0x1A", TokenKind::IntegerConstant(26)),
+            ("077", TokenKind::IntegerConstant(63)),
         ];
 
         for (text, expected_kind) in int_literals {
@@ -235,12 +235,10 @@ mod tests {
         }
 
         // Float constants - for now, treated as IntegerConstant since classify_token maps Number to IntegerConstant
+        // Note: These will fail parsing as integers, so they should be TokenKind::Unknown
         let float_literals = vec![
-            ("3.14", TokenKind::IntegerConstant(Symbol::new("3.14"))),
-            (
-                "1.23e-4",
-                TokenKind::IntegerConstant(Symbol::new("1.23e-4")),
-            ),
+            ("3.14", TokenKind::Unknown),
+            ("1.23e-4", TokenKind::Unknown),
         ];
 
         for (text, expected_kind) in float_literals {

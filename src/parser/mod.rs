@@ -260,77 +260,6 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         }
     }
 
-    /// Parse an integer constant from token text
-    fn parse_integer_constant(&self, text: Symbol) -> Result<i64, ParseError> {
-        let _token = self.current_token().unwrap();
-        // C11 integer literal parsing: handle bases (decimal, octal, hex) and suffixes (u, l, ll)
-        self.parse_c11_integer_literal(text)
-    }
-
-    /// Parse C11 integer literal syntax
-    fn parse_c11_integer_literal(&self, text: Symbol) -> Result<i64, ParseError> {
-        let text_str = text.as_str();
-        let token = self.current_token().unwrap();
-
-        // C11 integer literal format: [0[xX]][digits][suffix]
-        // Suffixes: u/U (unsigned), l/L (long), ll/LL (long long)
-        // Can be combined: ul, ull, etc.
-
-        // Find where the suffix starts (if any)
-        let mut end_of_digits = text_str.len();
-        let mut _has_unsigned = false;
-        let mut _has_long = false;
-        let mut _has_long_long = false;
-
-        // Check for suffixes (case insensitive)
-        let lower_text = text_str.to_lowercase();
-        if lower_text.ends_with("ull") || lower_text.ends_with("llu") {
-            end_of_digits = text_str.len() - 3;
-            _has_long_long = true;
-            _has_unsigned = lower_text.ends_with("ull");
-        } else if lower_text.ends_with("ul") || lower_text.ends_with("lu") {
-            end_of_digits = text_str.len() - 2;
-            _has_long = true;
-            _has_unsigned = lower_text.ends_with("ul");
-        } else if lower_text.ends_with("u") {
-            end_of_digits = text_str.len() - 1;
-            _has_unsigned = true;
-        } else if lower_text.ends_with("ll") {
-            end_of_digits = text_str.len() - 2;
-            _has_long_long = true;
-        } else if lower_text.ends_with("l") {
-            end_of_digits = text_str.len() - 1;
-            _has_long = true;
-        }
-
-        let digits_part = &text_str[..end_of_digits];
-
-        // Determine base
-        let (base, digits) = if digits_part.starts_with("0x") || digits_part.starts_with("0X") {
-            (16, &digits_part[2..])
-        } else if digits_part.starts_with("0") && digits_part.len() > 1 {
-            (8, &digits_part[1..])
-        } else {
-            (10, digits_part)
-        };
-
-        // Parse the number
-        let value = match base {
-            16 => i64::from_str_radix(digits, 16),
-            8 => i64::from_str_radix(digits, 8),
-            10 => digits.parse::<i64>(),
-            _ => unreachable!(),
-        };
-
-        match value {
-            Ok(val) => Ok(val),
-            Err(_) => Err(ParseError::InvalidIntegerConstant {
-                text: text_str.to_string(),
-                location: token.location,
-            }),
-        }
-    }
-
     /// Parse C11 floating-point literal syntax
     fn parse_c11_float_literal(&self, text: Symbol) -> Result<f64, ParseError> {
         let text_str = text.as_str();
@@ -558,11 +487,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 });
                 Ok(node)
             }
-            TokenKind::IntegerConstant(text) => {
+            TokenKind::IntegerConstant(value) => {
                 self.advance();
-                let _value = self.parse_integer_constant(text)?;
                 let node = self.ast.push_node(Node {
-                    kind: NodeKind::LiteralInt(text),
+                    kind: NodeKind::LiteralInt(value),
                     span: token.location,
                     resolved_type: Cell::new(None),
                     resolved_symbol: Cell::new(None),
@@ -624,7 +552,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             _ => Err(ParseError::UnexpectedToken {
                 expected: vec![
                     TokenKind::Identifier(Symbol::new("")),
-                    TokenKind::IntegerConstant(Symbol::new("0")),
+                    TokenKind::IntegerConstant(0),
                     TokenKind::FloatConstant(Symbol::new("0.0")),
                     TokenKind::StringLiteral(Symbol::new("")),
                     TokenKind::CharacterConstant(0),
@@ -762,7 +690,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
                 // Create a placeholder index node
                 let index = self.ast.push_node(Node {
-                    kind: NodeKind::LiteralInt(Symbol::new("0")), // Placeholder
+                    kind: NodeKind::LiteralInt(0), // Placeholder
                     span: self.current_token().unwrap().location,
                     resolved_type: Cell::new(None),
                     resolved_symbol: Cell::new(None),
@@ -893,7 +821,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             debug!("parse_index_access: empty array index []");
             // Create a placeholder for empty index
             self.ast.push_node(Node {
-                kind: NodeKind::LiteralInt(Symbol::new("0")), // Use 0 as placeholder
+                kind: NodeKind::LiteralInt(0), // Use 0 as placeholder
                 span: self.current_token().unwrap().location,
                 resolved_type: Cell::new(None),
                 resolved_symbol: Cell::new(None),

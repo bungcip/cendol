@@ -439,7 +439,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                         let node_kind = init_node.kind.clone();
                         let span = init_node.span;
                         
-                        drop(init_node); // Drop the borrow
+                        let _ = init_node; // Drop the borrow
                         
                         if let NodeKind::Declaration(decl) = node_kind {
                             debug!("For loop has declaration in init, processing with special scope");
@@ -493,14 +493,15 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
 
     fn collect_declaration_symbols(&mut self, decl: &DeclarationData, span: SourceSpan) {
         for init_declarator in &decl.init_declarators {
-            if let Declarator::Identifier(name, _, _) = &init_declarator.declarator {
+            // Use extract_identifier to handle all declarator types (Identifier, Pointer, Array, etc.)
+            if let Some(name) = self.extract_identifier(&init_declarator.declarator) {
                 // Check for redeclaration
                 if let Some(existing_entry_ref) =
-                    self.symbol_table.lookup_symbol_in_scope(*name, self.symbol_table.current_scope())
+                    self.symbol_table.lookup_symbol_in_scope(name, self.symbol_table.current_scope())
                 {
                     let existing_entry = self.symbol_table.get_symbol_entry(existing_entry_ref);
                     self.diag.report_error(SemanticError::Redefinition {
-                        name: *name,
+                        name,
                         first_def: existing_entry.definition_span,
                         second_def: span,
                     });
@@ -509,7 +510,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
 
                 let safe_type_ref = self.get_safe_type_ref();
                 let entry = SymbolEntry {
-                    name: *name,
+                    name,
                     kind: SymbolKind::Variable {
                         is_global: self.symbol_table.current_scope().get() == 1,
                         is_static: false,
@@ -528,7 +529,9 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                     is_completed: true,
                 };
                 debug!("Adding variable '{}' to scope {}", name.as_str(), self.symbol_table.current_scope().get());
-                self.symbol_table.add_symbol(*name, entry);
+                self.symbol_table.add_symbol(name, entry);
+            } else {
+                debug!("No identifier found in declarator: {:?}", std::mem::discriminant(&init_declarator.declarator));
             }
         }
     }

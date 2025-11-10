@@ -1022,22 +1022,26 @@ TokenKind::Generic => self.parse_generic_selection(),
             }
         };
 
-        // Special handling for struct/union definitions
-        // Check if the last specifier is a struct/union definition
-        let is_struct_union_definition = if let Some(last_specifier) = specifiers.last() {
-            matches!(&last_specifier.type_specifier, TypeSpecifier::Record(_, _, Some(_)))
+        // Special handling for struct/union/enum declarations
+        // Check if the last specifier is a struct/union/enum specifier (definition or forward declaration)
+        let is_record_enum_specifier = if let Some(last_specifier) = specifiers.last() {
+            matches!(&last_specifier.type_specifier,
+                     TypeSpecifier::Record(_, _, _) |
+                     TypeSpecifier::Enum(_, _))
         } else {
             false
         };
 
-        // If we have a struct/union definition, we need to check if there are declarators following
+        // If we have a struct/union/enum specifier, we need to check if there are declarators following
         // The logic should be:
-        // - If next token is semicolon: treat as pure struct/union definition
+        // - If next token is semicolon: treat as record/enum declaration (definition or forward)
         // - If next token is declarator-starting token: continue with normal declaration parsing
-        if is_struct_union_definition {
+        if is_record_enum_specifier {
             if self.matches(&[TokenKind::Semicolon]) {
-                // This is a pure struct/union definition like "struct foo { ... };"
-                // Consume the semicolon and create declaration with no declarators
+                // This is either:
+                // 1. A pure struct/union/enum definition like "struct foo { ... };" or "enum E { ... };"
+                // 2. A forward struct/union/enum declaration like "struct foo;" or "enum E;"
+                // In both cases, consume the semicolon and create declaration with no declarators
                 self.expect(TokenKind::Semicolon)?;
                 
                 let declaration_data = DeclarationData {
@@ -1051,12 +1055,12 @@ TokenKind::Generic => self.parse_generic_selection(),
                 let node = self
                     .ast
                     .push_node(Node::new(NodeKind::Declaration(declaration_data), span));
-                debug!("parse_declaration: successfully parsed struct/union definition, node_id={}", node.get());
+                debug!("parse_declaration: successfully parsed record/enum declaration, node_id={}", node.get());
                 return Ok(node);
             } else {
-                // This is a struct/union definition with declarators
-                // Continue with normal declaration parsing
-                debug!("parse_declaration: struct/union definition with declarators, continuing with normal parsing");
+                // This is a record/enum specifier with declarators
+                // Continue with normal declaration parsing (e.g., "struct foo { ... } var;")
+                debug!("parse_declaration: record/enum specifier with declarators, continuing with normal parsing");
             }
         }
 
@@ -1071,9 +1075,9 @@ TokenKind::Generic => self.parse_generic_selection(),
                 Some(TokenKind::Identifier(_)) | Some(TokenKind::Star) | Some(TokenKind::LeftParen))
         };
         
-        // If no declarators and this is not a struct/union definition, it's an error
+        // If no declarators and this is not a record/enum definition, it's an error
         if !has_declarators {
-            // Check if this looks like a struct/union definition
+            // Check if this looks like a record/enum definition
             // by looking at the last parsed specifier
             if let Some(last_specifier) = specifiers.last() {
                 match &last_specifier.type_specifier {
@@ -1081,14 +1085,24 @@ TokenKind::Generic => self.parse_generic_selection(),
                         // This should not happen due to the check above, but just in case
                         self.current_idx = initial_idx;
                         self.diag.diagnostics.truncate(saved_diagnostic_count);
-                        debug!("parse_declaration: struct/union definition with no declarators and no semicolon, rolled back to {}", initial_idx);
+                        debug!("parse_declaration: record definition with no declarators and no semicolon, rolled back to {}", initial_idx);
                         return Err(ParseError::SyntaxError {
                             message: "Expected ';' after struct/union definition".to_string(),
                             location: self.current_token()?.location,
                         });
                     }
+                    TypeSpecifier::Enum(_tag, _definition) => {
+                        // This should not happen due to the check above, but just in case
+                        self.current_idx = initial_idx;
+                        self.diag.diagnostics.truncate(saved_diagnostic_count);
+                        debug!("parse_declaration: enum definition with no declarators and no semicolon, rolled back to {}", initial_idx);
+                        return Err(ParseError::SyntaxError {
+                            message: "Expected ';' after enum definition".to_string(),
+                            location: self.current_token()?.location,
+                        });
+                    }
                     _ => {
-                        // Not a struct/union definition, this is likely an error
+                        // Not a record/enum definition, this is likely an error
                         // But let's rollback and let the statement parser handle it
                         self.current_idx = initial_idx;
                         self.diag.diagnostics.truncate(saved_diagnostic_count);

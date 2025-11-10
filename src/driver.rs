@@ -227,6 +227,7 @@ impl CompilerDriver {
         // print parser AST to check
         if self.config.dump_parser {
             self.dump_parser(&ast);
+            return Ok(());
         }
 
         // 5. Semantic analysis phase

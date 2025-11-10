@@ -570,14 +570,20 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             }
             TokenKind::LeftParen => {
                 self.advance();
-                let expr = self.parse_expression(BindingPower::MIN)?;
-                self.expect(TokenKind::RightParen)?;
-                match expr {
-                    ParseExprOutput::Expression(node) => Ok(node),
-                    _ => Err(ParseError::SyntaxError {
-                        message: "Expected expression in parentheses".to_string(),
-                        location: token.location,
-                    }),
+                // Check if this is a cast expression by looking ahead for a type name
+                if self.is_cast_expression_start() {
+                    return self.parse_cast_expression();
+                } else {
+                    // Regular parenthesized expression
+                    let expr = self.parse_expression(BindingPower::MIN)?;
+                    self.expect(TokenKind::RightParen)?;
+                    match expr {
+                        ParseExprOutput::Expression(node) => Ok(node),
+                        _ => Err(ParseError::SyntaxError {
+                            message: "Expected expression in parentheses".to_string(),
+                            location: token.location,
+                        }),
+                    }
                 }
             }
             TokenKind::Plus
@@ -3067,5 +3073,144 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         debug!("is_type_name: checking symbol {:?}, result={}, typedef_names={:?}",
                symbol, result, self.typedef_names);
         result
+    }
+
+    /// Check if a cast expression starts at the current position
+    /// This is called after consuming an opening parenthesis
+    fn is_cast_expression_start(&self) -> bool {
+        debug!("is_cast_expression_start: checking at position {}, token {:?}", self.current_idx, self.current_token_kind());
+        
+        if let Some(token) = self.try_current_token() {
+            match token.kind {
+                // Direct type specifiers
+                TokenKind::Void
+                | TokenKind::Char
+                | TokenKind::Short
+                | TokenKind::Int
+                | TokenKind::Long
+                | TokenKind::Float
+                | TokenKind::Double
+                | TokenKind::Signed
+                | TokenKind::Unsigned
+                | TokenKind::Bool
+                | TokenKind::Complex
+                | TokenKind::Atomic
+                | TokenKind::Struct
+                | TokenKind::Union
+                | TokenKind::Enum
+                | TokenKind::Const
+                | TokenKind::Volatile
+                | TokenKind::Restrict => {
+                    debug!("is_cast_expression_start: found direct type specifier: {:?}", token.kind);
+                    true
+                }
+                TokenKind::Star => {
+                    // Could be a pointer to a type, look further
+                    debug!("is_cast_expression_start: found Star, looking ahead");
+                    self.is_cast_expression_start_advanced()
+                }
+                TokenKind::Identifier(symbol) => {
+                    // Could be a typedef name
+                    let is_type = self.is_type_name(symbol);
+                    debug!("is_cast_expression_start: found identifier {:?}, is_type={}", symbol, is_type);
+                    is_type
+                }
+                _ => false,
+            }
+        } else {
+            false
+        }
+    }
+
+    /// Helper for more complex cast expression detection
+    fn is_cast_expression_start_advanced(&self) -> bool {
+        // Look ahead to see if we have a type pattern
+        let mut idx = self.current_idx;
+        
+        // Skip stars (pointers)
+        while let Some(token) = self.tokens.get(idx) {
+            if token.kind == TokenKind::Star {
+                idx += 1;
+                continue;
+            }
+            break;
+        }
+
+        // After pointers, look for type qualifiers
+        while let Some(token) = self.tokens.get(idx) {
+            match token.kind {
+                TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Atomic => {
+                    idx += 1;
+                    continue;
+                }
+                _ => break,
+            }
+        }
+
+        // Finally, check for a type name
+        if let Some(token) = self.tokens.get(idx) {
+            match token.kind {
+                TokenKind::Void
+                | TokenKind::Char
+                | TokenKind::Short
+                | TokenKind::Int
+                | TokenKind::Long
+                | TokenKind::Float
+                | TokenKind::Double
+                | TokenKind::Signed
+                | TokenKind::Unsigned
+                | TokenKind::Bool
+                | TokenKind::Complex
+                | TokenKind::Struct
+                | TokenKind::Union
+                | TokenKind::Enum
+                | TokenKind::Identifier(_) => true,
+                _ => false,
+            }
+        } else {
+            false
+        }
+    }
+
+    /// Parse a cast expression: (type-name) expression
+    fn parse_cast_expression(&mut self) -> Result<NodeRef, ParseError> {
+        debug!("parse_cast_expression: starting at position {}, token {:?}", self.current_idx, self.current_token_kind());
+        
+        // Parse the type name
+        let type_ref = self.parse_type_name()?;
+        
+        // Expect closing parenthesis
+        let right_paren_token = self.expect(TokenKind::RightParen)?;
+        debug!("parse_cast_expression: parsed type, now at position {}", self.current_idx);
+        
+        // Parse the expression being cast
+        let expr_result = self.parse_expression(BindingPower::CAST)?;
+        let expr_node = match expr_result {
+            ParseExprOutput::Expression(node) => {
+                debug!("parse_cast_expression: parsed operand expression");
+                node
+            }
+            _ => {
+                return Err(ParseError::SyntaxError {
+                    message: "Expected expression after cast".to_string(),
+                    location: right_paren_token.location,
+                });
+            }
+        };
+
+        let span = SourceSpan::new(
+            right_paren_token.location.start, // Start from the opening paren
+            self.ast.get_node(expr_node).span.end,
+        );
+
+        let node = self.ast.push_node(Node {
+            kind: NodeKind::Cast(type_ref, expr_node),
+            span,
+            resolved_type: Cell::new(None),
+            resolved_symbol: Cell::new(None),
+        });
+        
+        debug!("parse_cast_expression: successfully parsed cast expression");
+        Ok(node)
     }
 }

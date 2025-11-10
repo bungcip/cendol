@@ -462,7 +462,7 @@ impl<'src> Preprocessor<'src> {
 
         let mut result_tokens = Vec::new();
 
-        // Process tokens
+        // Process tokens with string literal concatenation
         while let Some(token) = self.lex_token() {
             if self.is_currently_skipping() {
                 // Skip tokens when in conditional compilation skip mode
@@ -489,6 +489,9 @@ impl<'src> Preprocessor<'src> {
             }
         }
 
+        // Perform string literal concatenation
+        result_tokens = self.concatenate_string_literals(result_tokens);
+
         // Add EOF token
         result_tokens.push(PPToken {
             kind: PPTokenKind::Eof,
@@ -512,6 +515,66 @@ impl<'src> Preprocessor<'src> {
     /// Check if we are currently skipping tokens
     fn is_currently_skipping(&self) -> bool {
         self.skipping || self.conditional_stack.iter().any(|info| info.was_skipping)
+    }
+
+    /// Concatenate adjacent string literals (C11 6.4.5)
+    fn concatenate_string_literals(&self, tokens: Vec<PPToken>) -> Vec<PPToken> {
+        let mut result = Vec::new();
+        let mut i = 0;
+        
+        while i < tokens.len() {
+            if let PPTokenKind::StringLiteral(current_symbol) = tokens[i].kind {
+                // Start collecting string literals
+                let current_str = current_symbol.as_str();
+                let mut concatenated_content = String::new();
+                let start_location = tokens[i].location;
+                
+                // Get the content of the first string literal (removing quotes)
+                if current_str.starts_with('"') && current_str.ends_with('"') {
+                    let content = &current_str[1..current_str.len() - 1];
+                    concatenated_content.push_str(content);
+                } else {
+                    // Invalid string literal format, just push as-is
+                    result.push(tokens[i].clone());
+                    i += 1;
+                    continue;
+                }
+                
+                // Look ahead for more string literals
+                let mut j = i + 1;
+                while j < tokens.len() {
+                    if let PPTokenKind::StringLiteral(next_symbol) = tokens[j].kind {
+                        let next_str = next_symbol.as_str();
+                        if next_str.starts_with('"') && next_str.ends_with('"') {
+                            let content = &next_str[1..next_str.len() - 1];
+                            concatenated_content.push_str(content);
+                            j += 1;
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                
+                // Create properly formatted concatenated string literal
+                let final_string = format!("\"{}\"", concatenated_content);
+                let concatenated_symbol = Symbol::new(&final_string);
+                result.push(PPToken {
+                    kind: PPTokenKind::StringLiteral(concatenated_symbol),
+                    flags: tokens[i].flags,
+                    location: start_location,
+                    length: final_string.len() as u16,
+                });
+                
+                i = j;
+            } else {
+                result.push(tokens[i].clone());
+                i += 1;
+            }
+        }
+        
+        result
     }
 
     /// Set the skipping state

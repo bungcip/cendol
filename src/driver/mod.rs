@@ -1,12 +1,13 @@
 // Compiler driver module
 
 use clap::{Args, Parser as CliParser};
+use itertools::Itertools;
 use log::debug;
 use std::fs;
 use std::path::{Path, PathBuf};
 use target_lexicon::Triple;
 
-use crate::ast::Ast;
+use crate::ast::{Ast, NodeKind};
 use crate::ast_dumper::{AstDumper, DumpConfig};
 use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::LangOptions;
@@ -32,6 +33,10 @@ pub struct Cli {
     /// Enable verbose diagnostic output
     #[clap(short, long)]
     pub verbose: bool,
+
+    /// Dump parser state
+    #[clap(long)]
+    pub dump_parser: bool,
 
     /// Generate HTML AST dump
     #[clap(long)]
@@ -67,6 +72,7 @@ pub struct CompileConfig {
     pub input_files: Vec<PathBuf>,
     pub output_path: Option<PathBuf>,
     pub dump_ast: bool,
+    pub dump_parser: bool,
     pub preprocess_only: bool,
     pub verbose: bool,
     pub preprocessor: PreprocessorConfig,
@@ -104,6 +110,7 @@ impl CompilerDriver {
             input_files: cli.input_files,
             output_path: cli.output,
             dump_ast: cli.dump_ast,
+            dump_parser: cli.dump_parser,
             preprocess_only: cli.preprocess_only,
             verbose: cli.verbose,
             include_paths: cli.include_paths,
@@ -217,6 +224,11 @@ impl CompilerDriver {
             return Ok(()); // Stop processing this file
         }
 
+        // print parser AST to check
+        if self.config.dump_parser {
+            self.dump_parser(&ast);
+        }
+
         // 5. Semantic analysis phase
         let symbol_table = {
             let mut analyzer = SemanticAnalyzer::new(&mut ast, &mut self.diagnostics);
@@ -307,6 +319,69 @@ impl CompilerDriver {
         Ok(())
     }
 
+    fn dump_parser(&self, ast: &Ast){
+        for (i, node) in ast.nodes.iter().enumerate() {
+            print!("{}: ", i + 1);
+            self.dump_parser_kind(&node.kind);
+        }
+    }
+
+    fn dump_parser_kind(&self, kind: &NodeKind) {
+        match kind {
+            NodeKind::TranslationUnit(tu) => {
+                println!("TranslationUnit([{}])", tu.iter().map(|&r| r.get().to_string()).join(", "));
+            }
+            NodeKind::LiteralInt(i) => println!("LiteralInt({})", i),
+            NodeKind::LiteralFloat(f) => println!("LiteralFloat({})", f),
+            NodeKind::LiteralString(s) => println!("LiteralString({})", s),
+            NodeKind::LiteralChar(c) => println!("LiteralChar('{}')", c.escape_default()),
+            NodeKind::Ident(sym, _) => println!("Ident({})", sym),
+            NodeKind::UnaryOp(op, operand) => println!("UnaryOp({:?}, {})", op, operand.get()),
+            NodeKind::BinaryOp(op, left, right) => println!("BinaryOp({:?}, {}, {})", op, left.get(), right.get()),
+            NodeKind::TernaryOp(cond, then, else_) => println!("TernaryOp({}, {}, {})", cond.get(), then.get(), else_.get()),
+            NodeKind::PostIncrement(expr) => println!("PostIncrement({})", expr.get()),
+            NodeKind::PostDecrement(expr) => println!("PostDecrement({})", expr.get()),
+            NodeKind::Assignment(op, lhs, rhs) => println!("Assignment({:?}, {}, {})", op, lhs.get(), rhs.get()),
+            NodeKind::FunctionCall(func, args) => println!("FunctionCall({}, [{}])", func.get(), args.iter().map(|&r| r.get().to_string()).join(", ")),
+            NodeKind::MemberAccess(obj, field, is_arrow) => println!("MemberAccess({}, {}, {})", obj.get(), field, if *is_arrow { "->" } else { "." }),
+            NodeKind::IndexAccess(array, index) => println!("IndexAccess({}, {})", array.get(), index.get()),
+            NodeKind::Cast(ty, expr) => println!("Cast({}, {})", ty.get(), expr.get()),
+            NodeKind::SizeOfExpr(expr) => println!("SizeOfExpr({})", expr.get()),
+            NodeKind::SizeOfType(ty) => println!("SizeOfType({})", ty.get()),
+            NodeKind::AlignOf(ty) => println!("AlignOf({})", ty.get()),
+            NodeKind::CompoundLiteral(ty, init) => println!("CompoundLiteral({}, {})", ty.get(), init.get()),
+            NodeKind::GenericSelection(ctrl, assocs) => println!("GenericSelection({}, {} associations)", ctrl.get(), assocs.len()),
+            NodeKind::VaArg(va_list, ty) => println!("VaArg({}, {})", va_list.get(), ty.get()),
+            NodeKind::CompoundStatement(stmts) => println!("CompoundStatement([{}])", stmts.iter().map(|&r| r.get().to_string()).join(", ")),
+            NodeKind::If(if_stmt) => println!("If(condition={}, then={}, else={})", if_stmt.condition.get(), if_stmt.then_branch.get(), if_stmt.else_branch.map(|r| r.get().to_string()).unwrap_or("none".to_string())),
+            NodeKind::While(while_stmt) => println!("While(condition={}, body={})", while_stmt.condition.get(), while_stmt.body.get()),
+            NodeKind::DoWhile(body, cond) => println!("DoWhile(body={}, condition={})", body.get(), cond.get()),
+            NodeKind::For(for_stmt) => println!("For(init={}, condition={}, increment={}, body={})", for_stmt.init.map(|r| r.get().to_string()).unwrap_or("none".to_string()), for_stmt.condition.map(|r| r.get().to_string()).unwrap_or("none".to_string()), for_stmt.increment.map(|r| r.get().to_string()).unwrap_or("none".to_string()), for_stmt.body.get()),
+            NodeKind::Return(expr) => println!("Return({})", expr.map(|r| r.get().to_string()).unwrap_or("void".to_string())),
+            NodeKind::Break => println!("Break"),
+            NodeKind::Continue => println!("Continue"),
+            NodeKind::Goto(label) => println!("Goto({})", label),
+            NodeKind::Label(label, stmt) => println!("Label({}, {})", label, stmt.get()),
+            NodeKind::Switch(cond, body) => println!("Switch(condition={}, body={})", cond.get(), body.get()),
+            NodeKind::Case(expr, stmt) => println!("Case({}, {})", expr.get(), stmt.get()),
+            NodeKind::CaseRange(start, end, stmt) => println!("CaseRange({}, {}, {})", start.get(), end.get(), stmt.get()),
+            NodeKind::Default(stmt) => println!("Default({})", stmt.get()),
+            NodeKind::ExpressionStatement(expr) => println!("ExpressionStatement({})", expr.map(|r| r.get().to_string()).unwrap_or("none".to_string())),
+            NodeKind::EmptyStatement => println!("EmptyStatement"),
+            NodeKind::Declaration(decl) =>{
+                println!("Declaration({} specifiers, init_declarators = [{}])", 
+                    decl.specifiers.len(), 
+                    decl.init_declarators.iter().map(|x|{
+                        format!("{:?} {:?}", x.declarator, x.initializer)
+                    }).join(",").to_string()
+                );
+            },
+            NodeKind::FunctionDef(func_def) => println!("FunctionDef({} specifiers, body={})", func_def.specifiers.len(), func_def.body.get()),
+            NodeKind::EnumConstant(name, value) => println!("EnumConstant({}, {})", name, value.map(|r| r.get().to_string()).unwrap_or("auto".to_string())),
+            NodeKind::StaticAssert(cond, msg) => println!("StaticAssert(condition={}, message={})", cond.get(), msg),
+        }
+    }
+    
     fn report_errors(&self) -> Result<(), CompilerError> {
         if self.diagnostics.has_errors() {
             let formatter = crate::diagnostic::ErrorFormatter::default();

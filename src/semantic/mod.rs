@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::num::NonZeroU32;
 
 use crate::ast::*;
-use crate::diagnostic::*;
 use log::debug;
 
 /// Scope ID for efficient scope references
@@ -10,7 +9,7 @@ use log::debug;
 pub struct ScopeId(NonZeroU32);
 
 impl ScopeId {
-    pub const GLOBAL: Self = Self(unsafe { NonZeroU32::new_unchecked(1) });
+    pub const GLOBAL: Self = Self(NonZeroU32::new(1).unwrap());
 
     pub fn new(id: u32) -> Option<Self> {
         NonZeroU32::new(id).map(Self)
@@ -49,6 +48,12 @@ pub struct SymbolTable {
     next_scope_id: u32,
 }
 
+impl Default for SymbolTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SymbolTable {
     pub fn new() -> Self {
         let mut table = SymbolTable {
@@ -82,7 +87,10 @@ impl SymbolTable {
 
         self.scopes.push(new_scope);
         self.current_scope_id = new_scope_id;
-        debug!("SymbolTable: Pushed scope. New current_scope_id: {}", self.current_scope_id.get());
+        debug!(
+            "SymbolTable: Pushed scope. New current_scope_id: {}",
+            self.current_scope_id.get()
+        );
         new_scope_id
     }
 
@@ -117,7 +125,10 @@ impl SymbolTable {
         }
 
         self.current_scope_id = scope_id;
-        debug!("SymbolTable: Pushed scope with ID. New current_scope_id: {}", self.current_scope_id.get());
+        debug!(
+            "SymbolTable: Pushed scope with ID. New current_scope_id: {}",
+            self.current_scope_id.get()
+        );
         scope_id
     }
 
@@ -126,7 +137,11 @@ impl SymbolTable {
         let current_scope = &self.scopes[current_scope_id_before_pop.get() as usize - 1];
         if let Some(parent) = current_scope.parent {
             self.current_scope_id = parent;
-            debug!("SymbolTable: Popped scope. Old current_scope_id: {}, New current_scope_id: {}", current_scope_id_before_pop.get(), self.current_scope_id.get());
+            debug!(
+                "SymbolTable: Popped scope. Old current_scope_id: {}, New current_scope_id: {}",
+                current_scope_id_before_pop.get(),
+                self.current_scope_id.get()
+            );
             Some(parent)
         } else {
             debug!("SymbolTable: Attempted to pop global scope. No change.");
@@ -140,7 +155,10 @@ impl SymbolTable {
 
     pub fn set_current_scope(&mut self, scope_id: ScopeId) {
         self.current_scope_id = scope_id;
-        debug!("SymbolTable: Set current_scope_id to {}", self.current_scope_id.get());
+        debug!(
+            "SymbolTable: Set current_scope_id to {}",
+            self.current_scope_id.get()
+        );
     }
 
     pub fn get_scope(&self, scope_id: ScopeId) -> &Scope {
@@ -216,7 +234,10 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
     }
 
     pub fn analyze(&mut self) -> SemanticOutput {
-        debug!("Starting semantic analysis with {} nodes", self.ast.nodes.len());
+        debug!(
+            "Starting semantic analysis with {} nodes",
+            self.ast.nodes.len()
+        );
 
         // Collect symbols
         self.collect_symbols();
@@ -232,71 +253,98 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
 
     fn collect_symbols(&mut self) {
         // Check if we have a root node to start traversal from
-        let Some(root_node) = self.ast.get_root_node() else {
+        let Some(_root_node) = self.ast.get_root_node() else {
             debug!("No root node found, skipping symbol collection");
             return;
         };
-        
-        // Get the root node reference for stack-based traversal
-        let root_node_ref = self.ast.root.unwrap();
 
-        debug!("Starting symbol collection from root node: {}", root_node_ref.get());
+        // Get the root node reference for stack-based traversal
+        let _root_node_ref = self.ast.root.unwrap();
+
+        debug!(
+            "Starting symbol collection from root node: {}",
+            _root_node_ref.get()
+        );
 
         // Collect function definitions and ONLY global declarations (top-level)
         let mut function_defs = Vec::new();
         let mut global_declarations = Vec::new();
-        
+
         // Get the translation unit children to identify top-level items
-        let root_node_children = self.get_child_nodes(root_node_ref);
-        debug!("Translation unit has {} top-level items", root_node_children.len());
-        
+        let root_node_children = self.get_child_nodes(_root_node_ref);
+        debug!(
+            "Translation unit has {} top-level items",
+            root_node_children.len()
+        );
+
         for top_level_node_ref in &root_node_children {
             let node = self.ast.get_node(*top_level_node_ref);
-            
+
             match &node.kind {
                 NodeKind::FunctionDef(func_def) => {
-                    debug!("Found top-level function definition at node {}", top_level_node_ref.get());
+                    debug!(
+                        "Found top-level function definition at node {}",
+                        top_level_node_ref.get()
+                    );
                     function_defs.push((*top_level_node_ref, func_def.clone(), node.span));
                 }
                 NodeKind::Declaration(decl) => {
-                    debug!("Found top-level declaration at node {} with {} declarators",
-                           top_level_node_ref.get(), decl.init_declarators.len());
+                    debug!(
+                        "Found top-level declaration at node {} with {} declarators",
+                        top_level_node_ref.get(),
+                        decl.init_declarators.len()
+                    );
                     global_declarations.push((*top_level_node_ref, decl.clone(), node.span));
                 }
                 _ => {
-                    debug!("Skipping non-declaration, non-function top-level item: {:?}",
-                           std::mem::discriminant(&node.kind));
+                    debug!(
+                        "Skipping non-declaration, non-function top-level item: {:?}",
+                        std::mem::discriminant(&node.kind)
+                    );
                 }
             }
         }
 
-        debug!("Symbol collection: found {} top-level function definitions and {} top-level declarations",
-               function_defs.len(), global_declarations.len());
-        
+        debug!(
+            "Symbol collection: found {} top-level function definitions and {} top-level declarations",
+            function_defs.len(),
+            global_declarations.len()
+        );
+
         // Process function definitions with their local declarations
         for (node_ref, func_def, span) in function_defs {
             debug!("Processing function definition at node {}", node_ref.get());
-            
+
             // First, process the function and its parameters
             let function_scope_id = self.collect_function_and_params(&func_def, span);
-            
+
             // Now collect local declarations with proper scope management
             self.collect_local_declarations(func_def.body, function_scope_id);
-            
+
             // Pop the function scope after processing all its contents
             if self.symbol_table.current_scope() == function_scope_id {
                 self.symbol_table.pop_scope();
-                debug!("Popped function scope {} after processing function", function_scope_id.get());
+                debug!(
+                    "Popped function scope {} after processing function",
+                    function_scope_id.get()
+                );
             }
         }
-        
+
         // Process only global declarations (those at translation unit level)
         for (node_ref, decl, span) in global_declarations {
-            debug!("Processing global declaration at node {} with {} declarators", node_ref.get(), decl.init_declarators.len());
+            debug!(
+                "Processing global declaration at node {} with {} declarators",
+                node_ref.get(),
+                decl.init_declarators.len()
+            );
             self.collect_declaration_symbols(&decl, span);
         }
-        
-        debug!("Symbol collection complete. Found {} symbols", self.symbol_table.entries.len());
+
+        debug!(
+            "Symbol collection complete. Found {} symbols",
+            self.symbol_table.entries.len()
+        );
     }
 
     fn get_safe_type_ref(&mut self) -> TypeRef {
@@ -315,17 +363,29 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
         }
     }
 
-    fn collect_function_and_params(&mut self, func_def: &FunctionDefData, span: SourceSpan) -> ScopeId {
-        debug!("collect_function_and_params called with declarator: {:?}", func_def.declarator);
-        
+    fn collect_function_and_params(
+        &mut self,
+        func_def: &FunctionDefData,
+        span: SourceSpan,
+    ) -> ScopeId {
+        debug!(
+            "collect_function_and_params called with declarator: {:?}",
+            func_def.declarator
+        );
+
         let (name, params) = self.extract_function_info(&func_def.declarator);
         let name = name.unwrap_or_else(|| Symbol::new("<anonymous>"));
 
-        debug!("Extracted function name: {}, parameters: {:?}", name.as_str(), params.len());
+        debug!(
+            "Extracted function name: {}, parameters: {:?}",
+            name.as_str(),
+            params.len()
+        );
 
         // Check for redeclaration
-        if let Some(existing_entry_ref) =
-            self.symbol_table.lookup_symbol_in_scope(name, self.symbol_table.current_scope())
+        if let Some(existing_entry_ref) = self
+            .symbol_table
+            .lookup_symbol_in_scope(name, self.symbol_table.current_scope())
         {
             let existing_entry = self.symbol_table.get_symbol_entry(existing_entry_ref);
             self.diag.report_error(SemanticError::Redefinition {
@@ -345,11 +405,16 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
 
         // Get a safe type reference
         let safe_type_ref = self.get_safe_type_ref();
-        
+
         // Add parameters to function scope FIRST
         for (i, param) in params.iter().enumerate() {
             if let Some(param_name) = param.name {
-                debug!("Adding function parameter {}: '{}' to function scope {}", i, param_name.as_str(), function_scope_id.get());
+                debug!(
+                    "Adding function parameter {}: '{}' to function scope {}",
+                    i,
+                    param_name.as_str(),
+                    function_scope_id.get()
+                );
                 let param_entry = SymbolEntry {
                     name: param_name,
                     kind: SymbolKind::Variable {
@@ -391,37 +456,49 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
             is_referenced: false,
             is_completed: true,
         };
-        debug!("Adding function '{}' to global scope (function scope will be {})",
-               name.as_str(), function_scope_id.get());
+        debug!(
+            "Adding function '{}' to global scope (function scope will be {})",
+            name.as_str(),
+            function_scope_id.get()
+        );
         self.symbol_table.add_symbol(name, func_entry);
-        
+
         // Store the function scope ID so it can be used during type resolution
         // The scope will be popped when we finish processing this function
-        debug!("Function scope {} will be used for function body processing", function_scope_id.get());
+        debug!(
+            "Function scope {} will be used for function body processing",
+            function_scope_id.get()
+        );
         function_scope_id
     }
 
     fn collect_local_declarations(&mut self, body_node: NodeRef, function_scope_id: ScopeId) {
-        debug!("Collecting local declarations for function scope {}", function_scope_id.get());
-        
+        debug!(
+            "Collecting local declarations for function scope {}",
+            function_scope_id.get()
+        );
+
         // Ensure we're in the function scope
         self.symbol_table.set_current_scope(function_scope_id);
-        
+
         // Traverse the function body with proper scope management
         let mut stack = vec![(body_node, function_scope_id)];
         let mut visited = std::collections::HashSet::new();
-        
+
         while let Some((node_ref, expected_scope)) = stack.pop() {
             if visited.contains(&node_ref.get()) {
                 continue;
             }
             visited.insert(node_ref.get());
-            
+
             let node = self.ast.get_node(node_ref);
-            
+
             match &node.kind {
                 NodeKind::Declaration(decl) => {
-                    debug!("Found local declaration with {} declarators", decl.init_declarators.len());
+                    debug!(
+                        "Found local declaration with {} declarators",
+                        decl.init_declarators.len()
+                    );
                     let decl_clone = decl.clone();
                     let span = node.span;
                     self.collect_declaration_symbols(&decl_clone, span);
@@ -430,27 +507,35 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                 NodeKind::For(for_stmt) => {
                     debug!("Found for loop, checking for declaration in initialization");
                     debug!("For loop has init: {}", for_stmt.init.is_some());
-                    
+
                     // Handle for loop with declaration in init
                     if let Some(init_node_ref) = for_stmt.init {
                         // Extract the node information first
                         let init_node = self.ast.get_node(init_node_ref);
-                        debug!("Init node kind: {:?}", std::mem::discriminant(&init_node.kind));
+                        debug!(
+                            "Init node kind: {:?}",
+                            std::mem::discriminant(&init_node.kind)
+                        );
                         let node_kind = init_node.kind.clone();
                         let span = init_node.span;
-                        
+
                         let _ = init_node; // Drop the borrow
-                        
+
                         if let NodeKind::Declaration(decl) = node_kind {
-                            debug!("For loop has declaration in init, processing with special scope");
-                            
+                            debug!(
+                                "For loop has declaration in init, processing with special scope"
+                            );
+
                             // Create a scope for the for loop variable that covers the entire loop
                             let for_scope_id = self.symbol_table.push_scope(ScopeKind::Block);
-                            debug!("Created for loop scope {} for loop variable", for_scope_id.get());
-                            
+                            debug!(
+                                "Created for loop scope {} for loop variable",
+                                for_scope_id.get()
+                            );
+
                             // Process the for loop body in this scope
                             stack.push((for_stmt.body, for_scope_id));
-                            
+
                             // Add the for loop init declaration to the new scope first
                             self.collect_declaration_symbols(&decl, span);
                         } else {
@@ -474,7 +559,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                     // Create a new block scope for this compound statement
                     debug!("Creating block scope for compound statement in function");
                     let block_scope_id = self.symbol_table.push_scope(ScopeKind::Block);
-                    
+
                     // Process all children in the new block scope
                     for child in nodes.iter().rev() {
                         stack.push((*child, block_scope_id));
@@ -494,10 +579,11 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
     fn collect_declaration_symbols(&mut self, decl: &DeclarationData, span: SourceSpan) {
         for init_declarator in &decl.init_declarators {
             // Use extract_identifier to handle all declarator types (Identifier, Pointer, Array, etc.)
-            if let Some(name) = self.extract_identifier(&init_declarator.declarator) {
+            if let Some(name) = Self::extract_identifier(&init_declarator.declarator) {
                 // Check for redeclaration
-                if let Some(existing_entry_ref) =
-                    self.symbol_table.lookup_symbol_in_scope(name, self.symbol_table.current_scope())
+                if let Some(existing_entry_ref) = self
+                    .symbol_table
+                    .lookup_symbol_in_scope(name, self.symbol_table.current_scope())
                 {
                     let existing_entry = self.symbol_table.get_symbol_entry(existing_entry_ref);
                     self.diag.report_error(SemanticError::Redefinition {
@@ -528,69 +614,92 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                     is_referenced: false,
                     is_completed: true,
                 };
-                debug!("Adding variable '{}' to scope {}", name.as_str(), self.symbol_table.current_scope().get());
+                debug!(
+                    "Adding variable '{}' to scope {}",
+                    name.as_str(),
+                    self.symbol_table.current_scope().get()
+                );
                 self.symbol_table.add_symbol(name, entry);
             } else {
-                debug!("No identifier found in declarator: {:?}", std::mem::discriminant(&init_declarator.declarator));
+                debug!(
+                    "No identifier found in declarator: {:?}",
+                    std::mem::discriminant(&init_declarator.declarator)
+                );
             }
         }
     }
 
-    fn extract_function_info(&self, declarator: &Declarator) -> (Option<Symbol>, Vec<FunctionParameter>) {
+    fn extract_function_info(
+        &self,
+        declarator: &Declarator,
+    ) -> (Option<Symbol>, Vec<FunctionParameter>) {
         match declarator {
             Declarator::Function(base, params) => {
-                let name = self.extract_identifier(base);
-                debug!("Extracting function info: name={:?}, params={}",
-                    name.as_ref().map(|s| s.as_str()), params.len());
-                
-                let func_params: Vec<FunctionParameter> = params.iter().enumerate().filter_map(|(i, param)| {
-                    debug!("Processing param {}: declarator={:?}", i, param.declarator);
-                    if let Some(decl) = &param.declarator {
-                        let param_name = self.extract_identifier(decl);
-                        debug!("  Extracted param name: {:?}", param_name.as_ref().map(|s| s.as_str()));
-                        param_name.map(|name| FunctionParameter {
-                            param_type: TypeRef::new(1).unwrap(),
-                            name: Some(name),
-                        })
-                    } else {
-                        debug!("  No declarator for param {}", i);
-                        None
-                    }
-                }).collect();
+                let name = Self::extract_identifier(base);
+                debug!(
+                    "Extracting function info: name={:?}, params={}",
+                    name.as_ref().map(|s| s.as_str()),
+                    params.len()
+                );
+
+                let func_params: Vec<FunctionParameter> = params
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, param)| {
+                        debug!("Processing param {}: declarator={:?}", i, param.declarator);
+                        if let Some(decl) = &param.declarator {
+                            let param_name = Self::extract_identifier(decl);
+                            debug!(
+                                "  Extracted param name: {:?}",
+                                param_name.as_ref().map(|s| s.as_str())
+                            );
+                            param_name.map(|name| FunctionParameter {
+                                param_type: TypeRef::new(1).unwrap(),
+                                name: Some(name),
+                            })
+                        } else {
+                            debug!("  No declarator for param {}", i);
+                            None
+                        }
+                    })
+                    .collect();
                 debug!("Final function params: {}", func_params.len());
                 (name, func_params)
             }
             _ => {
-                debug!("Not a function declarator: {:?}", std::mem::discriminant(declarator));
-                (self.extract_identifier(declarator), Vec::new())
+                debug!(
+                    "Not a function declarator: {:?}",
+                    std::mem::discriminant(declarator)
+                );
+                (Self::extract_identifier(declarator), Vec::new())
             }
         }
     }
 
-    fn extract_identifier(&self, declarator: &Declarator) -> Option<Symbol> {
+    fn extract_identifier(declarator: &Declarator) -> Option<Symbol> {
         match declarator {
             Declarator::Identifier(name, _, _) => {
                 debug!("Found identifier: {}", name.as_str());
                 Some(*name)
-            },
+            }
             Declarator::Pointer(_, Some(base)) => {
                 debug!("Pointer to base: recursing");
-                self.extract_identifier(base)
-            },
+                Self::extract_identifier(base)
+            }
             Declarator::Array(base, _) => {
                 debug!("Array of base: recursing");
-                self.extract_identifier(base)
-            },
+                Self::extract_identifier(base)
+            }
             Declarator::Function(base, _) => {
                 debug!("Function returning base: recursing");
-                self.extract_identifier(base)
-            },
+                Self::extract_identifier(base)
+            }
             Declarator::Abstract => {
                 debug!("Abstract declarator: no identifier");
                 None
-            },
-            other => {
-                debug!("Other declarator type: {:?}", std::mem::discriminant(other));
+            }
+            _ => {
+                debug!("Other declarator type: no identifier");
                 None
             }
         }
@@ -598,7 +707,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
 
     fn get_child_nodes(&self, node_ref: NodeRef) -> Vec<NodeRef> {
         let node = self.ast.get_node(node_ref);
-        
+
         let children = match &node.kind {
             NodeKind::TranslationUnit(nodes) => {
                 debug!("TranslationUnit has {} children", nodes.len());
@@ -655,29 +764,39 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
             NodeKind::SizeOfExpr(expr) => vec![*expr],
             NodeKind::TernaryOp(cond, then_expr, else_expr) => vec![*cond, *then_expr, *else_expr],
             _ => {
-                debug!("No children for discriminant: {:?}", std::mem::discriminant(&node.kind));
+                debug!(
+                    "No children for discriminant: {:?}",
+                    std::mem::discriminant(&node.kind)
+                );
                 Vec::new()
             }
         };
-        
-        debug!("get_child_nodes for node {} returned {} children", node_ref.get(), children.len());
+
+        debug!(
+            "get_child_nodes for node {} returned {} children",
+            node_ref.get(),
+            children.len()
+        );
         children
     }
 
     fn resolve_types(&mut self) {
         // Check if we have a root node to start traversal from
-        let Some(root_node) = self.ast.get_root_node() else {
+        let Some(_root_node) = self.ast.get_root_node() else {
             debug!("No root node found, skipping type resolution");
             return;
         };
-        
-        // Get the root node reference for stack-based traversal
-        let root_node_ref = self.ast.root.unwrap();
 
-        debug!("Starting type resolution from root node: {}", root_node_ref.get());
+        // Get the root node reference for stack-based traversal
+        let _root_node_ref = self.ast.root.unwrap();
+
+        debug!(
+            "Starting type resolution from root node: {}",
+            _root_node_ref.get()
+        );
 
         // Simplified single-pass approach: resolve identifiers as we encounter them
-        let mut stack = vec![root_node_ref];
+        let mut stack = vec![_root_node_ref];
         let mut nodes_processed = 0;
         let mut visited_nodes = std::collections::HashSet::new();
 
@@ -687,17 +806,25 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                 continue;
             }
             visited_nodes.insert(node_ref.get());
-            
+
             nodes_processed += 1;
             if nodes_processed % 50 == 0 {
-                debug!("Type resolution: processed {} nodes, stack has {} items", nodes_processed, stack.len());
+                debug!(
+                    "Type resolution: processed {} nodes, stack has {} items",
+                    nodes_processed,
+                    stack.len()
+                );
             }
 
             let node = self.ast.get_node(node_ref);
 
             match &node.kind {
                 NodeKind::Ident(name, resolved_symbol) => {
-                    debug!("Resolving identifier: {} in scope {}", name.as_str(), self.symbol_table.current_scope().get());
+                    debug!(
+                        "Resolving identifier: {} in scope {}",
+                        name.as_str(),
+                        self.symbol_table.current_scope().get()
+                    );
                     if let Some((symbol_ref, scope_id)) = self.symbol_table.lookup_symbol(*name) {
                         debug!("Found symbol {} in scope {}", name.as_str(), scope_id.get());
                         resolved_symbol.set(Some(symbol_ref));
@@ -705,7 +832,11 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                         let symbol_entry = self.symbol_table.get_symbol_entry_mut(symbol_ref);
                         symbol_entry.is_referenced = true;
                     } else {
-                        debug!("Undeclared identifier: {} (current scope: {})", name.as_str(), self.symbol_table.current_scope().get());
+                        debug!(
+                            "Undeclared identifier: {} (current scope: {})",
+                            name.as_str(),
+                            self.symbol_table.current_scope().get()
+                        );
                         self.diag.report_error(SemanticError::UndeclaredIdentifier {
                             name: *name,
                             location: node.span,
@@ -721,7 +852,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                 }
             }
         }
-        
+
         debug!("Type resolution complete");
     }
 }

@@ -23,7 +23,7 @@ impl SourceLoc {
     pub fn new(source_id: SourceId, offset: u32) -> Self {
         assert!(offset <= Self::OFFSET_MASK, "Offset exceeds 4 MiB limit");
         assert!(
-            source_id.0.get() <= (1 << (32 - Self::ID_SHIFT)) - 1,
+            source_id.0.get() < (1 << (32 - Self::ID_SHIFT)),
             "SourceId exceeds 1023 limit"
         );
 
@@ -81,6 +81,7 @@ pub struct FileInfo {
 /// File size limit: 4 MiB per file (22-bit offset in SourceLoc)
 /// Maximum files: 1023 unique source files (10-bit file ID in SourceLoc)
 pub struct SourceManager {
+    #[allow(unused)]
     files: Vec<SourceFile>,
     buffers: Vec<Vec<u8>>, // Use Rust Vec<u8>
     file_infos: HashMap<SourceId, FileInfo>,

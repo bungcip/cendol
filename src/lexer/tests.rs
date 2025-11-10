@@ -207,7 +207,11 @@ mod tests {
 
             let tokens = lexer.tokenize_all();
             assert_eq!(tokens.len(), 1, "Failed for operator: {}", text);
-            assert_eq!(tokens[0].kind, expected_kind, "Failed for operator: {}", text);
+            assert_eq!(
+                tokens[0].kind, expected_kind,
+                "Failed for operator: {}",
+                text
+            );
         }
     }
 
@@ -233,7 +237,10 @@ mod tests {
         // Float constants - for now, treated as IntegerConstant since classify_token maps Number to IntegerConstant
         let float_literals = vec![
             ("3.14", TokenKind::IntegerConstant(Symbol::new("3.14"))),
-            ("1.23e-4", TokenKind::IntegerConstant(Symbol::new("1.23e-4"))),
+            (
+                "1.23e-4",
+                TokenKind::IntegerConstant(Symbol::new("1.23e-4")),
+            ),
         ];
 
         for (text, expected_kind) in float_literals {
@@ -248,7 +255,7 @@ mod tests {
 
         // Character constants
         let char_literals = vec![
-            ("'a'", 97u32), // 'a' = 97
+            ("'a'", 97u32),   // 'a' = 97
             ("'\\n'", 10u32), // '\n' = 10
         ];
 
@@ -258,13 +265,22 @@ mod tests {
 
             let tokens = lexer.tokenize_all();
             assert_eq!(tokens.len(), 1);
-            assert_eq!(tokens[0].kind, TokenKind::CharacterConstant(expected_codepoint));
+            assert_eq!(
+                tokens[0].kind,
+                TokenKind::CharacterConstant(expected_codepoint)
+            );
         }
 
         // String literals
         let string_literals = vec![
-            ("\"hello\"", TokenKind::StringLiteral(Symbol::new("\"hello\""))),
-            ("\"world\\n\"", TokenKind::StringLiteral(Symbol::new("\"world\\n\""))),
+            (
+                "\"hello\"",
+                TokenKind::StringLiteral(Symbol::new("\"hello\"")),
+            ),
+            (
+                "\"world\\n\"",
+                TokenKind::StringLiteral(Symbol::new("\"world\\n\"")),
+            ),
         ];
 
         for (text, expected_kind) in string_literals {
@@ -280,14 +296,7 @@ mod tests {
 
     #[test]
     fn test_identifiers() {
-        let identifiers = vec![
-            "variable",
-            "my_var",
-            "_private",
-            "var123",
-            "a",
-            "_",
-        ];
+        let identifiers = vec!["variable", "my_var", "_private", "var123", "a", "_"];
 
         for ident in identifiers {
             let symbol = Symbol::new(ident);

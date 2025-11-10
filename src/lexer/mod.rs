@@ -1,6 +1,6 @@
 use crate::lang_options::LangOptions;
-use crate::preprocessor::{PPToken, PPTokenFlags, PPTokenKind};
-use crate::source_manager::{SourceId, SourceLoc, SourceManager, SourceSpan};
+use crate::preprocessor::{PPToken, PPTokenKind};
+use crate::source_manager::{SourceLoc, SourceManager, SourceSpan};
 use symbol_table::GlobalSymbol as Symbol;
 use target_lexicon::Triple as TargetTriple;
 
@@ -176,6 +176,12 @@ pub struct KeywordTable {
     thread_local: Symbol,
 }
 
+impl Default for KeywordTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KeywordTable {
     pub fn new() -> Self {
         KeywordTable {
@@ -325,9 +331,13 @@ impl KeywordTable {
 
 /// Lexer state machine
 pub struct Lexer<'src> {
+    #[allow(unused)]
     source_manager: &'src SourceManager,
+    #[allow(unused)]
     diag: &'src mut DiagnosticEngine,
+    #[allow(unused)]
     lang_opts: &'src LangOptions,
+    #[allow(unused)]
     target_info: &'src TargetTriple,
 
     // Current position in token stream
@@ -338,6 +348,7 @@ pub struct Lexer<'src> {
     keywords: KeywordTable,
 
     // Lexing state
+    #[allow(unused)]
     current_token: Option<Token>,
 }
 

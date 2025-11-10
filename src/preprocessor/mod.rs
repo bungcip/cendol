@@ -128,6 +128,7 @@ pub struct MacroInfo {
 /// Represents conditional compilation state
 #[derive(Clone)]
 pub struct PPConditionalInfo {
+    #[allow(unused)]
     if_loc: SourceLoc,
     was_skipping: bool,
     found_else: bool,
@@ -137,10 +138,15 @@ pub struct PPConditionalInfo {
 /// Manages header search paths and include resolution
 #[derive(Clone)]
 pub struct HeaderSearch {
+    #[allow(unused)]
     search_path: Vec<SearchPath>,
+    #[allow(unused)]
     system_path: Vec<SearchPath>,
+    #[allow(unused)]
     framework_path: Vec<SearchPath>,
+    #[allow(unused)]
     quoted_includes: Vec<String>,
+    #[allow(unused)]
     angled_includes: Vec<String>,
 }
 
@@ -188,6 +194,7 @@ pub struct Preprocessor<'src> {
     source_manager: &'src mut SourceManager,
     diag: &'src mut DiagnosticEngine,
     lang_opts: LangOptions,
+    #[allow(unused)]
     target_info: TargetInfo,
 
     // Macro management
@@ -204,11 +211,14 @@ pub struct Preprocessor<'src> {
     header_search: HeaderSearch,
 
     // Token management
+    #[allow(unused)]
     cur_token_lexer: Option<Box<PPTokenLexer>>,
-    lexer_stack: Vec<Box<PPLexer>>,
+    lexer_stack: Vec<PPLexer>,
 
     // State
+    #[allow(unused)]
     in_main_file: bool,
+    #[allow(unused)]
     is_parsing_main_file: bool,
     include_depth: usize,
     skipping: bool, // Whether we are currently skipping tokens due to conditional compilation
@@ -448,7 +458,7 @@ impl<'src> Preprocessor<'src> {
         let buffer_len = buffer.len() as u32;
 
         let lexer = PPLexer::new(source_id, buffer.to_vec());
-        self.lexer_stack.push(Box::new(lexer));
+        self.lexer_stack.push(lexer);
 
         let mut result_tokens = Vec::new();
 
@@ -464,7 +474,7 @@ impl<'src> Preprocessor<'src> {
                     // Handle directive
                     self.handle_directive()?;
                 }
-                PPTokenKind::Identifier(symbol) => {
+                PPTokenKind::Identifier(_symbol) => {
                     // Check for macro expansion
                     if let Some(expanded) = self.expand_macro(&token)? {
                         // Add expanded tokens to result
@@ -518,24 +528,20 @@ impl<'src> Preprocessor<'src> {
             0
         };
 
-        loop {
-            if let Some(token) = self.lex_token() {
-                let token_line = if let Some(lexer) = self.lexer_stack.last() {
-                    lexer.get_line(token.location.0)
-                } else {
-                    0
-                };
-                if token_line != start_line {
-                    // Put back the token from the next line
-                    if let Some(lexer) = self.lexer_stack.last_mut() {
-                        lexer.put_back(token);
-                    }
-                    break;
-                }
-                tokens.push(token);
+        while let Some(token) = self.lex_token() {
+            let token_line = if let Some(lexer) = self.lexer_stack.last() {
+                lexer.get_line(token.location.0)
             } else {
+                0
+            };
+            if token_line != start_line {
+                // Put back the token from the next line
+                if let Some(lexer) = self.lexer_stack.last_mut() {
+                    lexer.put_back(token);
+                }
                 break;
             }
+            tokens.push(token);
         }
 
         if tokens.is_empty() {
@@ -546,13 +552,14 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Evaluate a conditional expression (simplified - just check if defined)
-    fn evaluate_conditional_expression(&self, tokens: &[PPToken]) -> Result<bool, PreprocessorError> {
+    fn evaluate_conditional_expression(
+        &self,
+        tokens: &[PPToken],
+    ) -> Result<bool, PreprocessorError> {
         // Simplified evaluation: just check if the first token is defined
         if let Some(first_token) = tokens.first() {
             match &first_token.kind {
-                PPTokenKind::Identifier(sym) => {
-                    Ok(self.macros.contains_key(sym))
-                }
+                PPTokenKind::Identifier(sym) => Ok(self.macros.contains_key(sym)),
                 PPTokenKind::Number(sym) => {
                     // For now, treat numbers as true if non-zero
                     let text = sym.as_str();
@@ -569,22 +576,17 @@ impl<'src> Preprocessor<'src> {
     fn skip_conditional_block(&mut self) -> Result<(), PreprocessorError> {
         // For now, just skip to the end of the line
         // In a full implementation, this would need to handle nested conditionals
-        loop {
-            match self.lex_token() {
-                Some(token) => {
-                    if let Some(lexer) = self.lexer_stack.last() {
-                        let current_line = lexer.get_current_line();
-                        let token_line = lexer.get_line(token.location.0);
-                        if token_line != current_line {
-                            // Put back the token from the next line
-                            if let Some(lexer) = self.lexer_stack.last_mut() {
-                                lexer.put_back(token);
-                            }
-                            break;
-                        }
+        while let Some(token) = self.lex_token() {
+            if let Some(lexer) = self.lexer_stack.last() {
+                let current_line = lexer.get_current_line();
+                let token_line = lexer.get_line(token.location.0);
+                if token_line != current_line {
+                    // Put back the token from the next line
+                    if let Some(lexer) = self.lexer_stack.last_mut() {
+                        lexer.put_back(token);
                     }
+                    break;
                 }
-                None => break,
             }
         }
         Ok(())
@@ -674,7 +676,7 @@ impl<'src> Preprocessor<'src> {
             _ => {
                 let diag = crate::diagnostic::Diagnostic {
                     level: crate::diagnostic::DiagnosticLevel::Error,
-                    message: format!("Invalid preprocessor directive"),
+                    message: "Invalid preprocessor directive".to_string(),
                     location: SourceSpan::new(token.location, token.location),
                     code: Some("invalid_directive".to_string()),
                     hints: vec!["Valid directives include #define, #include, #if, #ifdef, #ifndef, #elif, #else, #endif, #line, #pragma, #error, #warning".to_string()],
@@ -690,26 +692,28 @@ impl<'src> Preprocessor<'src> {
 
     /// Handle #define directive
     fn handle_define(&mut self) -> Result<(), PreprocessorError> {
-        let name_token = self.lex_token().ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+        let name_token = self
+            .lex_token()
+            .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
         let name = match name_token.kind {
             PPTokenKind::Identifier(sym) => sym,
             _ => return Err(PreprocessorError::ExpectedIdentifier),
         };
 
         // Check for macro redefinition
-        if let Some(existing) = self.macros.get(&name) {
-            if !existing.flags.contains(MacroFlags::BUILTIN) {
-                // Emit warning for redefinition
-                let diag = crate::diagnostic::Diagnostic {
-                    level: crate::diagnostic::DiagnosticLevel::Warning,
-                    message: format!("Redefinition of macro '{}'", name.as_str()),
-                    location: SourceSpan::new(name_token.location, name_token.location),
-                    code: Some("macro_redefinition".to_string()),
-                    hints: Vec::new(),
-                    related: vec![SourceSpan::new(existing.location, existing.location)],
-                };
-                self.diag.report_diagnostic(diag);
-            }
+        if let Some(existing) = self.macros.get(&name)
+            && !existing.flags.contains(MacroFlags::BUILTIN)
+        {
+            // Emit warning for redefinition
+            let diag = crate::diagnostic::Diagnostic {
+                level: crate::diagnostic::DiagnosticLevel::Warning,
+                message: format!("Redefinition of macro '{}'", name.as_str()),
+                location: SourceSpan::new(name_token.location, name_token.location),
+                code: Some("macro_redefinition".to_string()),
+                hints: Vec::new(),
+                related: vec![SourceSpan::new(existing.location, existing.location)],
+            };
+            self.diag.report_diagnostic(diag);
         }
 
         let mut flags = MacroFlags::empty();
@@ -721,7 +725,9 @@ impl<'src> Preprocessor<'src> {
                 flags |= MacroFlags::FUNCTION_LIKE;
                 // parse params
                 loop {
-                    let param_token = self.lex_token().ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+                    let param_token = self
+                        .lex_token()
+                        .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
                     match param_token.kind {
                         PPTokenKind::RightParen => break,
                         PPTokenKind::Identifier(sym) => {
@@ -729,14 +735,18 @@ impl<'src> Preprocessor<'src> {
                                 return Err(PreprocessorError::InvalidMacroParameter);
                             }
                             params.push(sym);
-                            let sep = self.lex_token().ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+                            let sep = self
+                                .lex_token()
+                                .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
                             match sep.kind {
                                 PPTokenKind::Comma => continue,
                                 PPTokenKind::RightParen => break,
                                 PPTokenKind::Ellipsis => {
                                     variadic = Some(sym);
                                     flags |= MacroFlags::C99_VARARGS;
-                                    let rparen = self.lex_token().ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+                                    let rparen = self
+                                        .lex_token()
+                                        .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
                                     if rparen.kind != PPTokenKind::RightParen {
                                         return Err(PreprocessorError::InvalidMacroParameter);
                                     }
@@ -748,7 +758,9 @@ impl<'src> Preprocessor<'src> {
                         PPTokenKind::Ellipsis => {
                             flags |= MacroFlags::GNU_VARARGS;
                             variadic = Some(Symbol::new("__VA_ARGS__"));
-                            let rparen = self.lex_token().ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+                            let rparen = self
+                                .lex_token()
+                                .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
                             if rparen.kind != PPTokenKind::RightParen {
                                 return Err(PreprocessorError::InvalidMacroParameter);
                             }
@@ -757,10 +769,8 @@ impl<'src> Preprocessor<'src> {
                         _ => return Err(PreprocessorError::InvalidMacroParameter),
                     }
                 }
-            } else {
-                if let Some(lexer) = self.lexer_stack.last_mut() {
-                    lexer.put_back(token);
-                }
+            } else if let Some(lexer) = self.lexer_stack.last_mut() {
+                lexer.put_back(token);
             }
         }
         // Now, collect replacement tokens
@@ -770,23 +780,19 @@ impl<'src> Preprocessor<'src> {
             0
         };
         let mut tokens = Vec::new();
-        loop {
-            if let Some(token) = self.lex_token() {
-                let token_line = if let Some(lexer) = self.lexer_stack.last() {
-                    lexer.get_line(token.location.0)
-                } else {
-                    0
-                };
-                if token_line != start_line {
-                    if let Some(lexer) = self.lexer_stack.last_mut() {
-                        lexer.put_back(token);
-                    }
-                    break;
-                }
-                tokens.push(token);
+        while let Some(token) = self.lex_token() {
+            let token_line = if let Some(lexer) = self.lexer_stack.last() {
+                lexer.get_line(token.location.0)
             } else {
+                0
+            };
+            if token_line != start_line {
+                if let Some(lexer) = self.lexer_stack.last_mut() {
+                    lexer.put_back(token);
+                }
                 break;
             }
+            tokens.push(token);
         }
         // Store the macro
         let macro_info = MacroInfo {
@@ -800,7 +806,9 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
     fn handle_undef(&mut self) -> Result<(), PreprocessorError> {
-        let name_token = self.lex_token().ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+        let name_token = self
+            .lex_token()
+            .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
         let name = match name_token.kind {
             PPTokenKind::Identifier(sym) => sym,
             _ => return Err(PreprocessorError::ExpectedIdentifier),
@@ -811,13 +819,15 @@ impl<'src> Preprocessor<'src> {
     }
     fn handle_include(&mut self) -> Result<(), PreprocessorError> {
         // Parse the include path
-        let token = self.lex_token().ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+        let token = self
+            .lex_token()
+            .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
         let path_str = match token.kind {
             PPTokenKind::StringLiteral(symbol) => {
                 // Remove quotes from string literal
                 let full_str = symbol.as_str();
                 if full_str.starts_with('"') && full_str.ends_with('"') {
-                    full_str[1..full_str.len()-1].to_string()
+                    full_str[1..full_str.len() - 1].to_string()
                 } else {
                     return Err(PreprocessorError::InvalidIncludePath);
                 }
@@ -826,7 +836,9 @@ impl<'src> Preprocessor<'src> {
                 // Angled include: collect tokens until >
                 let mut path_parts = Vec::new();
                 loop {
-                    let part_token = self.lex_token().ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+                    let part_token = self
+                        .lex_token()
+                        .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
                     match part_token.kind {
                         PPTokenKind::Greater => break,
                         _ => path_parts.push(part_token),
@@ -852,14 +864,15 @@ impl<'src> Preprocessor<'src> {
         };
 
         // Check include depth
-        if self.include_depth >= 200 { // Arbitrary limit
+        if self.include_depth >= 200 {
+            // Arbitrary limit
             return Err(PreprocessorError::IncludeDepthExceeded);
         }
 
         // Check for circular includes
         if self.include_stack.iter().any(|info| {
             let file_info = self.source_manager.get_file_info(info.file_id);
-            file_info.map_or(false, |fi| fi.path == PathBuf::from(&path_str))
+            file_info.is_some_and(|fi| fi.path == path_str)
         }) {
             return Err(PreprocessorError::CircularInclude);
         }
@@ -868,7 +881,9 @@ impl<'src> Preprocessor<'src> {
         let resolved_path = self.header_search.resolve_path(&path_str)?;
 
         // Load the file
-        let include_source_id = self.source_manager.add_file_from_path(&resolved_path)
+        let include_source_id = self
+            .source_manager
+            .add_file_from_path(&resolved_path)
             .map_err(|_| {
                 // Emit diagnostic for file not found
                 let diag = crate::diagnostic::Diagnostic {
@@ -898,7 +913,7 @@ impl<'src> Preprocessor<'src> {
         // Create lexer for the included file
         let buffer = self.source_manager.get_buffer(include_source_id);
         let lexer = PPLexer::new(include_source_id, buffer.to_vec());
-        self.lexer_stack.push(Box::new(lexer));
+        self.lexer_stack.push(lexer);
 
         self.include_depth += 1;
 
@@ -923,7 +938,9 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn handle_ifdef(&mut self) -> Result<(), PreprocessorError> {
-        let name_token = self.lex_token().ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+        let name_token = self
+            .lex_token()
+            .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
         let name = match name_token.kind {
             PPTokenKind::Identifier(sym) => sym,
             _ => return Err(PreprocessorError::ExpectedIdentifier),
@@ -946,7 +963,9 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn handle_ifndef(&mut self) -> Result<(), PreprocessorError> {
-        let name_token = self.lex_token().ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+        let name_token = self
+            .lex_token()
+            .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
         let name = match name_token.kind {
             PPTokenKind::Identifier(sym) => sym,
             _ => return Err(PreprocessorError::ExpectedIdentifier),
@@ -1026,11 +1045,14 @@ impl<'src> Preprocessor<'src> {
     }
     fn handle_line(&mut self) -> Result<(), PreprocessorError> {
         // Parse line number
-        let line_token = self.lex_token().ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+        let line_token = self
+            .lex_token()
+            .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
         let line_number = match line_token.kind {
             PPTokenKind::Number(symbol) => {
                 let text = symbol.as_str();
-                text.parse::<usize>().map_err(|_| PreprocessorError::InvalidDirective)?
+                text.parse::<usize>()
+                    .map_err(|_| PreprocessorError::InvalidDirective)?
             }
             _ => return Err(PreprocessorError::InvalidDirective),
         };
@@ -1042,7 +1064,7 @@ impl<'src> Preprocessor<'src> {
                 PPTokenKind::StringLiteral(symbol) => {
                     let full_str = symbol.as_str();
                     if full_str.starts_with('"') && full_str.ends_with('"') {
-                        filename = Some(full_str[1..full_str.len()-1].to_string());
+                        filename = Some(full_str[1..full_str.len() - 1].to_string());
                     } else {
                         return Err(PreprocessorError::InvalidDirective);
                     }
@@ -1066,7 +1088,9 @@ impl<'src> Preprocessor<'src> {
     }
     fn handle_pragma(&mut self) -> Result<(), PreprocessorError> {
         // Parse the pragma directive
-        let pragma_token = self.lex_token().ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+        let pragma_token = self
+            .lex_token()
+            .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
         match pragma_token.kind {
             PPTokenKind::Identifier(symbol) => {
                 let pragma_name = symbol.as_str();
@@ -1083,22 +1107,17 @@ impl<'src> Preprocessor<'src> {
             }
         }
         // Skip to end of line
-        loop {
-            match self.lex_token() {
-                Some(token) => {
-                    if let Some(lexer) = self.lexer_stack.last() {
-                        let current_line = lexer.get_current_line();
-                        let token_line = lexer.get_line(token.location.0);
-                        if token_line != current_line {
-                            // Put back the token from the next line
-                            if let Some(lexer) = self.lexer_stack.last_mut() {
-                                lexer.put_back(token);
-                            }
-                            break;
-                        }
+        while let Some(token) = self.lex_token() {
+            if let Some(lexer) = self.lexer_stack.last() {
+                let current_line = lexer.get_current_line();
+                let token_line = lexer.get_line(token.location.0);
+                if token_line != current_line {
+                    // Put back the token from the next line
+                    if let Some(lexer) = self.lexer_stack.last_mut() {
+                        lexer.put_back(token);
                     }
+                    break;
                 }
-                None => break,
             }
         }
         Ok(())
@@ -1107,30 +1126,25 @@ impl<'src> Preprocessor<'src> {
     fn handle_error(&mut self) -> Result<(), PreprocessorError> {
         // Collect the error message from the rest of the line
         let mut message_parts = Vec::new();
-        loop {
-            match self.lex_token() {
-                Some(token) => {
-                    if let Some(lexer) = self.lexer_stack.last() {
-                        let current_line = lexer.get_current_line();
-                        let token_line = lexer.get_line(token.location.0);
-                        if token_line != current_line {
-                            // Put back the token from the next line
-                            if let Some(lexer) = self.lexer_stack.last_mut() {
-                                lexer.put_back(token);
-                            }
-                            break;
-                        }
+        while let Some(token) = self.lex_token() {
+            if let Some(lexer) = self.lexer_stack.last() {
+                let current_line = lexer.get_current_line();
+                let token_line = lexer.get_line(token.location.0);
+                if token_line != current_line {
+                    // Put back the token from the next line
+                    if let Some(lexer) = self.lexer_stack.last_mut() {
+                        lexer.put_back(token);
                     }
-                    // Get token text
-                    let buffer = self.source_manager.get_buffer(token.location.source_id());
-                    let start = token.location.offset() as usize;
-                    let end = start + token.length as usize;
-                    if end <= buffer.len() {
-                        let text = unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) };
-                        message_parts.push(text.to_string());
-                    }
+                    break;
                 }
-                None => break,
+            }
+            // Get token text
+            let buffer = self.source_manager.get_buffer(token.location.source_id());
+            let start = token.location.offset() as usize;
+            let end = start + token.length as usize;
+            if end <= buffer.len() {
+                let text = unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) };
+                message_parts.push(text.to_string());
             }
         }
         let message = message_parts.join(" ");
@@ -1145,30 +1159,25 @@ impl<'src> Preprocessor<'src> {
         } else {
             SourceLoc(0)
         };
-        loop {
-            match self.lex_token() {
-                Some(token) => {
-                    if let Some(lexer) = self.lexer_stack.last() {
-                        let current_line = lexer.get_current_line();
-                        let token_line = lexer.get_line(token.location.0);
-                        if token_line != current_line {
-                            // Put back the token from the next line
-                            if let Some(lexer) = self.lexer_stack.last_mut() {
-                                lexer.put_back(token);
-                            }
-                            break;
-                        }
+        while let Some(token) = self.lex_token() {
+            if let Some(lexer) = self.lexer_stack.last() {
+                let current_line = lexer.get_current_line();
+                let token_line = lexer.get_line(token.location.0);
+                if token_line != current_line {
+                    // Put back the token from the next line
+                    if let Some(lexer) = self.lexer_stack.last_mut() {
+                        lexer.put_back(token);
                     }
-                    // Get token text
-                    let buffer = self.source_manager.get_buffer(token.location.source_id());
-                    let start = token.location.offset() as usize;
-                    let end = start + token.length as usize;
-                    if end <= buffer.len() {
-                        let text = unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) };
-                        message_parts.push(text.to_string());
-                    }
+                    break;
                 }
-                None => break,
+            }
+            // Get token text
+            let buffer = self.source_manager.get_buffer(token.location.source_id());
+            let start = token.location.offset() as usize;
+            let end = start + token.length as usize;
+            if end <= buffer.len() {
+                let text = unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) };
+                message_parts.push(text.to_string());
             }
         }
         let message = message_parts.join(" ");
@@ -1186,10 +1195,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Expand a macro if it exists
-    fn expand_macro(
-        &mut self,
-        token: &PPToken,
-    ) -> Result<Option<Vec<PPToken>>, PreprocessorError> {
+    fn expand_macro(&mut self, token: &PPToken) -> Result<Option<Vec<PPToken>>, PreprocessorError> {
         if let PPTokenKind::Identifier(symbol) = token.kind {
             // Check if macro exists and is not disabled
             let macro_info = match self.macros.get(&symbol) {
@@ -1245,7 +1251,7 @@ impl<'src> Preprocessor<'src> {
     fn expand_function_macro(
         &mut self,
         macro_info: &MacroInfo,
-        token: &PPToken,
+        _token: &PPToken,
     ) -> Result<Vec<PPToken>, PreprocessorError> {
         // Parse arguments from lexer
         let args = self.parse_macro_args_from_lexer(macro_info)?;
@@ -1328,7 +1334,9 @@ impl<'src> Preprocessor<'src> {
                     bracket_depth -= 1;
                     current_arg.push(token);
                 }
-                PPTokenKind::Comma if paren_depth == 0 && brace_depth == 0 && bracket_depth == 0 => {
+                PPTokenKind::Comma
+                    if paren_depth == 0 && brace_depth == 0 && bracket_depth == 0 =>
+                {
                     // Argument separator
                     args.push(current_arg);
                     current_arg = Vec::new();
@@ -1347,7 +1355,17 @@ impl<'src> Preprocessor<'src> {
             if args.len() < expected_args {
                 let diag = crate::diagnostic::Diagnostic {
                     level: crate::diagnostic::DiagnosticLevel::Error,
-                    message: format!("Too few arguments for macro '{}': expected at least {}, got {}", macro_info.parameter_list.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "), expected_args, args.len()),
+                    message: format!(
+                        "Too few arguments for macro '{}': expected at least {}, got {}",
+                        macro_info
+                            .parameter_list
+                            .iter()
+                            .map(|s| s.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        expected_args,
+                        args.len()
+                    ),
                     location: SourceSpan::new(macro_info.location, macro_info.location),
                     code: Some("macro_too_few_args".to_string()),
                     hints: Vec::new(),
@@ -1359,7 +1377,17 @@ impl<'src> Preprocessor<'src> {
         } else if args.len() != expected_args {
             let diag = crate::diagnostic::Diagnostic {
                 level: crate::diagnostic::DiagnosticLevel::Error,
-                message: format!("Wrong number of arguments for macro '{}': expected {}, got {}", macro_info.parameter_list.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "), expected_args, args.len()),
+                message: format!(
+                    "Wrong number of arguments for macro '{}': expected {}, got {}",
+                    macro_info
+                        .parameter_list
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    expected_args,
+                    args.len()
+                ),
                 location: SourceSpan::new(macro_info.location, macro_info.location),
                 code: Some("macro_wrong_arg_count".to_string()),
                 hints: Vec::new(),
@@ -1390,17 +1418,28 @@ impl<'src> Preprocessor<'src> {
                     if i + 1 < macro_info.tokens.len() {
                         let next_token = &macro_info.tokens[i + 1];
                         if let PPTokenKind::Identifier(param_symbol) = next_token.kind {
-                            if let Some(param_index) = macro_info.parameter_list.iter().position(|&p| p == param_symbol) {
+                            if let Some(param_index) = macro_info
+                                .parameter_list
+                                .iter()
+                                .position(|&p| p == param_symbol)
+                            {
                                 let arg_tokens = &args[param_index];
-                                let stringified = self.stringify_tokens(arg_tokens, token.location)?;
+                                let stringified =
+                                    self.stringify_tokens(arg_tokens, token.location)?;
                                 result.push(stringified);
                                 i += 2;
                                 continue;
                             } else if macro_info.variadic_arg == Some(param_symbol) {
                                 // Handle variadic argument
                                 let start_index = macro_info.parameter_list.len();
-                                let variadic_args = args.iter().skip(start_index).flatten().cloned().collect::<Vec<_>>();
-                                let stringified = self.stringify_tokens(&variadic_args, token.location)?;
+                                let variadic_args = args
+                                    .iter()
+                                    .skip(start_index)
+                                    .flatten()
+                                    .cloned()
+                                    .collect::<Vec<_>>();
+                                let stringified =
+                                    self.stringify_tokens(&variadic_args, token.location)?;
                                 result.push(stringified);
                                 i += 2;
                                 continue;
@@ -1423,7 +1462,9 @@ impl<'src> Preprocessor<'src> {
                 }
                 PPTokenKind::Identifier(symbol) => {
                     // Parameter substitution
-                    if let Some(param_index) = macro_info.parameter_list.iter().position(|&p| p == symbol) {
+                    if let Some(param_index) =
+                        macro_info.parameter_list.iter().position(|&p| p == symbol)
+                    {
                         result.extend(args[param_index].clone());
                     } else if macro_info.variadic_arg == Some(symbol) {
                         // Handle variadic argument
@@ -1543,13 +1584,13 @@ impl<'src> Preprocessor<'src> {
     fn expand_tokens(&mut self, tokens: &mut Vec<PPToken>) -> Result<(), PreprocessorError> {
         let mut i = 0;
         while i < tokens.len() {
-            if let PPTokenKind::Identifier(symbol) = tokens[i].kind {
-                if let Some(expanded) = self.expand_macro(&tokens[i])? {
-                    // Replace current token with expanded tokens
-                    tokens.splice(i..i+1, expanded);
-                    // Don't increment i, rescan from current position
-                    continue;
-                }
+            if let PPTokenKind::Identifier(_symbol) = tokens[i].kind
+                && let Some(expanded) = self.expand_macro(&tokens[i])?
+            {
+                // Replace current token with expanded tokens
+                tokens.splice(i..i + 1, expanded);
+                // Don't increment i, rescan from current position
+                continue;
             }
             i += 1;
         }
@@ -1559,8 +1600,7 @@ impl<'src> Preprocessor<'src> {
 
 impl PPLexer {
     pub fn new(source_id: SourceId, buffer: Vec<u8>) -> Self {
-        let mut line_starts = Vec::new();
-        line_starts.push(0); // First line starts at offset 0
+        let line_starts = vec![0]; // First line starts at offset 0
 
         PPLexer {
             source_id,
@@ -2054,6 +2094,7 @@ impl PPLexer {
         }
     }
 
+    #[allow(dead_code)]
     fn skip_whitespace(&mut self) {
         while self.position < self.buffer.len() {
             let ch = self.buffer[self.position];

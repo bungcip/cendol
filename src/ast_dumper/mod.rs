@@ -696,11 +696,11 @@ impl<'src> AstDumper<'src> {
         node: &Node,
         depth: usize,
     ) -> Result<(), std::fmt::Error> {
-        if let Some(max_depth) = self.config.max_depth {
-            if depth > max_depth {
-                writeln!(html, "<li class=\"ast-node\">... (truncated)</li>")?;
-                return Ok(());
-            }
+        if let Some(max_depth) = self.config.max_depth
+            && depth > max_depth
+        {
+            writeln!(html, "<li class=\"ast-node\">... (truncated)</li>")?;
+            return Ok(());
         }
 
         let node_type = self.get_node_type_name(&node.kind);
@@ -744,9 +744,12 @@ impl<'src> AstDumper<'src> {
         // Add source code snippet if enabled
         if self.config.include_source {
             let raw_text = self.source_manager.get_source_text(node.span);
-            let escaped_text = self.escape_html(&raw_text);
+            let escaped_text = self.escape_html(raw_text);
             let lines: Vec<&str> = escaped_text.split('\n').collect();
-            let (start_line, _) = self.source_manager.get_line_column(node.span.start).unwrap_or((1, 1));
+            let (start_line, _) = self
+                .source_manager
+                .get_line_column(node.span.start)
+                .unwrap_or((1, 1));
             let mut text_with_lines = String::new();
 
             // Apply truncation if max_source_lines is set
@@ -1140,12 +1143,9 @@ impl<'src> AstDumper<'src> {
             Initializer::List(designated_inits) => {
                 for designated in designated_inits {
                     for designator in &designated.designation {
-                        match designator {
-                            Designator::ArrayIndex(index_expr) => {
-                                let index_node = self.ast.get_node(*index_expr);
-                                self.generate_ast_tree(html, index_node, depth)?;
-                            }
-                            _ => {}
+                        if let Designator::ArrayIndex(index_expr) = designator {
+                            let index_node = self.ast.get_node(*index_expr);
+                            self.generate_ast_tree(html, index_node, depth)?;
                         }
                     }
                     self.generate_initializer_children(html, &designated.initializer, depth)?;
@@ -1245,7 +1245,7 @@ impl<'src> AstDumper<'src> {
                     )
                 })
                 .collect();
-            let symbols_str = self.escape_html(&symbols.join(", "));
+            let _symbols_str = self.escape_html(&symbols.join(", "));
             let symbols_str = symbols.join(", ");
 
             writeln!(html, "<tr id=\"scope_{}\">", id)?;
@@ -1485,7 +1485,11 @@ impl<'src> AstDumper<'src> {
         display
     }
 
-    fn get_enhanced_symbol_info(&self, symbol_ref: SymbolEntryRef, symbol: &SymbolEntry) -> String {
+    fn get_enhanced_symbol_info(
+        &self,
+        _symbol_ref: SymbolEntryRef,
+        symbol: &SymbolEntry,
+    ) -> String {
         let mut info_parts = Vec::new();
 
         // Add definition/referenced status
@@ -1503,7 +1507,10 @@ impl<'src> AstDumper<'src> {
 
         // Add storage class if present
         if let Some(storage_class) = symbol.storage_class {
-            info_parts.push(format!("storage: {}", self.escape_html(&format!("{:?}", storage_class))));
+            info_parts.push(format!(
+                "storage: {}",
+                self.escape_html(&format!("{:?}", storage_class))
+            ));
         }
 
         // Add symbol kind specific information
@@ -1565,7 +1572,11 @@ impl<'src> AstDumper<'src> {
             } => {
                 let def_status = if *is_defined { "defined" } else { "undeclared" };
                 let use_status = if *is_used { "used" } else { "unused" };
-                info_parts.push(format!("label: {} {}", self.escape_html(def_status), self.escape_html(use_status)));
+                info_parts.push(format!(
+                    "label: {} {}",
+                    self.escape_html(def_status),
+                    self.escape_html(use_status)
+                ));
             }
             SymbolKind::Record {
                 is_complete,
@@ -1680,6 +1691,7 @@ impl<'src> AstDumper<'src> {
         }
     }
     /// Format source text for display, escaping HTML and handling newlines
+    #[allow(dead_code)]
     fn format_source_text(&self, text: &str) -> String {
         let escaped = self.escape_html(text);
         escaped
@@ -1688,7 +1700,7 @@ impl<'src> AstDumper<'src> {
     }
 
     /// Apply syntax highlighting to source code using the lexer
-    fn highlight_source_code(&mut self, text: &str, span: SourceSpan) -> String {
+    fn highlight_source_code(&mut self, text: &str, _span: SourceSpan) -> String {
         // Add the text as a temporary source for tokenization
         let temp_source_id = self.source_manager.add_file("<highlight>", text);
 
@@ -1749,7 +1761,11 @@ impl<'src> AstDumper<'src> {
             // Add highlighted token
             let token_text = &text[token_start..token_end];
             let css_class = self.token_kind_to_css_class(&token.kind);
-            highlighted.push_str(&format!("<span class=\"{}\">{}</span>", css_class, self.escape_html(token_text)));
+            highlighted.push_str(&format!(
+                "<span class=\"{}\">{}</span>",
+                css_class,
+                self.escape_html(token_text)
+            ));
 
             last_end = token_end;
         }
@@ -1765,16 +1781,50 @@ impl<'src> AstDumper<'src> {
     /// Map TokenKind to CSS class for highlighting
     fn token_kind_to_css_class(&self, kind: &TokenKind) -> &'static str {
         match kind {
-            TokenKind::Auto | TokenKind::Break | TokenKind::Case | TokenKind::Char | TokenKind::Const |
-            TokenKind::Continue | TokenKind::Default | TokenKind::Do | TokenKind::Double | TokenKind::Else |
-            TokenKind::Enum | TokenKind::Extern | TokenKind::Float | TokenKind::For | TokenKind::Goto |
-            TokenKind::If | TokenKind::Inline | TokenKind::Int | TokenKind::Long | TokenKind::Register |
-            TokenKind::Restrict | TokenKind::Return | TokenKind::Short | TokenKind::Signed | TokenKind::Sizeof |
-            TokenKind::Static | TokenKind::Struct | TokenKind::Switch | TokenKind::Typedef | TokenKind::Union |
-            TokenKind::Unsigned | TokenKind::Void | TokenKind::Volatile | TokenKind::While |
-            TokenKind::Alignas | TokenKind::Alignof | TokenKind::Atomic | TokenKind::Bool |
-            TokenKind::Complex | TokenKind::Generic | TokenKind::Noreturn | TokenKind::Pragma |
-            TokenKind::StaticAssert | TokenKind::ThreadLocal => "c-keyword",
+            TokenKind::Auto
+            | TokenKind::Break
+            | TokenKind::Case
+            | TokenKind::Char
+            | TokenKind::Const
+            | TokenKind::Continue
+            | TokenKind::Default
+            | TokenKind::Do
+            | TokenKind::Double
+            | TokenKind::Else
+            | TokenKind::Enum
+            | TokenKind::Extern
+            | TokenKind::Float
+            | TokenKind::For
+            | TokenKind::Goto
+            | TokenKind::If
+            | TokenKind::Inline
+            | TokenKind::Int
+            | TokenKind::Long
+            | TokenKind::Register
+            | TokenKind::Restrict
+            | TokenKind::Return
+            | TokenKind::Short
+            | TokenKind::Signed
+            | TokenKind::Sizeof
+            | TokenKind::Static
+            | TokenKind::Struct
+            | TokenKind::Switch
+            | TokenKind::Typedef
+            | TokenKind::Union
+            | TokenKind::Unsigned
+            | TokenKind::Void
+            | TokenKind::Volatile
+            | TokenKind::While
+            | TokenKind::Alignas
+            | TokenKind::Alignof
+            | TokenKind::Atomic
+            | TokenKind::Bool
+            | TokenKind::Complex
+            | TokenKind::Generic
+            | TokenKind::Noreturn
+            | TokenKind::Pragma
+            | TokenKind::StaticAssert
+            | TokenKind::ThreadLocal => "c-keyword",
 
             TokenKind::Identifier(_) => "c-identifier",
 
@@ -1784,18 +1834,52 @@ impl<'src> AstDumper<'src> {
 
             TokenKind::StringLiteral(_) => "c-string",
 
-            TokenKind::Plus | TokenKind::Minus | TokenKind::Star | TokenKind::Slash | TokenKind::Percent |
-            TokenKind::And | TokenKind::Or | TokenKind::Xor | TokenKind::Not | TokenKind::Tilde |
-            TokenKind::Less | TokenKind::Greater | TokenKind::LessEqual | TokenKind::GreaterEqual |
-            TokenKind::Equal | TokenKind::NotEqual | TokenKind::LeftShift | TokenKind::RightShift |
-            TokenKind::Assign | TokenKind::PlusAssign | TokenKind::MinusAssign | TokenKind::StarAssign |
-            TokenKind::DivAssign | TokenKind::ModAssign | TokenKind::AndAssign | TokenKind::OrAssign |
-            TokenKind::XorAssign | TokenKind::LeftShiftAssign | TokenKind::RightShiftAssign |
-            TokenKind::Increment | TokenKind::Decrement | TokenKind::Arrow | TokenKind::Dot |
-            TokenKind::Question | TokenKind::Colon | TokenKind::Comma | TokenKind::Semicolon |
-            TokenKind::LeftParen | TokenKind::RightParen | TokenKind::LeftBracket | TokenKind::RightBracket |
-            TokenKind::LeftBrace | TokenKind::RightBrace | TokenKind::Ellipsis | TokenKind::LogicAnd |
-            TokenKind::LogicOr => "c-operator",
+            TokenKind::Plus
+            | TokenKind::Minus
+            | TokenKind::Star
+            | TokenKind::Slash
+            | TokenKind::Percent
+            | TokenKind::And
+            | TokenKind::Or
+            | TokenKind::Xor
+            | TokenKind::Not
+            | TokenKind::Tilde
+            | TokenKind::Less
+            | TokenKind::Greater
+            | TokenKind::LessEqual
+            | TokenKind::GreaterEqual
+            | TokenKind::Equal
+            | TokenKind::NotEqual
+            | TokenKind::LeftShift
+            | TokenKind::RightShift
+            | TokenKind::Assign
+            | TokenKind::PlusAssign
+            | TokenKind::MinusAssign
+            | TokenKind::StarAssign
+            | TokenKind::DivAssign
+            | TokenKind::ModAssign
+            | TokenKind::AndAssign
+            | TokenKind::OrAssign
+            | TokenKind::XorAssign
+            | TokenKind::LeftShiftAssign
+            | TokenKind::RightShiftAssign
+            | TokenKind::Increment
+            | TokenKind::Decrement
+            | TokenKind::Arrow
+            | TokenKind::Dot
+            | TokenKind::Question
+            | TokenKind::Colon
+            | TokenKind::Comma
+            | TokenKind::Semicolon
+            | TokenKind::LeftParen
+            | TokenKind::RightParen
+            | TokenKind::LeftBracket
+            | TokenKind::RightBracket
+            | TokenKind::LeftBrace
+            | TokenKind::RightBrace
+            | TokenKind::Ellipsis
+            | TokenKind::LogicAnd
+            | TokenKind::LogicOr => "c-operator",
 
             TokenKind::Unknown => "c-unknown",
             TokenKind::EndOfFile => "",
@@ -1803,6 +1887,7 @@ impl<'src> AstDumper<'src> {
     }
 
     /// Get source text for a span, formatted for HTML display
+    #[allow(dead_code)]
     fn get_formatted_source_text(&self, span: SourceSpan) -> String {
         let source_text = self.source_manager.get_source_text(span);
         self.format_source_text(source_text)

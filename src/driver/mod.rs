@@ -1,23 +1,21 @@
 // Compiler driver module
 
 use clap::{Args, Parser as CliParser};
-use target_lexicon::Triple;
+use log::debug;
 use std::fs;
 use std::path::{Path, PathBuf};
-use symbol_table::GlobalSymbol as Symbol;
-use log::{debug, info, trace, warn};
+use target_lexicon::Triple;
 
-use crate::ast::{Ast, Declarator, FunctionDefData, Node, NodeKind, TypeQualifiers};
+use crate::ast::Ast;
 use crate::ast_dumper::{AstDumper, DumpConfig};
-use crate::diagnostic::{DiagnosticEngine, SemanticOutput};
+use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::LangOptions;
 use crate::parser::Parser;
-use crate::preprocessor::{Preprocessor, PreprocessorConfig, PreprocessorError};
+use crate::preprocessor::{Preprocessor, PreprocessorConfig};
 use crate::semantic::{SemanticAnalyzer, SymbolTable};
-use crate::source_manager::{SourceId, SourceLoc, SourceManager, SourceSpan};
+use crate::source_manager::SourceManager;
 
 // Remove duplicate PreprocessorConfig definition
-use std::cell::Cell;
 
 /// CLI interface using clap
 #[derive(CliParser, Debug)]
@@ -157,17 +155,17 @@ impl CompilerDriver {
             let mut preprocessor = Preprocessor::new(
                 &mut self.source_manager,
                 &mut self.diagnostics,
-                lang_options.clone(), // TODO: make it to just borrow
+                lang_options.clone(),  // TODO: make it to just borrow
                 target_triple.clone(), // TODO: make it to just borrow
                 &self.config.preprocessor,
             );
-            let result = preprocessor
+
+            // Preprocessor is dropped here, releasing the borrow on diagnostics
+            preprocessor
                 .process(source_id, &self.config.preprocessor)
                 .map_err(|e| {
                     CompilerError::PreprocessorError(format!("Preprocessing failed: {:?}", e))
-                })?;
-            // Preprocessor is dropped here, releasing the borrow on diagnostics
-            result
+                })?
         };
 
         // Check for preprocessing errors and stop if any
@@ -190,9 +188,9 @@ impl CompilerDriver {
                 &target_triple,
                 &pp_tokens,
             );
-            let result = lexer.tokenize_all();
+
             // Lexer is dropped here, releasing the borrow on diagnostics
-            result
+            lexer.tokenize_all()
         };
 
         // Check for lexing errors and stop if any
@@ -275,8 +273,6 @@ impl CompilerDriver {
         &self,
         pp_tokens: &[crate::preprocessor::PPToken],
     ) -> Result<(), CompilerError> {
-        use std::io::Write;
-
         for i in 0..pp_tokens.len() {
             let token = &pp_tokens[i];
             if token.kind == crate::preprocessor::PPTokenKind::Eof {

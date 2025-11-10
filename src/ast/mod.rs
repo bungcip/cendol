@@ -24,6 +24,12 @@ pub type SymbolEntryRef = NonZeroU32;
 pub type InitializerRef = NonZeroU32;
 
 /// Helper methods for Ast.
+impl Default for Ast {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Ast {
     pub fn new() -> Self {
         Ast {
@@ -62,7 +68,11 @@ impl Ast {
     pub fn get_type(&self, index: TypeRef) -> &Type {
         let idx = (index.get() - 1) as usize;
         if idx >= self.types.len() {
-            panic!("Type index {} out of bounds: types vector has {} elements", index.get(), self.types.len());
+            panic!(
+                "Type index {} out of bounds: types vector has {} elements",
+                index.get(),
+                self.types.len()
+            );
         }
         &self.types[idx]
     }

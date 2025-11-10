@@ -1,6 +1,5 @@
 use crate::lexer::TokenKind;
-use crate::source_manager::{SourceLoc, SourceManager, SourceSpan};
-use annotate_snippets::{Level, Renderer, Snippet};
+use crate::source_manager::{SourceManager, SourceSpan};
 use symbol_table::GlobalSymbol as Symbol;
 
 /// Diagnostic severity levels
@@ -64,6 +63,12 @@ pub struct DiagnosticEngine {
     pub diagnostics: Vec<Diagnostic>,
 }
 
+impl Default for DiagnosticEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DiagnosticEngine {
     pub fn new() -> Self {
         DiagnosticEngine {
@@ -78,7 +83,7 @@ impl DiagnosticEngine {
             }
             SemanticError::Redefinition {
                 name,
-                first_def,
+                first_def: _first_def,
                 second_def,
             } => (format!("Redefinition of '{}'", name), second_def),
             SemanticError::TypeMismatch {
@@ -192,27 +197,6 @@ impl DiagnosticEngine {
             .any(|d| d.level == DiagnosticLevel::Error)
     }
 
-    pub fn error_count(&self) -> usize {
-        self.diagnostics
-            .iter()
-            .filter(|d| d.level == DiagnosticLevel::Error)
-            .count()
-    }
-
-    pub fn warning_count(&self) -> usize {
-        self.diagnostics
-            .iter()
-            .filter(|d| d.level == DiagnosticLevel::Warning)
-            .count()
-    }
-
-    pub fn note_count(&self) -> usize {
-        self.diagnostics
-            .iter()
-            .filter(|d| d.level == DiagnosticLevel::Note)
-            .count()
-    }
-
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
     }
@@ -285,15 +269,15 @@ impl ErrorFormatter {
         let mut result = format!("{}: {}", level_str, diag.message);
 
         // Add source location if available
-        if let Some(file_info) = source_manager.get_file_info(diag.location.source_id()) {
-            if let Some((line, col)) = source_manager.get_line_column(diag.location.start) {
-                result.push_str(&format!(
-                    " at {}:{}:{}",
-                    file_info.path.display(),
-                    line,
-                    col
-                ));
-            }
+        if let Some(file_info) = source_manager.get_file_info(diag.location.source_id())
+            && let Some((line, col)) = source_manager.get_line_column(diag.location.start)
+        {
+            result.push_str(&format!(
+                " at {}:{}:{}",
+                file_info.path.display(),
+                line,
+                col
+            ));
         }
 
         // Add hints if enabled

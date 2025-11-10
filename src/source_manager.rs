@@ -31,6 +31,11 @@ impl SourceLoc {
         SourceLoc(packed)
     }
 
+    pub fn empty() -> Self {
+        SourceLoc(0)
+    }
+
+
     pub fn source_id(&self) -> SourceId {
         SourceId(
             NonZeroU32::new((self.0 >> Self::ID_SHIFT) & ((1 << (32 - Self::ID_SHIFT)) - 1))
@@ -64,8 +69,8 @@ impl SourceSpan {
 
     pub fn empty() -> Self {
         Self {
-            start: SourceLoc(0),
-            end: SourceLoc(0),
+            start: SourceLoc::empty(),
+            end: SourceLoc::empty(),
         }
     }
 

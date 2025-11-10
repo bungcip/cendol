@@ -169,22 +169,36 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         }
     }
 
-    /// Get the current token
-    fn current_token(&self) -> Option<Token> {
+    /// Get the current token (returns None if at end of input)
+    fn try_current_token(&self) -> Option<Token> {
         self.tokens.get(self.current_idx).cloned()
+    }
+
+    /// Get the current token (returns error if at end of input)
+    fn current_token(&self) -> Result<Token, ParseError> {
+        self.try_current_token()
+            .ok_or_else(|| ParseError::SyntaxError {
+                message: "Unexpected end of input".to_string(),
+                location: SourceSpan::empty(),
+            })
     }
 
     /// Get the current token kind
     fn current_token_kind(&self) -> Option<TokenKind> {
-        self.current_token().map(|t| t.kind)
+        self.try_current_token().map(|t| t.kind)
+    }
+
+    /// Get the current token location
+    fn current_token_span(&self) -> Result<SourceSpan, ParseError> {
+        Ok(self.current_token()?.location)
     }
 
     /// Peek at the next token without consuming it
-    fn peek_token(&self) -> Option<&Token> {
-        self.tokens.get(self.current_idx + 1)
+    fn peek_token(&self, next_index: u32) -> Option<&Token> {
+        self.tokens.get(self.current_idx + next_index as usize + 1)
     }
 
-    /// Advance to the next token
+    /// Advance to the next token and return previous token
     fn advance(&mut self) -> Option<Token> {
         if self.current_idx < self.tokens.len() {
             let token = &self.tokens[self.current_idx];
@@ -195,9 +209,18 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         }
     }
 
+    /// accept a specific, if found consume it and return it, otherwise nothing happen
+    fn accept(&mut self, accepted: TokenKind) -> Option<Token> {
+        if self.current_token_kind() == Some(accepted) {
+            self.advance()
+        } else {
+            None
+        }
+    }
+
     /// Expect a specific token kind, consume it if found
     fn expect(&mut self, expected: TokenKind) -> Result<Token, ParseError> {
-        if let Some(token) = self.current_token() {
+        if let Some(token) = self.try_current_token() {
             if token.kind == expected {
                 self.advance().ok_or_else(|| ParseError::SyntaxError {
                     message: "Unexpected end of input".to_string(),
@@ -231,7 +254,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         let mut brace_depth = 0;
         let mut paren_depth = 0;
 
-        while let Some(token) = self.current_token() {
+        while let Some(token) = self.try_current_token() {
             match token.kind {
                 TokenKind::LeftBrace => brace_depth += 1,
                 TokenKind::RightBrace => {
@@ -263,7 +286,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     /// Parse C11 floating-point literal syntax
     fn parse_c11_float_literal(&self, text: Symbol) -> Result<f64, ParseError> {
         let text_str = text.as_str();
-        let token = self.current_token().unwrap();
+        let token = self.try_current_token().unwrap();
 
         // C11 floating-point literal format:
         // [digits][.digits][e|E[+|-]digits][f|F|l|L]
@@ -415,7 +438,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         );
         let mut left = self.parse_prefix()?;
 
-        while let Some(current_token) = self.current_token() {
+        while let Some(current_token) = self.try_current_token() {
             debug!(
                 "parse_expression: loop iteration, current token {:?}, min_binding_power={}",
                 current_token.kind, min_binding_power.0
@@ -465,16 +488,13 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     /// Parse prefix expression
     fn parse_prefix(&mut self) -> Result<NodeRef, ParseError> {
         let token = self
-            .current_token()
+            .try_current_token()
             .ok_or_else(|| ParseError::SyntaxError {
                 message: "Unexpected end of input".to_string(),
                 location: SourceSpan::empty(),
             })?;
 
-        debug!(
-            "parse_prefix: token={:?} at {}",
-            token.kind, token.location
-        );
+        debug!("parse_prefix: token={:?} at {}", token.kind, token.location);
         match token.kind {
             TokenKind::Identifier(symbol) => {
                 self.advance();
@@ -487,10 +507,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             }
             TokenKind::IntegerConstant(value) => {
                 self.advance();
-                let node = self.ast.push_node(Node::new(
-                    NodeKind::LiteralInt(value),
-                    token.location,
-                ));
+                let node = self
+                    .ast
+                    .push_node(Node::new(NodeKind::LiteralInt(value), token.location));
                 Ok(node)
             }
             TokenKind::FloatConstant(text) => {
@@ -668,44 +687,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             TokenKind::Comma => BinaryOp::Comma,
             TokenKind::Question => return self.parse_ternary(left, right_node),
             TokenKind::LeftParen => return self.parse_function_call(left),
-            TokenKind::LeftBracket => {
-                // Handle array access inline to properly parse the index
-                // The LeftBracket was already consumed by the advance() call in parse_infix
-
-                // The inner parse_expression call has already been attempted and has parsed
-                // the index expression (e.g., "0"), but the current token is now RightBracket.
-                // We need to handle this case where the index was parsed but we need to
-                // consume the RightBracket to complete the array access.
-
-                // Since the index was already parsed by the inner parse_expression call,
-                // we can't easily retrieve it. However, we know that in a proper implementation,
-                // the index expression would be available. For now, we'll create a placeholder
-                // and focus on consuming the RightBracket to fix the parsing error.
-                // A proper fix would require refactoring the expression parsing to track
-                // the parsed index expression.
-
-                // Create a placeholder index node
-                let index = self.ast.push_node(Node {
-                    kind: NodeKind::LiteralInt(0), // Placeholder
-                    span: self.current_token().unwrap().location,
-                    resolved_type: Cell::new(None),
-                    resolved_symbol: Cell::new(None),
-                });
-
-                // Consume the RightBracket token
-                let right_bracket_token = self.expect(TokenKind::RightBracket)?;
-                let span = SourceSpan::new(
-                    self.ast.get_node(left).span.start,
-                    right_bracket_token.location.end,
-                );
-                let node = self.ast.push_node(Node {
-                    kind: NodeKind::IndexAccess(left, index),
-                    span,
-                    resolved_type: Cell::new(None),
-                    resolved_symbol: Cell::new(None),
-                });
-                return Ok(node);
-            }
+            TokenKind::LeftBracket => return self.parse_index_access(left),
             TokenKind::Dot => return self.parse_member_access(left, false),
             TokenKind::Arrow => return self.parse_member_access(left, true),
             _ => {
@@ -763,7 +745,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     fn parse_function_call(&mut self, function: NodeRef) -> Result<NodeRef, ParseError> {
         let mut args = Vec::new();
 
-        if !self.matches(&[TokenKind::RightParen]) {
+        if self.accept(TokenKind::RightParen) == None {
             loop {
                 let arg_result = self.parse_expression(BindingPower::MIN)?;
                 let arg = match arg_result {
@@ -777,7 +759,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 };
                 args.push(arg);
 
-                if !self.matches(&[TokenKind::Comma]) {
+                if self.accept(TokenKind::Comma) == None {
                     break;
                 }
                 self.advance(); // consume comma
@@ -801,7 +783,6 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Parse array index access
-    #[allow(dead_code)]
     fn parse_index_access(&mut self, array: NodeRef) -> Result<NodeRef, ParseError> {
         debug!(
             "parse_index_access: parsing array index, current token {:?}",
@@ -874,7 +855,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         is_arrow: bool,
     ) -> Result<NodeRef, ParseError> {
         let member_token = self
-            .current_token()
+            .try_current_token()
             .ok_or_else(|| ParseError::SyntaxError {
                 message: "Expected member name".to_string(),
                 location: SourceSpan::empty(),
@@ -943,14 +924,11 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse a declaration
     pub fn parse_declaration(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self
-            .current_token()
-            .map(|t| t.location.start)
-            .unwrap_or(SourceLoc(0));
+        let start_span = self.current_token()?.location.start;
 
         // Check for _Static_assert (C11)
-        if self.matches(&[TokenKind::StaticAssert]) {
-            return self.parse_static_assert();
+        if let Some(token) = self.accept(TokenKind::StaticAssert) {
+            return self.parse_static_assert(token);
         }
 
         // Parse declaration specifiers
@@ -1014,7 +992,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     fn parse_declaration_specifiers(&mut self) -> Result<Vec<DeclSpecifier>, ParseError> {
         let mut specifiers = Vec::new();
 
-        while let Some(token) = self.current_token() {
+        while let Some(token) = self.try_current_token() {
             match token.kind {
                 // Storage class specifiers
                 TokenKind::Typedef
@@ -1048,7 +1026,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 | TokenKind::Restrict
                 | TokenKind::Atomic => {
                     let mut qualifiers = TypeQualifiers::empty();
-                    while let Some(token) = self.current_token() {
+                    while let Some(token) = self.try_current_token() {
                         match token.kind {
                             TokenKind::Const => qualifiers.insert(TypeQualifiers::CONST),
                             TokenKind::Volatile => qualifiers.insert(TypeQualifiers::VOLATILE),
@@ -1070,7 +1048,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 // Function specifiers
                 TokenKind::Inline | TokenKind::Noreturn => {
                     let mut func_specs = FunctionSpecifiers::empty();
-                    while let Some(token) = self.current_token() {
+                    while let Some(token) = self.try_current_token() {
                         match token.kind {
                             TokenKind::Inline => func_specs.insert(FunctionSpecifiers::INLINE),
                             TokenKind::Noreturn => func_specs.insert(FunctionSpecifiers::NORETURN),
@@ -1185,7 +1163,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     /// Parse type specifier
     fn parse_type_specifier(&mut self) -> Result<TypeSpecifier, ParseError> {
         let token = self
-            .current_token()
+            .try_current_token()
             .ok_or_else(|| ParseError::SyntaxError {
                 message: "Expected type specifier".to_string(),
                 location: SourceSpan::empty(),
@@ -1253,11 +1231,11 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             }
             TokenKind::Struct => {
                 self.advance();
-                self.parse_struct_or_union_specifier(false)
+                self.parse_record_specifier(false)
             }
             TokenKind::Union => {
                 self.advance();
-                self.parse_struct_or_union_specifier(true)
+                self.parse_record_specifier(true)
             }
             TokenKind::Enum => {
                 self.advance();
@@ -1293,11 +1271,11 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Parse struct or union specifier
-    fn parse_struct_or_union_specifier(
+    fn parse_record_specifier(
         &mut self,
         is_union: bool,
     ) -> Result<TypeSpecifier, ParseError> {
-        let tag = if let Some(token) = self.current_token() {
+        let tag = if let Some(token) = self.try_current_token() {
             if let TokenKind::Identifier(symbol) = token.kind {
                 self.advance();
                 Some(symbol)
@@ -1326,7 +1304,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse enum specifier
     fn parse_enum_specifier(&mut self) -> Result<TypeSpecifier, ParseError> {
-        let tag = if let Some(token) = self.current_token() {
+        let tag = if let Some(token) = self.try_current_token() {
             if let TokenKind::Identifier(symbol) = token.kind {
                 self.advance().ok_or_else(|| ParseError::SyntaxError {
                     message: "Unexpected end of input".to_string(),
@@ -1430,7 +1408,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     /// Parse enumerator
     fn parse_enumerator(&mut self) -> Result<NodeRef, ParseError> {
         let token = self
-            .current_token()
+            .try_current_token()
             .ok_or_else(|| ParseError::SyntaxError {
                 message: "Expected enumerator name".to_string(),
                 location: SourceSpan::empty(),
@@ -1559,7 +1537,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             if self.matches(&[TokenKind::Dot]) {
                 self.advance(); // consume '.'
                 let token = self
-                    .current_token()
+                    .try_current_token()
                     .ok_or_else(|| ParseError::SyntaxError {
                         message: "Expected field name".to_string(),
                         location: SourceSpan::empty(),
@@ -1625,7 +1603,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             inner_declarator
         } else if let Some(ident_symbol) = initial_declarator {
             Declarator::Identifier(ident_symbol, TypeQualifiers::empty(), None)
-        } else if let Some(token) = self.current_token() {
+        } else if let Some(token) = self.try_current_token() {
             if let TokenKind::Identifier(symbol) = token.kind {
                 self.advance(); // Consume identifier
                 Declarator::Identifier(symbol, TypeQualifiers::empty(), None)
@@ -1683,7 +1661,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     /// Helper to parse type qualifiers
     fn parse_type_qualifiers(&mut self) -> Result<TypeQualifiers, ParseError> {
         let mut qualifiers = TypeQualifiers::empty();
-        while let Some(token) = self.current_token() {
+        while let Some(token) = self.try_current_token() {
             match token.kind {
                 TokenKind::Const => {
                     qualifiers.insert(TypeQualifiers::CONST);
@@ -1785,7 +1763,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     /// Parse a statement
     pub fn parse_statement(&mut self) -> Result<NodeRef, ParseError> {
         let token = self
-            .current_token()
+            .try_current_token()
             .ok_or_else(|| ParseError::SyntaxError {
                 message: "Expected statement".to_string(),
                 location: SourceSpan::empty(),
@@ -1793,7 +1771,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
         // Check for label: identifier :
         if let TokenKind::Identifier(label_symbol) = token.kind
-            && let Some(next_token) = self.peek_token()
+            && let Some(next_token) = self.peek_token(0)
             && next_token.kind == TokenKind::Colon
         {
             return self.parse_label_statement(label_symbol);
@@ -1822,10 +1800,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse compound statement (block)
     fn parse_compound_statement(&mut self) -> Result<(NodeRef, SourceLoc), ParseError> {
-        let start_span = self
-            .current_token()
-            .map(|t| t.location.start)
-            .unwrap_or(SourceLoc(0));
+        let start_span = self.current_token()?.location.start;
         self.expect(TokenKind::LeftBrace)?;
 
         let mut block_items = Vec::new();
@@ -1853,7 +1828,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Check if current tokens indicate start of a declaration
     fn is_declaration_start(&self) -> bool {
-        if let Some(token) = self.current_token() {
+        if let Some(token) = self.try_current_token() {
             match token.kind {
                 TokenKind::Typedef
                 | TokenKind::Extern
@@ -1895,10 +1870,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse if statement
     fn parse_if_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self
-            .current_token()
-            .map(|t| t.location.start)
-            .unwrap_or(SourceLoc(0));
+        let start_span = self.current_token()?.location.start;
         self.expect(TokenKind::If)?;
         self.expect(TokenKind::LeftParen)?;
 
@@ -1943,10 +1915,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse switch statement
     fn parse_switch_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self
-            .current_token()
-            .map(|t| t.location.start)
-            .unwrap_or(SourceLoc(0));
+        let start_span = self.current_token()?.location.start;
         self.expect(TokenKind::Switch)?;
         self.expect(TokenKind::LeftParen)?;
 
@@ -1982,10 +1951,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse while statement
     fn parse_while_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self
-            .current_token()
-            .map(|t| t.location.start)
-            .unwrap_or(SourceLoc(0));
+        let start_span = self.current_token()?.location.start;
         self.expect(TokenKind::While)?;
         self.expect(TokenKind::LeftParen)?;
 
@@ -2018,11 +1984,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse do-while statement
     fn parse_do_while_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self
-            .current_token()
-            .map(|t| t.location.start)
-            .unwrap_or(SourceLoc(0));
-
+        let start_span = self.current_token()?.location.start;
         self.expect(TokenKind::Do)?;
 
         let body = self.parse_statement()?;
@@ -2058,10 +2020,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse for statement
     fn parse_for_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self
-            .current_token()
-            .map(|t| t.location.start)
-            .unwrap_or(SourceLoc(0));
+        let start_span = self.current_token()?.location.start;
         self.expect(TokenKind::For)?;
         self.expect(TokenKind::LeftParen)?;
 
@@ -2176,15 +2135,11 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse goto statement
     fn parse_goto_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self
-            .current_token()
-            .map(|t| t.location.start)
-            .unwrap_or(SourceLoc(0));
-
+        let start_span = self.current_token()?.location.start;
         self.expect(TokenKind::Goto)?;
 
         let token = self
-            .current_token()
+            .try_current_token()
             .ok_or_else(|| ParseError::SyntaxError {
                 message: "Expected label name".to_string(),
                 location: SourceSpan::empty(),
@@ -2213,11 +2168,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse continue statement
     fn parse_continue_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self
-            .current_token()
-            .map(|t| t.location.start)
-            .unwrap_or(SourceLoc(0));
-
+        let start_span = self.current_token()?.location.start;
         self.expect(TokenKind::Continue)?;
         let semicolon_token = self.expect(TokenKind::Semicolon)?;
         let end_span = semicolon_token.location.end;
@@ -2230,10 +2181,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse break statement
     fn parse_break_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self
-            .current_token()
-            .map(|t| t.location.start)
-            .unwrap_or(SourceLoc(0));
+        let start_span = self.current_token()?.location.start;
 
         self.expect(TokenKind::Break)?;
         let semicolon_token = self.expect(TokenKind::Semicolon)?;
@@ -2247,10 +2195,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse return statement
     fn parse_return_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self
-            .current_token()
-            .map(|t| t.location.start)
-            .unwrap_or(SourceLoc(0));
+        let start_span = self.current_token()?.location.start;
 
         let _return_token = self.expect(TokenKind::Return)?;
         debug!("parse_return_statement: parsing return expression");
@@ -2287,10 +2232,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse empty statement
     fn parse_empty_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self
-            .current_token()
-            .map(|t| t.location.start)
-            .unwrap_or(SourceLoc(0));
+        let start_span = self.current_token()?.location.start;
 
         let semicolon_token = self.expect(TokenKind::Semicolon)?;
         let end_span = semicolon_token.location.end;
@@ -2305,10 +2247,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse case statement (including GNU case ranges)
     fn parse_case_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self
-            .current_token()
-            .map(|t| t.location.start)
-            .unwrap_or(SourceLoc(0));
+        let start_span = self.current_token()?.location.start;
 
         self.expect(TokenKind::Case)?;
 
@@ -2370,10 +2309,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse default statement
     fn parse_default_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self
-            .current_token()
-            .map(|t| t.location.start)
-            .unwrap_or(SourceLoc(0));
+        let start_span = self.current_token()?.location.start;
 
         self.expect(TokenKind::Default)?;
         self.expect(TokenKind::Colon)?;
@@ -2391,10 +2327,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse label statement
     fn parse_label_statement(&mut self, label_symbol: Symbol) -> Result<NodeRef, ParseError> {
-        let start_span = self
-            .current_token()
-            .map(|t| t.location.start)
-            .unwrap_or(SourceLoc(0));
+        let start_span = self.current_token()?.location.start;
 
         self.advance(); // consume the identifier
         self.expect(TokenKind::Colon)?; // consume the colon
@@ -2412,10 +2345,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse expression statement
     fn parse_expression_statement(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self
-            .current_token()
-            .map(|t| t.location.start)
-            .unwrap_or(SourceLoc(0));
+        let start_span = self.current_token()?.location.start;
 
         let expression = if self.matches(&[TokenKind::Semicolon]) {
             None
@@ -2445,10 +2375,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse function definition
     pub fn parse_function_definition(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self
-            .current_token()
-            .map(|t| t.location.start)
-            .unwrap_or(SourceLoc(0));
+        let start_span = self.current_token()?.location.start;
 
         // Parse declaration specifiers
         let specifiers = self.parse_declaration_specifiers()?;
@@ -2475,17 +2402,16 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse translation unit (top level)
     pub fn parse_translation_unit(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self
-            .current_token()
-            .map(|t| t.location.start)
-            .unwrap_or(SourceLoc(0));
+        let start_span = self.current_token()?.location.start;
+        let mut end_span = SourceLoc::empty();
 
         let mut top_level_declarations = Vec::new();
         let mut iteration_count = 0;
-        const MAX_ITERATIONS: usize = 10000; // Prevent infinite loops
+        const MAX_ITERATIONS: usize = 1000; // Prevent infinite loops
 
-        while let Some(token) = self.current_token() {
+        while let Some(token) = self.try_current_token() {
             if token.kind == TokenKind::EndOfFile {
+                end_span = token.location.end;
                 break;
             }
 
@@ -2521,21 +2447,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                     }
                 }
             }
-
-            // Ensure we made progress - if we didn't advance, force advance to prevent infinite loop
-            if self.current_idx == initial_idx {
-                // Skip the current token to make progress
-                self.advance();
-            }
         }
 
-        let end_span = self
-            .current_token()
-            .map(|t| t.location.end)
-            .unwrap_or(SourceLoc(0));
-
         let span = SourceSpan::new(start_span, end_span);
-
         let node = self.ast.push_node(Node::new(
             NodeKind::TranslationUnit(top_level_declarations),
             span,
@@ -2556,10 +2470,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse _Generic selection (C11)
     pub fn parse_generic_selection(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self
-            .current_token()
-            .map(|t| t.location.start)
-            .unwrap_or(SourceLoc(0));
+        let start_span = self.current_token()?.location.start;
         self.expect(TokenKind::Generic)?;
         self.expect(TokenKind::LeftParen)?;
 
@@ -2627,15 +2538,16 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse compound literal (C99)
     pub fn parse_compound_literal(&mut self) -> Result<NodeRef, ParseError> {
-        self.expect(TokenKind::LeftParen)?;
+        let start_token = self.expect(TokenKind::LeftParen)?;
         let type_ref = self.parse_type_name()?;
         self.expect(TokenKind::RightParen)?;
 
         let initializer = self.parse_initializer()?;
 
+        let end_loc = self.current_token_span()?.end;
         let span = SourceSpan {
-            start: SourceLoc(0), // Would need to track start properly
-            end: SourceLoc(0),   // This needs proper tracking
+            start: start_token.location.start,
+            end: end_loc, // This needs proper tracking
         };
 
         let initializer_ref = self.ast.push_initializer(initializer);
@@ -2649,13 +2561,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Parse static assert (C11)
-    pub fn parse_static_assert(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self
-            .current_token()
-            .map(|t| t.location.start)
-            .unwrap_or(SourceLoc(0));
-
-        self.expect(TokenKind::StaticAssert)?;
+    pub fn parse_static_assert(&mut self, start_token: Token) -> Result<NodeRef, ParseError> {
+        // already consumed `_Static_assert`
+        let start_span = start_token.location.start;
         self.expect(TokenKind::LeftParen)?;
 
         let condition_result = self.parse_expression(BindingPower::MIN)?;
@@ -2672,7 +2580,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         self.expect(TokenKind::Comma)?;
 
         let token = self
-            .current_token()
+            .try_current_token()
             .ok_or_else(|| ParseError::SyntaxError {
                 message: "Expected string literal in _Static_assert".to_string(),
                 location: SourceSpan::empty(),
@@ -2707,10 +2615,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse sizeof expression or type
     pub fn parse_sizeof(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self
-            .current_token()
-            .map(|t| t.location.start)
-            .unwrap_or(SourceLoc(0));
+        let start_span = self.current_token()?.location.start;
         self.expect(TokenKind::Sizeof)?;
 
         let node = if self.matches(&[TokenKind::LeftParen]) {
@@ -2768,10 +2673,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Parse _Alignof (C11)
     pub fn parse_alignof(&mut self) -> Result<NodeRef, ParseError> {
-        let start_span = self
-            .current_token()
-            .map(|t| t.location.start)
-            .unwrap_or(SourceLoc(0));
+        let start_span = self.current_token()?.location.start;
         self.expect(TokenKind::Alignof)?;
         self.expect(TokenKind::LeftParen)?;
 
@@ -2790,7 +2692,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Check if current token starts a type name
     fn is_type_name_start(&self) -> bool {
-        if let Some(token) = self.current_token() {
+        if let Some(token) = self.try_current_token() {
             matches!(
                 token.kind,
                 TokenKind::Void
@@ -2820,7 +2722,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Check if current token starts an abstract declarator
     fn is_abstract_declarator_start(&self) -> bool {
-        if let Some(token) = self.current_token() {
+        if let Some(token) = self.try_current_token() {
             match token.kind {
                 TokenKind::Star => true,        // pointer
                 TokenKind::LeftParen => true,   // parenthesized abstract declarator

@@ -837,6 +837,7 @@ impl<'src> AstDumper<'src> {
             NodeKind::EmptyStatement => "EmptyStatement".to_string(),
             NodeKind::EnumConstant(_, _) => "EnumConstant".to_string(),
             NodeKind::StaticAssert(_, _) => "StaticAssert".to_string(),
+            NodeKind::Dummy => "Dummy".to_string(),
         }
     }
 

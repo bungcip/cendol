@@ -101,7 +101,7 @@ impl Ast {
 /// The primary AST node structure.
 /// Stored in the flattened Vec<Node>, with index-based references.
 /// Designed to be small and cache-friendly.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Node {
     pub kind: NodeKind,
     pub span: SourceSpan,
@@ -249,6 +249,9 @@ pub enum NodeKind {
 
     // --- Top Level ---
     TranslationUnit(Vec<NodeRef> /* top-level declarations */),
+
+    // --- Dummy Node ---
+    Dummy,
 }
 
 // Structs for Large/Indirect Variants (to keep NodeKind size small and cache-friendly)

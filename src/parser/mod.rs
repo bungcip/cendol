@@ -479,22 +479,18 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             TokenKind::Identifier(symbol) => {
                 self.advance();
                 debug!("parse_prefix: parsed identifier {:?}", symbol);
-                let node = self.ast.push_node(Node {
-                    kind: NodeKind::Ident(symbol, Cell::new(None)),
-                    span: token.location,
-                    resolved_type: Cell::new(None),
-                    resolved_symbol: Cell::new(None),
-                });
+                let node = self.ast.push_node(Node::new(
+                    NodeKind::Ident(symbol, Cell::new(None)),
+                    token.location,
+                ));
                 Ok(node)
             }
             TokenKind::IntegerConstant(value) => {
                 self.advance();
-                let node = self.ast.push_node(Node {
-                    kind: NodeKind::LiteralInt(value),
-                    span: token.location,
-                    resolved_type: Cell::new(None),
-                    resolved_symbol: Cell::new(None),
-                });
+                let node = self.ast.push_node(Node::new(
+                    NodeKind::LiteralInt(value),
+                    token.location,
+                ));
                 Ok(node)
             }
             TokenKind::FloatConstant(text) => {

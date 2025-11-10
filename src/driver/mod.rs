@@ -321,6 +321,9 @@ impl CompilerDriver {
 
     fn dump_parser(&self, ast: &Ast){
         for (i, node) in ast.nodes.iter().enumerate() {
+            if matches!(node.kind, NodeKind::Dummy) {
+                continue;
+            }
             print!("{}: ", i + 1);
             self.dump_parser_kind(&node.kind);
         }
@@ -379,6 +382,7 @@ impl CompilerDriver {
             NodeKind::FunctionDef(func_def) => println!("FunctionDef({} specifiers, body={})", func_def.specifiers.len(), func_def.body.get()),
             NodeKind::EnumConstant(name, value) => println!("EnumConstant({}, {})", name, value.map(|r| r.get().to_string()).unwrap_or("auto".to_string())),
             NodeKind::StaticAssert(cond, msg) => println!("StaticAssert(condition={}, message={})", cond.get(), msg),
+            NodeKind::Dummy => println!("DUMMY"),
         }
     }
     

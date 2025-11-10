@@ -1007,6 +1007,10 @@ TokenKind::Generic => self.parse_generic_selection(),
         let specifiers = match self.parse_declaration_specifiers() {
             Ok(specifiers) => {
                 debug!("parse_declaration: parsed specifiers, now at position {} with token {:?}", self.current_idx, self.current_token_kind());
+                debug!("parse_declaration: current token after specifiers: {:?}", self.current_token_kind());
+                if let Some(last_specifier) = specifiers.last() {
+                    debug!("parse_declaration: last specifier type: {:?}", std::mem::discriminant(&last_specifier.type_specifier));
+                }
                 specifiers
             },
             Err(e) => {
@@ -1018,7 +1022,45 @@ TokenKind::Generic => self.parse_generic_selection(),
             }
         };
 
-        // Check if we have declarators
+        // Special handling for struct/union definitions
+        // Check if the last specifier is a struct/union definition
+        let is_struct_union_definition = if let Some(last_specifier) = specifiers.last() {
+            matches!(&last_specifier.type_specifier, TypeSpecifier::Record(_, _, Some(_)))
+        } else {
+            false
+        };
+
+        // If we have a struct/union definition, we need to check if there are declarators following
+        // The logic should be:
+        // - If next token is semicolon: treat as pure struct/union definition
+        // - If next token is declarator-starting token: continue with normal declaration parsing
+        if is_struct_union_definition {
+            if self.matches(&[TokenKind::Semicolon]) {
+                // This is a pure struct/union definition like "struct foo { ... };"
+                // Consume the semicolon and create declaration with no declarators
+                self.expect(TokenKind::Semicolon)?;
+                
+                let declaration_data = DeclarationData {
+                    specifiers,
+                    init_declarators: Vec::new(),
+                };
+                
+                let end_span = self.current_token()?.location.end;
+                let span = SourceSpan::new(start_span, end_span);
+                
+                let node = self
+                    .ast
+                    .push_node(Node::new(NodeKind::Declaration(declaration_data), span));
+                debug!("parse_declaration: successfully parsed struct/union definition, node_id={}", node.get());
+                return Ok(node);
+            } else {
+                // This is a struct/union definition with declarators
+                // Continue with normal declaration parsing
+                debug!("parse_declaration: struct/union definition with declarators, continuing with normal parsing");
+            }
+        }
+
+        // For all other cases, check if we have declarators
         let has_declarators = if self.matches(&[TokenKind::Semicolon]) {
             // Definitely no declarators
             false
@@ -1029,35 +1071,21 @@ TokenKind::Generic => self.parse_generic_selection(),
                 Some(TokenKind::Identifier(_)) | Some(TokenKind::Star) | Some(TokenKind::LeftParen))
         };
         
-        // If no declarators but we have specifiers, this could be:
-        // 1. A struct/union definition like "struct foo { ... };" (valid C)
-        // 2. A pure declaration like "int;" (which is actually invalid C)
-        // 3. An expression statement that starts with a type name
-        
+        // If no declarators and this is not a struct/union definition, it's an error
         if !has_declarators {
             // Check if this looks like a struct/union definition
             // by looking at the last parsed specifier
             if let Some(last_specifier) = specifiers.last() {
                 match &last_specifier.type_specifier {
                     TypeSpecifier::Record(_, _tag, _definition) => {
-                        // This is a struct/union definition - it's valid C
-                        // Consume the semicolon
-                        self.expect(TokenKind::Semicolon)?;
-                        
-                        // Create a declaration with no declarators
-                        let declaration_data = DeclarationData {
-                            specifiers,
-                            init_declarators: Vec::new(),
-                        };
-                        
-                        let end_span = self.current_token()?.location.end;
-                        let span = SourceSpan::new(start_span, end_span);
-                        
-                        let node = self
-                            .ast
-                            .push_node(Node::new(NodeKind::Declaration(declaration_data), span));
-                        debug!("parse_declaration: successfully parsed struct/union definition, node_id={}", node.get());
-                        return Ok(node);
+                        // This should not happen due to the check above, but just in case
+                        self.current_idx = initial_idx;
+                        self.diag.diagnostics.truncate(saved_diagnostic_count);
+                        debug!("parse_declaration: struct/union definition with no declarators and no semicolon, rolled back to {}", initial_idx);
+                        return Err(ParseError::SyntaxError {
+                            message: "Expected ';' after struct/union definition".to_string(),
+                            location: self.current_token()?.location,
+                        });
                     }
                     _ => {
                         // Not a struct/union definition, this is likely an error
@@ -1287,7 +1315,7 @@ TokenKind::Generic => self.parse_generic_selection(),
                 }
 
                 TokenKind::Identifier(symbol) => {
-                    debug!("parse_declaration_specifiers: found identifier {:?}, calling is_type_name", symbol);
+                    debug!("parse_declaration_specifiers: found identifier {:?}, calling is_type_name, current position: {}", symbol, self.current_idx);
                     if self.is_type_name(symbol) {
                         debug!("parse_declaration_specifiers: {:?} is a type name, parsing type specifier", symbol);
                         let type_specifier = self.parse_type_specifier()?;
@@ -1299,7 +1327,7 @@ TokenKind::Generic => self.parse_generic_selection(),
                             type_specifier,
                         });
                     } else {
-                        debug!("parse_declaration_specifiers: {:?} is not a type name, breaking", symbol);
+                        debug!("parse_declaration_specifiers: {:?} is not a type name, breaking at position {}", symbol, self.current_idx);
                         break;
                     }
                 }
@@ -1817,14 +1845,48 @@ TokenKind::Generic => self.parse_generic_selection(),
 
     /// Parse initializer
     fn parse_initializer(&mut self) -> Result<Initializer, ParseError> {
+        debug!("parse_initializer: called at position {}, current token: {:?}", self.current_idx, self.current_token_kind());
         if self.matches(&[TokenKind::LeftBrace]) {
+            debug!("parse_initializer: found LeftBrace, parsing compound initializer");
             // Compound initializer
             self.advance(); // consume '{'
             let mut initializers = Vec::new();
 
             while !self.matches(&[TokenKind::RightBrace]) {
-                let designated_init = self.parse_designated_initializer()?;
-                initializers.push(designated_init);
+                // Check if this is a designated initializer (starts with . or [)
+                let is_designated = self.matches(&[TokenKind::Dot]) || self.matches(&[TokenKind::LeftBracket]);
+                
+                let initializer = if is_designated {
+                    // Parse designated initializer
+                    let designated_init = self.parse_designated_initializer()?;
+                    designated_init
+                } else {
+                    // Parse regular initializer (expression or nested compound initializer)
+                    let expr_or_compound = if self.matches(&[TokenKind::LeftBrace]) {
+                        // Nested compound initializer
+                        self.parse_initializer()?
+                    } else {
+                        // Expression initializer
+                        let expr_result = self.parse_expression(BindingPower::MIN)?;
+                        match expr_result {
+                            ParseExprOutput::Expression(node) => Initializer::Expression(node),
+                            _ => {
+                                return Err(ParseError::SyntaxError {
+                                    message: "Expected expression in initializer".to_string(),
+                                    location: self.current_token().unwrap().location,
+                                });
+                            }
+                        }
+                    };
+                    
+                    // Wrap in DesignatedInitializer with empty designation
+                    DesignatedInitializer {
+                        designation: Vec::new(),
+                        initializer: expr_or_compound,
+                    }
+                };
+                
+                initializers.push(initializer);
 
                 if !self.matches(&[TokenKind::Comma]) {
                     break;
@@ -1835,6 +1897,7 @@ TokenKind::Generic => self.parse_generic_selection(),
             self.expect(TokenKind::RightBrace)?;
             Ok(Initializer::List(initializers))
         } else {
+            debug!("parse_initializer: no LeftBrace found, current token: {:?}, trying expression initializer", self.current_token_kind());
             // Expression initializer
             let expr_result = self.parse_expression(BindingPower::MIN)?;
             match expr_result {

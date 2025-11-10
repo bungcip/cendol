@@ -472,7 +472,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             })?;
 
         debug!(
-            "parse_prefix: token={:?} at {:?}",
+            "parse_prefix: token={:?} at {}",
             token.kind, token.location
         );
         match token.kind {
@@ -613,7 +613,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         min_bp: BindingPower,
     ) -> Result<NodeRef, ParseError> {
         debug!(
-            "parse_infix: processing operator {:?} at {:?}",
+            "parse_infix: processing operator {:?} at {}",
             operator_token.kind, operator_token.location
         );
 

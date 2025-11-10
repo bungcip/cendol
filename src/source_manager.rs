@@ -43,6 +43,13 @@ impl SourceLoc {
     }
 }
 
+impl std::fmt::Display for SourceLoc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SourceLoc(source_id={}, offset={})", self.source_id(), self.offset())
+    }
+}
+
+
 /// Represents a range in the source file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SourceSpan {
@@ -66,6 +73,13 @@ impl SourceSpan {
         self.start.source_id()
     }
 }
+
+impl std::fmt::Display for SourceSpan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SourceSpan(source_id={}, start={}, end={})", self.source_id(), self.start.offset(), self.end.offset())
+    }
+}
+
 
 /// File information for tracking source files
 #[derive(Debug)]

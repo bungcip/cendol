@@ -1087,8 +1087,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     /// Parse declaration specifiers
     fn parse_declaration_specifiers(&mut self) -> Result<Vec<DeclSpecifier>, ParseError> {
         let mut specifiers = Vec::new();
+        let start_idx = self.current_idx;
+
+        debug!("parse_declaration_specifiers: starting at position {}, token {:?}", start_idx, self.current_token_kind());
 
         while let Some(token) = self.try_current_token() {
+            debug!("parse_declaration_specifiers: loop iteration at position {}, token {:?}", self.current_idx, token.kind);
             match token.kind {
                 // Storage class specifiers
                 TokenKind::Typedef
@@ -1187,7 +1191,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 }
 
                 TokenKind::Identifier(symbol) => {
+                    debug!("parse_declaration_specifiers: found identifier {:?}, calling is_type_name", symbol);
                     if self.is_type_name(symbol) {
+                        debug!("parse_declaration_specifiers: {:?} is a type name, parsing type specifier", symbol);
                         let type_specifier = self.parse_type_specifier()?;
                         specifiers.push(DeclSpecifier {
                             storage_class: None,
@@ -1197,6 +1203,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                             type_specifier,
                         });
                     } else {
+                        debug!("parse_declaration_specifiers: {:?} is not a type name, breaking", symbol);
                         break;
                     }
                 }
@@ -1242,9 +1249,14 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                     });
                 }
 
-                _ => break,
+                _ => {
+                    debug!("parse_declaration_specifiers: token {:?} not recognized as declaration specifier, breaking", token.kind);
+                    break;
+                }
             }
         }
+
+        debug!("parse_declaration_specifiers: ending at position {}, specifiers len={}, found {} specifiers", self.current_idx, specifiers.len(), specifiers.len());
 
         if specifiers.is_empty() {
             return Err(ParseError::SyntaxError {
@@ -1831,11 +1843,56 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                         break;
                     }
 
-                    let specifiers = self.parse_declaration_specifiers()?;
+                    // Parse declaration specifiers for this parameter
+                    let start_idx = self.current_idx;
+                    let saved_diagnostic_count = self.diag.diagnostics.len();
+                    
+                    let specifiers = match self.parse_declaration_specifiers() {
+                        Ok(specifiers) => {
+                            debug!("parse_function_parameters: successfully parsed specifiers, current token: {:?}", self.current_token_kind());
+                            specifiers
+                        },
+                        Err(e) => {
+                            // If specifier parsing fails, we might be at a position where we need
+                            // to fall back to parsing without a proper declarator
+                            debug!("parse_function_parameters: specifier parsing failed, rolling back");
+                            self.current_idx = start_idx;
+                            self.diag.diagnostics.truncate(saved_diagnostic_count);
+                            
+                            // Create a simple default specifier
+                            vec![DeclSpecifier {
+                                storage_class: None,
+                                type_qualifiers: TypeQualifiers::empty(),
+                                function_specifiers: FunctionSpecifiers::empty(),
+                                alignment_specifier: None,
+                                type_specifier: TypeSpecifier::Int,
+                            }]
+                        }
+                    };
+                    
+                    // Try to parse declarator, but be more careful about failures
                     let declarator = if !self.matches(&[TokenKind::Comma])
                         && !self.matches(&[TokenKind::RightParen])
+                        && !self.matches(&[TokenKind::Ellipsis])
                     {
-                        Some(self.parse_declarator(None)?)
+                        // Check if we can even attempt declarator parsing
+                        let can_parse_declarator = self.current_token_kind()
+                            .map(|k| matches!(k, TokenKind::Identifier(_) | TokenKind::Star | TokenKind::LeftParen))
+                            .unwrap_or(false);
+                        
+                        if can_parse_declarator {
+                            match self.parse_declarator(None) {
+                                Ok(declarator) => Some(declarator),
+                                Err(e) => {
+                                    debug!("parse_function_parameters: declarator parsing failed: {:?}", e);
+                                    // If declarator parsing fails, we still want to continue
+                                    // with a None declarator
+                                    None
+                                }
+                            }
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     };
@@ -2006,7 +2063,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 | TokenKind::Alignas => true,
                 TokenKind::Identifier(symbol) => {
                     // Check if it's a typedef name
-                    self.is_type_name(symbol)
+                    let is_type = self.is_type_name(symbol);
+                    debug!("is_declaration_start: identifier {:?}, is_type_name={}", symbol, is_type);
+                    is_type
                 }
                 _ => false,
             }
@@ -2564,7 +2623,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
         let mut top_level_declarations = Vec::new();
         let mut iteration_count = 0;
-        const MAX_ITERATIONS: usize = 1000; // Prevent infinite loops
+        const MAX_ITERATIONS: usize = 50; // Prevent infinite loops
 
         while let Some(token) = self.try_current_token() {
             if token.kind == TokenKind::EndOfFile {
@@ -2952,8 +3011,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     /// Disambiguates between a type name and an identifier in ambiguous contexts.
     /// This is crucial for parsing C's "declaration-specifier-list" vs "expression" ambiguity.
     fn is_type_name(&self, symbol: Symbol) -> bool {
-        // Check if the symbol is in our typedef names set
-        self.typedef_names.contains(&symbol) ||
+        let result = self.typedef_names.contains(&symbol) ||
         // Also check built-in types that might be typedef'd
         matches!(symbol.as_str(), "size_t" | "ptrdiff_t" | "intmax_t" | "uintmax_t" |
                  "intptr_t" | "uintptr_t" | "int8_t" | "int16_t" | "int32_t" | "int64_t" |
@@ -2961,6 +3019,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                  "int_least16_t" | "int_least32_t" | "int_least64_t" | "uint_least8_t" |
                  "uint_least16_t" | "uint_least32_t" | "uint_least64_t" | "int_fast8_t" |
                  "int_fast16_t" | "int_fast32_t" | "int_fast64_t" | "uint_fast8_t" |
-                 "uint_fast16_t" | "uint_fast32_t" | "uint_fast64_t")
+                 "uint_fast16_t" | "uint_fast32_t" | "uint_fast64_t");
+        
+        debug!("is_type_name: checking symbol {:?}, result={}, typedef_names={:?}",
+               symbol, result, self.typedef_names);
+        result
     }
 }

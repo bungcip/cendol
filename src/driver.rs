@@ -292,31 +292,16 @@ impl CompilerDriver {
                 break;
             }
 
-            // Get token text from source manager
-            let buffer = self.source_manager.get_buffer(token.location.source_id());
-            let start = token.location.offset() as usize;
-            let end = start + token.length as usize;
-            if end <= buffer.len() {
-                let text = unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) };
-                print!("{}", text);
-            }
+            // Get token text
+            let text = token.get_text();
+            print!("{}", text);
 
-            // Print gap to next token, preserving newlines and whitespace
-            if i + 1 < pp_tokens.len() {
-                let next_token = &pp_tokens[i + 1];
-                let next_start = if next_token.kind == crate::pp::PPTokenKind::Eof {
-                    buffer.len()
-                } else {
-                    next_token.location.offset() as usize
-                };
-                let gap_start = end;
-                if next_start > gap_start {
-                    let gap = &buffer[gap_start..next_start];
-                    let gap_str = unsafe { std::str::from_utf8_unchecked(gap) };
-                    print!("{}", gap_str);
-                }
+            // Print space between tokens
+            if i + 1 < pp_tokens.len() && pp_tokens[i + 1].kind != crate::pp::PPTokenKind::Eof {
+                print!(" ");
             }
         }
+        println!();
         Ok(())
     }
 

@@ -5,7 +5,7 @@ use crate::ast::*;
 use crate::diagnostic::*;
 use crate::lang_options::LangOptions;
 use crate::lexer::{Lexer, TokenKind};
-use crate::preprocessor::{Preprocessor, PreprocessorConfig};
+use crate::pp::{Preprocessor, PreprocessorConfig};
 use crate::semantic::*;
 use crate::source_manager::*;
 use target_lexicon::Triple as TargetTriple;

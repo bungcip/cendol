@@ -195,55 +195,56 @@ fn test_all_punctuation_tokens() {
     let source = "+ - * / % & | ^ ! ~ < > <= >= == != << >> = += -= *= /= %= &= |= ^= <<= >>= ++ -- -> . ? : , ; ( ) [ ] { } ... && || # ##";
     let mut lexer = create_test_pp_lexer(source);
 
-    test_tokens!(lexer,
-        ( "+", PPTokenKind::Plus ),
-        ( "-", PPTokenKind::Minus ),
-        ( "*", PPTokenKind::Star ),
-        ( "/", PPTokenKind::Slash ),
-        ( "%", PPTokenKind::Percent ),
-        ( "&", PPTokenKind::And ),
-        ( "|", PPTokenKind::Or ),
-        ( "^", PPTokenKind::Xor ),
-        ( "!", PPTokenKind::Not ),
-        ( "~", PPTokenKind::Tilde ),
-        ( "<", PPTokenKind::Less ),
-        ( ">", PPTokenKind::Greater ),
-        ( "<=", PPTokenKind::LessEqual ),
-        ( ">=", PPTokenKind::GreaterEqual ),
-        ( "==", PPTokenKind::Equal ),
-        ( "!=", PPTokenKind::NotEqual ),
-        ( "<<", PPTokenKind::LeftShift ),
-        ( ">>", PPTokenKind::RightShift ),
-        ( "=", PPTokenKind::Assign ),
-        ( "+=", PPTokenKind::PlusAssign ),
-        ( "-=", PPTokenKind::MinusAssign ),
-        ( "*=", PPTokenKind::StarAssign ),
-        ( "/=", PPTokenKind::DivAssign ),
-        ( "%=", PPTokenKind::ModAssign ),
-        ( "&=", PPTokenKind::AndAssign ),
-        ( "|=", PPTokenKind::OrAssign ),
-        ( "^=", PPTokenKind::XorAssign ),
-        ( "<<=", PPTokenKind::LeftShiftAssign ),
-        ( ">>=", PPTokenKind::RightShiftAssign ),
-        ( "++", PPTokenKind::Increment ),
-        ( "--", PPTokenKind::Decrement ),
-        ( "->", PPTokenKind::Arrow ),
-        ( ".", PPTokenKind::Dot ),
-        ( "?", PPTokenKind::Question ),
-        ( ":", PPTokenKind::Colon ),
-        ( ",", PPTokenKind::Comma ),
-        ( ";", PPTokenKind::Semicolon ),
-        ( "(", PPTokenKind::LeftParen ),
-        ( ")", PPTokenKind::RightParen ),
-        ( "[", PPTokenKind::LeftBracket ),
-        ( "]", PPTokenKind::RightBracket ),
-        ( "{", PPTokenKind::LeftBrace ),
-        ( "}", PPTokenKind::RightBrace ),
-        ( "...", PPTokenKind::Ellipsis ),
-        ( "&&", PPTokenKind::LogicAnd ),
-        ( "||", PPTokenKind::LogicOr ),
-        ( "#", PPTokenKind::Hash ),
-        ( "##", PPTokenKind::HashHash ),
+    test_tokens!(
+        lexer,
+        ("+", PPTokenKind::Plus),
+        ("-", PPTokenKind::Minus),
+        ("*", PPTokenKind::Star),
+        ("/", PPTokenKind::Slash),
+        ("%", PPTokenKind::Percent),
+        ("&", PPTokenKind::And),
+        ("|", PPTokenKind::Or),
+        ("^", PPTokenKind::Xor),
+        ("!", PPTokenKind::Not),
+        ("~", PPTokenKind::Tilde),
+        ("<", PPTokenKind::Less),
+        (">", PPTokenKind::Greater),
+        ("<=", PPTokenKind::LessEqual),
+        (">=", PPTokenKind::GreaterEqual),
+        ("==", PPTokenKind::Equal),
+        ("!=", PPTokenKind::NotEqual),
+        ("<<", PPTokenKind::LeftShift),
+        (">>", PPTokenKind::RightShift),
+        ("=", PPTokenKind::Assign),
+        ("+=", PPTokenKind::PlusAssign),
+        ("-=", PPTokenKind::MinusAssign),
+        ("*=", PPTokenKind::StarAssign),
+        ("/=", PPTokenKind::DivAssign),
+        ("%=", PPTokenKind::ModAssign),
+        ("&=", PPTokenKind::AndAssign),
+        ("|=", PPTokenKind::OrAssign),
+        ("^=", PPTokenKind::XorAssign),
+        ("<<=", PPTokenKind::LeftShiftAssign),
+        (">>=", PPTokenKind::RightShiftAssign),
+        ("++", PPTokenKind::Increment),
+        ("--", PPTokenKind::Decrement),
+        ("->", PPTokenKind::Arrow),
+        (".", PPTokenKind::Dot),
+        ("?", PPTokenKind::Question),
+        (":", PPTokenKind::Colon),
+        (",", PPTokenKind::Comma),
+        (";", PPTokenKind::Semicolon),
+        ("(", PPTokenKind::LeftParen),
+        (")", PPTokenKind::RightParen),
+        ("[", PPTokenKind::LeftBracket),
+        ("]", PPTokenKind::RightBracket),
+        ("{", PPTokenKind::LeftBrace),
+        ("}", PPTokenKind::RightBrace),
+        ("...", PPTokenKind::Ellipsis),
+        ("&&", PPTokenKind::LogicAnd),
+        ("||", PPTokenKind::LogicOr),
+        ("#", PPTokenKind::Hash),
+        ("##", PPTokenKind::HashHash),
     );
 }
 
@@ -253,20 +254,21 @@ fn test_all_keyword_tokens() {
     let source = "if ifdef ifndef elif else endif define undef include line pragma error warning";
     let mut lexer = create_test_pp_lexer(source);
 
-    test_tokens!(lexer,
-        ( "if", PPTokenKind::If ),
-        ( "ifdef", PPTokenKind::Ifdef ),
-        ( "ifndef", PPTokenKind::Ifndef ),
-        ( "elif", PPTokenKind::Elif ),
-        ( "else", PPTokenKind::Else ),
-        ( "endif", PPTokenKind::Endif ),
-        ( "define", PPTokenKind::Define ),
-        ( "undef", PPTokenKind::Undef ),
-        ( "include", PPTokenKind::Include ),
-        ( "line", PPTokenKind::Line ),
-        ( "pragma", PPTokenKind::Pragma ),
-        ( "error", PPTokenKind::Error ),
-        ( "warning", PPTokenKind::Warning ),
+    test_tokens!(
+        lexer,
+        ("if", PPTokenKind::If),
+        ("ifdef", PPTokenKind::Ifdef),
+        ("ifndef", PPTokenKind::Ifndef),
+        ("elif", PPTokenKind::Elif),
+        ("else", PPTokenKind::Else),
+        ("endif", PPTokenKind::Endif),
+        ("define", PPTokenKind::Define),
+        ("undef", PPTokenKind::Undef),
+        ("include", PPTokenKind::Include),
+        ("line", PPTokenKind::Line),
+        ("pragma", PPTokenKind::Pragma),
+        ("error", PPTokenKind::Error),
+        ("warning", PPTokenKind::Warning),
     );
 }
 
@@ -278,25 +280,25 @@ fn test_all_literal_tokens() {
 
     let token1 = lexer.next_token().unwrap();
     match token1.kind {
-        PPTokenKind::Identifier(_) => {},
+        PPTokenKind::Identifier(_) => {}
         _ => panic!("Expected identifier token"),
     }
 
     let token2 = lexer.next_token().unwrap();
     match token2.kind {
-        PPTokenKind::StringLiteral(_) => {},
+        PPTokenKind::StringLiteral(_) => {}
         _ => panic!("Expected string literal token"),
     }
 
     let token3 = lexer.next_token().unwrap();
     match token3.kind {
-        PPTokenKind::CharLiteral(_) => {},
+        PPTokenKind::CharLiteral(_) => {}
         _ => panic!("Expected char literal token"),
     }
 
     let token4 = lexer.next_token().unwrap();
     match token4.kind {
-        PPTokenKind::Number(_) => {},
+        PPTokenKind::Number(_) => {}
         _ => panic!("Expected number token"),
     }
 }

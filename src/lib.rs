@@ -5,6 +5,6 @@ pub mod driver;
 pub mod lang_options;
 pub mod lexer;
 pub mod parser;
-pub mod preprocessor;
+pub mod pp;
 pub mod semantic;
 pub mod source_manager;

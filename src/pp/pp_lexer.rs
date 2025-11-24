@@ -227,14 +227,14 @@ impl PPLexer {
                     Some(PPToken::new(
                         PPTokenKind::HashHash,
                         flags,
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                         2,
                     ))
                 } else {
                     Some(PPToken::with_flags(
                         PPTokenKind::Hash,
                         flags,
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                     ))
                 }
             }
@@ -245,7 +245,7 @@ impl PPLexer {
                     Some(PPToken::new(
                         PPTokenKind::Increment,
                         PPTokenFlags::empty(),
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                         2,
                     ))
                 } else if next_ch == Some(b'=') {
@@ -253,13 +253,13 @@ impl PPLexer {
                     Some(PPToken::new(
                         PPTokenKind::PlusAssign,
                         PPTokenFlags::empty(),
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                         2,
                     ))
                 } else {
                     Some(PPToken::simple(
                         PPTokenKind::Plus,
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                     ))
                 }
             }
@@ -270,7 +270,7 @@ impl PPLexer {
                     Some(PPToken::new(
                         PPTokenKind::Decrement,
                         PPTokenFlags::empty(),
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                         2,
                     ))
                 } else if next_ch == Some(b'=') {
@@ -278,7 +278,7 @@ impl PPLexer {
                     Some(PPToken::new(
                         PPTokenKind::MinusAssign,
                         PPTokenFlags::empty(),
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                         2,
                     ))
                 } else if next_ch == Some(b'>') {
@@ -286,13 +286,13 @@ impl PPLexer {
                     Some(PPToken::new(
                         PPTokenKind::Arrow,
                         PPTokenFlags::empty(),
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                         2,
                     ))
                 } else {
                     Some(PPToken::simple(
                         PPTokenKind::Minus,
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                     ))
                 }
             }
@@ -303,13 +303,13 @@ impl PPLexer {
                     Some(PPToken::new(
                         PPTokenKind::StarAssign,
                         PPTokenFlags::empty(),
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                         2,
                     ))
                 } else {
                     Some(PPToken::simple(
                         PPTokenKind::Star,
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                     ))
                 }
             }
@@ -320,13 +320,13 @@ impl PPLexer {
                     Some(PPToken::new(
                         PPTokenKind::DivAssign,
                         PPTokenFlags::empty(),
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                         2,
                     ))
                 } else {
                     Some(PPToken::simple(
                         PPTokenKind::Slash,
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                     ))
                 }
             }
@@ -337,13 +337,13 @@ impl PPLexer {
                     Some(PPToken::new(
                         PPTokenKind::ModAssign,
                         PPTokenFlags::empty(),
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                         2,
                     ))
                 } else {
                     Some(PPToken::simple(
                         PPTokenKind::Percent,
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                     ))
                 }
             }
@@ -354,13 +354,13 @@ impl PPLexer {
                     Some(PPToken::new(
                         PPTokenKind::Equal,
                         PPTokenFlags::empty(),
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                         2,
                     ))
                 } else {
                     Some(PPToken::simple(
                         PPTokenKind::Assign,
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                     ))
                 }
             }
@@ -371,13 +371,13 @@ impl PPLexer {
                     Some(PPToken::new(
                         PPTokenKind::NotEqual,
                         PPTokenFlags::empty(),
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                         2,
                     ))
                 } else {
                     Some(PPToken::simple(
                         PPTokenKind::Not,
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                     ))
                 }
             }
@@ -391,14 +391,14 @@ impl PPLexer {
                         Some(PPToken::new(
                             PPTokenKind::LeftShiftAssign,
                             PPTokenFlags::empty(),
-                            SourceLoc::new(self.source_id, start_pos as u32),
+                            SourceLoc::new(self.source_id, start_pos),
                             3,
                         ))
                     } else {
                         Some(PPToken::new(
                             PPTokenKind::LeftShift,
                             PPTokenFlags::empty(),
-                            SourceLoc::new(self.source_id, start_pos as u32),
+                            SourceLoc::new(self.source_id, start_pos),
                             2,
                         ))
                     }
@@ -407,13 +407,13 @@ impl PPLexer {
                     Some(PPToken::new(
                         PPTokenKind::LessEqual,
                         PPTokenFlags::empty(),
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                         2,
                     ))
                 } else {
                     Some(PPToken::simple(
                         PPTokenKind::Less,
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                     ))
                 }
             }
@@ -427,14 +427,14 @@ impl PPLexer {
                         Some(PPToken::new(
                             PPTokenKind::RightShiftAssign,
                             PPTokenFlags::empty(),
-                            SourceLoc::new(self.source_id, start_pos as u32),
+                            SourceLoc::new(self.source_id, start_pos),
                             3,
                         ))
                     } else {
                         Some(PPToken::new(
                             PPTokenKind::RightShift,
                             PPTokenFlags::empty(),
-                            SourceLoc::new(self.source_id, start_pos as u32),
+                            SourceLoc::new(self.source_id, start_pos),
                             2,
                         ))
                     }
@@ -443,13 +443,13 @@ impl PPLexer {
                     Some(PPToken::new(
                         PPTokenKind::GreaterEqual,
                         PPTokenFlags::empty(),
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                         2,
                     ))
                 } else {
                     Some(PPToken::simple(
                         PPTokenKind::Greater,
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                     ))
                 }
             }
@@ -460,7 +460,7 @@ impl PPLexer {
                     Some(PPToken::new(
                         PPTokenKind::LogicAnd,
                         PPTokenFlags::empty(),
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                         2,
                     ))
                 } else if next_ch == Some(b'=') {
@@ -468,13 +468,13 @@ impl PPLexer {
                     Some(PPToken::new(
                         PPTokenKind::AndAssign,
                         PPTokenFlags::empty(),
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                         2,
                     ))
                 } else {
                     Some(PPToken::simple(
                         PPTokenKind::And,
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                     ))
                 }
             }
@@ -485,7 +485,7 @@ impl PPLexer {
                     Some(PPToken::new(
                         PPTokenKind::LogicOr,
                         PPTokenFlags::empty(),
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                         2,
                     ))
                 } else if next_ch == Some(b'=') {
@@ -493,13 +493,13 @@ impl PPLexer {
                     Some(PPToken::new(
                         PPTokenKind::OrAssign,
                         PPTokenFlags::empty(),
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                         2,
                     ))
                 } else {
                     Some(PPToken::simple(
                         PPTokenKind::Or,
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                     ))
                 }
             }
@@ -510,19 +510,19 @@ impl PPLexer {
                     Some(PPToken::new(
                         PPTokenKind::XorAssign,
                         PPTokenFlags::empty(),
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                         2,
                     ))
                 } else {
                     Some(PPToken::simple(
                         PPTokenKind::Xor,
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                     ))
                 }
             }
             b'~' => Some(PPToken::simple(
                 PPTokenKind::Tilde,
-                SourceLoc::new(self.source_id, start_pos as u32),
+                SourceLoc::new(self.source_id, start_pos),
             )),
             b'.' => {
                 let next_ch = self.peek_char();
@@ -533,72 +533,60 @@ impl PPLexer {
                     Some(PPToken::new(
                         PPTokenKind::Ellipsis,
                         PPTokenFlags::empty(),
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                         3,
                     ))
                 } else {
                     Some(PPToken::simple(
                         PPTokenKind::Dot,
-                        SourceLoc::new(self.source_id, start_pos as u32),
+                        SourceLoc::new(self.source_id, start_pos),
                     ))
                 }
             }
             b'?' => Some(PPToken::simple(
                 PPTokenKind::Question,
-                SourceLoc::new(self.source_id, start_pos as u32),
+                SourceLoc::new(self.source_id, start_pos),
             )),
             b':' => Some(PPToken::simple(
                 PPTokenKind::Colon,
-                SourceLoc::new(self.source_id, start_pos as u32),
+                SourceLoc::new(self.source_id, start_pos),
             )),
             b',' => Some(PPToken::simple(
                 PPTokenKind::Comma,
-                SourceLoc::new(self.source_id, start_pos as u32),
+                SourceLoc::new(self.source_id, start_pos),
             )),
             b';' => Some(PPToken::simple(
                 PPTokenKind::Semicolon,
-                SourceLoc::new(self.source_id, start_pos as u32),
+                SourceLoc::new(self.source_id, start_pos),
             )),
             b'(' => Some(PPToken::simple(
                 PPTokenKind::LeftParen,
-                SourceLoc::new(self.source_id, start_pos as u32),
+                SourceLoc::new(self.source_id, start_pos),
             )),
             b')' => Some(PPToken::simple(
                 PPTokenKind::RightParen,
-                SourceLoc::new(self.source_id, start_pos as u32),
+                SourceLoc::new(self.source_id, start_pos),
             )),
             b'[' => Some(PPToken::simple(
                 PPTokenKind::LeftBracket,
-                SourceLoc::new(self.source_id, start_pos as u32),
+                SourceLoc::new(self.source_id, start_pos),
             )),
             b']' => Some(PPToken::simple(
                 PPTokenKind::RightBracket,
-                SourceLoc::new(self.source_id, start_pos as u32),
+                SourceLoc::new(self.source_id, start_pos),
             )),
             b'{' => Some(PPToken::simple(
                 PPTokenKind::LeftBrace,
-                SourceLoc::new(self.source_id, start_pos as u32),
+                SourceLoc::new(self.source_id, start_pos),
             )),
             b'}' => Some(PPToken::simple(
                 PPTokenKind::RightBrace,
-                SourceLoc::new(self.source_id, start_pos as u32),
+                SourceLoc::new(self.source_id, start_pos),
             )),
             _ => Some(PPToken::simple(
                 PPTokenKind::Unknown,
-                SourceLoc::new(self.source_id, start_pos as u32),
+                SourceLoc::new(self.source_id, start_pos),
             )),
-        }
-    }
-
-    #[allow(dead_code)]
-    fn skip_whitespace(&mut self) {
-        while (self.position as usize) < self.buffer.len() {
-            let ch = self.buffer[self.position as usize];
-            if ch.is_ascii_whitespace() {
-                self.position += 1;
-            } else {
-                break;
-            }
         }
     }
 
@@ -627,7 +615,9 @@ impl PPLexer {
                 if next_ch == b'/' {
                     // Line comment: skip to end of line
                     self.position += 2;
-                    while (self.position as usize) < self.buffer.len() && self.buffer[self.position as usize] != b'\n' {
+                    while (self.position as usize) < self.buffer.len()
+                        && self.buffer[self.position as usize] != b'\n'
+                    {
                         self.position += 1;
                     }
                     // Continue the loop to skip more whitespace/comments
@@ -688,11 +678,7 @@ impl PPLexer {
             _ => PPTokenKind::Identifier(symbol),
         };
 
-        PPToken::text(
-            kind,
-            SourceLoc::new(self.source_id, start_pos as u32),
-            &text,
-        )
+        PPToken::text(kind, SourceLoc::new(self.source_id, start_pos), &text)
     }
 
     fn lex_number(&mut self, start_pos: u32, first_ch: u8) -> PPToken {
@@ -711,7 +697,7 @@ impl PPLexer {
 
         PPToken::text(
             PPTokenKind::Number(symbol),
-            SourceLoc::new(self.source_id, start_pos as u32),
+            SourceLoc::new(self.source_id, start_pos),
             &text,
         )
     }
@@ -741,7 +727,7 @@ impl PPLexer {
 
         PPToken::text(
             PPTokenKind::StringLiteral(symbol),
-            SourceLoc::new(self.source_id, start_pos as u32),
+            SourceLoc::new(self.source_id, start_pos),
             &text,
         )
     }
@@ -765,7 +751,7 @@ impl PPLexer {
         PPToken::new(
             PPTokenKind::CharLiteral(0),
             PPTokenFlags::empty(),
-            SourceLoc::new(self.source_id, start_pos as u32),
+            SourceLoc::new(self.source_id, start_pos),
             chars.len() as u16,
         )
     }

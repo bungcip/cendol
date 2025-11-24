@@ -35,7 +35,6 @@ impl SourceLoc {
         SourceLoc(0)
     }
 
-
     pub fn source_id(&self) -> SourceId {
         SourceId(
             NonZeroU32::new((self.0 >> Self::ID_SHIFT) & ((1 << (32 - Self::ID_SHIFT)) - 1))
@@ -50,10 +49,14 @@ impl SourceLoc {
 
 impl std::fmt::Display for SourceLoc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SourceLoc(source_id={}, offset={})", self.source_id(), self.offset())
+        write!(
+            f,
+            "SourceLoc(source_id={}, offset={})",
+            self.source_id(),
+            self.offset()
+        )
     }
 }
-
 
 /// Represents a range in the source file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,10 +84,15 @@ impl SourceSpan {
 
 impl std::fmt::Display for SourceSpan {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SourceSpan(source_id={}, start={}, end={})", self.source_id(), self.start.offset(), self.end.offset())
+        write!(
+            f,
+            "SourceSpan(source_id={}, start={}, end={})",
+            self.source_id(),
+            self.start.offset(),
+            self.end.offset()
+        )
     }
 }
-
 
 /// File information for tracking source files
 #[derive(Debug)]

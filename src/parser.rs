@@ -593,12 +593,15 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             | TokenKind::Decrement
             | TokenKind::Star
             | TokenKind::And => self.parse_unary_operator(token),
-TokenKind::Generic => self.parse_generic_selection(),
+            TokenKind::Generic => self.parse_generic_selection(),
             TokenKind::Alignof => self.parse_alignof(),
             TokenKind::Sizeof => {
-                debug!("parse_prefix: parsing sizeof expression at position {}", self.current_idx);
+                debug!(
+                    "parse_prefix: parsing sizeof expression at position {}",
+                    self.current_idx
+                );
                 self.parse_sizeof()
-            },
+            }
             _ => Err(ParseError::UnexpectedToken {
                 expected: vec![
                     TokenKind::Identifier(Symbol::new("")),
@@ -791,7 +794,10 @@ TokenKind::Generic => self.parse_generic_selection(),
         if self.accept(TokenKind::RightParen).is_some() {
             debug!("parse_function_call: empty argument list");
             // Empty argument list - RightParen already consumed, no need to expect it again
-            debug!("parse_function_call: successfully parsed function call with {} arguments", args.len());
+            debug!(
+                "parse_function_call: successfully parsed function call with {} arguments",
+                args.len()
+            );
         } else {
             debug!("parse_function_call: parsing arguments");
             loop {
@@ -806,7 +812,10 @@ TokenKind::Generic => self.parse_generic_selection(),
                     }
                 };
                 args.push(arg);
-                debug!("parse_function_call: parsed argument, count: {}", args.len());
+                debug!(
+                    "parse_function_call: parsed argument, count: {}",
+                    args.len()
+                );
 
                 if self.accept(TokenKind::Comma).is_some() {
                     debug!("parse_function_call: found comma, continuing to next argument");
@@ -818,7 +827,10 @@ TokenKind::Generic => self.parse_generic_selection(),
             }
 
             let right_paren_token = self.expect(TokenKind::RightParen)?;
-            debug!("parse_function_call: successfully parsed function call with {} arguments", args.len());
+            debug!(
+                "parse_function_call: successfully parsed function call with {} arguments",
+                args.len()
+            );
 
             let span = SourceSpan::new(
                 self.ast.get_node(function).span.start,
@@ -996,7 +1008,11 @@ TokenKind::Generic => self.parse_generic_selection(),
         let initial_idx = self.current_idx; // Save initial position for potential rollback
         let saved_diagnostic_count = self.diag.diagnostics.len();
 
-        debug!("parse_declaration: starting at position {}, token {:?}", initial_idx, self.current_token_kind());
+        debug!(
+            "parse_declaration: starting at position {}, token {:?}",
+            initial_idx,
+            self.current_token_kind()
+        );
 
         // Check for _Static_assert (C11)
         if let Some(token) = self.accept(TokenKind::StaticAssert) {
@@ -1006,18 +1022,31 @@ TokenKind::Generic => self.parse_generic_selection(),
         // Try to parse declaration specifiers
         let specifiers = match self.parse_declaration_specifiers() {
             Ok(specifiers) => {
-                debug!("parse_declaration: parsed specifiers, now at position {} with token {:?}", self.current_idx, self.current_token_kind());
-                debug!("parse_declaration: current token after specifiers: {:?}", self.current_token_kind());
+                debug!(
+                    "parse_declaration: parsed specifiers, now at position {} with token {:?}",
+                    self.current_idx,
+                    self.current_token_kind()
+                );
+                debug!(
+                    "parse_declaration: current token after specifiers: {:?}",
+                    self.current_token_kind()
+                );
                 if let Some(last_specifier) = specifiers.last() {
-                    debug!("parse_declaration: last specifier type: {:?}", std::mem::discriminant(&last_specifier.type_specifier));
+                    debug!(
+                        "parse_declaration: last specifier type: {:?}",
+                        std::mem::discriminant(&last_specifier.type_specifier)
+                    );
                 }
                 specifiers
-            },
+            }
             Err(e) => {
                 // If declaration specifiers parsing fails, roll back completely
                 self.current_idx = initial_idx;
                 self.diag.diagnostics.truncate(saved_diagnostic_count);
-                debug!("parse_declaration: specifier parsing failed, rolled back to {}", initial_idx);
+                debug!(
+                    "parse_declaration: specifier parsing failed, rolled back to {}",
+                    initial_idx
+                );
                 return Err(e);
             }
         };
@@ -1025,9 +1054,10 @@ TokenKind::Generic => self.parse_generic_selection(),
         // Special handling for struct/union/enum declarations
         // Check if the last specifier is a struct/union/enum specifier (definition or forward declaration)
         let is_record_enum_specifier = if let Some(last_specifier) = specifiers.last() {
-            matches!(&last_specifier.type_specifier,
-                     TypeSpecifier::Record(_, _, _) |
-                     TypeSpecifier::Enum(_, _))
+            matches!(
+                &last_specifier.type_specifier,
+                TypeSpecifier::Record(_, _, _) | TypeSpecifier::Enum(_, _)
+            )
         } else {
             false
         };
@@ -1043,24 +1073,29 @@ TokenKind::Generic => self.parse_generic_selection(),
                 // 2. A forward struct/union/enum declaration like "struct foo;" or "enum E;"
                 // In both cases, consume the semicolon and create declaration with no declarators
                 self.expect(TokenKind::Semicolon)?;
-                
+
                 let declaration_data = DeclarationData {
                     specifiers,
                     init_declarators: Vec::new(),
                 };
-                
+
                 let end_span = self.current_token()?.location.end;
                 let span = SourceSpan::new(start_span, end_span);
-                
+
                 let node = self
                     .ast
                     .push_node(Node::new(NodeKind::Declaration(declaration_data), span));
-                debug!("parse_declaration: successfully parsed record/enum declaration, node_id={}", node.get());
+                debug!(
+                    "parse_declaration: successfully parsed record/enum declaration, node_id={}",
+                    node.get()
+                );
                 return Ok(node);
             } else {
                 // This is a record/enum specifier with declarators
                 // Continue with normal declaration parsing (e.g., "struct foo { ... } var;")
-                debug!("parse_declaration: record/enum specifier with declarators, continuing with normal parsing");
+                debug!(
+                    "parse_declaration: record/enum specifier with declarators, continuing with normal parsing"
+                );
             }
         }
 
@@ -1071,10 +1106,12 @@ TokenKind::Generic => self.parse_generic_selection(),
         } else {
             // Check if we have a declarator-starting token
             // This includes: identifier, star, or left paren
-            matches!(self.current_token_kind(),
-                Some(TokenKind::Identifier(_)) | Some(TokenKind::Star) | Some(TokenKind::LeftParen))
+            matches!(
+                self.current_token_kind(),
+                Some(TokenKind::Identifier(_)) | Some(TokenKind::Star) | Some(TokenKind::LeftParen)
+            )
         };
-        
+
         // If no declarators and this is not a record/enum definition, it's an error
         if !has_declarators {
             // Check if this looks like a record/enum definition
@@ -1085,7 +1122,10 @@ TokenKind::Generic => self.parse_generic_selection(),
                         // This should not happen due to the check above, but just in case
                         self.current_idx = initial_idx;
                         self.diag.diagnostics.truncate(saved_diagnostic_count);
-                        debug!("parse_declaration: record definition with no declarators and no semicolon, rolled back to {}", initial_idx);
+                        debug!(
+                            "parse_declaration: record definition with no declarators and no semicolon, rolled back to {}",
+                            initial_idx
+                        );
                         return Err(ParseError::SyntaxError {
                             message: "Expected ';' after struct/union definition".to_string(),
                             location: self.current_token()?.location,
@@ -1095,7 +1135,10 @@ TokenKind::Generic => self.parse_generic_selection(),
                         // This should not happen due to the check above, but just in case
                         self.current_idx = initial_idx;
                         self.diag.diagnostics.truncate(saved_diagnostic_count);
-                        debug!("parse_declaration: enum definition with no declarators and no semicolon, rolled back to {}", initial_idx);
+                        debug!(
+                            "parse_declaration: enum definition with no declarators and no semicolon, rolled back to {}",
+                            initial_idx
+                        );
                         return Err(ParseError::SyntaxError {
                             message: "Expected ';' after enum definition".to_string(),
                             location: self.current_token()?.location,
@@ -1106,9 +1149,13 @@ TokenKind::Generic => self.parse_generic_selection(),
                         // But let's rollback and let the statement parser handle it
                         self.current_idx = initial_idx;
                         self.diag.diagnostics.truncate(saved_diagnostic_count);
-                        debug!("parse_declaration: no declarators found, rolled back to {}", initial_idx);
+                        debug!(
+                            "parse_declaration: no declarators found, rolled back to {}",
+                            initial_idx
+                        );
                         return Err(ParseError::SyntaxError {
-                            message: "Expected declarator or identifier after type specifier".to_string(),
+                            message: "Expected declarator or identifier after type specifier"
+                                .to_string(),
                             location: self.current_token()?.location,
                         });
                     }
@@ -1117,7 +1164,10 @@ TokenKind::Generic => self.parse_generic_selection(),
                 // No specifiers at all - this shouldn't happen
                 self.current_idx = initial_idx;
                 self.diag.diagnostics.truncate(saved_diagnostic_count);
-                debug!("parse_declaration: no specifiers, rolled back to {}", initial_idx);
+                debug!(
+                    "parse_declaration: no specifiers, rolled back to {}",
+                    initial_idx
+                );
                 return Err(ParseError::SyntaxError {
                     message: "Expected type specifiers".to_string(),
                     location: self.current_token()?.location,
@@ -1130,36 +1180,57 @@ TokenKind::Generic => self.parse_generic_selection(),
 
         loop {
             let declarator_start_idx = self.current_idx;
-            debug!("parse_declaration: parsing declarator at position {}, token {:?}", declarator_start_idx, self.current_token_kind());
-            
+            debug!(
+                "parse_declaration: parsing declarator at position {}, token {:?}",
+                declarator_start_idx,
+                self.current_token_kind()
+            );
+
             let declarator = match self.parse_declarator(None) {
                 Ok(declarator) => {
-                    debug!("parse_declaration: parsed declarator, now at position {} with token {:?}", self.current_idx, self.current_token_kind());
+                    debug!(
+                        "parse_declaration: parsed declarator, now at position {} with token {:?}",
+                        self.current_idx,
+                        self.current_token_kind()
+                    );
                     declarator
-                },
+                }
                 Err(e) => {
                     // If declarator parsing fails, roll back completely
                     self.current_idx = initial_idx;
                     self.diag.diagnostics.truncate(saved_diagnostic_count);
-                    debug!("parse_declaration: declarator parsing failed, rolled back to {}", initial_idx);
+                    debug!(
+                        "parse_declaration: declarator parsing failed, rolled back to {}",
+                        initial_idx
+                    );
                     return Err(e);
                 }
             };
-            
+
             let _initializer_start_idx = self.current_idx;
             let initializer = if self.matches(&[TokenKind::Assign]) {
                 self.advance(); // consume '='
-                debug!("parse_declaration: found '=', parsing initializer at position {}", self.current_idx);
+                debug!(
+                    "parse_declaration: found '=', parsing initializer at position {}",
+                    self.current_idx
+                );
                 match self.parse_initializer() {
                     Ok(initializer) => {
-                        debug!("parse_declaration: parsed initializer, now at position {} with token {:?}", self.current_idx, self.current_token_kind());
+                        debug!(
+                            "parse_declaration: parsed initializer, now at position {} with token {:?}",
+                            self.current_idx,
+                            self.current_token_kind()
+                        );
                         Some(initializer)
-                    },
+                    }
                     Err(e) => {
                         // If initializer parsing fails, roll back completely
                         self.current_idx = initial_idx;
                         self.diag.diagnostics.truncate(saved_diagnostic_count);
-                        debug!("parse_declaration: initializer parsing failed, rolled back to {}", initial_idx);
+                        debug!(
+                            "parse_declaration: initializer parsing failed, rolled back to {}",
+                            initial_idx
+                        );
                         return Err(e);
                     }
                 }
@@ -1188,7 +1259,10 @@ TokenKind::Generic => self.parse_generic_selection(),
             // If semicolon is missing, roll back completely
             self.current_idx = initial_idx;
             self.diag.diagnostics.truncate(saved_diagnostic_count);
-            debug!("parse_declaration: missing semicolon, rolled back to {}", initial_idx);
+            debug!(
+                "parse_declaration: missing semicolon, rolled back to {}",
+                initial_idx
+            );
             return Err(ParseError::SyntaxError {
                 message: "Expected ';' after declaration".to_string(),
                 location: self.current_token()?.location,
@@ -1218,7 +1292,10 @@ TokenKind::Generic => self.parse_generic_selection(),
         let node = self
             .ast
             .push_node(Node::new(NodeKind::Declaration(declaration_data), span));
-        debug!("parse_declaration: successfully parsed declaration, node_id={}", node.get());
+        debug!(
+            "parse_declaration: successfully parsed declaration, node_id={}",
+            node.get()
+        );
         Ok(node)
     }
 
@@ -1227,10 +1304,17 @@ TokenKind::Generic => self.parse_generic_selection(),
         let mut specifiers = Vec::new();
         let start_idx = self.current_idx;
 
-        debug!("parse_declaration_specifiers: starting at position {}, token {:?}", start_idx, self.current_token_kind());
+        debug!(
+            "parse_declaration_specifiers: starting at position {}, token {:?}",
+            start_idx,
+            self.current_token_kind()
+        );
 
         while let Some(token) = self.try_current_token() {
-            debug!("parse_declaration_specifiers: loop iteration at position {}, token {:?}", self.current_idx, token.kind);
+            debug!(
+                "parse_declaration_specifiers: loop iteration at position {}, token {:?}",
+                self.current_idx, token.kind
+            );
             match token.kind {
                 // Storage class specifiers
                 TokenKind::Typedef
@@ -1329,9 +1413,15 @@ TokenKind::Generic => self.parse_generic_selection(),
                 }
 
                 TokenKind::Identifier(symbol) => {
-                    debug!("parse_declaration_specifiers: found identifier {:?}, calling is_type_name, current position: {}", symbol, self.current_idx);
+                    debug!(
+                        "parse_declaration_specifiers: found identifier {:?}, calling is_type_name, current position: {}",
+                        symbol, self.current_idx
+                    );
                     if self.is_type_name(symbol) {
-                        debug!("parse_declaration_specifiers: {:?} is a type name, parsing type specifier", symbol);
+                        debug!(
+                            "parse_declaration_specifiers: {:?} is a type name, parsing type specifier",
+                            symbol
+                        );
                         let type_specifier = self.parse_type_specifier()?;
                         specifiers.push(DeclSpecifier {
                             storage_class: None,
@@ -1341,7 +1431,10 @@ TokenKind::Generic => self.parse_generic_selection(),
                             type_specifier,
                         });
                     } else {
-                        debug!("parse_declaration_specifiers: {:?} is not a type name, breaking at position {}", symbol, self.current_idx);
+                        debug!(
+                            "parse_declaration_specifiers: {:?} is not a type name, breaking at position {}",
+                            symbol, self.current_idx
+                        );
                         break;
                     }
                 }
@@ -1388,13 +1481,21 @@ TokenKind::Generic => self.parse_generic_selection(),
                 }
 
                 _ => {
-                    debug!("parse_declaration_specifiers: token {:?} not recognized as declaration specifier, breaking", token.kind);
+                    debug!(
+                        "parse_declaration_specifiers: token {:?} not recognized as declaration specifier, breaking",
+                        token.kind
+                    );
                     break;
                 }
             }
         }
 
-        debug!("parse_declaration_specifiers: ending at position {}, specifiers len={}, found {} specifiers", self.current_idx, specifiers.len(), specifiers.len());
+        debug!(
+            "parse_declaration_specifiers: ending at position {}, specifiers len={}, found {} specifiers",
+            self.current_idx,
+            specifiers.len(),
+            specifiers.len()
+        );
 
         if specifiers.is_empty() {
             return Err(ParseError::SyntaxError {
@@ -1412,7 +1513,10 @@ TokenKind::Generic => self.parse_generic_selection(),
     }
 
     /// Parse type specifier with context
-    fn parse_type_specifier_with_context(&mut self, in_struct_member: bool) -> Result<TypeSpecifier, ParseError> {
+    fn parse_type_specifier_with_context(
+        &mut self,
+        in_struct_member: bool,
+    ) -> Result<TypeSpecifier, ParseError> {
         let token = self
             .try_current_token()
             .ok_or_else(|| ParseError::SyntaxError {
@@ -1522,10 +1626,7 @@ TokenKind::Generic => self.parse_generic_selection(),
     }
 
     /// Parse struct or union specifier
-    fn parse_record_specifier(
-        &mut self,
-        is_union: bool,
-    ) -> Result<TypeSpecifier, ParseError> {
+    fn parse_record_specifier(&mut self, is_union: bool) -> Result<TypeSpecifier, ParseError> {
         self.parse_record_specifier_with_context(is_union, false)
     }
 
@@ -1548,18 +1649,19 @@ TokenKind::Generic => self.parse_generic_selection(),
 
         // In struct member context, only parse members if we have a specific tag
         // to avoid confusion with anonymous nested structs
-        let definition = if self.matches(&[TokenKind::LeftBrace]) && (!in_struct_member || tag.is_some()) {
-            self.advance(); // consume '{'
-            let members = self.parse_struct_declaration_list()?;
-            self.expect(TokenKind::RightBrace)?;
-            Some(RecordDefData {
-                tag,
-                members: Some(members),
-                is_union,
-            })
-        } else {
-            None
-        };
+        let definition =
+            if self.matches(&[TokenKind::LeftBrace]) && (!in_struct_member || tag.is_some()) {
+                self.advance(); // consume '{'
+                let members = self.parse_struct_declaration_list()?;
+                self.expect(TokenKind::RightBrace)?;
+                Some(RecordDefData {
+                    tag,
+                    members: Some(members),
+                    is_union,
+                })
+            } else {
+                None
+            };
 
         Ok(TypeSpecifier::Record(is_union, tag, definition))
     }
@@ -1610,14 +1712,14 @@ TokenKind::Generic => self.parse_generic_selection(),
         if self.matches(&[TokenKind::Struct, TokenKind::Union]) {
             let is_union = self.matches(&[TokenKind::Union]);
             self.advance(); // consume struct/union
-            
+
             // Check if this is an anonymous struct
             if self.matches(&[TokenKind::LeftBrace]) {
                 // Anonymous struct definition
                 self.expect(TokenKind::LeftBrace)?;
                 let members = self.parse_struct_declaration_list()?;
                 self.expect(TokenKind::RightBrace)?;
-                
+
                 // After parsing { members }, check the next token
                 // If the next token is ';', treat it as an anonymous struct member (no declarator needed)
                 // If the next token is an identifier or declarator start, continue with variable declaration parsing
@@ -1632,13 +1734,17 @@ TokenKind::Generic => self.parse_generic_selection(),
                         initializer: None,
                     }]
                 };
-                
-                let type_specifier = TypeSpecifier::Record(is_union, None, Some(RecordDefData {
-                    tag: None,
-                    members: Some(members),
+
+                let type_specifier = TypeSpecifier::Record(
                     is_union,
-                }));
-                
+                    None,
+                    Some(RecordDefData {
+                        tag: None,
+                        members: Some(members),
+                        is_union,
+                    }),
+                );
+
                 let specifiers = vec![DeclSpecifier {
                     storage_class: None,
                     type_qualifiers: TypeQualifiers::empty(),
@@ -1646,12 +1752,12 @@ TokenKind::Generic => self.parse_generic_selection(),
                     alignment_specifier: None,
                     type_specifier,
                 }];
-                
+
                 // Only expect semicolon if we haven't already consumed it in the anonymous case
                 if !init_declarators.is_empty() {
                     self.expect(TokenKind::Semicolon)?;
                 }
-                
+
                 return Ok(DeclarationData {
                     specifiers,
                     init_declarators,
@@ -1668,14 +1774,14 @@ TokenKind::Generic => self.parse_generic_selection(),
                 } else {
                     None
                 };
-                
+
                 // Check if it's defined inline
                 if self.matches(&[TokenKind::LeftBrace]) {
                     // Named struct with definition
                     self.expect(TokenKind::LeftBrace)?;
                     let members = self.parse_struct_declaration_list()?;
                     self.expect(TokenKind::RightBrace)?;
-                    
+
                     // After parsing { members }, check the next token
                     let init_declarators = if self.matches(&[TokenKind::Semicolon]) {
                         // Named struct definition: struct tag { members };
@@ -1688,13 +1794,17 @@ TokenKind::Generic => self.parse_generic_selection(),
                             initializer: None,
                         }]
                     };
-                    
-                    let type_specifier = TypeSpecifier::Record(is_union, tag, Some(RecordDefData {
-                        tag,
-                        members: Some(members),
+
+                    let type_specifier = TypeSpecifier::Record(
                         is_union,
-                    }));
-                    
+                        tag,
+                        Some(RecordDefData {
+                            tag,
+                            members: Some(members),
+                            is_union,
+                        }),
+                    );
+
                     let specifiers = vec![DeclSpecifier {
                         storage_class: None,
                         type_qualifiers: TypeQualifiers::empty(),
@@ -1702,12 +1812,12 @@ TokenKind::Generic => self.parse_generic_selection(),
                         alignment_specifier: None,
                         type_specifier,
                     }];
-                    
+
                     // Only expect semicolon if we haven't already consumed it
                     if !init_declarators.is_empty() {
                         self.expect(TokenKind::Semicolon)?;
                     }
-                    
+
                     return Ok(DeclarationData {
                         specifiers,
                         init_declarators,
@@ -1716,7 +1826,7 @@ TokenKind::Generic => self.parse_generic_selection(),
                     // Just a forward declaration or reference to named struct
                     let type_specifier = TypeSpecifier::Record(is_union, tag, None);
                     let declarator = self.parse_declarator(None)?;
-                    
+
                     let specifiers = vec![DeclSpecifier {
                         storage_class: None,
                         type_qualifiers: TypeQualifiers::empty(),
@@ -1724,9 +1834,9 @@ TokenKind::Generic => self.parse_generic_selection(),
                         alignment_specifier: None,
                         type_specifier,
                     }];
-                    
+
                     self.expect(TokenKind::Semicolon)?;
-                    
+
                     return Ok(DeclarationData {
                         specifiers,
                         init_declarators: vec![InitDeclarator {
@@ -1740,7 +1850,7 @@ TokenKind::Generic => self.parse_generic_selection(),
             // Regular member: type specifier + declarator
             let type_specifier = self.parse_type_specifier_with_context(true)?;
             let declarator = self.parse_declarator(None)?;
-            
+
             let specifiers = vec![DeclSpecifier {
                 storage_class: None,
                 type_qualifiers: TypeQualifiers::empty(),
@@ -1748,9 +1858,9 @@ TokenKind::Generic => self.parse_generic_selection(),
                 alignment_specifier: None,
                 type_specifier,
             }];
-            
+
             self.expect(TokenKind::Semicolon)?;
-            
+
             return Ok(DeclarationData {
                 specifiers,
                 init_declarators: vec![InitDeclarator {
@@ -1859,7 +1969,11 @@ TokenKind::Generic => self.parse_generic_selection(),
 
     /// Parse initializer
     fn parse_initializer(&mut self) -> Result<Initializer, ParseError> {
-        debug!("parse_initializer: called at position {}, current token: {:?}", self.current_idx, self.current_token_kind());
+        debug!(
+            "parse_initializer: called at position {}, current token: {:?}",
+            self.current_idx,
+            self.current_token_kind()
+        );
         if self.matches(&[TokenKind::LeftBrace]) {
             debug!("parse_initializer: found LeftBrace, parsing compound initializer");
             // Compound initializer
@@ -1868,8 +1982,9 @@ TokenKind::Generic => self.parse_generic_selection(),
 
             while !self.matches(&[TokenKind::RightBrace]) {
                 // Check if this is a designated initializer (starts with . or [)
-                let is_designated = self.matches(&[TokenKind::Dot]) || self.matches(&[TokenKind::LeftBracket]);
-                
+                let is_designated =
+                    self.matches(&[TokenKind::Dot]) || self.matches(&[TokenKind::LeftBracket]);
+
                 let initializer = if is_designated {
                     // Parse designated initializer
                     let designated_init = self.parse_designated_initializer()?;
@@ -1892,14 +2007,14 @@ TokenKind::Generic => self.parse_generic_selection(),
                             }
                         }
                     };
-                    
+
                     // Wrap in DesignatedInitializer with empty designation
                     DesignatedInitializer {
                         designation: Vec::new(),
                         initializer: expr_or_compound,
                     }
                 };
-                
+
                 initializers.push(initializer);
 
                 if !self.matches(&[TokenKind::Comma]) {
@@ -1911,7 +2026,10 @@ TokenKind::Generic => self.parse_generic_selection(),
             self.expect(TokenKind::RightBrace)?;
             Ok(Initializer::List(initializers))
         } else {
-            debug!("parse_initializer: no LeftBrace found, current token: {:?}, trying expression initializer", self.current_token_kind());
+            debug!(
+                "parse_initializer: no LeftBrace found, current token: {:?}, trying expression initializer",
+                self.current_token_kind()
+            );
             // Expression initializer
             let expr_result = self.parse_expression(BindingPower::MIN)?;
             match expr_result {
@@ -2151,19 +2269,24 @@ TokenKind::Generic => self.parse_generic_selection(),
                     // Parse declaration specifiers for this parameter
                     let start_idx = self.current_idx;
                     let saved_diagnostic_count = self.diag.diagnostics.len();
-                    
+
                     let specifiers = match self.parse_declaration_specifiers() {
                         Ok(specifiers) => {
-                            debug!("parse_function_parameters: successfully parsed specifiers, current token: {:?}", self.current_token_kind());
+                            debug!(
+                                "parse_function_parameters: successfully parsed specifiers, current token: {:?}",
+                                self.current_token_kind()
+                            );
                             specifiers
-                        },
+                        }
                         Err(_e) => {
                             // If specifier parsing fails, we might be at a position where we need
                             // to fall back to parsing without a proper declarator
-                            debug!("parse_function_parameters: specifier parsing failed, rolling back");
+                            debug!(
+                                "parse_function_parameters: specifier parsing failed, rolling back"
+                            );
                             self.current_idx = start_idx;
                             self.diag.diagnostics.truncate(saved_diagnostic_count);
-                            
+
                             // Create a simple default specifier
                             vec![DeclSpecifier {
                                 storage_class: None,
@@ -2174,22 +2297,33 @@ TokenKind::Generic => self.parse_generic_selection(),
                             }]
                         }
                     };
-                    
+
                     // Try to parse declarator, but be more careful about failures
                     let declarator = if !self.matches(&[TokenKind::Comma])
                         && !self.matches(&[TokenKind::RightParen])
                         && !self.matches(&[TokenKind::Ellipsis])
                     {
                         // Check if we can even attempt declarator parsing
-                        let can_parse_declarator = self.current_token_kind()
-                            .map(|k| matches!(k, TokenKind::Identifier(_) | TokenKind::Star | TokenKind::LeftParen))
+                        let can_parse_declarator = self
+                            .current_token_kind()
+                            .map(|k| {
+                                matches!(
+                                    k,
+                                    TokenKind::Identifier(_)
+                                        | TokenKind::Star
+                                        | TokenKind::LeftParen
+                                )
+                            })
                             .unwrap_or(false);
-                        
+
                         if can_parse_declarator {
                             match self.parse_declarator(None) {
                                 Ok(declarator) => Some(declarator),
                                 Err(e) => {
-                                    debug!("parse_function_parameters: declarator parsing failed: {:?}", e);
+                                    debug!(
+                                        "parse_function_parameters: declarator parsing failed: {:?}",
+                                        e
+                                    );
                                     // If declarator parsing fails, we still want to continue
                                     // with a None declarator
                                     None
@@ -2265,27 +2399,36 @@ TokenKind::Generic => self.parse_generic_selection(),
 
         while !self.matches(&[TokenKind::RightBrace]) {
             let initial_idx = self.current_idx;
-            
-            debug!("parse_compound_statement: parsing block item, current token {:?}, position {}", 
-                  self.current_token_kind(), initial_idx);
-            
+
+            debug!(
+                "parse_compound_statement: parsing block item, current token {:?}, position {}",
+                self.current_token_kind(),
+                initial_idx
+            );
+
             // Try parsing as declaration first, but only if it looks like a declaration start
             let should_try_declaration = self.is_declaration_start();
             let mut declaration_attempt: Option<Result<NodeRef, ParseError>> = None;
-            
+
             if should_try_declaration {
                 // Save state before attempting declaration parsing
                 let saved_idx = self.current_idx;
                 let saved_error_state = self.diag.diagnostics.len();
-                
-                debug!("parse_compound_statement: trying declaration parsing at position {}", saved_idx);
+
+                debug!(
+                    "parse_compound_statement: trying declaration parsing at position {}",
+                    saved_idx
+                );
                 match self.parse_declaration() {
                     Ok(declaration) => {
                         debug!("parse_compound_statement: successfully parsed declaration");
                         block_items.push(declaration);
                     }
                     Err(decl_error) => {
-                        debug!("parse_compound_statement: declaration parsing failed: {:?}, rolling back from {} to {}", decl_error, self.current_idx, saved_idx);
+                        debug!(
+                            "parse_compound_statement: declaration parsing failed: {:?}, rolling back from {} to {}",
+                            decl_error, self.current_idx, saved_idx
+                        );
                         // Reset state and try as statement
                         self.current_idx = saved_idx;
                         // Remove any diagnostics added during failed declaration parsing
@@ -2298,18 +2441,24 @@ TokenKind::Generic => self.parse_generic_selection(),
             // If declaration failed or wasn't attempted, try as statement
             if declaration_attempt.is_some() || !should_try_declaration {
                 if declaration_attempt.is_some() {
-                    debug!("parse_compound_statement: reset to position {}, trying statement", initial_idx);
+                    debug!(
+                        "parse_compound_statement: reset to position {}, trying statement",
+                        initial_idx
+                    );
                 } else {
                     debug!("parse_compound_statement: not a declaration start, trying statement");
                 }
-                
+
                 match self.parse_statement() {
                     Ok(statement) => {
                         debug!("parse_compound_statement: successfully parsed statement");
                         block_items.push(statement);
                     }
                     Err(stmt_error) => {
-                        debug!("parse_compound_statement: statement parsing also failed: {:?}", stmt_error);
+                        debug!(
+                            "parse_compound_statement: statement parsing also failed: {:?}",
+                            stmt_error
+                        );
                         // Both declaration and statement parsing failed
                         // Report the declaration error and try to synchronize
                         if let Some(Err(decl_error)) = declaration_attempt {
@@ -2336,7 +2485,10 @@ TokenKind::Generic => self.parse_generic_selection(),
 
     /// Check if current tokens indicate start of a declaration
     fn is_declaration_start(&self) -> bool {
-        debug!("is_declaration_start: checking token {:?}", self.current_token_kind());
+        debug!(
+            "is_declaration_start: checking token {:?}",
+            self.current_token_kind()
+        );
         if let Some(token) = self.try_current_token() {
             match token.kind {
                 TokenKind::Typedef
@@ -2369,13 +2521,14 @@ TokenKind::Generic => self.parse_generic_selection(),
                 TokenKind::Identifier(symbol) => {
                     // Check if it's a typedef name
                     let is_type = self.is_type_name(symbol);
-                    debug!("is_declaration_start: identifier {:?}, is_type_name={}", symbol, is_type);
+                    debug!(
+                        "is_declaration_start: identifier {:?}, is_type_name={}",
+                        symbol, is_type
+                    );
                     is_type
                 }
                 // Exclude sizeof and other expression-only keywords that might be mistaken for type names
-                TokenKind::Sizeof
-                | TokenKind::Alignof
-                | TokenKind::Generic => false,
+                TokenKind::Sizeof | TokenKind::Alignof | TokenKind::Generic => false,
                 _ => false,
             }
         } else {
@@ -2943,11 +3096,15 @@ TokenKind::Generic => self.parse_generic_selection(),
             // Prevent infinite loops by limiting iterations
             iteration_count += 1;
             if iteration_count > MAX_ITERATIONS {
-                debug!("Parser exceeded maximum iteration limit at token {:?}, position {}", 
-                      token.kind, self.current_idx);
+                debug!(
+                    "Parser exceeded maximum iteration limit at token {:?}, position {}",
+                    token.kind, self.current_idx
+                );
                 return Err(ParseError::SyntaxError {
-                    message: format!("Parser exceeded maximum iteration limit - possible infinite loop at token {:?}",
-                                   token.kind),
+                    message: format!(
+                        "Parser exceeded maximum iteration limit - possible infinite loop at token {:?}",
+                        token.kind
+                    ),
                     location: token.location,
                 });
             }
@@ -3143,21 +3300,37 @@ TokenKind::Generic => self.parse_generic_selection(),
     /// Parse sizeof expression or type
     pub fn parse_sizeof(&mut self) -> Result<NodeRef, ParseError> {
         let start_span = self.current_token()?.location.start;
-        debug!("parse_sizeof: starting at position {}, token {:?}", self.current_idx, self.current_token_kind());
-        
+        debug!(
+            "parse_sizeof: starting at position {}, token {:?}",
+            self.current_idx,
+            self.current_token_kind()
+        );
+
         self.expect(TokenKind::Sizeof)?;
-        debug!("parse_sizeof: consumed sizeof token, now at position {}, token {:?}", self.current_idx, self.current_token_kind());
+        debug!(
+            "parse_sizeof: consumed sizeof token, now at position {}, token {:?}",
+            self.current_idx,
+            self.current_token_kind()
+        );
 
         let node = if self.matches(&[TokenKind::LeftParen]) {
             self.advance(); // consume '('
-            debug!("parse_sizeof: found '(', now at position {}, token {:?}", self.current_idx, self.current_token_kind());
-            
+            debug!(
+                "parse_sizeof: found '(', now at position {}, token {:?}",
+                self.current_idx,
+                self.current_token_kind()
+            );
+
             // Check if it's a type name or expression
             if self.is_type_name_start() {
                 debug!("parse_sizeof: detected type name start, parsing type name");
                 let type_ref = self.parse_type_name()?;
-                debug!("parse_sizeof: parsed type name, now at position {}, token {:?}", self.current_idx, self.current_token_kind());
-                
+                debug!(
+                    "parse_sizeof: parsed type name, now at position {}, token {:?}",
+                    self.current_idx,
+                    self.current_token_kind()
+                );
+
                 let right_paren_token = self.expect(TokenKind::RightParen)?;
 
                 let end_span = right_paren_token.location.end;
@@ -3232,8 +3405,12 @@ TokenKind::Generic => self.parse_generic_selection(),
 
     /// Check if current token starts a type name
     fn is_type_name_start(&self) -> bool {
-        debug!("is_type_name_start: checking token {:?} at position {}", self.current_token_kind(), self.current_idx);
-        
+        debug!(
+            "is_type_name_start: checking token {:?} at position {}",
+            self.current_token_kind(),
+            self.current_idx
+        );
+
         if let Some(token) = self.try_current_token() {
             let result = matches!(
                 token.kind,
@@ -3256,18 +3433,20 @@ TokenKind::Generic => self.parse_generic_selection(),
                     | TokenKind::Restrict
                     | TokenKind::Atomic
             );
-            
+
             // For identifiers, only consider them type name starts if they are actually typedef names
             let is_identifier_type = if let TokenKind::Identifier(symbol) = token.kind {
                 self.is_type_name(symbol)
             } else {
                 false
             };
-            
+
             let final_result = result || is_identifier_type;
-            
-            debug!("is_type_name_start: token {:?} is type name start: {} (direct: {}, identifier: {})",
-                   token.kind, final_result, result, is_identifier_type);
+
+            debug!(
+                "is_type_name_start: token {:?} is type name start: {} (direct: {}, identifier: {})",
+                token.kind, final_result, result, is_identifier_type
+            );
             final_result
         } else {
             debug!("is_type_name_start: no token available");
@@ -3357,17 +3536,23 @@ TokenKind::Generic => self.parse_generic_selection(),
                  "uint_least16_t" | "uint_least32_t" | "uint_least64_t" | "int_fast8_t" |
                  "int_fast16_t" | "int_fast32_t" | "int_fast64_t" | "uint_fast8_t" |
                  "uint_fast16_t" | "uint_fast32_t" | "uint_fast64_t");
-        
-        debug!("is_type_name: checking symbol {:?}, result={}, typedef_names={:?}",
-               symbol, result, self.typedef_names);
+
+        debug!(
+            "is_type_name: checking symbol {:?}, result={}, typedef_names={:?}",
+            symbol, result, self.typedef_names
+        );
         result
     }
 
     /// Check if a cast expression starts at the current position
     /// This is called after consuming an opening parenthesis
     fn is_cast_expression_start(&self) -> bool {
-        debug!("is_cast_expression_start: checking at position {}, token {:?}", self.current_idx, self.current_token_kind());
-        
+        debug!(
+            "is_cast_expression_start: checking at position {}, token {:?}",
+            self.current_idx,
+            self.current_token_kind()
+        );
+
         if let Some(token) = self.try_current_token() {
             match token.kind {
                 // Direct type specifiers
@@ -3389,7 +3574,10 @@ TokenKind::Generic => self.parse_generic_selection(),
                 | TokenKind::Const
                 | TokenKind::Volatile
                 | TokenKind::Restrict => {
-                    debug!("is_cast_expression_start: found direct type specifier: {:?}", token.kind);
+                    debug!(
+                        "is_cast_expression_start: found direct type specifier: {:?}",
+                        token.kind
+                    );
                     true
                 }
                 TokenKind::Star => {
@@ -3400,11 +3588,17 @@ TokenKind::Generic => self.parse_generic_selection(),
                 TokenKind::Identifier(symbol) => {
                     // Could be a typedef name
                     let is_type = self.is_type_name(symbol);
-                    debug!("is_cast_expression_start: found identifier {:?}, is_type={}", symbol, is_type);
+                    debug!(
+                        "is_cast_expression_start: found identifier {:?}, is_type={}",
+                        symbol, is_type
+                    );
                     is_type
                 }
                 _ => {
-                    debug!("is_cast_expression_start: token {:?} not recognized as cast start", token.kind);
+                    debug!(
+                        "is_cast_expression_start: token {:?} not recognized as cast start",
+                        token.kind
+                    );
                     false
                 }
             }
@@ -3418,7 +3612,7 @@ TokenKind::Generic => self.parse_generic_selection(),
     fn is_cast_expression_start_advanced(&self) -> bool {
         // Look ahead to see if we have a type pattern
         let mut idx = self.current_idx;
-        
+
         // Skip stars (pointers)
         while let Some(token) = self.tokens.get(idx) {
             if token.kind == TokenKind::Star {
@@ -3431,7 +3625,10 @@ TokenKind::Generic => self.parse_generic_selection(),
         // After pointers, look for type qualifiers
         while let Some(token) = self.tokens.get(idx) {
             match token.kind {
-                TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Atomic => {
+                TokenKind::Const
+                | TokenKind::Volatile
+                | TokenKind::Restrict
+                | TokenKind::Atomic => {
                     idx += 1;
                     continue;
                 }
@@ -3466,15 +3663,22 @@ TokenKind::Generic => self.parse_generic_selection(),
 
     /// Parse a cast expression: (type-name) expression
     fn parse_cast_expression(&mut self) -> Result<NodeRef, ParseError> {
-        debug!("parse_cast_expression: starting at position {}, token {:?}", self.current_idx, self.current_token_kind());
-        
+        debug!(
+            "parse_cast_expression: starting at position {}, token {:?}",
+            self.current_idx,
+            self.current_token_kind()
+        );
+
         // Parse the type name
         let type_ref = self.parse_type_name()?;
-        
+
         // Expect closing parenthesis
         let right_paren_token = self.expect(TokenKind::RightParen)?;
-        debug!("parse_cast_expression: parsed type, now at position {}", self.current_idx);
-        
+        debug!(
+            "parse_cast_expression: parsed type, now at position {}",
+            self.current_idx
+        );
+
         // Parse the expression being cast
         let expr_result = self.parse_expression(BindingPower::CAST)?;
         let expr_node = match expr_result {
@@ -3501,7 +3705,7 @@ TokenKind::Generic => self.parse_generic_selection(),
             resolved_type: Cell::new(None),
             resolved_symbol: Cell::new(None),
         });
-        
+
         debug!("parse_cast_expression: successfully parsed cast expression");
         Ok(node)
     }

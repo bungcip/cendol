@@ -1,5 +1,5 @@
 use crate::lang_options::LangOptions;
-use crate::preprocessor::{PPToken, PPTokenKind};
+use crate::pp::{PPToken, PPTokenKind};
 use crate::source_manager::{SourceLoc, SourceManager, SourceSpan};
 use symbol_table::GlobalSymbol as Symbol;
 use target_lexicon::Triple as TargetTriple;

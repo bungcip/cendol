@@ -8,7 +8,7 @@ use symbol_table::GlobalSymbol as Symbol;
 use target_lexicon::Triple as TargetInfo;
 
 // Re-export types from pp_lexer module for backward compatibility
-pub use crate::preprocessor::pp_lexer::{PPToken, PPTokenKind, PPTokenFlags, PPLexer};
+pub use crate::pp::pp_lexer::{PPLexer, PPToken, PPTokenFlags, PPTokenKind};
 
 mod pp_lexer;
 
@@ -420,14 +420,14 @@ impl<'src> Preprocessor<'src> {
     fn concatenate_string_literals(&self, tokens: Vec<PPToken>) -> Vec<PPToken> {
         let mut result = Vec::new();
         let mut i = 0;
-        
+
         while i < tokens.len() {
             if let PPTokenKind::StringLiteral(current_symbol) = tokens[i].kind {
                 // Start collecting string literals
                 let current_str = current_symbol.as_str();
                 let mut concatenated_content = String::new();
                 let start_location = tokens[i].location;
-                
+
                 // Get the content of the first string literal (removing quotes)
                 if current_str.starts_with('"') && current_str.ends_with('"') {
                     let content = &current_str[1..current_str.len() - 1];
@@ -438,7 +438,7 @@ impl<'src> Preprocessor<'src> {
                     i += 1;
                     continue;
                 }
-                
+
                 // Look ahead for more string literals
                 let mut j = i + 1;
                 while j < tokens.len() {
@@ -455,7 +455,7 @@ impl<'src> Preprocessor<'src> {
                         break;
                     }
                 }
-                
+
                 // Create properly formatted concatenated string literal
                 let final_string = format!("\"{}\"", concatenated_content);
                 let concatenated_symbol = Symbol::new(&final_string);
@@ -465,14 +465,14 @@ impl<'src> Preprocessor<'src> {
                     start_location,
                     final_string.len() as u16,
                 ));
-                
+
                 i = j;
             } else {
                 result.push(tokens[i].clone());
                 i += 1;
             }
         }
-        
+
         result
     }
 
@@ -1559,7 +1559,6 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 }
-
 
 #[cfg(test)]
 mod tests_pp_lexer;

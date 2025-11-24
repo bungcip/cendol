@@ -12,7 +12,7 @@ use crate::ast_dumper::{AstDumper, DumpConfig};
 use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::LangOptions;
 use crate::parser::Parser;
-use crate::preprocessor::{Preprocessor, PreprocessorConfig};
+use crate::pp::{Preprocessor, PreprocessorConfig};
 use crate::semantic::{SemanticAnalyzer, SymbolTable};
 use crate::source_manager::SourceManager;
 
@@ -284,11 +284,11 @@ impl CompilerDriver {
 
     fn dump_preprocessed_output(
         &self,
-        pp_tokens: &[crate::preprocessor::PPToken],
+        pp_tokens: &[crate::pp::PPToken],
     ) -> Result<(), CompilerError> {
         for i in 0..pp_tokens.len() {
             let token = &pp_tokens[i];
-            if token.kind == crate::preprocessor::PPTokenKind::Eof {
+            if token.kind == crate::pp::PPTokenKind::Eof {
                 break;
             }
 
@@ -304,7 +304,7 @@ impl CompilerDriver {
             // Print gap to next token, preserving newlines and whitespace
             if i + 1 < pp_tokens.len() {
                 let next_token = &pp_tokens[i + 1];
-                let next_start = if next_token.kind == crate::preprocessor::PPTokenKind::Eof {
+                let next_start = if next_token.kind == crate::pp::PPTokenKind::Eof {
                     buffer.len()
                 } else {
                     next_token.location.offset() as usize
@@ -320,7 +320,7 @@ impl CompilerDriver {
         Ok(())
     }
 
-    fn dump_parser(&self, ast: &Ast){
+    fn dump_parser(&self, ast: &Ast) {
         for (i, node) in ast.nodes.iter().enumerate() {
             if matches!(node.kind, NodeKind::Dummy) {
                 continue;
@@ -333,7 +333,10 @@ impl CompilerDriver {
     fn dump_parser_kind(&self, kind: &NodeKind) {
         match kind {
             NodeKind::TranslationUnit(tu) => {
-                println!("TranslationUnit([{}])", tu.iter().map(|&r| r.get().to_string()).join(", "));
+                println!(
+                    "TranslationUnit([{}])",
+                    tu.iter().map(|&r| r.get().to_string()).join(", ")
+                );
             }
             NodeKind::LiteralInt(i) => println!("LiteralInt({})", i),
             NodeKind::LiteralFloat(f) => println!("LiteralFloat({})", f),
@@ -341,52 +344,134 @@ impl CompilerDriver {
             NodeKind::LiteralChar(c) => println!("LiteralChar('{}')", c.escape_default()),
             NodeKind::Ident(sym, _) => println!("Ident({})", sym),
             NodeKind::UnaryOp(op, operand) => println!("UnaryOp({:?}, {})", op, operand.get()),
-            NodeKind::BinaryOp(op, left, right) => println!("BinaryOp({:?}, {}, {})", op, left.get(), right.get()),
-            NodeKind::TernaryOp(cond, then, else_) => println!("TernaryOp({}, {}, {})", cond.get(), then.get(), else_.get()),
+            NodeKind::BinaryOp(op, left, right) => {
+                println!("BinaryOp({:?}, {}, {})", op, left.get(), right.get())
+            }
+            NodeKind::TernaryOp(cond, then, else_) => {
+                println!("TernaryOp({}, {}, {})", cond.get(), then.get(), else_.get())
+            }
             NodeKind::PostIncrement(expr) => println!("PostIncrement({})", expr.get()),
             NodeKind::PostDecrement(expr) => println!("PostDecrement({})", expr.get()),
-            NodeKind::Assignment(op, lhs, rhs) => println!("Assignment({:?}, {}, {})", op, lhs.get(), rhs.get()),
-            NodeKind::FunctionCall(func, args) => println!("FunctionCall({}, [{}])", func.get(), args.iter().map(|&r| r.get().to_string()).join(", ")),
-            NodeKind::MemberAccess(obj, field, is_arrow) => println!("MemberAccess({}, {}, {})", obj.get(), field, if *is_arrow { "->" } else { "." }),
-            NodeKind::IndexAccess(array, index) => println!("IndexAccess({}, {})", array.get(), index.get()),
+            NodeKind::Assignment(op, lhs, rhs) => {
+                println!("Assignment({:?}, {}, {})", op, lhs.get(), rhs.get())
+            }
+            NodeKind::FunctionCall(func, args) => println!(
+                "FunctionCall({}, [{}])",
+                func.get(),
+                args.iter().map(|&r| r.get().to_string()).join(", ")
+            ),
+            NodeKind::MemberAccess(obj, field, is_arrow) => println!(
+                "MemberAccess({}, {}, {})",
+                obj.get(),
+                field,
+                if *is_arrow { "->" } else { "." }
+            ),
+            NodeKind::IndexAccess(array, index) => {
+                println!("IndexAccess({}, {})", array.get(), index.get())
+            }
             NodeKind::Cast(ty, expr) => println!("Cast({}, {})", ty.get(), expr.get()),
             NodeKind::SizeOfExpr(expr) => println!("SizeOfExpr({})", expr.get()),
             NodeKind::SizeOfType(ty) => println!("SizeOfType({})", ty.get()),
             NodeKind::AlignOf(ty) => println!("AlignOf({})", ty.get()),
-            NodeKind::CompoundLiteral(ty, init) => println!("CompoundLiteral({}, {})", ty.get(), init.get()),
-            NodeKind::GenericSelection(ctrl, assocs) => println!("GenericSelection({}, {} associations)", ctrl.get(), assocs.len()),
+            NodeKind::CompoundLiteral(ty, init) => {
+                println!("CompoundLiteral({}, {})", ty.get(), init.get())
+            }
+            NodeKind::GenericSelection(ctrl, assocs) => println!(
+                "GenericSelection({}, {} associations)",
+                ctrl.get(),
+                assocs.len()
+            ),
             NodeKind::VaArg(va_list, ty) => println!("VaArg({}, {})", va_list.get(), ty.get()),
-            NodeKind::CompoundStatement(stmts) => println!("CompoundStatement([{}])", stmts.iter().map(|&r| r.get().to_string()).join(", ")),
-            NodeKind::If(if_stmt) => println!("If(condition={}, then={}, else={})", if_stmt.condition.get(), if_stmt.then_branch.get(), if_stmt.else_branch.map(|r| r.get().to_string()).unwrap_or("none".to_string())),
-            NodeKind::While(while_stmt) => println!("While(condition={}, body={})", while_stmt.condition.get(), while_stmt.body.get()),
-            NodeKind::DoWhile(body, cond) => println!("DoWhile(body={}, condition={})", body.get(), cond.get()),
-            NodeKind::For(for_stmt) => println!("For(init={}, condition={}, increment={}, body={})", for_stmt.init.map(|r| r.get().to_string()).unwrap_or("none".to_string()), for_stmt.condition.map(|r| r.get().to_string()).unwrap_or("none".to_string()), for_stmt.increment.map(|r| r.get().to_string()).unwrap_or("none".to_string()), for_stmt.body.get()),
-            NodeKind::Return(expr) => println!("Return({})", expr.map(|r| r.get().to_string()).unwrap_or("void".to_string())),
+            NodeKind::CompoundStatement(stmts) => println!(
+                "CompoundStatement([{}])",
+                stmts.iter().map(|&r| r.get().to_string()).join(", ")
+            ),
+            NodeKind::If(if_stmt) => println!(
+                "If(condition={}, then={}, else={})",
+                if_stmt.condition.get(),
+                if_stmt.then_branch.get(),
+                if_stmt
+                    .else_branch
+                    .map(|r| r.get().to_string())
+                    .unwrap_or("none".to_string())
+            ),
+            NodeKind::While(while_stmt) => println!(
+                "While(condition={}, body={})",
+                while_stmt.condition.get(),
+                while_stmt.body.get()
+            ),
+            NodeKind::DoWhile(body, cond) => {
+                println!("DoWhile(body={}, condition={})", body.get(), cond.get())
+            }
+            NodeKind::For(for_stmt) => println!(
+                "For(init={}, condition={}, increment={}, body={})",
+                for_stmt
+                    .init
+                    .map(|r| r.get().to_string())
+                    .unwrap_or("none".to_string()),
+                for_stmt
+                    .condition
+                    .map(|r| r.get().to_string())
+                    .unwrap_or("none".to_string()),
+                for_stmt
+                    .increment
+                    .map(|r| r.get().to_string())
+                    .unwrap_or("none".to_string()),
+                for_stmt.body.get()
+            ),
+            NodeKind::Return(expr) => println!(
+                "Return({})",
+                expr.map(|r| r.get().to_string())
+                    .unwrap_or("void".to_string())
+            ),
             NodeKind::Break => println!("Break"),
             NodeKind::Continue => println!("Continue"),
             NodeKind::Goto(label) => println!("Goto({})", label),
             NodeKind::Label(label, stmt) => println!("Label({}, {})", label, stmt.get()),
-            NodeKind::Switch(cond, body) => println!("Switch(condition={}, body={})", cond.get(), body.get()),
+            NodeKind::Switch(cond, body) => {
+                println!("Switch(condition={}, body={})", cond.get(), body.get())
+            }
             NodeKind::Case(expr, stmt) => println!("Case({}, {})", expr.get(), stmt.get()),
-            NodeKind::CaseRange(start, end, stmt) => println!("CaseRange({}, {}, {})", start.get(), end.get(), stmt.get()),
+            NodeKind::CaseRange(start, end, stmt) => {
+                println!("CaseRange({}, {}, {})", start.get(), end.get(), stmt.get())
+            }
             NodeKind::Default(stmt) => println!("Default({})", stmt.get()),
-            NodeKind::ExpressionStatement(expr) => println!("ExpressionStatement({})", expr.map(|r| r.get().to_string()).unwrap_or("none".to_string())),
+            NodeKind::ExpressionStatement(expr) => println!(
+                "ExpressionStatement({})",
+                expr.map(|r| r.get().to_string())
+                    .unwrap_or("none".to_string())
+            ),
             NodeKind::EmptyStatement => println!("EmptyStatement"),
-            NodeKind::Declaration(decl) =>{
-                println!("Declaration({} specifiers, init_declarators = [{}])", 
-                    decl.specifiers.len(), 
-                    decl.init_declarators.iter().map(|x|{
-                        format!("{:?} {:?}", x.declarator, x.initializer)
-                    }).join(",").to_string()
+            NodeKind::Declaration(decl) => {
+                println!(
+                    "Declaration({} specifiers, init_declarators = [{}])",
+                    decl.specifiers.len(),
+                    decl.init_declarators
+                        .iter()
+                        .map(|x| { format!("{:?} {:?}", x.declarator, x.initializer) })
+                        .join(",")
+                        .to_string()
                 );
-            },
-            NodeKind::FunctionDef(func_def) => println!("FunctionDef({} specifiers, body={})", func_def.specifiers.len(), func_def.body.get()),
-            NodeKind::EnumConstant(name, value) => println!("EnumConstant({}, {})", name, value.map(|r| r.get().to_string()).unwrap_or("auto".to_string())),
-            NodeKind::StaticAssert(cond, msg) => println!("StaticAssert(condition={}, message={})", cond.get(), msg),
+            }
+            NodeKind::FunctionDef(func_def) => println!(
+                "FunctionDef({} specifiers, body={})",
+                func_def.specifiers.len(),
+                func_def.body.get()
+            ),
+            NodeKind::EnumConstant(name, value) => println!(
+                "EnumConstant({}, {})",
+                name,
+                value
+                    .map(|r| r.get().to_string())
+                    .unwrap_or("auto".to_string())
+            ),
+            NodeKind::StaticAssert(cond, msg) => {
+                println!("StaticAssert(condition={}, message={})", cond.get(), msg)
+            }
             NodeKind::Dummy => println!("DUMMY"),
         }
     }
-    
+
     fn report_errors(&self) -> Result<(), CompilerError> {
         if self.diagnostics.has_errors() {
             let formatter = crate::diagnostic::ErrorFormatter::default();

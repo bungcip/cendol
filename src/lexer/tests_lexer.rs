@@ -1,7 +1,7 @@
 use super::*;
 use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::LangOptions;
-use crate::preprocessor::{PPToken, PPTokenFlags, PPTokenKind};
+use crate::pp::{PPToken, PPTokenFlags, PPTokenKind};
 use crate::source_manager::{SourceId, SourceLoc, SourceManager};
 use symbol_table::GlobalSymbol as Symbol;
 use target_lexicon::Triple;

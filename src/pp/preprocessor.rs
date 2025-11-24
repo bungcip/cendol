@@ -454,25 +454,21 @@ impl<'src> Preprocessor<'src> {
         Ok(tokens)
     }
 
-    /// Evaluate a conditional expression (simplified - just check if defined)
+    /// Evaluate a conditional expression (simplified - handle defined and basic arithmetic)
     fn evaluate_conditional_expression(
-        &self,
+        &mut self,
         tokens: &[PPToken],
     ) -> Result<bool, PreprocessorError> {
-        // Simplified evaluation: handle defined() operator and simple identifiers
         if tokens.is_empty() {
             return Err(PreprocessorError::InvalidConditionalExpression);
         }
 
-
-        // Check for defined(identifier) or defined identifier
+        // Check for defined(identifier) or defined identifier before macro expansion
         if tokens.len() >= 2 && matches!(tokens[0].kind, PPTokenKind::Identifier(sym) if sym.as_str() == "defined") {
             if tokens.len() == 2 {
                 // defined identifier
                 if let PPTokenKind::Identifier(sym) = &tokens[1].kind {
-                    let result = self.macros.contains_key(sym);
-                    println!("  defined({}) = {}", sym.as_str(), result);
-                    return Ok(result);
+                    return Ok(self.macros.contains_key(sym));
                 }
             } else if tokens.len() == 4
                 && matches!(tokens[1].kind, PPTokenKind::LeftParen)
@@ -484,19 +480,65 @@ impl<'src> Preprocessor<'src> {
             }
         }
 
-        // Fallback to simple identifier check
-        if let Some(first_token) = tokens.first() {
-            match &first_token.kind {
-                PPTokenKind::Identifier(sym) => Ok(self.macros.contains_key(sym)),
+        // First, expand macros in the expression
+        let mut expanded_tokens = tokens.to_vec();
+        self.expand_tokens(&mut expanded_tokens)?;
+
+        // Evaluate arithmetic expression
+        self.evaluate_arithmetic_expression(&expanded_tokens)
+    }
+
+    /// Evaluate a simple arithmetic expression for #if/#elif
+    fn evaluate_arithmetic_expression(&self, tokens: &[PPToken]) -> Result<bool, PreprocessorError> {
+        if tokens.is_empty() {
+            return Err(PreprocessorError::InvalidConditionalExpression);
+        }
+
+        // Very simplified: handle single number, or comparison expressions
+        if tokens.len() == 1 {
+            return match &tokens[0].kind {
                 PPTokenKind::Number(sym) => {
-                    // For now, treat numbers as true if non-zero
                     let text = sym.as_str();
                     Ok(text != "0")
                 }
+                PPTokenKind::Identifier(sym) => Ok(self.macros.contains_key(sym)),
+                _ => Err(PreprocessorError::InvalidConditionalExpression),
+            };
+        }
+
+        // Handle binary comparisons: left op right
+        if tokens.len() == 3 {
+            let left = self.evaluate_token_value(&tokens[0])?;
+            let op = &tokens[1].kind;
+            let right = self.evaluate_token_value(&tokens[2])?;
+
+            match op {
+                PPTokenKind::Greater => Ok(left > right),
+                PPTokenKind::GreaterEqual => Ok(left >= right),
+                PPTokenKind::Less => Ok(left < right),
+                PPTokenKind::LessEqual => Ok(left <= right),
+                PPTokenKind::Equal => Ok(left == right),
+                PPTokenKind::NotEqual => Ok(left != right),
                 _ => Err(PreprocessorError::InvalidConditionalExpression),
             }
         } else {
             Err(PreprocessorError::InvalidConditionalExpression)
+        }
+    }
+
+    /// Get the numeric value of a token (after macro expansion)
+    fn evaluate_token_value(&self, token: &PPToken) -> Result<i64, PreprocessorError> {
+        match &token.kind {
+            PPTokenKind::Number(sym) => {
+                let text = sym.as_str();
+                text.parse::<i64>().map_err(|_| PreprocessorError::InvalidConditionalExpression)
+            }
+            PPTokenKind::Identifier(sym) => {
+                // If it's an identifier, it should have been expanded to a number
+                // For now, treat as 0 if not expanded
+                Err(PreprocessorError::InvalidConditionalExpression)
+            }
+            _ => Err(PreprocessorError::InvalidConditionalExpression),
         }
     }
 

@@ -7,6 +7,11 @@ use target_lexicon::Triple;
 
 /// Helper function to set up preprocessor testing
 fn setup_preprocessor_test(src: &str) -> Vec<PPToken> {
+    setup_preprocessor_test_with_diagnostics(src).0
+}
+
+/// Helper function to set up preprocessor testing and return diagnostics
+fn setup_preprocessor_test_with_diagnostics(src: &str) -> (Vec<PPToken>, Vec<crate::diagnostic::Diagnostic>) {
     let mut source_manager = SourceManager::new();
     let mut diagnostics = DiagnosticEngine::new();
     let lang_options = LangOptions {
@@ -37,7 +42,7 @@ fn setup_preprocessor_test(src: &str) -> Vec<PPToken> {
         .filter(|t| !matches!(t.kind, PPTokenKind::Eof))
         .collect();
 
-    significant_tokens
+    (significant_tokens, diagnostics.diagnostics().to_vec())
 }
 
 /// Helper macro to assert token sequence kinds
@@ -188,6 +193,75 @@ int x = 0;
             assert_ne!(sym.as_str(), "A", "A should not appear in output");
         }
     }
+}
+
+#[test]
+fn test_arithmetic_in_if_expression_and_elif() {
+    let src = r#"
+#define VAL 8
+#if VAL > 10
+  int x = 100;
+#elif VAL >= 8
+  int x = 8;
+#else
+  int x = 0;
+#endif
+"#;
+
+    let significant_tokens = setup_preprocessor_test(src);
+
+    // Expected: int, x, =, 8, ;
+    // Since VAL is 8, VAL > 10 is false, VAL >= 8 is true
+    assert_token_kinds!(
+        significant_tokens,
+        PPTokenKind::Identifier(Symbol::new("int")),
+        PPTokenKind::Identifier(Symbol::new("x")),
+        PPTokenKind::Assign,
+        PPTokenKind::Number(Symbol::new("8")),
+        PPTokenKind::Semicolon)
+    ;
+
+    // Ensure VAL was expanded in the conditional but not in output
+    for token in &significant_tokens {
+        if let PPTokenKind::Identifier(sym) = &token.kind {
+            assert_ne!(sym.as_str(), "VAL", "VAL should not appear in output");
+        }
+    }
+}
+
+#[test]
+fn test_macro_redefinition_warning_or_override() {
+    let src = r#"
+#define X 1
+#define X 2
+int x = X;
+"#;
+
+    let (significant_tokens, diagnostics) = setup_preprocessor_test_with_diagnostics(src);
+
+    // Expected: int, x, =, 2, ;
+    // Since X is redefined from 1 to 2, the final value should be 2
+    assert_token_kinds!(
+        significant_tokens,
+        PPTokenKind::Identifier(Symbol::new("int")),
+        PPTokenKind::Identifier(Symbol::new("x")),
+        PPTokenKind::Assign,
+        PPTokenKind::Number(Symbol::new("2")),
+        PPTokenKind::Semicolon)
+    ;
+
+    // Ensure X was expanded to the final definition
+    for token in &significant_tokens {
+        if let PPTokenKind::Identifier(sym) = &token.kind {
+            assert_ne!(sym.as_str(), "X", "X should not appear in output");
+        }
+    }
+
+    // Check that a macro redefinition warning was emitted
+    assert_eq!(diagnostics.len(), 1, "Should have exactly one diagnostic");
+    assert_eq!(diagnostics[0].level, crate::diagnostic::DiagnosticLevel::Warning);
+    assert!(diagnostics[0].message.contains("Redefinition of macro 'X'"));
+    assert_eq!(diagnostics[0].code, Some("macro_redefinition".to_string()));
 }
 
 #[test]

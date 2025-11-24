@@ -509,22 +509,6 @@ impl<'src> Preprocessor<'src> {
         Ok(result != 0)
     }
 
-    /// Get the numeric value of a token (after macro expansion)
-    fn evaluate_token_value(&self, token: &PPToken) -> Result<i64, PreprocessorError> {
-        match &token.kind {
-            PPTokenKind::Number(sym) => {
-                let text = sym.as_str();
-                text.parse::<i64>()
-                    .map_err(|_| PreprocessorError::InvalidConditionalExpression)
-            }
-            PPTokenKind::Identifier(_sym) => {
-                // If it's an identifier, it should have been expanded to a number
-                // For now, treat as 0 if not expanded
-                Err(PreprocessorError::InvalidConditionalExpression)
-            }
-            _ => Err(PreprocessorError::InvalidConditionalExpression),
-        }
-    }
 
     /// Lex the next token
     fn lex_token(&mut self) -> Option<PPToken> {

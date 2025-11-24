@@ -1277,8 +1277,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         for specifier in &specifiers {
             if specifier.storage_class == Some(StorageClass::Typedef) {
                 for init_declarator in &init_declarators {
-                    if let Declarator::Identifier(name, _, _) = &init_declarator.declarator {
-                        self.typedef_names.insert(*name);
+                    if let Some(name) = self.get_declarator_name(&init_declarator.declarator) {
+                        self.typedef_names.insert(name);
                     }
                 }
             }
@@ -3465,6 +3465,19 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             }
         } else {
             false
+        }
+    }
+
+    /// Extract the declared name from a declarator, if any
+    fn get_declarator_name(&self, declarator: &Declarator) -> Option<Symbol> {
+        match declarator {
+            Declarator::Identifier(name, _, _) => Some(*name),
+            Declarator::Pointer(_, Some(inner)) => self.get_declarator_name(inner),
+            Declarator::Array(inner, _) => self.get_declarator_name(inner),
+            Declarator::Function(inner, _) => self.get_declarator_name(inner),
+            Declarator::AnonymousRecord(_, _) => None,
+            Declarator::Abstract => None,
+            Declarator::Pointer(_, None) => None,
         }
     }
 

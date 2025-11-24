@@ -178,7 +178,11 @@ impl SymbolTable {
     }
 
     pub fn lookup_symbol(&self, name: Symbol) -> Option<(SymbolEntryRef, ScopeId)> {
-        let mut scope_id = self.current_scope_id;
+        self.lookup_symbol_from(name, self.current_scope_id)
+    }
+
+    pub fn lookup_symbol_from(&self, name: Symbol, start_scope: ScopeId) -> Option<(SymbolEntryRef, ScopeId)> {
+        let mut scope_id = start_scope;
         loop {
             let scope = self.get_scope(scope_id);
             if let Some(&entry_ref) = scope.symbols.get(&name) {
@@ -332,6 +336,9 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
             }
         }
 
+        // Ensure we're back in global scope for global declarations
+        self.symbol_table.set_current_scope(ScopeId::GLOBAL);
+
         // Process only global declarations (those at translation unit level)
         for (node_ref, decl, span) in global_declarations {
             debug!(
@@ -436,10 +443,6 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
             }
         }
 
-        // Pop function scope to add function to global scope
-        self.symbol_table.pop_scope();
-        debug!("Popped function scope to add function to global scope");
-
         // Add function to global scope (this ensures it's available during type resolution)
         let func_entry = SymbolEntry {
             name,
@@ -462,7 +465,9 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
             name.as_str(),
             function_scope_id.get()
         );
+        self.symbol_table.set_current_scope(ScopeId::GLOBAL);
         self.symbol_table.add_symbol(name, func_entry);
+        self.symbol_table.set_current_scope(function_scope_id);
 
         // Store the function scope ID so it can be used during type resolution
         // The scope will be popped when we finish processing this function
@@ -483,10 +488,11 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
         self.symbol_table.set_current_scope(function_scope_id);
 
         // Traverse the function body with proper scope management
-        let mut stack = vec![(body_node, function_scope_id)];
+        // Start with the body node in the function scope (don't create block scope for top-level body)
+        let mut stack = vec![(body_node, function_scope_id, true)]; // (node_ref, scope, is_top_level_body)
         let mut visited: BitVec = BitVec::new();
 
-        while let Some((node_ref, expected_scope)) = stack.pop() {
+        while let Some((node_ref, expected_scope, is_top_level_body)) = stack.pop() {
             let node_id = node_ref.get() as usize;
             if node_id < visited.len() && visited[node_id] {
                 continue;
@@ -539,7 +545,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                             );
 
                             // Process the for loop body in this scope
-                            stack.push((for_stmt.body, for_scope_id));
+                            stack.push((for_stmt.body, for_scope_id, false));
 
                             // Add the for loop init declaration to the new scope first
                             self.collect_declaration_symbols(&decl, span);
@@ -547,34 +553,40 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                             debug!("For loop init is not a declaration, it's an expression");
                             // Init is an expression, process normally
                             let children = self.get_child_nodes(node_ref);
-                            for child in children {
-                                stack.push((child, expected_scope));
+                            for child in children.into_iter().rev() {
+                                stack.push((child, expected_scope, false));
                             }
                         }
                     } else {
                         debug!("For loop has no init");
                         // No init, process normally
                         let children = self.get_child_nodes(node_ref);
-                        for child in children {
-                            stack.push((child, expected_scope));
+                        for child in children.into_iter().rev() {
+                            stack.push((child, expected_scope, false));
                         }
                     }
                 }
                 NodeKind::CompoundStatement(nodes) => {
-                    // Create a new block scope for this compound statement
-                    debug!("Creating block scope for compound statement in function");
-                    let block_scope_id = self.symbol_table.push_scope(ScopeKind::Block);
-
-                    // Process all children in the new block scope
-                    for child in nodes.iter().rev() {
-                        stack.push((*child, block_scope_id));
+                    if is_top_level_body {
+                        // Top-level function body: don't create new scope, use function scope
+                        debug!("Processing top-level function body in function scope");
+                        for child in nodes.iter().rev() {
+                            stack.push((*child, expected_scope, false));
+                        }
+                    } else {
+                        // Nested compound statement: create a new block scope
+                        debug!("Creating block scope for nested compound statement");
+                        let block_scope_id = self.symbol_table.push_scope(ScopeKind::Block);
+                        for child in nodes.iter().rev() {
+                            stack.push((*child, block_scope_id, false));
+                        }
                     }
                 }
                 _ => {
                     // For other node types, just traverse their children in the current scope
                     let children = self.get_child_nodes(node_ref);
-                    for child in children {
-                        stack.push((child, expected_scope));
+                    for child in children.into_iter().rev() {
+                        stack.push((child, expected_scope, false));
                     }
                 }
             }
@@ -800,12 +812,12 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
             _root_node_ref.get()
         );
 
-        // Simplified single-pass approach: resolve identifiers as we encounter them
-        let mut stack = vec![_root_node_ref];
+        // Stack for traversal: (node_ref, expected_scope, is_top_level_body)
+        let mut stack = vec![(_root_node_ref, ScopeId::GLOBAL, false)];
         let mut nodes_processed = 0;
         let mut visited_nodes: BitVec = BitVec::new();
 
-        while let Some(node_ref) = stack.pop() {
+        while let Some((node_ref, expected_scope, is_top_level_body)) = stack.pop() {
             // Skip already visited nodes to prevent infinite loops
             let node_id = node_ref.get() as usize;
             if node_id < visited_nodes.len() && visited_nodes[node_id] {
@@ -827,14 +839,53 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
 
             let node = self.ast.get_node(node_ref);
 
+            // Set the current scope for this node
+            self.symbol_table.set_current_scope(expected_scope);
+
             match &node.kind {
+                NodeKind::FunctionDef(func_def) => {
+                    // For function definitions, we need to resolve in the function scope
+                    let func_name = self.extract_function_info(&func_def.declarator).0.unwrap_or_else(|| Symbol::new("<anonymous>"));
+                    if let Some((symbol_ref, _)) = self.symbol_table.lookup_symbol(func_name) {
+                        let symbol_entry = self.symbol_table.get_symbol_entry(symbol_ref);
+                        let func_scope_id = ScopeId::new(symbol_entry.scope_id).unwrap();
+                        // Push function body with function scope, mark as top-level body
+                        let children = self.get_child_nodes(node_ref);
+                        for child in children.into_iter().rev() {
+                            let is_body = matches!(self.ast.get_node(child).kind, NodeKind::CompoundStatement(_));
+                            stack.push((child, func_scope_id, is_body));
+                        }
+                    } else {
+                        // Fallback: push children with current scope
+                        let children = self.get_child_nodes(node_ref);
+                        for child in children.into_iter().rev() {
+                            stack.push((child, expected_scope, false));
+                        }
+                    }
+                }
+                NodeKind::CompoundStatement(_) => {
+                    if is_top_level_body {
+                        // Top-level function body: don't create new scope
+                        let children = self.get_child_nodes(node_ref);
+                        for child in children.into_iter().rev() {
+                            stack.push((child, expected_scope, false));
+                        }
+                    } else {
+                        // Nested compound statement: create block scope
+                        let block_scope = self.symbol_table.push_scope(ScopeKind::Block);
+                        let children = self.get_child_nodes(node_ref);
+                        for child in children.into_iter().rev() {
+                            stack.push((child, block_scope, false));
+                        }
+                    }
+                }
                 NodeKind::Ident(name, resolved_symbol) => {
                     debug!(
                         "Resolving identifier: {} in scope {}",
                         name.as_str(),
-                        self.symbol_table.current_scope().get()
+                        expected_scope.get()
                     );
-                    if let Some((symbol_ref, scope_id)) = self.symbol_table.lookup_symbol(*name) {
+                    if let Some((symbol_ref, scope_id)) = self.symbol_table.lookup_symbol_from(*name, expected_scope) {
                         debug!("Found symbol {} in scope {}", name.as_str(), scope_id.get());
                         resolved_symbol.set(Some(symbol_ref));
                         // Mark symbol as referenced
@@ -842,21 +893,22 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                         symbol_entry.is_referenced = true;
                     } else {
                         debug!(
-                            "Undeclared identifier: {} (current scope: {})",
+                            "Undeclared identifier: {} (expected scope: {})",
                             name.as_str(),
-                            self.symbol_table.current_scope().get()
+                            expected_scope.get()
                         );
                         self.diag.report_error(SemanticError::UndeclaredIdentifier {
                             name: *name,
                             location: node.span,
                         });
                     }
+                    // Identifiers have no children
                 }
                 _ => {
-                    // For all other nodes, just add their children to the stack
+                    // For all other nodes, push children with the same scope
                     let children = self.get_child_nodes(node_ref);
-                    for child in children {
-                        stack.push(child);
+                    for child in children.into_iter().rev() {
+                        stack.push((child, expected_scope, false));
                     }
                 }
             }

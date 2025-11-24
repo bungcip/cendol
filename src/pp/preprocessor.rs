@@ -2,8 +2,9 @@ use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::LangOptions;
 use crate::source_manager::{SourceId, SourceLoc, SourceManager, SourceSpan};
 use chrono::{DateTime, Datelike, Timelike, Utc};
-use log::debug;
 use std::collections::{HashMap, HashSet};
+
+use crate::pp::expr_parser::ExpressionParser;
 use std::path::PathBuf;
 use symbol_table::GlobalSymbol as Symbol;
 use target_lexicon::Triple as TargetInfo;
@@ -345,6 +346,11 @@ impl<'src> Preprocessor<'src> {
         )]
     }
 
+    /// Check if a macro is defined
+    pub fn is_macro_defined(&self, symbol: &Symbol) -> bool {
+        self.macros.contains_key(symbol)
+    }
+
     /// Process source file and return preprocessed tokens
     pub fn process(
         &mut self,
@@ -498,36 +504,9 @@ impl<'src> Preprocessor<'src> {
             return Err(PreprocessorError::InvalidConditionalExpression);
         }
 
-        // Very simplified: handle single number, or comparison expressions
-        if tokens.len() == 1 {
-            return match &tokens[0].kind {
-                PPTokenKind::Number(sym) => {
-                    let text = sym.as_str();
-                    Ok(text != "0")
-                }
-                PPTokenKind::Identifier(sym) => Ok(self.macros.contains_key(sym)),
-                _ => Err(PreprocessorError::InvalidConditionalExpression),
-            };
-        }
-
-        // Handle binary comparisons: left op right
-        if tokens.len() == 3 {
-            let left = self.evaluate_token_value(&tokens[0])?;
-            let op = &tokens[1].kind;
-            let right = self.evaluate_token_value(&tokens[2])?;
-
-            match op {
-                PPTokenKind::Greater => Ok(left > right),
-                PPTokenKind::GreaterEqual => Ok(left >= right),
-                PPTokenKind::Less => Ok(left < right),
-                PPTokenKind::LessEqual => Ok(left <= right),
-                PPTokenKind::Equal => Ok(left == right),
-                PPTokenKind::NotEqual => Ok(left != right),
-                _ => Err(PreprocessorError::InvalidConditionalExpression),
-            }
-        } else {
-            Err(PreprocessorError::InvalidConditionalExpression)
-        }
+        let mut parser = ExpressionParser::new(tokens, self);
+        let result = parser.parse_expression()?;
+        Ok(result != 0)
     }
 
     /// Get the numeric value of a token (after macro expansion)
@@ -579,9 +558,7 @@ impl<'src> Preprocessor<'src> {
             PPTokenKind::Include => self.handle_include()?,
             PPTokenKind::If => {
                 let expr_tokens = self.parse_conditional_expression()?;
-                debug!("Parsed #if expression tokens: {:?}", expr_tokens);
                 let condition = self.evaluate_conditional_expression(&expr_tokens)?;
-                debug!("Evaluated #if condition: {}", condition);
                 self.handle_if_directive(condition)?;
             }
             PPTokenKind::Ifdef => {
@@ -592,9 +569,7 @@ impl<'src> Preprocessor<'src> {
             }
             PPTokenKind::Elif => {
                 let expr_tokens = self.parse_conditional_expression()?;
-                debug!("Parsed #elif expression tokens: {:?}", expr_tokens);
                 let condition = self.evaluate_conditional_expression(&expr_tokens)?;
-                debug!("Evaluated #elif condition: {}", condition);
                 self.handle_elif_directive(condition)?;
             }
             PPTokenKind::Else => {
@@ -855,7 +830,6 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
     fn handle_if_directive(&mut self, condition: bool) -> Result<(), PreprocessorError> {
-        debug!("Handling #if directive with condition: {}", condition);
         // Push new conditional state
         let info = PPConditionalInfo {
             if_loc: self.get_current_location(),
@@ -863,16 +837,11 @@ impl<'src> Preprocessor<'src> {
             found_else: false,
             found_non_skipping: condition, // Set to true if condition is true
         };
-        debug!("Pushing conditional: {:?}", info);
         self.conditional_stack.push(info);
-        debug!("Conditional stack after #if: {:?}", self.conditional_stack);
 
         // Set skipping state based on condition
         if !condition {
             self.set_skipping(true);
-            debug!("Set skipping to true due to false condition");
-        } else {
-            debug!("Condition true, not setting skipping");
         }
 
         Ok(())
@@ -888,11 +857,6 @@ impl<'src> Preprocessor<'src> {
         };
 
         let defined = self.macros.contains_key(&name);
-        debug!(
-            "Handling #ifdef for macro '{}', defined: {}",
-            name.as_str(),
-            defined
-        );
         let info = PPConditionalInfo {
             if_loc: self.get_current_location(),
             was_skipping: self.is_currently_skipping(),
@@ -900,19 +864,9 @@ impl<'src> Preprocessor<'src> {
             found_non_skipping: defined,
         };
         self.conditional_stack.push(info);
-        debug!(
-            "Conditional stack after #ifdef: {:?}",
-            self.conditional_stack
-        );
 
         if !defined {
             self.set_skipping(true);
-            debug!(
-                "Set skipping to true because macro '{}' is not defined",
-                name.as_str()
-            );
-        } else {
-            debug!("Macro '{}' is defined, not setting skipping", name.as_str());
         }
 
         Ok(())
@@ -928,11 +882,6 @@ impl<'src> Preprocessor<'src> {
         };
 
         let defined = self.macros.contains_key(&name);
-        debug!(
-            "Handling #ifndef for macro '{}', defined: {}",
-            name.as_str(),
-            defined
-        );
         let info = PPConditionalInfo {
             if_loc: self.get_current_location(),
             was_skipping: self.is_currently_skipping(),
@@ -940,29 +889,15 @@ impl<'src> Preprocessor<'src> {
             found_non_skipping: !defined,
         };
         self.conditional_stack.push(info);
-        debug!(
-            "Conditional stack after #ifndef: {:?}",
-            self.conditional_stack
-        );
 
         if defined {
             self.set_skipping(true);
-            debug!(
-                "Set skipping to true because macro '{}' is defined",
-                name.as_str()
-            );
-        } else {
-            debug!(
-                "Macro '{}' is not defined, not setting skipping",
-                name.as_str()
-            );
         }
 
         Ok(())
     }
 
     fn handle_elif_directive(&mut self, condition: bool) -> Result<(), PreprocessorError> {
-        debug!("Handling #elif directive with condition: {}", condition);
         if self.conditional_stack.is_empty() {
             return Err(PreprocessorError::ElifWithoutIf);
         }
@@ -974,26 +909,18 @@ impl<'src> Preprocessor<'src> {
 
         // Determine if we should start processing
         let should_process = !current.found_non_skipping && condition;
-        debug!("Should process #elif: {}", should_process);
 
         if should_process {
             current.found_non_skipping = true;
             self.set_skipping(false);
-            debug!("Set skipping to false for #elif");
         } else {
             self.set_skipping(true);
-            debug!("Set skipping to true for #elif");
         }
-        debug!(
-            "Conditional stack after #elif: {:?}",
-            self.conditional_stack
-        );
 
         Ok(())
     }
 
     fn handle_else(&mut self) -> Result<(), PreprocessorError> {
-        debug!("Handling #else directive");
         if self.conditional_stack.is_empty() {
             return Err(PreprocessorError::ElseWithoutIf);
         }
@@ -1006,40 +933,23 @@ impl<'src> Preprocessor<'src> {
 
         // Process else block if no previous branch was taken
         let should_process = !current.found_non_skipping;
-        debug!("Should process #else: {}", should_process);
         if should_process {
             self.set_skipping(false);
-            debug!("Set skipping to false for #else");
         } else {
             self.set_skipping(true);
-            debug!("Set skipping to true for #else");
         }
-        debug!(
-            "Conditional stack after #else: {:?}",
-            self.conditional_stack
-        );
 
         Ok(())
     }
 
     fn handle_endif(&mut self) -> Result<(), PreprocessorError> {
-        debug!(
-            "Handling #endif directive in offset {}",
-            self.get_current_location().offset()
-        );
         if self.conditional_stack.is_empty() {
             return Err(PreprocessorError::UnmatchedEndif);
         }
 
         let info = self.conditional_stack.pop().unwrap();
-        debug!("Popped conditional info: {:?}", info);
         // Restore previous skipping state
         self.set_skipping(info.was_skipping);
-        debug!("Restored skipping state to: {}", info.was_skipping);
-        debug!(
-            "Conditional stack after #endif: {:?}",
-            self.conditional_stack
-        );
 
         Ok(())
     }
@@ -1124,6 +1034,27 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn handle_error(&mut self) -> Result<(), PreprocessorError> {
+        if self.is_currently_skipping() {
+            // Skip to end of line
+            let directive_line = if let Some(lexer) = self.lexer_stack.last() {
+                lexer.get_current_line()
+            } else {
+                0
+            };
+            while let Some(token) = self.lex_token() {
+                if let Some(lexer) = self.lexer_stack.last() {
+                    let token_line = lexer.get_line(token.location.0);
+                    if token_line != directive_line {
+                        // Put back the token from the next line
+                        if let Some(lexer) = self.lexer_stack.last_mut() {
+                            lexer.put_back(token);
+                        }
+                        break;
+                    }
+                }
+            }
+            return Ok(());
+        }
         // Collect the error message from the rest of the line
         let mut message_parts = Vec::new();
         // Get the line of the #error directive

@@ -423,3 +423,56 @@ X;
         }
     }
 }
+
+#[test]
+fn test_complex_arithmetic_expressions() {
+    let src = r#"
+// Test various arithmetic operations in preprocessor conditionals
+#if (-2) != -2
+#error fail
+#endif
+
+#if (0 || 0) != 0
+#error fail
+#endif
+
+#if (1 || 0) != 1
+#error fail
+#endif
+
+#if (0xf0 | 1) != 0xf1
+#error fail
+#endif
+
+#if (1 << 1) != 2
+#error fail
+#endif
+
+#if (2 + 1) != 3
+#error fail
+#endif
+
+#if (2+2*3+2) != 10
+#error fail
+#endif
+
+#if ((2+2)*(3+2)) != 20
+#error fail
+#endif
+
+int result = 42;
+"#;
+
+    let significant_tokens = setup_preprocessor_test(src);
+
+    // Expected: int, result, =, 42, ;
+    // All conditionals should evaluate to false, so no #error should trigger
+    assert_token_kinds!(
+        significant_tokens,
+        PPTokenKind::Identifier(Symbol::new("int")),
+        PPTokenKind::Identifier(Symbol::new("result")),
+        PPTokenKind::Assign,
+        PPTokenKind::Number(Symbol::new("42")),
+        PPTokenKind::Semicolon
+    );
+}

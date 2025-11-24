@@ -361,33 +361,35 @@ impl<'src> Preprocessor<'src> {
 
         // Process tokens with string literal concatenation
         while let Some(token) = self.lex_token() {
-            if self.is_currently_skipping() {
-                // Skip tokens when in conditional compilation skip mode
-                continue;
-            }
-
             match token.kind {
                 PPTokenKind::Hash if token.flags.contains(PPTokenFlags::STARTS_PP_LINE) => {
-                    // Handle directive
+                    // Handle directive - always process directives regardless of skipping
                     self.handle_directive()?;
                 }
-                PPTokenKind::Identifier(_symbol) => {
-                    // Check for macro expansion
-                    if let Some(expanded) = self.expand_macro(&token)? {
-                        // Add expanded tokens to result
-                        result_tokens.extend(expanded);
-                    } else {
-                        result_tokens.push(token);
-                    }
-                }
                 _ => {
-                    result_tokens.push(token);
+                    if self.is_currently_skipping() {
+                        // Skip tokens when in conditional compilation skip mode
+                        continue;
+                    }
+
+                    match token.kind {
+                        PPTokenKind::Identifier(_symbol) => {
+                            // Check for macro expansion
+                            if let Some(expanded) = self.expand_macro(&token)? {
+                                // Add expanded tokens to result
+                                result_tokens.extend(expanded);
+                            } else {
+                                result_tokens.push(token);
+                            }
+                        }
+                        _ => {
+                            result_tokens.push(token);
+                        }
+                    }
                 }
             }
         }
 
-        // Perform string literal concatenation
-        result_tokens = self.concatenate_string_literals(result_tokens);
 
         // Add EOF token
         result_tokens.push(PPToken::new(
@@ -414,65 +416,6 @@ impl<'src> Preprocessor<'src> {
         self.skipping || self.conditional_stack.iter().any(|info| info.was_skipping)
     }
 
-    /// Concatenate adjacent string literals (C11 6.4.5)
-    fn concatenate_string_literals(&self, tokens: Vec<PPToken>) -> Vec<PPToken> {
-        let mut result = Vec::new();
-        let mut i = 0;
-
-        while i < tokens.len() {
-            if let PPTokenKind::StringLiteral(current_symbol) = tokens[i].kind {
-                // Start collecting string literals
-                let current_str = current_symbol.as_str();
-                let mut concatenated_content = String::new();
-                let start_location = tokens[i].location;
-
-                // Get the content of the first string literal (removing quotes)
-                if current_str.starts_with('"') && current_str.ends_with('"') {
-                    let content = &current_str[1..current_str.len() - 1];
-                    concatenated_content.push_str(content);
-                } else {
-                    // Invalid string literal format, just push as-is
-                    result.push(tokens[i].clone());
-                    i += 1;
-                    continue;
-                }
-
-                // Look ahead for more string literals
-                let mut j = i + 1;
-                while j < tokens.len() {
-                    if let PPTokenKind::StringLiteral(next_symbol) = tokens[j].kind {
-                        let next_str = next_symbol.as_str();
-                        if next_str.starts_with('"') && next_str.ends_with('"') {
-                            let content = &next_str[1..next_str.len() - 1];
-                            concatenated_content.push_str(content);
-                            j += 1;
-                        } else {
-                            break;
-                        }
-                    } else {
-                        break;
-                    }
-                }
-
-                // Create properly formatted concatenated string literal
-                let final_string = format!("\"{}\"", concatenated_content);
-                let concatenated_symbol = Symbol::new(&final_string);
-                result.push(PPToken::new(
-                    PPTokenKind::StringLiteral(concatenated_symbol),
-                    tokens[i].flags,
-                    start_location,
-                    final_string.len() as u16,
-                ));
-
-                i = j;
-            } else {
-                result.push(tokens[i].clone());
-                i += 1;
-            }
-        }
-
-        result
-    }
 
     /// Set the skipping state
     fn set_skipping(&mut self, skipping: bool) {
@@ -516,7 +459,32 @@ impl<'src> Preprocessor<'src> {
         &self,
         tokens: &[PPToken],
     ) -> Result<bool, PreprocessorError> {
-        // Simplified evaluation: just check if the first token is defined
+        // Simplified evaluation: handle defined() operator and simple identifiers
+        if tokens.is_empty() {
+            return Err(PreprocessorError::InvalidConditionalExpression);
+        }
+
+
+        // Check for defined(identifier) or defined identifier
+        if tokens.len() >= 2 && matches!(tokens[0].kind, PPTokenKind::Identifier(sym) if sym.as_str() == "defined") {
+            if tokens.len() == 2 {
+                // defined identifier
+                if let PPTokenKind::Identifier(sym) = &tokens[1].kind {
+                    let result = self.macros.contains_key(sym);
+                    println!("  defined({}) = {}", sym.as_str(), result);
+                    return Ok(result);
+                }
+            } else if tokens.len() == 4
+                && matches!(tokens[1].kind, PPTokenKind::LeftParen)
+                && matches!(tokens[3].kind, PPTokenKind::RightParen) {
+                // defined(identifier)
+                if let PPTokenKind::Identifier(sym) = &tokens[2].kind {
+                    return Ok(self.macros.contains_key(sym));
+                }
+            }
+        }
+
+        // Fallback to simple identifier check
         if let Some(first_token) = tokens.first() {
             match &first_token.kind {
                 PPTokenKind::Identifier(sym) => Ok(self.macros.contains_key(sym)),
@@ -583,51 +551,26 @@ impl<'src> Preprocessor<'src> {
             PPTokenKind::Undef => self.handle_undef()?,
             PPTokenKind::Include => self.handle_include()?,
             PPTokenKind::If => {
-                if self.is_currently_skipping() {
-                    // Skip the entire #if block
-                    self.skip_conditional_block()?;
-                } else {
-                    let expr_tokens = self.parse_conditional_expression()?;
-                    let condition = self.evaluate_conditional_expression(&expr_tokens)?;
-                    self.handle_if_directive(condition)?;
-                }
+                let expr_tokens = self.parse_conditional_expression()?;
+                let condition = self.evaluate_conditional_expression(&expr_tokens)?;
+                self.handle_if_directive(condition)?;
             }
             PPTokenKind::Ifdef => {
-                if self.is_currently_skipping() {
-                    self.skip_conditional_block()?;
-                } else {
-                    self.handle_ifdef()?;
-                }
+                self.handle_ifdef()?;
             }
             PPTokenKind::Ifndef => {
-                if self.is_currently_skipping() {
-                    self.skip_conditional_block()?;
-                } else {
-                    self.handle_ifndef()?;
-                }
+                self.handle_ifndef()?;
             }
             PPTokenKind::Elif => {
-                if self.is_currently_skipping() {
-                    self.skip_conditional_block()?;
-                } else {
-                    let expr_tokens = self.parse_conditional_expression()?;
-                    let condition = self.evaluate_conditional_expression(&expr_tokens)?;
-                    self.handle_elif_directive(condition)?;
-                }
+                let expr_tokens = self.parse_conditional_expression()?;
+                let condition = self.evaluate_conditional_expression(&expr_tokens)?;
+                self.handle_elif_directive(condition)?;
             }
             PPTokenKind::Else => {
-                if self.is_currently_skipping() {
-                    self.skip_conditional_block()?;
-                } else {
-                    self.handle_else()?;
-                }
+                self.handle_else()?;
             }
             PPTokenKind::Endif => {
-                if self.is_currently_skipping() {
-                    self.skip_conditional_block()?;
-                } else {
-                    self.handle_endif()?;
-                }
+                self.handle_endif()?;
             }
             PPTokenKind::Line => self.handle_line()?,
             PPTokenKind::Pragma => self.handle_pragma()?,
@@ -885,7 +828,7 @@ impl<'src> Preprocessor<'src> {
             if_loc: self.get_current_location(),
             was_skipping: self.is_currently_skipping(),
             found_else: false,
-            found_non_skipping: false,
+            found_non_skipping: condition,  // Set to true if condition is true
         };
         self.conditional_stack.push(info);
 
@@ -911,7 +854,7 @@ impl<'src> Preprocessor<'src> {
             if_loc: self.get_current_location(),
             was_skipping: self.is_currently_skipping(),
             found_else: false,
-            found_non_skipping: false,
+            found_non_skipping: defined,
         };
         self.conditional_stack.push(info);
 
@@ -936,7 +879,7 @@ impl<'src> Preprocessor<'src> {
             if_loc: self.get_current_location(),
             was_skipping: self.is_currently_skipping(),
             found_else: false,
-            found_non_skipping: false,
+            found_non_skipping: !defined,
         };
         self.conditional_stack.push(info);
 

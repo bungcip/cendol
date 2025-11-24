@@ -155,6 +155,42 @@ LOG("value=%d\n", 5);
 }
 
 #[test]
+fn test_nested_ifdef_ifndef_and_defined_operator() {
+    let src = r#"
+#define A 1
+#if defined(A)
+#ifdef B
+int x = 2;
+#else
+int x = 1;
+#endif
+#else
+int x = 0;
+#endif
+"#;
+
+    let significant_tokens = setup_preprocessor_test(src);
+
+    // Expected: int, x, =, 1, ;
+    // Since A is defined and B is not defined, it should take the #else branch
+    assert_token_kinds!(
+        significant_tokens,
+        PPTokenKind::Identifier(Symbol::new("int")),
+        PPTokenKind::Identifier(Symbol::new("x")),
+        PPTokenKind::Assign,
+        PPTokenKind::Number(Symbol::new("1")),
+        PPTokenKind::Semicolon)
+    ;
+
+    // Ensure A was not expanded (it's used in conditional)
+    for token in &significant_tokens {
+        if let PPTokenKind::Identifier(sym) = &token.kind {
+            assert_ne!(sym.as_str(), "A", "A should not appear in output");
+        }
+    }
+}
+
+#[test]
 fn test_token_pasting() {
     let src = r#"
 #define PASTE(a,b) a ## b

@@ -571,7 +571,73 @@ impl<'src> Lexer<'src> {
                 break;
             }
         }
+
+        // Perform string literal concatenation (C11 6.4.5)
+        tokens = self.concatenate_string_literals(tokens);
+
         tokens
+    }
+
+    /// Concatenate adjacent string literals (C11 6.4.5)
+    fn concatenate_string_literals(&self, tokens: Vec<Token>) -> Vec<Token> {
+        let mut result = Vec::new();
+        let mut i = 0;
+
+        while i < tokens.len() {
+            if let TokenKind::StringLiteral(current_symbol) = tokens[i].kind {
+                // Start collecting string literals
+                let current_str = current_symbol.as_str();
+                let mut concatenated_content = String::new();
+                let start_location = tokens[i].location.start;
+
+                // Get the content of the first string literal (removing quotes)
+                if current_str.starts_with('"') && current_str.ends_with('"') {
+                    let content = &current_str[1..current_str.len() - 1];
+                    concatenated_content.push_str(content);
+                } else {
+                    // Invalid string literal format, just push as-is
+                    result.push(tokens[i].clone());
+                    i += 1;
+                    continue;
+                }
+
+                // Look ahead for more string literals
+                let mut j = i + 1;
+                while j < tokens.len() {
+                    if let TokenKind::StringLiteral(next_symbol) = tokens[j].kind {
+                        let next_str = next_symbol.as_str();
+                        if next_str.starts_with('"') && next_str.ends_with('"') {
+                            let content = &next_str[1..next_str.len() - 1];
+                            concatenated_content.push_str(content);
+                            j += 1;
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+
+                // Create properly formatted concatenated string literal
+                let final_string = format!("\"{}\"", concatenated_content);
+                let concatenated_symbol = Symbol::new(&final_string);
+                let end_location = tokens[j - 1].location.end;
+                result.push(Token {
+                    kind: TokenKind::StringLiteral(concatenated_symbol),
+                    location: SourceSpan {
+                        start: start_location,
+                        end: end_location,
+                    },
+                });
+
+                i = j;
+            } else {
+                result.push(tokens[i].clone());
+                i += 1;
+            }
+        }
+
+        result
     }
 }
 

@@ -8,7 +8,7 @@ use target_lexicon::Triple;
 
 fn create_test_lexer(tokens: Vec<PPToken>) -> Lexer<'static> {
     let mut source_manager = SourceManager::new();
-    let source_id = source_manager.add_buffer("test".as_bytes().to_vec(), "test.c");
+    let _source_id = source_manager.add_buffer("test".as_bytes().to_vec(), "test.c");
     let mut diag = DiagnosticEngine::new();
     let lang_opts = LangOptions::c11();
     let target_info = Triple::host();

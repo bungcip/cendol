@@ -96,6 +96,33 @@ pub struct PPToken {
     pub length: u16,         // Maximum token length (64KB should be sufficient for any token)
 }
 
+impl PPToken {
+    /// Create a PPToken with full control over all fields
+    pub fn new(kind: PPTokenKind, flags: PPTokenFlags, location: SourceLoc, length: u16) -> Self {
+        PPToken {
+            kind,
+            flags,
+            location,
+            length,
+        }
+    }
+
+    /// Create a simple PPToken with empty flags and length 1 (most common case)
+    pub fn simple(kind: PPTokenKind, location: SourceLoc) -> Self {
+        PPToken::new(kind, PPTokenFlags::empty(), location, 1)
+    }
+
+    /// Create a PPToken with text-based length (empty flags)
+    pub fn text(kind: PPTokenKind, location: SourceLoc, text: &str) -> Self {
+        PPToken::new(kind, PPTokenFlags::empty(), location, text.len() as u16)
+    }
+
+    /// Create a PPToken with custom flags and length 1
+    pub fn with_flags(kind: PPTokenKind, flags: PPTokenFlags, location: SourceLoc) -> Self {
+        PPToken::new(kind, flags, location, 1)
+    }
+}
+
 /// Manages lexing from different source buffers
 pub struct PPLexer {
     pub source_id: SourceId,
@@ -133,7 +160,10 @@ impl PPLexer {
         self.position += 1;
 
         // Handle line splicing: backslash followed by newline
-        if result == b'\\' && self.position < self.buffer.len() && self.buffer[self.position] == b'\n' {
+        if result == b'\\'
+            && self.position < self.buffer.len()
+            && self.buffer[self.position] == b'\n'
+        {
             // Skip the newline too
             self.position += 1;
             // Update line starts - remove the newline from line tracking
@@ -156,13 +186,13 @@ impl PPLexer {
     pub fn peek_char(&mut self) -> Option<u8> {
         let saved_position = self.position;
         let saved_line_starts = self.line_starts.clone();
-        
+
         let result = self.next_char();
-        
+
         // Restore state
         self.position = saved_position;
         self.line_starts = saved_line_starts;
-        
+
         result
     }
 
@@ -194,176 +224,161 @@ impl PPLexer {
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'#') {
                     self.next_char(); // consume the second #
-                    Some(PPToken {
-                        kind: PPTokenKind::HashHash,
+                    Some(PPToken::new(
+                        PPTokenKind::HashHash,
                         flags,
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 2,
-                    })
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                        2,
+                    ))
                 } else {
-                    Some(PPToken {
-                        kind: PPTokenKind::Hash,
+                    Some(PPToken::with_flags(
+                        PPTokenKind::Hash,
                         flags,
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 1,
-                    })
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                    ))
                 }
             }
             b'+' => {
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'+') {
                     self.next_char();
-                    Some(PPToken {
-                        kind: PPTokenKind::Increment,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 2,
-                    })
+                    Some(PPToken::new(
+                        PPTokenKind::Increment,
+                        PPTokenFlags::empty(),
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                        2,
+                    ))
                 } else if next_ch == Some(b'=') {
                     self.next_char();
-                    Some(PPToken {
-                        kind: PPTokenKind::PlusAssign,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 2,
-                    })
+                    Some(PPToken::new(
+                        PPTokenKind::PlusAssign,
+                        PPTokenFlags::empty(),
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                        2,
+                    ))
                 } else {
-                    Some(PPToken {
-                        kind: PPTokenKind::Plus,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 1,
-                    })
+                    Some(PPToken::simple(
+                        PPTokenKind::Plus,
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                    ))
                 }
             }
             b'-' => {
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'-') {
                     self.next_char();
-                    Some(PPToken {
-                        kind: PPTokenKind::Decrement,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 2,
-                    })
+                    Some(PPToken::new(
+                        PPTokenKind::Decrement,
+                        PPTokenFlags::empty(),
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                        2,
+                    ))
                 } else if next_ch == Some(b'=') {
                     self.next_char();
-                    Some(PPToken {
-                        kind: PPTokenKind::MinusAssign,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 2,
-                    })
+                    Some(PPToken::new(
+                        PPTokenKind::MinusAssign,
+                        PPTokenFlags::empty(),
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                        2,
+                    ))
                 } else if next_ch == Some(b'>') {
                     self.next_char();
-                    Some(PPToken {
-                        kind: PPTokenKind::Arrow,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 2,
-                    })
+                    Some(PPToken::new(
+                        PPTokenKind::Arrow,
+                        PPTokenFlags::empty(),
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                        2,
+                    ))
                 } else {
-                    Some(PPToken {
-                        kind: PPTokenKind::Minus,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 1,
-                    })
+                    Some(PPToken::simple(
+                        PPTokenKind::Minus,
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                    ))
                 }
             }
             b'*' => {
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'=') {
                     self.next_char();
-                    Some(PPToken {
-                        kind: PPTokenKind::StarAssign,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 2,
-                    })
+                    Some(PPToken::new(
+                        PPTokenKind::StarAssign,
+                        PPTokenFlags::empty(),
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                        2,
+                    ))
                 } else {
-                    Some(PPToken {
-                        kind: PPTokenKind::Star,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 1,
-                    })
+                    Some(PPToken::simple(
+                        PPTokenKind::Star,
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                    ))
                 }
             }
             b'/' => {
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'=') {
                     self.next_char();
-                    Some(PPToken {
-                        kind: PPTokenKind::DivAssign,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 2,
-                    })
+                    Some(PPToken::new(
+                        PPTokenKind::DivAssign,
+                        PPTokenFlags::empty(),
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                        2,
+                    ))
                 } else {
-                    Some(PPToken {
-                        kind: PPTokenKind::Slash,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 1,
-                    })
+                    Some(PPToken::simple(
+                        PPTokenKind::Slash,
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                    ))
                 }
             }
             b'%' => {
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'=') {
                     self.next_char();
-                    Some(PPToken {
-                        kind: PPTokenKind::ModAssign,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 2,
-                    })
+                    Some(PPToken::new(
+                        PPTokenKind::ModAssign,
+                        PPTokenFlags::empty(),
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                        2,
+                    ))
                 } else {
-                    Some(PPToken {
-                        kind: PPTokenKind::Percent,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 1,
-                    })
+                    Some(PPToken::simple(
+                        PPTokenKind::Percent,
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                    ))
                 }
             }
             b'=' => {
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'=') {
                     self.next_char();
-                    Some(PPToken {
-                        kind: PPTokenKind::Equal,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 2,
-                    })
+                    Some(PPToken::new(
+                        PPTokenKind::Equal,
+                        PPTokenFlags::empty(),
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                        2,
+                    ))
                 } else {
-                    Some(PPToken {
-                        kind: PPTokenKind::Assign,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 1,
-                    })
+                    Some(PPToken::simple(
+                        PPTokenKind::Assign,
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                    ))
                 }
             }
             b'!' => {
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'=') {
                     self.next_char();
-                    Some(PPToken {
-                        kind: PPTokenKind::NotEqual,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 2,
-                    })
+                    Some(PPToken::new(
+                        PPTokenKind::NotEqual,
+                        PPTokenFlags::empty(),
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                        2,
+                    ))
                 } else {
-                    Some(PPToken {
-                        kind: PPTokenKind::Not,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 1,
-                    })
+                    Some(PPToken::simple(
+                        PPTokenKind::Not,
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                    ))
                 }
             }
             b'<' => {
@@ -373,35 +388,33 @@ impl PPLexer {
                     let next_next_ch = self.peek_char();
                     if next_next_ch == Some(b'=') {
                         self.next_char();
-                        Some(PPToken {
-                            kind: PPTokenKind::LeftShiftAssign,
-                            flags: PPTokenFlags::empty(),
-                            location: SourceLoc::new(self.source_id, start_pos as u32),
-                            length: 3,
-                        })
+                        Some(PPToken::new(
+                            PPTokenKind::LeftShiftAssign,
+                            PPTokenFlags::empty(),
+                            SourceLoc::new(self.source_id, start_pos as u32),
+                            3,
+                        ))
                     } else {
-                        Some(PPToken {
-                            kind: PPTokenKind::LeftShift,
-                            flags: PPTokenFlags::empty(),
-                            location: SourceLoc::new(self.source_id, start_pos as u32),
-                            length: 2,
-                        })
+                        Some(PPToken::new(
+                            PPTokenKind::LeftShift,
+                            PPTokenFlags::empty(),
+                            SourceLoc::new(self.source_id, start_pos as u32),
+                            2,
+                        ))
                     }
                 } else if next_ch == Some(b'=') {
                     self.next_char();
-                    Some(PPToken {
-                        kind: PPTokenKind::LessEqual,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 2,
-                    })
+                    Some(PPToken::new(
+                        PPTokenKind::LessEqual,
+                        PPTokenFlags::empty(),
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                        2,
+                    ))
                 } else {
-                    Some(PPToken {
-                        kind: PPTokenKind::Less,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 1,
-                    })
+                    Some(PPToken::simple(
+                        PPTokenKind::Less,
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                    ))
                 }
             }
             b'>' => {
@@ -411,227 +424,169 @@ impl PPLexer {
                     let next_next_ch = self.peek_char();
                     if next_next_ch == Some(b'=') {
                         self.next_char();
-                        Some(PPToken {
-                            kind: PPTokenKind::RightShiftAssign,
-                            flags: PPTokenFlags::empty(),
-                            location: SourceLoc::new(self.source_id, start_pos as u32),
-                            length: 3,
-                        })
+                        Some(PPToken::new(
+                            PPTokenKind::RightShiftAssign,
+                            PPTokenFlags::empty(),
+                            SourceLoc::new(self.source_id, start_pos as u32),
+                            3,
+                        ))
                     } else {
-                        Some(PPToken {
-                            kind: PPTokenKind::RightShift,
-                            flags: PPTokenFlags::empty(),
-                            location: SourceLoc::new(self.source_id, start_pos as u32),
-                            length: 2,
-                        })
+                        Some(PPToken::new(
+                            PPTokenKind::RightShift,
+                            PPTokenFlags::empty(),
+                            SourceLoc::new(self.source_id, start_pos as u32),
+                            2,
+                        ))
                     }
                 } else if next_ch == Some(b'=') {
                     self.next_char();
-                    Some(PPToken {
-                        kind: PPTokenKind::GreaterEqual,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 2,
-                    })
+                    Some(PPToken::new(
+                        PPTokenKind::GreaterEqual,
+                        PPTokenFlags::empty(),
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                        2,
+                    ))
                 } else {
-                    Some(PPToken {
-                        kind: PPTokenKind::Greater,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 1,
-                    })
+                    Some(PPToken::simple(
+                        PPTokenKind::Greater,
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                    ))
                 }
             }
             b'&' => {
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'&') {
                     self.next_char();
-                    Some(PPToken {
-                        kind: PPTokenKind::LogicAnd,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 2,
-                    })
+                    Some(PPToken::new(
+                        PPTokenKind::LogicAnd,
+                        PPTokenFlags::empty(),
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                        2,
+                    ))
                 } else if next_ch == Some(b'=') {
                     self.next_char();
-                    Some(PPToken {
-                        kind: PPTokenKind::AndAssign,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 2,
-                    })
+                    Some(PPToken::new(
+                        PPTokenKind::AndAssign,
+                        PPTokenFlags::empty(),
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                        2,
+                    ))
                 } else {
-                    Some(PPToken {
-                        kind: PPTokenKind::And,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 1,
-                    })
+                    Some(PPToken::simple(
+                        PPTokenKind::And,
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                    ))
                 }
             }
             b'|' => {
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'|') {
                     self.next_char();
-                    Some(PPToken {
-                        kind: PPTokenKind::LogicOr,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 2,
-                    })
+                    Some(PPToken::new(
+                        PPTokenKind::LogicOr,
+                        PPTokenFlags::empty(),
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                        2,
+                    ))
                 } else if next_ch == Some(b'=') {
                     self.next_char();
-                    Some(PPToken {
-                        kind: PPTokenKind::OrAssign,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 2,
-                    })
+                    Some(PPToken::new(
+                        PPTokenKind::OrAssign,
+                        PPTokenFlags::empty(),
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                        2,
+                    ))
                 } else {
-                    Some(PPToken {
-                        kind: PPTokenKind::Or,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 1,
-                    })
+                    Some(PPToken::simple(
+                        PPTokenKind::Or,
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                    ))
                 }
             }
             b'^' => {
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'=') {
                     self.next_char();
-                    Some(PPToken {
-                        kind: PPTokenKind::XorAssign,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 2,
-                    })
+                    Some(PPToken::new(
+                        PPTokenKind::XorAssign,
+                        PPTokenFlags::empty(),
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                        2,
+                    ))
                 } else {
-                    Some(PPToken {
-                        kind: PPTokenKind::Xor,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 1,
-                    })
+                    Some(PPToken::simple(
+                        PPTokenKind::Xor,
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                    ))
                 }
             }
-            b'~' => {
-                Some(PPToken {
-                    kind: PPTokenKind::Tilde,
-                    flags: PPTokenFlags::empty(),
-                    location: SourceLoc::new(self.source_id, start_pos as u32),
-                    length: 1,
-                })
-            }
+            b'~' => Some(PPToken::simple(
+                PPTokenKind::Tilde,
+                SourceLoc::new(self.source_id, start_pos as u32),
+            )),
             b'.' => {
                 let next_ch = self.peek_char();
                 let next_next_ch = self.peek_char();
                 if next_ch == Some(b'.') && next_next_ch == Some(b'.') {
                     self.next_char(); // consume first '.'
                     self.next_char(); // consume second '.'
-                    Some(PPToken {
-                        kind: PPTokenKind::Ellipsis,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 3,
-                    })
+                    Some(PPToken::new(
+                        PPTokenKind::Ellipsis,
+                        PPTokenFlags::empty(),
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                        3,
+                    ))
                 } else {
-                    Some(PPToken {
-                        kind: PPTokenKind::Dot,
-                        flags: PPTokenFlags::empty(),
-                        location: SourceLoc::new(self.source_id, start_pos as u32),
-                        length: 1,
-                    })
+                    Some(PPToken::simple(
+                        PPTokenKind::Dot,
+                        SourceLoc::new(self.source_id, start_pos as u32),
+                    ))
                 }
             }
-            b'?' => {
-                Some(PPToken {
-                    kind: PPTokenKind::Question,
-                    flags: PPTokenFlags::empty(),
-                    location: SourceLoc::new(self.source_id, start_pos as u32),
-                    length: 1,
-                })
-            }
-            b':' => {
-                Some(PPToken {
-                    kind: PPTokenKind::Colon,
-                    flags: PPTokenFlags::empty(),
-                    location: SourceLoc::new(self.source_id, start_pos as u32),
-                    length: 1,
-                })
-            }
-            b',' => {
-                Some(PPToken {
-                    kind: PPTokenKind::Comma,
-                    flags: PPTokenFlags::empty(),
-                    location: SourceLoc::new(self.source_id, start_pos as u32),
-                    length: 1,
-                })
-            }
-            b';' => {
-                Some(PPToken {
-                    kind: PPTokenKind::Semicolon,
-                    flags: PPTokenFlags::empty(),
-                    location: SourceLoc::new(self.source_id, start_pos as u32),
-                    length: 1,
-                })
-            }
-            b'(' => {
-                Some(PPToken {
-                    kind: PPTokenKind::LeftParen,
-                    flags: PPTokenFlags::empty(),
-                    location: SourceLoc::new(self.source_id, start_pos as u32),
-                    length: 1,
-                })
-            }
-            b')' => {
-                Some(PPToken {
-                    kind: PPTokenKind::RightParen,
-                    flags: PPTokenFlags::empty(),
-                    location: SourceLoc::new(self.source_id, start_pos as u32),
-                    length: 1,
-                })
-            }
-            b'[' => {
-                Some(PPToken {
-                    kind: PPTokenKind::LeftBracket,
-                    flags: PPTokenFlags::empty(),
-                    location: SourceLoc::new(self.source_id, start_pos as u32),
-                    length: 1,
-                })
-            }
-            b']' => {
-                Some(PPToken {
-                    kind: PPTokenKind::RightBracket,
-                    flags: PPTokenFlags::empty(),
-                    location: SourceLoc::new(self.source_id, start_pos as u32),
-                    length: 1,
-                })
-            }
-            b'{' => {
-                Some(PPToken {
-                    kind: PPTokenKind::LeftBrace,
-                    flags: PPTokenFlags::empty(),
-                    location: SourceLoc::new(self.source_id, start_pos as u32),
-                    length: 1,
-                })
-            }
-            b'}' => {
-                Some(PPToken {
-                    kind: PPTokenKind::RightBrace,
-                    flags: PPTokenFlags::empty(),
-                    location: SourceLoc::new(self.source_id, start_pos as u32),
-                    length: 1,
-                })
-            }
-            _ => {
-                Some(PPToken {
-                    kind: PPTokenKind::Unknown,
-                    flags: PPTokenFlags::empty(),
-                    location: SourceLoc::new(self.source_id, start_pos as u32),
-                    length: 1,
-                })
-            }
+            b'?' => Some(PPToken::simple(
+                PPTokenKind::Question,
+                SourceLoc::new(self.source_id, start_pos as u32),
+            )),
+            b':' => Some(PPToken::simple(
+                PPTokenKind::Colon,
+                SourceLoc::new(self.source_id, start_pos as u32),
+            )),
+            b',' => Some(PPToken::simple(
+                PPTokenKind::Comma,
+                SourceLoc::new(self.source_id, start_pos as u32),
+            )),
+            b';' => Some(PPToken::simple(
+                PPTokenKind::Semicolon,
+                SourceLoc::new(self.source_id, start_pos as u32),
+            )),
+            b'(' => Some(PPToken::simple(
+                PPTokenKind::LeftParen,
+                SourceLoc::new(self.source_id, start_pos as u32),
+            )),
+            b')' => Some(PPToken::simple(
+                PPTokenKind::RightParen,
+                SourceLoc::new(self.source_id, start_pos as u32),
+            )),
+            b'[' => Some(PPToken::simple(
+                PPTokenKind::LeftBracket,
+                SourceLoc::new(self.source_id, start_pos as u32),
+            )),
+            b']' => Some(PPToken::simple(
+                PPTokenKind::RightBracket,
+                SourceLoc::new(self.source_id, start_pos as u32),
+            )),
+            b'{' => Some(PPToken::simple(
+                PPTokenKind::LeftBrace,
+                SourceLoc::new(self.source_id, start_pos as u32),
+            )),
+            b'}' => Some(PPToken::simple(
+                PPTokenKind::RightBrace,
+                SourceLoc::new(self.source_id, start_pos as u32),
+            )),
+            _ => Some(PPToken::simple(
+                PPTokenKind::Unknown,
+                SourceLoc::new(self.source_id, start_pos as u32),
+            )),
         }
     }
 
@@ -733,12 +688,11 @@ impl PPLexer {
             _ => PPTokenKind::Identifier(symbol),
         };
 
-        PPToken {
+        PPToken::text(
             kind,
-            flags: PPTokenFlags::empty(),
-            location: SourceLoc::new(self.source_id, start_pos as u32),
-            length: text.len() as u16,
-        }
+            SourceLoc::new(self.source_id, start_pos as u32),
+            &text,
+        )
     }
 
     fn lex_number(&mut self, start_pos: usize, first_ch: u8) -> PPToken {
@@ -755,12 +709,11 @@ impl PPLexer {
         let text = String::from_utf8(chars).unwrap();
         let symbol = Symbol::new(&text);
 
-        PPToken {
-            kind: PPTokenKind::Number(symbol),
-            flags: PPTokenFlags::empty(),
-            location: SourceLoc::new(self.source_id, start_pos as u32),
-            length: text.len() as u16,
-        }
+        PPToken::text(
+            PPTokenKind::Number(symbol),
+            SourceLoc::new(self.source_id, start_pos as u32),
+            &text,
+        )
     }
 
     fn lex_string_literal(&mut self, start_pos: usize, first_ch: u8) -> PPToken {
@@ -786,12 +739,11 @@ impl PPLexer {
         let text = String::from_utf8(chars).unwrap();
         let symbol = Symbol::new(&text);
 
-        PPToken {
-            kind: PPTokenKind::StringLiteral(symbol),
-            flags: PPTokenFlags::empty(),
-            location: SourceLoc::new(self.source_id, start_pos as u32),
-            length: text.len() as u16,
-        }
+        PPToken::text(
+            PPTokenKind::StringLiteral(symbol),
+            SourceLoc::new(self.source_id, start_pos as u32),
+            &text,
+        )
     }
 
     fn lex_char_literal(&mut self, start_pos: usize, first_ch: u8) -> PPToken {
@@ -810,12 +762,12 @@ impl PPLexer {
         }
 
         // Simplified: just return a placeholder value
-        PPToken {
-            kind: PPTokenKind::CharLiteral(0),
-            flags: PPTokenFlags::empty(),
-            location: SourceLoc::new(self.source_id, start_pos as u32),
-            length: chars.len() as u16,
-        }
+        PPToken::new(
+            PPTokenKind::CharLiteral(0),
+            PPTokenFlags::empty(),
+            SourceLoc::new(self.source_id, start_pos as u32),
+            chars.len() as u16,
+        )
     }
 
     pub fn put_back(&mut self, token: PPToken) {
@@ -830,4 +782,3 @@ impl PPLexer {
         self.line_starts.len() - 1 + self.line_offset
     }
 }
-

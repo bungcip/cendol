@@ -257,68 +257,68 @@ impl<'src> Preprocessor<'src> {
         // Other built-ins
         self.define_builtin_macro(
             "__STDC__",
-            vec![PPToken {
-                kind: PPTokenKind::Number(Symbol::new("1")),
-                flags: PPTokenFlags::empty(),
-                location: SourceLoc(0),
-                length: 1,
-            }],
+            vec![PPToken::new(
+                PPTokenKind::Number(Symbol::new("1")),
+                PPTokenFlags::empty(),
+                SourceLoc(0),
+                1,
+            )],
         );
 
         if self.lang_opts.c11 {
             self.define_builtin_macro(
                 "__STDC_VERSION__",
-                vec![PPToken {
-                    kind: PPTokenKind::Number(Symbol::new("201112")),
-                    flags: PPTokenFlags::empty(),
-                    location: SourceLoc(0),
-                    length: 6,
-                }],
+                vec![PPToken::new(
+                    PPTokenKind::Number(Symbol::new("201112")),
+                    PPTokenFlags::empty(),
+                    SourceLoc(0),
+                    6,
+                )],
             );
             self.define_builtin_macro(
                 "__STDC_HOSTED__",
-                vec![PPToken {
-                    kind: PPTokenKind::Number(Symbol::new("1")),
-                    flags: PPTokenFlags::empty(),
-                    location: SourceLoc(0),
-                    length: 1,
-                }],
+                vec![PPToken::new(
+                    PPTokenKind::Number(Symbol::new("1")),
+                    PPTokenFlags::empty(),
+                    SourceLoc(0),
+                    1,
+                )],
             );
             self.define_builtin_macro(
                 "__STDC_MB_MIGHT_NEQ_WC__",
-                vec![PPToken {
-                    kind: PPTokenKind::Number(Symbol::new("1")),
-                    flags: PPTokenFlags::empty(),
-                    location: SourceLoc(0),
-                    length: 1,
-                }],
+                vec![PPToken::new(
+                    PPTokenKind::Number(Symbol::new("1")),
+                    PPTokenFlags::empty(),
+                    SourceLoc(0),
+                    1,
+                )],
             );
             self.define_builtin_macro(
                 "__STDC_IEC_559__",
-                vec![PPToken {
-                    kind: PPTokenKind::Number(Symbol::new("1")),
-                    flags: PPTokenFlags::empty(),
-                    location: SourceLoc(0),
-                    length: 1,
-                }],
+                vec![PPToken::new(
+                    PPTokenKind::Number(Symbol::new("1")),
+                    PPTokenFlags::empty(),
+                    SourceLoc(0),
+                    1,
+                )],
             );
             self.define_builtin_macro(
                 "__STDC_IEC_559_COMPLEX__",
-                vec![PPToken {
-                    kind: PPTokenKind::Number(Symbol::new("1")),
-                    flags: PPTokenFlags::empty(),
-                    location: SourceLoc(0),
-                    length: 1,
-                }],
+                vec![PPToken::new(
+                    PPTokenKind::Number(Symbol::new("1")),
+                    PPTokenFlags::empty(),
+                    SourceLoc(0),
+                    1,
+                )],
             );
             self.define_builtin_macro(
                 "__STDC_ISO_10646__",
-                vec![PPToken {
-                    kind: PPTokenKind::Number(Symbol::new("201103L")),
-                    flags: PPTokenFlags::empty(),
-                    location: SourceLoc(0),
-                    length: 7,
-                }],
+                vec![PPToken::new(
+                    PPTokenKind::Number(Symbol::new("201103L")),
+                    PPTokenFlags::empty(),
+                    SourceLoc(0),
+                    7,
+                )],
             );
         }
     }
@@ -338,12 +338,12 @@ impl<'src> Preprocessor<'src> {
 
     /// Tokenize a string into PP tokens (simplified)
     fn tokenize_string(&self, s: &str) -> Vec<PPToken> {
-        vec![PPToken {
-            kind: PPTokenKind::StringLiteral(Symbol::new(s)),
-            flags: PPTokenFlags::empty(),
-            location: SourceLoc(0),
-            length: s.len() as u16,
-        }]
+        vec![PPToken::new(
+            PPTokenKind::StringLiteral(Symbol::new(s)),
+            PPTokenFlags::empty(),
+            SourceLoc(0),
+            s.len() as u16,
+        )]
     }
 
     /// Process source file and return preprocessed tokens
@@ -392,12 +392,12 @@ impl<'src> Preprocessor<'src> {
         result_tokens = self.concatenate_string_literals(result_tokens);
 
         // Add EOF token
-        result_tokens.push(PPToken {
-            kind: PPTokenKind::Eof,
-            flags: PPTokenFlags::empty(),
-            location: SourceLoc::new(source_id, buffer_len),
-            length: 0,
-        });
+        result_tokens.push(PPToken::new(
+            PPTokenKind::Eof,
+            PPTokenFlags::empty(),
+            SourceLoc::new(source_id, buffer_len),
+            0,
+        ));
 
         Ok(result_tokens)
     }
@@ -459,12 +459,12 @@ impl<'src> Preprocessor<'src> {
                 // Create properly formatted concatenated string literal
                 let final_string = format!("\"{}\"", concatenated_content);
                 let concatenated_symbol = Symbol::new(&final_string);
-                result.push(PPToken {
-                    kind: PPTokenKind::StringLiteral(concatenated_symbol),
-                    flags: tokens[i].flags,
-                    location: start_location,
-                    length: final_string.len() as u16,
-                });
+                result.push(PPToken::new(
+                    PPTokenKind::StringLiteral(concatenated_symbol),
+                    tokens[i].flags,
+                    start_location,
+                    final_string.len() as u16,
+                ));
                 
                 i = j;
             } else {
@@ -1434,12 +1434,12 @@ impl<'src> Preprocessor<'src> {
                         let mut first = true;
                         for arg in args.iter().skip(start_index) {
                             if !first {
-                                result.push(PPToken {
-                                    kind: PPTokenKind::Comma,
-                                    flags: PPTokenFlags::empty(),
-                                    location: token.location,
-                                    length: 1,
-                                });
+                                result.push(PPToken::new(
+                                    PPTokenKind::Comma,
+                                    PPTokenFlags::empty(),
+                                    token.location,
+                                    1,
+                                ));
                             }
                             result.extend(arg.clone());
                             first = false;
@@ -1494,12 +1494,12 @@ impl<'src> Preprocessor<'src> {
 
         result.push('"');
 
-        Ok(PPToken {
-            kind: PPTokenKind::StringLiteral(Symbol::new(&result)),
-            flags: PPTokenFlags::empty(),
+        Ok(PPToken::new(
+            PPTokenKind::StringLiteral(Symbol::new(&result)),
+            PPTokenFlags::empty(),
             location,
-            length: result.len() as u16,
-        })
+            result.len() as u16,
+        ))
     }
 
     /// Paste tokens for ## operator
@@ -1534,12 +1534,12 @@ impl<'src> Preprocessor<'src> {
         // In a full implementation, this would need proper lexing
         let symbol = Symbol::new(&pasted_text);
 
-        Ok(vec![PPToken {
-            kind: PPTokenKind::Identifier(symbol),
-            flags: PPTokenFlags::empty(),
-            location: left.location, // Use left token's location
-            length: pasted_text.len() as u16,
-        }])
+        Ok(vec![PPToken::new(
+            PPTokenKind::Identifier(symbol),
+            PPTokenFlags::empty(),
+            left.location, // Use left token's location
+            pasted_text.len() as u16,
+        )])
     }
 
     /// Expand tokens by rescanning for further macro expansion

@@ -24,12 +24,12 @@ fn create_test_lexer(tokens: Vec<PPToken>) -> Lexer<'static> {
 
 fn create_pptoken(kind: PPTokenKind, text: &str, offset: u32) -> PPToken {
     use std::num::NonZeroU32;
-    PPToken {
+    PPToken::new(
         kind,
-        flags: PPTokenFlags::empty(),
-        location: SourceLoc::new(SourceId(NonZeroU32::new(1).unwrap()), offset),
-        length: text.len() as u16,
-    }
+        PPTokenFlags::empty(),
+        SourceLoc::new(SourceId(NonZeroU32::new(1).unwrap()), offset),
+        text.len() as u16,
+    )
 }
 
 #[cfg(test)]

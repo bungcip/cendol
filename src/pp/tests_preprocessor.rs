@@ -7,11 +7,11 @@ use target_lexicon::Triple;
 
 /// Helper function to set up preprocessor testing
 fn setup_preprocessor_test(src: &str) -> Vec<PPToken> {
-    setup_preprocessor_test_with_diagnostics(src).0
+    setup_preprocessor_test_with_diagnostics(src).unwrap().0
 }
 
 /// Helper function to set up preprocessor testing and return diagnostics
-fn setup_preprocessor_test_with_diagnostics(src: &str) -> (Vec<PPToken>, Vec<crate::diagnostic::Diagnostic>) {
+fn setup_preprocessor_test_with_diagnostics(src: &str) -> Result<(Vec<PPToken>, Vec<crate::diagnostic::Diagnostic>), PreprocessorError> {
     let mut source_manager = SourceManager::new();
     let mut diagnostics = DiagnosticEngine::new();
     let lang_options = LangOptions {
@@ -35,14 +35,14 @@ fn setup_preprocessor_test_with_diagnostics(src: &str) -> (Vec<PPToken>, Vec<cra
         &config,
     );
 
-    let tokens = preprocessor.process(source_id, &config).unwrap();
+    let tokens = preprocessor.process(source_id, &config)?;
 
     let significant_tokens: Vec<_> = tokens
         .into_iter()
         .filter(|t| !matches!(t.kind, PPTokenKind::Eof))
         .collect();
 
-    (significant_tokens, diagnostics.diagnostics().to_vec())
+    Ok((significant_tokens, diagnostics.diagnostics().to_vec()))
 }
 
 /// Helper macro to assert token sequence kinds
@@ -237,7 +237,7 @@ fn test_macro_redefinition_warning_or_override() {
 int x = X;
 "#;
 
-    let (significant_tokens, diagnostics) = setup_preprocessor_test_with_diagnostics(src);
+    let (significant_tokens, diagnostics) = setup_preprocessor_test_with_diagnostics(src).unwrap();
 
     // Expected: int, x, =, 2, ;
     // Since X is redefined from 1 to 2, the final value should be 2
@@ -262,6 +262,53 @@ int x = X;
     assert_eq!(diagnostics[0].level, crate::diagnostic::DiagnosticLevel::Warning);
     assert!(diagnostics[0].message.contains("Redefinition of macro 'X'"));
     assert_eq!(diagnostics[0].code, Some("macro_redefinition".to_string()));
+}
+
+#[test]
+fn test_predefined_macros_present() {
+    let src = r#"
+const int a = __STDC__;
+"#;
+
+    let significant_tokens = setup_preprocessor_test(src);
+
+    // Expected: const, int, a, =, 1, ;
+    assert_token_kinds!(
+        significant_tokens,
+        PPTokenKind::Identifier(Symbol::new("const")),
+        PPTokenKind::Identifier(Symbol::new("int")),
+        PPTokenKind::Identifier(Symbol::new("a")),
+        PPTokenKind::Assign,
+        PPTokenKind::Number(Symbol::new("1")),
+        PPTokenKind::Semicolon
+    );
+
+    // Ensure __STDC__ was expanded
+    for token in &significant_tokens {
+        if let PPTokenKind::Identifier(sym) = &token.kind {
+            assert_ne!(sym.as_str(), "__STDC__", "__STDC__ should have been expanded");
+        }
+    }
+}
+
+#[test]
+fn test_error_directive_produces_failure() {
+    let src = r#"
+#if 0
+#else
+#error "this should be reported"
+#endif
+"#;
+
+    // This should fail due to #error directive
+    let result = setup_preprocessor_test_with_diagnostics(src);
+    assert!(result.is_err(), "Preprocessor should fail on #error directive");
+
+    if let Err(PreprocessorError::ErrorDirective(message)) = result {
+        assert_eq!(message, "\"this should be reported\"");
+    } else {
+        panic!("Expected ErrorDirective error");
+    }
 }
 
 #[test]

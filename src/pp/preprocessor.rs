@@ -1071,11 +1071,16 @@ impl<'src> Preprocessor<'src> {
     fn handle_error(&mut self) -> Result<(), PreprocessorError> {
         // Collect the error message from the rest of the line
         let mut message_parts = Vec::new();
+        // Get the line of the #error directive
+        let directive_line = if let Some(lexer) = self.lexer_stack.last() {
+            lexer.get_current_line()
+        } else {
+            0
+        };
         while let Some(token) = self.lex_token() {
             if let Some(lexer) = self.lexer_stack.last() {
-                let current_line = lexer.get_current_line();
                 let token_line = lexer.get_line(token.location.0);
-                if token_line != current_line {
+                if token_line != directive_line {
                     // Put back the token from the next line
                     if let Some(lexer) = self.lexer_stack.last_mut() {
                         lexer.put_back(token);

@@ -589,6 +589,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             TokenKind::Plus
             | TokenKind::Minus
             | TokenKind::Not
+            | TokenKind::Tilde
             | TokenKind::Increment
             | TokenKind::Decrement
             | TokenKind::Star
@@ -1023,8 +1024,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         let specifiers = match self.parse_declaration_specifiers() {
             Ok(specifiers) => {
                 debug!(
-                    "parse_declaration: parsed specifiers, now at position {} with token {:?}",
-                    self.current_idx,
+                    "parse_declaration: parsed {} specifiers, current token {:?}",
+                    specifiers.len(),
                     self.current_token_kind()
                 );
                 debug!(
@@ -1111,6 +1112,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 Some(TokenKind::Identifier(_)) | Some(TokenKind::Star) | Some(TokenKind::LeftParen)
             )
         };
+        debug!("parse_declaration: has_declarators = {}", has_declarators);
 
         // If no declarators and this is not a record/enum definition, it's an error
         if !has_declarators {
@@ -1189,8 +1191,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             let declarator = match self.parse_declarator(None) {
                 Ok(declarator) => {
                     debug!(
-                        "parse_declaration: parsed declarator, now at position {} with token {:?}",
-                        self.current_idx,
+                        "parse_declaration: parsed declarator, current token {:?}",
                         self.current_token_kind()
                     );
                     declarator
@@ -1250,6 +1251,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         }
 
         // Check for semicolon at current position
+        debug!(
+            "parse_declaration: expecting semicolon, current token {:?}",
+            self.current_token_kind()
+        );
         let semicolon_token = if self.matches(&[TokenKind::Semicolon]) {
             self.advance().ok_or_else(|| ParseError::SyntaxError {
                 message: "Unexpected end of input".to_string(),
@@ -3540,15 +3545,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     /// Disambiguates between a type name and an identifier in ambiguous contexts.
     /// This is crucial for parsing C's "declaration-specifier-list" vs "expression" ambiguity.
     fn is_type_name(&self, symbol: Symbol) -> bool {
-        let result = self.typedef_names.contains(&symbol) ||
-        // Also check built-in types that might be typedef'd
-        matches!(symbol.as_str(), "size_t" | "ptrdiff_t" | "intmax_t" | "uintmax_t" |
-                 "intptr_t" | "uintptr_t" | "int8_t" | "int16_t" | "int32_t" | "int64_t" |
-                 "uint8_t" | "uint16_t" | "uint32_t" | "uint64_t" | "int_least8_t" |
-                 "int_least16_t" | "int_least32_t" | "int_least64_t" | "uint_least8_t" |
-                 "uint_least16_t" | "uint_least32_t" | "uint_least64_t" | "int_fast8_t" |
-                 "int_fast16_t" | "int_fast32_t" | "int_fast64_t" | "uint_fast8_t" |
-                 "uint_fast16_t" | "uint_fast32_t" | "uint_fast64_t");
+        let result = self.typedef_names.contains(&symbol);
 
         debug!(
             "is_type_name: checking symbol {:?}, result={}, typedef_names={:?}",

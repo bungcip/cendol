@@ -423,14 +423,14 @@ impl<'src> Lexer<'src> {
 
         // Parse the number
         let value = match base {
-            16 => i64::from_str_radix(digits, 16),
-            8 => i64::from_str_radix(digits, 8),
-            10 => digits.parse::<i64>(),
+            16 => u64::from_str_radix(digits, 16),
+            8 => u64::from_str_radix(digits, 8),
+            10 => digits.parse::<u64>(),
             _ => unreachable!(),
         };
 
         match value {
-            Ok(val) => Ok(val),
+            Ok(val) => Ok(val as i64), // Cast to i64, allowing wraparound for large values
             Err(_) => Err(()), // Invalid integer constant
         }
     }

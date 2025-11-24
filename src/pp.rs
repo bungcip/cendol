@@ -9,3 +9,5 @@ mod preprocessor;
 
 #[cfg(test)]
 mod tests_pp_lexer;
+#[cfg(test)]
+mod tests_preprocessor;

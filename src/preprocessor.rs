@@ -1676,12 +1676,84 @@ impl PPLexer {
         }
     }
 
+    /// Get the next character, handling line splicing transparently
+    /// Line splicing: backslash followed by newline removes both characters
+    fn next_char(&mut self) -> Option<u8> {
+        if self.position >= self.buffer.len() {
+            return None;
+        }
+
+        let mut result = self.buffer[self.position];
+        self.position += 1;
+
+        // Handle line splicing: backslash followed by newline
+        if result == b'\\' && self.position < self.buffer.len() && self.buffer[self.position] == b'\n' {
+            // Skip the newline too
+            self.position += 1;
+            // Update line starts - remove the newline from line tracking
+            if self.line_starts.len() > 1 {
+                self.line_starts.pop();
+            }
+            // Get the character after the newline for splicing
+            if self.position < self.buffer.len() {
+                result = self.buffer[self.position];
+                self.position += 1;
+            } else {
+                return None;
+            }
+        }
+
+        Some(result)
+    }
+
+    /// Peek at the next character without consuming it, handling line splicing
+    fn peek_char(&mut self) -> Option<u8> {
+        let saved_position = self.position;
+        let saved_line_starts = self.line_starts.clone();
+        
+        let result = self.next_char();
+        
+        // Restore state
+        self.position = saved_position;
+        self.line_starts = saved_line_starts;
+        
+        result
+    }
+
     pub fn next_token(&mut self) -> Option<PPToken> {
         if let Some(token) = self.put_back_token.take() {
             return Some(token);
         }
 
         self.skip_whitespace_and_comments();
+
+        // Handle line splicing: backslash followed by newline removes both characters
+        while self.position + 1 < self.buffer.len()
+            && self.buffer[self.position] == b'\\'
+            && self.buffer[self.position + 1] == b'\n'
+        {
+            // Line splicing: remove backslash and newline
+            self.position += 2;
+            // Update line starts - remove the newline from line tracking
+            if self.line_starts.len() > 1 {
+                self.line_starts.pop();
+            }
+            // Continue checking for more line splices
+            self.skip_whitespace_and_comments();
+        }
+
+        // Additional line splicing at the start of tokens (for cases like identifiers/numbers)
+        while self.position + 1 < self.buffer.len()
+            && self.buffer[self.position] == b'\\'
+            && self.buffer[self.position + 1] == b'\n'
+        {
+            // Line splicing: remove backslash and newline
+            self.position += 2;
+            // Update line starts - remove the newline from line tracking
+            if self.line_starts.len() > 1 {
+                self.line_starts.pop();
+            }
+        }
 
         if self.position >= self.buffer.len() {
             return None;
@@ -2229,6 +2301,18 @@ impl PPLexer {
             && (self.buffer[self.position].is_ascii_alphanumeric()
                 || self.buffer[self.position] == b'_')
         {
+            // Handle line splicing in the middle of identifiers
+            if self.position + 1 < self.buffer.len()
+                && self.buffer[self.position] == b'\\'
+                && self.buffer[self.position + 1] == b'\n'
+            {
+                self.position += 2;
+                // Update line starts - remove the newline from line tracking
+                if self.line_starts.len() > 1 {
+                    self.line_starts.pop();
+                }
+                continue;
+            }
             self.position += 1;
         }
 
@@ -2269,6 +2353,18 @@ impl PPLexer {
                 || self.buffer[self.position].is_ascii_alphabetic()
                 || self.buffer[self.position] == b'_')
         {
+            // Handle line splicing in the middle of numbers
+            if self.position + 1 < self.buffer.len()
+                && self.buffer[self.position] == b'\\'
+                && self.buffer[self.position + 1] == b'\n'
+            {
+                self.position += 2;
+                // Update line starts - remove the newline from line tracking
+                if self.line_starts.len() > 1 {
+                    self.line_starts.pop();
+                }
+                continue;
+            }
             self.position += 1;
         }
 
@@ -2287,7 +2383,18 @@ impl PPLexer {
         self.position += 1;
         while self.position < self.buffer.len() && self.buffer[self.position] != b'"' {
             if self.buffer[self.position] == b'\\' && self.position + 1 < self.buffer.len() {
-                self.position += 2;
+                // Handle escape sequences, including line splicing
+                if self.buffer[self.position + 1] == b'\n' {
+                    // This is line splicing within a string - remove the backslash and newline
+                    // This is actually invalid in C, but we'll handle it for completeness
+                    self.position += 2;
+                    // Update line starts - remove the newline from line tracking
+                    if self.line_starts.len() > 1 {
+                        self.line_starts.pop();
+                    }
+                } else {
+                    self.position += 2;
+                }
             } else {
                 self.position += 1;
             }
@@ -2341,3 +2448,6 @@ impl PPLexer {
         self.line_starts.len() - 1 + self.line_offset
     }
 }
+
+#[cfg(test)]
+mod tests_pp_lexer;

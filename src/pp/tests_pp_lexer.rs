@@ -29,13 +29,10 @@ fn test_line_splicing_basic() {
 lo";
     let mut lexer = create_test_pp_lexer(source);
 
-    let token = lexer.next_token().unwrap();
-    match token.kind {
-        PPTokenKind::Identifier(symbol) => {
-            assert_eq!(symbol.as_str(), "hello"); // Should be spliced into single identifier
-        }
-        _ => panic!("Expected identifier token"),
-    }
+    test_tokens!(
+        lexer,
+        ("hello", PPTokenKind::Identifier(_)),
+    );
 }
 
 /// Test line splicing with multiple splices
@@ -46,29 +43,23 @@ lo\\
 world";
     let mut lexer = create_test_pp_lexer(source);
 
-    let token = lexer.next_token().unwrap();
-    match token.kind {
-        PPTokenKind::Identifier(symbol) => {
-            assert_eq!(symbol.as_str(), "helloworld"); // Should be spliced into single identifier
-        }
-        _ => panic!("Expected identifier token"),
-    }
+    test_tokens!(
+        lexer,
+        ("helloworld", PPTokenKind::Identifier(_)),
+    );
 }
 
 /// Test line splicing with whitespace
 #[test]
 fn test_line_splicing_with_whitespace() {
     let source = "hel  \\
-   lo";
+    lo";
     let mut lexer = create_test_pp_lexer(source);
 
-    let token = lexer.next_token().unwrap();
-    match token.kind {
-        PPTokenKind::Identifier(symbol) => {
-            assert_eq!(symbol.as_str(), "hel"); // Line splicing happens, but spaces stop the identifier
-        }
-        _ => panic!("Expected identifier token"),
-    }
+    test_tokens!(
+        lexer,
+        ("hel", PPTokenKind::Identifier(_)),
+    );
 }
 
 /// Test line splicing in numbers
@@ -78,13 +69,10 @@ fn test_line_splicing_numbers() {
 456";
     let mut lexer = create_test_pp_lexer(source);
 
-    let token = lexer.next_token().unwrap();
-    match token.kind {
-        PPTokenKind::Number(symbol) => {
-            assert_eq!(symbol.as_str(), "123456"); // Should be spliced into single number
-        }
-        _ => panic!("Expected number token"),
-    }
+    test_tokens!(
+        lexer,
+        ("123456", PPTokenKind::Number(_)),
+    );
 }
 
 /// Test that line splicing doesn't occur without backslash-newline
@@ -116,13 +104,10 @@ fn test_line_splicing_end_of_buffer() {
     let source = "test\\";
     let mut lexer = create_test_pp_lexer(source);
 
-    let token = lexer.next_token().unwrap();
-    match token.kind {
-        PPTokenKind::Identifier(symbol) => {
-            assert_eq!(symbol.as_str(), "test");
-        }
-        _ => panic!("Expected identifier token"),
-    }
+    test_tokens!(
+        lexer,
+        ("test", PPTokenKind::Identifier(_)),
+    );
 }
 
 /// Test that line splicing works with peek_char and next_char
@@ -181,13 +166,10 @@ fn test_line_splicing_in_strings() {
 world\"";
     let mut lexer = create_test_pp_lexer(source);
 
-    let token = lexer.next_token().unwrap();
-    match token.kind {
-        PPTokenKind::StringLiteral(symbol) => {
-            assert_eq!(symbol.as_str(), "\"helloworld\""); // Line splicing in strings
-        }
-        _ => panic!("Expected string literal token"),
-    }
+    test_tokens!(
+        lexer,
+        ("\"helloworld\"", PPTokenKind::StringLiteral(_)),
+    );
 }
 
 /// Test that PPLexer can produce all punctuation tokens
@@ -279,29 +261,13 @@ fn test_all_literal_tokens() {
     let source = "variable \"string\" 'c' 123";
     let mut lexer = create_test_pp_lexer(source);
 
-    let token1 = lexer.next_token().unwrap();
-    match token1.kind {
-        PPTokenKind::Identifier(_) => {}
-        _ => panic!("Expected identifier token"),
-    }
-
-    let token2 = lexer.next_token().unwrap();
-    match token2.kind {
-        PPTokenKind::StringLiteral(_) => {}
-        _ => panic!("Expected string literal token"),
-    }
-
-    let token3 = lexer.next_token().unwrap();
-    match token3.kind {
-        PPTokenKind::CharLiteral(_) => {}
-        _ => panic!("Expected char literal token"),
-    }
-
-    let token4 = lexer.next_token().unwrap();
-    match token4.kind {
-        PPTokenKind::Number(_) => {}
-        _ => panic!("Expected number token"),
-    }
+    test_tokens!(
+        lexer,
+        ("variable", PPTokenKind::Identifier(_)),
+        ("\"string\"", PPTokenKind::StringLiteral(_)),
+        ("'c'", PPTokenKind::CharLiteral(_)),
+        ("123", PPTokenKind::Number(_)),
+    );
 }
 
 /// Test that adjacent string literals are not combined in preprocessor stage
@@ -326,6 +292,58 @@ fn test_adjacent_string_literals_not_combined() {
             assert_eq!(symbol.as_str(), "\"world\"");
         }
         _ => panic!("Expected second string literal token"),
+    }
+
+    // Should be no more tokens
+    assert!(lexer.next_token().is_none());
+}
+
+/// Test wide character literals with L, u, U prefixes
+#[test]
+fn test_wide_character_literals() {
+    let source = "L'a' u'b' U'c' '\\0'";
+    let mut lexer = create_test_pp_lexer(source);
+
+    test_tokens!(
+        lexer,
+        ("L'a'", PPTokenKind::CharLiteral(97)), // 'a'
+        ("u'b'", PPTokenKind::CharLiteral(98)), // 'b'
+        ("U'c'", PPTokenKind::CharLiteral(99)), // 'c'
+        ("'\\0'", PPTokenKind::CharLiteral(0)),
+    );
+}
+
+/// Test wide string literals with L, u, U prefixes
+#[test]
+fn test_wide_string_literals() {
+    let source = "L\"hello\" u\"world\" U\"test\"";
+    let mut lexer = create_test_pp_lexer(source);
+
+    // L"hello"
+    let token1 = lexer.next_token().unwrap();
+    match token1.kind {
+        PPTokenKind::StringLiteral(symbol) => {
+            assert_eq!(symbol.as_str(), "L\"hello\"");
+        }
+        _ => panic!("Expected wide string literal token L\"hello\""),
+    }
+
+    // u"world"
+    let token2 = lexer.next_token().unwrap();
+    match token2.kind {
+        PPTokenKind::StringLiteral(symbol) => {
+            assert_eq!(symbol.as_str(), "u\"world\"");
+        }
+        _ => panic!("Expected wide string literal token u\"world\""),
+    }
+
+    // U"test"
+    let token3 = lexer.next_token().unwrap();
+    match token3.kind {
+        PPTokenKind::StringLiteral(symbol) => {
+            assert_eq!(symbol.as_str(), "U\"test\"");
+        }
+        _ => panic!("Expected wide string literal token U\"test\""),
     }
 
     // Should be no more tokens

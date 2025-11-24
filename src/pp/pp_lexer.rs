@@ -284,7 +284,20 @@ impl PPLexer {
         let ch = self.next_char().unwrap_or(b' ');
 
         match ch {
-            b'a'..=b'z' | b'A'..=b'Z' | b'_' => Some(self.lex_identifier(start_pos, ch)),
+            b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
+                if ch == b'L' || ch == b'u' || ch == b'U' {
+                    let next_ch = self.peek_char();
+                    if next_ch == Some(b'"') {
+                        Some(self.lex_string_literal(start_pos, ch))
+                    } else if next_ch == Some(b'\'') {
+                        Some(self.lex_char_literal(start_pos, ch))
+                    } else {
+                        Some(self.lex_identifier(start_pos, ch))
+                    }
+                } else {
+                    Some(self.lex_identifier(start_pos, ch))
+                }
+            }
             b'0'..=b'9' => Some(self.lex_number(start_pos, ch)),
             b'"' => Some(self.lex_string_literal(start_pos, ch)),
             b'\'' => Some(self.lex_char_literal(start_pos, ch)),
@@ -776,8 +789,14 @@ impl PPLexer {
     }
 
     fn lex_string_literal(&mut self, start_pos: u32, first_ch: u8) -> PPToken {
-        // Use next_char() for consistency with line splicing
-        let mut chars = vec![first_ch]; // opening quote
+        let has_prefix = first_ch == b'L' || first_ch == b'u' || first_ch == b'U';
+        let mut chars = vec![first_ch];
+
+        if has_prefix {
+            // consume the "
+            let quote = self.next_char().unwrap();
+            chars.push(quote);
+        }
 
         while let Some(ch) = self.next_char() {
             chars.push(ch);
@@ -806,8 +825,16 @@ impl PPLexer {
     }
 
     fn lex_char_literal(&mut self, start_pos: u32, first_ch: u8) -> PPToken {
-        // Use next_char() for consistency with line splicing
-        let mut chars = vec![first_ch]; // opening quote
+        let has_prefix = first_ch == b'L' || first_ch == b'u' || first_ch == b'U';
+        let mut chars = vec![first_ch];
+
+        if has_prefix {
+            // consume the '
+            let quote = self.next_char().unwrap();
+            chars.push(quote);
+        }
+
+        // now collect until closing '
         while let Some(ch) = self.next_char() {
             chars.push(ch);
             if ch == b'\'' {
@@ -820,9 +847,21 @@ impl PPLexer {
             }
         }
 
-        // Simplified: just return a placeholder value
+        // Simplified: parse simple cases
+        let quote_start = if has_prefix { 1 } else { 0 };
+        let content_start = quote_start + 1;
+        let content_len = chars.len() - content_start - 1; // exclude closing '
+
+        let codepoint = if content_len == 2 && chars[content_start] == b'\\' && chars[content_start + 1] == b'0' {
+            0
+        } else if content_len == 1 {
+            chars[content_start] as u32
+        } else {
+            0 // placeholder for complex cases
+        };
+
         PPToken::new(
-            PPTokenKind::CharLiteral(0),
+            PPTokenKind::CharLiteral(codepoint),
             PPTokenFlags::empty(),
             SourceLoc::new(self.source_id, start_pos),
             chars.len() as u16,

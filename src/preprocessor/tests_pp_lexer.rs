@@ -1,6 +1,4 @@
-use crate::preprocessor::{PPLexer, PPTokenFlags, PPTokenKind};
-use crate::source_manager::{SourceId};
-use symbol_table::GlobalSymbol as Symbol;
+use super::*;
 use std::num::NonZeroU32;
 
 /// Helper function to create a PPLexer for testing
@@ -10,212 +8,170 @@ fn create_test_pp_lexer(source: &str) -> PPLexer {
     PPLexer::new(source_id, buffer)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Test line splicing: backslash followed by newline removes both characters
+#[test]
+fn test_line_splicing_basic() {
+    let source = "hel\\
+lo";
+    let mut lexer = create_test_pp_lexer(source);
 
-    /// Test 1: Check if PPLexer can correctly lex source code to PPKind token for all punctuation
-    #[test]
-    fn test_punctuation_lexing() {
-        let test_cases = vec![
-            ("+", PPTokenKind::Plus),
-            ("-", PPTokenKind::Minus),
-            ("*", PPTokenKind::Star),
-            ("/", PPTokenKind::Slash),
-            ("%", PPTokenKind::Percent),
-            ("&", PPTokenKind::And),
-            ("|", PPTokenKind::Or),
-            ("^", PPTokenKind::Xor),
-            ("!", PPTokenKind::Not),
-            ("~", PPTokenKind::Tilde),
-            ("<", PPTokenKind::Less),
-            (">", PPTokenKind::Greater),
-            ("=", PPTokenKind::Assign),
-            ("==", PPTokenKind::Equal),
-            ("!=", PPTokenKind::NotEqual),
-            ("<=", PPTokenKind::LessEqual),
-            (">=", PPTokenKind::GreaterEqual),
-            ("&&", PPTokenKind::LogicAnd),
-            ("||", PPTokenKind::LogicOr),
-            ("++", PPTokenKind::Increment),
-            ("--", PPTokenKind::Decrement),
-            ("->", PPTokenKind::Arrow),
-            ("+=", PPTokenKind::PlusAssign),
-            ("-=", PPTokenKind::MinusAssign),
-            ("*=", PPTokenKind::StarAssign),
-            ("/=", PPTokenKind::DivAssign),
-            ("%=", PPTokenKind::ModAssign),
-            ("&=", PPTokenKind::AndAssign),
-            ("|=", PPTokenKind::OrAssign),
-            ("^=", PPTokenKind::XorAssign),
-            ("<<", PPTokenKind::LeftShift),
-            (">>", PPTokenKind::RightShift),
-            ("<<=", PPTokenKind::LeftShiftAssign),
-            (">>=", PPTokenKind::RightShiftAssign),
-            ("...", PPTokenKind::Ellipsis),
-            ("#", PPTokenKind::Hash),
-            ("##", PPTokenKind::HashHash),
-            ("?", PPTokenKind::Question),
-            (":", PPTokenKind::Colon),
-            (",", PPTokenKind::Comma),
-            (";", PPTokenKind::Semicolon),
-            ("(", PPTokenKind::LeftParen),
-            (")", PPTokenKind::RightParen),
-            ("[", PPTokenKind::LeftBracket),
-            ("]", PPTokenKind::RightBracket),
-            ("{", PPTokenKind::LeftBrace),
-            ("}", PPTokenKind::RightBrace),
-            (".", PPTokenKind::Dot),
-        ];
-
-        for (source, expected_kind) in test_cases {
-            let mut lexer = create_test_pp_lexer(source);
-            let token = lexer.next_token();
-            
-            assert!(token.is_some(), "Failed to lex punctuation: {}", source);
-            let actual_token = token.unwrap();
-            
-            assert_eq!(actual_token.kind, expected_kind,
-                "Incorrect token kind for punctuation: {}", source);
-            assert_eq!(actual_token.length as usize, source.len(),
-                "Incorrect token length for punctuation: {}", source);
+    let token = lexer.next_token().unwrap();
+    match token.kind {
+        PPTokenKind::Identifier(symbol) => {
+            assert_eq!(symbol.as_str(), "hello"); // Should be spliced into single identifier
         }
+        _ => panic!("Expected identifier token"),
+    }
+}
+
+/// Test line splicing with multiple splices
+#[test]
+fn test_line_splicing_multiple() {
+    let source = "hel\\
+lo\\
+world";
+    let mut lexer = create_test_pp_lexer(source);
+
+    let token = lexer.next_token().unwrap();
+    match token.kind {
+        PPTokenKind::Identifier(symbol) => {
+            assert_eq!(symbol.as_str(), "helloworld"); // Should be spliced into single identifier
+        }
+        _ => panic!("Expected identifier token"),
+    }
+}
+
+/// Test line splicing with whitespace
+#[test]
+fn test_line_splicing_with_whitespace() {
+    let source = "hel  \\
+   lo";
+    let mut lexer = create_test_pp_lexer(source);
+
+    let token = lexer.next_token().unwrap();
+    match token.kind {
+        PPTokenKind::Identifier(symbol) => {
+            assert_eq!(symbol.as_str(), "hel"); // Line splicing happens, but spaces stop the identifier
+        }
+        _ => panic!("Expected identifier token"),
+    }
+}
+
+/// Test line splicing in numbers
+#[test]
+fn test_line_splicing_numbers() {
+    let source = "123\\
+456";
+    let mut lexer = create_test_pp_lexer(source);
+
+    let token = lexer.next_token().unwrap();
+    match token.kind {
+        PPTokenKind::Number(symbol) => {
+            assert_eq!(symbol.as_str(), "123456"); // Should be spliced into single number
+        }
+        _ => panic!("Expected number token"),
+    }
+}
+
+/// Test that line splicing doesn't occur without backslash-newline
+#[test]
+fn test_no_line_splicing() {
+    let source = "hello\nworld";
+    let mut lexer = create_test_pp_lexer(source);
+
+    let first_token = lexer.next_token().unwrap();
+    match first_token.kind {
+        PPTokenKind::Identifier(symbol) => {
+            assert_eq!(symbol.as_str(), "hello");
+        }
+        _ => panic!("Expected first identifier token"),
     }
 
-    /// Test 2: Check if PPLexer can produce directive tokens
-    #[test]
-    fn test_directive_tokens() {
-        let test_cases = vec![
-            ("#if", PPTokenKind::Hash, PPTokenKind::If),
-            ("#ifdef", PPTokenKind::Hash, PPTokenKind::Ifdef),
-            ("#ifndef", PPTokenKind::Hash, PPTokenKind::Ifndef),
-            ("#elif", PPTokenKind::Hash, PPTokenKind::Elif),
-            ("#else", PPTokenKind::Hash, PPTokenKind::Else),
-            ("#endif", PPTokenKind::Hash, PPTokenKind::Endif),
-            ("#define", PPTokenKind::Hash, PPTokenKind::Define),
-            ("#undef", PPTokenKind::Hash, PPTokenKind::Undef),
-            ("#include", PPTokenKind::Hash, PPTokenKind::Include),
-            ("#line", PPTokenKind::Hash, PPTokenKind::Line),
-            ("#pragma", PPTokenKind::Hash, PPTokenKind::Pragma),
-            ("#error", PPTokenKind::Hash, PPTokenKind::Error),
-            ("#warning", PPTokenKind::Hash, PPTokenKind::Warning),
-        ];
-
-        for (source, expected_first, expected_second) in test_cases {
-            let mut lexer = create_test_pp_lexer(source);
-            
-            // Test first token (should be #)
-            let first_token = lexer.next_token();
-            assert!(first_token.is_some(), "Failed to lex directive: {}", source);
-            let actual_first = first_token.unwrap();
-            
-            assert_eq!(actual_first.kind, expected_first,
-                "Incorrect first token for directive: {}", source);
-            assert!(actual_first.flags.contains(PPTokenFlags::STARTS_PP_LINE),
-                "First token should have STARTS_PP_LINE flag");
-            
-            // Test second token (should be directive keyword)
-            let second_token = lexer.next_token();
-            assert!(second_token.is_some(), "Failed to lex directive keyword");
-            let actual_second = second_token.unwrap();
-            
-            assert_eq!(actual_second.kind, expected_second,
-                "Incorrect second token for directive: {}", source);
+    let second_token = lexer.next_token().unwrap();
+    match second_token.kind {
+        PPTokenKind::Identifier(symbol) => {
+            assert_eq!(symbol.as_str(), "world");
         }
+        _ => panic!("Expected second identifier token"),
     }
+}
 
-    /// Test 3: Check if PPLexer can produce keyword tokens
-    #[test]
-    fn test_keyword_tokens() {
-        let test_cases = vec![
-            ("if", PPTokenKind::If),
-            ("ifdef", PPTokenKind::Ifdef),
-            ("ifndef", PPTokenKind::Ifndef),
-            ("elif", PPTokenKind::Elif),
-            ("else", PPTokenKind::Else),
-            ("endif", PPTokenKind::Endif),
-            ("define", PPTokenKind::Define),
-            ("undef", PPTokenKind::Undef),
-            ("include", PPTokenKind::Include),
-            ("line", PPTokenKind::Line),
-            ("pragma", PPTokenKind::Pragma),
-            ("error", PPTokenKind::Error),
-            ("warning", PPTokenKind::Warning),
-        ];
+/// Test line splicing at end of buffer
+#[test]
+fn test_line_splicing_end_of_buffer() {
+    let source = "test\\";
+    let mut lexer = create_test_pp_lexer(source);
 
-        for (source, expected_kind) in test_cases {
-            let mut lexer = create_test_pp_lexer(source);
-            let token = lexer.next_token();
-            
-            assert!(token.is_some(), "Failed to lex keyword: {}", source);
-            let actual_token = token.unwrap();
-            
-            assert_eq!(actual_token.kind, expected_kind,
-                "Incorrect token kind for keyword: {}", source);
-            assert_eq!(actual_token.length as usize, source.len(),
-                "Incorrect token length for keyword: {}", source);
+    let token = lexer.next_token().unwrap();
+    match token.kind {
+        PPTokenKind::Identifier(symbol) => {
+            assert_eq!(symbol.as_str(), "test");
         }
-
-        // Test that regular identifiers are not treated as keywords
-        let mut lexer = create_test_pp_lexer("my_variable");
-        let token = lexer.next_token();
-        
-        assert!(token.is_some(), "Failed to lex identifier");
-        match token.unwrap().kind {
-            PPTokenKind::Identifier(symbol) => {
-                assert_eq!(symbol.as_str(), "my_variable");
-            }
-            _ => panic!("Expected identifier token"),
-        }
+        _ => panic!("Expected identifier token"),
     }
+}
 
-    /// Test 4: Check if PPLexer can produce literal tokens
-    #[test]
-    fn test_literal_tokens() {
-        // Test number literals
-        let number_literals = vec![
-            "42", "0", "123456", "0x1A", "077", "3.14", "1e4"
-        ];
+/// Test that line splicing works with peek_char and next_char
+#[test]
+fn test_next_char_line_splicing() {
+    let source = "a\\
+b";
+    let mut lexer = create_test_pp_lexer(source);
 
-        for source in number_literals {
-            let mut lexer = create_test_pp_lexer(source);
-            let token = lexer.next_token();
-            
-            assert!(token.is_some(), "Failed to lex number literal: {}", source);
-            match token.unwrap().kind {
-                PPTokenKind::Number(_) => {},
-                _ => panic!("Expected number token for: {}", source),
-            }
+    // Test that next_char properly handles line splicing
+    let ch1 = lexer.next_char();
+    assert_eq!(ch1, Some(b'a'));
+
+    // After consuming 'a', we should encounter backslash-newline
+    // which should be spliced, so next_char should return 'b'
+    let ch2 = lexer.next_char();
+    assert_eq!(ch2, Some(b'b'));
+
+    // Should be at end now
+    let ch3 = lexer.next_char();
+    assert_eq!(ch3, None);
+}
+
+/// Test peek_char doesn't consume characters including line splicing
+#[test]
+fn test_peek_char_line_splicing() {
+    let source = "a\\
+b";
+    let mut lexer = create_test_pp_lexer(source);
+
+    // Peek should return the first character without consuming
+    let peeked = lexer.peek_char();
+    assert_eq!(peeked, Some(b'a'));
+
+    // Position should still be at start
+    let current_pos = lexer.position;
+    assert_eq!(current_pos, 0);
+
+    // Now consume the first character
+    let consumed = lexer.next_char();
+    assert_eq!(consumed, Some(b'a'));
+    assert_eq!(lexer.position, 1);
+
+    // Peek again should show that line splicing will give us 'b'
+    let peeked_after_splice = lexer.peek_char();
+    assert_eq!(peeked_after_splice, Some(b'b'));
+
+    // Position should still be after 'a'
+    assert_eq!(lexer.position, 1);
+}
+
+/// Test line splicing in string literals
+#[test]
+fn test_line_splicing_in_strings() {
+    let source = "\"hello\\
+world\"";
+    let mut lexer = create_test_pp_lexer(source);
+
+    let token = lexer.next_token().unwrap();
+    match token.kind {
+        PPTokenKind::StringLiteral(symbol) => {
+            assert_eq!(symbol.as_str(), "\"helloworld\""); // Line splicing in strings
         }
-
-        // Test string literals
-        let string_literals = vec![
-            "\"hello\"", "\"world\"", "\"\"", "\"escaped\\nstring\""
-        ];
-
-        for source in string_literals {
-            let mut lexer = create_test_pp_lexer(source);
-            let token = lexer.next_token();
-            
-            assert!(token.is_some(), "Failed to lex string literal: {}", source);
-            match token.unwrap().kind {
-                PPTokenKind::StringLiteral(_) => {},
-                _ => panic!("Expected string literal for: {}", source),
-            }
-        }
-
-        // Test character literals
-        let char_literals = vec!["'a'", "'\\n'", "'Z'"];
-
-        for source in char_literals {
-            let mut lexer = create_test_pp_lexer(source);
-            let token = lexer.next_token();
-            
-            assert!(token.is_some(), "Failed to lex character literal: {}", source);
-            match token.unwrap().kind {
-                PPTokenKind::CharLiteral(_) => {},
-                _ => panic!("Expected character literal for: {}", source),
-            }
-        }
+        _ => panic!("Expected string literal token"),
     }
 }

@@ -502,3 +502,35 @@ int x = x(0);
         PPTokenKind::Semicolon
     );
 }
+
+#[test]
+fn test_object_macro_with_parentheses_in_replacement() {
+    let src = r#"
+#define NULL ((void*)0)
+int x = NULL;
+"#;
+
+    let significant_tokens = setup_preprocessor_test(src);
+
+    // Expected: int, x, =, (, void, *, ), 0, ), ;
+    assert_token_kinds!(
+        significant_tokens,
+        PPTokenKind::Identifier(Symbol::new("int")),
+        PPTokenKind::Identifier(Symbol::new("x")),
+        PPTokenKind::Assign,
+        PPTokenKind::LeftParen,
+        PPTokenKind::Identifier(Symbol::new("void")),
+        PPTokenKind::Star,
+        PPTokenKind::RightParen,
+        PPTokenKind::Number(Symbol::new("0")),
+        PPTokenKind::RightParen,
+        PPTokenKind::Semicolon
+    );
+
+    // Ensure NULL was expanded
+    for token in &significant_tokens {
+        if let PPTokenKind::Identifier(sym) = &token.kind {
+            assert_ne!(sym.as_str(), "NULL", "NULL should have been expanded");
+        }
+    }
+}

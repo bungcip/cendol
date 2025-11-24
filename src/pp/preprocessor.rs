@@ -622,28 +622,48 @@ impl<'src> Preprocessor<'src> {
         let next = self.lex_token();
         if let Some(token) = next {
             if token.kind == PPTokenKind::LeftParen {
-                flags |= MacroFlags::FUNCTION_LIKE;
-                // parse params
-                loop {
-                    let param_token = self
-                        .lex_token()
-                        .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
-                    match param_token.kind {
-                        PPTokenKind::RightParen => break,
-                        PPTokenKind::Identifier(sym) => {
-                            if params.contains(&sym) {
-                                return Err(PreprocessorError::InvalidMacroParameter);
-                            }
-                            params.push(sym);
-                            let sep = self
+                let first_param = self.lex_token();
+                if let Some(fp) = first_param {
+                    if matches!(fp.kind, PPTokenKind::RightParen | PPTokenKind::Identifier(_) | PPTokenKind::Ellipsis) {
+                        flags |= MacroFlags::FUNCTION_LIKE;
+                        if let Some(lexer) = self.lexer_stack.last_mut() {
+                            lexer.put_back(fp);
+                        }
+                        // parse params
+                        loop {
+                            let param_token = self
                                 .lex_token()
                                 .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
-                            match sep.kind {
-                                PPTokenKind::Comma => continue,
+                            match param_token.kind {
                                 PPTokenKind::RightParen => break,
+                                PPTokenKind::Identifier(sym) => {
+                                    if params.contains(&sym) {
+                                        return Err(PreprocessorError::InvalidMacroParameter);
+                                    }
+                                    params.push(sym);
+                                    let sep = self
+                                        .lex_token()
+                                        .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+                                    match sep.kind {
+                                        PPTokenKind::Comma => continue,
+                                        PPTokenKind::RightParen => break,
+                                        PPTokenKind::Ellipsis => {
+                                            variadic = Some(sym);
+                                            flags |= MacroFlags::C99_VARARGS;
+                                            let rparen = self
+                                                .lex_token()
+                                                .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+                                            if rparen.kind != PPTokenKind::RightParen {
+                                                return Err(PreprocessorError::InvalidMacroParameter);
+                                            }
+                                            break;
+                                        }
+                                        _ => return Err(PreprocessorError::InvalidMacroParameter),
+                                    }
+                                }
                                 PPTokenKind::Ellipsis => {
-                                    variadic = Some(sym);
-                                    flags |= MacroFlags::C99_VARARGS;
+                                    flags |= MacroFlags::GNU_VARARGS;
+                                    variadic = Some(Symbol::new("__VA_ARGS__"));
                                     let rparen = self
                                         .lex_token()
                                         .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
@@ -655,19 +675,14 @@ impl<'src> Preprocessor<'src> {
                                 _ => return Err(PreprocessorError::InvalidMacroParameter),
                             }
                         }
-                        PPTokenKind::Ellipsis => {
-                            flags |= MacroFlags::GNU_VARARGS;
-                            variadic = Some(Symbol::new("__VA_ARGS__"));
-                            let rparen = self
-                                .lex_token()
-                                .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
-                            if rparen.kind != PPTokenKind::RightParen {
-                                return Err(PreprocessorError::InvalidMacroParameter);
-                            }
-                            break;
+                    } else {
+                        if let Some(lexer) = self.lexer_stack.last_mut() {
+                            lexer.put_back(fp);
+                            lexer.put_back(token);
                         }
-                        _ => return Err(PreprocessorError::InvalidMacroParameter),
                     }
+                } else {
+                    return Err(PreprocessorError::UnexpectedEndOfFile);
                 }
             } else if let Some(lexer) = self.lexer_stack.last_mut() {
                 lexer.put_back(token);

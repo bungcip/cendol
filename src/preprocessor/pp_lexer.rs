@@ -127,10 +127,10 @@ impl PPToken {
 pub struct PPLexer {
     pub source_id: SourceId,
     buffer: Vec<u8>,
-    pub position: usize,
+    pub position: u32, // its okay to use u32 here since source files are limited to 4 MB
     line_starts: Vec<u32>,
     put_back_token: Option<PPToken>,
-    pub line_offset: usize,
+    pub line_offset: u32,
     pub filename_override: Option<String>,
 }
 
@@ -152,17 +152,17 @@ impl PPLexer {
     /// Get the next character, handling line splicing transparently
     /// Line splicing: backslash followed by newline removes both characters
     pub fn next_char(&mut self) -> Option<u8> {
-        if self.position >= self.buffer.len() {
+        if self.position as usize >= self.buffer.len() {
             return None;
         }
 
-        let mut result = self.buffer[self.position];
+        let mut result = self.buffer[self.position as usize];
         self.position += 1;
 
         // Handle line splicing: backslash followed by newline
         if result == b'\\'
-            && self.position < self.buffer.len()
-            && self.buffer[self.position] == b'\n'
+            && (self.position as usize) < self.buffer.len()
+            && self.buffer[self.position as usize] == b'\n'
         {
             // Skip the newline too
             self.position += 1;
@@ -171,8 +171,8 @@ impl PPLexer {
                 self.line_starts.pop();
             }
             // Get the character after the newline for splicing
-            if self.position < self.buffer.len() {
-                result = self.buffer[self.position];
+            if (self.position as usize) < self.buffer.len() {
+                result = self.buffer[self.position as usize];
                 self.position += 1;
             } else {
                 return None;
@@ -203,7 +203,7 @@ impl PPLexer {
 
         self.skip_whitespace_and_comments();
 
-        if self.position >= self.buffer.len() {
+        if self.position as usize >= self.buffer.len() {
             return None;
         }
 
@@ -216,7 +216,7 @@ impl PPLexer {
             b'"' => Some(self.lex_string_literal(start_pos, ch)),
             b'\'' => Some(self.lex_char_literal(start_pos, ch)),
             b'#' => {
-                let is_start_of_line = start_pos == *self.line_starts.last().unwrap_or(&0) as usize;
+                let is_start_of_line = start_pos == *self.line_starts.last().unwrap_or(&0);
                 let mut flags = PPTokenFlags::empty();
                 if is_start_of_line {
                     flags |= PPTokenFlags::STARTS_PP_LINE;
@@ -592,8 +592,8 @@ impl PPLexer {
 
     #[allow(dead_code)]
     fn skip_whitespace(&mut self) {
-        while self.position < self.buffer.len() {
-            let ch = self.buffer[self.position];
+        while (self.position as usize) < self.buffer.len() {
+            let ch = self.buffer[self.position as usize];
             if ch.is_ascii_whitespace() {
                 self.position += 1;
             } else {
@@ -605,8 +605,8 @@ impl PPLexer {
     fn skip_whitespace_and_comments(&mut self) {
         loop {
             // Skip whitespace, tracking lines
-            while self.position < self.buffer.len() {
-                let ch = self.buffer[self.position];
+            while (self.position as usize) < self.buffer.len() {
+                let ch = self.buffer[self.position as usize];
                 if ch == b'\n' {
                     self.line_starts.push((self.position + 1) as u32);
                     self.position += 1;
@@ -617,31 +617,31 @@ impl PPLexer {
                 }
             }
 
-            if self.position >= self.buffer.len() {
+            if self.position as usize >= self.buffer.len() {
                 break;
             }
 
-            let ch = self.buffer[self.position];
-            if ch == b'/' && self.position + 1 < self.buffer.len() {
-                let next_ch = self.buffer[self.position + 1];
+            let ch = self.buffer[self.position as usize];
+            if ch == b'/' && self.position as usize + 1 < self.buffer.len() {
+                let next_ch = self.buffer[self.position as usize + 1];
                 if next_ch == b'/' {
                     // Line comment: skip to end of line
                     self.position += 2;
-                    while self.position < self.buffer.len() && self.buffer[self.position] != b'\n' {
+                    while (self.position as usize) < self.buffer.len() && self.buffer[self.position as usize] != b'\n' {
                         self.position += 1;
                     }
                     // Continue the loop to skip more whitespace/comments
                 } else if next_ch == b'*' {
                     // Block comment: skip to */
                     self.position += 2;
-                    while self.position + 1 < self.buffer.len() {
-                        if self.buffer[self.position] == b'*'
-                            && self.buffer[self.position + 1] == b'/'
+                    while self.position as usize + 1 < self.buffer.len() {
+                        if self.buffer[self.position as usize] == b'*'
+                            && self.buffer[self.position as usize + 1] == b'/'
                         {
                             self.position += 2;
                             break;
                         }
-                        if self.buffer[self.position] == b'\n' {
+                        if self.buffer[self.position as usize] == b'\n' {
                             self.line_starts.push((self.position + 1) as u32);
                         }
                         self.position += 1;
@@ -656,7 +656,7 @@ impl PPLexer {
         }
     }
 
-    fn lex_identifier(&mut self, start_pos: usize, first_ch: u8) -> PPToken {
+    fn lex_identifier(&mut self, start_pos: u32, first_ch: u8) -> PPToken {
         // Use next_char() for consistency with line splicing
         let mut chars = vec![first_ch];
         while let Some(ch) = self.peek_char() {
@@ -695,7 +695,7 @@ impl PPLexer {
         )
     }
 
-    fn lex_number(&mut self, start_pos: usize, first_ch: u8) -> PPToken {
+    fn lex_number(&mut self, start_pos: u32, first_ch: u8) -> PPToken {
         // Use next_char() for consistency with line splicing
         let mut chars = vec![first_ch];
         while let Some(ch) = self.peek_char() {
@@ -716,7 +716,7 @@ impl PPLexer {
         )
     }
 
-    fn lex_string_literal(&mut self, start_pos: usize, first_ch: u8) -> PPToken {
+    fn lex_string_literal(&mut self, start_pos: u32, first_ch: u8) -> PPToken {
         // Use next_char() for consistency with line splicing
         let mut chars = vec![first_ch]; // opening quote
 
@@ -746,7 +746,7 @@ impl PPLexer {
         )
     }
 
-    fn lex_char_literal(&mut self, start_pos: usize, first_ch: u8) -> PPToken {
+    fn lex_char_literal(&mut self, start_pos: u32, first_ch: u8) -> PPToken {
         // Use next_char() for consistency with line splicing
         let mut chars = vec![first_ch]; // opening quote
         while let Some(ch) = self.next_char() {
@@ -774,11 +774,11 @@ impl PPLexer {
         self.put_back_token = Some(token);
     }
 
-    pub fn get_line(&self, offset: u32) -> usize {
-        self.line_starts.partition_point(|&x| x <= offset) - 1
+    pub fn get_line(&self, offset: u32) -> u32 {
+        self.line_starts.partition_point(|&x| x <= offset) as u32 - 1
     }
 
-    pub fn get_current_line(&self) -> usize {
-        self.line_starts.len() - 1 + self.line_offset
+    pub fn get_current_line(&self) -> u32 {
+        self.line_starts.len() as u32 - 1 + self.line_offset
     }
 }

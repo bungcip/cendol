@@ -405,7 +405,7 @@ impl<'src> Preprocessor<'src> {
     /// Get the current location from the lexer stack
     fn get_current_location(&self) -> SourceLoc {
         if let Some(lexer) = self.lexer_stack.last() {
-            SourceLoc::new(lexer.source_id, lexer.position as u32)
+            SourceLoc::new(lexer.source_id, lexer.position)
         } else {
             SourceLoc(0)
         }
@@ -1013,7 +1013,7 @@ impl<'src> Preprocessor<'src> {
         let line_number = match line_token.kind {
             PPTokenKind::Number(symbol) => {
                 let text = symbol.as_str();
-                text.parse::<usize>()
+                text.parse::<u32>()
                     .map_err(|_| PreprocessorError::InvalidDirective)?
             }
             _ => return Err(PreprocessorError::InvalidDirective),
@@ -1117,7 +1117,7 @@ impl<'src> Preprocessor<'src> {
         // Collect the warning message from the rest of the line
         let mut message_parts = Vec::new();
         let directive_location = if let Some(lexer) = self.lexer_stack.last() {
-            SourceLoc::new(lexer.source_id, lexer.position as u32)
+            SourceLoc::new(lexer.source_id, lexer.position)
         } else {
             SourceLoc(0)
         };

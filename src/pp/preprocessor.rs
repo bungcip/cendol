@@ -2,6 +2,7 @@ use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::LangOptions;
 use crate::source_manager::{SourceId, SourceLoc, SourceManager, SourceSpan};
 use chrono::{DateTime, Datelike, Timelike, Utc};
+use log::debug;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use symbol_table::GlobalSymbol as Symbol;
@@ -34,7 +35,7 @@ pub struct MacroInfo {
 }
 
 /// Represents conditional compilation state
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct PPConditionalInfo {
     #[allow(unused)]
     if_loc: SourceLoc,
@@ -389,7 +390,6 @@ impl<'src> Preprocessor<'src> {
             }
         }
 
-
         // Add EOF token
         result_tokens.push(PPToken::new(
             PPTokenKind::Eof,
@@ -414,7 +414,6 @@ impl<'src> Preprocessor<'src> {
     fn is_currently_skipping(&self) -> bool {
         self.skipping || self.conditional_stack.iter().any(|info| info.was_skipping)
     }
-
 
     /// Set the skipping state
     fn set_skipping(&mut self, skipping: bool) {
@@ -463,7 +462,9 @@ impl<'src> Preprocessor<'src> {
         }
 
         // Check for defined(identifier) or defined identifier before macro expansion
-        if tokens.len() >= 2 && matches!(tokens[0].kind, PPTokenKind::Identifier(sym) if sym.as_str() == "defined") {
+        if tokens.len() >= 2
+            && matches!(tokens[0].kind, PPTokenKind::Identifier(sym) if sym.as_str() == "defined")
+        {
             if tokens.len() == 2 {
                 // defined identifier
                 if let PPTokenKind::Identifier(sym) = &tokens[1].kind {
@@ -471,7 +472,8 @@ impl<'src> Preprocessor<'src> {
                 }
             } else if tokens.len() == 4
                 && matches!(tokens[1].kind, PPTokenKind::LeftParen)
-                && matches!(tokens[3].kind, PPTokenKind::RightParen) {
+                && matches!(tokens[3].kind, PPTokenKind::RightParen)
+            {
                 // defined(identifier)
                 if let PPTokenKind::Identifier(sym) = &tokens[2].kind {
                     return Ok(self.macros.contains_key(sym));
@@ -488,7 +490,10 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Evaluate a simple arithmetic expression for #if/#elif
-    fn evaluate_arithmetic_expression(&self, tokens: &[PPToken]) -> Result<bool, PreprocessorError> {
+    fn evaluate_arithmetic_expression(
+        &self,
+        tokens: &[PPToken],
+    ) -> Result<bool, PreprocessorError> {
         if tokens.is_empty() {
             return Err(PreprocessorError::InvalidConditionalExpression);
         }
@@ -530,35 +535,16 @@ impl<'src> Preprocessor<'src> {
         match &token.kind {
             PPTokenKind::Number(sym) => {
                 let text = sym.as_str();
-                text.parse::<i64>().map_err(|_| PreprocessorError::InvalidConditionalExpression)
+                text.parse::<i64>()
+                    .map_err(|_| PreprocessorError::InvalidConditionalExpression)
             }
-            PPTokenKind::Identifier(sym) => {
+            PPTokenKind::Identifier(_sym) => {
                 // If it's an identifier, it should have been expanded to a number
                 // For now, treat as 0 if not expanded
                 Err(PreprocessorError::InvalidConditionalExpression)
             }
             _ => Err(PreprocessorError::InvalidConditionalExpression),
         }
-    }
-
-    /// Skip a conditional compilation block when already skipping
-    fn skip_conditional_block(&mut self) -> Result<(), PreprocessorError> {
-        // For now, just skip to the end of the line
-        // In a full implementation, this would need to handle nested conditionals
-        while let Some(token) = self.lex_token() {
-            if let Some(lexer) = self.lexer_stack.last() {
-                let current_line = lexer.get_current_line();
-                let token_line = lexer.get_line(token.location.0);
-                if token_line != current_line {
-                    // Put back the token from the next line
-                    if let Some(lexer) = self.lexer_stack.last_mut() {
-                        lexer.put_back(token);
-                    }
-                    break;
-                }
-            }
-        }
-        Ok(())
     }
 
     /// Lex the next token
@@ -593,7 +579,9 @@ impl<'src> Preprocessor<'src> {
             PPTokenKind::Include => self.handle_include()?,
             PPTokenKind::If => {
                 let expr_tokens = self.parse_conditional_expression()?;
+                debug!("Parsed #if expression tokens: {:?}", expr_tokens);
                 let condition = self.evaluate_conditional_expression(&expr_tokens)?;
+                debug!("Evaluated #if condition: {}", condition);
                 self.handle_if_directive(condition)?;
             }
             PPTokenKind::Ifdef => {
@@ -604,7 +592,9 @@ impl<'src> Preprocessor<'src> {
             }
             PPTokenKind::Elif => {
                 let expr_tokens = self.parse_conditional_expression()?;
+                debug!("Parsed #elif expression tokens: {:?}", expr_tokens);
                 let condition = self.evaluate_conditional_expression(&expr_tokens)?;
+                debug!("Evaluated #elif condition: {}", condition);
                 self.handle_elif_directive(condition)?;
             }
             PPTokenKind::Else => {
@@ -659,6 +649,13 @@ impl<'src> Preprocessor<'src> {
             };
             self.diag.report_diagnostic(diag);
         }
+
+        // Now, collect replacement tokens
+        let start_line = if let Some(lexer) = self.lexer_stack.last() {
+            lexer.get_current_line()
+        } else {
+            0
+        };
 
         let mut flags = MacroFlags::empty();
         let mut params = Vec::new();
@@ -717,12 +714,6 @@ impl<'src> Preprocessor<'src> {
                 lexer.put_back(token);
             }
         }
-        // Now, collect replacement tokens
-        let start_line = if let Some(lexer) = self.lexer_stack.last() {
-            lexer.get_current_line()
-        } else {
-            0
-        };
         let mut tokens = Vec::new();
         while let Some(token) = self.lex_token() {
             let token_line = if let Some(lexer) = self.lexer_stack.last() {
@@ -864,18 +855,24 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
     fn handle_if_directive(&mut self, condition: bool) -> Result<(), PreprocessorError> {
+        debug!("Handling #if directive with condition: {}", condition);
         // Push new conditional state
         let info = PPConditionalInfo {
             if_loc: self.get_current_location(),
             was_skipping: self.is_currently_skipping(),
             found_else: false,
-            found_non_skipping: condition,  // Set to true if condition is true
+            found_non_skipping: condition, // Set to true if condition is true
         };
+        debug!("Pushing conditional: {:?}", info);
         self.conditional_stack.push(info);
+        debug!("Conditional stack after #if: {:?}", self.conditional_stack);
 
         // Set skipping state based on condition
         if !condition {
             self.set_skipping(true);
+            debug!("Set skipping to true due to false condition");
+        } else {
+            debug!("Condition true, not setting skipping");
         }
 
         Ok(())
@@ -891,6 +888,11 @@ impl<'src> Preprocessor<'src> {
         };
 
         let defined = self.macros.contains_key(&name);
+        debug!(
+            "Handling #ifdef for macro '{}', defined: {}",
+            name.as_str(),
+            defined
+        );
         let info = PPConditionalInfo {
             if_loc: self.get_current_location(),
             was_skipping: self.is_currently_skipping(),
@@ -898,9 +900,19 @@ impl<'src> Preprocessor<'src> {
             found_non_skipping: defined,
         };
         self.conditional_stack.push(info);
+        debug!(
+            "Conditional stack after #ifdef: {:?}",
+            self.conditional_stack
+        );
 
         if !defined {
             self.set_skipping(true);
+            debug!(
+                "Set skipping to true because macro '{}' is not defined",
+                name.as_str()
+            );
+        } else {
+            debug!("Macro '{}' is defined, not setting skipping", name.as_str());
         }
 
         Ok(())
@@ -916,6 +928,11 @@ impl<'src> Preprocessor<'src> {
         };
 
         let defined = self.macros.contains_key(&name);
+        debug!(
+            "Handling #ifndef for macro '{}', defined: {}",
+            name.as_str(),
+            defined
+        );
         let info = PPConditionalInfo {
             if_loc: self.get_current_location(),
             was_skipping: self.is_currently_skipping(),
@@ -923,15 +940,29 @@ impl<'src> Preprocessor<'src> {
             found_non_skipping: !defined,
         };
         self.conditional_stack.push(info);
+        debug!(
+            "Conditional stack after #ifndef: {:?}",
+            self.conditional_stack
+        );
 
         if defined {
             self.set_skipping(true);
+            debug!(
+                "Set skipping to true because macro '{}' is defined",
+                name.as_str()
+            );
+        } else {
+            debug!(
+                "Macro '{}' is not defined, not setting skipping",
+                name.as_str()
+            );
         }
 
         Ok(())
     }
 
     fn handle_elif_directive(&mut self, condition: bool) -> Result<(), PreprocessorError> {
+        debug!("Handling #elif directive with condition: {}", condition);
         if self.conditional_stack.is_empty() {
             return Err(PreprocessorError::ElifWithoutIf);
         }
@@ -943,18 +974,26 @@ impl<'src> Preprocessor<'src> {
 
         // Determine if we should start processing
         let should_process = !current.found_non_skipping && condition;
+        debug!("Should process #elif: {}", should_process);
 
         if should_process {
             current.found_non_skipping = true;
             self.set_skipping(false);
+            debug!("Set skipping to false for #elif");
         } else {
             self.set_skipping(true);
+            debug!("Set skipping to true for #elif");
         }
+        debug!(
+            "Conditional stack after #elif: {:?}",
+            self.conditional_stack
+        );
 
         Ok(())
     }
 
     fn handle_else(&mut self) -> Result<(), PreprocessorError> {
+        debug!("Handling #else directive");
         if self.conditional_stack.is_empty() {
             return Err(PreprocessorError::ElseWithoutIf);
         }
@@ -967,23 +1006,40 @@ impl<'src> Preprocessor<'src> {
 
         // Process else block if no previous branch was taken
         let should_process = !current.found_non_skipping;
+        debug!("Should process #else: {}", should_process);
         if should_process {
             self.set_skipping(false);
+            debug!("Set skipping to false for #else");
         } else {
             self.set_skipping(true);
+            debug!("Set skipping to true for #else");
         }
+        debug!(
+            "Conditional stack after #else: {:?}",
+            self.conditional_stack
+        );
 
         Ok(())
     }
 
     fn handle_endif(&mut self) -> Result<(), PreprocessorError> {
+        debug!(
+            "Handling #endif directive in offset {}",
+            self.get_current_location().offset()
+        );
         if self.conditional_stack.is_empty() {
             return Err(PreprocessorError::UnmatchedEndif);
         }
 
         let info = self.conditional_stack.pop().unwrap();
+        debug!("Popped conditional info: {:?}", info);
         // Restore previous skipping state
         self.set_skipping(info.was_skipping);
+        debug!("Restored skipping state to: {}", info.was_skipping);
+        debug!(
+            "Conditional stack after #endif: {:?}",
+            self.conditional_stack
+        );
 
         Ok(())
     }
@@ -1404,18 +1460,21 @@ impl<'src> Preprocessor<'src> {
                         let right_token = &macro_info.tokens[i + 1];
 
                         // Substitute the right token if it's a parameter
-                        let right_substituted = if let PPTokenKind::Identifier(symbol) = right_token.kind {
-                            if let Some(param_index) = macro_info.parameter_list.iter().position(|&p| p == symbol) {
-                                args[param_index].clone()
-                            } else if macro_info.variadic_arg == Some(symbol) {
-                                let start_index = macro_info.parameter_list.len();
-                                args.iter().skip(start_index).flatten().cloned().collect()
+                        let right_substituted =
+                            if let PPTokenKind::Identifier(symbol) = right_token.kind {
+                                if let Some(param_index) =
+                                    macro_info.parameter_list.iter().position(|&p| p == symbol)
+                                {
+                                    args[param_index].clone()
+                                } else if macro_info.variadic_arg == Some(symbol) {
+                                    let start_index = macro_info.parameter_list.len();
+                                    args.iter().skip(start_index).flatten().cloned().collect()
+                                } else {
+                                    vec![right_token.clone()]
+                                }
                             } else {
                                 vec![right_token.clone()]
-                            }
-                        } else {
-                            vec![right_token.clone()]
-                        };
+                            };
 
                         // Paste with the first token of right_substituted
                         if let Some(right) = right_substituted.first() {
@@ -1547,7 +1606,6 @@ impl<'src> Preprocessor<'src> {
         )])
     }
 
-
     /// Expand tokens by rescanning for further macro expansion
     fn expand_tokens(&mut self, tokens: &mut Vec<PPToken>) -> Result<(), PreprocessorError> {
         let mut i = 0;
@@ -1561,7 +1619,9 @@ impl<'src> Preprocessor<'src> {
                 }
             };
             if let Some(macro_info) = self.macros.get(&symbol).cloned() {
-                if macro_info.flags.contains(MacroFlags::FUNCTION_LIKE) && !macro_info.flags.contains(MacroFlags::DISABLED) {
+                if macro_info.flags.contains(MacroFlags::FUNCTION_LIKE)
+                    && !macro_info.flags.contains(MacroFlags::DISABLED)
+                {
                     if i + 1 < tokens.len() && tokens[i + 1].kind == PPTokenKind::LeftParen {
                         // Find the end of arguments
                         let mut paren_depth = 0;

@@ -11,7 +11,12 @@ fn setup_preprocessor_test(src: &str) -> Vec<PPToken> {
 }
 
 /// Helper function to set up preprocessor testing and return diagnostics
-fn setup_preprocessor_test_with_diagnostics(src: &str) -> Result<(Vec<PPToken>, Vec<crate::diagnostic::Diagnostic>), PreprocessorError> {
+fn setup_preprocessor_test_with_diagnostics(
+    src: &str,
+) -> Result<(Vec<PPToken>, Vec<crate::diagnostic::Diagnostic>), PreprocessorError> {
+    // Initialize logging for tests
+    let _ = env_logger::try_init();
+
     let mut source_manager = SourceManager::new();
     let mut diagnostics = DiagnosticEngine::new();
     let lang_options = LangOptions {
@@ -184,8 +189,8 @@ int x = 0;
         PPTokenKind::Identifier(Symbol::new("x")),
         PPTokenKind::Assign,
         PPTokenKind::Number(Symbol::new("1")),
-        PPTokenKind::Semicolon)
-    ;
+        PPTokenKind::Semicolon
+    );
 
     // Ensure A was not expanded (it's used in conditional)
     for token in &significant_tokens {
@@ -218,8 +223,8 @@ fn test_arithmetic_in_if_expression_and_elif() {
         PPTokenKind::Identifier(Symbol::new("x")),
         PPTokenKind::Assign,
         PPTokenKind::Number(Symbol::new("8")),
-        PPTokenKind::Semicolon)
-    ;
+        PPTokenKind::Semicolon
+    );
 
     // Ensure VAL was expanded in the conditional but not in output
     for token in &significant_tokens {
@@ -247,8 +252,8 @@ int x = X;
         PPTokenKind::Identifier(Symbol::new("x")),
         PPTokenKind::Assign,
         PPTokenKind::Number(Symbol::new("2")),
-        PPTokenKind::Semicolon)
-    ;
+        PPTokenKind::Semicolon
+    );
 
     // Ensure X was expanded to the final definition
     for token in &significant_tokens {
@@ -259,7 +264,10 @@ int x = X;
 
     // Check that a macro redefinition warning was emitted
     assert_eq!(diagnostics.len(), 1, "Should have exactly one diagnostic");
-    assert_eq!(diagnostics[0].level, crate::diagnostic::DiagnosticLevel::Warning);
+    assert_eq!(
+        diagnostics[0].level,
+        crate::diagnostic::DiagnosticLevel::Warning
+    );
     assert!(diagnostics[0].message.contains("Redefinition of macro 'X'"));
     assert_eq!(diagnostics[0].code, Some("macro_redefinition".to_string()));
 }
@@ -286,7 +294,11 @@ const int a = __STDC__;
     // Ensure __STDC__ was expanded
     for token in &significant_tokens {
         if let PPTokenKind::Identifier(sym) = &token.kind {
-            assert_ne!(sym.as_str(), "__STDC__", "__STDC__ should have been expanded");
+            assert_ne!(
+                sym.as_str(),
+                "__STDC__",
+                "__STDC__ should have been expanded"
+            );
         }
     }
 }
@@ -302,7 +314,10 @@ fn test_error_directive_produces_failure() {
 
     // This should fail due to #error directive
     let result = setup_preprocessor_test_with_diagnostics(src);
-    assert!(result.is_err(), "Preprocessor should fail on #error directive");
+    assert!(
+        result.is_err(),
+        "Preprocessor should fail on #error directive"
+    );
 
     if let Err(PreprocessorError::ErrorDirective(message)) = result {
         assert_eq!(message, "\"this should be reported\"");
@@ -329,8 +344,8 @@ int x = A;
         PPTokenKind::Identifier(Symbol::new("x")),
         PPTokenKind::Assign,
         PPTokenKind::Number(Symbol::new("1")),
-        PPTokenKind::Semicolon)
-    ;
+        PPTokenKind::Semicolon
+    );
 
     // Ensure all macros were expanded
     for token in &significant_tokens {
@@ -371,6 +386,40 @@ int x = PASTE(foo, bar);
     for token in &significant_tokens {
         if let PPTokenKind::Identifier(sym) = &token.kind {
             assert_ne!(sym.as_str(), "PASTE", "PASTE should have been expanded");
+        }
+    }
+}
+
+#[test]
+fn test_ifndef_conditional() {
+    let src = r#"
+#ifndef DEF
+int x = 0;
+#endif
+
+#define DEF
+
+#ifndef DEF
+X;
+#endif
+"#;
+
+    let significant_tokens = setup_preprocessor_test(src);
+
+    // Expected: int, x, =, 0, ;
+    assert_token_kinds!(
+        significant_tokens,
+        PPTokenKind::Identifier(Symbol::new("int")),
+        PPTokenKind::Identifier(Symbol::new("x")),
+        PPTokenKind::Assign,
+        PPTokenKind::Number(Symbol::new("0")),
+        PPTokenKind::Semicolon
+    );
+
+    // Ensure X was not included (since DEF is defined)
+    for token in &significant_tokens {
+        if let PPTokenKind::Identifier(sym) = &token.kind {
+            assert_ne!(sym.as_str(), "X", "X should not appear in output");
         }
     }
 }

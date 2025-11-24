@@ -88,7 +88,7 @@ pub enum PPTokenKind {
 }
 
 /// Token structure for preprocessor tokens
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct PPToken {
     pub kind: PPTokenKind,
     pub flags: PPTokenFlags,

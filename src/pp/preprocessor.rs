@@ -376,7 +376,6 @@ impl<'src> Preprocessor<'src> {
                         PPTokenKind::Identifier(_symbol) => {
                             // Check for macro expansion
                             if let Some(expanded) = self.expand_macro(&token)? {
-                                // Add expanded tokens to result
                                 result_tokens.extend(expanded);
                             } else {
                                 result_tokens.push(token);
@@ -1548,16 +1547,100 @@ impl<'src> Preprocessor<'src> {
         )])
     }
 
+
     /// Expand tokens by rescanning for further macro expansion
     fn expand_tokens(&mut self, tokens: &mut Vec<PPToken>) -> Result<(), PreprocessorError> {
         let mut i = 0;
         while i < tokens.len() {
-            if let PPTokenKind::Identifier(_symbol) = tokens[i].kind
-                && let Some(expanded) = self.expand_macro(&tokens[i])?
-            {
-                // Replace current token with expanded tokens
+            let token = tokens[i];
+            let symbol = match token.kind {
+                PPTokenKind::Identifier(s) => s,
+                _ => {
+                    i += 1;
+                    continue;
+                }
+            };
+            if let Some(macro_info) = self.macros.get(&symbol).cloned() {
+                if macro_info.flags.contains(MacroFlags::FUNCTION_LIKE) && !macro_info.flags.contains(MacroFlags::DISABLED) {
+                    if i + 1 < tokens.len() && tokens[i + 1].kind == PPTokenKind::LeftParen {
+                        // Find the end of arguments
+                        let mut paren_depth = 0;
+                        let mut j = i + 1;
+                        let mut end_j = None;
+                        while j < tokens.len() {
+                            match tokens[j].kind {
+                                PPTokenKind::LeftParen => paren_depth += 1,
+                                PPTokenKind::RightParen => {
+                                    paren_depth -= 1;
+                                    if paren_depth == 0 {
+                                        end_j = Some(j);
+                                        break;
+                                    }
+                                }
+                                _ => {}
+                            }
+                            j += 1;
+                        }
+                        if let Some(end_j) = end_j {
+                            // Parse arguments using indices
+                            let mut args = Vec::new();
+                            let mut current_arg = Vec::new();
+                            let mut paren_depth = 0;
+                            let mut k = i + 2;
+                            while k < end_j {
+                                match tokens[k].kind {
+                                    PPTokenKind::LeftParen => {
+                                        paren_depth += 1;
+                                        current_arg.push(tokens[k].clone());
+                                    }
+                                    PPTokenKind::RightParen => {
+                                        paren_depth -= 1;
+                                        current_arg.push(tokens[k].clone());
+                                    }
+                                    PPTokenKind::Comma if paren_depth == 0 => {
+                                        args.push(current_arg);
+                                        current_arg = Vec::new();
+                                    }
+                                    _ => {
+                                        current_arg.push(tokens[k].clone());
+                                    }
+                                }
+                                k += 1;
+                            }
+                            if !current_arg.is_empty() {
+                                args.push(current_arg);
+                            }
+                            // Validate argument count
+                            let expected_args = macro_info.parameter_list.len();
+                            if args.len() != expected_args {
+                                return Err(PreprocessorError::InvalidMacroParameter);
+                            }
+                            // Substitute
+                            let substituted = self.substitute_macro(&macro_info, &args)?;
+                            // Replace i..end_j+1 with substituted
+                            tokens.splice(i..end_j + 1, substituted);
+                            // Mark as used
+                            if let Some(m) = self.macros.get_mut(&symbol) {
+                                m.flags |= MacroFlags::USED;
+                            }
+                            // Temporarily disable
+                            if let Some(m) = self.macros.get_mut(&symbol) {
+                                m.flags |= MacroFlags::DISABLED;
+                            }
+                            // Recurse
+                            self.expand_tokens(tokens)?;
+                            // Re-enable
+                            if let Some(m) = self.macros.get_mut(&symbol) {
+                                m.flags.remove(MacroFlags::DISABLED);
+                            }
+                            continue;
+                        }
+                    }
+                }
+            }
+            // For object macros
+            if let Some(expanded) = self.expand_macro(&tokens[i])? {
                 tokens.splice(i..i + 1, expanded);
-                // Don't increment i, rescan from current position
                 continue;
             }
             i += 1;

@@ -312,6 +312,37 @@ fn test_error_directive_produces_failure() {
 }
 
 #[test]
+fn test_complex_macro_expansion_and_recursion_limit() {
+    let src = r#"
+#define ID(x) x
+#define A ID(ID(ID(1)))
+int x = A;
+"#;
+
+    let significant_tokens = setup_preprocessor_test(src);
+
+    // Expected: int, x, =, 1, ;
+    // A should expand to ID(ID(ID(1))) -> ID(ID(1)) -> ID(1) -> 1
+    assert_token_kinds!(
+        significant_tokens,
+        PPTokenKind::Identifier(Symbol::new("int")),
+        PPTokenKind::Identifier(Symbol::new("x")),
+        PPTokenKind::Assign,
+        PPTokenKind::Number(Symbol::new("1")),
+        PPTokenKind::Semicolon)
+    ;
+
+    // Ensure all macros were expanded
+    for token in &significant_tokens {
+        if let PPTokenKind::Identifier(sym) = &token.kind {
+            let name = sym.as_str();
+            assert_ne!(name, "ID", "ID should have been expanded");
+            assert_ne!(name, "A", "A should have been expanded");
+        }
+    }
+}
+
+#[test]
 fn test_token_pasting() {
     let src = r#"
 #define PASTE(a,b) a ## b

@@ -476,3 +476,29 @@ int result = 42;
         PPTokenKind::Semicolon
     );
 }
+
+#[test]
+fn test_function_like_macro_not_expanded_when_not_followed_by_paren() {
+    let src = r#"
+#define x(y) ((y) + 1)
+int x = x(0);
+"#;
+
+    let significant_tokens = setup_preprocessor_test(src);
+
+    // Expected: int, x, =, (, (, 0, ), +, 1, ), ;
+    assert_token_kinds!(
+        significant_tokens,
+        PPTokenKind::Identifier(Symbol::new("int")),
+        PPTokenKind::Identifier(Symbol::new("x")),
+        PPTokenKind::Assign,
+        PPTokenKind::LeftParen,
+        PPTokenKind::LeftParen,
+        PPTokenKind::Number(Symbol::new("0")),
+        PPTokenKind::RightParen,
+        PPTokenKind::Plus,
+        PPTokenKind::Number(Symbol::new("1")),
+        PPTokenKind::RightParen,
+        PPTokenKind::Semicolon
+    );
+}

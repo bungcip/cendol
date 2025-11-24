@@ -1139,6 +1139,25 @@ impl<'src> Preprocessor<'src> {
                 _ => return Ok(None),
             };
 
+            // For function-like macros, check if followed by '('
+            if macro_info.flags.contains(MacroFlags::FUNCTION_LIKE) {
+                let next = self.lex_token();
+                match next {
+                    Some(t) if t.kind == PPTokenKind::LeftParen => {
+                        if let Some(lexer) = self.lexer_stack.last_mut() {
+                            lexer.put_back(t);
+                        }
+                    }
+                    Some(t) => {
+                        if let Some(lexer) = self.lexer_stack.last_mut() {
+                            lexer.put_back(t);
+                        }
+                        return Ok(None);
+                    }
+                    None => return Ok(None),
+                }
+            }
+
             // Check for recursion
             if macro_info.flags.contains(MacroFlags::DISABLED) {
                 return Err(PreprocessorError::MacroRecursion);

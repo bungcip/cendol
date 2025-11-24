@@ -112,3 +112,77 @@ int x = ADD(3, 4);
         }
     }
 }
+
+#[test]
+fn test_variadic_macro_and_stringification() {
+    let src = r#"
+#define LOG(fmt, ...) printf(fmt, __VA_ARGS__)
+#define STR(x) #x
+const char* s = STR(hello_world);
+LOG("value=%d\n", 5);
+"#;
+
+    let significant_tokens = setup_preprocessor_test(src);
+
+    // Expected: const, char*, s, =, "hello_world", ;, printf, (, "value=%d\n", ,, 5, ), ;
+    assert_token_kinds!(
+        significant_tokens,
+        PPTokenKind::Identifier(Symbol::new("const")),
+        PPTokenKind::Identifier(Symbol::new("char")),
+        PPTokenKind::Star,
+        PPTokenKind::Identifier(Symbol::new("s")),
+        PPTokenKind::Assign,
+        PPTokenKind::StringLiteral(Symbol::new("\"hello_world\"")),
+        PPTokenKind::Semicolon,
+        PPTokenKind::Identifier(Symbol::new("printf")),
+        PPTokenKind::LeftParen,
+        PPTokenKind::StringLiteral(Symbol::new("\"value=%d\\n\"")),
+        PPTokenKind::Comma,
+        PPTokenKind::Number(Symbol::new("5")),
+        PPTokenKind::RightParen,
+        PPTokenKind::Semicolon
+    );
+
+    // Ensure macros were expanded
+    for token in &significant_tokens {
+        if let PPTokenKind::Identifier(sym) = &token.kind {
+            let name = sym.as_str();
+            assert_ne!(name, "LOG", "LOG should have been expanded");
+            assert_ne!(name, "STR", "STR should have been expanded");
+            assert_ne!(name, "__VA_ARGS__", "__VA_ARGS__ should have been expanded");
+        }
+    }
+}
+
+#[test]
+fn test_token_pasting() {
+    let src = r#"
+#define PASTE(a,b) a ## b
+int foobar = 1;
+int x = PASTE(foo, bar);
+"#;
+
+    let significant_tokens = setup_preprocessor_test(src);
+
+    // Expected: int, foobar, =, 1, ;, int, x, =, foobar, ;
+    assert_token_kinds!(
+        significant_tokens,
+        PPTokenKind::Identifier(Symbol::new("int")),
+        PPTokenKind::Identifier(Symbol::new("foobar")),
+        PPTokenKind::Assign,
+        PPTokenKind::Number(Symbol::new("1")),
+        PPTokenKind::Semicolon,
+        PPTokenKind::Identifier(Symbol::new("int")),
+        PPTokenKind::Identifier(Symbol::new("x")),
+        PPTokenKind::Assign,
+        PPTokenKind::Identifier(Symbol::new("foobar")),
+        PPTokenKind::Semicolon
+    );
+
+    // Ensure PASTE was expanded
+    for token in &significant_tokens {
+        if let PPTokenKind::Identifier(sym) = &token.kind {
+            assert_ne!(sym.as_str(), "PASTE", "PASTE should have been expanded");
+        }
+    }
+}

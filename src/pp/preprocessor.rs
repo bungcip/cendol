@@ -1412,9 +1412,27 @@ impl<'src> Preprocessor<'src> {
                     // Token pasting operator
                     if !result.is_empty() && i + 1 < macro_info.tokens.len() {
                         let left = result.pop().unwrap();
-                        let right = &macro_info.tokens[i + 1];
-                        let pasted = self.paste_tokens(&left, right)?;
-                        result.extend(pasted);
+                        let right_token = &macro_info.tokens[i + 1];
+
+                        // Substitute the right token if it's a parameter
+                        let right_substituted = if let PPTokenKind::Identifier(symbol) = right_token.kind {
+                            if let Some(param_index) = macro_info.parameter_list.iter().position(|&p| p == symbol) {
+                                args[param_index].clone()
+                            } else if macro_info.variadic_arg == Some(symbol) {
+                                let start_index = macro_info.parameter_list.len();
+                                args.iter().skip(start_index).flatten().cloned().collect()
+                            } else {
+                                vec![right_token.clone()]
+                            }
+                        } else {
+                            vec![right_token.clone()]
+                        };
+
+                        // Paste with the first token of right_substituted
+                        if let Some(right) = right_substituted.first() {
+                            let pasted = self.paste_tokens(&left, right)?;
+                            result.extend(pasted);
+                        }
                         i += 2;
                         continue;
                     }

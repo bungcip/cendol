@@ -505,7 +505,8 @@ impl<'src> Preprocessor<'src> {
         }
 
         let mut parser = ExpressionParser::new(tokens, self);
-        let result = parser.parse_expression()?;
+        let expr = parser.parse_expression()?;
+        let result = expr.evaluate(self)?;
         Ok(result != 0)
     }
 

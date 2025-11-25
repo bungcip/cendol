@@ -14,7 +14,7 @@ bitflags::bitflags! {
 /// Token kinds for preprocessor tokens
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PPTokenKind {
-    // Keywords
+    // Keywords (when in directive mode)
     If,
     Ifdef,
     Ifndef,
@@ -175,8 +175,6 @@ impl PPToken {
             PPTokenKind::Ellipsis => "...".to_string(),
             PPTokenKind::LogicAnd => "&&".to_string(),
             PPTokenKind::LogicOr => "||".to_string(),
-            PPTokenKind::Hash => "#".to_string(),
-            PPTokenKind::HashHash => "##".to_string(),
             PPTokenKind::If => "if".to_string(),
             PPTokenKind::Ifdef => "ifdef".to_string(),
             PPTokenKind::Ifndef => "ifndef".to_string(),
@@ -190,6 +188,8 @@ impl PPToken {
             PPTokenKind::Pragma => "pragma".to_string(),
             PPTokenKind::Error => "error".to_string(),
             PPTokenKind::Warning => "warning".to_string(),
+            PPTokenKind::Hash => "#".to_string(),
+            PPTokenKind::HashHash => "##".to_string(),
             PPTokenKind::Eof => "".to_string(),
             PPTokenKind::Unknown => "?".to_string(),
         }
@@ -205,6 +205,7 @@ pub struct PPLexer {
     put_back_token: Option<PPToken>,
     pub line_offset: u32,
     pub filename_override: Option<String>,
+    pub in_directive: bool, // Whether we are lexing a directive name
 }
 
 impl PPLexer {
@@ -219,6 +220,7 @@ impl PPLexer {
             put_back_token: None,
             line_offset: 0,
             filename_override: None,
+            in_directive: false,
         }
     }
 
@@ -747,23 +749,8 @@ impl PPLexer {
         let text = String::from_utf8(chars).unwrap();
         let symbol = Symbol::new(&text);
 
-        // Check for preprocessor keywords
-        let kind = match text.as_str() {
-            "if" => PPTokenKind::If,
-            "ifdef" => PPTokenKind::Ifdef,
-            "ifndef" => PPTokenKind::Ifndef,
-            "elif" => PPTokenKind::Elif,
-            "else" => PPTokenKind::Else,
-            "endif" => PPTokenKind::Endif,
-            "define" => PPTokenKind::Define,
-            "undef" => PPTokenKind::Undef,
-            "include" => PPTokenKind::Include,
-            "line" => PPTokenKind::Line,
-            "pragma" => PPTokenKind::Pragma,
-            "error" => PPTokenKind::Error,
-            "warning" => PPTokenKind::Warning,
-            _ => PPTokenKind::Identifier(symbol),
-        };
+        // All identifiers are treated as Identifier, keywords are handled in the parser
+        let kind = PPTokenKind::Identifier(symbol);
 
         PPToken::text(kind, SourceLoc::new(self.source_id, start_pos), &text)
     }
@@ -874,10 +861,10 @@ impl PPLexer {
     }
 
     pub fn get_line(&self, offset: u32) -> u32 {
-        self.line_starts.partition_point(|&x| x <= offset) as u32 - 1
+        self.line_starts.partition_point(|&x| x <= offset) as u32 + self.line_offset
     }
 
     pub fn get_current_line(&self) -> u32 {
-        self.line_starts.len() as u32 - 1 + self.line_offset
+        self.line_starts.len() as u32 + self.line_offset
     }
 }

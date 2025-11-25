@@ -9,7 +9,7 @@ use target_lexicon::Triple;
 fn create_test_lexer(tokens: Vec<PPToken>) -> Lexer<'static> {
     let mut source_manager = SourceManager::new();
     let _source_id = source_manager.add_buffer("test".as_bytes().to_vec(), "test.c");
-    let mut diag = DiagnosticEngine::new();
+    let diag = DiagnosticEngine::new();
     let lang_opts = LangOptions::c11();
     let target_info = Triple::host();
 
@@ -150,7 +150,7 @@ mod tests {
         ];
 
         for (text, expected_kind) in operators {
-            let pptoken = create_pptoken(PPTokenKind::Unknown, text, 0); // Using Unknown as placeholder, but classify_token will map it
+            let _pptoken = create_pptoken(PPTokenKind::Unknown, text, 0); // Using Unknown as placeholder, but classify_token will map it
             // Actually, I need to create PPTokens with the correct PPTokenKind
             // For simplicity, let's map the text to PPTokenKind
             let pp_kind = match text {

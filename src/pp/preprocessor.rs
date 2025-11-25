@@ -380,12 +380,28 @@ impl<'src> Preprocessor<'src> {
                     }
 
                     match token.kind {
-                        PPTokenKind::Identifier(_symbol) => {
-                            // Check for macro expansion
-                            if let Some(expanded) = self.expand_macro(&token)? {
-                                result_tokens.extend(expanded);
+                        PPTokenKind::Identifier(symbol) => {
+                            if symbol.as_str() == "__LINE__" {
+                                let line = if let Some(lexer) = self.lexer_stack.last() {
+                                    lexer.get_current_line()
+                                } else {
+                                    1
+                                };
+                                let line_str = line.to_string();
+                                let line_symbol = Symbol::new(&line_str);
+                                result_tokens.push(PPToken::new(
+                                    PPTokenKind::Number(line_symbol),
+                                    PPTokenFlags::empty(),
+                                    token.location,
+                                    line_str.len() as u16,
+                                ));
                             } else {
-                                result_tokens.push(token);
+                                // Check for macro expansion
+                                if let Some(expanded) = self.expand_macro(&token)? {
+                                    result_tokens.extend(expanded);
+                                } else {
+                                    result_tokens.push(token);
+                                }
                             }
                         }
                         _ => {
@@ -538,35 +554,52 @@ impl<'src> Preprocessor<'src> {
             .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
 
         match token.kind {
-            PPTokenKind::Define => self.handle_define()?,
-            PPTokenKind::Undef => self.handle_undef()?,
-            PPTokenKind::Include => self.handle_include()?,
-            PPTokenKind::If => {
-                let expr_tokens = self.parse_conditional_expression()?;
-                let condition = self.evaluate_conditional_expression(&expr_tokens)?;
-                self.handle_if_directive(condition)?;
+            PPTokenKind::Identifier(sym) => {
+                let name = sym.as_str();
+                match name {
+                    "define" => self.handle_define()?,
+                    "undef" => self.handle_undef()?,
+                    "include" => self.handle_include()?,
+                    "if" => {
+                        let expr_tokens = self.parse_conditional_expression()?;
+                        let condition = self.evaluate_conditional_expression(&expr_tokens)?;
+                        self.handle_if_directive(condition)?;
+                    }
+                    "ifdef" => {
+                        self.handle_ifdef()?;
+                    }
+                    "ifndef" => {
+                        self.handle_ifndef()?;
+                    }
+                    "elif" => {
+                        let expr_tokens = self.parse_conditional_expression()?;
+                        let condition = self.evaluate_conditional_expression(&expr_tokens)?;
+                        self.handle_elif_directive(condition)?;
+                    }
+                    "else" => {
+                        self.handle_else()?;
+                    }
+                    "endif" => {
+                        self.handle_endif()?;
+                    }
+                    "line" => self.handle_line()?,
+                    "pragma" => self.handle_pragma()?,
+                    "error" => self.handle_error()?,
+                    "warning" => self.handle_warning()?,
+                    _ => {
+                        let diag = crate::diagnostic::Diagnostic {
+                            level: crate::diagnostic::DiagnosticLevel::Error,
+                            message: "Invalid preprocessor directive".to_string(),
+                            location: SourceSpan::new(token.location, token.location),
+                            code: Some("invalid_directive".to_string()),
+                            hints: vec!["Valid directives include #define, #include, #if, #ifdef, #ifndef, #elif, #else, #endif, #line, #pragma, #error, #warning".to_string()],
+                            related: Vec::new(),
+                        };
+                        self.diag.report_diagnostic(diag);
+                        return Err(PreprocessorError::InvalidDirective);
+                    }
+                }
             }
-            PPTokenKind::Ifdef => {
-                self.handle_ifdef()?;
-            }
-            PPTokenKind::Ifndef => {
-                self.handle_ifndef()?;
-            }
-            PPTokenKind::Elif => {
-                let expr_tokens = self.parse_conditional_expression()?;
-                let condition = self.evaluate_conditional_expression(&expr_tokens)?;
-                self.handle_elif_directive(condition)?;
-            }
-            PPTokenKind::Else => {
-                self.handle_else()?;
-            }
-            PPTokenKind::Endif => {
-                self.handle_endif()?;
-            }
-            PPTokenKind::Line => self.handle_line()?,
-            PPTokenKind::Pragma => self.handle_pragma()?,
-            PPTokenKind::Error => self.handle_error()?,
-            PPTokenKind::Warning => self.handle_warning()?,
             _ => {
                 let diag = crate::diagnostic::Diagnostic {
                     level: crate::diagnostic::DiagnosticLevel::Error,
@@ -954,11 +987,43 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
     fn handle_line(&mut self) -> Result<(), PreprocessorError> {
+        // Collect tokens until end of line
+        let mut tokens = Vec::new();
+        let start_line = if let Some(lexer) = self.lexer_stack.last() {
+            lexer.get_current_line()
+        } else {
+            0
+        };
+
+        while let Some(token) = self.lex_token() {
+            let token_line = if let Some(lexer) = self.lexer_stack.last() {
+                lexer.get_line(token.location.0)
+            } else {
+                0
+            };
+            if token_line != start_line {
+                // Put back the token from the next line
+                if let Some(lexer) = self.lexer_stack.last_mut() {
+                    lexer.put_back(token);
+                }
+                break;
+            }
+            tokens.push(token);
+        }
+
+        if tokens.is_empty() {
+            return Err(PreprocessorError::InvalidDirective);
+        }
+
+        // Expand macros in tokens
+        self.expand_tokens(&mut tokens)?;
+
+        if tokens.is_empty() {
+            return Err(PreprocessorError::InvalidDirective);
+        }
+
         // Parse line number
-        let line_token = self
-            .lex_token()
-            .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
-        let line_number = match line_token.kind {
+        let line_number = match &tokens[0].kind {
             PPTokenKind::Number(symbol) => {
                 let text = symbol.as_str();
                 text.parse::<u32>()
@@ -968,25 +1033,21 @@ impl<'src> Preprocessor<'src> {
         };
 
         // Optional filename
-        let mut filename = None;
-        if let Some(token) = self.lex_token() {
-            match token.kind {
+        let filename = if tokens.len() > 1 {
+            match &tokens[1].kind {
                 PPTokenKind::StringLiteral(symbol) => {
                     let full_str = symbol.as_str();
                     if full_str.starts_with('"') && full_str.ends_with('"') {
-                        filename = Some(full_str[1..full_str.len() - 1].to_string());
+                        Some(full_str[1..full_str.len() - 1].to_string())
                     } else {
                         return Err(PreprocessorError::InvalidDirective);
                     }
                 }
-                _ => {
-                    // Put back the token if it's not a string literal
-                    if let Some(lexer) = self.lexer_stack.last_mut() {
-                        lexer.put_back(token);
-                    }
-                }
+                _ => None,
             }
-        }
+        } else {
+            None
+        };
 
         // Update lexer state
         if let Some(lexer) = self.lexer_stack.last_mut() {
@@ -1560,8 +1621,28 @@ impl<'src> Preprocessor<'src> {
     fn expand_tokens(&mut self, tokens: &mut Vec<PPToken>) -> Result<(), PreprocessorError> {
         let mut i = 0;
         while i < tokens.len() {
-            let token = tokens[i];
-            let symbol = match token.kind {
+            let token = &tokens[i];
+            if let PPTokenKind::Identifier(symbol) = &token.kind {
+                if symbol.as_str() == "__LINE__" {
+                    let line = if let Some(lexer) = self.lexer_stack.last() {
+                        lexer.get_current_line()
+                    } else {
+                        1
+                    };
+                    let line_str = line.to_string();
+                    let line_symbol = Symbol::new(&line_str);
+                    let number_token = PPToken::new(
+                        PPTokenKind::Number(line_symbol),
+                        PPTokenFlags::empty(),
+                        token.location,
+                        line_str.len() as u16,
+                    );
+                    tokens[i] = number_token;
+                    i += 1;
+                    continue;
+                }
+            }
+            let symbol = match tokens[i].kind {
                 PPTokenKind::Identifier(s) => s,
                 _ => {
                     i += 1;

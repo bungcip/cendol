@@ -239,19 +239,19 @@ fn test_all_keyword_tokens() {
 
     test_tokens!(
         lexer,
-        ("if", PPTokenKind::If),
-        ("ifdef", PPTokenKind::Ifdef),
-        ("ifndef", PPTokenKind::Ifndef),
-        ("elif", PPTokenKind::Elif),
-        ("else", PPTokenKind::Else),
-        ("endif", PPTokenKind::Endif),
-        ("define", PPTokenKind::Define),
-        ("undef", PPTokenKind::Undef),
-        ("include", PPTokenKind::Include),
-        ("line", PPTokenKind::Line),
-        ("pragma", PPTokenKind::Pragma),
-        ("error", PPTokenKind::Error),
-        ("warning", PPTokenKind::Warning),
+        ("if", PPTokenKind::Identifier(_)),
+        ("ifdef", PPTokenKind::Identifier(_)),
+        ("ifndef", PPTokenKind::Identifier(_)),
+        ("elif", PPTokenKind::Identifier(_)),
+        ("else", PPTokenKind::Identifier(_)),
+        ("endif", PPTokenKind::Identifier(_)),
+        ("define", PPTokenKind::Identifier(_)),
+        ("undef", PPTokenKind::Identifier(_)),
+        ("include", PPTokenKind::Identifier(_)),
+        ("line", PPTokenKind::Identifier(_)),
+        ("pragma", PPTokenKind::Identifier(_)),
+        ("error", PPTokenKind::Identifier(_)),
+        ("warning", PPTokenKind::Identifier(_)),
     );
 }
 

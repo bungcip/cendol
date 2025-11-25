@@ -547,6 +547,7 @@ impl<'src> Lexer<'src> {
             PPTokenKind::Pragma => TokenKind::Unknown, // Not used in lexer
             PPTokenKind::Error => TokenKind::Unknown, // Not used in lexer
             PPTokenKind::Warning => TokenKind::Unknown, // Not used in lexer
+            PPTokenKind::Defined => TokenKind::Unknown, // Not used in lexer
             PPTokenKind::Hash => TokenKind::Unknown,  // # not used in lexer
             PPTokenKind::HashHash => TokenKind::Unknown, // ## not used in lexer
             PPTokenKind::Unknown => TokenKind::Unknown,

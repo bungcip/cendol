@@ -28,6 +28,8 @@ pub enum PPTokenKind {
     Pragma,
     Error,
     Warning,
+    // Special for expressions
+    Defined,
     // Punctuation and operators
     Plus,
     Minus,
@@ -188,6 +190,7 @@ impl PPToken {
             PPTokenKind::Pragma => "pragma".to_string(),
             PPTokenKind::Error => "error".to_string(),
             PPTokenKind::Warning => "warning".to_string(),
+            PPTokenKind::Defined => "defined".to_string(),
             PPTokenKind::Hash => "#".to_string(),
             PPTokenKind::HashHash => "##".to_string(),
             PPTokenKind::Eof => "".to_string(),
@@ -206,6 +209,7 @@ pub struct PPLexer {
     pub line_offset: u32,
     pub filename_override: Option<String>,
     pub in_directive: bool, // Whether we are lexing a directive name
+    pub in_expression: bool, // Whether we are lexing a preprocessor expression
 }
 
 impl PPLexer {
@@ -221,6 +225,7 @@ impl PPLexer {
             line_offset: 0,
             filename_override: None,
             in_directive: false,
+            in_expression: false,
         }
     }
 
@@ -747,10 +752,13 @@ impl PPLexer {
         }
 
         let text = String::from_utf8(chars).unwrap();
-        let symbol = Symbol::new(&text);
 
-        // All identifiers are treated as Identifier, keywords are handled in the parser
-        let kind = PPTokenKind::Identifier(symbol);
+        let kind = if self.in_expression && text == "defined" {
+            PPTokenKind::Defined
+        } else {
+            let symbol = Symbol::new(&text);
+            PPTokenKind::Identifier(symbol)
+        };
 
         PPToken::text(kind, SourceLoc::new(self.source_id, start_pos), &text)
     }

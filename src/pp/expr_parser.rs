@@ -326,7 +326,7 @@ impl<'a> ExpressionParser<'a> {
             return Err(PreprocessorError::InvalidConditionalExpression);
         }
         let token = &self.tokens[self.pos];
-        if matches!(token.kind, PPTokenKind::Identifier(sym) if sym.as_str() == "defined") {
+        if matches!(token.kind, PPTokenKind::Defined) {
             self.pos += 1;
             let ident = if self.pos < self.tokens.len() && matches!(self.tokens[self.pos].kind, PPTokenKind::LeftParen) {
                 self.pos += 1;

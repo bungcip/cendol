@@ -650,46 +650,58 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
         &self,
         declarator: &Declarator,
     ) -> (Option<Symbol>, Vec<FunctionParameter>) {
+        // Find the function declarator that has the identifier as its direct base
+        let (name, params) = self.find_function_with_name(declarator);
+        if let Some((func_decl, params)) = name.zip(params) {
+            debug!(
+                "Found function declarator with name: {}, params={}",
+                func_decl.as_str(),
+                params.len()
+            );
+
+            let func_params: Vec<FunctionParameter> = params
+                .iter()
+                .enumerate()
+                .filter_map(|(i, param)| {
+                    debug!("Processing param {}: declarator={:?}", i, param.declarator);
+                    if let Some(decl) = &param.declarator {
+                        let param_name = Self::extract_identifier(decl);
+                        debug!(
+                            "  Extracted param name: {:?}",
+                            param_name.as_ref().map(|s| s.as_str())
+                        );
+                        param_name.map(|name| FunctionParameter {
+                            param_type: TypeRef::new(1).unwrap(),
+                            name: Some(name),
+                        })
+                    } else {
+                        debug!("  No declarator for param {}", i);
+                        None
+                    }
+                })
+                .collect();
+            debug!("Final function params: {}", func_params.len());
+            (Some(func_decl), func_params)
+        } else {
+            debug!("No function with name found");
+            (None, Vec::new())
+        }
+    }
+
+    fn find_function_with_name<'a>(&self, declarator: &'a Declarator) -> (Option<Symbol>, Option<&'a Vec<ParamData>>) {
         match declarator {
             Declarator::Function(base, params) => {
-                let name = Self::extract_identifier(base);
-                debug!(
-                    "Extracting function info: name={:?}, params={}",
-                    name.as_ref().map(|s| s.as_str()),
-                    params.len()
-                );
-
-                let func_params: Vec<FunctionParameter> = params
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, param)| {
-                        debug!("Processing param {}: declarator={:?}", i, param.declarator);
-                        if let Some(decl) = &param.declarator {
-                            let param_name = Self::extract_identifier(decl);
-                            debug!(
-                                "  Extracted param name: {:?}",
-                                param_name.as_ref().map(|s| s.as_str())
-                            );
-                            param_name.map(|name| FunctionParameter {
-                                param_type: TypeRef::new(1).unwrap(),
-                                name: Some(name),
-                            })
-                        } else {
-                            debug!("  No declarator for param {}", i);
-                            None
-                        }
-                    })
-                    .collect();
-                debug!("Final function params: {}", func_params.len());
-                (name, func_params)
+                if let Declarator::Identifier(name, _, _) = base.as_ref() {
+                    // Found it
+                    (Some(*name), Some(params))
+                } else {
+                    // Recurse
+                    self.find_function_with_name(base)
+                }
             }
-            _ => {
-                debug!(
-                    "Not a function declarator: {:?}",
-                    std::mem::discriminant(declarator)
-                );
-                (Self::extract_identifier(declarator), Vec::new())
-            }
+            Declarator::Pointer(_, Some(base)) => self.find_function_with_name(base),
+            Declarator::Array(base, _) => self.find_function_with_name(base),
+            _ => (None, None)
         }
     }
 
@@ -893,10 +905,24 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                         symbol_entry.is_referenced = true;
                     } else {
                         debug!(
-                            "Undeclared identifier: {} (expected scope: {})",
+                            "Undeclared identifier: {} (expected scope: {}), checking symbol table contents",
                             name.as_str(),
                             expected_scope.get()
                         );
+                        // Debug: list all symbols in current scope and parent scopes
+                        let mut debug_scope = expected_scope;
+                        while let Some(scope) = self.symbol_table.scopes.get(debug_scope.get() as usize - 1) {
+                            debug!("Scope {} (kind: {:?}) has {} symbols:", debug_scope.get(), scope.kind, scope.symbols.len());
+                            for (sym_name, sym_ref) in &scope.symbols {
+                                let entry = self.symbol_table.get_symbol_entry(*sym_ref);
+                                debug!("  Symbol: {} -> {:?}", sym_name.as_str(), entry.kind);
+                            }
+                            if let Some(parent) = scope.parent {
+                                debug_scope = parent;
+                            } else {
+                                break;
+                            }
+                        }
                         self.diag.report_error(SemanticError::UndeclaredIdentifier {
                             name: *name,
                             location: node.span,

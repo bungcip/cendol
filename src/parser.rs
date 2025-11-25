@@ -3703,8 +3703,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 | TokenKind::Complex
                 | TokenKind::Struct
                 | TokenKind::Union
-                | TokenKind::Enum
-                | TokenKind::Identifier(_) => true,
+                | TokenKind::Enum => true,
+                TokenKind::Identifier(symbol) => self.is_type_name(symbol),
                 _ => false,
             }
         } else {

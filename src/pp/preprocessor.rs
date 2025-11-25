@@ -524,7 +524,7 @@ impl<'src> Preprocessor<'src> {
 
         // Check for defined(identifier) or defined identifier before macro expansion
         if tokens.len() >= 2
-            && matches!(tokens[0].kind, PPTokenKind::Identifier(sym) if sym.as_str() == "defined")
+            && matches!(tokens[0].kind, PPTokenKind::Defined)
         {
             if tokens.len() == 2 {
                 // defined identifier

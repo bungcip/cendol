@@ -7,6 +7,7 @@ use symbol_table::GlobalSymbol as Symbol;
 pub enum Expr {
     Number(i64),
     Identifier(String),
+    Defined(Box<Expr>),
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
     Unary(UnaryOp, Box<Expr>),
     Conditional(Box<Expr>, Box<Expr>, Box<Expr>),
@@ -47,6 +48,13 @@ impl Expr {
         match self {
             Expr::Number(n) => Ok(*n),
             Expr::Identifier(s) => Ok(if pp.is_macro_defined(&Symbol::new(s)) { 1 } else { 0 }),
+            Expr::Defined(ident) => {
+                if let Expr::Identifier(s) = &**ident {
+                    Ok(if pp.is_macro_defined(&Symbol::new(s)) { 1 } else { 0 })
+                } else {
+                    Err(PreprocessorError::InvalidConditionalExpression)
+                }
+            }
             Expr::Binary(op, left, right) => {
                 let l = left.evaluate(pp)?;
                 match op {
@@ -317,11 +325,26 @@ impl<'a> ExpressionParser<'a> {
         if self.pos >= self.tokens.len() {
             return Err(PreprocessorError::InvalidConditionalExpression);
         }
-        let op = &self.tokens[self.pos].kind;
-        if matches!(op, PPTokenKind::Plus | PPTokenKind::Minus | PPTokenKind::Tilde | PPTokenKind::Not) {
+        let token = &self.tokens[self.pos];
+        if matches!(token.kind, PPTokenKind::Identifier(sym) if sym.as_str() == "defined") {
+            self.pos += 1;
+            let ident = if self.pos < self.tokens.len() && matches!(self.tokens[self.pos].kind, PPTokenKind::LeftParen) {
+                self.pos += 1;
+                let ident = self.parse_primary()?;
+                if self.pos < self.tokens.len() && matches!(self.tokens[self.pos].kind, PPTokenKind::RightParen) {
+                    self.pos += 1;
+                    ident
+                } else {
+                    return Err(PreprocessorError::InvalidConditionalExpression);
+                }
+            } else {
+                self.parse_primary()?
+            };
+            Ok(Expr::Defined(Box::new(ident)))
+        } else if matches!(token.kind, PPTokenKind::Plus | PPTokenKind::Minus | PPTokenKind::Tilde | PPTokenKind::Not) {
             self.pos += 1;
             let operand = self.parse_unary()?;
-            let unary_op = match op {
+            let unary_op = match token.kind {
                 PPTokenKind::Plus => UnaryOp::Plus,
                 PPTokenKind::Minus => UnaryOp::Minus,
                 PPTokenKind::Tilde => UnaryOp::Tilde,
@@ -343,15 +366,28 @@ impl<'a> ExpressionParser<'a> {
         match &token.kind {
             PPTokenKind::Number(sym) => {
                 let text = sym.as_str();
+                // Strip suffixes: u U l L ll LL (case insensitive)
+                let mut num_text = text;
+                let lower = text.to_lowercase();
+                if lower.ends_with("ull") || lower.ends_with("llu") {
+                    num_text = &text[..text.len() - 3];
+                } else if lower.ends_with("ul") || lower.ends_with("lu") || lower.ends_with("ll") {
+                    num_text = &text[..text.len() - 2];
+                } else if lower.ends_with("u") || lower.ends_with("l") {
+                    num_text = &text[..text.len() - 1];
+                }
                 // Parse as i64, handle hex, octal, decimal
-                let num = if text.starts_with("0x") || text.starts_with("0X") {
-                    i64::from_str_radix(&text[2..], 16)
-                } else if text.starts_with("0") && text.len() > 1 {
-                    i64::from_str_radix(text, 8)
+                let num = if num_text.starts_with("0x") || num_text.starts_with("0X") {
+                    i64::from_str_radix(&num_text[2..], 16)
+                } else if num_text.starts_with("0") && num_text.len() > 1 {
+                    i64::from_str_radix(num_text, 8)
                 } else {
-                    text.parse::<i64>()
+                    num_text.parse::<i64>()
                 }.map_err(|_| PreprocessorError::InvalidConditionalExpression)?;
                 Ok(Expr::Number(num))
+            }
+            PPTokenKind::CharLiteral(codepoint) => {
+                Ok(Expr::Number(*codepoint as i64))
             }
             PPTokenKind::Identifier(sym) => {
                 // Identifiers are 0 if not defined, but since we expanded macros, should be numbers

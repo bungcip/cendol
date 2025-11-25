@@ -117,7 +117,12 @@ impl CompilerDriver {
             defines,
             preprocessor: PreprocessorConfig {
                 max_include_depth: cli.preprocessor.max_include_depth,
-                system_include_paths: Vec::new(), // TODO: Add system include paths
+                system_include_paths: vec![
+                    PathBuf::from("/usr/lib/gcc/x86_64-linux-gnu/13/include"),
+                    PathBuf::from("/usr/local/include"),
+                    PathBuf::from("/usr/include/x86_64-linux-gnu"),
+                    PathBuf::from("/usr/include"),
+                ],
             },
         };
 
@@ -168,11 +173,16 @@ impl CompilerDriver {
             );
 
             // Preprocessor is dropped here, releasing the borrow on diagnostics
-            preprocessor
-                .process(source_id, &self.config.preprocessor)
-                .map_err(|e| {
-                    CompilerError::PreprocessorError(format!("Preprocessing failed: {:?}", e))
-                })?
+            match preprocessor.process(source_id, &self.config.preprocessor) {
+                Ok(t) => t,
+                Err(e) => {
+                    if self.diagnostics.has_errors() {
+                        return Ok(());
+                    } else {
+                        return Err(CompilerError::PreprocessorError(format!("Preprocessing failed: {:?}", e)));
+                    }
+                }
+            }
         };
 
         // Check for preprocessing errors and stop if any

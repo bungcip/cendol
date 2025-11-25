@@ -5,7 +5,7 @@ use chrono::{DateTime, Datelike, Timelike, Utc};
 use std::collections::{HashMap, HashSet};
 
 use crate::pp::expr_parser::ExpressionParser;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use symbol_table::GlobalSymbol as Symbol;
 use target_lexicon::Triple as TargetInfo;
 
@@ -62,10 +62,28 @@ pub struct HeaderSearch {
 
 impl HeaderSearch {
     /// Resolve an include path to an absolute path
-    pub fn resolve_path(&self, include_path: &str) -> Result<PathBuf, PreprocessorError> {
-        // For now, just return the path as-is
-        // In a full implementation, this would search through include paths
-        Ok(PathBuf::from(include_path))
+    pub fn resolve_path(&self, include_path: &str, is_angled: bool, current_dir: &Path) -> Option<PathBuf> {
+        if is_angled {
+            for search_path in &self.search_path {
+                let candidate = search_path.path.join(include_path);
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+        } else {
+            // quoted
+            let candidate = current_dir.join(include_path);
+            if candidate.exists() {
+                return Some(candidate);
+            }
+            for search_path in &self.search_path {
+                let candidate = search_path.path.join(include_path);
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+        }
+        None
     }
 }
 
@@ -765,6 +783,7 @@ impl<'src> Preprocessor<'src> {
         let token = self
             .lex_token()
             .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+        let is_angled = matches!(token.kind, PPTokenKind::Less);
         let path_str = match token.kind {
             PPTokenKind::StringLiteral(symbol) => {
                 // Remove quotes from string literal
@@ -789,10 +808,7 @@ impl<'src> Preprocessor<'src> {
                 }
                 // Concatenate the path parts
                 let mut path = String::new();
-                for (i, part) in path_parts.iter().enumerate() {
-                    if i > 0 {
-                        path.push(' ');
-                    }
+                for part in path_parts.iter() {
                     let buffer = self.source_manager.get_buffer(part.location.source_id());
                     let start = part.location.offset() as usize;
                     let end = start + part.length as usize;
@@ -820,8 +836,24 @@ impl<'src> Preprocessor<'src> {
             return Err(PreprocessorError::CircularInclude);
         }
 
+        // Get current directory
+        let current_file_id = self.lexer_stack.last().unwrap().source_id;
+        let current_file_info = self.source_manager.get_file_info(current_file_id).unwrap();
+        let current_dir = current_file_info.path.parent().unwrap_or(Path::new("."));
+
         // Resolve the path
-        let resolved_path = self.header_search.resolve_path(&path_str)?;
+        let resolved_path = self.header_search.resolve_path(&path_str, is_angled, current_dir).ok_or_else(|| {
+            let diag = crate::diagnostic::Diagnostic {
+                level: crate::diagnostic::DiagnosticLevel::Error,
+                message: format!("Include file '{}' not found", path_str),
+                location: SourceSpan::new(token.location, token.location),
+                code: Some("include_file_not_found".to_string()),
+                hints: vec!["Check the include path and ensure the file exists".to_string()],
+                related: Vec::new(),
+            };
+            self.diag.report_diagnostic(diag);
+            PreprocessorError::FileNotFound
+        })?;
 
         // Load the file
         let include_source_id = self

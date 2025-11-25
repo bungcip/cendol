@@ -1078,15 +1078,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         };
 
         // Special handling for struct/union/enum declarations
-        // Check if the last specifier is a struct/union/enum specifier (definition or forward declaration)
-        let is_record_enum_specifier = if let Some(last_specifier) = specifiers.last() {
-            matches!(
-                &last_specifier.type_specifier,
-                TypeSpecifier::Record(_, _, _) | TypeSpecifier::Enum(_, _)
-            )
-        } else {
-            false
-        };
+        // Check if any specifier is a struct/union/enum specifier (definition or forward declaration)
+        let is_record_enum_specifier = specifiers.iter().any(|s| matches!(&s.type_specifier, TypeSpecifier::Record(_, _, _) | TypeSpecifier::Enum(_, _)));
 
         // If we have a struct/union/enum specifier, we need to check if there are declarators following
         // The logic should be:
@@ -1332,6 +1325,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     /// Parse declaration specifiers
     fn parse_declaration_specifiers(&mut self) -> Result<Vec<DeclSpecifier>, ParseError> {
         let mut specifiers = Vec::new();
+        let mut has_type_specifier = false;
         let start_idx = self.current_idx;
 
         debug!(
@@ -1440,6 +1434,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                         alignment_specifier: None,
                         type_specifier,
                     });
+                    has_type_specifier = true;
                 }
 
                 TokenKind::Identifier(symbol) => {
@@ -1447,9 +1442,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                         "parse_declaration_specifiers: found identifier {:?}, calling is_type_name, current position: {}",
                         symbol, self.current_idx
                     );
-                    if self.is_type_name(symbol) {
+                    if self.is_type_name(symbol) && !has_type_specifier {
                         debug!(
-                            "parse_declaration_specifiers: {:?} is a type name, parsing type specifier",
+                            "parse_declaration_specifiers: {:?} is a type name and no type specifier yet, parsing type specifier",
                             symbol
                         );
                         let type_specifier = self.parse_type_specifier()?;
@@ -1460,9 +1455,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                             alignment_specifier: None,
                             type_specifier,
                         });
+                        has_type_specifier = true;
                     } else {
                         debug!(
-                            "parse_declaration_specifiers: {:?} is not a type name, breaking at position {}",
+                            "parse_declaration_specifiers: {:?} is not a type name or already have type specifier, breaking at position {}",
                             symbol, self.current_idx
                         );
                         break;

@@ -374,6 +374,14 @@ impl<'src> Preprocessor<'src> {
 
         let lexer = PPLexer::new(source_id, buffer.to_vec());
         self.lexer_stack.push(lexer);
+        // Set line starts for the source manager so presumed locations work during processing
+        let mut line_starts = vec![0];
+        for (i, &byte) in buffer.iter().enumerate() {
+            if byte == b'\n' {
+                line_starts.push((i + 1) as u32);
+            }
+        }
+        self.source_manager.set_line_starts(source_id, line_starts);
 
         let mut result_tokens = Vec::new();
 
@@ -393,8 +401,8 @@ impl<'src> Preprocessor<'src> {
                     match token.kind {
                         PPTokenKind::Identifier(symbol) => {
                             if symbol.as_str() == "__LINE__" {
-                                let line = if let Some(lexer) = self.lexer_stack.last() {
-                                    lexer.get_current_line()
+                                let line = if let Some(presumed) = self.source_manager.get_presumed_location(token.location) {
+                                    presumed.0
                                 } else {
                                     1
                                 };
@@ -1118,10 +1126,14 @@ impl<'src> Preprocessor<'src> {
         // Get current physical line (where #line directive appears)
         let physical_line = start_line;
 
+        // The #line directive sets the line number for the following line,
+        // so we need to adjust the logical_line for the entry
+        let entry_logical_line = logical_line - 1;
+
         // Add entry to LineMap
         if let Some(lexer) = self.lexer_stack.last() {
             if let Some(line_map) = self.source_manager.get_line_map_mut(lexer.source_id) {
-                let entry = crate::source_manager::LineDirective::new(physical_line, logical_line, logical_file);
+                let entry = crate::source_manager::LineDirective::new(physical_line, entry_logical_line, logical_file);
                 line_map.add_entry(entry);
             }
         }
@@ -1709,8 +1721,8 @@ impl<'src> Preprocessor<'src> {
             let token = &tokens[i];
             if let PPTokenKind::Identifier(symbol) = &token.kind {
                 if symbol.as_str() == "__LINE__" {
-                    let line = if let Some(lexer) = self.lexer_stack.last() {
-                        lexer.get_current_line()
+                    let line = if let Some(presumed) = self.source_manager.get_presumed_location(token.location) {
+                        presumed.0
                     } else {
                         1
                     };

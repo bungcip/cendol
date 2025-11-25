@@ -225,15 +225,12 @@ impl SourceManager {
         let buffer_index = self.buffers.len();
         self.buffers.push(buffer);
 
-        // Calculate line starts
-        let line_starts = self.calculate_line_starts(&self.buffers[buffer_index]);
-
         let file_info = FileInfo {
             file_id,
             path: PathBuf::from(path),
             size,
             buffer_index,
-            line_starts,
+            line_starts: Vec::new(),
             line_map: LineMap::new(),
         };
 
@@ -253,15 +250,12 @@ impl SourceManager {
         let buffer_index = self.buffers.len();
         self.buffers.push(buffer);
 
-        // Calculate line starts
-        let line_starts = self.calculate_line_starts(&self.buffers[buffer_index]);
-
         let file_info = FileInfo {
             file_id,
             path: PathBuf::from(path),
             size,
             buffer_index,
-            line_starts,
+            line_starts: Vec::new(),
             line_map: LineMap::new(),
         };
 
@@ -279,15 +273,12 @@ impl SourceManager {
         let buffer_index = self.buffers.len();
         self.buffers.push(buffer);
 
-        // Calculate line starts
-        let line_starts = self.calculate_line_starts(&self.buffers[buffer_index]);
-
         let file_info = FileInfo {
             file_id,
             path: PathBuf::from(path),
             size,
             buffer_index,
-            line_starts,
+            line_starts: Vec::new(),
             line_map: LineMap::new(),
         };
 
@@ -320,6 +311,30 @@ impl SourceManager {
         self.file_infos.get_mut(&source_id).map(|fi| &mut fi.line_map)
     }
 
+    /// Set line starts for a given source ID
+    pub fn set_line_starts(&mut self, source_id: SourceId, line_starts: Vec<u32>) {
+        if let Some(file_info) = self.file_infos.get_mut(&source_id) {
+            file_info.line_starts = line_starts;
+        }
+    }
+
+    /// Calculate line starts for a given source ID (for testing)
+    #[cfg(test)]
+    pub fn calculate_line_starts_for_test(&mut self, source_id: SourceId) {
+        if let Some(file_info) = self.file_infos.get_mut(&source_id) {
+            let buffer = &self.buffers[file_info.buffer_index];
+            let mut line_starts = vec![0]; // First line starts at offset 0
+
+            for (i, &byte) in buffer.iter().enumerate() {
+                if byte == b'\n' {
+                    line_starts.push((i + 1) as u32);
+                }
+            }
+
+            file_info.line_starts = line_starts;
+        }
+    }
+
     /// Get the source text for a given span
     /// Since we only support UTF-8, we can assume the bytes are valid UTF-8
     pub fn get_source_text(&self, span: SourceSpan) -> &str {
@@ -334,26 +349,19 @@ impl SourceManager {
         }
     }
 
-    /// Calculate line start offsets for a buffer
-    fn calculate_line_starts(&self, buffer: &[u8]) -> Vec<u32> {
-        let mut line_starts = vec![0]; // First line starts at offset 0
-
-        for (i, &byte) in buffer.iter().enumerate() {
-            if byte == b'\n' {
-                line_starts.push((i + 1) as u32);
-            }
-        }
-
-        line_starts
-    }
 
     /// Get line and column for a source location
     pub fn get_line_column(&self, loc: SourceLoc) -> Option<(u32, u32)> {
         let file_info = self.get_file_info(loc.source_id())?;
         let offset = loc.offset();
 
-        // Binary search to find the line
         let line_starts = &file_info.line_starts;
+        if line_starts.is_empty() {
+            // If line_starts not calculated yet, assume single line starting at 0
+            return Some((1, offset + 1));
+        }
+
+        // Binary search to find the line
         let mut left = 0;
         let mut right = line_starts.len();
 

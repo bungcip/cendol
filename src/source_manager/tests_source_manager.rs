@@ -113,6 +113,7 @@ fn test_source_manager_get_line_column() {
     let mut sm = SourceManager::new();
     let content = "line1\nline2\nline3";
     let file_id = sm.add_file("test.c", content);
+    sm.calculate_line_starts_for_test(file_id);
 
     // Position at 'l' in "line2"
     let loc = SourceLoc::new(file_id, 6); // "line1\n" is 6 bytes
@@ -127,6 +128,7 @@ fn test_source_manager_get_line_column_end_of_file() {
     let mut sm = SourceManager::new();
     let content = "line1\nline2";
     let file_id = sm.add_file("test.c", content);
+    sm.calculate_line_starts_for_test(file_id);
 
     // Position at end of file
     let loc = SourceLoc::new(file_id, content.len() as u32);
@@ -185,16 +187,6 @@ fn test_source_manager_get_source_text_invalid_range() {
     sm.get_source_text(span);
 }
 
-#[test]
-fn test_source_manager_line_starts_calculation() {
-    let mut sm = SourceManager::new();
-    let content = "line1\nline2\nline3\n";
-    let file_id = sm.add_file("test.c", content);
-
-    let info = sm.get_file_info(file_id).unwrap();
-    // Should have line starts at 0, 6, 12, 18
-    assert_eq!(info.line_starts, vec![0, 6, 12, 18]);
-}
 
 #[test]
 fn test_source_manager_empty_file() {
@@ -203,7 +195,6 @@ fn test_source_manager_empty_file() {
 
     let info = sm.get_file_info(file_id).unwrap();
     assert_eq!(info.size, 0);
-    assert_eq!(info.line_starts, vec![0]);
 }
 
 #[test]
@@ -213,7 +204,7 @@ fn test_source_manager_file_without_newlines() {
     let file_id = sm.add_file("no_nl.c", content);
 
     let info = sm.get_file_info(file_id).unwrap();
-    assert_eq!(info.line_starts, vec![0]);
+    assert_eq!(info.size, content.len() as u32);
 }
 
 #[test]
@@ -329,6 +320,7 @@ fn test_source_manager_get_presumed_location() {
     let mut sm = SourceManager::new();
     let content = "line1\nline2\nline3\nline4\nline5";
     let file_id = sm.add_file("test.c", content);
+    sm.calculate_line_starts_for_test(file_id);
 
     // Add a line mapping: at physical line 3, logical line 100
     {
@@ -348,6 +340,7 @@ fn test_source_manager_get_presumed_location_no_mapping() {
     let mut sm = SourceManager::new();
     let content = "line1\nline2\nline3";
     let file_id = sm.add_file("test.c", content);
+    sm.calculate_line_starts_for_test(file_id);
 
     // No line mappings
     let loc = SourceLoc::new(file_id, 7); // "line1\nl" position

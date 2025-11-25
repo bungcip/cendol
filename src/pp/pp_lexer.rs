@@ -867,4 +867,8 @@ impl PPLexer {
     pub fn get_current_line(&self) -> u32 {
         self.line_starts.len() as u32 + self.line_offset
     }
+
+    pub fn get_line_starts(&self) -> &Vec<u32> {
+        &self.line_starts
+    }
 }

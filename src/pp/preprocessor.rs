@@ -93,15 +93,6 @@ pub struct SearchPath {
     pub is_system: bool,
 }
 
-/// File information for tracking source files
-#[derive(Clone)]
-pub struct FileInfo {
-    pub file_id: SourceId,
-    pub path: PathBuf,
-    pub size: u32,
-    pub buffer_index: usize,   // Index into buffers Vec
-    pub line_starts: Vec<u32>, // Line start offsets for efficient line lookup
-}
 
 /// Include stack information
 #[derive(Clone)]
@@ -584,7 +575,9 @@ impl<'src> Preprocessor<'src> {
                     return Some(token);
                 } else {
                     // EOF reached, pop the lexer
-                    self.lexer_stack.pop();
+                    let popped_lexer = self.lexer_stack.pop().unwrap();
+                    // Set the line_starts from the lexer to the source manager
+                    self.source_manager.set_line_starts(popped_lexer.source_id, popped_lexer.get_line_starts().clone());
                     if self.lexer_stack.is_empty() {
                         return None;
                     }

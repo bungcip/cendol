@@ -1,4 +1,4 @@
-use std::{collections::HashMap, num::NonZeroU32, path::PathBuf};
+use std::{collections::HashMap, num::NonZeroU32, path::PathBuf, cmp::Ordering};
 
 /// Source ID for identifying source files
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -94,6 +94,85 @@ impl std::fmt::Display for SourceSpan {
     }
 }
 
+/// Represents a single #line directive entry
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineDirective {
+    pub physical_line: u32,
+    pub logical_line: u32,
+    pub logical_file: Option<String>,
+}
+
+impl LineDirective {
+    pub fn new(physical_line: u32, logical_line: u32, logical_file: Option<String>) -> Self {
+        LineDirective {
+            physical_line,
+            logical_line,
+            logical_file,
+        }
+    }
+}
+
+impl Ord for LineDirective {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.physical_line.cmp(&other.physical_line)
+    }
+}
+
+impl PartialOrd for LineDirective {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Stores all #line directives for a single file, sorted by physical line
+#[derive(Debug, Clone, Default)]
+pub struct LineMap {
+    entries: Vec<LineDirective>,
+}
+
+impl LineMap {
+    pub fn new() -> Self {
+        LineMap {
+            entries: Vec::new(),
+        }
+    }
+
+    /// Add a line directive entry. Must be added in sorted order by physical_line.
+    pub fn add_entry(&mut self, entry: LineDirective) {
+        // Ensure monotonic addition
+        if let Some(last) = self.entries.last() {
+            assert!(entry.physical_line >= last.physical_line, "Line directives must be added in sorted order");
+        }
+        self.entries.push(entry);
+    }
+
+    /// Find the presumed location for a given physical line
+    pub fn presumed_location(&self, physical_line: u32) -> (u32, Option<&str>) {
+        // Binary search to find the last entry where physical_line <= target
+        let idx = self.entries.partition_point(|e| e.physical_line <= physical_line);
+
+        if idx == 0 {
+            // No mapping, use physical line
+            (physical_line, None)
+        } else {
+            let entry = &self.entries[idx - 1];
+            let logical_line = entry.logical_line + (physical_line - entry.physical_line);
+            // If entry has no logical file, it means no change from physical file
+            (logical_line, entry.logical_file.as_deref())
+        }
+    }
+
+    /// Check if the LineMap is empty (no #line directives)
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Get the number of entries
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+}
+
 /// File information for tracking source files
 #[derive(Debug)]
 pub struct FileInfo {
@@ -102,6 +181,7 @@ pub struct FileInfo {
     pub size: u32,
     pub buffer_index: usize,   // Index into buffers Vec
     pub line_starts: Vec<u32>, // Line start offsets for efficient line lookup
+    pub line_map: LineMap,     // #line directive mappings
 }
 
 /// Manages source files and locations
@@ -154,6 +234,7 @@ impl SourceManager {
             size,
             buffer_index,
             line_starts,
+            line_map: LineMap::new(),
         };
 
         self.file_infos.insert(file_id, file_info);
@@ -181,6 +262,7 @@ impl SourceManager {
             size,
             buffer_index,
             line_starts,
+            line_map: LineMap::new(),
         };
 
         self.file_infos.insert(file_id, file_info);
@@ -206,6 +288,7 @@ impl SourceManager {
             size,
             buffer_index,
             line_starts,
+            line_map: LineMap::new(),
         };
 
         self.file_infos.insert(file_id, file_info);
@@ -230,6 +313,11 @@ impl SourceManager {
     /// Get file info for a given source ID
     pub fn get_file_info(&self, source_id: SourceId) -> Option<&FileInfo> {
         self.file_infos.get(&source_id)
+    }
+
+    /// Get mutable access to the LineMap for a given source ID
+    pub fn get_line_map_mut(&mut self, source_id: SourceId) -> Option<&mut LineMap> {
+        self.file_infos.get_mut(&source_id).map(|fi| &mut fi.line_map)
     }
 
     /// Get the source text for a given span
@@ -286,6 +374,20 @@ impl SourceManager {
         };
 
         Some((line + 1, column + 1)) // 1-based indexing
+    }
+
+    /// Get the presumed location (logical line and file) for a source location
+    pub fn get_presumed_location(&self, loc: SourceLoc) -> Option<(u32, u32, Option<&str>)> {
+        let file_info = self.get_file_info(loc.source_id())?;
+        let physical_line = self.get_line_column(loc)?.0;
+
+        let (logical_line, logical_file) = file_info.line_map.presumed_location(physical_line);
+        let column = self.get_line_column(loc)?.1;
+
+        // If no logical file specified, use the physical filename
+        let filename = logical_file.or_else(|| file_info.path.to_str());
+
+        Some((logical_line, column, filename))
     }
 }
 

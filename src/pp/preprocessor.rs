@@ -184,6 +184,8 @@ pub enum PreprocessorError {
     ErrorDirective(String),
     #[error("Invalid conditional expression")]
     InvalidConditionalExpression,
+    #[error("Invalid #line directive")]
+    InvalidLineDirective,
     #[error("Unmatched #else")]
     UnmatchedElse,
     #[error("Unmatched #elif")]
@@ -486,6 +488,16 @@ impl<'src> Preprocessor<'src> {
         }
 
         if tokens.is_empty() {
+            let location = SourceSpan::new(self.get_current_location(), self.get_current_location());
+            let diag = crate::diagnostic::Diagnostic {
+                level: crate::diagnostic::DiagnosticLevel::Error,
+                message: "Invalid conditional expression".to_string(),
+                location,
+                code: Some("invalid_conditional_expression".to_string()),
+                hints: vec!["Conditional directives require an expression".to_string()],
+                related: Vec::new(),
+            };
+            self.diag.report_diagnostic(diag);
             return Err(PreprocessorError::InvalidConditionalExpression);
         }
 
@@ -531,7 +543,7 @@ impl<'src> Preprocessor<'src> {
 
     /// Evaluate a simple arithmetic expression for #if/#elif
     fn evaluate_arithmetic_expression(
-        &self,
+        &mut self,
         tokens: &[PPToken],
     ) -> Result<bool, PreprocessorError> {
         if tokens.is_empty() {
@@ -539,7 +551,26 @@ impl<'src> Preprocessor<'src> {
         }
 
         let mut parser = ExpressionParser::new(tokens, self);
-        let expr = parser.parse_expression()?;
+        let expr = match parser.parse_expression() {
+            Ok(e) => e,
+            Err(_) => {
+                let location = if !tokens.is_empty() {
+                    SourceSpan::new(tokens[0].location, tokens[0].location)
+                } else {
+                    SourceSpan::empty()
+                };
+                let diag = crate::diagnostic::Diagnostic {
+                    level: crate::diagnostic::DiagnosticLevel::Error,
+                    message: "Invalid conditional expression".to_string(),
+                    location,
+                    code: Some("invalid_conditional_expression".to_string()),
+                    hints: vec!["Check the syntax of the conditional expression".to_string()],
+                    related: Vec::new(),
+                };
+                self.diag.report_diagnostic(diag);
+                return Err(PreprocessorError::InvalidConditionalExpression);
+            }
+        };
         let result = expr.evaluate(self)?;
         Ok(result != 0)
     }
@@ -1044,47 +1075,62 @@ impl<'src> Preprocessor<'src> {
         }
 
         if tokens.is_empty() {
-            return Err(PreprocessorError::InvalidDirective);
+            return Err(PreprocessorError::InvalidLineDirective);
         }
 
         // Expand macros in tokens
         self.expand_tokens(&mut tokens)?;
 
         if tokens.is_empty() {
-            return Err(PreprocessorError::InvalidDirective);
+            return Err(PreprocessorError::InvalidLineDirective);
         }
 
         // Parse line number
-        let line_number = match &tokens[0].kind {
+        let logical_line = match &tokens[0].kind {
             PPTokenKind::Number(symbol) => {
                 let text = symbol.as_str();
                 text.parse::<u32>()
-                    .map_err(|_| PreprocessorError::InvalidDirective)?
+                    .map_err(|_| PreprocessorError::InvalidLineDirective)?
             }
-            _ => return Err(PreprocessorError::InvalidDirective),
+            _ => return Err(PreprocessorError::InvalidLineDirective),
         };
 
+        // Validate line number (should be positive)
+        if logical_line == 0 {
+            return Err(PreprocessorError::InvalidLineDirective);
+        }
+
         // Optional filename
-        let filename = if tokens.len() > 1 {
+        let logical_file = if tokens.len() > 1 {
             match &tokens[1].kind {
                 PPTokenKind::StringLiteral(symbol) => {
                     let full_str = symbol.as_str();
                     if full_str.starts_with('"') && full_str.ends_with('"') {
                         Some(full_str[1..full_str.len() - 1].to_string())
                     } else {
-                        return Err(PreprocessorError::InvalidDirective);
+                        return Err(PreprocessorError::InvalidLineDirective);
                     }
                 }
-                _ => None,
+                _ => return Err(PreprocessorError::InvalidLineDirective), // Extra tokens that aren't filename
             }
         } else {
             None
         };
 
-        // Update lexer state
-        if let Some(lexer) = self.lexer_stack.last_mut() {
-            lexer.line_offset = line_number.saturating_sub(lexer.get_current_line() + 1);
-            lexer.filename_override = filename;
+        // Check for too many tokens
+        if tokens.len() > 2 {
+            return Err(PreprocessorError::InvalidLineDirective);
+        }
+
+        // Get current physical line (where #line directive appears)
+        let physical_line = start_line;
+
+        // Add entry to LineMap
+        if let Some(lexer) = self.lexer_stack.last() {
+            if let Some(line_map) = self.source_manager.get_line_map_mut(lexer.source_id) {
+                let entry = crate::source_manager::LineDirective::new(physical_line, logical_line, logical_file);
+                line_map.add_entry(entry);
+            }
         }
 
         Ok(())
@@ -1150,7 +1196,12 @@ impl<'src> Preprocessor<'src> {
         }
         // Collect the error message from the rest of the line
         let mut message_parts = Vec::new();
-        // Get the line of the #error directive
+        // Get the location of the #error directive
+        let directive_location = if let Some(lexer) = self.lexer_stack.last() {
+            SourceLoc::new(lexer.source_id, lexer.position)
+        } else {
+            SourceLoc(0)
+        };
         let directive_line = if let Some(lexer) = self.lexer_stack.last() {
             lexer.get_current_line()
         } else {
@@ -1177,6 +1228,15 @@ impl<'src> Preprocessor<'src> {
             }
         }
         let message = message_parts.join(" ");
+        let diag = crate::diagnostic::Diagnostic {
+            level: crate::diagnostic::DiagnosticLevel::Error,
+            message: format!("#error directive: {}", message),
+            location: SourceSpan::new(directive_location, directive_location),
+            code: Some("error_directive".to_string()),
+            hints: Vec::new(),
+            related: Vec::new(),
+        };
+        self.diag.report_diagnostic(diag);
         Err(PreprocessorError::ErrorDirective(message))
     }
 

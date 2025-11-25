@@ -534,3 +534,100 @@ int x = NULL;
         }
     }
 }
+
+#[test]
+fn test_line_directive_presumed_location() {
+    let src = r#"
+// This is line 2
+#line 100 "mapped.c"
+// This is now logical line 101
+int x = 1;
+// This is logical line 102
+int y = 2;
+"#;
+
+    let (significant_tokens, diagnostics) = setup_preprocessor_test_with_diagnostics(src).unwrap();
+
+    // Expected tokens: int, x, =, 1, ;, int, y, =, 2, ;
+    assert_token_kinds!(
+        significant_tokens,
+        PPTokenKind::Identifier(Symbol::new("int")),
+        PPTokenKind::Identifier(Symbol::new("x")),
+        PPTokenKind::Assign,
+        PPTokenKind::Number(Symbol::new("1")),
+        PPTokenKind::Semicolon,
+        PPTokenKind::Identifier(Symbol::new("int")),
+        PPTokenKind::Identifier(Symbol::new("y")),
+        PPTokenKind::Assign,
+        PPTokenKind::Number(Symbol::new("2")),
+        PPTokenKind::Semicolon
+    );
+
+    // No diagnostics expected
+    assert_eq!(diagnostics.len(), 0);
+}
+
+#[test]
+fn test_line_directive_with_diagnostics() {
+    let src = r#"
+#line 50 "test.c"
+invalid syntax here
+"#;
+
+    let result = setup_preprocessor_test_with_diagnostics(src);
+
+    // This should succeed at preprocessor level (we're not testing parsing here)
+    // but the test demonstrates that line directives are processed
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_invalid_line_directive() {
+    let src = r#"
+#line invalid
+int x = 1;
+"#;
+
+    let result = setup_preprocessor_test_with_diagnostics(src);
+    assert!(result.is_err());
+
+    if let Err(PreprocessorError::InvalidLineDirective) = result {
+        // Expected error
+    } else {
+        panic!("Expected InvalidLineDirective error");
+    }
+}
+
+#[test]
+fn test_line_directive_zero_line_number() {
+    let src = r#"
+#line 0
+int x = 1;
+"#;
+
+    let result = setup_preprocessor_test_with_diagnostics(src);
+    assert!(result.is_err());
+
+    if let Err(PreprocessorError::InvalidLineDirective) = result {
+        // Expected error
+    } else {
+        panic!("Expected InvalidLineDirective error");
+    }
+}
+
+#[test]
+fn test_line_directive_malformed_filename() {
+    let src = r#"
+#line 100 invalid_filename
+int x = 1;
+"#;
+
+    let result = setup_preprocessor_test_with_diagnostics(src);
+    assert!(result.is_err());
+
+    if let Err(PreprocessorError::InvalidLineDirective) = result {
+        // Expected error
+    } else {
+        panic!("Expected InvalidLineDirective error");
+    }
+}

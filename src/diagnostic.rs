@@ -269,12 +269,15 @@ impl ErrorFormatter {
         let mut result = format!("{}: {}", level_str, diag.message);
 
         // Add source location if available
-        if let Some(file_info) = source_manager.get_file_info(diag.location.source_id())
-            && let Some((line, col)) = source_manager.get_line_column(diag.location.start)
-        {
+        if let Some(file_info) = source_manager.get_file_info(diag.location.source_id()) {
+            let (line, col, filename) = if let Some((presumed_line, presumed_col, presumed_file)) = source_manager.get_presumed_location(diag.location.start) {
+                (presumed_line, presumed_col, presumed_file.unwrap_or_else(|| file_info.path.to_str().unwrap_or("<invalid>")))
+            } else {
+                (1, 1, file_info.path.to_str().unwrap_or("<invalid>"))
+            };
             result.push_str(&format!(
                 " at {}:{}:{}",
-                file_info.path.display(),
+                filename,
                 line,
                 col
             ));

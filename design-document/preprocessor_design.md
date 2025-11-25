@@ -19,7 +19,7 @@ Following Clang's design, the preprocessor consists of several key components:
 - **Macro Processing**: Define, undefine, and expand macros according to C standard rules
 - **File Inclusion**: Process `#include` directives with proper search path handling
 - **Conditional Compilation**: Evaluate `#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif` directives
-- **Line Control**: Handle `#line` directives for source location management
+- **Line Control**: Handle `#line` directives for source location management using LineMap
 - **Pragma Handling**: Process `#pragma` directives and `_Pragma` operators
 - **Token Stream Generation**: Produce a sequence of tokens for the lexer phase
 
@@ -165,6 +165,19 @@ pub struct HeaderSearch {
     quoted_includes: Vec<String>,
     angled_includes: Vec<String>,
 }
+
+/// Line mapping for #line directive support
+#[derive(Debug, Clone)]
+pub struct LineMap {
+    entries: Vec<LineDirective>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineDirective {
+    pub physical_line: u32,
+    pub logical_line: u32,
+    pub logical_file: Option<String>,
+}
 ```
 
 ### Processing Algorithm
@@ -187,7 +200,7 @@ pub struct HeaderSearch {
    - **#include**: Resolve file path and switch input buffers
    - **#if/#ifdef/#ifndef**: Evaluate condition and update conditional stack
    - **#elif/#else/#endif**: Manage conditional compilation flow
-   - **#line**: Update source location information
+   - **#line**: Update source location information using LineMap for diagnostic remapping
    - **#pragma**: Handle implementation-specific directives
 
 4. **Macro Expansion** (Rescan and Further Replacement Algorithm):
@@ -346,6 +359,45 @@ The `#include` directive processes file inclusion with protection against infini
 - `FileInfo`: Stores per-file metadata
 - `IncludeStackInfo`: Tracks include stack state
 
+6. **Line Mapping** (#line Directive Processing):
+
+The `#line` directive allows source code to specify logical source locations that differ from physical file locations. This is commonly used by code generators and preprocessors to provide accurate diagnostic information.
+
+**Algorithm Steps:**
+- **Directive Parsing**: Parse `#line` directive syntax: `#line <number> ["filename"]`
+  - Extract logical line number (must be positive integer)
+  - Extract optional logical filename (string literal)
+  - Validate syntax and reject malformed directives
+
+- **LineMap Construction**:
+  - Store `LineDirective` entries in sorted order by physical line number
+  - Each entry maps a physical line to logical line and optional filename
+  - Maintain monotonic ordering for efficient binary search
+
+- **Presumed Location Lookup**:
+  - For diagnostic reporting, convert physical locations to presumed locations
+  - Use binary search on LineMap entries to find applicable mapping
+  - Apply offset calculation: `logical_line = entry.logical_line + (physical_line - entry.physical_line)`
+
+**Example:**
+```c
+// Physical file: generated.c, physical line 100
+#line 50 "original.c"
+// Physical line 101, logical line 51 in "original.c"
+int x = invalid_syntax; // Error reported at original.c:51
+```
+
+**Data Structure Usage:**
+- `LineMap`: Stores sorted array of line mapping entries
+- `LineDirective`: Represents individual #line directive mappings
+- `SourceManager.get_presumed_location()`: Converts physical to logical locations
+- `Diagnostic.location`: Uses presumed locations for accurate error reporting
+
+**Performance Characteristics:**
+- Binary search lookup: O(log n) where n is number of #line directives
+- Memory efficient: Compact storage of mapping entries
+- Fast-path for common case: No mappings (direct physical location usage)
+
 ### Key Features
 
 - **Standards Compliance**: Full C11 preprocessor support
@@ -354,6 +406,7 @@ The `#include` directive processes file inclusion with protection against infini
 - **Diagnostic Integration**: Comprehensive error and warning reporting
 - **Built-in Macro Support**: Automatic handling of standard predefined macros
 - **Include Guard Optimization**: Fast detection of header guards
+- **Line Mapping Support**: Efficient #line directive processing with binary search lookups
 - **UTF-8 Only**: The preprocessor assumes and only supports UTF-8 encoded source files (no validation performed for performance)
 - **Direct Buffer Access**: Works directly with byte buffers from SourceManager, avoiding string conversions
 - **Unsafe UTF-8 Operations**: Uses `unsafe` operations assuming UTF-8 validity for maximum performance

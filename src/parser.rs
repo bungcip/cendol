@@ -1651,11 +1651,6 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         }
     }
 
-    /// Parse struct or union specifier
-    fn parse_record_specifier(&mut self, is_union: bool) -> Result<TypeSpecifier, ParseError> {
-        self.parse_record_specifier_with_context(is_union, false)
-    }
-
     /// Parse struct or union specifier with context
     fn parse_record_specifier_with_context(
         &mut self,
@@ -3708,26 +3703,6 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         }
     }
 
-    /// Parse a cast expression: (type-name) expression
-    fn parse_cast_expression(&mut self) -> Result<NodeRef, ParseError> {
-        debug!(
-            "parse_cast_expression: starting at position {}, token {:?}",
-            self.current_idx,
-            self.current_token_kind()
-        );
-
-        // Parse the type name
-        let type_ref = self.parse_type_name()?;
-
-        // Expect closing parenthesis
-        let right_paren_token = self.expect(TokenKind::RightParen)?;
-        debug!(
-            "parse_cast_expression: parsed type, now at position {}",
-            self.current_idx
-        );
-
-        self.parse_cast_expression_from_type_and_paren(type_ref, right_paren_token)
-    }
 
     /// Parse cast expression given the already parsed type and right paren token
     fn parse_cast_expression_from_type_and_paren(&mut self, type_ref: TypeRef, right_paren_token: Token) -> Result<NodeRef, ParseError> {

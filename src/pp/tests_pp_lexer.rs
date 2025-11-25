@@ -298,6 +298,75 @@ fn test_adjacent_string_literals_not_combined() {
     assert!(lexer.next_token().is_none());
 }
 
+/// Test that single # tokens always have STARTS_PP_LINE flag set
+#[test]
+fn test_hash_starts_pp_line() {
+    let source = "#";
+    let mut lexer = create_test_pp_lexer(source);
+
+    let token = lexer.next_token().unwrap();
+    assert_eq!(token.kind, PPTokenKind::Hash);
+    assert!(token.flags.contains(PPTokenFlags::STARTS_PP_LINE));
+}
+
+/// Test that indented # tokens have STARTS_PP_LINE flag set
+#[test]
+fn test_indented_hash_starts_pp_line() {
+    let source = "  #";
+    let mut lexer = create_test_pp_lexer(source);
+
+    let token = lexer.next_token().unwrap();
+    assert_eq!(token.kind, PPTokenKind::Hash);
+    assert!(token.flags.contains(PPTokenFlags::STARTS_PP_LINE));
+}
+
+/// Test that ## tokens do not have STARTS_PP_LINE flag set
+#[test]
+fn test_hashhash_no_starts_pp_line() {
+    let source = "##";
+    let mut lexer = create_test_pp_lexer(source);
+
+    let token = lexer.next_token().unwrap();
+    assert_eq!(token.kind, PPTokenKind::HashHash);
+    assert!(!token.flags.contains(PPTokenFlags::STARTS_PP_LINE));
+}
+
+/// Test line splicing with CRLF (\r\n)
+#[test]
+fn test_line_splicing_crlf() {
+    let source = "hel\\\r\nlo";
+    let mut lexer = create_test_pp_lexer(source);
+
+    test_tokens!(
+        lexer,
+        ("hello", PPTokenKind::Identifier(_)),
+    );
+}
+
+/// Test line splicing with just CR
+#[test]
+fn test_line_splicing_cr() {
+    let source = "hel\\\rlo";
+    let mut lexer = create_test_pp_lexer(source);
+
+    test_tokens!(
+        lexer,
+        ("hello", PPTokenKind::Identifier(_)),
+    );
+}
+
+/// Test line splicing with CR at end of buffer
+#[test]
+fn test_line_splicing_cr_end() {
+    let source = "test\\\r";
+    let mut lexer = create_test_pp_lexer(source);
+
+    test_tokens!(
+        lexer,
+        ("test", PPTokenKind::Identifier(_)),
+    );
+}
+
 /// Test wide character literals with L, u, U prefixes
 #[test]
 fn test_wide_character_literals() {

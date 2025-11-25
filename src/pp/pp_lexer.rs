@@ -232,23 +232,27 @@ impl PPLexer {
         let mut result = self.buffer[self.position as usize];
         self.position += 1;
 
-        // Handle line splicing: backslash followed by newline
-        if result == b'\\'
-            && (self.position as usize) < self.buffer.len()
-            && self.buffer[self.position as usize] == b'\n'
-        {
-            // Skip the newline too
-            self.position += 1;
-            // Update line starts - remove the newline from line tracking
-            if self.line_starts.len() > 1 {
-                self.line_starts.pop();
-            }
-            // Get the character after the newline for splicing
+        // Handle line splicing: backslash followed by newline or carriage return
+        if result == b'\\' {
             if (self.position as usize) < self.buffer.len() {
-                result = self.buffer[self.position as usize];
-                self.position += 1;
-            } else {
-                return None;
+                let next = self.buffer[self.position as usize];
+                if next == b'\n' || next == b'\r' {
+                    self.position += 1;
+                    if next == b'\r' && (self.position as usize) < self.buffer.len() && self.buffer[self.position as usize] == b'\n' {
+                        self.position += 1;
+                    }
+                    // Update line starts - remove the newline from line tracking
+                    if self.line_starts.len() > 1 {
+                        self.line_starts.pop();
+                    }
+                    // Get the character after the line ending for splicing
+                    if (self.position as usize) < self.buffer.len() {
+                        result = self.buffer[self.position as usize];
+                        self.position += 1;
+                    } else {
+                        return None;
+                    }
+                }
             }
         }
 
@@ -302,17 +306,14 @@ impl PPLexer {
             b'"' => Some(self.lex_string_literal(start_pos, ch)),
             b'\'' => Some(self.lex_char_literal(start_pos, ch)),
             b'#' => {
-                let is_start_of_line = start_pos == *self.line_starts.last().unwrap_or(&0);
                 let mut flags = PPTokenFlags::empty();
-                if is_start_of_line {
-                    flags |= PPTokenFlags::STARTS_PP_LINE;
-                }
+                flags |= PPTokenFlags::STARTS_PP_LINE;
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'#') {
                     self.next_char(); // consume the second #
                     Some(PPToken::new(
                         PPTokenKind::HashHash,
-                        flags,
+                        PPTokenFlags::empty(), // HashHash does not start a PP line
                         SourceLoc::new(self.source_id, start_pos),
                         2,
                     ))

@@ -234,11 +234,10 @@ mod tests {
             assert_eq!(tokens[0].kind, expected_kind);
         }
 
-        // Float constants - for now, treated as IntegerConstant since classify_token maps Number to IntegerConstant
-        // Note: These will fail parsing as integers, so they should be TokenKind::Unknown
+        // Float constants - treated as FloatConstant since classify_token maps Number to FloatConstant if integer parsing fails
         let float_literals = vec![
-            ("3.14", TokenKind::Unknown),
-            ("1.23e-4", TokenKind::Unknown),
+            ("3.14", TokenKind::FloatConstant(Symbol::new("3.14"))),
+            ("1.23e-4", TokenKind::FloatConstant(Symbol::new("1.23e-4"))),
         ];
 
         for (text, expected_kind) in float_literals {

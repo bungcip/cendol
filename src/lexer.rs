@@ -475,10 +475,14 @@ impl<'src> Lexer<'src> {
             PPTokenKind::StringLiteral(symbol) => TokenKind::StringLiteral(symbol),
             PPTokenKind::CharLiteral(codepoint) => TokenKind::CharacterConstant(codepoint),
             PPTokenKind::Number(value) => {
-                // Parse the integer literal into i64 with C11 support
+                // Try to parse as integer first
                 match self.parse_c11_integer_literal(value) {
                     Ok(parsed_value) => TokenKind::IntegerConstant(parsed_value),
-                    Err(_) => TokenKind::Unknown, // Handle parsing errors gracefully
+                    Err(_) => {
+                        // If integer parsing fails, it might be a float
+                        // For now, just pass the raw text to the parser
+                        TokenKind::FloatConstant(value)
+                    }
                 }
             }
             PPTokenKind::Eof => TokenKind::EndOfFile,

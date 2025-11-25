@@ -318,12 +318,20 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         // or [digits][e|E[+|-]digits][f|F|l|L]
         // or 0[xX][hexdigits][.hexdigits][p|P[+|-]digits][f|F|l|L]
 
+        // Strip suffix (f, F, l, L) for parsing
+        let text_without_suffix = if text_str.ends_with('f') || text_str.ends_with('F') ||
+                                   text_str.ends_with('l') || text_str.ends_with('L') {
+            &text_str[..text_str.len() - 1]
+        } else {
+            text_str
+        };
+
         // Handle hexadecimal floating-point literals (C99/C11)
         if text_str.starts_with("0x") || text_str.starts_with("0X") {
-            self.parse_hex_float_literal(text_str, token.location)
+            self.parse_hex_float_literal(text_without_suffix, token.location)
         } else {
             // Use Rust's built-in parsing for decimal floats
-            match text_str.parse::<f64>() {
+            match text_without_suffix.parse::<f64>() {
                 Ok(val) => Ok(val),
                 Err(_) => Err(ParseError::SyntaxError {
                     message: format!("Invalid floating-point constant: {}", text_str),
@@ -569,10 +577,27 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 Ok(node)
             }
             TokenKind::LeftParen => {
+                let left_paren_token = token; // Save the opening paren token for span calculation
                 self.advance();
-                // Check if this is a cast expression by looking ahead for a type name
+                // Check if this is a cast expression or compound literal by looking ahead for a type name
                 if self.is_cast_expression_start() {
-                    return self.parse_cast_expression();
+                    // Parse the type name
+                    let type_ref = self.parse_type_name()?;
+                    // Expect closing parenthesis
+                    self.expect(TokenKind::RightParen)?;
+
+                    // Check if this is a compound literal (next token is '{')
+                    if self.matches(&[TokenKind::LeftBrace]) {
+                        // This is a compound literal: (type-name){initializer}
+                        return self.parse_compound_literal_from_type_and_start(type_ref, left_paren_token.location.start);
+                    } else {
+                        // This is a cast expression: (type-name)expression
+                        let dummy_right_paren = Token {
+                            kind: TokenKind::RightParen,
+                            location: SourceSpan::new(left_paren_token.location.end, left_paren_token.location.end),
+                        };
+                        return self.parse_cast_expression_from_type_and_paren(type_ref, dummy_right_paren);
+                    }
                 } else {
                     // Regular parenthesized expression
                     let expr = self.parse_expression(BindingPower::MIN)?;
@@ -581,7 +606,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                         ParseExprOutput::Expression(node) => Ok(node),
                         _ => Err(ParseError::SyntaxError {
                             message: "Expected expression in parentheses".to_string(),
-                            location: token.location,
+                            location: left_paren_token.location,
                         }),
                     }
                 }
@@ -1852,9 +1877,22 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 }
             }
         } else {
-            // Regular member: type specifier + declarator
+            // Regular member: type specifier + multiple declarators
             let type_specifier = self.parse_type_specifier_with_context(true)?;
-            let declarator = self.parse_declarator(None)?;
+
+            let mut init_declarators = Vec::new();
+            loop {
+                let declarator = self.parse_declarator(None)?;
+                init_declarators.push(InitDeclarator {
+                    declarator,
+                    initializer: None,
+                });
+
+                if !self.matches(&[TokenKind::Comma]) {
+                    break;
+                }
+                self.advance(); // consume comma
+            }
 
             let specifiers = vec![DeclSpecifier {
                 storage_class: None,
@@ -1868,10 +1906,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
             return Ok(DeclarationData {
                 specifiers,
-                init_declarators: vec![InitDeclarator {
-                    declarator,
-                    initializer: None,
-                }],
+                init_declarators,
             });
         }
     }
@@ -3231,12 +3266,17 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         let type_ref = self.parse_type_name()?;
         self.expect(TokenKind::RightParen)?;
 
+        self.parse_compound_literal_from_type_and_start(type_ref, start_token.location.start)
+    }
+
+    /// Parse compound literal given the type and start location
+    fn parse_compound_literal_from_type_and_start(&mut self, type_ref: TypeRef, start_loc: SourceLoc) -> Result<NodeRef, ParseError> {
         let initializer = self.parse_initializer()?;
 
         let end_loc = self.current_token_span()?.end;
         let span = SourceSpan {
-            start: start_token.location.start,
-            end: end_loc, // This needs proper tracking
+            start: start_loc,
+            end: end_loc,
         };
 
         let initializer_ref = self.ast.push_initializer(initializer);
@@ -3248,6 +3288,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         });
         Ok(node)
     }
+
 
     /// Parse static assert (C11)
     pub fn parse_static_assert(&mut self, start_token: Token) -> Result<NodeRef, ParseError> {
@@ -3689,6 +3730,11 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             self.current_idx
         );
 
+        self.parse_cast_expression_from_type_and_paren(type_ref, right_paren_token)
+    }
+
+    /// Parse cast expression given the already parsed type and right paren token
+    fn parse_cast_expression_from_type_and_paren(&mut self, type_ref: TypeRef, right_paren_token: Token) -> Result<NodeRef, ParseError> {
         // Parse the expression being cast
         let expr_result = self.parse_expression(BindingPower::CAST)?;
         let expr_node = match expr_result {
@@ -3719,4 +3765,5 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         debug!("parse_cast_expression: successfully parsed cast expression");
         Ok(node)
     }
+
 }

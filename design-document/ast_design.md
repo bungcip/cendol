@@ -71,6 +71,8 @@ pub struct Ast {
 
 /// Node reference type for referencing child nodes.
 pub type NodeRef = NonZeroU32;
+pub type TypeRef = NonZeroU32;
+pub type SymbolEntryRef = NonZeroU32;
 pub type InitializerRef = NonZeroU32;
 
 /// Helper methods for Ast.
@@ -155,9 +157,7 @@ pub struct Node {
 
 /// Represents a resolved symbol entry from the symbol table.
 /// This structure is typically populated during the semantic analysis phase.
-/// Symbol entries are stored in a separate Vec<SymbolEntry> with SymbolEntryIndex references.
-pub type SymbolEntryIndex = u32;
-
+/// Symbol entries are stored in a separate Vec<SymbolEntry> with SymbolEntryRef references.
 #[derive(Debug)]
 pub struct SymbolEntry {
     pub name: Symbol,
@@ -169,7 +169,6 @@ pub struct SymbolEntry {
     pub is_defined: bool,
     pub is_referenced: bool,
     pub is_completed: bool,
-    // Add other relevant symbol information here (e.g., value for constants, linkage)
 }
 
 /// Defines the kind of symbol.
@@ -208,12 +207,12 @@ pub enum SymbolKind {
 }
 
 /// The core enum defining all possible AST node types for C11.
-/// Variants use NodeIndex for child references, enabling flattened storage.
+/// Variants use NodeRef for child references, enabling flattened storage.
 #[derive(Debug)]
 pub enum NodeKind {
     // --- Literals (Inline storage for common types) ---
     LiteralInt(i64),
-    LiteralFloat(f64),
+    LiteralFloat(Symbol), // Raw text for float literals
     LiteralString(Symbol),
     LiteralChar(char),
 
@@ -259,7 +258,8 @@ pub enum NodeKind {
     CaseRange(NodeRef /* start_expr */, NodeRef /* end_expr */, NodeRef /* statement */), // GNU Extension often supported
     Default(NodeRef /* statement */),
 
-    EmptyStatement, // ';'
+    ExpressionStatement(Option<NodeRef> /* expression */), // Expression followed by ';'
+    EmptyStatement,                                        // ';'
 
     // --- Declarations & Definitions ---
     Declaration(DeclarationData),
@@ -269,6 +269,9 @@ pub enum NodeKind {
 
     // --- Top Level ---
     TranslationUnit(Vec<NodeRef> /* top-level declarations */),
+
+    // --- Dummy Node ---
+    Dummy,
 }
 
 // Structs for Large/Indirect Variants (to keep NodeKind size small and cache-friendly)
@@ -322,7 +325,7 @@ pub struct ParamData {
 
 #[derive(Debug)]
 pub struct RecordDefData {
-    pub tag: Option<Symbol>, // None if anonymous
+    pub tag: Option<Symbol>,                   // None if anonymous
     pub members: Option<Vec<DeclarationData>>, // Field declarations
     pub is_union: bool,
 }
@@ -333,7 +336,7 @@ pub struct EnumDefData {
     pub enumerators: Option<Vec<NodeRef>>, // List of EnumConstant nodes
 }
 
-// Declaration Specifiers combine StorageClass, TypeQualifiers, FunctionSpecifiers, AlignmentSpecifier, and TypeSpecifiers
+// Declaration Specifiers combine StorageClass, TypeQualifiers, FunctionSpecifiers, and TypeSpecifiers
 #[derive(Debug)]
 pub struct DeclSpecifier {
     pub storage_class: Option<StorageClass>,
@@ -346,8 +349,18 @@ pub struct DeclSpecifier {
 // Type Specifiers (C11)
 #[derive(Debug)]
 pub enum TypeSpecifier {
-    Void, Char, Short, Int, Long, Float, Double, Signed, Unsigned,
-    Bool, Complex, Atomic(TypeRef), // _Bool, _Complex, _Atomic
+    Void,
+    Char,
+    Short,
+    Int,
+    Long,
+    Float,
+    Double,
+    Signed,
+    Unsigned,
+    Bool, // C11 _Bool
+    Complex, // C11 _Complex
+    Atomic(TypeRef), // C11 _Atomic
     Record(bool /* is_union */, Option<Symbol> /* tag */, Option<RecordDefData> /* definition */),
     Enum(Option<Symbol> /* tag */, Option<Vec<NodeRef>> /* enumerators */),
     TypedefName(Symbol),
@@ -356,7 +369,12 @@ pub enum TypeSpecifier {
 // Storage Class Specifiers
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StorageClass {
-    Typedef, Extern, Static, Auto, Register, ThreadLocal, // C11 _Thread_local
+    Typedef,
+    Extern,
+    Static,
+    Auto,
+    Register,
+    ThreadLocal, // C11 _Thread_local
 }
 
 // Type Qualifiers (using bitflags crate for consistency)
@@ -382,27 +400,56 @@ bitflags::bitflags! {
 // Alignment Specifiers (C11 _Alignas)
 #[derive(Debug)]
 pub enum AlignmentSpecifier {
-    Type(TypeRef),     // _Alignas(type-name)
-    Expr(NodeRef),     // _Alignas(constant-expression)
+    Type(TypeRef), // _Alignas(type-name)
+    Expr(NodeRef), // _Alignas(constant-expression)
 }
 
 // Unary Operators
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOp {
-    Plus, Minus, Deref, AddrOf, BitNot, LogicNot,
-    PreIncrement, PreDecrement,
+    Plus,
+    Minus,
+    Deref,
+    AddrOf,
+    BitNot,
+    LogicNot,
+    PreIncrement,
+    PreDecrement,
 }
 
 // Binary Operators (includes assignment types)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
-    Add, Sub, Mul, Div, Mod,
-    BitAnd, BitOr, BitXor, LShift, RShift,
-    Equal, NotEqual, Less, LessEqual, Greater, GreaterEqual,
-    LogicAnd, LogicOr,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    BitAnd,
+    BitOr,
+    BitXor,
+    LShift,
+    RShift,
+    Equal,
+    NotEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    LogicAnd,
+    LogicOr,
     Comma,
-    Assign, AssignAdd, AssignSub, AssignMul, AssignDiv, AssignMod,
-    AssignBitAnd, AssignBitOr, AssignBitXor, AssignLShift, AssignRShift,
+    Assign,
+    AssignAdd,
+    AssignSub,
+    AssignMul,
+    AssignDiv,
+    AssignMod,
+    AssignBitAnd,
+    AssignBitOr,
+    AssignBitXor,
+    AssignLShift,
+    AssignRShift,
 }
 
 // C11 _Generic Association
@@ -420,21 +467,22 @@ pub enum Declarator {
     Pointer(TypeQualifiers, Option<Box<Declarator>>), // e.g., `*`
     Array(Box<Declarator>, ArraySize), // e.g., `[10]`
     Function(Box<Declarator>, Vec<ParamData> /* parameters */), // e.g., `(int x)`
+    AnonymousRecord(bool /* is_union */, Vec<DeclarationData> /* members */), // C11 anonymous struct/union
 }
 
 // Defines array size (e.g., [10], [*], or [] for flexible array members)
 #[derive(Debug)]
 pub enum ArraySize {
     Expression(NodeRef),
-    Star,       // [*] VLA
-    Incomplete, // []
+    Star,                                              // [*] VLA
+    Incomplete,                                        // []
     VlaSpecifier(Option<NodeRef> /* VLA size expr */), // `static` or `*` for VLA (C99)
 }
 
 // Initializer structure for variables (e.g., int x = 5; or struct s = {1, 2};)
 #[derive(Debug)]
 pub enum Initializer {
-    Expression(NodeRef), // = 5
+    Expression(NodeRef),              // = 5
     List(Vec<DesignatedInitializer>), // = { .x = 1, [0] = 2 }
 }
 
@@ -455,14 +503,12 @@ pub enum Designator {
 // Type representation (for semantic analysis)
 // This is a canonical type, distinct from TypeSpecifier which is a syntax construct.
 // Types are stored in a separate Vec<Type> with TypeRef references.
-pub type TypeRef = NonZeroU32;
-pub type SymbolEntryRef = NonZeroU32;
 
 #[derive(Debug)]
 pub struct Type {
     pub kind: TypeKind,
     pub qualifiers: TypeQualifiers,
-    pub size: Option<usize>, // Computed during semantic analysis
+    pub size: Option<usize>,      // Computed during semantic analysis
     pub alignment: Option<usize>, // Computed during semantic analysis
 }
 
@@ -470,22 +516,43 @@ pub struct Type {
 pub enum TypeKind {
     Void,
     Bool,
-    Char { is_signed: bool },
-    Short { is_signed: bool },
-    Int { is_signed: bool },
-    Long { is_signed: bool, is_long_long: bool },
+    Char {
+        is_signed: bool,
+    },
+    Short {
+        is_signed: bool,
+    },
+    Int {
+        is_signed: bool,
+    },
+    Long {
+        is_signed: bool,
+        is_long_long: bool,
+    },
     Float,
-    Double { is_long_double: bool },
-    Complex { base_type: TypeRef }, // C11 _Complex
-    Atomic { base_type: TypeRef }, // C11 _Atomic
-    Pointer { pointee: TypeRef },
-    Array { element_type: TypeRef, size: ArraySizeType },
+    Double {
+        is_long_double: bool,
+    },
+    Complex {
+        base_type: TypeRef,
+    }, // C11 _Complex
+    Atomic {
+        base_type: TypeRef,
+    }, // C11 _Atomic
+    Pointer {
+        pointee: TypeRef,
+    },
+    Array {
+        element_type: TypeRef,
+        size: ArraySizeType,
+    },
     Function {
         return_type: TypeRef,
         parameters: Vec<FunctionParameter>,
         is_variadic: bool,
     },
-    Record { // Represents both struct and union
+    Record {
+        // Represents both struct and union
         tag: Option<Symbol>,
         members: Vec<StructMember>,
         is_complete: bool,
@@ -547,11 +614,14 @@ The flattened AST enables highly efficient traversal and operations:
 -   **Data-Oriented Design (DOD)**: The flattened structure naturally supports DOD patterns - passes can iterate over slices of the node array, processing only relevant data contiguously.
 -   **Parallel Processing**: The index-based references make it easier to parallelize traversals across subtrees without complex pointer management.
 
-## 5. Future Optimizations
+## 5. Implementation Notes
 
--   **Memory Prefetching**: Explicitly use `core::arch::x86_64::_mm_prefetch` or similar intrinsics for critical traversal paths, leveraging the predictable access patterns of the flattened array.
--   **SIMD for Batch Operations**: The contiguous layout naturally supports SIMD instructions for batch processing of AST nodes (e.g., during certain analysis passes), enabling parallel processing of multiple nodes.
--   **Custom Allocators**: While the standard `Vec` provides excellent performance, explore custom allocators optimized for the specific size distributions of AST nodes and related structures.
--   **Traversal Parallelization**: The index-based structure makes it straightforward to parallelize traversals across independent subtrees or implement work-stealing algorithms for large ASTs.
+The AST implementation includes several practical enhancements over the basic design:
+
+- **Interior Mutability**: Uses `Cell<Option<TypeRef>>` and `Cell<Option<SymbolEntryRef>>` for semantic annotations without requiring mutable AST references
+- **Anonymous Records**: Support for C11 anonymous structs/unions in declarators
+- **Raw Float Literals**: Float literals store raw text (`Symbol`) rather than parsed values for precision preservation
+- **Comprehensive Type System**: Full C11 type system including complex types, atomics, and qualifiers
+- **Error Recovery**: `Error` type kind for malformed constructs during parsing
 
 This AST design prioritizes performance and cache efficiency, providing a robust and fast foundation for the C11 compiler.

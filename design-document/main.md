@@ -3,8 +3,8 @@
 ## Table of Contents
 1. [Overview](#overview)
 2. [Architecture Overview](#architecture-overview)
-    2.1. [Compiler Driver Design](compiler_driver_design.md)
-    2.2. [Rust Environment and External Crates](rust_environment_design.md)
+   2.1. [Compiler Driver Design](compiler_driver_design.md)
+   2.2. [Rust Environment and External Crates](rust_environment_design.md)
 3. [Preprocessor Phase](preprocessor_design.md)
 4. [Lexer Phase](lexer_design.md)
 5. [Parser Phase](parser_design.md)
@@ -57,63 +57,75 @@ graph TD
 Transforms C source code by handling macro expansion, conditional compilation, and file inclusion. Produces a stream of preprocessing tokens (`PPToken`) that represent the preprocessed source.
 
 **Key Features:**
-- Clang-inspired modular architecture with separate components
-- Macro expansion with argument rescanning and token pasting
-- Include file resolution with guard detection
-- Packed bit flags for macro properties
+- Modular architecture with separate lexer (`pp_lexer.rs`), expression parser (`expr_parser.rs`), and main preprocessor (`preprocessor.rs`)
+- Full macro expansion with argument rescanning, token pasting, and stringification
+- Include file resolution with header guard detection and system include paths
+- Conditional compilation with `#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif`
+- Built-in macro expansion for `__FILE__`, `__LINE__`, `__DATE__`, `__TIME__`
+- Packed bit flags for token properties using `bitflags` crate
 
 ### 2. Lexer Phase
 Tokenizes the preprocessing token stream into lexical tokens with pre-interned keywords. Converts `PPToken` stream to `Token` stream ready for parsing.
 
 **Key Features:**
 - UTF-8 only support with efficient character handling
-- Global symbol interning for identifiers
+- Global symbol interning for identifiers using `symbol_table` crate
+- Pre-interned keyword table for O(1) keyword recognition
+- Integer and float literal parsing with C11 syntax support
+- String literal concatenation (C11 6.4.5)
 - Packed token flags for lexical properties
-- Memory prefetching hints for performance
 
 ### 3. Parser Phase
 Constructs a flattened Abstract Syntax Tree from the token stream using Pratt parsing for expressions and recursive descent for statements.
 
 **Key Features:**
-- Flattened AST storage in contiguous vectors
-- Pratt parser with full C11 operator precedence
-- Index-based node references for cache efficiency
-- Complex declarator parsing for C's type system
+- Flattened AST storage in contiguous vectors for cache efficiency
+- Pratt parser with full C11 operator precedence and associativity
+- Index-based node references (`NodeRef`, `TypeRef`) for fast access
+- Complex declarator parsing for C's type system (pointers, arrays, functions)
+- Comprehensive error recovery with synchronization points
+- Support for all C11 syntax including generics, atomics, and compound literals
 
 ### 4. Semantic Analysis Phase
 Performs comprehensive analysis of the AST to ensure semantic correctness, building symbol tables and resolving types.
 
 **Key Features:**
-- Multi-pass analysis (collection, resolution, validation, annotation)
-- Hierarchical scope management with efficient lookups
-- Type canonicalization and compatibility checking
-- Label resolution and control flow validation
+- Two-pass analysis: symbol collection followed by type resolution
+- Hierarchical scope management with `ScopeId` for efficient scope references
+- Symbol table with flattened storage (`Vec<SymbolEntry>`, `Vec<Scope>`)
+- Type checking and compatibility validation
+- Identifier resolution with proper scope rules
+- Declaration validation and redeclaration checking
 
 ### 5. AST Dumper Phase
 Generates interactive HTML visualization of the compiler's internal state for debugging and analysis.
 
 **Key Features:**
-- Cross-referenced tables (AST nodes, symbols, types, scopes)
-- Interactive HTML with collapsible trees and search
+- Interactive HTML output with collapsible AST trees
+- Cross-referenced tables for symbols, types, and scopes
 - Source code integration with syntax highlighting
-- Comprehensive debugging information
+- Comprehensive debugging information including semantic annotations
+- Search and navigation functionality
+- Responsive design for different screen sizes
 
 ## Supporting Infrastructure
 
 ### Error Handling
 - Rich diagnostic system with `annotate_snippets` for beautiful error messages
-- Phase-specific error recovery strategies
+- Phase-specific error recovery strategies with synchronization points
 - IDE integration with structured error output
 - Non-blocking compilation that continues despite errors
+- Detailed source location tracking with `SourceSpan`
 
 ### Data Flow
-- Clear interfaces between all compiler phases
-- Efficient memory management with arena allocation
-- Global symbol interning for fast identifier comparison
-- Packed data structures for optimal cache usage
+- Clear interfaces between all compiler phases using dedicated data structures
+- Efficient memory management with arena-style allocation patterns
+- Global symbol interning for fast identifier comparison across phases
+- Packed data structures for optimal cache usage and memory efficiency
 
 ### Performance Optimizations
-- Flattened data structures for cache-friendly access
-- Index-based references instead of pointers
-- Bit flags for compact boolean storage
+- Flattened data structures for cache-friendly access patterns
+- Index-based references instead of pointers to reduce indirection
+- Bit flags for compact boolean storage using `bitflags` crate
 - Streaming processing to minimize memory pressure
+- Pre-interned symbols and keywords for fast lookups

@@ -2,199 +2,251 @@
 
 ## Overview
 
-The AST Dumper phase processes the flattened AST and semantic analysis results to generate human-readable HTML output for debugging and analysis. It visualizes the compiler's internal representations including the AST structure, symbol tables, scope hierarchy, and type information.
+The AST Dumper phase processes the flattened AST and semantic analysis results to generate comprehensive, interactive HTML output for debugging and analysis. It visualizes the compiler's internal representations including the AST structure, symbol tables, scope hierarchy, type information, and diagnostics with rich styling and JavaScript-powered interactivity.
 
 ## Responsibilities
 
-- **AST Visualization**: Render the flattened AST as an interactive HTML tree structure
-- **Symbol Table Display**: Present symbol information in tabular format with cross-references
-- **Scope Hierarchy**: Show scope relationships and symbol ownership
-- **Type Information**: Display canonicalized types with their properties
-- **Cross-referencing**: Enable navigation between related elements (AST nodes ↔ symbols ↔ types)
+- **AST Visualization**: Render the flattened AST as an interactive HTML tree with collapsible nodes
+- **Symbol Table Display**: Present symbol information in searchable, cross-referenced tables
+- **Scope Hierarchy**: Show scope relationships with navigation and filtering
+- **Type Information**: Display canonicalized types with detailed properties
+- **Diagnostic Reporting**: Include compiler errors and warnings with source locations
+- **Interactive Features**: Provide search, filtering, expand/collapse, and cross-navigation
+- **Source Code Integration**: Display original source with syntax highlighting
 
 ## Core Data Structures
 
 ```rust
-/// Main AST dumper
-pub struct AstDumper<'src> {
-    ast: &'src Ast,
-    symbol_table: &'src SymbolTable,
-    diag: &'src DiagnosticEngine,
-    config: DumpConfig,
-}
-
-/// Configuration for dump output
+/// Configuration for AST dump output
+#[derive(Debug, Clone)]
 pub struct DumpConfig {
     pub pretty_print: bool,
     pub include_source: bool,
     pub max_depth: Option<usize>,
+    pub max_source_lines: Option<usize>,
     pub output_path: PathBuf,
+}
+
+impl Default for DumpConfig {
+    fn default() -> Self {
+        DumpConfig {
+            pretty_print: true,
+            include_source: false,
+            max_depth: None,
+            max_source_lines: None,
+            output_path: PathBuf::from("ast_dump.html"),
+        }
+    }
+}
+
+/// Main AST dumper that generates HTML visualization
+pub struct AstDumper<'src> {
+    ast: &'src Ast,
+    symbol_table: &'src SymbolTable,
+    diag: &'src mut DiagnosticEngine,
+    source_manager: &'src mut SourceManager,
+    lang_opts: &'src LangOptions,
+    target_info: &'src TargetTriple,
+    config: DumpConfig,
 }
 ```
 
 ## Inputs
 
-The AST Dumper receives:
+The AST Dumper receives comprehensive compiler state:
 
 1. **Flattened AST**: From parser output with semantic annotations
-2. **Symbol Table**: From semantic analysis with resolved symbols
-3. **Source Manager**: For location information and source code access
-4. **Dump Configuration**: Output preferences and formatting options
+2. **Symbol Table**: From semantic analysis with resolved symbols and scopes
+3. **Diagnostic Engine**: Compiler errors, warnings, and notes
+4. **Source Manager**: For location information and source code access
+5. **Language Options**: C11 compliance settings
+6. **Target Information**: Platform-specific details
+7. **Dump Configuration**: Output preferences and formatting options
 
 ## Output Format
 
-The dumper generates a single HTML file with embedded CSS and optional JavaScript for interactivity. The output includes:
+The dumper generates a comprehensive HTML file with:
 
-1. **AST Tree View**: Hierarchical visualization of the flattened AST using nested lists
-2. **Symbol Table**: Tabular display of all symbols with cross-references
-3. **Scope Table**: Scope hierarchy and symbol ownership
-4. **Type Table**: Canonicalized types with properties and relationships
+1. **Embedded CSS**: Extensive styling for professional appearance
+2. **JavaScript Interactivity**: Search, filtering, expand/collapse functionality
+3. **Multiple Sections**: AST tree, symbol table, scope table, type table, diagnostics
+4. **Cross-references**: Clickable links between all related elements
+5. **Source Integration**: Syntax-highlighted source code snippets
+6. **Responsive Design**: Works on different screen sizes
 
 ## HTML Structure
 
+The output includes a complete HTML document with:
+
+- **Header**: Title, embedded CSS styles, and JavaScript functions
+- **Navigation**: Table of contents with section links
+- **Main Content**: Five major sections with interactive features
+- **Footer**: Generation timestamp and configuration info
+
+## Interactive Features
+
+### AST Tree Visualization
+
+The AST is rendered as a hierarchical, collapsible tree:
+
 ```html
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Cendol AST Dump</title>
-    <style>
-        /* Embedded CSS for styling */
-        .ast-node { margin: 5px; }
-        .node-type { font-weight: bold; color: #2E86AB; }
-        .semantic-info { background: #F8F9FA; padding: 5px; margin: 5px; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-    </style>
-</head>
-<body>
-    <h1>Cendol Compiler AST Dump</h1>
-
-    <section id="ast-section">
-        <h2>Abstract Syntax Tree</h2>
-        <div id="ast-tree"><!-- AST content --></div>
-    </section>
-
-    <section id="symbols-section">
-        <h2>Symbol Table</h2>
-        <table id="symbol-table"><!-- Symbol table content --></table>
-    </section>
-
-    <section id="scopes-section">
-        <h2>Scope Table</h2>
-        <table id="scope-table"><!-- Scope table content --></table>
-    </section>
-
-    <section id="types-section">
-        <h2>Type Table</h2>
-        <table id="type-table"><!-- Type table content --></table>
-    </section>
-</body>
-</html>
+<div id="ast-tree">
+    <ul class="ast-tree">
+        <li class="ast-node collapsed" id="node_0">
+            <div class="node-content" onclick="toggleAstNode(this)">
+                <span class="toggle-icon">▶</span>
+                <span class="node-type">TranslationUnit</span>
+                <span class="span-info">[main.c:1:1-10:1]</span>
+            </div>
+            <ul>
+                <!-- Child nodes -->
+            </ul>
+        </li>
+    </ul>
+</div>
 ```
 
-## AST Tree Visualization
+**Features:**
+- **Collapsible Nodes**: Click to expand/collapse subtrees
+- **Source Snippets**: Optional source code display with syntax highlighting
+- **Semantic Info**: Type and symbol references with links
+- **Search**: Filter nodes by type or content
 
-The flattened AST is rendered as a hierarchical HTML structure using nested `<ul>` and `<li>` elements. Each node displays:
+### Table Sections
 
-- **Node Kind**: The AST node type (e.g., `FunctionDef`, `BinaryOp`, `Ident`)
-- **Source Span**: Location information in the original source
-- **Semantic Information**: Resolved types, symbol references, constant values
-- **Child Nodes**: Nested subtrees for complex expressions/statements
+Each table provides rich, interactive functionality:
 
-**Example Output:**
-```html
-<ul class="ast-tree">
-    <li class="ast-node">
-        <span class="node-type">TranslationUnit</span>
-        <span class="span-info">[main.c:1:1-10:1]</span>
-        <ul>
-            <li class="ast-node">
-                <span class="node-type">FunctionDef</span>
-                <span class="span-info">[main.c:3:1-9:1]</span>
-                <div class="semantic-info">
-                    Type: <a href="#type_1">int(void)</a>,
-                    Symbol: <a href="#sym_1">main</a>
-                </div>
-                <!-- Function body nodes -->
-            </li>
-        </ul>
-    </li>
-</ul>
+#### Symbol Table
+- **Columns**: ID, Name, Kind, Type, Scope, Location
+- **Cross-references**: Clickable links to types and scopes
+- **Search**: Filter symbols by name or properties
+- **Sorting**: Click headers to sort by different criteria
+
+#### Scope Table
+- **Hierarchy Display**: Shows parent-child relationships
+- **Symbol Lists**: Links to all symbols in each scope
+- **Navigation**: Jump between related scopes
+
+#### Type Table
+- **Type Details**: Comprehensive type information
+- **Qualifiers**: const, volatile, restrict, _Atomic display
+- **Size/Alignment**: Computed type properties
+
+#### Diagnostics Table
+- **Error Classification**: Color-coded by severity (Error/Warning/Note)
+- **Source Links**: Jump to error locations
+- **Hints**: Additional suggestions for fixes
+
+## CSS Styling
+
+The dumper includes extensive CSS for professional appearance:
+
+- **Color Scheme**: Professional blue/gray theme
+- **Typography**: Clean, readable fonts
+- **Layout**: Responsive design with proper spacing
+- **Interactive States**: Hover effects and visual feedback
+- **Syntax Highlighting**: C language syntax colors
+- **Table Styling**: Professional data tables with alternating rows
+
+## JavaScript Functionality
+
+Interactive features powered by embedded JavaScript:
+
+### Tree Controls
+```javascript
+function expandAllAst() {
+    const collapsedNodes = document.querySelectorAll('#ast-tree li.collapsed');
+    collapsedNodes.forEach(node => {
+        node.classList.remove('collapsed');
+        node.classList.add('expanded');
+    });
+}
+
+function collapseAllAst() {
+    const expandedNodes = document.querySelectorAll('#ast-tree li.expanded');
+    expandedNodes.forEach(node => {
+        node.classList.remove('expanded');
+        node.classList.add('collapsed');
+    });
+}
 ```
 
-## Table Representations
+### Search and Filtering
+```javascript
+function searchAst(query) {
+    const lowerQuery = query.toLowerCase();
+    const allNodes = document.querySelectorAll('#ast-tree li');
 
-### Symbol Table
-Displays all symbols with their properties and cross-references:
+    allNodes.forEach(node => {
+        const nodeType = node.querySelector('.node-type');
+        const spanInfo = node.querySelector('.span-info');
+        const text = (nodeType ? nodeType.textContent : '') +
+                    (spanInfo ? spanInfo.textContent : '');
 
-| Column | Description |
-|--------|-------------|
-| ID | Unique symbol identifier |
-| Name | Symbol name (resolved via GlobalSymbol) |
-| Kind | Variable, Function, Typedef, etc. |
-| Type | Link to type table entry |
-| Scope | Link to scope table entry |
-| Location | Source location |
+        if (text.toLowerCase().includes(lowerQuery)) {
+            node.style.display = '';
+            // Expand parent nodes to show results
+        } else {
+            node.style.display = 'none';
+        }
+    });
+}
+```
 
-### Scope Table
-Shows scope hierarchy and relationships:
+### Node Type Filtering
+```javascript
+function filterAstByType(nodeType) {
+    const allNodes = document.querySelectorAll('#ast-tree li');
 
-| Column | Description |
-|--------|-------------|
-| ID | Unique scope identifier |
-| Parent | Parent scope (if any) |
-| Kind | Global, Function, Block, etc. |
-| Level | Nesting depth |
-| Symbols | Links to symbols in this scope |
+    allNodes.forEach(node => {
+        const nodeTypeSpan = node.querySelector('.node-type');
+        const nodeTypeText = nodeTypeSpan ? nodeTypeSpan.textContent : '';
 
-### Type Table
-Presents canonicalized types with their properties:
-
-| Column | Description |
-|--------|-------------|
-| ID | Unique type identifier |
-| Kind | Primitive, Pointer, Array, Function, etc. |
-| Base | Base type (for derived types) |
-| Qualifiers | const, volatile, restrict, _Atomic |
-| Size | Type size in bytes |
-| Details | Additional type-specific information |
+        if (!nodeType || nodeTypeText === nodeType) {
+            node.style.display = '';
+        } else {
+            node.style.display = 'none';
+        }
+    });
+}
+```
 
 ## Implementation Strategy
 
-The dumper uses a visitor pattern to traverse the flattened AST and generate HTML output:
+The dumper uses a comprehensive traversal approach:
 
-1. **AST Traversal**: Visits each node in the flattened array using index-based navigation
-2. **HTML Generation**: Builds HTML strings with proper escaping and formatting
-3. **Cross-reference Resolution**: Maintains mappings between AST nodes, symbols, and types
-4. **Source Integration**: Optionally includes source code snippets for context
+1. **HTML Generation**: Builds complete HTML document with all sections
+2. **AST Traversal**: Visits each node using index-based navigation
+3. **Cross-reference Mapping**: Maintains ID mappings for links between sections
+4. **Source Integration**: Retrieves and highlights source code snippets
+5. **Table Generation**: Creates searchable, sortable data tables
 
-## Features
+## Key Features
 
-- **Interactive Navigation**: Clickable links between AST nodes and symbol/type definitions
-- **Collapsible Trees**: JavaScript-powered expand/collapse for large AST structures
-- **Search Functionality**: Filter symbols, types, and scopes by name or properties
-- **Source Code Integration**: Display original source code alongside AST representation
-- **Responsive Design**: Mobile-friendly HTML layout
+- **Professional UI**: Extensive CSS styling for compiler-quality output
+- **Full Interactivity**: JavaScript-powered search, filtering, and navigation
+- **Cross-references**: Bidirectional links between all compiler artifacts
+- **Source Integration**: Syntax-highlighted source code with location mapping
+- **Comprehensive Coverage**: AST, symbols, scopes, types, and diagnostics
+- **Performance**: Efficient generation and rendering for large codebases
+- **Accessibility**: Proper HTML structure and keyboard navigation
 
 ## Error Handling
 
-The dumper gracefully handles incomplete or malformed compiler output:
+The dumper gracefully handles various edge cases:
 
-- **Missing Information**: Displays "unknown" or "unresolved" for missing data
-- **Invalid References**: Shows broken links with clear error indicators
-- **Truncation**: Limits output size for very large programs with configurable depth limits
-
-## Performance Optimizations
-
-- **Streaming HTML Generation**: Avoids building large strings in memory
-- **Lazy Evaluation**: Only computes expensive representations when needed
-- **Memory-efficient**: Reuses string buffers and minimizes allocations
-- **Scalable**: Handles large codebases through pagination and virtual scrolling
+- **Missing Data**: Shows "unknown" or "unresolved" for incomplete information
+- **Invalid References**: Displays broken links with error indicators
+- **Large Outputs**: Configurable depth and source line limits
+- **Memory Efficiency**: Streaming HTML generation to handle large ASTs
 
 ## Integration with Compiler Pipeline
 
-The AST Dumper receives the final compiler state and generates debug output:
+The AST Dumper integrates as the final phase:
 
-- **Input**: `Ast`, `SymbolTable`, `SourceManager`, and `DumpConfig`
-- **Output**: Single HTML file with embedded CSS and JavaScript
-- **Configuration**: Controlled by compiler flags for different output verbosity levels
+- **Input**: Complete compiler state (AST, symbols, diagnostics, sources)
+- **Output**: Self-contained HTML file with all assets embedded
+- **Configuration**: Command-line flags control output features and limits
+- **Error Recovery**: Generates partial output even with compilation errors
+
+This comprehensive visualization tool provides invaluable debugging capabilities for compiler development and user analysis of compilation results.

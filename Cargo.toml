@@ -3,66 +3,26 @@ name = "cendol"
 version = "0.1.0"
 edition = "2024"
 
-[lints.clippy]
-bool_comparison = "allow" ## reason: `== false` is more readable in some cases
-
 [dependencies]
-cranelift = "0.125"
-cranelift-frontend = "0.125"
-cranelift-codegen = "0.125"
-cranelift-module = "0.125"
-cranelift-jit = "0.125"
-cranelift-native = "0.125"
-cranelift-object = "0.125"
-thiserror = "2.0.17"
-chrono = "0.4.38"
-target-lexicon = "0.13.3"
-ariadne = "0.4.1"
-atty = "0.2.14"
-clap = { version = "4.5.49", features = ["derive"] }
-serde = { version = "1.0.203", features = ["derive"] }
-tempfile = "3.23"
-symbol_table = { version = "0.5.0", features = ["global", "serde"] }
-thin-vec = "0.2"
+clap = { version = "4.5", features = ["derive"] }
+bumpalo = "3.16"
+hashbrown = "0.15"
+thiserror = "2.0"
+anyhow = "1.0"
+log = "0.4"
+env_logger = "0.11"
+itertools = "0.13"
+chrono = "0.4"
+bitflags = "2.6"
+target-lexicon = "0.12"
+symbol_table = { version = "0.3", features = ["global"] }
+annotate-snippets = "0.12"
+bitvec = "1.0"
 
 [dev-dependencies]
-insta = { version = "1.39.0", features = ["yaml"] }
-assert_cmd = "2.0.14"
-predicates = "3.1.0"
-tempfile = "3.23"
+insta = { version = "1.40", features = ["yaml"] }
+serde_yaml = "0.9"
 
-[[test]]
-name = "bad_input"
-path = "tests/bad_input.rs"
+[features]
+insta = []
 
-[[test]]
-name = "codegen"
-path = "tests/codegen.rs"
-
-[[test]]
-name = "enum"
-path = "tests/enum.rs"
-
-[[test]]
-name = "for_loop"
-path = "tests/for_loop.rs"
-
-[[test]]
-name = "long_long"
-path = "tests/long_long.rs"
-
-[[test]]
-name = "switch"
-path = "tests/switch.rs"
-
-[[test]]
-name = "test_lexer"
-path = "tests/test_lexer.rs"
-
-[[test]]
-name = "test_parser"
-path = "tests/test_parser.rs"
-
-[[test]]
-name = "test_preprocessor"
-path = "tests/test_preprocessor.rs"

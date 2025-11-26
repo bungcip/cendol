@@ -1,5 +1,3 @@
-/target
-*.o
-*.out
-.kilo
-input.c
+﻿target
+ast_dump.html
+c-testsuite

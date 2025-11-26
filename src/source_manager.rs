@@ -287,6 +287,38 @@ impl SourceManager {
         file_id
     }
 
+    /// Add a virtual buffer for macro expansions (Level B support)
+    /// Virtual buffers contain expanded macro text with proper sequential locations
+    pub fn add_virtual_buffer(&mut self, buffer: Vec<u8>, name: &str) -> SourceId {
+        let file_id = SourceId(NonZeroU32::new(self.next_file_id).expect("File ID overflow"));
+        self.next_file_id += 1;
+
+        let size = buffer.len() as u32;
+        let buffer_index = self.buffers.len();
+        self.buffers.push(buffer);
+
+        // Calculate line starts for the virtual buffer
+        let mut line_starts = vec![0]; // First line starts at offset 0
+        for (i, &byte) in self.buffers[buffer_index].iter().enumerate() {
+            if byte == b'\n' {
+                line_starts.push((i + 1) as u32);
+            }
+        }
+
+        let file_info = FileInfo {
+            file_id,
+            path: PathBuf::from(format!("<{}>", name)), // Virtual files use <> notation
+            size,
+            buffer_index,
+            line_starts,
+            line_map: LineMap::new(),
+        };
+
+        self.file_infos.insert(file_id, file_info);
+
+        file_id
+    }
+
     /// Get the buffer for a given source ID
     /// Since SourceId is always valid (we panic if not found), we can use indexing
     pub fn get_buffer(&self, source_id: SourceId) -> &[u8] {

@@ -417,6 +417,7 @@ impl<'src> Preprocessor<'src> {
                             } else {
                                 // Check for macro expansion
                                 if let Some(expanded) = self.expand_macro(&token)? {
+                                    // Replace the macro identifier with expanded tokens
                                     result_tokens.extend(expanded);
                                 } else {
                                     result_tokens.push(token);
@@ -1343,9 +1344,9 @@ impl<'src> Preprocessor<'src> {
             }
 
             let result = if macro_info.flags.contains(MacroFlags::FUNCTION_LIKE) {
-                self.expand_function_macro(&macro_info, token)
+                self.expand_function_macro(&macro_info, &symbol, token)
             } else {
-                self.expand_object_macro(&macro_info, token)
+                self.expand_object_macro(&macro_info, &symbol, token)
             };
 
             // Re-enable the macro
@@ -1359,15 +1360,49 @@ impl<'src> Preprocessor<'src> {
         }
     }
 
+    /// Helper to convert tokens to their string representation
+    fn tokens_to_string(&self, tokens: &[PPToken]) -> String {
+        let mut result = String::new();
+        for token in tokens {
+            result.push_str(&token.get_text());
+        }
+        result
+    }
+
     /// Expand an object-like macro
     fn expand_object_macro(
         &mut self,
         macro_info: &MacroInfo,
-        _token: &PPToken,
+        symbol: &Symbol,
+        token: &PPToken,
     ) -> Result<Vec<PPToken>, PreprocessorError> {
-        // Clone tokens and rescan for further expansion
-        let mut expanded = macro_info.tokens.clone();
+        // For Level B: Create a virtual buffer containing the replacement text
+        let replacement_text = self.tokens_to_string(&macro_info.tokens);
+        let virtual_buffer = replacement_text.into_bytes();
+        let virtual_id = self.source_manager.add_virtual_buffer(virtual_buffer, &format!("macro_{}", symbol.as_str()));
+
+        // Create tokens with locations in the virtual buffer
+        let mut expanded = Vec::new();
+        let mut offset = 0u32;
+
+        for original_token in &macro_info.tokens {
+            let token_text = original_token.get_text();
+            let token_len = token_text.len() as u16;
+
+            let new_token = PPToken::new(
+                original_token.kind,
+                original_token.flags | PPTokenFlags::MACRO_EXPANDED,
+                SourceLoc::new(virtual_id, offset),
+                token_len,
+            );
+
+            expanded.push(new_token);
+            offset += token_len as u32;
+        }
+
+        // Recursively expand any macros in the replacement
         self.expand_tokens(&mut expanded)?;
+
         Ok(expanded)
     }
 
@@ -1375,7 +1410,8 @@ impl<'src> Preprocessor<'src> {
     fn expand_function_macro(
         &mut self,
         macro_info: &MacroInfo,
-        _token: &PPToken,
+        symbol: &Symbol,
+        token: &PPToken,
     ) -> Result<Vec<PPToken>, PreprocessorError> {
         // Parse arguments from lexer
         let args = self.parse_macro_args_from_lexer(macro_info)?;
@@ -1383,8 +1419,31 @@ impl<'src> Preprocessor<'src> {
         // Substitute parameters in macro body
         let substituted = self.substitute_macro(macro_info, &args)?;
 
-        // Rescan for further expansion
-        let mut expanded = substituted;
+        // For Level B: Create a virtual buffer containing the substituted text
+        let replacement_text = self.tokens_to_string(&substituted);
+        let virtual_buffer = replacement_text.into_bytes();
+        let virtual_id = self.source_manager.add_virtual_buffer(virtual_buffer, &format!("macro_{}", symbol.as_str()));
+
+        // Create tokens with locations in the virtual buffer
+        let mut expanded = Vec::new();
+        let mut offset = 0u32;
+
+        for original_token in &substituted {
+            let token_text = original_token.get_text();
+            let token_len = token_text.len() as u16;
+
+            let new_token = PPToken::new(
+                original_token.kind,
+                original_token.flags | PPTokenFlags::MACRO_EXPANDED,
+                SourceLoc::new(virtual_id, offset),
+                token_len,
+            );
+
+            expanded.push(new_token);
+            offset += token_len as u32;
+        }
+
+        // Recursively expand any macros in the replacement
         self.expand_tokens(&mut expanded)?;
 
         Ok(expanded)

@@ -12,7 +12,7 @@ use crate::ast_dumper::{AstDumper, DumpConfig};
 use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::LangOptions;
 use crate::parser::Parser;
-use crate::pp::{Preprocessor, PreprocessorConfig};
+use crate::pp::{Preprocessor, PreprocessorConfig, PPTokenFlags};
 use crate::semantic::{SemanticAnalyzer, SymbolTable};
 use crate::source_manager::SourceManager;
 
@@ -50,6 +50,14 @@ pub struct Cli {
     #[clap(flatten)]
     pub preprocessor: PreprocessorOptions,
 
+    /// Suppress line markers in preprocessor output
+    #[clap(short = 'P')]
+    pub suppress_line_markers: bool,
+
+    /// Retain comments in preprocessor output
+    #[clap(short = 'C', long = "retain-comments")]
+    pub retain_comments: bool,
+
     /// Include search paths
     #[clap(short = 'I', long = "include-path", value_name = "DIR", action = clap::ArgAction::Append)]
     pub include_paths: Vec<PathBuf>,
@@ -76,6 +84,7 @@ pub struct CompileConfig {
     pub preprocess_only: bool,
     pub verbose: bool,
     pub preprocessor: PreprocessorConfig,
+    pub suppress_line_markers: bool,
     pub include_paths: Vec<PathBuf>,
     pub defines: Vec<(String, Option<String>)>, // NAME -> VALUE
 }
@@ -113,8 +122,6 @@ impl CompilerDriver {
             dump_parser: cli.dump_parser,
             preprocess_only: cli.preprocess_only,
             verbose: cli.verbose,
-            include_paths: cli.include_paths,
-            defines,
             preprocessor: PreprocessorConfig {
                 max_include_depth: cli.preprocessor.max_include_depth,
                 system_include_paths: vec![
@@ -124,6 +131,9 @@ impl CompilerDriver {
                     PathBuf::from("/usr/include"),
                 ],
             },
+            suppress_line_markers: cli.suppress_line_markers,
+            include_paths: cli.include_paths,
+            defines,
         };
 
         Ok(CompilerDriver {
@@ -192,7 +202,7 @@ impl CompilerDriver {
 
         // If preprocess only, dump the preprocessed output
         if self.config.preprocess_only {
-            self.dump_preprocessed_output(&pp_tokens)?;
+            self.dump_preprocessed_output(&pp_tokens, self.config.suppress_line_markers)?;
             return Ok(());
         }
 
@@ -295,22 +305,76 @@ impl CompilerDriver {
     fn dump_preprocessed_output(
         &self,
         pp_tokens: &[crate::pp::PPToken],
+        suppress_line_markers: bool,
     ) -> Result<(), CompilerError> {
-        for i in 0..pp_tokens.len() {
-            let token = &pp_tokens[i];
+        if pp_tokens.is_empty() {
+            return Ok(());
+        }
+
+        // Get the source buffer for the first token
+        let first_token = &pp_tokens[0];
+        let mut current_file_id = first_token.location.source_id();
+        let mut current_buffer = self.source_manager.get_buffer(current_file_id);
+        let mut last_pos = 0u32;
+
+        for token in pp_tokens {
             if token.kind == crate::pp::PPTokenKind::Eof {
                 break;
             }
 
-            // Get token text
-            let text = token.get_text();
-            print!("{}", text);
+            // Check for file transitions and emit line markers
+            if token.location.source_id() != current_file_id {
+                // Emit line marker for file transition (unless suppressed)
+                if !suppress_line_markers {
+                    if let Some(file_info) = self.source_manager.get_file_info(token.location.source_id()) {
+                        let line = self.source_manager.get_line_column(token.location)
+                            .map(|(l, _)| l)
+                            .unwrap_or(1);
+                        let filename = file_info.path.file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("<unknown>");
 
-            // Print space between tokens
-            if i + 1 < pp_tokens.len() && pp_tokens[i + 1].kind != crate::pp::PPTokenKind::Eof {
-                print!(" ");
+                        // For now, use flag "1" for entering file (simplified)
+                        println!("# {} \"{}\" 1", line, filename);
+                    }
+                }
+
+                current_file_id = token.location.source_id();
+                current_buffer = self.source_manager.get_buffer(current_file_id);
+                last_pos = token.location.offset();
             }
+
+            // Handle macro-expanded tokens (Level A: use canonical spelling)
+            if token.flags.contains(PPTokenFlags::MACRO_EXPANDED) {
+                // For macro-expanded tokens, just print the canonical spelling
+                // No whitespace reconstruction for Level A - these tokens don't have
+                // meaningful source locations for whitespace calculation
+                print!("{}", token.get_text());
+                // Don't update last_pos for macro-expanded tokens
+                continue;
+            }
+
+            let token_start = token.location.offset();
+            let token_end = token_start + token.length as u32;
+
+            // Print all bytes between last_pos and token_start (whitespace, comments)
+            if token_start > last_pos {
+                let slice = &current_buffer[last_pos as usize..token_start as usize];
+                // Convert to string, assuming UTF-8 (preprocessor should ensure this)
+                if let Ok(text) = std::str::from_utf8(slice) {
+                    print!("{}", text);
+                }
+            }
+
+            // Print the token's raw bytes from source
+            let token_slice = token.get_raw_slice(current_buffer);
+            if let Ok(text) = std::str::from_utf8(token_slice) {
+                print!("{}", text);
+            }
+
+            last_pos = token_end;
         }
+
         println!();
         Ok(())
     }

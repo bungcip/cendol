@@ -102,7 +102,7 @@ pub struct IncludeStackInfo {
 }
 
 /// Configuration for preprocessor
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PreprocessorConfig {
     pub max_include_depth: usize,
     pub system_include_paths: Vec<PathBuf>,
@@ -920,7 +920,7 @@ impl<'src> Preprocessor<'src> {
         // Check for circular includes
         if self.include_stack.iter().any(|info| {
             let file_info = self.source_manager.get_file_info(info.file_id);
-            file_info.is_some_and(|fi| fi.path == path_str)
+            file_info.is_some_and(|fi| fi.path == PathBuf::from(&path_str))
         }) {
             return Err(PreprocessorError::CircularInclude);
         }

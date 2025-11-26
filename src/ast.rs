@@ -175,9 +175,10 @@ pub enum SymbolKind {
     // Add other symbol kinds as needed (e.g., Macro, BlockScope)
 }
 
+use serde::Serialize;
 /// The core enum defining all possible AST node types for C11.
 /// Variants use NodeIndex for child references, enabling flattened storage.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum NodeKind {
     // --- Literals (Inline storage for common types) ---
     LiteralInt(i64), // Parsed integer literal value
@@ -257,20 +258,20 @@ pub enum NodeKind {
 // Structs for Large/Indirect Variants (to keep NodeKind size small and cache-friendly)
 // These are stored separately with index-based references.
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct IfStmt {
     pub condition: NodeRef,
     pub then_branch: NodeRef,
     pub else_branch: Option<NodeRef>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct WhileStmt {
     pub condition: NodeRef,
     pub body: NodeRef,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ForStmt {
     pub init: Option<NodeRef>, // Can be Declaration or Expression
     pub condition: Option<NodeRef>,
@@ -278,46 +279,46 @@ pub struct ForStmt {
     pub body: NodeRef,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct DeclarationData {
     pub specifiers: Vec<DeclSpecifier>,
     pub init_declarators: Vec<InitDeclarator>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct InitDeclarator {
     pub declarator: Declarator,
     pub initializer: Option<Initializer>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct FunctionDefData {
     pub specifiers: Vec<DeclSpecifier>,
     pub declarator: Declarator,
     pub body: NodeRef, // A CompoundStatement
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ParamData {
     pub specifiers: Vec<DeclSpecifier>,
     pub declarator: Option<Declarator>, // Optional name for abstract declarator
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct RecordDefData {
     pub tag: Option<Symbol>,                   // None if anonymous
     pub members: Option<Vec<DeclarationData>>, // Field declarations
     pub is_union: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct EnumDefData {
     pub tag: Option<Symbol>,
     pub enumerators: Option<Vec<NodeRef>>, // List of EnumConstant nodes
 }
 
 // Declaration Specifiers combine StorageClass, TypeQualifiers, FunctionSpecifiers, and TypeSpecifiers
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct DeclSpecifier {
     pub storage_class: Option<StorageClass>,
     pub type_qualifiers: TypeQualifiers,
@@ -327,7 +328,7 @@ pub struct DeclSpecifier {
 }
 
 // Type Specifiers (C11)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum TypeSpecifier {
     Void,
     Char,
@@ -356,7 +357,7 @@ pub enum TypeSpecifier {
 }
 
 // Storage Class Specifiers
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum StorageClass {
     Typedef,
     Extern,
@@ -368,7 +369,7 @@ pub enum StorageClass {
 
 // Type Qualifiers (using bitflags crate for consistency)
 bitflags! {
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
     pub struct TypeQualifiers: u8 {
         const CONST = 1 << 0;
         const VOLATILE = 1 << 1;
@@ -379,7 +380,7 @@ bitflags! {
 
 // Function Specifiers (C11)
 bitflags! {
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
     pub struct FunctionSpecifiers: u8 {
         const INLINE = 1 << 0;
         const NORETURN = 1 << 1; // C11 _Noreturn
@@ -387,14 +388,14 @@ bitflags! {
 }
 
 // Alignment Specifiers (C11 _Alignas)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum AlignmentSpecifier {
     Type(TypeRef), // _Alignas(type-name)
     Expr(NodeRef), // _Alignas(constant-expression)
 }
 
 // Unary Operators
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum UnaryOp {
     Plus,
     Minus,
@@ -407,7 +408,7 @@ pub enum UnaryOp {
 }
 
 // Binary Operators (includes assignment types)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -442,7 +443,7 @@ pub enum BinaryOp {
 }
 
 // C11 _Generic Association
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct GenericAssociation {
     pub type_name: Option<TypeRef>, // None for 'default:'
     pub result_expr: NodeRef,
@@ -450,7 +451,7 @@ pub struct GenericAssociation {
 
 // Complex part of C declaration: the part that applies pointers, arrays, and functions
 // This recursive structure allows for declarations like `int (*(*fp)())[10];`
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum Declarator {
     Identifier(Symbol, TypeQualifiers, Option<Box<Declarator>>), // Base case: name (e.g., `x`)
     Abstract,                                                    // for abstract declarator
@@ -464,7 +465,7 @@ pub enum Declarator {
 }
 
 // Defines array size (e.g., [10], [*], or [] for flexible array members)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum ArraySize {
     Expression { expr: NodeRef, qualifiers: TypeQualifiers },
     Star { qualifiers: TypeQualifiers }, // [*] VLA
@@ -473,21 +474,21 @@ pub enum ArraySize {
 }
 
 // Initializer structure for variables (e.g., int x = 5; or struct s = {1, 2};)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum Initializer {
     Expression(NodeRef),              // = 5
     List(Vec<DesignatedInitializer>), // = { .x = 1, [0] = 2 }
 }
 
 // Designated initializer for array/struct lists (C99/C11)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct DesignatedInitializer {
     pub designation: Vec<Designator>,
     pub initializer: Initializer,
 }
 
 // A single designator in a list (.field or [index])
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum Designator {
     FieldName(Symbol),
     ArrayIndex(NodeRef), // Index expression

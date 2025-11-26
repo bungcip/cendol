@@ -3772,3 +3772,4 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
 }
+mod tests_parser;

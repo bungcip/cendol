@@ -114,6 +114,9 @@ name = "bitflags"
 version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
+dependencies = [
+ "serde_core",
+]
 
 [[package]]
 name = "bitvec"
@@ -159,6 +162,7 @@ dependencies = [
  "insta",
  "itertools",
  "log",
+ "serde",
  "serde_yaml",
  "symbol_table",
  "target-lexicon",
@@ -577,6 +581,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
 dependencies = [
  "serde_core",
+ "serde_derive",
 ]
 
 [[package]]
@@ -638,6 +643,7 @@ checksum = "828f672b631c220bf6ea8a1d3b82c7d0fc998e5ba8373383d8604bc1e2a6245a"
 dependencies = [
  "ahash",
  "hashbrown 0.12.3",
+ "serde",
 ]
 
 [[package]]

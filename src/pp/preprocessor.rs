@@ -432,46 +432,43 @@ impl<'src> Preprocessor<'src> {
 
         // Process tokens with string literal concatenation
         while let Some(token) = self.lex_token() {
-            match token.kind {
-                PPTokenKind::Hash if token.flags.contains(PPTokenFlags::STARTS_PP_LINE) => {
-                    // Handle directive - always process directives regardless of skipping
-                    self.handle_directive()?;
+            if token.kind == PPTokenKind::Hash {
+                // Handle directive - always process directives regardless of skipping
+                self.handle_directive()?;
+            } else {
+                if self.is_currently_skipping() {
+                    // Skip tokens when in conditional compilation skip mode
+                    continue;
                 }
-                _ => {
-                    if self.is_currently_skipping() {
-                        // Skip tokens when in conditional compilation skip mode
-                        continue;
-                    }
 
-                    match token.kind {
-                        PPTokenKind::Identifier(symbol) => {
-                            if symbol.as_str() == "__LINE__" {
-                                let line = if let Some(presumed) = self.source_manager.get_presumed_location(token.location) {
-                                    presumed.0
-                                } else {
-                                    1
-                                };
-                                let line_str = line.to_string();
-                                let line_symbol = Symbol::new(&line_str);
-                                result_tokens.push(PPToken::new(
-                                    PPTokenKind::Number(line_symbol),
-                                    PPTokenFlags::empty(),
-                                    token.location,
-                                    line_str.len() as u16,
-                                ));
+                match token.kind {
+                    PPTokenKind::Identifier(symbol) => {
+                        if symbol.as_str() == "__LINE__" {
+                            let line = if let Some(presumed) = self.source_manager.get_presumed_location(token.location) {
+                                presumed.0
                             } else {
-                                // Check for macro expansion
-                                if let Some(expanded) = self.expand_macro(&token)? {
-                                    // Replace the macro identifier with expanded tokens
-                                    result_tokens.extend(expanded);
-                                } else {
-                                    result_tokens.push(token);
-                                }
+                                1
+                            };
+                            let line_str = line.to_string();
+                            let line_symbol = Symbol::new(&line_str);
+                            result_tokens.push(PPToken::new(
+                                PPTokenKind::Number(line_symbol),
+                                PPTokenFlags::empty(),
+                                token.location,
+                                line_str.len() as u16,
+                            ));
+                        } else {
+                            // Check for macro expansion
+                            if let Some(expanded) = self.expand_macro(&token)? {
+                                // Replace the macro identifier with expanded tokens
+                                result_tokens.extend(expanded);
+                            } else {
+                                result_tokens.push(token);
                             }
                         }
-                        _ => {
-                            result_tokens.push(token);
-                        }
+                    }
+                    _ => {
+                        result_tokens.push(token);
                     }
                 }
             }
@@ -816,11 +813,9 @@ impl<'src> Preprocessor<'src> {
                                 _ => return Err(PreprocessorError::InvalidMacroParameter),
                             }
                         }
-                    } else {
-                        if let Some(lexer) = self.lexer_stack.last_mut() {
-                            lexer.put_back(fp);
-                            lexer.put_back(token);
-                        }
+                    } else if let Some(lexer) = self.lexer_stack.last_mut() {
+                        lexer.put_back(fp);
+                        lexer.put_back(token);
                     }
                 } else {
                     return Err(PreprocessorError::UnexpectedEndOfFile);
@@ -920,7 +915,7 @@ impl<'src> Preprocessor<'src> {
         // Check for circular includes
         if self.include_stack.iter().any(|info| {
             let file_info = self.source_manager.get_file_info(info.file_id);
-            file_info.is_some_and(|fi| fi.path == PathBuf::from(&path_str))
+            file_info.is_some_and(|fi| fi.path == *&path_str)
         }) {
             return Err(PreprocessorError::CircularInclude);
         }
@@ -1216,12 +1211,11 @@ impl<'src> Preprocessor<'src> {
         let entry_logical_line = logical_line - 1;
 
         // Add entry to LineMap
-        if let Some(lexer) = self.lexer_stack.last() {
-            if let Some(line_map) = self.source_manager.get_line_map_mut(lexer.source_id) {
+        if let Some(lexer) = self.lexer_stack.last()
+            && let Some(line_map) = self.source_manager.get_line_map_mut(lexer.source_id) {
                 let entry = crate::source_manager::LineDirective::new(physical_line, entry_logical_line, logical_file);
                 line_map.add_entry(entry);
             }
-        }
 
         Ok(())
     }
@@ -1702,7 +1696,7 @@ impl<'src> Preprocessor<'src> {
                             }
                         }
                     }
-                    result.push(token.clone());
+                    result.push(*token);
                 }
                 PPTokenKind::HashHash => {
                     // Token pasting operator
@@ -1721,10 +1715,10 @@ impl<'src> Preprocessor<'src> {
                                     let start_index = macro_info.parameter_list.len();
                                     args.iter().skip(start_index).flatten().cloned().collect()
                                 } else {
-                                    vec![right_token.clone()]
+                                    vec![*right_token]
                                 }
                             } else {
-                                vec![right_token.clone()]
+                                vec![*right_token]
                             };
 
                         // Paste with the first token of right_substituted
@@ -1735,7 +1729,7 @@ impl<'src> Preprocessor<'src> {
                         i += 2;
                         continue;
                     }
-                    result.push(token.clone());
+                    result.push(*token);
                 }
                 PPTokenKind::Identifier(symbol) => {
                     // Parameter substitution
@@ -1760,11 +1754,11 @@ impl<'src> Preprocessor<'src> {
                             first = false;
                         }
                     } else {
-                        result.push(token.clone());
+                        result.push(*token);
                     }
                 }
                 _ => {
-                    result.push(token.clone());
+                    result.push(*token);
                 }
             }
             i += 1;
@@ -1862,8 +1856,8 @@ impl<'src> Preprocessor<'src> {
         let mut i = 0;
         while i < tokens.len() {
             let token = &tokens[i];
-            if let PPTokenKind::Identifier(symbol) = &token.kind {
-                if symbol.as_str() == "__LINE__" {
+            if let PPTokenKind::Identifier(symbol) = &token.kind
+                && symbol.as_str() == "__LINE__" {
                     let line = if let Some(presumed) = self.source_manager.get_presumed_location(token.location) {
                         presumed.0
                     } else {
@@ -1881,7 +1875,6 @@ impl<'src> Preprocessor<'src> {
                     i += 1;
                     continue;
                 }
-            }
             let symbol = match tokens[i].kind {
                 PPTokenKind::Identifier(s) => s,
                 _ => {
@@ -1889,11 +1882,10 @@ impl<'src> Preprocessor<'src> {
                     continue;
                 }
             };
-            if let Some(macro_info) = self.macros.get(&symbol).cloned() {
-                if macro_info.flags.contains(MacroFlags::FUNCTION_LIKE)
+            if let Some(macro_info) = self.macros.get(&symbol).cloned()
+                && macro_info.flags.contains(MacroFlags::FUNCTION_LIKE)
                     && !macro_info.flags.contains(MacroFlags::DISABLED)
-                {
-                    if i + 1 < tokens.len() && tokens[i + 1].kind == PPTokenKind::LeftParen {
+                    && i + 1 < tokens.len() && tokens[i + 1].kind == PPTokenKind::LeftParen {
                         // Find the end of arguments
                         let mut paren_depth = 0;
                         let mut j = i + 1;
@@ -1922,18 +1914,18 @@ impl<'src> Preprocessor<'src> {
                                 match tokens[k].kind {
                                     PPTokenKind::LeftParen => {
                                         paren_depth += 1;
-                                        current_arg.push(tokens[k].clone());
+                                        current_arg.push(tokens[k]);
                                     }
                                     PPTokenKind::RightParen => {
                                         paren_depth -= 1;
-                                        current_arg.push(tokens[k].clone());
+                                        current_arg.push(tokens[k]);
                                     }
                                     PPTokenKind::Comma if paren_depth == 0 => {
                                         args.push(current_arg);
                                         current_arg = Vec::new();
                                     }
                                     _ => {
-                                        current_arg.push(tokens[k].clone());
+                                        current_arg.push(tokens[k]);
                                     }
                                 }
                                 k += 1;
@@ -1967,8 +1959,6 @@ impl<'src> Preprocessor<'src> {
                             continue;
                         }
                     }
-                }
-            }
             // For object macros
             if let Some(expanded) = self.expand_macro(&tokens[i])? {
                 tokens.splice(i..i + 1, expanded);

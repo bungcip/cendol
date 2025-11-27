@@ -255,8 +255,8 @@ impl PPLexer {
         self.position += 1;
 
         // Handle line splicing: backslash followed by newline or carriage return
-        if result == b'\\' {
-            if (self.position as usize) < self.buffer.len() {
+        if result == b'\\'
+            && (self.position as usize) < self.buffer.len() {
                 let next = self.buffer[self.position as usize];
                 if next == b'\n' || next == b'\r' {
                     self.position += 1;
@@ -276,7 +276,6 @@ impl PPLexer {
                     }
                 }
             }
-        }
 
         Some(result)
     }
@@ -808,7 +807,7 @@ impl PPLexer {
             while (self.position as usize) < self.buffer.len() {
                 let ch = self.buffer[self.position as usize];
                 if ch == b'\n' {
-                    self.line_starts.push((self.position + 1) as u32);
+                    self.line_starts.push(self.position + 1);
                     self.position += 1;
                 } else if ch.is_ascii_whitespace() {
                     self.position += 1;
@@ -844,7 +843,7 @@ impl PPLexer {
                             break;
                         }
                         if self.buffer[self.position as usize] == b'\n' {
-                            self.line_starts.push((self.position + 1) as u32);
+                            self.line_starts.push(self.position + 1);
                         }
                         self.position += 1;
                     }

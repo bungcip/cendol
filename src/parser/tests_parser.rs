@@ -47,103 +47,92 @@ fn parse_expression(source: &str) -> (Ast, Node) {
 #[test]
 fn test_simple_addition() {
     let (_ast, node) = parse_expression("1 + 2");
-    insta::assert_yaml_snapshot!(&node.kind, @r###"
-    ---
+    insta::assert_yaml_snapshot!(&node.kind, @r"
     BinaryOp:
       - Add
       - 1
       - 2
-    "###);
+    ");
 }
 
 #[test]
 fn test_unary_operators() {
     let (_ast, node) = parse_expression("-1");
-    insta::assert_yaml_snapshot!(&node.kind, @r###"
-    ---
+    insta::assert_yaml_snapshot!(&node.kind, @r"
     UnaryOp:
       - Minus
       - 1
-    "###);
+    ");
 }
 
 #[test]
 fn test_precedence() {
     let (_ast, node) = parse_expression("1 + 2 * 3");
-    insta::assert_yaml_snapshot!(&node.kind, @r###"
-    ---
+    insta::assert_yaml_snapshot!(&node.kind, @r"
     BinaryOp:
       - Add
       - 1
       - 4
-    "###);
+    ");
 }
 
 #[test]
 fn test_parenthesized_expression() {
     let (_ast, node) = parse_expression("(1 + 2) * 3");
-    insta::assert_yaml_snapshot!(&node.kind, @r###"
-    ---
+    insta::assert_yaml_snapshot!(&node.kind, @r"
     BinaryOp:
       - Mul
       - 3
       - 4
-    "###);
+    ");
 }
 
 #[test]
 fn test_assignment() {
     let (_ast, node) = parse_expression("a = 1");
-    insta::assert_yaml_snapshot!(&node.kind, @r###"
-    ---
+    insta::assert_yaml_snapshot!(&node.kind, @r"
     BinaryOp:
       - Assign
       - 1
       - 2
-    "###);
+    ");
 }
 
 #[test]
 fn test_function_call() {
     let (_ast, node) = parse_expression("foo(1, 2)");
-    insta::assert_yaml_snapshot!(&node.kind, @r###"
-    ---
+    insta::assert_yaml_snapshot!(&node.kind, @r"
     FunctionCall:
       - 1
       - - 4
-    "###);
+    ");
 }
 
 #[test]
 fn test_member_access() {
     let (_ast, node) = parse_expression("a.b");
-    insta::assert_yaml_snapshot!(&node.kind, @r###"
-    ---
+    insta::assert_yaml_snapshot!(&node.kind, @r"
     MemberAccess:
       - 1
       - b
       - false
-    "###);
+    ");
 }
 
 #[test]
 fn test_array_indexing() {
     let (_ast, node) = parse_expression("a[1]");
-    insta::assert_yaml_snapshot!(&node.kind, @r###"
-    ---
+    insta::assert_yaml_snapshot!(&node.kind, @r"
     IndexAccess:
       - 1
       - 2
-    "###);
+    ");
 }
 
 #[test]
 fn test_sizeof_expression() {
     let (_ast, node) = parse_expression("sizeof(a)");
-    insta::assert_yaml_snapshot!(&node.kind, @r###"
-    ---
-    SizeOfExpr: 1
-    "###);
+    insta::assert_yaml_snapshot!(&node.kind, @"SizeOfExpr: 1");
 }
 
 #[test]

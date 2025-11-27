@@ -1,223 +1,35 @@
-use bitvec::prelude::*;
-use std::collections::HashMap;
-use std::num::NonZeroU32;
+//! Semantic analysis module.
+//!
+//! This module provides comprehensive semantic analysis for C11 code, including:
+//! - Symbol collection and scope management
+//! - Name resolution
+//! - Type checking
+//! - Semantic validation
+//!
+//! The analysis is performed in distinct phases using the visitor pattern
+//! for clean separation of concerns and maintainable code.
 
-use crate::ast::*;
+pub mod symbol_table;
+pub mod name_resolver;
+pub mod type_checker;
+pub mod utils;
+pub mod visitor;
+
+// Re-export key types for public API
+pub use symbol_table::{ScopeId, ScopeKind, Scope, SymbolTable};
+pub use name_resolver::NameResolver;
+pub use type_checker::TypeChecker;
+
+use bitvec::prelude::*;
 use log::debug;
 
-/// Scope ID for efficient scope references
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ScopeId(NonZeroU32);
+use crate::ast::*;
+use crate::diagnostic::{DiagnosticEngine, SemanticWarning};
 
-impl ScopeId {
-    pub const GLOBAL: Self = Self(NonZeroU32::new(1).unwrap());
-
-    pub fn new(id: u32) -> Option<Self> {
-        NonZeroU32::new(id).map(Self)
-    }
-
-    pub fn get(self) -> u32 {
-        self.0.get()
-    }
-}
-
-/// Scope types
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScopeKind {
-    Global,
-    File,
-    Function,
-    Block,
-    FunctionPrototype,
-}
-
-/// Scope information
+/// Output of semantic analysis
 #[derive(Debug)]
-pub struct Scope {
-    pub parent: Option<ScopeId>,
-    pub symbols: HashMap<Symbol, SymbolEntryRef>,
-    pub kind: ScopeKind,
-    pub level: u32,
-}
-
-/// Symbol table using flattened storage
-#[derive(Debug)]
-pub struct SymbolTable {
-    pub entries: Vec<SymbolEntry>,
-    pub scopes: Vec<Scope>,
-    current_scope_id: ScopeId,
-    next_scope_id: u32,
-}
-
-impl Default for SymbolTable {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl SymbolTable {
-    pub fn new() -> Self {
-        let mut table = SymbolTable {
-            entries: Vec::new(),
-            scopes: Vec::new(),
-            current_scope_id: ScopeId::GLOBAL,
-            next_scope_id: 2, // Start after GLOBAL
-        };
-
-        // Initialize global scope
-        table.scopes.push(Scope {
-            parent: None,
-            symbols: HashMap::new(),
-            kind: ScopeKind::Global,
-            level: 0,
-        });
-
-        table
-    }
-
-    pub fn push_scope(&mut self, kind: ScopeKind) -> ScopeId {
-        let new_scope_id = ScopeId::new(self.next_scope_id).unwrap();
-        self.next_scope_id += 1;
-
-        let new_scope = Scope {
-            parent: Some(self.current_scope_id),
-            symbols: HashMap::new(),
-            kind,
-            level: self.scopes[self.current_scope_id.get() as usize - 1].level + 1,
-        };
-
-        self.scopes.push(new_scope);
-        self.current_scope_id = new_scope_id;
-        debug!(
-            "SymbolTable: Pushed scope. New current_scope_id: {}",
-            self.current_scope_id.get()
-        );
-        new_scope_id
-    }
-
-    pub fn push_scope_with_id(&mut self, scope_id: ScopeId, kind: ScopeKind) -> ScopeId {
-        // Update next_scope_id to ensure uniqueness
-        if scope_id.get() >= self.next_scope_id {
-            self.next_scope_id = scope_id.get() + 1;
-        }
-
-        let new_scope = Scope {
-            parent: Some(self.current_scope_id),
-            symbols: HashMap::new(),
-            kind,
-            level: self.scopes[self.current_scope_id.get() as usize - 1].level + 1,
-        };
-
-        // Ensure the scope vector is large enough
-        while self.scopes.len() < scope_id.get() as usize {
-            self.scopes.push(Scope {
-                parent: None,
-                symbols: HashMap::new(),
-                kind: ScopeKind::Global,
-                level: 0,
-            });
-        }
-
-        // Replace the scope at the given index
-        if scope_id.get() as usize <= self.scopes.len() {
-            self.scopes[scope_id.get() as usize - 1] = new_scope;
-        } else {
-            self.scopes.push(new_scope);
-        }
-
-        self.current_scope_id = scope_id;
-        debug!(
-            "SymbolTable: Pushed scope with ID. New current_scope_id: {}",
-            self.current_scope_id.get()
-        );
-        scope_id
-    }
-
-    pub fn pop_scope(&mut self) -> Option<ScopeId> {
-        let current_scope_id_before_pop = self.current_scope_id;
-        let current_scope = &self.scopes[current_scope_id_before_pop.get() as usize - 1];
-        if let Some(parent) = current_scope.parent {
-            self.current_scope_id = parent;
-            debug!(
-                "SymbolTable: Popped scope. Old current_scope_id: {}, New current_scope_id: {}",
-                current_scope_id_before_pop.get(),
-                self.current_scope_id.get()
-            );
-            Some(parent)
-        } else {
-            debug!("SymbolTable: Attempted to pop global scope. No change.");
-            None
-        }
-    }
-
-    pub fn current_scope(&self) -> ScopeId {
-        self.current_scope_id
-    }
-
-    pub fn set_current_scope(&mut self, scope_id: ScopeId) {
-        self.current_scope_id = scope_id;
-        debug!(
-            "SymbolTable: Set current_scope_id to {}",
-            self.current_scope_id.get()
-        );
-    }
-
-    pub fn get_scope(&self, scope_id: ScopeId) -> &Scope {
-        &self.scopes[scope_id.get() as usize - 1]
-    }
-
-    pub fn get_scope_mut(&mut self, scope_id: ScopeId) -> &mut Scope {
-        &mut self.scopes[scope_id.get() as usize - 1]
-    }
-
-    pub fn add_symbol(&mut self, name: Symbol, entry: SymbolEntry) -> SymbolEntryRef {
-        let entry_ref = self.push_symbol_entry(entry);
-        let current_scope = self.get_scope_mut(self.current_scope_id);
-        current_scope.symbols.insert(name, entry_ref);
-        entry_ref
-    }
-
-    pub fn lookup_symbol(&self, name: Symbol) -> Option<(SymbolEntryRef, ScopeId)> {
-        self.lookup_symbol_from(name, self.current_scope_id)
-    }
-
-    pub fn lookup_symbol_from(&self, name: Symbol, start_scope: ScopeId) -> Option<(SymbolEntryRef, ScopeId)> {
-        let mut scope_id = start_scope;
-        loop {
-            let scope = self.get_scope(scope_id);
-            if let Some(&entry_ref) = scope.symbols.get(&name) {
-                return Some((entry_ref, scope_id));
-            }
-            if let Some(parent) = scope.parent {
-                scope_id = parent;
-            } else {
-                break;
-            }
-        }
-        None
-    }
-
-    pub fn lookup_symbol_in_scope(
-        &self,
-        name: Symbol,
-        scope_id: ScopeId,
-    ) -> Option<SymbolEntryRef> {
-        self.get_scope(scope_id).symbols.get(&name).copied()
-    }
-
-    fn push_symbol_entry(&mut self, entry: SymbolEntry) -> SymbolEntryRef {
-        let index = self.entries.len() as u32 + 1;
-        self.entries.push(entry);
-        SymbolEntryRef::new(index).expect("SymbolEntryRef overflow")
-    }
-
-    pub fn get_symbol_entry(&self, index: SymbolEntryRef) -> &SymbolEntry {
-        &self.entries[(index.get() - 1) as usize]
-    }
-
-    pub fn get_symbol_entry_mut(&mut self, index: SymbolEntryRef) -> &mut SymbolEntry {
-        &mut self.entries[(index.get() - 1) as usize]
-    }
+pub struct SemanticOutput {
+    pub diagnostics: Vec<crate::diagnostic::Diagnostic>,
 }
 
 /// Main semantic analyzer - orchestrates all phases
@@ -244,11 +56,14 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
             self.ast.nodes.len()
         );
 
-        // Collect symbols
+        // Phase 1: Collect symbols
         self.collect_symbols();
 
-        // Resolve types and validate
-        self.resolve_types();
+        // Phase 2: Resolve names
+        self.resolve_names();
+
+        // Phase 3: Type checking (placeholder for now)
+        self.check_types();
 
         // Return diagnostics
         SemanticOutput {
@@ -353,6 +168,36 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
             "Symbol collection complete. Found {} symbols",
             self.symbol_table.entries.len()
         );
+    }
+
+    fn resolve_names(&mut self) {
+        let Some(root_node) = self.ast.get_root_node() else {
+            debug!("No root node found, skipping name resolution");
+            return;
+        };
+
+        let root_node_ref = self.ast.root.unwrap();
+        debug!("Starting name resolution from root node: {}", root_node_ref.get());
+
+        let mut name_resolver = NameResolver::new();
+        name_resolver.resolve_names(self.ast, &mut self.symbol_table, self.diag, root_node_ref);
+
+        debug!("Name resolution complete");
+    }
+
+    fn check_types(&mut self) {
+        let Some(root_node) = self.ast.get_root_node() else {
+            debug!("No root node found, skipping type checking");
+            return;
+        };
+
+        let root_node_ref = self.ast.root.unwrap();
+        debug!("Starting type checking from root node: {}", root_node_ref.get());
+
+        let mut type_checker = TypeChecker::new();
+        type_checker.check_types(self.ast, &mut self.symbol_table, self.diag, root_node_ref);
+
+        debug!("Type checking complete");
     }
 
     fn get_safe_type_ref(&mut self) -> TypeRef {
@@ -807,140 +652,6 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
             children.len()
         );
         children
-    }
-
-    fn resolve_types(&mut self) {
-        // Check if we have a root node to start traversal from
-        let Some(_root_node) = self.ast.get_root_node() else {
-            debug!("No root node found, skipping type resolution");
-            return;
-        };
-
-        // Get the root node reference for stack-based traversal
-        let _root_node_ref = self.ast.root.unwrap();
-
-        debug!(
-            "Starting type resolution from root node: {}",
-            _root_node_ref.get()
-        );
-
-        // Stack for traversal: (node_ref, expected_scope, is_top_level_body)
-        let mut stack = vec![(_root_node_ref, ScopeId::GLOBAL, false)];
-        let mut nodes_processed = 0;
-        let mut visited_nodes: BitVec = BitVec::new();
-
-        while let Some((node_ref, expected_scope, is_top_level_body)) = stack.pop() {
-            // Skip already visited nodes to prevent infinite loops
-            let node_id = node_ref.get() as usize;
-            if node_id < visited_nodes.len() && visited_nodes[node_id] {
-                continue;
-            }
-            if node_id >= visited_nodes.len() {
-                visited_nodes.resize(node_id + 1, false);
-            }
-            visited_nodes.set(node_id, true);
-
-            nodes_processed += 1;
-            if nodes_processed % 50 == 0 {
-                debug!(
-                    "Type resolution: processed {} nodes, stack has {} items",
-                    nodes_processed,
-                    stack.len()
-                );
-            }
-
-            let node = self.ast.get_node(node_ref);
-
-            // Set the current scope for this node
-            self.symbol_table.set_current_scope(expected_scope);
-
-            match &node.kind {
-                NodeKind::FunctionDef(func_def) => {
-                    // For function definitions, we need to resolve in the function scope
-                    let func_name = self.extract_function_info(&func_def.declarator).0.unwrap_or_else(|| Symbol::new("<anonymous>"));
-                    if let Some((symbol_ref, _)) = self.symbol_table.lookup_symbol(func_name) {
-                        let symbol_entry = self.symbol_table.get_symbol_entry(symbol_ref);
-                        let func_scope_id = ScopeId::new(symbol_entry.scope_id).unwrap();
-                        // Push function body with function scope, mark as top-level body
-                        let children = self.get_child_nodes(node_ref);
-                        for child in children.into_iter().rev() {
-                            let is_body = matches!(self.ast.get_node(child).kind, NodeKind::CompoundStatement(_));
-                            stack.push((child, func_scope_id, is_body));
-                        }
-                    } else {
-                        // Fallback: push children with current scope
-                        let children = self.get_child_nodes(node_ref);
-                        for child in children.into_iter().rev() {
-                            stack.push((child, expected_scope, false));
-                        }
-                    }
-                }
-                NodeKind::CompoundStatement(_) => {
-                    if is_top_level_body {
-                        // Top-level function body: don't create new scope
-                        let children = self.get_child_nodes(node_ref);
-                        for child in children.into_iter().rev() {
-                            stack.push((child, expected_scope, false));
-                        }
-                    } else {
-                        // Nested compound statement: create block scope
-                        let block_scope = self.symbol_table.push_scope(ScopeKind::Block);
-                        let children = self.get_child_nodes(node_ref);
-                        for child in children.into_iter().rev() {
-                            stack.push((child, block_scope, false));
-                        }
-                    }
-                }
-                NodeKind::Ident(name, resolved_symbol) => {
-                    debug!(
-                        "Resolving identifier: {} in scope {}",
-                        name.as_str(),
-                        expected_scope.get()
-                    );
-                    if let Some((symbol_ref, scope_id)) = self.symbol_table.lookup_symbol_from(*name, expected_scope) {
-                        debug!("Found symbol {} in scope {}", name.as_str(), scope_id.get());
-                        resolved_symbol.set(Some(symbol_ref));
-                        // Mark symbol as referenced
-                        let symbol_entry = self.symbol_table.get_symbol_entry_mut(symbol_ref);
-                        symbol_entry.is_referenced = true;
-                    } else {
-                        debug!(
-                            "Undeclared identifier: {} (expected scope: {}), checking symbol table contents",
-                            name.as_str(),
-                            expected_scope.get()
-                        );
-                        // Debug: list all symbols in current scope and parent scopes
-                        let mut debug_scope = expected_scope;
-                        while let Some(scope) = self.symbol_table.scopes.get(debug_scope.get() as usize - 1) {
-                            debug!("Scope {} (kind: {:?}) has {} symbols:", debug_scope.get(), scope.kind, scope.symbols.len());
-                            for (sym_name, sym_ref) in &scope.symbols {
-                                let entry = self.symbol_table.get_symbol_entry(*sym_ref);
-                                debug!("  Symbol: {} -> {:?}", sym_name.as_str(), entry.kind);
-                            }
-                            if let Some(parent) = scope.parent {
-                                debug_scope = parent;
-                            } else {
-                                break;
-                            }
-                        }
-                        self.diag.report_error(SemanticError::UndeclaredIdentifier {
-                            name: *name,
-                            location: node.span,
-                        });
-                    }
-                    // Identifiers have no children
-                }
-                _ => {
-                    // For all other nodes, push children with the same scope
-                    let children = self.get_child_nodes(node_ref);
-                    for child in children.into_iter().rev() {
-                        stack.push((child, expected_scope, false));
-                    }
-                }
-            }
-        }
-
-        debug!("Type resolution complete");
     }
 }
 

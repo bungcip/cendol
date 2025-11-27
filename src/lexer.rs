@@ -601,7 +601,7 @@ impl<'src> Lexer<'src> {
                     concatenated_content.push_str(content);
                 } else {
                     // Invalid string literal format, just push as-is
-                    result.push(tokens[i].clone());
+                    result.push(tokens[i]);
                     i += 1;
                     continue;
                 }
@@ -637,7 +637,7 @@ impl<'src> Lexer<'src> {
 
                 i = j;
             } else {
-                result.push(tokens[i].clone());
+                result.push(tokens[i]);
                 i += 1;
             }
         }

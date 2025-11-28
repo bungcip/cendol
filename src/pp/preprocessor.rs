@@ -1134,7 +1134,7 @@ impl<'src> Preprocessor<'src> {
         // Check for built-in headers first for angled includes
         let include_source_id = if is_angled {
             if let Some(content) = self.built_in_headers.get(path_str.as_str()) {
-                self.source_manager.add_file(&path_str, content)
+                self.source_manager.add_buffer(content.as_bytes().to_vec(), &path_str)
             } else {
                 // Get current directory
                 let current_file_id = self.lexer_stack.last().unwrap().source_id;

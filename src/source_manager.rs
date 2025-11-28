@@ -197,8 +197,6 @@ pub struct FileInfo {
 /// File size limit: 4 MiB per file (22-bit offset in SourceLoc)
 /// Maximum files: 1023 unique source files (10-bit file ID in SourceLoc)
 pub struct SourceManager {
-    #[allow(unused)]
-    files: Vec<SourceFile>,
     buffers: Vec<Vec<u8>>, // Use Rust Vec<u8>
     file_infos: HashMap<SourceId, FileInfo>,
     next_file_id: u32,
@@ -207,7 +205,6 @@ pub struct SourceManager {
 impl SourceManager {
     pub fn new() -> Self {
         SourceManager {
-            files: Vec::new(),
             buffers: Vec::new(),
             file_infos: HashMap::new(),
             next_file_id: 2, // Start from 2, reserve 1 for built-ins
@@ -222,58 +219,10 @@ impl SourceManager {
     ) -> Result<SourceId, std::io::Error> {
         let buffer = std::fs::read(path)?;
         let path_str = path.to_str().unwrap_or("<invalid-utf8>");
-        Ok(self.add_file_bytes(path_str, buffer))
+        Ok(self.add_buffer(buffer, path_str))
     }
 
-    /// Add a file to the source manager with raw bytes (UTF-8 assumed)
-    pub fn add_file_bytes(&mut self, path: &str, buffer: Vec<u8>) -> SourceId {
-        let file_id = SourceId::new(self.next_file_id);
-        self.next_file_id += 1;
-
-        let size = buffer.len() as u32;
-        let buffer_index = self.buffers.len();
-        self.buffers.push(buffer);
-
-        let file_info = FileInfo {
-            file_id,
-            path: PathBuf::from(path),
-            size,
-            buffer_index,
-            line_starts: Vec::new(),
-            line_map: LineMap::new(),
-        };
-
-        self.file_infos.insert(file_id, file_info);
-
-        file_id
-    }
-
-    /// Add a file to the source manager
-    pub fn add_file(&mut self, path: &str, content: &str) -> SourceId {
-        let file_id = SourceId::new(self.next_file_id);
-        self.next_file_id += 1;
-
-        // Convert content to bytes
-        let buffer = content.as_bytes().to_vec();
-        let size = buffer.len() as u32;
-        let buffer_index = self.buffers.len();
-        self.buffers.push(buffer);
-
-        let file_info = FileInfo {
-            file_id,
-            path: PathBuf::from(path),
-            size,
-            buffer_index,
-            line_starts: Vec::new(),
-            line_map: LineMap::new(),
-        };
-
-        self.file_infos.insert(file_id, file_info);
-
-        file_id
-    }
-
-    /// Add a buffer to the source manager
+    /// Add a buffer to the source manager with raw bytes (UTF-8 assumed)
     pub fn add_buffer(&mut self, buffer: Vec<u8>, path: &str) -> SourceId {
         let file_id = SourceId::new(self.next_file_id);
         self.next_file_id += 1;
@@ -335,12 +284,6 @@ impl SourceManager {
         &self.buffers[info.buffer_index][..]
     }
 
-    /// Get file content as string for a given source ID
-    /// Since we only support UTF-8, we can assume the bytes are valid UTF-8
-    pub fn get_file_content(&self, source_id: SourceId) -> String {
-        let buffer = self.get_buffer(source_id);
-        unsafe { String::from_utf8_unchecked(buffer.to_vec()) }
-    }
 
     /// Get file info for a given source ID
     pub fn get_file_info(&self, source_id: SourceId) -> Option<&FileInfo> {
@@ -450,11 +393,6 @@ impl SourceManager {
     }
 }
 
-/// Placeholder for SourceFile - may be expanded in the future
-#[derive(Debug)]
-pub struct SourceFile {
-    // Placeholder - implementation may vary based on needs
-}
 
 impl Default for SourceManager {
     fn default() -> Self {

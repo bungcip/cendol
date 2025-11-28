@@ -1,16 +1,6 @@
 use super::*;
 
 #[test]
-fn test_source_loc_new() {
-    let source_id = SourceId::new(1);
-    let offset = 100;
-    let loc = SourceLoc::new(source_id, offset);
-
-    assert_eq!(loc.source_id(), source_id);
-    assert_eq!(loc.offset(), offset);
-}
-
-#[test]
 fn test_source_loc_packing() {
     // Test basic packing/unpacking
     let source_id = SourceId::new(1);
@@ -85,20 +75,10 @@ fn test_source_span_source_id() {
 }
 
 #[test]
-fn test_source_manager_add_file() {
-    let mut sm = SourceManager::new();
-    let content = "Hello\nWorld\n";
-    let file_id = sm.add_file("test.c", content);
-
-    assert_eq!(file_id.0.get(), 2);
-    assert_eq!(sm.get_file_content(file_id), content);
-}
-
-#[test]
 fn test_source_manager_get_source_text() {
     let mut sm = SourceManager::new();
     let content = "Hello World!";
-    let file_id = sm.add_file("test.c", content);
+    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c");
 
     let start = SourceLoc::new(file_id, 6);
     let end = SourceLoc::new(file_id, 11);
@@ -111,7 +91,7 @@ fn test_source_manager_get_source_text() {
 fn test_source_manager_get_line_column() {
     let mut sm = SourceManager::new();
     let content = "line1\nline2\nline3";
-    let file_id = sm.add_file("test.c", content);
+    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c");
     sm.calculate_line_starts_for_test(file_id);
 
     // Position at 'l' in "line2"
@@ -126,7 +106,7 @@ fn test_source_manager_get_line_column() {
 fn test_source_manager_get_line_column_end_of_file() {
     let mut sm = SourceManager::new();
     let content = "line1\nline2";
-    let file_id = sm.add_file("test.c", content);
+    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c");
     sm.calculate_line_starts_for_test(file_id);
 
     // Position at end of file
@@ -140,21 +120,21 @@ fn test_source_manager_get_line_column_end_of_file() {
 #[test]
 fn test_source_manager_multiple_files() {
     let mut sm = SourceManager::new();
-    let file1_id = sm.add_file("file1.c", "content1");
-    let file2_id = sm.add_file("file2.c", "content2");
+    let file1_id = sm.add_buffer("content1".as_bytes().to_vec(), "file1.c");
+    let file2_id = sm.add_buffer("content2".as_bytes().to_vec(), "file2.c");
 
     assert_eq!(file1_id.0.get(), 2);
     assert_eq!(file2_id.0.get(), 3);
 
-    assert_eq!(sm.get_file_content(file1_id), "content1");
-    assert_eq!(sm.get_file_content(file2_id), "content2");
+    assert_eq!(sm.get_buffer(file1_id), "content1".as_bytes());
+    assert_eq!(sm.get_buffer(file2_id), "content2".as_bytes());
 }
 
 #[test]
 fn test_source_manager_get_buffer() {
     let mut sm = SourceManager::new();
     let content = "test content";
-    let file_id = sm.add_file("test.c", content);
+    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c");
 
     let buffer = sm.get_buffer(file_id);
     assert_eq!(buffer, content.as_bytes());
@@ -164,7 +144,7 @@ fn test_source_manager_get_buffer() {
 fn test_source_manager_get_file_info() {
     let mut sm = SourceManager::new();
     let content = "test";
-    let file_id = sm.add_file("test.c", content);
+    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c");
 
     let info = sm.get_file_info(file_id).unwrap();
     assert_eq!(info.file_id, file_id);
@@ -177,7 +157,7 @@ fn test_source_manager_get_file_info() {
 fn test_source_manager_get_source_text_invalid_range() {
     let mut sm = SourceManager::new();
     let content = "short";
-    let file_id = sm.add_file("test.c", content);
+    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c");
 
     let start = SourceLoc::new(file_id, 3);
     let end = SourceLoc::new(file_id, 10); // Beyond content length
@@ -190,7 +170,7 @@ fn test_source_manager_get_source_text_invalid_range() {
 #[test]
 fn test_source_manager_empty_file() {
     let mut sm = SourceManager::new();
-    let file_id = sm.add_file("empty.c", "");
+    let file_id = sm.add_buffer("".as_bytes().to_vec(), "empty.c");
 
     let info = sm.get_file_info(file_id).unwrap();
     assert_eq!(info.size, 0);
@@ -200,29 +180,21 @@ fn test_source_manager_empty_file() {
 fn test_source_manager_file_without_newlines() {
     let mut sm = SourceManager::new();
     let content = "no newlines here";
-    let file_id = sm.add_file("no_nl.c", content);
+    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "no_nl.c");
 
     let info = sm.get_file_info(file_id).unwrap();
     assert_eq!(info.size, content.len() as u32);
 }
 
 #[test]
-fn test_source_manager_add_file_bytes() {
+fn test_source_manager_add_buffer() {
     let mut sm = SourceManager::new();
     let bytes = b"byte content";
-    let file_id = sm.add_file_bytes("bytes.c", bytes.to_vec());
+    let file_id = sm.add_buffer(bytes.to_vec(), "bytes.c");
 
     assert_eq!(sm.get_buffer(file_id), bytes);
 }
 
-#[test]
-fn test_source_manager_add_buffer() {
-    let mut sm = SourceManager::new();
-    let buffer = b"buffer content".to_vec();
-    let file_id = sm.add_buffer(buffer.clone(), "buffer.c");
-
-    assert_eq!(sm.get_buffer(file_id), buffer);
-}
 
 #[test]
 fn test_line_map_empty() {
@@ -318,7 +290,7 @@ fn test_line_directive_ord() {
 fn test_source_manager_get_presumed_location() {
     let mut sm = SourceManager::new();
     let content = "line1\nline2\nline3\nline4\nline5";
-    let file_id = sm.add_file("test.c", content);
+    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c");
     sm.calculate_line_starts_for_test(file_id);
 
     // Add a line mapping: at physical line 3, logical line 100
@@ -338,7 +310,7 @@ fn test_source_manager_get_presumed_location() {
 fn test_source_manager_get_presumed_location_no_mapping() {
     let mut sm = SourceManager::new();
     let content = "line1\nline2\nline3";
-    let file_id = sm.add_file("test.c", content);
+    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c");
     sm.calculate_line_starts_for_test(file_id);
 
     // No line mappings

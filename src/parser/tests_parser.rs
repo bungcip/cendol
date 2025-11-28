@@ -13,7 +13,7 @@ fn parse_expression(source: &str) -> (Ast, Node) {
     let mut diag = DiagnosticEngine::new();
     let lang_opts = LangOptions::c11();
     let target_info = Triple::unknown();
-    let source_id = sm.add_file("test.c", source);
+    let source_id = sm.add_buffer(source.as_bytes().to_vec(), "test.c");
 
     let mut pp = Preprocessor::new(
         &mut sm,

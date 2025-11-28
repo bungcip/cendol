@@ -16,7 +16,7 @@ fn lex_string_to_token_kind(input: &str) -> Vec<TokenKind> {
 /// Helper function to test lexing from string to TokenKind, optionally including EndOfFile
 fn lex_string_to_token_kind_with_eof(input: &str, include_eof: bool) -> Vec<TokenKind> {
     let mut source_manager = SourceManager::new();
-    let source_id = source_manager.add_file("test_input", input);
+    let source_id = source_manager.add_buffer(input.as_bytes().to_vec(), "test_input");
     let mut diag = DiagnosticEngine::new();
     let lang_opts = LangOptions::c11();
     let target_info = Triple::host();

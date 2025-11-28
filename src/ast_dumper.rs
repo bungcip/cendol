@@ -1702,7 +1702,7 @@ impl<'src> AstDumper<'src> {
     /// Apply syntax highlighting to source code using the lexer
     fn highlight_source_code(&mut self, text: &str, _span: SourceSpan) -> String {
         // Add the text as a temporary source for tokenization
-        let temp_source_id = self.source_manager.add_file("<highlight>", text);
+        let temp_source_id = self.source_manager.add_buffer(text.as_bytes().to_vec(), "<highlight>");
 
         // Create preprocessor config
         let pp_config = PreprocessorConfig {

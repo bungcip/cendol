@@ -30,7 +30,7 @@ fn setup_preprocessor_test_with_diagnostics(
         ..Default::default()
     };
 
-    let source_id = source_manager.add_file_bytes("<test>", src.as_bytes().to_vec());
+    let source_id = source_manager.add_buffer(src.as_bytes().to_vec(), "<test>");
 
     let mut preprocessor = Preprocessor::new(
         &mut source_manager,
@@ -601,8 +601,8 @@ int x = 1;
 #[test]
 fn test_circular_include_error() {
     let mut sm = SourceManager::new();
-    let source_id_a = sm.add_file("a.c", "#include \"b.c\"");
-    sm.add_file("b.c", "#include \"a.c\"");
+    let source_id_a = sm.add_buffer("#include \"b.c\"".as_bytes().to_vec(), "a.c");
+    sm.add_buffer("#include \"a.c\"".as_bytes().to_vec(), "b.c");
 
     let mut diag = DiagnosticEngine::new();
     let lang_opts = LangOptions::c11();

@@ -338,6 +338,16 @@ impl SourceManager {
         self.file_infos.get(&source_id)
     }
 
+    /// Get file info for a given source ID
+    pub fn get_file_id(&self, path: &str) -> Option<SourceId> {
+        for (id, info) in self.file_infos.iter() {
+            if info.path == PathBuf::from(path) {
+                return Some(*id);
+            }
+        }
+        None
+    }
+
     /// Get mutable access to the LineMap for a given source ID
     pub fn get_line_map_mut(&mut self, source_id: SourceId) -> Option<&mut LineMap> {
         self.file_infos.get_mut(&source_id).map(|fi| &mut fi.line_map)

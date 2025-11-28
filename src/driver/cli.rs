@@ -71,7 +71,7 @@ pub struct CompileConfig {
     pub dump_parser: bool,
     pub preprocess_only: bool,
     pub verbose: bool,
-    pub preprocessor: crate::pp::PreprocessorConfig,
+    pub preprocessor: crate::pp::PPConfig,
     pub suppress_line_markers: bool,
     pub include_paths: Vec<PathBuf>,
     pub defines: Vec<(String, Option<String>)>, // NAME -> VALUE
@@ -102,7 +102,7 @@ impl Cli {
             dump_parser: self.dump_parser,
             preprocess_only: self.preprocess_only,
             verbose: self.verbose,
-            preprocessor: crate::pp::PreprocessorConfig {
+            preprocessor: crate::pp::PPConfig {
                 max_include_depth: self.preprocessor.max_include_depth,
                 ..Default::default()
             },

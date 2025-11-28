@@ -1,7 +1,7 @@
 use super::*;
 use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::LangOptions;
-use crate::pp::{Preprocessor, PreprocessorConfig};
+use crate::pp::{Preprocessor, PPConfig};
 use crate::source_manager::SourceManager;
 use symbol_table::GlobalSymbol as Symbol;
 use target_lexicon::Triple;
@@ -21,7 +21,7 @@ fn lex_string_to_token_kind_with_eof(input: &str, include_eof: bool) -> Vec<Toke
     let lang_opts = LangOptions::c11();
     let target_info = Triple::host();
 
-    let pp_config = PreprocessorConfig {
+    let pp_config = PPConfig {
         max_include_depth: 10,
         ..Default::default()
     };

@@ -267,7 +267,7 @@ pub struct IncludeStackInfo {
 
 /// Configuration for preprocessor
 #[derive(Debug, Clone, Default)]
-pub struct PreprocessorConfig {
+pub struct PPConfig {
     pub max_include_depth: usize,
     pub system_include_paths: Vec<PathBuf>,
     pub quoted_include_paths: Vec<PathBuf>,
@@ -317,7 +317,7 @@ pub struct PPTokenLexer {
 
 /// Preprocessor errors
 #[derive(Debug, thiserror::Error)]
-pub enum PreprocessorError {
+pub enum PPError {
     #[error("File not found")]
     FileNotFound,
     #[error("Invalid UTF-8 sequence")]
@@ -369,7 +369,7 @@ impl<'src> Preprocessor<'src> {
         diag: &'src mut DiagnosticEngine,
         lang_opts: LangOptions,
         target_info: TargetInfo,
-        config: &PreprocessorConfig,
+        config: &PPConfig,
     ) -> Self {
         let mut header_search = HeaderSearch {
             search_path: config
@@ -610,8 +610,8 @@ impl<'src> Preprocessor<'src> {
     pub fn process(
         &mut self,
         source_id: SourceId,
-        _config: &PreprocessorConfig,
-    ) -> Result<Vec<PPToken>, PreprocessorError> {
+        _config: &PPConfig,
+    ) -> Result<Vec<PPToken>, PPError> {
         // Initialize lexer for main file
         let buffer = self.source_manager.get_buffer(source_id);
         let buffer_len = buffer.len() as u32;
@@ -706,7 +706,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Parse a conditional expression for #if and #elif
-    fn parse_conditional_expression(&mut self) -> Result<Vec<PPToken>, PreprocessorError> {
+    fn parse_conditional_expression(&mut self) -> Result<Vec<PPToken>, PPError> {
         // Set expression mode for the lexer
         if let Some(lexer) = self.lexer_stack.last_mut() {
             lexer.in_expression = true;
@@ -747,7 +747,7 @@ impl<'src> Preprocessor<'src> {
                 related: Vec::new(),
             };
             self.diag.report_diagnostic(diag);
-            return Err(PreprocessorError::InvalidConditionalExpression);
+            return Err(PPError::InvalidConditionalExpression);
         }
 
         // Reset expression mode
@@ -762,9 +762,9 @@ impl<'src> Preprocessor<'src> {
     fn evaluate_conditional_expression(
         &mut self,
         tokens: &[PPToken],
-    ) -> Result<bool, PreprocessorError> {
+    ) -> Result<bool, PPError> {
         if tokens.is_empty() {
-            return Err(PreprocessorError::InvalidConditionalExpression);
+            return Err(PPError::InvalidConditionalExpression);
         }
 
         // Check for defined(identifier) or defined identifier before macro expansion
@@ -799,9 +799,9 @@ impl<'src> Preprocessor<'src> {
     fn evaluate_arithmetic_expression(
         &mut self,
         tokens: &[PPToken],
-    ) -> Result<bool, PreprocessorError> {
+    ) -> Result<bool, PPError> {
         if tokens.is_empty() {
-            return Err(PreprocessorError::InvalidConditionalExpression);
+            return Err(PPError::InvalidConditionalExpression);
         }
 
         let mut parser = Interpreter::new(tokens, self);
@@ -822,7 +822,7 @@ impl<'src> Preprocessor<'src> {
                     related: Vec::new(),
                 };
                 self.diag.report_diagnostic(diag);
-                return Err(PreprocessorError::InvalidConditionalExpression);
+                return Err(PPError::InvalidConditionalExpression);
             }
         };
         let result = expr.evaluate(self)?;
@@ -855,10 +855,10 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Handle preprocessor directives
-    fn handle_directive(&mut self) -> Result<(), PreprocessorError> {
+    fn handle_directive(&mut self) -> Result<(), PPError> {
         let token = self
             .lex_token()
-            .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+            .ok_or(PPError::UnexpectedEndOfFile)?;
 
         match token.kind {
             PPTokenKind::Identifier(sym) => {
@@ -904,7 +904,7 @@ impl<'src> Preprocessor<'src> {
                             related: Vec::new(),
                         };
                         self.diag.report_diagnostic(diag);
-                        return Err(PreprocessorError::InvalidDirective);
+                        return Err(PPError::InvalidDirective);
                     }
                 }
             }
@@ -918,7 +918,7 @@ impl<'src> Preprocessor<'src> {
                     related: Vec::new(),
                 };
                 self.diag.report_diagnostic(diag);
-                return Err(PreprocessorError::InvalidDirective);
+                return Err(PPError::InvalidDirective);
             }
         }
 
@@ -926,13 +926,13 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Handle #define directive
-    fn handle_define(&mut self) -> Result<(), PreprocessorError> {
+    fn handle_define(&mut self) -> Result<(), PPError> {
         let name_token = self
             .lex_token()
-            .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+            .ok_or(PPError::UnexpectedEndOfFile)?;
         let name = match name_token.kind {
             PPTokenKind::Identifier(sym) => sym,
-            _ => return Err(PreprocessorError::ExpectedIdentifier),
+            _ => return Err(PPError::ExpectedIdentifier),
         };
 
         // Check for macro redefinition
@@ -980,17 +980,17 @@ impl<'src> Preprocessor<'src> {
                         loop {
                             let param_token = self
                                 .lex_token()
-                                .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+                                .ok_or(PPError::UnexpectedEndOfFile)?;
                             match param_token.kind {
                                 PPTokenKind::RightParen => break,
                                 PPTokenKind::Identifier(sym) => {
                                     if params.contains(&sym) {
-                                        return Err(PreprocessorError::InvalidMacroParameter);
+                                        return Err(PPError::InvalidMacroParameter);
                                     }
                                     params.push(sym);
                                     let sep = self
                                         .lex_token()
-                                        .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+                                        .ok_or(PPError::UnexpectedEndOfFile)?;
                                     match sep.kind {
                                         PPTokenKind::Comma => continue,
                                         PPTokenKind::RightParen => break,
@@ -999,15 +999,15 @@ impl<'src> Preprocessor<'src> {
                                             flags |= MacroFlags::C99_VARARGS;
                                             let rparen = self
                                                 .lex_token()
-                                                .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+                                                .ok_or(PPError::UnexpectedEndOfFile)?;
                                             if rparen.kind != PPTokenKind::RightParen {
                                                 return Err(
-                                                    PreprocessorError::InvalidMacroParameter,
+                                                    PPError::InvalidMacroParameter,
                                                 );
                                             }
                                             break;
                                         }
-                                        _ => return Err(PreprocessorError::InvalidMacroParameter),
+                                        _ => return Err(PPError::InvalidMacroParameter),
                                     }
                                 }
                                 PPTokenKind::Ellipsis => {
@@ -1015,13 +1015,13 @@ impl<'src> Preprocessor<'src> {
                                     variadic = Some(Symbol::new("__VA_ARGS__"));
                                     let rparen = self
                                         .lex_token()
-                                        .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+                                        .ok_or(PPError::UnexpectedEndOfFile)?;
                                     if rparen.kind != PPTokenKind::RightParen {
-                                        return Err(PreprocessorError::InvalidMacroParameter);
+                                        return Err(PPError::InvalidMacroParameter);
                                     }
                                     break;
                                 }
-                                _ => return Err(PreprocessorError::InvalidMacroParameter),
+                                _ => return Err(PPError::InvalidMacroParameter),
                             }
                         }
                     } else if let Some(lexer) = self.lexer_stack.last_mut() {
@@ -1029,7 +1029,7 @@ impl<'src> Preprocessor<'src> {
                         lexer.put_back(token);
                     }
                 } else {
-                    return Err(PreprocessorError::UnexpectedEndOfFile);
+                    return Err(PPError::UnexpectedEndOfFile);
                 }
             } else if let Some(lexer) = self.lexer_stack.last_mut() {
                 lexer.put_back(token);
@@ -1061,23 +1061,23 @@ impl<'src> Preprocessor<'src> {
         self.macros.insert(name, macro_info);
         Ok(())
     }
-    fn handle_undef(&mut self) -> Result<(), PreprocessorError> {
+    fn handle_undef(&mut self) -> Result<(), PPError> {
         let name_token = self
             .lex_token()
-            .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+            .ok_or(PPError::UnexpectedEndOfFile)?;
         let name = match name_token.kind {
             PPTokenKind::Identifier(sym) => sym,
-            _ => return Err(PreprocessorError::ExpectedIdentifier),
+            _ => return Err(PPError::ExpectedIdentifier),
         };
         // Remove the macro from the table if it exists
         self.macros.remove(&name);
         Ok(())
     }
-    fn handle_include(&mut self) -> Result<(), PreprocessorError> {
+    fn handle_include(&mut self) -> Result<(), PPError> {
         // Parse the include path
         let token = self
             .lex_token()
-            .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+            .ok_or(PPError::UnexpectedEndOfFile)?;
         let is_angled = matches!(token.kind, PPTokenKind::Less);
         let path_str = match token.kind {
             PPTokenKind::StringLiteral(symbol) => {
@@ -1086,7 +1086,7 @@ impl<'src> Preprocessor<'src> {
                 if full_str.starts_with('"') && full_str.ends_with('"') {
                     full_str[1..full_str.len() - 1].to_string()
                 } else {
-                    return Err(PreprocessorError::InvalidIncludePath);
+                    return Err(PPError::InvalidIncludePath);
                 }
             }
             PPTokenKind::Less => {
@@ -1095,7 +1095,7 @@ impl<'src> Preprocessor<'src> {
                 loop {
                     let part_token = self
                         .lex_token()
-                        .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+                        .ok_or(PPError::UnexpectedEndOfFile)?;
                     match part_token.kind {
                         PPTokenKind::Greater => break,
                         _ => path_parts.push(part_token),
@@ -1114,13 +1114,13 @@ impl<'src> Preprocessor<'src> {
                 }
                 path
             }
-            _ => return Err(PreprocessorError::InvalidIncludePath),
+            _ => return Err(PPError::InvalidIncludePath),
         };
 
         // Check include depth
         if self.include_depth >= 200 {
             // Arbitrary limit
-            return Err(PreprocessorError::IncludeDepthExceeded);
+            return Err(PPError::IncludeDepthExceeded);
         }
 
         // Check for circular includes
@@ -1128,7 +1128,7 @@ impl<'src> Preprocessor<'src> {
             let file_info = self.source_manager.get_file_info(info.file_id);
             file_info.is_some_and(|fi| fi.path == Path::new(&path_str))
         }) {
-            return Err(PreprocessorError::CircularInclude);
+            return Err(PPError::CircularInclude);
         }
 
         // Check for built-in headers first for angled includes
@@ -1162,7 +1162,7 @@ impl<'src> Preprocessor<'src> {
                                 related: Vec::new(),
                             };
                             self.diag.report_diagnostic(diag);
-                            PreprocessorError::FileNotFound
+                            PPError::FileNotFound
                         })?
                 } else {
                     // For angled includes, if not found, emit warning and skip
@@ -1195,11 +1195,11 @@ impl<'src> Preprocessor<'src> {
                 // Load the file
                 self.source_manager
                     .add_file_from_path(&resolved_path)
-                    .map_err(|_| PreprocessorError::FileNotFound)?
+                    .map_err(|_| PPError::FileNotFound)?
             } else if let Some(file_id) = self.source_manager.get_file_id(&path_str) {
                 file_id
             } else {
-                return Err(PreprocessorError::FileNotFound);
+                return Err(PPError::FileNotFound);
             }
         };
 
@@ -1224,7 +1224,7 @@ impl<'src> Preprocessor<'src> {
 
         Ok(())
     }
-    fn handle_if_directive(&mut self, condition: bool) -> Result<(), PreprocessorError> {
+    fn handle_if_directive(&mut self, condition: bool) -> Result<(), PPError> {
         // Push new conditional state
         let info = PPConditionalInfo {
             if_loc: self.get_current_location(),
@@ -1242,13 +1242,13 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    fn handle_ifdef(&mut self) -> Result<(), PreprocessorError> {
+    fn handle_ifdef(&mut self) -> Result<(), PPError> {
         let name_token = self
             .lex_token()
-            .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+            .ok_or(PPError::UnexpectedEndOfFile)?;
         let name = match name_token.kind {
             PPTokenKind::Identifier(sym) => sym,
-            _ => return Err(PreprocessorError::ExpectedIdentifier),
+            _ => return Err(PPError::ExpectedIdentifier),
         };
 
         let defined = self.macros.contains_key(&name);
@@ -1267,13 +1267,13 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    fn handle_ifndef(&mut self) -> Result<(), PreprocessorError> {
+    fn handle_ifndef(&mut self) -> Result<(), PPError> {
         let name_token = self
             .lex_token()
-            .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+            .ok_or(PPError::UnexpectedEndOfFile)?;
         let name = match name_token.kind {
             PPTokenKind::Identifier(sym) => sym,
-            _ => return Err(PreprocessorError::ExpectedIdentifier),
+            _ => return Err(PPError::ExpectedIdentifier),
         };
 
         let defined = self.macros.contains_key(&name);
@@ -1292,14 +1292,14 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    fn handle_elif_directive(&mut self, condition: bool) -> Result<(), PreprocessorError> {
+    fn handle_elif_directive(&mut self, condition: bool) -> Result<(), PPError> {
         if self.conditional_stack.is_empty() {
-            return Err(PreprocessorError::ElifWithoutIf);
+            return Err(PPError::ElifWithoutIf);
         }
 
         let current = self.conditional_stack.last_mut().unwrap();
         if current.found_else {
-            return Err(PreprocessorError::UnmatchedElif);
+            return Err(PPError::UnmatchedElif);
         }
 
         // Determine if we should start processing
@@ -1315,14 +1315,14 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    fn handle_else(&mut self) -> Result<(), PreprocessorError> {
+    fn handle_else(&mut self) -> Result<(), PPError> {
         if self.conditional_stack.is_empty() {
-            return Err(PreprocessorError::ElseWithoutIf);
+            return Err(PPError::ElseWithoutIf);
         }
 
         let current = self.conditional_stack.last_mut().unwrap();
         if current.found_else {
-            return Err(PreprocessorError::UnmatchedElse);
+            return Err(PPError::UnmatchedElse);
         }
         current.found_else = true;
 
@@ -1337,9 +1337,9 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    fn handle_endif(&mut self) -> Result<(), PreprocessorError> {
+    fn handle_endif(&mut self) -> Result<(), PPError> {
         if self.conditional_stack.is_empty() {
-            return Err(PreprocessorError::UnmatchedEndif);
+            return Err(PPError::UnmatchedEndif);
         }
 
         let info = self.conditional_stack.pop().unwrap();
@@ -1348,7 +1348,7 @@ impl<'src> Preprocessor<'src> {
 
         Ok(())
     }
-    fn handle_line(&mut self) -> Result<(), PreprocessorError> {
+    fn handle_line(&mut self) -> Result<(), PPError> {
         // Collect tokens until end of line
         let mut tokens = Vec::new();
         let start_line = if let Some(lexer) = self.lexer_stack.last() {
@@ -1374,14 +1374,14 @@ impl<'src> Preprocessor<'src> {
         }
 
         if tokens.is_empty() {
-            return Err(PreprocessorError::InvalidLineDirective);
+            return Err(PPError::InvalidLineDirective);
         }
 
         // Expand macros in tokens
         self.expand_tokens(&mut tokens)?;
 
         if tokens.is_empty() {
-            return Err(PreprocessorError::InvalidLineDirective);
+            return Err(PPError::InvalidLineDirective);
         }
 
         // Parse line number
@@ -1389,14 +1389,14 @@ impl<'src> Preprocessor<'src> {
             PPTokenKind::Number(symbol) => {
                 let text = symbol.as_str();
                 text.parse::<u32>()
-                    .map_err(|_| PreprocessorError::InvalidLineDirective)?
+                    .map_err(|_| PPError::InvalidLineDirective)?
             }
-            _ => return Err(PreprocessorError::InvalidLineDirective),
+            _ => return Err(PPError::InvalidLineDirective),
         };
 
         // Validate line number (should be positive)
         if logical_line == 0 {
-            return Err(PreprocessorError::InvalidLineDirective);
+            return Err(PPError::InvalidLineDirective);
         }
 
         // Optional filename
@@ -1407,10 +1407,10 @@ impl<'src> Preprocessor<'src> {
                     if full_str.starts_with('"') && full_str.ends_with('"') {
                         Some(full_str[1..full_str.len() - 1].to_string())
                     } else {
-                        return Err(PreprocessorError::InvalidLineDirective);
+                        return Err(PPError::InvalidLineDirective);
                     }
                 }
-                _ => return Err(PreprocessorError::InvalidLineDirective), // Extra tokens that aren't filename
+                _ => return Err(PPError::InvalidLineDirective), // Extra tokens that aren't filename
             }
         } else {
             None
@@ -1418,7 +1418,7 @@ impl<'src> Preprocessor<'src> {
 
         // Check for too many tokens
         if tokens.len() > 2 {
-            return Err(PreprocessorError::InvalidLineDirective);
+            return Err(PPError::InvalidLineDirective);
         }
 
         // Get current physical line (where #line directive appears)
@@ -1442,11 +1442,11 @@ impl<'src> Preprocessor<'src> {
 
         Ok(())
     }
-    fn handle_pragma(&mut self) -> Result<(), PreprocessorError> {
+    fn handle_pragma(&mut self) -> Result<(), PPError> {
         // Parse the pragma directive
         let pragma_token = self
             .lex_token()
-            .ok_or(PreprocessorError::UnexpectedEndOfFile)?;
+            .ok_or(PPError::UnexpectedEndOfFile)?;
         match pragma_token.kind {
             PPTokenKind::Identifier(symbol) => {
                 let pragma_name = symbol.as_str();
@@ -1479,7 +1479,7 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    fn handle_error(&mut self) -> Result<(), PreprocessorError> {
+    fn handle_error(&mut self) -> Result<(), PPError> {
         if self.is_currently_skipping() {
             // Skip to end of line
             let directive_line = if let Some(lexer) = self.lexer_stack.last() {
@@ -1544,10 +1544,10 @@ impl<'src> Preprocessor<'src> {
             related: Vec::new(),
         };
         self.diag.report_diagnostic(diag);
-        Err(PreprocessorError::ErrorDirective(message))
+        Err(PPError::ErrorDirective(message))
     }
 
-    fn handle_warning(&mut self) -> Result<(), PreprocessorError> {
+    fn handle_warning(&mut self) -> Result<(), PPError> {
         // Collect the warning message from the rest of the line
         let mut message_parts = Vec::new();
         let directive_location = if let Some(lexer) = self.lexer_stack.last() {
@@ -1591,7 +1591,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Expand a macro if it exists
-    fn expand_macro(&mut self, token: &PPToken) -> Result<Option<Vec<PPToken>>, PreprocessorError> {
+    fn expand_macro(&mut self, token: &PPToken) -> Result<Option<Vec<PPToken>>, PPError> {
         if let PPTokenKind::Identifier(symbol) = token.kind {
             // Check if macro exists and is not disabled
             let macro_info = match self.macros.get(&symbol) {
@@ -1620,7 +1620,7 @@ impl<'src> Preprocessor<'src> {
 
             // Check for recursion
             if macro_info.flags.contains(MacroFlags::DISABLED) {
-                return Err(PreprocessorError::MacroRecursion);
+                return Err(PPError::MacroRecursion);
             }
 
             // Mark as used
@@ -1665,7 +1665,7 @@ impl<'src> Preprocessor<'src> {
         macro_info: &MacroInfo,
         symbol: &Symbol,
         _token: &PPToken,
-    ) -> Result<Vec<PPToken>, PreprocessorError> {
+    ) -> Result<Vec<PPToken>, PPError> {
         // For Level B: Create a virtual buffer containing the replacement text
         let replacement_text = self.tokens_to_string(&macro_info.tokens);
         let virtual_buffer = replacement_text.into_bytes();
@@ -1704,7 +1704,7 @@ impl<'src> Preprocessor<'src> {
         macro_info: &MacroInfo,
         symbol: &Symbol,
         _token: &PPToken,
-    ) -> Result<Vec<PPToken>, PreprocessorError> {
+    ) -> Result<Vec<PPToken>, PPError> {
         // Parse arguments from lexer
         let args = self.parse_macro_args_from_lexer(macro_info)?;
 
@@ -1747,7 +1747,7 @@ impl<'src> Preprocessor<'src> {
     fn parse_macro_args_from_lexer(
         &mut self,
         macro_info: &MacroInfo,
-    ) -> Result<Vec<Vec<PPToken>>, PreprocessorError> {
+    ) -> Result<Vec<Vec<PPToken>>, PPError> {
         // Skip whitespace and expect '('
         let mut found_lparen = false;
         while let Some(token) = self.lex_token() {
@@ -1756,20 +1756,20 @@ impl<'src> Preprocessor<'src> {
                     found_lparen = true;
                     break;
                 }
-                PPTokenKind::Eof => return Err(PreprocessorError::UnexpectedEndOfFile),
+                PPTokenKind::Eof => return Err(PPError::UnexpectedEndOfFile),
                 _ if token.flags.contains(PPTokenFlags::LEADING_SPACE) => continue,
                 _ => {
                     // Put back non-whitespace token
                     if let Some(lexer) = self.lexer_stack.last_mut() {
                         lexer.put_back(token);
                     }
-                    return Err(PreprocessorError::InvalidMacroParameter);
+                    return Err(PPError::InvalidMacroParameter);
                 }
             }
         }
 
         if !found_lparen {
-            return Err(PreprocessorError::UnexpectedEndOfFile);
+            return Err(PPError::UnexpectedEndOfFile);
         }
 
         let mut args = Vec::new();
@@ -1849,7 +1849,7 @@ impl<'src> Preprocessor<'src> {
                     related: Vec::new(),
                 };
                 self.diag.report_diagnostic(diag);
-                return Err(PreprocessorError::InvalidMacroParameter);
+                return Err(PPError::InvalidMacroParameter);
             }
         } else if args.len() != expected_args {
             let diag = crate::diagnostic::Diagnostic {
@@ -1871,7 +1871,7 @@ impl<'src> Preprocessor<'src> {
                 related: Vec::new(),
             };
             self.diag.report_diagnostic(diag);
-            return Err(PreprocessorError::InvalidMacroParameter);
+            return Err(PPError::InvalidMacroParameter);
         }
 
         Ok(args)
@@ -1882,7 +1882,7 @@ impl<'src> Preprocessor<'src> {
         &mut self,
         macro_info: &MacroInfo,
         args: &[Vec<PPToken>],
-    ) -> Result<Vec<PPToken>, PreprocessorError> {
+    ) -> Result<Vec<PPToken>, PPError> {
         let mut result = Vec::new();
         let mut i = 0;
 
@@ -1999,7 +1999,7 @@ impl<'src> Preprocessor<'src> {
         &self,
         tokens: &[PPToken],
         location: SourceLoc,
-    ) -> Result<PPToken, PreprocessorError> {
+    ) -> Result<PPToken, PPError> {
         let mut result = String::new();
         result.push('"');
 
@@ -2024,7 +2024,7 @@ impl<'src> Preprocessor<'src> {
                     }
                 }
             } else {
-                return Err(PreprocessorError::InvalidStringification);
+                return Err(PPError::InvalidStringification);
             }
         }
 
@@ -2043,7 +2043,7 @@ impl<'src> Preprocessor<'src> {
         &self,
         left: &PPToken,
         right: &PPToken,
-    ) -> Result<Vec<PPToken>, PreprocessorError> {
+    ) -> Result<Vec<PPToken>, PPError> {
         // Get text of both tokens
         let left_buffer = self.source_manager.get_buffer(left.location.source_id());
         let left_start = left.location.offset() as usize;
@@ -2051,7 +2051,7 @@ impl<'src> Preprocessor<'src> {
         let left_text = if left_end <= left_buffer.len() {
             unsafe { std::str::from_utf8_unchecked(&left_buffer[left_start..left_end]) }
         } else {
-            return Err(PreprocessorError::InvalidTokenPasting);
+            return Err(PPError::InvalidTokenPasting);
         };
 
         let right_buffer = self.source_manager.get_buffer(right.location.source_id());
@@ -2060,7 +2060,7 @@ impl<'src> Preprocessor<'src> {
         let right_text = if right_end <= right_buffer.len() {
             unsafe { std::str::from_utf8_unchecked(&right_buffer[right_start..right_end]) }
         } else {
-            return Err(PreprocessorError::InvalidTokenPasting);
+            return Err(PPError::InvalidTokenPasting);
         };
 
         let pasted_text = format!("{}{}", left_text, right_text);
@@ -2079,7 +2079,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Expand tokens by rescanning for further macro expansion
-    fn expand_tokens(&mut self, tokens: &mut Vec<PPToken>) -> Result<(), PreprocessorError> {
+    fn expand_tokens(&mut self, tokens: &mut Vec<PPToken>) -> Result<(), PPError> {
         let mut i = 0;
         while i < tokens.len() {
             let token = &tokens[i];
@@ -2168,7 +2168,7 @@ impl<'src> Preprocessor<'src> {
                     // Validate argument count
                     let expected_args = macro_info.parameter_list.len();
                     if args.len() != expected_args {
-                        return Err(PreprocessorError::InvalidMacroParameter);
+                        return Err(PPError::InvalidMacroParameter);
                     }
                     // Substitute
                     let substituted = self.substitute_macro(&macro_info, &args)?;

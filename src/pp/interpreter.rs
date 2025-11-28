@@ -1,5 +1,5 @@
 use crate::pp::pp_lexer::{PPToken, PPTokenKind};
-use crate::pp::preprocessor::PreprocessorError;
+use crate::pp::preprocessor::PPError;
 use crate::pp::Preprocessor;
 use crate::ast::{BinaryOp, UnaryOp};
 use symbol_table::GlobalSymbol as Symbol;
@@ -17,7 +17,7 @@ pub enum PPExpr {
 
 
 impl PPExpr {
-    pub fn evaluate(&self, pp: &Preprocessor) -> Result<i64, PreprocessorError> {
+    pub fn evaluate(&self, pp: &Preprocessor) -> Result<i64, PPError> {
         match self {
             PPExpr::Number(n) => Ok(*n),
             PPExpr::Identifier(s) => Ok(if pp.is_macro_defined(&Symbol::new(s)) { 1 } else { 0 }),
@@ -25,7 +25,7 @@ impl PPExpr {
                 if let PPExpr::Identifier(s) = &**ident {
                     Ok(if pp.is_macro_defined(&Symbol::new(s)) { 1 } else { 0 })
                 } else {
-                    Err(PreprocessorError::InvalidConditionalExpression)
+                    Err(PPError::InvalidConditionalExpression)
                 }
             }
             PPExpr::Binary(op, left, right) => {
@@ -66,14 +66,14 @@ impl PPExpr {
                             BinaryOp::Mul => Ok(l * r),
                             BinaryOp::Div => {
                                 if r == 0 {
-                                    Err(PreprocessorError::InvalidConditionalExpression)
+                                    Err(PPError::InvalidConditionalExpression)
                                 } else {
                                     Ok(l / r)
                                 }
                             }
                             BinaryOp::Mod => {
                                 if r == 0 {
-                                    Err(PreprocessorError::InvalidConditionalExpression)
+                                    Err(PPError::InvalidConditionalExpression)
                                 } else {
                                     Ok(l % r)
                                 }
@@ -122,11 +122,11 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    pub fn parse_expression(&mut self) -> Result<PPExpr, PreprocessorError> {
+    pub fn parse_expression(&mut self) -> Result<PPExpr, PPError> {
         self.parse_conditional()
     }
 
-    fn parse_conditional(&mut self) -> Result<PPExpr, PreprocessorError> {
+    fn parse_conditional(&mut self) -> Result<PPExpr, PPError> {
         let cond = self.parse_or()?;
         if self.pos < self.tokens.len() && matches!(self.tokens[self.pos].kind, PPTokenKind::Question) {
             self.pos += 1; // consume ?
@@ -136,14 +136,14 @@ impl<'a> Interpreter<'a> {
                 let false_e = self.parse_conditional()?;
                 Ok(PPExpr::Conditional(Box::new(cond), Box::new(true_e), Box::new(false_e)))
             } else {
-                Err(PreprocessorError::InvalidConditionalExpression)
+                Err(PPError::InvalidConditionalExpression)
             }
         } else {
             Ok(cond)
         }
     }
 
-    fn parse_or(&mut self) -> Result<PPExpr, PreprocessorError> {
+    fn parse_or(&mut self) -> Result<PPExpr, PPError> {
         let mut left = self.parse_and()?;
         while self.pos < self.tokens.len() && matches!(self.tokens[self.pos].kind, PPTokenKind::LogicOr) {
             self.pos += 1;
@@ -153,7 +153,7 @@ impl<'a> Interpreter<'a> {
         Ok(left)
     }
 
-    fn parse_and(&mut self) -> Result<PPExpr, PreprocessorError> {
+    fn parse_and(&mut self) -> Result<PPExpr, PPError> {
         let mut left = self.parse_bitwise_or()?;
         while self.pos < self.tokens.len() && matches!(self.tokens[self.pos].kind, PPTokenKind::LogicAnd) {
             self.pos += 1;
@@ -163,7 +163,7 @@ impl<'a> Interpreter<'a> {
         Ok(left)
     }
 
-    fn parse_bitwise_or(&mut self) -> Result<PPExpr, PreprocessorError> {
+    fn parse_bitwise_or(&mut self) -> Result<PPExpr, PPError> {
         let mut left = self.parse_bitwise_xor()?;
         while self.pos < self.tokens.len() && matches!(self.tokens[self.pos].kind, PPTokenKind::Or) {
             self.pos += 1;
@@ -173,7 +173,7 @@ impl<'a> Interpreter<'a> {
         Ok(left)
     }
 
-    fn parse_bitwise_xor(&mut self) -> Result<PPExpr, PreprocessorError> {
+    fn parse_bitwise_xor(&mut self) -> Result<PPExpr, PPError> {
         let mut left = self.parse_bitwise_and()?;
         while self.pos < self.tokens.len() && matches!(self.tokens[self.pos].kind, PPTokenKind::Xor) {
             self.pos += 1;
@@ -183,7 +183,7 @@ impl<'a> Interpreter<'a> {
         Ok(left)
     }
 
-    fn parse_bitwise_and(&mut self) -> Result<PPExpr, PreprocessorError> {
+    fn parse_bitwise_and(&mut self) -> Result<PPExpr, PPError> {
         let mut left = self.parse_equality()?;
         while self.pos < self.tokens.len() && matches!(self.tokens[self.pos].kind, PPTokenKind::And) {
             self.pos += 1;
@@ -193,7 +193,7 @@ impl<'a> Interpreter<'a> {
         Ok(left)
     }
 
-    fn parse_equality(&mut self) -> Result<PPExpr, PreprocessorError> {
+    fn parse_equality(&mut self) -> Result<PPExpr, PPError> {
         let mut left = self.parse_relational()?;
         while self.pos < self.tokens.len() {
             let op = &self.tokens[self.pos].kind;
@@ -213,7 +213,7 @@ impl<'a> Interpreter<'a> {
         Ok(left)
     }
 
-    fn parse_relational(&mut self) -> Result<PPExpr, PreprocessorError> {
+    fn parse_relational(&mut self) -> Result<PPExpr, PPError> {
         let mut left = self.parse_shift()?;
         while self.pos < self.tokens.len() {
             let op = &self.tokens[self.pos].kind;
@@ -235,7 +235,7 @@ impl<'a> Interpreter<'a> {
         Ok(left)
     }
 
-    fn parse_shift(&mut self) -> Result<PPExpr, PreprocessorError> {
+    fn parse_shift(&mut self) -> Result<PPExpr, PPError> {
         let mut left = self.parse_additive()?;
         while self.pos < self.tokens.len() {
             let op = &self.tokens[self.pos].kind;
@@ -255,7 +255,7 @@ impl<'a> Interpreter<'a> {
         Ok(left)
     }
 
-    fn parse_additive(&mut self) -> Result<PPExpr, PreprocessorError> {
+    fn parse_additive(&mut self) -> Result<PPExpr, PPError> {
         let mut left = self.parse_multiplicative()?;
         while self.pos < self.tokens.len() {
             let op = &self.tokens[self.pos].kind;
@@ -275,7 +275,7 @@ impl<'a> Interpreter<'a> {
         Ok(left)
     }
 
-    fn parse_multiplicative(&mut self) -> Result<PPExpr, PreprocessorError> {
+    fn parse_multiplicative(&mut self) -> Result<PPExpr, PPError> {
         let mut left = self.parse_unary()?;
         while self.pos < self.tokens.len() {
             let op = &self.tokens[self.pos].kind;
@@ -296,9 +296,9 @@ impl<'a> Interpreter<'a> {
         Ok(left)
     }
 
-    fn parse_unary(&mut self) -> Result<PPExpr, PreprocessorError> {
+    fn parse_unary(&mut self) -> Result<PPExpr, PPError> {
         if self.pos >= self.tokens.len() {
-            return Err(PreprocessorError::InvalidConditionalExpression);
+            return Err(PPError::InvalidConditionalExpression);
         }
         let token = &self.tokens[self.pos];
         if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == self.preprocessor.defined_symbol()) {
@@ -310,7 +310,7 @@ impl<'a> Interpreter<'a> {
                     self.pos += 1;
                     ident
                 } else {
-                    return Err(PreprocessorError::InvalidConditionalExpression);
+                    return Err(PPError::InvalidConditionalExpression);
                 }
             } else {
                 self.parse_primary()?
@@ -332,9 +332,9 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    fn parse_primary(&mut self) -> Result<PPExpr, PreprocessorError> {
+    fn parse_primary(&mut self) -> Result<PPExpr, PPError> {
         if self.pos >= self.tokens.len() {
-            return Err(PreprocessorError::InvalidConditionalExpression);
+            return Err(PPError::InvalidConditionalExpression);
         }
         let token = &self.tokens[self.pos];
         self.pos += 1;
@@ -358,7 +358,7 @@ impl<'a> Interpreter<'a> {
                     i64::from_str_radix(num_text, 8)
                 } else {
                     num_text.parse::<i64>()
-                }.map_err(|_| PreprocessorError::InvalidConditionalExpression)?;
+                }.map_err(|_| PPError::InvalidConditionalExpression)?;
                 Ok(PPExpr::Number(num))
             }
             PPTokenKind::CharLiteral(codepoint, _) => {
@@ -374,10 +374,10 @@ impl<'a> Interpreter<'a> {
                     self.pos += 1;
                     Ok(result)
                 } else {
-                    Err(PreprocessorError::InvalidConditionalExpression)
+                    Err(PPError::InvalidConditionalExpression)
                 }
             }
-            _ => Err(PreprocessorError::InvalidConditionalExpression),
+            _ => Err(PPError::InvalidConditionalExpression),
         }
     }
 }

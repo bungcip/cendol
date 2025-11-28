@@ -20,7 +20,7 @@ fn parse_expression(source: &str) -> (Ast, Node) {
         &mut diag,
         lang_opts.clone(),
         target_info.clone(),
-        &crate::pp::PreprocessorConfig {
+        &crate::pp::PPConfig {
             max_include_depth: 200,
             ..Default::default()
         },

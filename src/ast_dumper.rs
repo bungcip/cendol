@@ -5,7 +5,7 @@ use crate::ast::*;
 use crate::diagnostic::*;
 use crate::lang_options::LangOptions;
 use crate::lexer::{Lexer, TokenKind};
-use crate::pp::{Preprocessor, PreprocessorConfig};
+use crate::pp::{Preprocessor, PPConfig};
 use crate::semantic::*;
 use crate::source_manager::*;
 use target_lexicon::Triple as TargetTriple;
@@ -1705,7 +1705,7 @@ impl<'src> AstDumper<'src> {
         let temp_source_id = self.source_manager.add_buffer(text.as_bytes().to_vec(), "<highlight>");
 
         // Create preprocessor config
-        let pp_config = PreprocessorConfig {
+        let pp_config = PPConfig {
             max_include_depth: 10, // Small limit for highlighting
             ..Default::default()
         };

@@ -13,7 +13,7 @@ fn setup_preprocessor_test(src: &str) -> Vec<PPToken> {
 /// Helper function to set up preprocessor testing and return diagnostics
 fn setup_preprocessor_test_with_diagnostics(
     src: &str,
-) -> Result<(Vec<PPToken>, Vec<crate::diagnostic::Diagnostic>), PreprocessorError> {
+) -> Result<(Vec<PPToken>, Vec<crate::diagnostic::Diagnostic>), PPError> {
     // Initialize logging for tests
     let _ = env_logger::try_init();
 
@@ -25,7 +25,7 @@ fn setup_preprocessor_test_with_diagnostics(
         ms_extensions: false,
     };
     let target_info = Triple::host();
-    let config = PreprocessorConfig {
+    let config = PPConfig {
         max_include_depth: 100,
         ..Default::default()
     };
@@ -319,7 +319,7 @@ fn test_error_directive_produces_failure() {
         "Preprocessor should fail on #error directive"
     );
 
-    if let Err(PreprocessorError::ErrorDirective(message)) = result {
+    if let Err(PPError::ErrorDirective(message)) = result {
         assert_eq!(message, "\"this should be reported\"");
     } else {
         panic!("Expected ErrorDirective error");
@@ -591,7 +591,7 @@ int x = 1;
     let result = setup_preprocessor_test_with_diagnostics(src);
     assert!(result.is_err());
 
-    if let Err(PreprocessorError::InvalidLineDirective) = result {
+    if let Err(PPError::InvalidLineDirective) = result {
         // Expected error
     } else {
         panic!("Expected InvalidLineDirective error");
@@ -607,14 +607,14 @@ fn test_circular_include_error() {
     let mut diag = DiagnosticEngine::new();
     let lang_opts = LangOptions::c11();
     let target_info = Triple::unknown();
-    let config = PreprocessorConfig {
+    let config = PPConfig {
         max_include_depth: 10,
         ..Default::default()
     };
     let mut pp = Preprocessor::new(&mut sm, &mut diag, lang_opts, target_info, &config);
     let result = pp.process(source_id_a, &config);
 
-    assert!(matches!(result, Err(PreprocessorError::CircularInclude)));
+    assert!(matches!(result, Err(PPError::CircularInclude)));
 }
 
 #[test]
@@ -627,7 +627,7 @@ int x = 1;
     let result = setup_preprocessor_test_with_diagnostics(src);
     assert!(result.is_err());
 
-    if let Err(PreprocessorError::InvalidLineDirective) = result {
+    if let Err(PPError::InvalidLineDirective) = result {
         // Expected error
     } else {
         panic!("Expected InvalidLineDirective error");
@@ -644,7 +644,7 @@ int x = 1;
     let result = setup_preprocessor_test_with_diagnostics(src);
     assert!(result.is_err());
 
-    if let Err(PreprocessorError::InvalidLineDirective) = result {
+    if let Err(PPError::InvalidLineDirective) = result {
         // Expected error
     } else {
         panic!("Expected InvalidLineDirective error");

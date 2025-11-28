@@ -107,6 +107,10 @@ This is a learning project, but contributions are welcome! Areas of interest inc
 * Testing and bug fixes
 * Documentation improvements
 
+## AI-Friendly Contributions
+
+This project is AI-friendly and welcomes contributions from developers using AI tools. We encourage the use of AI for code generation, debugging, and documentation to enhance productivity.
+
 ## License
 
 See [LICENSE](LICENSE) file for details.

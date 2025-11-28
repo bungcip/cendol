@@ -12,7 +12,7 @@ use crate::lang_options::LangOptions;
 use crate::parser::Parser;
 use crate::pp::Preprocessor;
 use crate::semantic::{SemanticAnalyzer, SymbolTable};
-use crate::source_manager::SourceManager;
+use crate::source_manager::{SourceManager, SourceId};
 use target_lexicon::Triple;
 
 use super::cli::CompileConfig;
@@ -56,8 +56,26 @@ impl CompilerDriver {
     }
 
     /// Compile a single file through the full pipeline
-    fn compile_file(&mut self, source_path: &Path) -> Result<(), CompilerError> {
-        log::debug!("Starting compilation of file: {}", source_path.display());
+    pub fn compile_file(&mut self, source_path: &Path) -> Result<(), CompilerError> {
+        let source_id = self
+            .source_manager
+            .add_file_from_path(source_path)
+            .map_err(|e| {
+                CompilerError::IoError(format!("Failed to read {}: {}", source_path.display(), e))
+            })?;
+        self.compile_source_id(source_id)
+    }
+
+    #[cfg(test)]
+    /// Compile a string of source code
+    pub fn compile_source(&mut self, source: &str, filename: &str) -> Result<(), CompilerError> {
+        let source_id = self.source_manager.add_file(filename, source);
+        self.compile_source_id(source_id)
+    }
+
+    /// Compile a single source file, identified by its SourceId
+    fn compile_source_id(&mut self, source_id: SourceId) -> Result<(), CompilerError> {
+        log::debug!("Starting compilation of source_id: {}", source_id.as_u32());
         let lang_options = LangOptions {
             c11: true,
             gnu_mode: false,
@@ -65,25 +83,15 @@ impl CompilerDriver {
         };
         let target_triple = Triple::host();
 
-        // 1. Load source file through SourceManager
-        let source_id = self
-            .source_manager
-            .add_file_from_path(source_path)
-            .map_err(|e| {
-                CompilerError::IoError(format!("Failed to read {}: {}", source_path.display(), e))
-            })?;
-
         // 2. Preprocessing phase
         let pp_tokens = {
             let mut preprocessor = Preprocessor::new(
                 &mut self.source_manager,
                 &mut self.diagnostics,
-                lang_options.clone(),  // TODO: make it to just borrow
-                target_triple.clone(), // TODO: make it to just borrow
+                lang_options.clone(),
+                target_triple.clone(),
                 &self.config.preprocessor,
             );
-
-            // Preprocessor is dropped here, releasing the borrow on diagnostics
             match preprocessor.process(source_id, &self.config.preprocessor) {
                 Ok(t) => t,
                 Err(e) => {
@@ -95,13 +103,9 @@ impl CompilerDriver {
                 }
             }
         };
-
-        // Check for preprocessing errors and stop if any
         if self.diagnostics.has_errors() {
-            return Ok(()); // Stop processing this file
+            return Ok(());
         }
-
-        // If preprocess only, dump the preprocessed output
         if self.config.preprocess_only {
             self.output_handler.dump_preprocessed_output(&pp_tokens, self.config.suppress_line_markers, &self.source_manager)?;
             return Ok(());
@@ -116,14 +120,10 @@ impl CompilerDriver {
                 &target_triple,
                 &pp_tokens,
             );
-
-            // Lexer is dropped here, releasing the borrow on diagnostics
             lexer.tokenize_all()
         };
-
-        // Check for lexing errors and stop if any
         if self.diagnostics.has_errors() {
-            return Ok(()); // Stop processing this file
+            return Ok(());
         }
 
         // 4. Parsing phase
@@ -132,21 +132,14 @@ impl CompilerDriver {
             {
                 let mut parser = Parser::new(&tokens, &mut temp_ast, &mut self.diagnostics);
                 if let Err(e) = parser.parse_translation_unit() {
-                    // Report the error but continue with empty AST
                     self.diagnostics.report_parse_error(e);
                 }
-                // Parser is dropped here, releasing the borrow on diagnostics
             }
-            // Return the AST for use in next phases
             temp_ast
         };
-
-        // Check for parsing errors and stop if any
         if self.diagnostics.has_errors() {
-            return Ok(()); // Stop processing this file
+            return Ok(());
         }
-
-        // print parser AST to check
         if self.config.dump_parser {
             self.output_handler.dump_parser(&ast);
             return Ok(());
@@ -156,17 +149,12 @@ impl CompilerDriver {
         let symbol_table = {
             let mut analyzer = SemanticAnalyzer::new(&mut ast, &mut self.diagnostics);
             let _semantic_output = analyzer.analyze();
-            // Analyzer is dropped here, releasing the borrow on diagnostics
-            // We need to restructure to get the symbol table out
-            // For now, we'll create a new empty one and move the data
             let mut new_table = SymbolTable::new();
             std::mem::swap(&mut new_table, &mut analyzer.symbol_table);
             new_table
         };
-
-        // Check for semantic analysis errors and stop if any
         if self.diagnostics.has_errors() {
-            return Ok(()); // Stop processing this file
+            return Ok(());
         }
 
         // 6. AST dumping (if requested)
@@ -190,10 +178,13 @@ impl CompilerDriver {
         if self.diagnostics.has_errors() {
             let formatter = crate::diagnostic::ErrorFormatter::default();
             formatter.print_diagnostics(self.diagnostics.diagnostics(), &self.source_manager);
-            // Continue instead of failing
         }
-
         Ok(())
+    }
+
+    /// Check if any errors were reported
+    pub fn has_errors(&self) -> bool {
+        self.diagnostics.has_errors()
     }
 }
 

@@ -4,6 +4,12 @@ use std::{collections::HashMap, num::NonZeroU32, path::PathBuf, cmp::Ordering};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SourceId(pub NonZeroU32);
 
+impl SourceId {
+    pub fn as_u32(&self) -> u32 {
+        self.0.get()
+    }
+}
+
 impl std::fmt::Display for SourceId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "SourceId({})", self.0)

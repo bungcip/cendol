@@ -1,9 +1,8 @@
 use super::*;
-use std::num::NonZeroU32;
 
 #[test]
 fn test_source_loc_new() {
-    let source_id = SourceId(NonZeroU32::new(1).unwrap());
+    let source_id = SourceId::new(1);
     let offset = 100;
     let loc = SourceLoc::new(source_id, offset);
 
@@ -14,7 +13,7 @@ fn test_source_loc_new() {
 #[test]
 fn test_source_loc_packing() {
     // Test basic packing/unpacking
-    let source_id = SourceId(NonZeroU32::new(5).unwrap());
+    let source_id = SourceId::new(1);
     let offset = 12345;
     let loc = SourceLoc::new(source_id, offset);
 
@@ -24,7 +23,7 @@ fn test_source_loc_packing() {
 
 #[test]
 fn test_source_loc_max_offset() {
-    let source_id = SourceId(NonZeroU32::new(1).unwrap());
+    let source_id = SourceId::new(1);
     let max_offset = (1 << 22) - 1; // 4 MiB - 1
     let loc = SourceLoc::new(source_id, max_offset);
 
@@ -34,7 +33,7 @@ fn test_source_loc_max_offset() {
 #[test]
 #[should_panic(expected = "Offset exceeds 4 MiB limit")]
 fn test_source_loc_offset_overflow() {
-    let source_id = SourceId(NonZeroU32::new(1).unwrap());
+    let source_id = SourceId::new(1);
     let overflow_offset = 1 << 22; // 4 MiB
     SourceLoc::new(source_id, overflow_offset);
 }
@@ -42,7 +41,7 @@ fn test_source_loc_offset_overflow() {
 #[test]
 fn test_source_loc_max_file_id() {
     let max_id = 1023;
-    let source_id = SourceId(NonZeroU32::new(max_id).unwrap());
+    let source_id = SourceId::new(max_id);
     let offset = 0;
     let loc = SourceLoc::new(source_id, offset);
 
@@ -53,15 +52,15 @@ fn test_source_loc_max_file_id() {
 #[should_panic(expected = "SourceId exceeds 1023 limit")]
 fn test_source_loc_file_id_overflow() {
     let overflow_id = 1024;
-    let source_id = SourceId(NonZeroU32::new(overflow_id).unwrap());
+    let source_id = SourceId::new(overflow_id);
     let offset = 0;
     SourceLoc::new(source_id, offset);
 }
 
 #[test]
 fn test_source_span_new() {
-    let start = SourceLoc::new(SourceId(NonZeroU32::new(1).unwrap()), 10);
-    let end = SourceLoc::new(SourceId(NonZeroU32::new(1).unwrap()), 20);
+    let start = SourceLoc::new(SourceId::new(1), 10);
+    let end = SourceLoc::new(SourceId::new(1), 20);
     let span = SourceSpan::new(start, end);
 
     assert_eq!(span.start, start);
@@ -77,7 +76,7 @@ fn test_source_span_empty() {
 
 #[test]
 fn test_source_span_source_id() {
-    let source_id = SourceId(NonZeroU32::new(42).unwrap());
+    let source_id = SourceId::new(42);
     let start = SourceLoc::new(source_id, 0);
     let end = SourceLoc::new(source_id, 10);
     let span = SourceSpan::new(start, end);

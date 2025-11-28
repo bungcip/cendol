@@ -1,10 +1,9 @@
 use super::*;
 use crate::source_manager::SourceId;
-use std::num::NonZeroU32;
 
 /// Helper function to create a PPLexer for testing
 fn create_test_pp_lexer(source: &str) -> PPLexer {
-    let source_id = SourceId(NonZeroU32::new(1).unwrap());
+    let source_id = SourceId::new(1);
     let buffer = source.as_bytes().to_vec();
     PPLexer::new(source_id, buffer)
 }

@@ -10,6 +10,13 @@ impl std::fmt::Display for SourceId {
     }
 }
 
+impl SourceId {
+    /// create a new SourceId from a u32. panics if id is zero.
+    pub fn new(id: u32) -> Self {
+        SourceId(NonZeroU32::new(id).expect("SourceId must be non-zero"))
+    }
+}
+
 /// Packed file ID and byte offset in a single u32.
 /// - Bits 0-21: Byte Offset (max 4 MiB file size)
 /// - Bits 22-31: Source ID Index (max 1023 unique source files)
@@ -35,11 +42,13 @@ impl SourceLoc {
         SourceLoc(0)
     }
 
+    /// built-in source location (SourceId = 1, offset = 0)
+    pub fn builtin() -> Self {
+        SourceLoc::new(SourceId::new(1), 0)
+    }
+
     pub fn source_id(&self) -> SourceId {
-        SourceId(
-            NonZeroU32::new((self.0 >> Self::ID_SHIFT) & ((1 << (32 - Self::ID_SHIFT)) - 1))
-                .expect("Invalid SourceId"),
-        )
+        SourceId::new((self.0 >> Self::ID_SHIFT) & ((1 << (32 - Self::ID_SHIFT)) - 1))
     }
 
     pub fn offset(&self) -> u32 {
@@ -218,7 +227,7 @@ impl SourceManager {
 
     /// Add a file to the source manager with raw bytes (UTF-8 assumed)
     pub fn add_file_bytes(&mut self, path: &str, buffer: Vec<u8>) -> SourceId {
-        let file_id = SourceId(NonZeroU32::new(self.next_file_id).expect("File ID overflow"));
+        let file_id = SourceId::new(self.next_file_id);
         self.next_file_id += 1;
 
         let size = buffer.len() as u32;
@@ -241,7 +250,7 @@ impl SourceManager {
 
     /// Add a file to the source manager
     pub fn add_file(&mut self, path: &str, content: &str) -> SourceId {
-        let file_id = SourceId(NonZeroU32::new(self.next_file_id).expect("File ID overflow"));
+        let file_id = SourceId::new(self.next_file_id);
         self.next_file_id += 1;
 
         // Convert content to bytes
@@ -266,7 +275,7 @@ impl SourceManager {
 
     /// Add a buffer to the source manager
     pub fn add_buffer(&mut self, buffer: Vec<u8>, path: &str) -> SourceId {
-        let file_id = SourceId(NonZeroU32::new(self.next_file_id).expect("File ID overflow"));
+        let file_id = SourceId::new(self.next_file_id);
         self.next_file_id += 1;
 
         let size = buffer.len() as u32;
@@ -290,7 +299,7 @@ impl SourceManager {
     /// Add a virtual buffer for macro expansions (Level B support)
     /// Virtual buffers contain expanded macro text with proper sequential locations
     pub fn add_virtual_buffer(&mut self, buffer: Vec<u8>, name: &str) -> SourceId {
-        let file_id = SourceId(NonZeroU32::new(self.next_file_id).expect("File ID overflow"));
+        let file_id = SourceId::new(self.next_file_id);
         self.next_file_id += 1;
 
         let size = buffer.len() as u32;

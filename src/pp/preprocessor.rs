@@ -4,7 +4,7 @@ use crate::source_manager::{SourceId, SourceLoc, SourceManager, SourceSpan};
 use chrono::{DateTime, Datelike, Timelike, Utc};
 use std::collections::{HashMap, HashSet};
 
-use crate::pp::expr_parser::ExpressionParser;
+use crate::pp::interpreter::Interpreter;
 use std::path::{Path, PathBuf};
 use symbol_table::GlobalSymbol as Symbol;
 use target_lexicon::Triple as TargetInfo;
@@ -603,7 +603,7 @@ impl<'src> Preprocessor<'src> {
         }
 
 
-        let mut parser = ExpressionParser::new(tokens, self);
+        let mut parser = Interpreter::new(tokens, self);
         let expr = match parser.parse_expression() {
             Ok(e) => e,
             Err(_) => {
@@ -693,7 +693,7 @@ impl<'src> Preprocessor<'src> {
                     _ => {
                         let diag = crate::diagnostic::Diagnostic {
                             level: crate::diagnostic::DiagnosticLevel::Error,
-                            message: "Invalid preprocessor directive".to_string(),
+                            message: format!("Invalid preprocessor directive '{name}'"),
                             location: SourceSpan::new(token.location, token.location),
                             code: Some("invalid_directive".to_string()),
                             hints: vec!["Valid directives include #define, #include, #if, #ifdef, #ifndef, #elif, #else, #endif, #line, #pragma, #error, #warning".to_string()],

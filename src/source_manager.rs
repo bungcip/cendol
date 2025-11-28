@@ -341,7 +341,7 @@ impl SourceManager {
     /// Get file info for a given source ID
     pub fn get_file_id(&self, path: &str) -> Option<SourceId> {
         for (id, info) in self.file_infos.iter() {
-            if info.path == PathBuf::from(path) {
+            if info.path == *path {
                 return Some(*id);
             }
         }

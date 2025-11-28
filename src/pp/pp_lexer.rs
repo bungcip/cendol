@@ -67,7 +67,7 @@ pub enum PPTokenKind {
     // Literals and identifiers
     Identifier(Symbol),    // Interned identifier
     StringLiteral(Symbol), // Interned string literal
-    CharLiteral(u32),      // Unicode codepoint value
+    CharLiteral(u8, Symbol), // byte char value and raw text
     Number(Symbol),        // Raw numeric literal text for parser
     // Special
     Eof,
@@ -129,7 +129,7 @@ impl PPToken {
             PPTokenKind::Identifier(sym) => sym.as_str().to_string(),
             PPTokenKind::Number(sym) => sym.as_str().to_string(),
             PPTokenKind::StringLiteral(sym) => sym.as_str().to_string(),
-            PPTokenKind::CharLiteral(_) => "'?'".to_string(), // placeholder
+            PPTokenKind::CharLiteral(_, sym) => sym.as_str().to_string(),
             PPTokenKind::LeftParen => "(".to_string(),
             PPTokenKind::RightParen => ")".to_string(),
             PPTokenKind::LeftBracket => "[".to_string(),
@@ -942,7 +942,7 @@ impl PPLexer {
         let content_len = chars.len() - content_start - 1; // exclude closing '
 
         let codepoint = if content_len == 1 {
-            chars[content_start] as u32
+            chars[content_start]
         } else if content_len == 2 && chars[content_start] == b'\\' {
             // Handle escape sequences
             match chars[content_start + 1] {
@@ -953,17 +953,20 @@ impl PPLexer {
                 b'\\' => 92, // backslash
                 b'\'' => 39, // single quote
                 b'"' => 34,  // double quote
-                _ => chars[content_start + 1] as u32, // fallback to the escaped char
+                _ => chars[content_start + 1], // fallback to the escaped char
             }
         } else {
             0 // placeholder for complex cases (multibyte chars, etc.)
         };
 
+        let text = String::from_utf8(chars).unwrap();
+        let symbol = Symbol::new(&text);
+
         PPToken::new(
-            PPTokenKind::CharLiteral(codepoint),
+            PPTokenKind::CharLiteral(codepoint, symbol),
             flags,
             SourceLoc::new(self.source_id, start_pos),
-            chars.len() as u16,
+            text.len() as u16,
         )
     }
 

@@ -223,7 +223,7 @@ fn parse_prefix(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         TokenKind::CharacterConstant(codepoint) => {
             parser.advance();
             let node = parser.ast.push_node(Node {
-                kind: NodeKind::LiteralChar(codepoint as u8 as char),
+                kind: NodeKind::LiteralChar(codepoint),
                 span: token.location,
                 resolved_type: Cell::new(None),
                 resolved_symbol: Cell::new(None),

@@ -18,7 +18,7 @@ pub enum NodeKind {
     LiteralInt(i64), // Parsed integer literal value
     LiteralFloat(f64),
     LiteralString(Symbol),
-    LiteralChar(char),
+    LiteralChar(u8),
 
     // --- Expressions ---
     // Ident now includes a Cell for resolved SymbolEntry after semantic analysis
@@ -413,7 +413,7 @@ impl NodeKind {
     }
 
     /// Create a literal char node
-    pub fn literal_char(value: char) -> Self {
+    pub fn literal_char(value: u8) -> Self {
         NodeKind::LiteralChar(value)
     }
 

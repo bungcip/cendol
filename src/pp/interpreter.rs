@@ -361,7 +361,7 @@ impl<'a> Interpreter<'a> {
                 }.map_err(|_| PreprocessorError::InvalidConditionalExpression)?;
                 Ok(PPExpr::Number(num))
             }
-            PPTokenKind::CharLiteral(codepoint) => {
+            PPTokenKind::CharLiteral(codepoint, _) => {
                 Ok(PPExpr::Number(*codepoint as i64))
             }
             PPTokenKind::Identifier(sym) => {

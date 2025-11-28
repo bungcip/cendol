@@ -233,6 +233,7 @@ pub mod iterators {
 
     /// Iterator over child nodes of a node
     pub struct ChildNodeIterator<'a> {
+        #[allow(dead_code)]
         ast: &'a Ast,
         children: Vec<NodeRef>,
         index: usize,

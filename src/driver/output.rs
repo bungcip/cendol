@@ -138,7 +138,7 @@ impl OutputHandler {
             NodeKind::LiteralInt(i) => println!("LiteralInt({})", i),
             NodeKind::LiteralFloat(f) => println!("LiteralFloat({})", f),
             NodeKind::LiteralString(s) => println!("LiteralString({})", s),
-            NodeKind::LiteralChar(c) => println!("LiteralChar('{}')", c.escape_default()),
+            NodeKind::LiteralChar(c) => println!("LiteralChar('{}')", c.to_string()),
             NodeKind::Ident(sym, _) => println!("Ident({})", sym),
             NodeKind::UnaryOp(op, operand) => println!("UnaryOp({:?}, {})", op, operand.get()),
             NodeKind::BinaryOp(op, left, right) => {

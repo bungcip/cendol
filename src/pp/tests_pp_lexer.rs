@@ -15,7 +15,9 @@ macro_rules! test_tokens {
         $(
             let token = $lexer.next_token().unwrap();
             match token.kind {
-                $expected => {},
+                $expected => {
+                    assert_eq!(token.get_text(), $input, "Token text mismatch for {}", stringify!($expected));
+                },
                 _ => panic!("Expected {:?}, got {:?}", stringify!($expected), token.kind),
             }
         )*
@@ -26,16 +28,23 @@ macro_rules! test_tokens {
 fn test_line_splicing_comprehensive() {
     // Basic line splicing
     let source = "hel\\
-lo";
-    let mut lexer = create_test_pp_lexer(source);
-    test_tokens!(lexer, ("hello", PPTokenKind::Identifier(_)));
-
-    // Multiple line splices
-    let source = "hel\\
+lo
+hel\\
 lo\\
-world";
+world
+123\\
+456
+\"hello\\
+world\"
+";
     let mut lexer = create_test_pp_lexer(source);
-    test_tokens!(lexer, ("helloworld", PPTokenKind::Identifier(_)));
+    test_tokens!(lexer, 
+        ("hello", PPTokenKind::Identifier(_)),
+        ("helloworld", PPTokenKind::Identifier(_)),
+        ("123456", PPTokenKind::Number(_)),
+        ("\"helloworld\"", PPTokenKind::StringLiteral(_)),
+    );
+
 
     // Line splicing with whitespace
     let source = "hel  \\
@@ -43,36 +52,20 @@ world";
     let mut lexer = create_test_pp_lexer(source);
     test_tokens!(lexer, ("hel", PPTokenKind::Identifier(_)));
 
-    // Line splicing in numbers
-    let source = "123\\
-456";
-    let mut lexer = create_test_pp_lexer(source);
-    test_tokens!(lexer, ("123456", PPTokenKind::Number(_)));
 
     // No line splicing (regular newline)
     let source = "hello\nworld";
     let mut lexer = create_test_pp_lexer(source);
-    let first_token = lexer.next_token().unwrap();
-    match first_token.kind {
-        PPTokenKind::Identifier(symbol) => assert_eq!(symbol.as_str(), "hello"),
-        _ => panic!("Expected first identifier token"),
-    }
-    let second_token = lexer.next_token().unwrap();
-    match second_token.kind {
-        PPTokenKind::Identifier(symbol) => assert_eq!(symbol.as_str(), "world"),
-        _ => panic!("Expected second identifier token"),
-    }
+    test_tokens!(lexer, 
+        ("hello", PPTokenKind::Identifier(_)),
+        ("world", PPTokenKind::Identifier(_)),
+    );
 
     // Line splicing at end of buffer
     let source = "test\\";
     let mut lexer = create_test_pp_lexer(source);
     test_tokens!(lexer, ("test", PPTokenKind::Identifier(_)));
 
-    // Line splicing in strings
-    let source = "\"hello\\
-world\"";
-    let mut lexer = create_test_pp_lexer(source);
-    test_tokens!(lexer, ("\"helloworld\"", PPTokenKind::StringLiteral(_)));
 
     // Line splicing with CRLF
     let source = "hel\\\r\nlo";
@@ -203,7 +196,7 @@ fn test_all_literal_tokens() {
         lexer,
         ("variable", PPTokenKind::Identifier(_)),
         ("\"string\"", PPTokenKind::StringLiteral(_)),
-        ("'c'", PPTokenKind::CharLiteral(_)),
+        ("'c'", PPTokenKind::CharLiteral(_, _)),
         ("123", PPTokenKind::Number(_)),
     );
 }
@@ -278,10 +271,10 @@ fn test_wide_character_literals() {
 
     test_tokens!(
         lexer,
-        ("L'a'", PPTokenKind::CharLiteral(97)), // 'a'
-        ("u'b'", PPTokenKind::CharLiteral(98)), // 'b'
-        ("U'c'", PPTokenKind::CharLiteral(99)), // 'c'
-        ("'\\0'", PPTokenKind::CharLiteral(0)),
+        ("L'a'", PPTokenKind::CharLiteral(97, _)), // 'a'
+        ("u'b'", PPTokenKind::CharLiteral(98, _)), // 'b'
+        ("U'c'", PPTokenKind::CharLiteral(99, _)), // 'c'
+        ("'\\0'", PPTokenKind::CharLiteral(0, _)),
     );
 }
 
@@ -291,32 +284,11 @@ fn test_wide_string_literals() {
     let source = "L\"hello\" u\"world\" U\"test\"";
     let mut lexer = create_test_pp_lexer(source);
 
-    // L"hello"
-    let token1 = lexer.next_token().unwrap();
-    match token1.kind {
-        PPTokenKind::StringLiteral(symbol) => {
-            assert_eq!(symbol.as_str(), "L\"hello\"");
-        }
-        _ => panic!("Expected wide string literal token L\"hello\""),
-    }
-
-    // u"world"
-    let token2 = lexer.next_token().unwrap();
-    match token2.kind {
-        PPTokenKind::StringLiteral(symbol) => {
-            assert_eq!(symbol.as_str(), "u\"world\"");
-        }
-        _ => panic!("Expected wide string literal token u\"world\""),
-    }
-
-    // U"test"
-    let token3 = lexer.next_token().unwrap();
-    match token3.kind {
-        PPTokenKind::StringLiteral(symbol) => {
-            assert_eq!(symbol.as_str(), "U\"test\"");
-        }
-        _ => panic!("Expected wide string literal token U\"test\""),
-    }
+    test_tokens!(lexer,
+        ("L\"hello\"", PPTokenKind::StringLiteral(_)),
+        ("u\"world\"", PPTokenKind::StringLiteral(_)),
+        ("U\"test\"", PPTokenKind::StringLiteral(_)),
+    );
 
     // Should be no more tokens
     assert!(lexer.next_token().is_none());

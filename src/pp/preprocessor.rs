@@ -6,7 +6,6 @@ use std::collections::{HashMap, HashSet};
 
 use crate::pp::interpreter::Interpreter;
 use std::path::{Path, PathBuf};
-use std::num::NonZeroU32;
 use symbol_table::GlobalSymbol as Symbol;
 use target_lexicon::Triple as TargetInfo;
 

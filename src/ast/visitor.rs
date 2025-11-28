@@ -22,7 +22,7 @@ pub trait AstVisitor<'ast> {
     fn visit_literal_int(&mut self, _value: i64, _span: SourceSpan, _context: &mut Self::Context) {}
     fn visit_literal_float(&mut self, _value: f64, _span: SourceSpan, _context: &mut Self::Context) {}
     fn visit_literal_string(&mut self, _value: Symbol, _span: SourceSpan, _context: &mut Self::Context) {}
-    fn visit_literal_char(&mut self, _value: char, _span: SourceSpan, _context: &mut Self::Context) {}
+    fn visit_literal_char(&mut self, _value: u8, _span: SourceSpan, _context: &mut Self::Context) {}
 
     // --- Expressions ---
     fn visit_ident(&mut self, _name: Symbol, _resolved_symbol: &Cell<Option<SymbolEntryRef>>, _span: SourceSpan, _context: &mut Self::Context) {}

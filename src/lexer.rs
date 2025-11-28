@@ -13,7 +13,7 @@ pub enum TokenKind {
     // Literals
     IntegerConstant(i64),   // Parsed integer literal value
     FloatConstant(Symbol),  // Raw float literal text
-    CharacterConstant(u32), // Unicode codepoint
+    CharacterConstant(u8),  // Byte value of character constant
     StringLiteral(Symbol),  // Interned string literal
 
     // Keywords (C11)
@@ -473,7 +473,7 @@ impl<'src> Lexer<'src> {
                 }
             }
             PPTokenKind::StringLiteral(symbol) => TokenKind::StringLiteral(symbol),
-            PPTokenKind::CharLiteral(codepoint) => TokenKind::CharacterConstant(codepoint),
+            PPTokenKind::CharLiteral(codepoint, _) => TokenKind::CharacterConstant(codepoint),
             PPTokenKind::Number(value) => {
                 // Try to parse as integer first
                 match self.parse_c11_integer_literal(value) {

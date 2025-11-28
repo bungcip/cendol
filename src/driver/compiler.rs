@@ -56,7 +56,7 @@ impl CompilerDriver {
     }
 
     /// Compile a single file through the full pipeline
-    fn compile_file(&mut self, source_path: &Path) -> Result<(), CompilerError> {
+    pub fn compile_file(&mut self, source_path: &Path) -> Result<(), CompilerError> {
         log::debug!("Starting compilation of file: {}", source_path.display());
         let lang_options = LangOptions {
             c11: true,
@@ -194,6 +194,11 @@ impl CompilerDriver {
         }
 
         Ok(())
+    }
+
+    /// Check if any errors were reported
+    pub fn has_errors(&self) -> bool {
+        self.diagnostics.has_errors()
     }
 }
 

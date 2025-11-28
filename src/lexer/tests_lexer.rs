@@ -38,10 +38,6 @@ fn lex_string_to_token_kind_with_eof(input: &str, include_eof: bool) -> Vec<Toke
     }; // preprocessor is dropped here
 
     let mut lexer = Lexer::new(
-        &source_manager,
-        &mut diag,
-        &lang_opts,
-        &target_info,
         &pp_tokens,
     );
 
@@ -74,11 +70,9 @@ mod tests {
             "_Noreturn", "_Pragma", "_Static_assert", "_Thread_local",
         ];
 
-        let keyword_table = KeywordTable::new();
-
         for keyword in keywords {
             let symbol = Symbol::new(keyword);
-            let expected_kind = keyword_table.is_keyword(symbol)
+            let expected_kind = super::is_keyword(symbol)
                 .expect(&format!("{} should be a keyword", keyword));
 
             let token_kinds = lex_string_to_token_kind(keyword);
@@ -207,6 +201,44 @@ mod tests {
             assert_eq!(token_kinds.len(), 1, "Expected 1 token for identifier: {}", ident);
             assert_eq!(token_kinds[0], TokenKind::Identifier(symbol), "Failed for identifier: {}", ident);
         }
+    }
+
+    #[test]
+    fn test_string_literal_concatenation() {
+        // Test adjacent string literal concatenation (C11 6.4.5)
+        let test_cases = vec![
+            // Basic concatenation
+            ("\"hello\" \"world\"", "\"helloworld\""),
+            // With whitespace between
+            ("\"hello\"   \"world\"", "\"helloworld\""),
+            // Multiple concatenations
+            ("\"a\" \"b\" \"c\"", "\"abc\""),
+            // With escape sequences
+            ("\"hello\\n\" \"world\"", "\"hello\\nworld\""),
+            // Mixed quotes and content
+            ("\"start\" \" middle \" \"end\"", "\"start middle end\""),
+        ];
+
+        for (input, expected_content) in test_cases {
+            let token_kinds = lex_string_to_token_kind(input);
+            assert_eq!(token_kinds.len(), 1, "Expected 1 token for concatenated string: {}", input);
+
+            match &token_kinds[0] {
+                TokenKind::StringLiteral(symbol) => {
+                    let actual_content = symbol.as_str();
+                    assert_eq!(actual_content, expected_content,
+                        "String concatenation failed for input: {}", input);
+                }
+                _ => panic!("Expected StringLiteral token for input: {}", input),
+            }
+        }
+
+        // Test that non-adjacent strings are not concatenated
+        let token_kinds = lex_string_to_token_kind("\"hello\" ; \"world\"");
+        assert_eq!(token_kinds.len(), 3, "Expected 3 tokens for non-adjacent strings");
+        assert!(matches!(token_kinds[0], TokenKind::StringLiteral(_)), "First token should be string literal");
+        assert_eq!(token_kinds[1], TokenKind::Semicolon, "Second token should be semicolon");
+        assert!(matches!(token_kinds[2], TokenKind::StringLiteral(_)), "Third token should be string literal");
     }
 
     #[test]

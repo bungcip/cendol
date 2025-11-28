@@ -4,7 +4,7 @@
 //! symbols and scopes during semantic analysis. It maintains a hierarchical
 //! scope structure and provides efficient symbol lookup and storage.
 
-use std::collections::HashMap;
+use hashbrown::HashMap;
 use std::num::NonZeroU32;
 
 use log::debug;

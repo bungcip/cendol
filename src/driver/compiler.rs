@@ -9,6 +9,7 @@ use std::path::Path;
 use crate::ast::Ast;
 use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::LangOptions;
+use crate::lexer::Lexer;
 use crate::parser::Parser;
 use crate::pp::Preprocessor;
 use crate::semantic::{SemanticAnalyzer, SymbolTable};
@@ -109,11 +110,7 @@ impl CompilerDriver {
 
         // 3. Lexing phase
         let tokens = {
-            let mut lexer = crate::lexer::Lexer::new(
-                &self.source_manager,
-                &mut self.diagnostics,
-                &lang_options,
-                &target_triple,
+            let mut lexer = Lexer::new(
                 &pp_tokens,
             );
 

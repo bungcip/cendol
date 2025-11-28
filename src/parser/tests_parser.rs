@@ -27,7 +27,7 @@ fn parse_expression(source: &str) -> (Ast, Node) {
     );
     let pp_tokens = pp.process(source_id, &Default::default()).unwrap();
 
-    let mut lexer = Lexer::new(&sm, &mut diag, &lang_opts, &target_info, &pp_tokens);
+    let mut lexer = Lexer::new(&pp_tokens);
     let tokens = lexer.tokenize_all();
 
     let mut ast = Ast::new();

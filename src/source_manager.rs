@@ -1,4 +1,5 @@
-use std::{collections::HashMap, num::NonZeroU32, path::PathBuf, cmp::Ordering};
+use std::{num::NonZeroU32, path::PathBuf, cmp::Ordering};
+use hashbrown::HashMap;
 
 /// Source ID for identifying source files
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

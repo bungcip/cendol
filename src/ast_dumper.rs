@@ -1726,10 +1726,6 @@ impl<'src> AstDumper<'src> {
 
         // Create lexer and tokenize
         let mut lexer = Lexer::new(
-            self.source_manager,
-            self.diag,
-            self.lang_opts,
-            self.target_info,
             &pp_tokens,
         );
 

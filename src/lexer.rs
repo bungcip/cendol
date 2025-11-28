@@ -1,8 +1,9 @@
-use crate::lang_options::LangOptions;
 use crate::pp::{PPToken, PPTokenKind};
-use crate::source_manager::{SourceLoc, SourceManager, SourceSpan};
+use crate::source_manager::{SourceLoc, SourceSpan};
 use symbol_table::GlobalSymbol as Symbol;
-use target_lexicon::Triple as TargetTriple;
+
+use hashbrown::HashMap;
+use std::sync::OnceLock;
 
 // Re-export DiagnosticEngine from diagnostic module for convenience
 pub use crate::diagnostic::DiagnosticEngine;
@@ -10,111 +11,138 @@ pub use crate::diagnostic::DiagnosticEngine;
 /// C11 token kinds for the lexical analyzer
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TokenKind {
-    // Literals
+    // === LITERALS ===
     IntegerConstant(i64),   // Parsed integer literal value
     FloatConstant(Symbol),  // Raw float literal text
     CharacterConstant(u8),  // Byte value of character constant
     StringLiteral(Symbol),  // Interned string literal
 
-    // Keywords (C11)
+    // === IDENTIFIERS ===
+    Identifier(Symbol), // Interned identifier
+
+    // === KEYWORDS ===
+    // Storage class specifiers
     Auto,
+    Extern,
+    Register,
+    Static,
+    ThreadLocal,
+
+    // Type qualifiers
+    Const,
+    Restrict,
+    Volatile,
+    Atomic,
+
+    // Type specifiers
+    Bool,
+    Char,
+    Double,
+    Float,
+    Int,
+    Long,
+    Short,
+    Signed,
+    Unsigned,
+    Void,
+    Complex,
+
+    // Complex type specifiers
+    Struct,
+    Union,
+    Enum,
+
+    // Control flow
     Break,
     Case,
-    Char,
-    Const,
     Continue,
     Default,
     Do,
-    Double,
     Else,
-    Enum,
-    Extern,
-    Float,
     For,
     Goto,
     If,
-    Inline,
-    Int,
-    Long,
-    Register,
-    Restrict,
     Return,
-    Short,
-    Signed,
-    Sizeof,
-    Static,
-    Struct,
     Switch,
-    Typedef,
-    Union,
-    Unsigned,
-    Void,
-    Volatile,
     While,
-    // C11 specific keywords
+
+    // Other keywords
     Alignas,
     Alignof,
-    Atomic,
-    Bool,
-    Complex,
     Generic,
+    Inline,
     Noreturn,
     Pragma,
+    Sizeof,
     StaticAssert,
-    ThreadLocal,
+    Typedef,
 
-    // Identifiers
-    Identifier(Symbol), // Interned identifier
-
-    // Operators and punctuation
+    // === OPERATORS ===
+    // Arithmetic operators
     Plus,
     Minus,
     Star,
     Slash,
-    Percent, // + - * / %
+    Percent,
+    Increment,
+    Decrement,
+
+    // Bitwise operators
     And,
     Or,
     Xor,
     Not,
-    Tilde, // & | ^ ! ~
+    Tilde,
+    LeftShift,
+    RightShift,
+
+    // Comparison operators
     Less,
     Greater,
     LessEqual,
     GreaterEqual,
     Equal,
-    NotEqual, // < > <= >= == !=
-    LeftShift,
-    RightShift, // << >>
+    NotEqual,
+
+    // Assignment operators
     Assign,
     PlusAssign,
-    MinusAssign, // = += -=
+    MinusAssign,
     StarAssign,
     DivAssign,
-    ModAssign, // *= /= %=
+    ModAssign,
     AndAssign,
     OrAssign,
-    XorAssign, // &= |= ^=
+    XorAssign,
     LeftShiftAssign,
-    RightShiftAssign, // <<= >>=
-    Increment,
-    Decrement, // ++ --
-    Arrow,
-    Dot, // -> .
-    Question,
-    Colon, // ? :
-    Comma,
-    Semicolon, // , ;
-    LeftParen,
-    RightParen, // ( )
-    LeftBracket,
-    RightBracket, // [ ]
-    LeftBrace,
-    RightBrace, // { }
-    Ellipsis,   // ...
-    LogicAnd,
-    LogicOr, // && ||
+    RightShiftAssign,
 
-    // Special tokens
+    // Logical operators
+    LogicAnd,
+    LogicOr,
+
+    // Member access
+    Arrow,
+    Dot,
+
+    // Ternary operator
+    Question,
+    Colon,
+
+    // === PUNCTUATION ===
+    Comma,
+    Semicolon,
+    Ellipsis,
+
+    // Brackets and parentheses
+    LeftParen,
+    RightParen,
+    LeftBracket,
+    RightBracket,
+    LeftBrace,
+    RightBrace,
+
+    // === SPECIAL TOKENS ===
     EndOfFile,
     Unknown,
 }
@@ -126,252 +154,162 @@ pub struct Token {
     pub location: SourceSpan,
 }
 
-/// Table of pre-interned C11 keywords for O(1) keyword recognition
-pub struct KeywordTable {
+/// Static keyword lookup table for O(1) keyword recognition
+static KEYWORDS: OnceLock<HashMap<&'static str, TokenKind>> = OnceLock::new();
+
+/// Static punctuation mapping for systematic token classification
+static PUNCTUATION_MAP: OnceLock<HashMap<PPTokenKind, TokenKind>> = OnceLock::new();
+
+/// Initialize the keyword map
+fn init_keywords() -> HashMap<&'static str, TokenKind> {
+    let mut map = HashMap::new();
+
     // C11 keywords
-    auto: Symbol,
-    break_: Symbol,
-    case: Symbol,
-    char_: Symbol,
-    const_: Symbol,
-    continue_: Symbol,
-    default: Symbol,
-    do_: Symbol,
-    double: Symbol,
-    else_: Symbol,
-    enum_: Symbol,
-    extern_: Symbol,
-    float: Symbol,
-    for_: Symbol,
-    goto: Symbol,
-    if_: Symbol,
-    inline: Symbol,
-    int: Symbol,
-    long: Symbol,
-    register: Symbol,
-    restrict: Symbol,
-    return_: Symbol,
-    short: Symbol,
-    signed: Symbol,
-    sizeof: Symbol,
-    static_: Symbol,
-    struct_: Symbol,
-    switch: Symbol,
-    typedef: Symbol,
-    union_: Symbol,
-    unsigned: Symbol,
-    void: Symbol,
-    volatile: Symbol,
-    while_: Symbol,
-    // C11 specific
-    alignas: Symbol,
-    alignof: Symbol,
-    atomic: Symbol,
-    bool_: Symbol,
-    complex: Symbol,
-    generic: Symbol,
-    noreturn: Symbol,
-    pragma: Symbol,
-    static_assert: Symbol,
-    thread_local: Symbol,
+    map.insert("auto", TokenKind::Auto);
+    map.insert("break", TokenKind::Break);
+    map.insert("case", TokenKind::Case);
+    map.insert("char", TokenKind::Char);
+    map.insert("const", TokenKind::Const);
+    map.insert("continue", TokenKind::Continue);
+    map.insert("default", TokenKind::Default);
+    map.insert("do", TokenKind::Do);
+    map.insert("double", TokenKind::Double);
+    map.insert("else", TokenKind::Else);
+    map.insert("enum", TokenKind::Enum);
+    map.insert("extern", TokenKind::Extern);
+    map.insert("float", TokenKind::Float);
+    map.insert("for", TokenKind::For);
+    map.insert("goto", TokenKind::Goto);
+    map.insert("if", TokenKind::If);
+    map.insert("inline", TokenKind::Inline);
+    map.insert("int", TokenKind::Int);
+    map.insert("long", TokenKind::Long);
+    map.insert("register", TokenKind::Register);
+    map.insert("restrict", TokenKind::Restrict);
+    map.insert("return", TokenKind::Return);
+    map.insert("short", TokenKind::Short);
+    map.insert("signed", TokenKind::Signed);
+    map.insert("sizeof", TokenKind::Sizeof);
+    map.insert("static", TokenKind::Static);
+    map.insert("struct", TokenKind::Struct);
+    map.insert("switch", TokenKind::Switch);
+    map.insert("typedef", TokenKind::Typedef);
+    map.insert("union", TokenKind::Union);
+    map.insert("unsigned", TokenKind::Unsigned);
+    map.insert("void", TokenKind::Void);
+    map.insert("volatile", TokenKind::Volatile);
+    map.insert("while", TokenKind::While);
+
+    // C11 specific keywords
+    map.insert("_Alignas", TokenKind::Alignas);
+    map.insert("_Alignof", TokenKind::Alignof);
+    map.insert("_Atomic", TokenKind::Atomic);
+    map.insert("_Bool", TokenKind::Bool);
+    map.insert("_Complex", TokenKind::Complex);
+    map.insert("_Generic", TokenKind::Generic);
+    map.insert("_Noreturn", TokenKind::Noreturn);
+    map.insert("_Pragma", TokenKind::Pragma);
+    map.insert("_Static_assert", TokenKind::StaticAssert);
+    map.insert("_Thread_local", TokenKind::ThreadLocal);
+
+    map
 }
 
-impl Default for KeywordTable {
-    fn default() -> Self {
-        Self::new()
-    }
+/// Initialize the punctuation mapping
+fn init_punctuation_map() -> HashMap<PPTokenKind, TokenKind> {
+    let mut map = HashMap::new();
+
+    // Arithmetic operators
+    map.insert(PPTokenKind::Plus, TokenKind::Plus);
+    map.insert(PPTokenKind::Minus, TokenKind::Minus);
+    map.insert(PPTokenKind::Star, TokenKind::Star);
+    map.insert(PPTokenKind::Slash, TokenKind::Slash);
+    map.insert(PPTokenKind::Percent, TokenKind::Percent);
+    map.insert(PPTokenKind::Increment, TokenKind::Increment);
+    map.insert(PPTokenKind::Decrement, TokenKind::Decrement);
+
+    // Bitwise operators
+    map.insert(PPTokenKind::And, TokenKind::And);
+    map.insert(PPTokenKind::Or, TokenKind::Or);
+    map.insert(PPTokenKind::Xor, TokenKind::Xor);
+    map.insert(PPTokenKind::Not, TokenKind::Not);
+    map.insert(PPTokenKind::Tilde, TokenKind::Tilde);
+    map.insert(PPTokenKind::LeftShift, TokenKind::LeftShift);
+    map.insert(PPTokenKind::RightShift, TokenKind::RightShift);
+
+    // Comparison operators
+    map.insert(PPTokenKind::Less, TokenKind::Less);
+    map.insert(PPTokenKind::Greater, TokenKind::Greater);
+    map.insert(PPTokenKind::LessEqual, TokenKind::LessEqual);
+    map.insert(PPTokenKind::GreaterEqual, TokenKind::GreaterEqual);
+    map.insert(PPTokenKind::Equal, TokenKind::Equal);
+    map.insert(PPTokenKind::NotEqual, TokenKind::NotEqual);
+
+    // Assignment operators
+    map.insert(PPTokenKind::Assign, TokenKind::Assign);
+    map.insert(PPTokenKind::PlusAssign, TokenKind::PlusAssign);
+    map.insert(PPTokenKind::MinusAssign, TokenKind::MinusAssign);
+    map.insert(PPTokenKind::StarAssign, TokenKind::StarAssign);
+    map.insert(PPTokenKind::DivAssign, TokenKind::DivAssign);
+    map.insert(PPTokenKind::ModAssign, TokenKind::ModAssign);
+    map.insert(PPTokenKind::AndAssign, TokenKind::AndAssign);
+    map.insert(PPTokenKind::OrAssign, TokenKind::OrAssign);
+    map.insert(PPTokenKind::XorAssign, TokenKind::XorAssign);
+    map.insert(PPTokenKind::LeftShiftAssign, TokenKind::LeftShiftAssign);
+    map.insert(PPTokenKind::RightShiftAssign, TokenKind::RightShiftAssign);
+
+    // Logical operators
+    map.insert(PPTokenKind::LogicAnd, TokenKind::LogicAnd);
+    map.insert(PPTokenKind::LogicOr, TokenKind::LogicOr);
+
+    // Member access
+    map.insert(PPTokenKind::Arrow, TokenKind::Arrow);
+    map.insert(PPTokenKind::Dot, TokenKind::Dot);
+
+    // Ternary operator
+    map.insert(PPTokenKind::Question, TokenKind::Question);
+    map.insert(PPTokenKind::Colon, TokenKind::Colon);
+
+    // Punctuation
+    map.insert(PPTokenKind::Comma, TokenKind::Comma);
+    map.insert(PPTokenKind::Semicolon, TokenKind::Semicolon);
+    map.insert(PPTokenKind::Ellipsis, TokenKind::Ellipsis);
+
+    // Brackets and parentheses
+    map.insert(PPTokenKind::LeftParen, TokenKind::LeftParen);
+    map.insert(PPTokenKind::RightParen, TokenKind::RightParen);
+    map.insert(PPTokenKind::LeftBracket, TokenKind::LeftBracket);
+    map.insert(PPTokenKind::RightBracket, TokenKind::RightBracket);
+    map.insert(PPTokenKind::LeftBrace, TokenKind::LeftBrace);
+    map.insert(PPTokenKind::RightBrace, TokenKind::RightBrace);
+
+    // Special tokens that map to Unknown
+    map.insert(PPTokenKind::Hash, TokenKind::Unknown);
+    map.insert(PPTokenKind::HashHash, TokenKind::Unknown);
+
+    map
 }
 
-impl KeywordTable {
-    pub fn new() -> Self {
-        KeywordTable {
-            auto: Symbol::new("auto"),
-            break_: Symbol::new("break"),
-            case: Symbol::new("case"),
-            char_: Symbol::new("char"),
-            const_: Symbol::new("const"),
-            continue_: Symbol::new("continue"),
-            default: Symbol::new("default"),
-            do_: Symbol::new("do"),
-            double: Symbol::new("double"),
-            else_: Symbol::new("else"),
-            enum_: Symbol::new("enum"),
-            extern_: Symbol::new("extern"),
-            float: Symbol::new("float"),
-            for_: Symbol::new("for"),
-            goto: Symbol::new("goto"),
-            if_: Symbol::new("if"),
-            inline: Symbol::new("inline"),
-            int: Symbol::new("int"),
-            long: Symbol::new("long"),
-            register: Symbol::new("register"),
-            restrict: Symbol::new("restrict"),
-            return_: Symbol::new("return"),
-            short: Symbol::new("short"),
-            signed: Symbol::new("signed"),
-            sizeof: Symbol::new("sizeof"),
-            static_: Symbol::new("static"),
-            struct_: Symbol::new("struct"),
-            switch: Symbol::new("switch"),
-            typedef: Symbol::new("typedef"),
-            union_: Symbol::new("union"),
-            unsigned: Symbol::new("unsigned"),
-            void: Symbol::new("void"),
-            volatile: Symbol::new("volatile"),
-            while_: Symbol::new("while"),
-            // C11 specific
-            alignas: Symbol::new("_Alignas"),
-            alignof: Symbol::new("_Alignof"),
-            atomic: Symbol::new("_Atomic"),
-            bool_: Symbol::new("_Bool"),
-            complex: Symbol::new("_Complex"),
-            generic: Symbol::new("_Generic"),
-            noreturn: Symbol::new("_Noreturn"),
-            pragma: Symbol::new("_Pragma"),
-            static_assert: Symbol::new("_Static_assert"),
-            thread_local: Symbol::new("_Thread_local"),
-        }
-    }
-
-    pub fn is_keyword(&self, symbol: Symbol) -> Option<TokenKind> {
-        // O(1) comparison using interned symbols
-        if symbol == self.auto {
-            Some(TokenKind::Auto)
-        } else if symbol == self.break_ {
-            Some(TokenKind::Break)
-        } else if symbol == self.case {
-            Some(TokenKind::Case)
-        } else if symbol == self.char_ {
-            Some(TokenKind::Char)
-        } else if symbol == self.const_ {
-            Some(TokenKind::Const)
-        } else if symbol == self.continue_ {
-            Some(TokenKind::Continue)
-        } else if symbol == self.default {
-            Some(TokenKind::Default)
-        } else if symbol == self.do_ {
-            Some(TokenKind::Do)
-        } else if symbol == self.double {
-            Some(TokenKind::Double)
-        } else if symbol == self.else_ {
-            Some(TokenKind::Else)
-        } else if symbol == self.enum_ {
-            Some(TokenKind::Enum)
-        } else if symbol == self.extern_ {
-            Some(TokenKind::Extern)
-        } else if symbol == self.float {
-            Some(TokenKind::Float)
-        } else if symbol == self.for_ {
-            Some(TokenKind::For)
-        } else if symbol == self.goto {
-            Some(TokenKind::Goto)
-        } else if symbol == self.if_ {
-            Some(TokenKind::If)
-        } else if symbol == self.inline {
-            Some(TokenKind::Inline)
-        } else if symbol == self.int {
-            Some(TokenKind::Int)
-        } else if symbol == self.long {
-            Some(TokenKind::Long)
-        } else if symbol == self.register {
-            Some(TokenKind::Register)
-        } else if symbol == self.restrict {
-            Some(TokenKind::Restrict)
-        } else if symbol == self.return_ {
-            Some(TokenKind::Return)
-        } else if symbol == self.short {
-            Some(TokenKind::Short)
-        } else if symbol == self.signed {
-            Some(TokenKind::Signed)
-        } else if symbol == self.sizeof {
-            Some(TokenKind::Sizeof)
-        } else if symbol == self.static_ {
-            Some(TokenKind::Static)
-        } else if symbol == self.struct_ {
-            Some(TokenKind::Struct)
-        } else if symbol == self.switch {
-            Some(TokenKind::Switch)
-        } else if symbol == self.typedef {
-            Some(TokenKind::Typedef)
-        } else if symbol == self.union_ {
-            Some(TokenKind::Union)
-        } else if symbol == self.unsigned {
-            Some(TokenKind::Unsigned)
-        } else if symbol == self.void {
-            Some(TokenKind::Void)
-        } else if symbol == self.volatile {
-            Some(TokenKind::Volatile)
-        } else if symbol == self.while_ {
-            Some(TokenKind::While)
-        } else if symbol == self.alignas {
-            Some(TokenKind::Alignas)
-        } else if symbol == self.alignof {
-            Some(TokenKind::Alignof)
-        } else if symbol == self.atomic {
-            Some(TokenKind::Atomic)
-        } else if symbol == self.bool_ {
-            Some(TokenKind::Bool)
-        } else if symbol == self.complex {
-            Some(TokenKind::Complex)
-        } else if symbol == self.generic {
-            Some(TokenKind::Generic)
-        } else if symbol == self.noreturn {
-            Some(TokenKind::Noreturn)
-        } else if symbol == self.pragma {
-            Some(TokenKind::Pragma)
-        } else if symbol == self.static_assert {
-            Some(TokenKind::StaticAssert)
-        } else if symbol == self.thread_local {
-            Some(TokenKind::ThreadLocal)
-        } else {
-            None
-        }
-    }
+/// Check if a symbol represents a C11 keyword
+pub fn is_keyword(symbol: Symbol) -> Option<TokenKind> {
+    KEYWORDS.get_or_init(init_keywords).get(symbol.as_str()).copied()
 }
 
 /// Lexer state machine
 pub struct Lexer<'src> {
-    #[allow(unused)]
-    source_manager: &'src SourceManager,
-    #[allow(unused)]
-    diag: &'src mut DiagnosticEngine,
-    #[allow(unused)]
-    lang_opts: &'src LangOptions,
-    #[allow(unused)]
-    target_info: &'src TargetTriple,
-
     // Current position in token stream
     tokens: &'src [PPToken],
     current_index: usize,
-
-    // Pre-interned keyword symbols for fast comparison
-    keywords: KeywordTable,
-
-    // Lexing state
-    #[allow(unused)]
-    current_token: Option<Token>,
 }
 
 impl<'src> Lexer<'src> {
     /// Create a new lexer with the given preprocessor token stream
     pub fn new(
-        source_manager: &'src SourceManager,
-        diag: &'src mut DiagnosticEngine,
-        lang_opts: &'src LangOptions,
-        target_info: &'src TargetTriple,
         tokens: &'src [PPToken],
     ) -> Self {
-        let keywords = KeywordTable::new();
-
         Lexer {
-            source_manager,
-            diag,
-            lang_opts,
-            target_info,
             tokens,
             current_index: 0,
-            keywords,
-            current_token: None,
         }
     }
 
@@ -379,60 +317,56 @@ impl<'src> Lexer<'src> {
     fn parse_c11_integer_literal(&self, text: Symbol) -> Result<i64, ()> {
         let text_str = text.as_str();
 
-        // C11 integer literal format: [0[xX]][digits][suffix]
-        // Suffixes: u/U (unsigned), l/L (long), ll/LL (long long)
-        // Can be combined: ul, ull, etc.
-
-        // Find where the suffix starts (if any)
-        let mut end_of_digits = text_str.len();
-        let mut _has_unsigned = false;
-        let mut _has_long = false;
-        let mut _has_long_long = false;
-
-        // Check for suffixes (case insensitive)
-        let lower_text = text_str.to_lowercase();
-        if lower_text.ends_with("ull") || lower_text.ends_with("llu") {
-            end_of_digits = text_str.len() - 3;
-            _has_long_long = true;
-            _has_unsigned = lower_text.ends_with("ull");
-        } else if lower_text.ends_with("ul") || lower_text.ends_with("lu") {
-            end_of_digits = text_str.len() - 2;
-            _has_long = true;
-            _has_unsigned = lower_text.ends_with("ul");
-        } else if lower_text.ends_with("u") {
-            end_of_digits = text_str.len() - 1;
-            _has_unsigned = true;
-        } else if lower_text.ends_with("ll") {
-            end_of_digits = text_str.len() - 2;
-            _has_long_long = true;
-        } else if lower_text.ends_with("l") {
-            end_of_digits = text_str.len() - 1;
-            _has_long = true;
-        }
-
-        let digits_part = &text_str[..end_of_digits];
-
-        // Determine base
-        let (base, digits) = if digits_part.starts_with("0x") || digits_part.starts_with("0X") {
-            (16, &digits_part[2..])
-        } else if digits_part.starts_with("0") && digits_part.len() > 1 {
-            (8, &digits_part[1..])
-        } else {
-            (10, digits_part)
-        };
+        // Extract the numeric part and determine base
+        let (digits, base) = Self::extract_digits_and_base(text_str)?;
 
         // Parse the number
+        Self::parse_integer_value(digits, base)
+    }
+
+    /// Extract digits and determine base from integer literal text
+    fn extract_digits_and_base(text: &str) -> Result<(&str, u32), ()> {
+        // Remove suffix to get just the numeric part
+        let digits_part = Self::strip_integer_suffix(text);
+
+        // Determine base
+        if digits_part.starts_with("0x") || digits_part.starts_with("0X") {
+            Ok((&digits_part[2..], 16))
+        } else if digits_part.starts_with('0') && digits_part.len() > 1 {
+            Ok((&digits_part[1..], 8))
+        } else {
+            Ok((digits_part, 10))
+        }
+    }
+
+    /// Strip integer literal suffix (u, l, ll, ul, ull, etc.)
+    fn strip_integer_suffix(text: &str) -> &str {
+        let lower_text = text.to_lowercase();
+
+        // Check for suffixes in order of length (longest first)
+        if lower_text.ends_with("ull") || lower_text.ends_with("llu") {
+            &text[..text.len() - 3]
+        } else if lower_text.ends_with("ul") || lower_text.ends_with("lu") {
+            &text[..text.len() - 2]
+        } else if lower_text.ends_with('u') || lower_text.ends_with('l') {
+            &text[..text.len() - 1]
+        } else if lower_text.ends_with("ll") {
+            &text[..text.len() - 2]
+        } else {
+            text
+        }
+    }
+
+    /// Parse integer value from digits and base
+    fn parse_integer_value(digits: &str, base: u32) -> Result<i64, ()> {
         let value = match base {
             16 => u64::from_str_radix(digits, 16),
             8 => u64::from_str_radix(digits, 8),
             10 => digits.parse::<u64>(),
-            _ => unreachable!(),
+            _ => return Err(()),
         };
 
-        match value {
-            Ok(val) => Ok(val as i64), // Cast to i64, allowing wraparound for large values
-            Err(_) => Err(()), // Invalid integer constant
-        }
+        value.map(|v| v as i64).map_err(|_| ())
     }
 
     /// Get the next token from the stream
@@ -466,77 +400,23 @@ impl<'src> Lexer<'src> {
         match pptoken.kind {
             PPTokenKind::Identifier(symbol) => {
                 // Check if it's a keyword
-                if let Some(keyword) = self.keywords.is_keyword(symbol) {
-                    keyword
-                } else {
-                    TokenKind::Identifier(symbol)
-                }
+                is_keyword(symbol).unwrap_or(TokenKind::Identifier(symbol))
             }
             PPTokenKind::StringLiteral(symbol) => TokenKind::StringLiteral(symbol),
             PPTokenKind::CharLiteral(codepoint, _) => TokenKind::CharacterConstant(codepoint),
             PPTokenKind::Number(value) => {
                 // Try to parse as integer first
-                match self.parse_c11_integer_literal(value) {
-                    Ok(parsed_value) => TokenKind::IntegerConstant(parsed_value),
-                    Err(_) => {
-                        // If integer parsing fails, it might be a float
-                        // For now, just pass the raw text to the parser
-                        TokenKind::FloatConstant(value)
-                    }
-                }
+                self.parse_c11_integer_literal(value)
+                    .map(TokenKind::IntegerConstant)
+                    .unwrap_or_else(|_| TokenKind::FloatConstant(value))
             }
             PPTokenKind::Eof => TokenKind::EndOfFile,
-            // Map preprocessor punctuation to lexer tokens
-            PPTokenKind::Plus => TokenKind::Plus,
-            PPTokenKind::Minus => TokenKind::Minus,
-            PPTokenKind::Star => TokenKind::Star,
-            PPTokenKind::Slash => TokenKind::Slash,
-            PPTokenKind::Percent => TokenKind::Percent,
-            PPTokenKind::And => TokenKind::And,
-            PPTokenKind::Or => TokenKind::Or,
-            PPTokenKind::Xor => TokenKind::Xor,
-            PPTokenKind::Not => TokenKind::Not,
-            PPTokenKind::Tilde => TokenKind::Tilde,
-            PPTokenKind::Less => TokenKind::Less,
-            PPTokenKind::Greater => TokenKind::Greater,
-            PPTokenKind::LessEqual => TokenKind::LessEqual,
-            PPTokenKind::GreaterEqual => TokenKind::GreaterEqual,
-            PPTokenKind::Equal => TokenKind::Equal,
-            PPTokenKind::NotEqual => TokenKind::NotEqual,
-            PPTokenKind::LeftShift => TokenKind::LeftShift,
-            PPTokenKind::RightShift => TokenKind::RightShift,
-            PPTokenKind::Assign => TokenKind::Assign,
-            PPTokenKind::PlusAssign => TokenKind::PlusAssign,
-            PPTokenKind::MinusAssign => TokenKind::MinusAssign,
-            PPTokenKind::StarAssign => TokenKind::StarAssign,
-            PPTokenKind::DivAssign => TokenKind::DivAssign,
-            PPTokenKind::ModAssign => TokenKind::ModAssign,
-            PPTokenKind::AndAssign => TokenKind::AndAssign,
-            PPTokenKind::OrAssign => TokenKind::OrAssign,
-            PPTokenKind::XorAssign => TokenKind::XorAssign,
-            PPTokenKind::LeftShiftAssign => TokenKind::LeftShiftAssign,
-            PPTokenKind::RightShiftAssign => TokenKind::RightShiftAssign,
-            PPTokenKind::Increment => TokenKind::Increment,
-            PPTokenKind::Decrement => TokenKind::Decrement,
-            PPTokenKind::Arrow => TokenKind::Arrow,
-            PPTokenKind::Dot => TokenKind::Dot,
-            PPTokenKind::Question => TokenKind::Question,
-            PPTokenKind::Colon => TokenKind::Colon,
-            PPTokenKind::Comma => TokenKind::Comma,
-            PPTokenKind::Semicolon => TokenKind::Semicolon,
-            PPTokenKind::LeftParen => TokenKind::LeftParen,
-            PPTokenKind::RightParen => TokenKind::RightParen,
-            PPTokenKind::LeftBracket => TokenKind::LeftBracket,
-            PPTokenKind::RightBracket => TokenKind::RightBracket,
-            PPTokenKind::LeftBrace => TokenKind::LeftBrace,
-            PPTokenKind::RightBrace => TokenKind::RightBrace,
-            PPTokenKind::Ellipsis => TokenKind::Ellipsis,
-            PPTokenKind::LogicAnd => TokenKind::LogicAnd,
-            PPTokenKind::LogicOr => TokenKind::LogicOr,
-            // PPTokenKind::Defined is handled in expressions, not keywords
-            PPTokenKind::Hash => TokenKind::Unknown,  // # not used in lexer
-            PPTokenKind::HashHash => TokenKind::Unknown, // ## not used in lexer
-            PPTokenKind::Unknown => TokenKind::Unknown,
+            // Handle punctuation tokens systematically
+            pptoken_kind => PUNCTUATION_MAP
+                .get_or_init(init_punctuation_map)
+                .get(&pptoken_kind)
+                .copied()
+                .unwrap_or(TokenKind::Unknown),
         }
     }
 
@@ -575,60 +455,66 @@ impl<'src> Lexer<'src> {
         let mut i = 0;
 
         while i < tokens.len() {
-            if let TokenKind::StringLiteral(current_symbol) = tokens[i].kind {
-                // Start collecting string literals
-                let current_str = current_symbol.as_str();
-                let mut concatenated_content = String::new();
-                let start_location = tokens[i].location.start;
-
-                // Get the content of the first string literal (removing quotes)
-                if current_str.starts_with('"') && current_str.ends_with('"') {
-                    let content = &current_str[1..current_str.len() - 1];
-                    concatenated_content.push_str(content);
-                } else {
-                    // Invalid string literal format, just push as-is
-                    result.push(tokens[i]);
-                    i += 1;
-                    continue;
-                }
-
-                // Look ahead for more string literals
-                let mut j = i + 1;
-                while j < tokens.len() {
-                    if let TokenKind::StringLiteral(next_symbol) = tokens[j].kind {
-                        let next_str = next_symbol.as_str();
-                        if next_str.starts_with('"') && next_str.ends_with('"') {
-                            let content = &next_str[1..next_str.len() - 1];
-                            concatenated_content.push_str(content);
-                            j += 1;
-                        } else {
-                            break;
-                        }
-                    } else {
-                        break;
-                    }
-                }
-
-                // Create properly formatted concatenated string literal
-                let final_string = format!("\"{}\"", concatenated_content);
-                let concatenated_symbol = Symbol::new(&final_string);
-                let end_location = tokens[j - 1].location.end;
-                result.push(Token {
-                    kind: TokenKind::StringLiteral(concatenated_symbol),
-                    location: SourceSpan {
-                        start: start_location,
-                        end: end_location,
-                    },
-                });
-
-                i = j;
+            if let TokenKind::StringLiteral(_) = tokens[i].kind {
+                // Try to concatenate string literals starting from position i
+                let (concatenated_token, next_pos) = self.concatenate_from_position(&tokens, i);
+                result.push(concatenated_token);
+                i = next_pos;
             } else {
-                result.push(tokens[i]);
+                result.push(tokens[i].clone());
                 i += 1;
             }
         }
 
         result
+    }
+
+    /// Concatenate string literals starting from a given position
+    fn concatenate_from_position(&self, tokens: &[Token], start_pos: usize) -> (Token, usize) {
+        let mut content = String::new();
+        let start_location = tokens[start_pos].location.start;
+        let mut end_location = tokens[start_pos].location.end;
+        let mut pos = start_pos;
+
+        // Collect all adjacent string literals
+        while pos < tokens.len() {
+            if let TokenKind::StringLiteral(symbol) = &tokens[pos].kind {
+                if let Some(extracted) = Self::extract_string_content(symbol) {
+                    content.push_str(&extracted);
+                    end_location = tokens[pos].location.end;
+                    pos += 1;
+                } else {
+                    // Invalid format, stop concatenation
+                    break;
+                }
+            } else {
+                // Not a string literal, stop concatenation
+                break;
+            }
+        }
+
+        // Create the concatenated token
+        let final_string = format!("\"{}\"", content);
+        let concatenated_symbol = Symbol::new(&final_string);
+        let token = Token {
+            kind: TokenKind::StringLiteral(concatenated_symbol),
+            location: SourceSpan {
+                start: start_location,
+                end: end_location,
+            },
+        };
+
+        (token, pos)
+    }
+
+    /// Extract content from a string literal symbol, removing quotes
+    fn extract_string_content(symbol: &Symbol) -> Option<String> {
+        let s = symbol.as_str();
+        if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
+            Some(s[1..s.len() - 1].to_string())
+        } else {
+            None
+        }
     }
 }
 

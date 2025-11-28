@@ -2,7 +2,8 @@ use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::LangOptions;
 use crate::source_manager::{SourceId, SourceLoc, SourceManager, SourceSpan};
 use chrono::{DateTime, Datelike, Timelike, Utc};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
+use hashbrown::HashMap;
 
 use crate::pp::interpreter::Interpreter;
 use std::path::{Path, PathBuf};
@@ -301,8 +302,6 @@ pub struct Preprocessor<'src> {
     built_in_headers: HashMap<&'static str, &'static str>,
 
     // Token management
-    #[allow(unused)]
-    cur_token_lexer: Option<Box<PPTokenLexer>>,
     lexer_stack: Vec<PPLexer>,
 
     // State
@@ -310,10 +309,6 @@ pub struct Preprocessor<'src> {
     skipping: bool, // Whether we are currently skipping tokens due to conditional compilation
 }
 
-/// Specialized lexer for macro expansion and token manipulation
-pub struct PPTokenLexer {
-    // Implementation for macro expansion
-}
 
 /// Preprocessor errors
 #[derive(Debug, thiserror::Error)]
@@ -417,7 +412,6 @@ impl<'src> Preprocessor<'src> {
             include_stack: Vec::new(),
             header_search,
             built_in_headers,
-            cur_token_lexer: None,
             lexer_stack: Vec::new(),
             include_depth: 0,
             skipping: false,

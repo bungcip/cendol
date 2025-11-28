@@ -28,8 +28,12 @@ Cendol utilizes several external crates to streamline development, enhance funct
 ### 3. `hashbrown`
 
 - **Purpose**: High-performance hash map implementation.
-- **Explanation**: Used for symbol interning, type canonicalization, and other hash-map-intensive operations where performance is critical. `hashbrown` is a drop-in replacement for `std::collections::HashMap` but offers superior performance, especially in scenarios with many insertions and lookups, making it ideal for compiler data structures.
-- **Reference**: Used internally for `StringInterner` in [Abstract Syntax Tree (AST) Design](ast_design.md), `macro_table` in [Preprocessor Design Document](preprocessor_design.md), `PrattTable` in [Parser Design Document](parser_design.md), and `SymbolTable` and `TypeTable` in [Semantic Analysis Phase](semantic_analysis_design.md).
+- **Explanation**: **Fully implemented throughout the codebase** for all HashMap operations. `hashbrown` is a drop-in replacement for `std::collections::HashMap` but offers superior performance through optimized hashing algorithms (ahash/foldhash), especially in scenarios with many insertions and lookups, making it ideal for compiler data structures.
+- **Implementation Status**: ✅ **COMPLETED** - Migrated all `std::collections::HashMap` usage to `hashbrown::HashMap` in:
+  - `src/source_manager.rs` - file_infos HashMap
+  - `src/semantic/symbol_table.rs` - symbols HashMap  
+  - `src/pp/preprocessor.rs` - macros and built_in_headers HashMaps
+- **Reference**: Used for `StringInterner` in [Abstract Syntax Tree (AST) Design](ast_design.md), `macro_table` in [Preprocessor Design Document](preprocessor_design.md), `PrattTable` in [Parser Design Document](parser_design.md), and `SymbolTable` and `TypeTable` in [Semantic Analysis Phase](semantic_analysis_design.md).
 
 ### 4. `thiserror`
 

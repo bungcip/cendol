@@ -104,7 +104,7 @@ impl Cli {
             verbose: self.verbose,
             preprocessor: crate::pp::PreprocessorConfig {
                 max_include_depth: self.preprocessor.max_include_depth,
-                system_include_paths: vec![],
+                ..Default::default()
             },
             suppress_line_markers: self.suppress_line_markers,
             include_paths: self.include_paths,

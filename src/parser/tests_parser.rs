@@ -22,7 +22,7 @@ fn parse_expression(source: &str) -> (Ast, Node) {
         target_info.clone(),
         &crate::pp::PreprocessorConfig {
             max_include_depth: 200,
-            system_include_paths: Vec::new(),
+            ..Default::default()
         },
     );
     let pp_tokens = pp.process(source_id, &Default::default()).unwrap();

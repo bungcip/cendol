@@ -23,7 +23,7 @@ fn lex_string_to_token_kind_with_eof(input: &str, include_eof: bool) -> Vec<Toke
 
     let pp_config = PreprocessorConfig {
         max_include_depth: 10,
-        system_include_paths: Vec::new(),
+        ..Default::default()
     };
 
     let pp_tokens = {

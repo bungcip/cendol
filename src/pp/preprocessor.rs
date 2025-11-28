@@ -162,22 +162,79 @@ pub struct HeaderSearch {
 }
 
 impl HeaderSearch {
+    /// Add a system include path
+    pub fn add_system_path(&mut self, path: PathBuf) {
+        self.system_path.push(SearchPath {
+            path,
+            is_system: true,
+        });
+    }
+
+    /// Add a quoted include path (-iquote)
+    pub fn add_quoted_path(&mut self, path: PathBuf) {
+        self.quoted_includes.push(path.to_string_lossy().to_string());
+    }
+
+    /// Add an angled include path (-I)
+    pub fn add_angled_path(&mut self, path: PathBuf) {
+        self.angled_includes.push(path.to_string_lossy().to_string());
+    }
+
+    /// Add a framework path
+    pub fn add_framework_path(&mut self, path: PathBuf) {
+        self.framework_path.push(SearchPath {
+            path,
+            is_system: true,
+        });
+    }
+
     /// Resolve an include path to an absolute path
     pub fn resolve_path(&self, include_path: &str, is_angled: bool, current_dir: &Path) -> Option<PathBuf> {
         if is_angled {
-            for search_path in &self.search_path {
+            // Angled includes: search angled_includes, then system_path, then framework_path
+            for include_path_str in &self.angled_includes {
+                let candidate = Path::new(include_path_str).join(include_path);
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+            for search_path in &self.system_path {
+                let candidate = search_path.path.join(include_path);
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+            for search_path in &self.framework_path {
                 let candidate = search_path.path.join(include_path);
                 if candidate.exists() {
                     return Some(candidate);
                 }
             }
         } else {
-            // quoted
+            // Quoted includes: search current_dir, then quoted_includes, then angled_includes, then system_path, then framework_path
             let candidate = current_dir.join(include_path);
             if candidate.exists() {
                 return Some(candidate);
             }
-            for search_path in &self.search_path {
+            for include_path_str in &self.quoted_includes {
+                let candidate = Path::new(include_path_str).join(include_path);
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+            for include_path_str in &self.angled_includes {
+                let candidate = Path::new(include_path_str).join(include_path);
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+            for search_path in &self.system_path {
+                let candidate = search_path.path.join(include_path);
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+            for search_path in &self.framework_path {
                 let candidate = search_path.path.join(include_path);
                 if candidate.exists() {
                     return Some(candidate);
@@ -207,6 +264,9 @@ pub struct IncludeStackInfo {
 pub struct PreprocessorConfig {
     pub max_include_depth: usize,
     pub system_include_paths: Vec<PathBuf>,
+    pub quoted_include_paths: Vec<PathBuf>,
+    pub angled_include_paths: Vec<PathBuf>,
+    pub framework_paths: Vec<PathBuf>,
 }
 
 /// Main preprocessor structure
@@ -240,10 +300,6 @@ pub struct Preprocessor<'src> {
     lexer_stack: Vec<PPLexer>,
 
     // State
-    #[allow(unused)]
-    in_main_file: bool,
-    #[allow(unused)]
-    is_parsing_main_file: bool,
     include_depth: usize,
     skipping: bool, // Whether we are currently skipping tokens due to conditional compilation
 }
@@ -309,7 +365,7 @@ impl<'src> Preprocessor<'src> {
         target_info: TargetInfo,
         config: &PreprocessorConfig,
     ) -> Self {
-        let header_search = HeaderSearch {
+        let mut header_search = HeaderSearch {
             search_path: config
                 .system_include_paths
                 .iter()
@@ -323,6 +379,20 @@ impl<'src> Preprocessor<'src> {
             quoted_includes: Vec::new(),
             angled_includes: Vec::new(),
         };
+
+        // Populate the new fields
+        for path in &config.system_include_paths {
+            header_search.add_system_path(path.clone());
+        }
+        for path in &config.quoted_include_paths {
+            header_search.add_quoted_path(path.clone());
+        }
+        for path in &config.angled_include_paths {
+            header_search.add_angled_path(path.clone());
+        }
+        for path in &config.framework_paths {
+            header_search.add_framework_path(path.clone());
+        }
 
         let mut built_in_headers = HashMap::new();
         built_in_headers.insert("stddef.h", include_str!("../../custom-include/stddef.h"));
@@ -343,8 +413,6 @@ impl<'src> Preprocessor<'src> {
             built_in_headers,
             cur_token_lexer: None,
             lexer_stack: Vec::new(),
-            in_main_file: true,
-            is_parsing_main_file: true,
             include_depth: 0,
             skipping: false,
         };

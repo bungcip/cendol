@@ -1707,7 +1707,7 @@ impl<'src> AstDumper<'src> {
         // Create preprocessor config
         let pp_config = PreprocessorConfig {
             max_include_depth: 10, // Small limit for highlighting
-            system_include_paths: Vec::new(),
+            ..Default::default()
         };
 
         // Preprocess the temporary source

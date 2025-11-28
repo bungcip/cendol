@@ -27,7 +27,7 @@ fn setup_preprocessor_test_with_diagnostics(
     let target_info = Triple::host();
     let config = PreprocessorConfig {
         max_include_depth: 100,
-        system_include_paths: Vec::new(),
+        ..Default::default()
     };
 
     let source_id = source_manager.add_file_bytes("<test>", src.as_bytes().to_vec());
@@ -609,7 +609,7 @@ fn test_circular_include_error() {
     let target_info = Triple::unknown();
     let config = PreprocessorConfig {
         max_include_depth: 10,
-        system_include_paths: vec![],
+        ..Default::default()
     };
     let mut pp = Preprocessor::new(&mut sm, &mut diag, lang_opts, target_info, &config);
     let result = pp.process(source_id_a, &config);

@@ -10,6 +10,107 @@ use std::num::NonZeroU32;
 use symbol_table::GlobalSymbol as Symbol;
 use target_lexicon::Triple as TargetInfo;
 
+/// Preprocessor directive kinds
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DirectiveKind {
+    Define,
+    Undef,
+    Include,
+    If,
+    Ifdef,
+    Ifndef,
+    Elif,
+    Else,
+    Endif,
+    Line,
+    Pragma,
+    Error,
+    Warning,
+}
+
+/// Table of pre-interned preprocessor directive names for O(1) keyword recognition
+#[derive(Clone)]
+pub struct DirectiveKeywordTable {
+    define: Symbol,
+    undef: Symbol,
+    include: Symbol,
+    if_: Symbol,
+    ifdef: Symbol,
+    ifndef: Symbol,
+    elif: Symbol,
+    else_: Symbol,
+    endif: Symbol,
+    line: Symbol,
+    pragma: Symbol,
+    error: Symbol,
+    warning: Symbol,
+    defined: Symbol, // For the defined operator in expressions
+}
+
+impl Default for DirectiveKeywordTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DirectiveKeywordTable {
+    pub fn new() -> Self {
+        DirectiveKeywordTable {
+            define: Symbol::new("define"),
+            undef: Symbol::new("undef"),
+            include: Symbol::new("include"),
+            if_: Symbol::new("if"),
+            ifdef: Symbol::new("ifdef"),
+            ifndef: Symbol::new("ifndef"),
+            elif: Symbol::new("elif"),
+            else_: Symbol::new("else"),
+            endif: Symbol::new("endif"),
+            line: Symbol::new("line"),
+            pragma: Symbol::new("pragma"),
+            error: Symbol::new("error"),
+            warning: Symbol::new("warning"),
+            defined: Symbol::new("defined"),
+        }
+    }
+
+    pub fn is_directive(&self, symbol: Symbol) -> Option<DirectiveKind> {
+        if symbol == self.define {
+            Some(DirectiveKind::Define)
+        } else if symbol == self.undef {
+            Some(DirectiveKind::Undef)
+        } else if symbol == self.include {
+            Some(DirectiveKind::Include)
+        } else if symbol == self.if_ {
+            Some(DirectiveKind::If)
+        } else if symbol == self.ifdef {
+            Some(DirectiveKind::Ifdef)
+        } else if symbol == self.ifndef {
+            Some(DirectiveKind::Ifndef)
+        } else if symbol == self.elif {
+            Some(DirectiveKind::Elif)
+        } else if symbol == self.else_ {
+            Some(DirectiveKind::Else)
+        } else if symbol == self.endif {
+            Some(DirectiveKind::Endif)
+        } else if symbol == self.line {
+            Some(DirectiveKind::Line)
+        } else if symbol == self.pragma {
+            Some(DirectiveKind::Pragma)
+        } else if symbol == self.error {
+            Some(DirectiveKind::Error)
+        } else if symbol == self.warning {
+            Some(DirectiveKind::Warning)
+        } else {
+            None
+        }
+    }
+
+    /// Get the interned symbol for the "defined" operator
+    pub fn defined_symbol(&self) -> Symbol {
+        self.defined
+    }
+}
+
 // Re-export types from pp_lexer module for backward compatibility
 pub use crate::pp::pp_lexer::{PPLexer, PPToken, PPTokenFlags, PPTokenKind};
 
@@ -116,6 +217,9 @@ pub struct Preprocessor<'src> {
     lang_opts: LangOptions,
     #[allow(unused)]
     target_info: TargetInfo,
+
+    // Pre-interned directive keywords for fast comparison
+    directive_keywords: DirectiveKeywordTable,
 
     // Macro management
     macros: HashMap<Symbol, MacroInfo>,
@@ -231,6 +335,7 @@ impl<'src> Preprocessor<'src> {
             diag,
             lang_opts,
             target_info,
+            directive_keywords: DirectiveKeywordTable::new(),
             macros: HashMap::new(),
             once_included: HashSet::new(),
             conditional_stack: Vec::new(),
@@ -408,6 +513,11 @@ impl<'src> Preprocessor<'src> {
         self.macros.contains_key(symbol)
     }
 
+    /// Get the interned symbol for the "defined" operator
+    pub fn defined_symbol(&self) -> Symbol {
+        self.directive_keywords.defined_symbol()
+    }
+
     /// Process source file and return preprocessed tokens
     pub fn process(
         &mut self,
@@ -568,7 +678,7 @@ impl<'src> Preprocessor<'src> {
 
         // Check for defined(identifier) or defined identifier before macro expansion
         if tokens.len() >= 2
-            && matches!(tokens[0].kind, PPTokenKind::Defined)
+            && matches!(tokens[0].kind, PPTokenKind::Identifier(sym) if sym == self.defined_symbol())
         {
             if tokens.len() == 2 {
                 // defined identifier
@@ -660,38 +770,39 @@ impl<'src> Preprocessor<'src> {
 
         match token.kind {
             PPTokenKind::Identifier(sym) => {
-                let name = sym.as_str();
-                match name {
-                    "define" => self.handle_define()?,
-                    "undef" => self.handle_undef()?,
-                    "include" => self.handle_include()?,
-                    "if" => {
+                // Use O(1) interned keyword comparison
+                match self.directive_keywords.is_directive(sym) {
+                    Some(DirectiveKind::Define) => self.handle_define()?,
+                    Some(DirectiveKind::Undef) => self.handle_undef()?,
+                    Some(DirectiveKind::Include) => self.handle_include()?,
+                    Some(DirectiveKind::If) => {
                         let expr_tokens = self.parse_conditional_expression()?;
                         let condition = self.evaluate_conditional_expression(&expr_tokens)?;
                         self.handle_if_directive(condition)?;
                     }
-                    "ifdef" => {
+                    Some(DirectiveKind::Ifdef) => {
                         self.handle_ifdef()?;
                     }
-                    "ifndef" => {
+                    Some(DirectiveKind::Ifndef) => {
                         self.handle_ifndef()?;
                     }
-                    "elif" => {
+                    Some(DirectiveKind::Elif) => {
                         let expr_tokens = self.parse_conditional_expression()?;
                         let condition = self.evaluate_conditional_expression(&expr_tokens)?;
                         self.handle_elif_directive(condition)?;
                     }
-                    "else" => {
+                    Some(DirectiveKind::Else) => {
                         self.handle_else()?;
                     }
-                    "endif" => {
+                    Some(DirectiveKind::Endif) => {
                         self.handle_endif()?;
                     }
-                    "line" => self.handle_line()?,
-                    "pragma" => self.handle_pragma()?,
-                    "error" => self.handle_error()?,
-                    "warning" => self.handle_warning()?,
-                    _ => {
+                    Some(DirectiveKind::Line) => self.handle_line()?,
+                    Some(DirectiveKind::Pragma) => self.handle_pragma()?,
+                    Some(DirectiveKind::Error) => self.handle_error()?,
+                    Some(DirectiveKind::Warning) => self.handle_warning()?,
+                    None => {
+                        let name = sym.as_str();
                         let diag = crate::diagnostic::Diagnostic {
                             level: crate::diagnostic::DiagnosticLevel::Error,
                             message: format!("Invalid preprocessor directive '{name}'"),

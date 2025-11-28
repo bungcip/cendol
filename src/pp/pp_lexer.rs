@@ -15,22 +15,6 @@ bitflags::bitflags! {
 /// Token kinds for preprocessor tokens
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PPTokenKind {
-    // Keywords (when in directive mode)
-    If,
-    Ifdef,
-    Ifndef,
-    Elif,
-    Else,
-    Endif,
-    Define,
-    Undef,
-    Include,
-    Line,
-    Pragma,
-    Error,
-    Warning,
-    // Special for expressions
-    Defined,
     // Punctuation and operators
     Plus,
     Minus,
@@ -192,20 +176,6 @@ impl PPToken {
             PPTokenKind::Ellipsis => "...".to_string(),
             PPTokenKind::LogicAnd => "&&".to_string(),
             PPTokenKind::LogicOr => "||".to_string(),
-            PPTokenKind::If => "if".to_string(),
-            PPTokenKind::Ifdef => "ifdef".to_string(),
-            PPTokenKind::Ifndef => "ifndef".to_string(),
-            PPTokenKind::Elif => "elif".to_string(),
-            PPTokenKind::Else => "else".to_string(),
-            PPTokenKind::Endif => "endif".to_string(),
-            PPTokenKind::Define => "define".to_string(),
-            PPTokenKind::Undef => "undef".to_string(),
-            PPTokenKind::Include => "include".to_string(),
-            PPTokenKind::Line => "line".to_string(),
-            PPTokenKind::Pragma => "pragma".to_string(),
-            PPTokenKind::Error => "error".to_string(),
-            PPTokenKind::Warning => "warning".to_string(),
-            PPTokenKind::Defined => "defined".to_string(),
             PPTokenKind::Hash => "#".to_string(),
             PPTokenKind::HashHash => "##".to_string(),
             PPTokenKind::Eof => "".to_string(),
@@ -870,12 +840,8 @@ impl PPLexer {
 
         let text = String::from_utf8(chars).unwrap();
 
-        let kind = if self.in_expression && text == "defined" {
-            PPTokenKind::Defined
-        } else {
-            let symbol = Symbol::new(&text);
-            PPTokenKind::Identifier(symbol)
-        };
+        let symbol = Symbol::new(&text);
+        let kind = PPTokenKind::Identifier(symbol);
 
         PPToken::text(kind, flags, SourceLoc::new(self.source_id, start_pos), &text)
     }

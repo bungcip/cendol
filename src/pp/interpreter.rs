@@ -301,7 +301,7 @@ impl<'a> Interpreter<'a> {
             return Err(PreprocessorError::InvalidConditionalExpression);
         }
         let token = &self.tokens[self.pos];
-        if matches!(token.kind, PPTokenKind::Defined) {
+        if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == self.preprocessor.defined_symbol()) {
             self.pos += 1;
             let ident = if self.pos < self.tokens.len() && matches!(self.tokens[self.pos].kind, PPTokenKind::LeftParen) {
                 self.pos += 1;

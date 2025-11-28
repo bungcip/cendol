@@ -533,21 +533,7 @@ impl<'src> Lexer<'src> {
             PPTokenKind::Ellipsis => TokenKind::Ellipsis,
             PPTokenKind::LogicAnd => TokenKind::LogicAnd,
             PPTokenKind::LogicOr => TokenKind::LogicOr,
-            // Map preprocessor keywords to lexer keywords
-            PPTokenKind::If => TokenKind::If,
-            PPTokenKind::Ifdef => TokenKind::Unknown, // Not used in lexer
-            PPTokenKind::Ifndef => TokenKind::Unknown, // Not used in lexer
-            PPTokenKind::Elif => TokenKind::Unknown,  // Not used in lexer
-            PPTokenKind::Else => TokenKind::Else,
-            PPTokenKind::Endif => TokenKind::Unknown, // Not used in lexer
-            PPTokenKind::Define => TokenKind::Unknown, // Not used in lexer
-            PPTokenKind::Undef => TokenKind::Unknown, // Not used in lexer
-            PPTokenKind::Include => TokenKind::Unknown, // Not used in lexer
-            PPTokenKind::Line => TokenKind::Unknown,  // Not used in lexer
-            PPTokenKind::Pragma => TokenKind::Unknown, // Not used in lexer
-            PPTokenKind::Error => TokenKind::Unknown, // Not used in lexer
-            PPTokenKind::Warning => TokenKind::Unknown, // Not used in lexer
-            PPTokenKind::Defined => TokenKind::Unknown, // Not used in lexer
+            // PPTokenKind::Defined is handled in expressions, not keywords
             PPTokenKind::Hash => TokenKind::Unknown,  // # not used in lexer
             PPTokenKind::HashHash => TokenKind::Unknown, // ## not used in lexer
             PPTokenKind::Unknown => TokenKind::Unknown,

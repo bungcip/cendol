@@ -331,9 +331,6 @@ mod tests {
     use super::*;
     use super::ast_iterators::AstIteratorExt;
     use crate::ast::Ast;
-    use crate::diagnostic::DiagnosticEngine;
-    use crate::lexer::{Lexer, TokenKind};
-    use crate::source_manager::SourceManager;
 
     #[test]
     fn test_ast_iterator() {

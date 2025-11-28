@@ -171,7 +171,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
     }
 
     fn resolve_names(&mut self) {
-        let Some(root_node) = self.ast.get_root_node() else {
+        let Some(_root_node) = self.ast.get_root_node() else {
             debug!("No root node found, skipping name resolution");
             return;
         };
@@ -186,7 +186,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
     }
 
     fn check_types(&mut self) {
-        let Some(root_node) = self.ast.get_root_node() else {
+        let Some(_root_node) = self.ast.get_root_node() else {
             debug!("No root node found, skipping type checking");
             return;
         };
@@ -655,5 +655,3 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
     }
 }
 
-// Re-export diagnostic types for convenience
-pub use crate::diagnostic::*;

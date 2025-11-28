@@ -1,35 +1,59 @@
 use super::*;
 use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::LangOptions;
-use crate::pp::{PPToken, PPTokenFlags, PPTokenKind};
-use crate::source_manager::{SourceId, SourceLoc, SourceManager};
+use crate::pp::{Preprocessor, PreprocessorConfig};
+use crate::source_manager::SourceManager;
 use symbol_table::GlobalSymbol as Symbol;
 use target_lexicon::Triple;
 
-fn create_test_lexer(tokens: Vec<PPToken>) -> Lexer<'static> {
+
+/// Helper function to test lexing from string to TokenKind
+/// This tests the full pipeline: string -> PPToken -> TokenKind
+fn lex_string_to_token_kind(input: &str) -> Vec<TokenKind> {
+    lex_string_to_token_kind_with_eof(input, false)
+}
+
+/// Helper function to test lexing from string to TokenKind, optionally including EndOfFile
+fn lex_string_to_token_kind_with_eof(input: &str, include_eof: bool) -> Vec<TokenKind> {
     let mut source_manager = SourceManager::new();
-    let _source_id = source_manager.add_buffer("test".as_bytes().to_vec(), "test.c");
-    let diag = DiagnosticEngine::new();
+    let source_id = source_manager.add_file("test_input", input);
+    let mut diag = DiagnosticEngine::new();
     let lang_opts = LangOptions::c11();
     let target_info = Triple::host();
 
-    Lexer::new(
-        Box::leak(Box::new(source_manager)),
-        Box::leak(Box::new(diag)),
-        Box::leak(Box::new(lang_opts)),
-        Box::leak(Box::new(target_info)),
-        Box::leak(tokens.into_boxed_slice()),
-    )
-}
+    let pp_config = PreprocessorConfig {
+        max_include_depth: 10,
+        system_include_paths: Vec::new(),
+    };
 
-fn create_pptoken(kind: PPTokenKind, text: &str, offset: u32) -> PPToken {
-    use std::num::NonZeroU32;
-    PPToken::new(
-        kind,
-        PPTokenFlags::empty(),
-        SourceLoc::new(SourceId(NonZeroU32::new(1).unwrap()), offset),
-        text.len() as u16,
-    )
+    let pp_tokens = {
+        let mut preprocessor = Preprocessor::new(
+            &mut source_manager,
+            &mut diag,
+            lang_opts.clone(),
+            target_info.clone(),
+            &pp_config,
+        );
+        preprocessor.process(source_id, &pp_config).unwrap()
+    }; // preprocessor is dropped here
+
+    let mut lexer = Lexer::new(
+        &source_manager,
+        &mut diag,
+        &lang_opts,
+        &target_info,
+        &pp_tokens,
+    );
+
+    let tokens = lexer.tokenize_all();
+    if include_eof {
+        tokens.into_iter().map(|t| t.kind).collect()
+    } else {
+        tokens.into_iter()
+            .filter(|t| !matches!(t.kind, TokenKind::EndOfFile))
+            .map(|t| t.kind)
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -40,61 +64,26 @@ mod tests {
     fn test_c11_keywords() {
         // Test all C11 keywords including C11-specific ones
         let keywords = vec![
-            ("auto", TokenKind::Auto),
-            ("break", TokenKind::Break),
-            ("case", TokenKind::Case),
-            ("char", TokenKind::Char),
-            ("const", TokenKind::Const),
-            ("continue", TokenKind::Continue),
-            ("default", TokenKind::Default),
-            ("do", TokenKind::Do),
-            ("double", TokenKind::Double),
-            ("else", TokenKind::Else),
-            ("enum", TokenKind::Enum),
-            ("extern", TokenKind::Extern),
-            ("float", TokenKind::Float),
-            ("for", TokenKind::For),
-            ("goto", TokenKind::Goto),
-            ("if", TokenKind::If),
-            ("inline", TokenKind::Inline),
-            ("int", TokenKind::Int),
-            ("long", TokenKind::Long),
-            ("register", TokenKind::Register),
-            ("restrict", TokenKind::Restrict),
-            ("return", TokenKind::Return),
-            ("short", TokenKind::Short),
-            ("signed", TokenKind::Signed),
-            ("sizeof", TokenKind::Sizeof),
-            ("static", TokenKind::Static),
-            ("struct", TokenKind::Struct),
-            ("switch", TokenKind::Switch),
-            ("typedef", TokenKind::Typedef),
-            ("union", TokenKind::Union),
-            ("unsigned", TokenKind::Unsigned),
-            ("void", TokenKind::Void),
-            ("volatile", TokenKind::Volatile),
-            ("while", TokenKind::While),
+            "auto", "break", "case", "char", "const", "continue", "default", "do",
+            "double", "else", "enum", "extern", "float", "for", "goto", "if",
+            "inline", "int", "long", "register", "restrict", "return", "short",
+            "signed", "sizeof", "static", "struct", "switch", "typedef", "union",
+            "unsigned", "void", "volatile", "while",
             // C11 specific keywords
-            ("_Alignas", TokenKind::Alignas),
-            ("_Alignof", TokenKind::Alignof),
-            ("_Atomic", TokenKind::Atomic),
-            ("_Bool", TokenKind::Bool),
-            ("_Complex", TokenKind::Complex),
-            ("_Generic", TokenKind::Generic),
-            ("_Noreturn", TokenKind::Noreturn),
-            ("_Pragma", TokenKind::Pragma),
-            ("_Static_assert", TokenKind::StaticAssert),
-            ("_Thread_local", TokenKind::ThreadLocal),
+            "_Alignas", "_Alignof", "_Atomic", "_Bool", "_Complex", "_Generic",
+            "_Noreturn", "_Pragma", "_Static_assert", "_Thread_local",
         ];
 
-        for (text, expected_kind) in keywords {
-            let symbol = Symbol::new(text);
-            let pptoken = create_pptoken(PPTokenKind::Identifier(symbol), text, 0);
-            let mut lexer = create_test_lexer(vec![pptoken]);
+        let keyword_table = KeywordTable::new();
 
-            let tokens = lexer.tokenize_all();
-            assert_eq!(tokens.len(), 1);
-            assert_eq!(tokens[0].kind, expected_kind);
+        for keyword in keywords {
+            let symbol = Symbol::new(keyword);
+            let expected_kind = keyword_table.is_keyword(symbol)
+                .expect(&format!("{} should be a keyword", keyword));
+
+            let token_kinds = lex_string_to_token_kind(keyword);
+            assert_eq!(token_kinds.len(), 1, "Expected 1 token for keyword: {}", keyword);
+            assert_eq!(token_kinds[0], expected_kind, "Failed for keyword: {}", keyword);
         }
     }
 
@@ -150,68 +139,9 @@ mod tests {
         ];
 
         for (text, expected_kind) in operators {
-            let _pptoken = create_pptoken(PPTokenKind::Unknown, text, 0); // Using Unknown as placeholder, but classify_token will map it
-            // Actually, I need to create PPTokens with the correct PPTokenKind
-            // For simplicity, let's map the text to PPTokenKind
-            let pp_kind = match text {
-                "+" => PPTokenKind::Plus,
-                "-" => PPTokenKind::Minus,
-                "*" => PPTokenKind::Star,
-                "/" => PPTokenKind::Slash,
-                "%" => PPTokenKind::Percent,
-                "&" => PPTokenKind::And,
-                "|" => PPTokenKind::Or,
-                "^" => PPTokenKind::Xor,
-                "!" => PPTokenKind::Not,
-                "~" => PPTokenKind::Tilde,
-                "<" => PPTokenKind::Less,
-                ">" => PPTokenKind::Greater,
-                "<=" => PPTokenKind::LessEqual,
-                ">=" => PPTokenKind::GreaterEqual,
-                "==" => PPTokenKind::Equal,
-                "!=" => PPTokenKind::NotEqual,
-                "<<" => PPTokenKind::LeftShift,
-                ">>" => PPTokenKind::RightShift,
-                "=" => PPTokenKind::Assign,
-                "+=" => PPTokenKind::PlusAssign,
-                "-=" => PPTokenKind::MinusAssign,
-                "*=" => PPTokenKind::StarAssign,
-                "/=" => PPTokenKind::DivAssign,
-                "%=" => PPTokenKind::ModAssign,
-                "&=" => PPTokenKind::AndAssign,
-                "|=" => PPTokenKind::OrAssign,
-                "^=" => PPTokenKind::XorAssign,
-                "<<=" => PPTokenKind::LeftShiftAssign,
-                ">>=" => PPTokenKind::RightShiftAssign,
-                "++" => PPTokenKind::Increment,
-                "--" => PPTokenKind::Decrement,
-                "->" => PPTokenKind::Arrow,
-                "." => PPTokenKind::Dot,
-                "?" => PPTokenKind::Question,
-                ":" => PPTokenKind::Colon,
-                "," => PPTokenKind::Comma,
-                ";" => PPTokenKind::Semicolon,
-                "(" => PPTokenKind::LeftParen,
-                ")" => PPTokenKind::RightParen,
-                "[" => PPTokenKind::LeftBracket,
-                "]" => PPTokenKind::RightBracket,
-                "{" => PPTokenKind::LeftBrace,
-                "}" => PPTokenKind::RightBrace,
-                "..." => PPTokenKind::Ellipsis,
-                "&&" => PPTokenKind::LogicAnd,
-                "||" => PPTokenKind::LogicOr,
-                _ => panic!("Unknown operator: {}", text),
-            };
-            let pptoken = create_pptoken(pp_kind, text, 0);
-            let mut lexer = create_test_lexer(vec![pptoken]);
-
-            let tokens = lexer.tokenize_all();
-            assert_eq!(tokens.len(), 1, "Failed for operator: {}", text);
-            assert_eq!(
-                tokens[0].kind, expected_kind,
-                "Failed for operator: {}",
-                text
-            );
+            let token_kinds = lex_string_to_token_kind(text);
+            assert_eq!(token_kinds.len(), 1, "Expected 1 token for operator: {}", text);
+            assert_eq!(token_kinds[0], expected_kind, "Failed for operator: {}", text);
         }
     }
 
@@ -225,13 +155,9 @@ mod tests {
         ];
 
         for (text, expected_kind) in int_literals {
-            let symbol = Symbol::new(text);
-            let pptoken = create_pptoken(PPTokenKind::Number(symbol), text, 0);
-            let mut lexer = create_test_lexer(vec![pptoken]);
-
-            let tokens = lexer.tokenize_all();
-            assert_eq!(tokens.len(), 1);
-            assert_eq!(tokens[0].kind, expected_kind);
+            let token_kinds = lex_string_to_token_kind(text);
+            assert_eq!(token_kinds.len(), 1, "Expected 1 token for integer literal: {}", text);
+            assert_eq!(token_kinds[0], expected_kind, "Failed for integer literal: {}", text);
         }
 
         // Float constants - treated as FloatConstant since classify_token maps Number to FloatConstant if integer parsing fails
@@ -241,53 +167,33 @@ mod tests {
         ];
 
         for (text, expected_kind) in float_literals {
-            let symbol = Symbol::new(text);
-            let pptoken = create_pptoken(PPTokenKind::Number(symbol), text, 0);
-            let mut lexer = create_test_lexer(vec![pptoken]);
-
-            let tokens = lexer.tokenize_all();
-            assert_eq!(tokens.len(), 1);
-            assert_eq!(tokens[0].kind, expected_kind);
+            let token_kinds = lex_string_to_token_kind(text);
+            assert_eq!(token_kinds.len(), 1, "Expected 1 token for float literal: {}", text);
+            assert_eq!(token_kinds[0], expected_kind, "Failed for float literal: {}", text);
         }
 
         // Character constants
         let char_literals = vec![
-            ("'a'", 97u32),   // 'a' = 97
-            ("'\\n'", 10u32), // '\n' = 10
+            ("'a'", TokenKind::CharacterConstant(97)),   // 'a' = 97
+            ("'\\n'", TokenKind::CharacterConstant(10)), // '\n' = 10
         ];
 
-        for (text, expected_codepoint) in char_literals {
-            let pptoken = create_pptoken(PPTokenKind::CharLiteral(expected_codepoint), text, 0);
-            let mut lexer = create_test_lexer(vec![pptoken]);
-
-            let tokens = lexer.tokenize_all();
-            assert_eq!(tokens.len(), 1);
-            assert_eq!(
-                tokens[0].kind,
-                TokenKind::CharacterConstant(expected_codepoint)
-            );
+        for (text, expected_kind) in char_literals {
+            let token_kinds = lex_string_to_token_kind(text);
+            assert_eq!(token_kinds.len(), 1, "Expected 1 token for character literal: {}", text);
+            assert_eq!(token_kinds[0], expected_kind, "Failed for character literal: {}", text);
         }
 
         // String literals
         let string_literals = vec![
-            (
-                "\"hello\"",
-                TokenKind::StringLiteral(Symbol::new("\"hello\"")),
-            ),
-            (
-                "\"world\\n\"",
-                TokenKind::StringLiteral(Symbol::new("\"world\\n\"")),
-            ),
+            ("\"hello\"", TokenKind::StringLiteral(Symbol::new("\"hello\""))),
+            ("\"world\\n\"", TokenKind::StringLiteral(Symbol::new("\"world\\n\""))),
         ];
 
         for (text, expected_kind) in string_literals {
-            let symbol = Symbol::new(text);
-            let pptoken = create_pptoken(PPTokenKind::StringLiteral(symbol), text, 0);
-            let mut lexer = create_test_lexer(vec![pptoken]);
-
-            let tokens = lexer.tokenize_all();
-            assert_eq!(tokens.len(), 1);
-            assert_eq!(tokens[0].kind, expected_kind);
+            let token_kinds = lex_string_to_token_kind(text);
+            assert_eq!(token_kinds.len(), 1, "Expected 1 token for string literal: {}", text);
+            assert_eq!(token_kinds[0], expected_kind, "Failed for string literal: {}", text);
         }
     }
 
@@ -297,31 +203,22 @@ mod tests {
 
         for ident in identifiers {
             let symbol = Symbol::new(ident);
-            let pptoken = create_pptoken(PPTokenKind::Identifier(symbol), ident, 0);
-            let mut lexer = create_test_lexer(vec![pptoken]);
-
-            let tokens = lexer.tokenize_all();
-            assert_eq!(tokens.len(), 1);
-            assert_eq!(tokens[0].kind, TokenKind::Identifier(symbol));
+            let token_kinds = lex_string_to_token_kind(ident);
+            assert_eq!(token_kinds.len(), 1, "Expected 1 token for identifier: {}", ident);
+            assert_eq!(token_kinds[0], TokenKind::Identifier(symbol), "Failed for identifier: {}", ident);
         }
     }
 
     #[test]
     fn test_special_tokens() {
-        // EndOfFile
-        let eof_pptoken = create_pptoken(PPTokenKind::Eof, "", 0);
-        let mut lexer = create_test_lexer(vec![eof_pptoken]);
+        // EndOfFile - empty string should produce EndOfFile when included
+        let token_kinds = lex_string_to_token_kind_with_eof("", true);
+        assert_eq!(token_kinds.len(), 1, "Expected 1 token for empty string");
+        assert_eq!(token_kinds[0], TokenKind::EndOfFile, "Empty string should produce EndOfFile");
 
-        let tokens = lexer.tokenize_all();
-        assert_eq!(tokens.len(), 1);
-        assert_eq!(tokens[0].kind, TokenKind::EndOfFile);
-
-        // Unknown
-        let unknown_pptoken = create_pptoken(PPTokenKind::Unknown, "@", 0);
-        let mut lexer = create_test_lexer(vec![unknown_pptoken]);
-
-        let tokens = lexer.tokenize_all();
-        assert_eq!(tokens.len(), 1);
-        assert_eq!(tokens[0].kind, TokenKind::Unknown);
+        // Unknown - unrecognized character should produce Unknown
+        let token_kinds = lex_string_to_token_kind("@");
+        assert_eq!(token_kinds.len(), 1, "Expected 1 token for unknown character");
+        assert_eq!(token_kinds[0], TokenKind::Unknown, "Unrecognized character should produce Unknown");
     }
 }

@@ -883,9 +883,17 @@ impl PPLexer {
     fn lex_number(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
         // Use next_char() for consistency with line splicing
         let mut chars = vec![first_ch];
+        let mut seen_e = false;
         while let Some(ch) = self.peek_char() {
             if ch.is_ascii_digit() || ch == b'.' || ch.is_ascii_alphabetic() || ch == b'_' {
                 chars.push(self.next_char().unwrap());
+                if ch == b'e' || ch == b'E' {
+                    seen_e = true;
+                }
+            } else if (ch == b'+' || ch == b'-') && seen_e {
+                // Allow + or - after e/E for scientific notation
+                chars.push(self.next_char().unwrap());
+                seen_e = false; // Reset so we don't allow multiple +/- after e
             } else {
                 break;
             }
@@ -962,17 +970,27 @@ impl PPLexer {
             }
         }
 
-        // Simplified: parse simple cases
+        // Parse character literal content
         let quote_start = if has_prefix { 1 } else { 0 };
         let content_start = quote_start + 1;
         let content_len = chars.len() - content_start - 1; // exclude closing '
 
-        let codepoint = if content_len == 2 && chars[content_start] == b'\\' && chars[content_start + 1] == b'0' {
-            0
-        } else if content_len == 1 {
+        let codepoint = if content_len == 1 {
             chars[content_start] as u32
+        } else if content_len == 2 && chars[content_start] == b'\\' {
+            // Handle escape sequences
+            match chars[content_start + 1] {
+                b'0' => 0,   // null
+                b'n' => 10,  // newline
+                b't' => 9,   // tab
+                b'r' => 13,  // carriage return
+                b'\\' => 92, // backslash
+                b'\'' => 39, // single quote
+                b'"' => 34,  // double quote
+                _ => chars[content_start + 1] as u32, // fallback to the escaped char
+            }
         } else {
-            0 // placeholder for complex cases
+            0 // placeholder for complex cases (multibyte chars, etc.)
         };
 
         PPToken::new(

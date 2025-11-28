@@ -1,5 +1,5 @@
 #![cfg(test)]
-use crate::ast::{Ast, Node, NodeKind};
+use crate::ast::{Ast, Node};
 use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::LangOptions;
 use crate::lexer::Lexer;

@@ -21,156 +21,94 @@ macro_rules! test_tokens {
         )*
     };
 }
-
-/// Test line splicing: backslash followed by newline removes both characters
+/// Test comprehensive line splicing scenarios
 #[test]
-fn test_line_splicing_basic() {
+fn test_line_splicing_comprehensive() {
+    // Basic line splicing
     let source = "hel\\
 lo";
     let mut lexer = create_test_pp_lexer(source);
+    test_tokens!(lexer, ("hello", PPTokenKind::Identifier(_)));
 
-    test_tokens!(
-        lexer,
-        ("hello", PPTokenKind::Identifier(_)),
-    );
-}
-
-/// Test line splicing with multiple splices
-#[test]
-fn test_line_splicing_multiple() {
+    // Multiple line splices
     let source = "hel\\
 lo\\
 world";
     let mut lexer = create_test_pp_lexer(source);
+    test_tokens!(lexer, ("helloworld", PPTokenKind::Identifier(_)));
 
-    test_tokens!(
-        lexer,
-        ("helloworld", PPTokenKind::Identifier(_)),
-    );
-}
-
-/// Test line splicing with whitespace
-#[test]
-fn test_line_splicing_with_whitespace() {
+    // Line splicing with whitespace
     let source = "hel  \\
     lo";
     let mut lexer = create_test_pp_lexer(source);
+    test_tokens!(lexer, ("hel", PPTokenKind::Identifier(_)));
 
-    test_tokens!(
-        lexer,
-        ("hel", PPTokenKind::Identifier(_)),
-    );
-}
-
-/// Test line splicing in numbers
-#[test]
-fn test_line_splicing_numbers() {
+    // Line splicing in numbers
     let source = "123\\
 456";
     let mut lexer = create_test_pp_lexer(source);
+    test_tokens!(lexer, ("123456", PPTokenKind::Number(_)));
 
-    test_tokens!(
-        lexer,
-        ("123456", PPTokenKind::Number(_)),
-    );
-}
-
-/// Test that line splicing doesn't occur without backslash-newline
-#[test]
-fn test_no_line_splicing() {
+    // No line splicing (regular newline)
     let source = "hello\nworld";
     let mut lexer = create_test_pp_lexer(source);
-
     let first_token = lexer.next_token().unwrap();
     match first_token.kind {
-        PPTokenKind::Identifier(symbol) => {
-            assert_eq!(symbol.as_str(), "hello");
-        }
+        PPTokenKind::Identifier(symbol) => assert_eq!(symbol.as_str(), "hello"),
         _ => panic!("Expected first identifier token"),
     }
-
     let second_token = lexer.next_token().unwrap();
     match second_token.kind {
-        PPTokenKind::Identifier(symbol) => {
-            assert_eq!(symbol.as_str(), "world");
-        }
+        PPTokenKind::Identifier(symbol) => assert_eq!(symbol.as_str(), "world"),
         _ => panic!("Expected second identifier token"),
     }
-}
 
-/// Test line splicing at end of buffer
-#[test]
-fn test_line_splicing_end_of_buffer() {
+    // Line splicing at end of buffer
     let source = "test\\";
     let mut lexer = create_test_pp_lexer(source);
+    test_tokens!(lexer, ("test", PPTokenKind::Identifier(_)));
 
-    test_tokens!(
-        lexer,
-        ("test", PPTokenKind::Identifier(_)),
-    );
-}
-
-/// Test that line splicing works with peek_char and next_char
-#[test]
-fn test_next_char_line_splicing() {
-    let source = "a\\
-b";
-    let mut lexer = create_test_pp_lexer(source);
-
-    // Test that next_char properly handles line splicing
-    let ch1 = lexer.next_char();
-    assert_eq!(ch1, Some(b'a'));
-
-    // After consuming 'a', we should encounter backslash-newline
-    // which should be spliced, so next_char should return 'b'
-    let ch2 = lexer.next_char();
-    assert_eq!(ch2, Some(b'b'));
-
-    // Should be at end now
-    let ch3 = lexer.next_char();
-    assert_eq!(ch3, None);
-}
-
-/// Test peek_char doesn't consume characters including line splicing
-#[test]
-fn test_peek_char_line_splicing() {
-    let source = "a\\
-b";
-    let mut lexer = create_test_pp_lexer(source);
-
-    // Peek should return the first character without consuming
-    let peeked = lexer.peek_char();
-    assert_eq!(peeked, Some(b'a'));
-
-    // Position should still be at start
-    let current_pos = lexer.position;
-    assert_eq!(current_pos, 0);
-
-    // Now consume the first character
-    let consumed = lexer.next_char();
-    assert_eq!(consumed, Some(b'a'));
-    assert_eq!(lexer.position, 1);
-
-    // Peek again should show that line splicing will give us 'b'
-    let peeked_after_splice = lexer.peek_char();
-    assert_eq!(peeked_after_splice, Some(b'b'));
-
-    // Position should still be after 'a'
-    assert_eq!(lexer.position, 1);
-}
-
-/// Test line splicing in string literals
-#[test]
-fn test_line_splicing_in_strings() {
+    // Line splicing in strings
     let source = "\"hello\\
 world\"";
     let mut lexer = create_test_pp_lexer(source);
+    test_tokens!(lexer, ("\"helloworld\"", PPTokenKind::StringLiteral(_)));
 
-    test_tokens!(
-        lexer,
-        ("\"helloworld\"", PPTokenKind::StringLiteral(_)),
-    );
+    // Line splicing with CRLF
+    let source = "hel\\\r\nlo";
+    let mut lexer = create_test_pp_lexer(source);
+    test_tokens!(lexer, ("hello", PPTokenKind::Identifier(_)));
+
+    // Line splicing with CR
+    let source = "hel\\\rlo";
+    let mut lexer = create_test_pp_lexer(source);
+    test_tokens!(lexer, ("hello", PPTokenKind::Identifier(_)));
+
+    // Line splicing with CR at end
+    let source = "test\\\r";
+    let mut lexer = create_test_pp_lexer(source);
+    test_tokens!(lexer, ("test", PPTokenKind::Identifier(_)));
+
+    // Test next_char with line splicing
+    let source = "a\\
+b";
+    let mut lexer = create_test_pp_lexer(source);
+    assert_eq!(lexer.next_char(), Some(b'a'));
+    assert_eq!(lexer.next_char(), Some(b'b'));
+    assert_eq!(lexer.next_char(), None);
+
+    // Test peek_char with line splicing
+    let source = "a\\
+b";
+    let mut lexer = create_test_pp_lexer(source);
+    assert_eq!(lexer.peek_char(), Some(b'a'));
+    assert_eq!(lexer.position, 0);
+    assert_eq!(lexer.next_char(), Some(b'a'));
+    assert_eq!(lexer.position, 1);
+    assert_eq!(lexer.peek_char(), Some(b'b'));
+    assert_eq!(lexer.position, 1);
 }
+
 
 /// Test that PPLexer can produce all punctuation tokens
 #[test]
@@ -331,41 +269,6 @@ fn test_hashhash_no_starts_pp_line() {
     assert!(!token.flags.contains(PPTokenFlags::STARTS_PP_LINE));
 }
 
-/// Test line splicing with CRLF (\r\n)
-#[test]
-fn test_line_splicing_crlf() {
-    let source = "hel\\\r\nlo";
-    let mut lexer = create_test_pp_lexer(source);
-
-    test_tokens!(
-        lexer,
-        ("hello", PPTokenKind::Identifier(_)),
-    );
-}
-
-/// Test line splicing with just CR
-#[test]
-fn test_line_splicing_cr() {
-    let source = "hel\\\rlo";
-    let mut lexer = create_test_pp_lexer(source);
-
-    test_tokens!(
-        lexer,
-        ("hello", PPTokenKind::Identifier(_)),
-    );
-}
-
-/// Test line splicing with CR at end of buffer
-#[test]
-fn test_line_splicing_cr_end() {
-    let source = "test\\\r";
-    let mut lexer = create_test_pp_lexer(source);
-
-    test_tokens!(
-        lexer,
-        ("test", PPTokenKind::Identifier(_)),
-    );
-}
 
 /// Test wide character literals with L, u, U prefixes
 #[test]

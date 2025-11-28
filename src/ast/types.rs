@@ -148,8 +148,8 @@ pub enum ArraySizeType {
     Star, // [*] for function parameters
 }
 
-/// Type qualifiers (using bitflags for efficient storage)
 bitflags! {
+    /// Type qualifiers (using bitflags for efficient storage)
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
     pub struct TypeQualifiers: u8 {
         const CONST = 1 << 0;
@@ -240,7 +240,7 @@ pub mod iterators {
 
     impl<'a> ChildNodeIterator<'a> {
         pub fn new(ast: &'a Ast, node_ref: NodeRef) -> Self {
-            let node = ast.get_node(node_ref);
+            let _node = ast.get_node(node_ref);
             let children = Vec::new();
             ChildNodeIterator {
                 ast,

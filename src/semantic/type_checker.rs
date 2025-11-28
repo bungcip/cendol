@@ -7,7 +7,6 @@
 use crate::ast::*;
 use crate::diagnostic::DiagnosticEngine;
 use crate::semantic::symbol_table::{ScopeId, SymbolTable};
-use crate::semantic::utils::*;
 use crate::semantic::visitor::{SemanticVisitor, visit_node};
 
 /// Context for type checking

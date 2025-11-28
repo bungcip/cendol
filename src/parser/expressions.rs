@@ -338,7 +338,7 @@ fn parse_infix(
     parser: &mut Parser,
     left: NodeRef,
     operator_token: Token,
-    min_bp: BindingPower,
+    _min_bp: BindingPower,
 ) -> Result<NodeRef, ParseError> {
     debug!(
         "parse_infix: processing operator {:?} at {}",

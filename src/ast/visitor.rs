@@ -162,7 +162,7 @@ pub fn walk_ast<'ast, V: AstVisitor<'ast>>(
     visit_node(visitor, ast, node_ref, context);
 
     // Recursively visit children based on node type
-    let node = ast.get_node(node_ref);
+    let _node = ast.get_node(node_ref);
 
     // This would need to be implemented based on the new structure
     // For now, placeholder

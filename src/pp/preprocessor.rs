@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::pp::interpreter::Interpreter;
 use std::path::{Path, PathBuf};
+use std::num::NonZeroU32;
 use symbol_table::GlobalSymbol as Symbol;
 use target_lexicon::Triple as TargetInfo;
 
@@ -915,7 +916,7 @@ impl<'src> Preprocessor<'src> {
         // Check for circular includes
         if self.include_stack.iter().any(|info| {
             let file_info = self.source_manager.get_file_info(info.file_id);
-            file_info.is_some_and(|fi| fi.path == *&path_str)
+            file_info.is_some_and(|fi| fi.path == Path::new(&path_str))
         }) {
             return Err(PreprocessorError::CircularInclude);
         }
@@ -932,8 +933,23 @@ impl<'src> Preprocessor<'src> {
 
                 // Resolve the path
                 let resolved_path = self.header_search.resolve_path(&path_str, is_angled, current_dir);
-                let resolved_path = if let Some(path) = resolved_path {
-                    path
+                if let Some(resolved_path) = resolved_path {
+                    // Load the file
+                    self.source_manager
+                        .add_file_from_path(&resolved_path)
+                        .map_err(|_| {
+                            // Emit diagnostic for file not found
+                            let diag = crate::diagnostic::Diagnostic {
+                                level: crate::diagnostic::DiagnosticLevel::Error,
+                                message: format!("Include file '{}' not found", path_str),
+                                location: SourceSpan::new(token.location, token.location),
+                                code: Some("include_file_not_found".to_string()),
+                                hints: vec!["Check the include path and ensure the file exists".to_string()],
+                                related: Vec::new(),
+                            };
+                            self.diag.report_diagnostic(diag);
+                            PreprocessorError::FileNotFound
+                        })?
                 } else {
                     // For angled includes, if not found, emit warning and skip
                     let diag = crate::diagnostic::Diagnostic {
@@ -946,24 +962,7 @@ impl<'src> Preprocessor<'src> {
                     };
                     self.diag.report_diagnostic(diag);
                     return Ok(());
-                };
-
-                // Load the file
-                self.source_manager
-                    .add_file_from_path(&resolved_path)
-                    .map_err(|_| {
-                        // Emit diagnostic for file not found
-                        let diag = crate::diagnostic::Diagnostic {
-                            level: crate::diagnostic::DiagnosticLevel::Error,
-                            message: format!("Include file '{}' not found", path_str),
-                            location: SourceSpan::new(token.location, token.location),
-                            code: Some("include_file_not_found".to_string()),
-                            hints: vec!["Check the include path and ensure the file exists".to_string()],
-                            related: Vec::new(),
-                        };
-                        self.diag.report_diagnostic(diag);
-                        PreprocessorError::FileNotFound
-                    })?
+                }
             }
         } else {
             // For quoted includes, resolve as before
@@ -973,16 +972,17 @@ impl<'src> Preprocessor<'src> {
 
             // Resolve the path
             let resolved_path = self.header_search.resolve_path(&path_str, is_angled, current_dir);
-            let resolved_path = if let Some(path) = resolved_path {
-                path
+
+            if let Some(resolved_path) = resolved_path {
+                // Load the file
+                self.source_manager
+                    .add_file_from_path(&resolved_path)
+                    .map_err(|_| PreprocessorError::FileNotFound)?
+            } else if let Some(file_id) = self.source_manager.get_file_id(&path_str) {
+                file_id
             } else {
                 return Err(PreprocessorError::FileNotFound);
-            };
-
-            // Load the file
-            self.source_manager
-                .add_file_from_path(&resolved_path)
-                .map_err(|_| PreprocessorError::FileNotFound)?
+            }
         };
 
         // Check if file has #pragma once

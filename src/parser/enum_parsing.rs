@@ -87,7 +87,7 @@ pub fn parse_enumerator(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     let value = if parser.matches(&[TokenKind::Assign]) {
         parser.advance(); // consume '='
-        let expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN)?;
+        let expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::ASSIGNMENT)?;
         match expr_result {
             super::ParseExprOutput::Expression(node) => Some(node),
             _ => {

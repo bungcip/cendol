@@ -19,22 +19,23 @@ pub struct BindingPower(u8);
 
 impl BindingPower {
     pub const MIN: Self = Self(0);
-    pub const ASSIGNMENT: Self = Self(10);
-    pub const CONDITIONAL: Self = Self(20);
-    pub const LOGICAL_OR: Self = Self(30);
-    pub const LOGICAL_AND: Self = Self(40);
-    pub const BITWISE_OR: Self = Self(50);
-    pub const BITWISE_XOR: Self = Self(60);
-    pub const BITWISE_AND: Self = Self(70);
-    pub const EQUALITY: Self = Self(80);
-    pub const RELATIONAL: Self = Self(90);
-    pub const SHIFT: Self = Self(100);
-    pub const ADDITIVE: Self = Self(110);
-    pub const MULTIPLICATIVE: Self = Self(120);
-    pub const CAST: Self = Self(130);
-    pub const UNARY: Self = Self(140);
-    pub const POSTFIX: Self = Self(150);
-    pub const PRIMARY: Self = Self(160);
+    pub const COMMA: Self = Self(1);
+    pub const ASSIGNMENT: Self = Self(2);
+    pub const CONDITIONAL: Self = Self(3);
+    pub const LOGICAL_OR: Self = Self(4);
+    pub const LOGICAL_AND: Self = Self(5);
+    pub const BITWISE_OR: Self = Self(6);
+    pub const BITWISE_XOR: Self = Self(7);
+    pub const BITWISE_AND: Self = Self(8);
+    pub const EQUALITY: Self = Self(9);
+    pub const RELATIONAL: Self = Self(10);
+    pub const SHIFT: Self = Self(11);
+    pub const ADDITIVE: Self = Self(12);
+    pub const MULTIPLICATIVE: Self = Self(13);
+    pub const CAST: Self = Self(14);
+    pub const UNARY: Self = Self(15);
+    pub const POSTFIX: Self = Self(16);
+    pub const PRIMARY: Self = Self(17);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,7 +64,7 @@ impl PrattParser {
             | TokenKind::RightShiftAssign => Some((BindingPower::ASSIGNMENT, Associativity::Right)),
 
             // Comma operator (left-associative, lowest precedence)
-            TokenKind::Comma => Some((BindingPower(5), Associativity::Left)),
+            TokenKind::Comma => Some((BindingPower::COMMA, Associativity::Left)),
 
             // Conditional operator (right-associative)
             TokenKind::Question => Some((BindingPower::CONDITIONAL, Associativity::Right)),
@@ -173,7 +174,7 @@ pub fn parse_expression(
 }
 
 /// Parse prefix expression
-fn parse_prefix(parser: &mut Parser) -> Result<NodeRef, ParseError> {
+pub(crate) fn parse_prefix(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser
         .try_current_token()
         .ok_or_else(|| ParseError::SyntaxError {
@@ -429,7 +430,7 @@ fn parse_function_call(parser: &mut Parser, function: NodeRef) -> Result<NodeRef
     } else {
         debug!("parse_function_call: parsing arguments");
         loop {
-            let arg_result = parse_expression(parser, BindingPower::MIN)?;
+            let arg_result = parse_expression(parser, BindingPower::ASSIGNMENT)?;
             let arg = match arg_result {
                 super::ParseExprOutput::Expression(node) => node,
                 _ => {

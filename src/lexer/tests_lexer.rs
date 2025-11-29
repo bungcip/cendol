@@ -146,6 +146,36 @@ mod tests {
             ("42", TokenKind::IntegerConstant(42)),
             ("0x1A", TokenKind::IntegerConstant(26)),
             ("077", TokenKind::IntegerConstant(63)),
+            // C11 integer suffixes - decimal
+            ("1ll", TokenKind::IntegerConstant(1)),
+            ("42u", TokenKind::IntegerConstant(42)),
+            ("123l", TokenKind::IntegerConstant(123)),
+            ("456ul", TokenKind::IntegerConstant(456)),
+            ("789lu", TokenKind::IntegerConstant(789)),
+            ("1000ull", TokenKind::IntegerConstant(1000)),
+            ("2000llu", TokenKind::IntegerConstant(2000)),
+            // C11 integer suffixes - hexadecimal
+            ("0x1Au", TokenKind::IntegerConstant(26)),
+            ("0xFFll", TokenKind::IntegerConstant(255)),
+            ("0x10UL", TokenKind::IntegerConstant(16)),
+            ("0x20LU", TokenKind::IntegerConstant(32)),
+            ("0x40ULL", TokenKind::IntegerConstant(64)),
+            ("0x80LLU", TokenKind::IntegerConstant(128)),
+            // C11 integer suffixes - octal
+            ("077u", TokenKind::IntegerConstant(63)),
+            ("0123l", TokenKind::IntegerConstant(83)),
+            ("0777ul", TokenKind::IntegerConstant(511)),
+            ("0123lu", TokenKind::IntegerConstant(83)),
+            ("0777ull", TokenKind::IntegerConstant(511)),
+            ("0123llu", TokenKind::IntegerConstant(83)),
+            // Case insensitive suffixes
+            ("1LL", TokenKind::IntegerConstant(1)),
+            ("42U", TokenKind::IntegerConstant(42)),
+            ("123L", TokenKind::IntegerConstant(123)),
+            ("456UL", TokenKind::IntegerConstant(456)),
+            ("789LU", TokenKind::IntegerConstant(789)),
+            ("1000ULL", TokenKind::IntegerConstant(1000)),
+            ("2000LLU", TokenKind::IntegerConstant(2000)),
         ];
 
         for (text, expected_kind) in int_literals {

@@ -251,17 +251,9 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<Initializer, Pars
                     // Nested compound initializer
                     parse_initializer(parser)?
                 } else {
-                    // Expression initializer
-                    let expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN)?;
-                    match expr_result {
-                        super::ParseExprOutput::Expression(node) => Initializer::Expression(node),
-                        _ => {
-                            return Err(ParseError::SyntaxError {
-                                message: "Expected expression in initializer".to_string(),
-                                location: parser.current_token().unwrap().location,
-                            });
-                        }
-                    }
+                    // Expression initializer - parse until comma or closing brace
+                    let expr_result = parse_initializer_expression(parser)?;
+                    Initializer::Expression(expr_result)
                 };
 
                 // Wrap in DesignatedInitializer with empty designation
@@ -286,15 +278,9 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<Initializer, Pars
             "parse_initializer: no LeftBrace found, current token: {:?}, trying expression initializer",
             parser.current_token_kind()
         );
-        // Expression initializer
-        let expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN)?;
-        match expr_result {
-            super::ParseExprOutput::Expression(node) => Ok(Initializer::Expression(node)),
-            _ => Err(ParseError::SyntaxError {
-                message: "Expected expression in initializer".to_string(),
-                location: parser.current_token().unwrap().location,
-            }),
-        }
+        // Expression initializer - use simple parsing to avoid comma operators
+        let node = parse_initializer_expression(parser)?;
+        Ok(Initializer::Expression(node))
     }
 }
 
@@ -364,6 +350,21 @@ fn parse_designation(parser: &mut Parser) -> Result<Vec<Designator>, ParseError>
     }
 
     Ok(designators)
+}
+
+/// Parse expression for initializer (stops at commas that separate declarators)
+fn parse_initializer_expression(parser: &mut Parser) -> Result<NodeRef, ParseError> {
+    // Parse expressions in initializers, but stop at comma operators to avoid
+    // consuming declarator-separating commas. Use assignment precedence to allow
+    // most binary operators but prevent comma operators.
+    let expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::ASSIGNMENT)?;
+    match expr_result {
+        super::ParseExprOutput::Expression(node) => Ok(node),
+        _ => Err(ParseError::SyntaxError {
+            message: "Expected expression in initializer".to_string(),
+            location: parser.current_token().unwrap().location,
+        }),
+    }
 }
 
 /// Parse type name (for casts, sizeof, etc.)

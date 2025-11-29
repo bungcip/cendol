@@ -163,6 +163,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                 decl.init_declarators.len()
             );
             self.collect_declaration_symbols(&decl, span);
+            self.collect_enum_constants_from_declaration(&decl, span);
         }
 
         debug!(
@@ -489,6 +490,117 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                     std::mem::discriminant(&init_declarator.declarator)
                 );
             }
+        }
+    }
+
+    fn collect_enum_constants_from_declaration(&mut self, decl: &DeclarationData, span: SourceSpan) {
+        for specifier in &decl.specifiers {
+            if let TypeSpecifier::Enum(tag, Some(enumerators)) = &specifier.type_specifier {
+                debug!(
+                    "Found enum declaration with tag {:?} and {} enumerators",
+                    tag.as_ref().map(|s| s.as_str()),
+                    enumerators.len()
+                );
+
+                let safe_type_ref = self.get_safe_type_ref();
+                let mut current_value = 0i64; // Enums start at 0
+
+                for enumerator_ref in enumerators {
+                    let enumerator_node = self.ast.get_node(*enumerator_ref);
+                    if let NodeKind::EnumConstant(name, value_expr) = &enumerator_node.kind {
+                        debug!(
+                            "Processing enum constant '{}' with value_expr: {:?}",
+                            name.as_str(),
+                            value_expr.is_some()
+                        );
+
+                        // Calculate the value
+                        let enum_value = if let Some(value_node_ref) = value_expr {
+                            // Evaluate the constant expression
+                            if let Some(val) = self.evaluate_constant_expression(*value_node_ref) {
+                                current_value = val;
+                                val
+                            } else {
+                                debug!("Failed to evaluate enum constant value, using current_value {}", current_value);
+                                current_value
+                            }
+                        } else {
+                            current_value
+                        };
+
+                        // Check for redeclaration
+                        if let Some(existing_entry_ref) = self
+                            .symbol_table
+                            .lookup_symbol_in_scope(*name, self.symbol_table.current_scope())
+                        {
+                            let existing_entry = self.symbol_table.get_symbol_entry(existing_entry_ref);
+                            self.diag.report_warning(SemanticWarning::Redefinition {
+                                name: *name,
+                                first_def: existing_entry.definition_span,
+                                second_def: span,
+                            });
+                            continue;
+                        }
+
+                        let entry = SymbolEntry {
+                            name: *name,
+                            kind: SymbolKind::EnumConstant { value: enum_value },
+                            type_info: safe_type_ref,
+                            storage_class: None,
+                            scope_id: self.symbol_table.current_scope().get(),
+                            definition_span: span,
+                            is_defined: true,
+                            is_referenced: false,
+                            is_completed: true,
+                        };
+                        debug!(
+                            "Adding enum constant '{}' with value {} to scope {}",
+                            name.as_str(),
+                            enum_value,
+                            self.symbol_table.current_scope().get()
+                        );
+                        self.symbol_table.add_symbol(*name, entry);
+
+                        // Increment for next enumerator
+                        current_value += 1;
+                    } else {
+                        debug!("Unexpected node kind for enumerator: {:?}", enumerator_node.kind);
+                    }
+                }
+            }
+        }
+    }
+
+    fn evaluate_constant_expression(&self, node_ref: NodeRef) -> Option<i64> {
+        let node = self.ast.get_node(node_ref);
+        match &node.kind {
+            NodeKind::LiteralInt(value) => Some(*value),
+            NodeKind::Ident(symbol, _) => {
+                // Look up the symbol value if it's a previously defined enum constant
+                if let Some((entry_ref, _)) = self.symbol_table.lookup_symbol(*symbol) {
+                    let entry = self.symbol_table.get_symbol_entry(entry_ref);
+                    if let SymbolKind::EnumConstant { value } = entry.kind {
+                        Some(value)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            NodeKind::BinaryOp(op, left, right) => {
+                let left_val = self.evaluate_constant_expression(*left)?;
+                let right_val = self.evaluate_constant_expression(*right)?;
+                match op {
+                    BinaryOp::Add => Some(left_val + right_val),
+                    BinaryOp::Sub => Some(left_val - right_val),
+                    BinaryOp::Mul => Some(left_val * right_val),
+                    BinaryOp::Div => Some(left_val / right_val),
+                    BinaryOp::Mod => Some(left_val % right_val),
+                    _ => None,
+                }
+            }
+            _ => None,
         }
     }
 

@@ -192,7 +192,7 @@ impl CompilerDriver {
         if self.diagnostics.has_errors() {
             let formatter = crate::diagnostic::ErrorFormatter::default();
             formatter.print_diagnostics(self.diagnostics.diagnostics(), &self.source_manager);
-            // Continue instead of failing
+            return Err(CompilerError::CompilationFailed);
         }
 
         Ok(())

@@ -348,10 +348,10 @@ impl<'src> Lexer<'src> {
             &text[..text.len() - 3]
         } else if lower_text.ends_with("ul") || lower_text.ends_with("lu") {
             &text[..text.len() - 2]
-        } else if lower_text.ends_with('u') || lower_text.ends_with('l') {
-            &text[..text.len() - 1]
         } else if lower_text.ends_with("ll") {
             &text[..text.len() - 2]
+        } else if lower_text.ends_with('u') || lower_text.ends_with('l') {
+            &text[..text.len() - 1]
         } else {
             text
         }

@@ -1,7 +1,7 @@
 //! Output formatting and file writing module
-//!
-//! This module handles various output formats including preprocessed source,
-//! parser AST dumps, and HTML AST dumps.
+// //!
+// //! This module handles various output formats including preprocessed source,
+// //! parser AST dumps, and HTML AST dumps.
 
 use itertools::Itertools;
 use std::fs;
@@ -60,17 +60,21 @@ impl OutputHandler {
             if token.location.source_id() != current_file_id {
                 // Emit line marker for file transition (unless suppressed)
                 if !suppress_line_markers
-                    && let Some(file_info) = source_manager.get_file_info(token.location.source_id()) {
-                        let line = source_manager.get_line_column(token.location)
-                            .map(|(l, _)| l)
-                            .unwrap_or(1);
-                        let filename = file_info.path.file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("<unknown>");
+                    && let Some(file_info) = source_manager.get_file_info(token.location.source_id())
+                {
+                    let line = source_manager
+                        .get_line_column(token.location)
+                        .map(|(l, _)| l)
+                        .unwrap_or(1);
+                    let filename = file_info
+                        .path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("<unknown>");
 
-                        // For now, use flag "1" for entering file (simplified)
-                        println!("# {} \"{}\" 1", line, filename);
-                    }
+                    // For now, use flag "1" for entering file (simplified)
+                    println!("# {} \\\"{}\\\" 1", line, filename);
+                }
 
                 current_file_id = token.location.source_id();
                 current_buffer = source_manager.get_buffer(current_file_id);
@@ -271,12 +275,7 @@ impl OutputHandler {
     /// Dump AST to HTML file
     pub fn dump_ast(
         &self,
-        ast: &Ast,
-        symbol_table: &SymbolTable,
-        diagnostics: &mut DiagnosticEngine,
-        source_manager: &mut SourceManager,
-        lang_options: &LangOptions,
-        target_triple: &Triple,
+        args: &mut AstDumpArgs,
         config: &CompileConfig,
     ) -> Result<(), CompilerError> {
         let output_path = config
@@ -291,17 +290,17 @@ impl OutputHandler {
             output_path: output_path.clone(),
         };
         let mut dumper = AstDumper::new(
-            ast,
-            symbol_table,
-            diagnostics,
-            source_manager,
-            lang_options,
-            target_triple,
+            args.ast,
+            args.symbol_table,
+            args.diagnostics,
+            args.source_manager,
+            args.lang_options,
+            args.target_triple,
             dump_config,
         );
-        let html = dumper.generate_html().map_err(|e| {
-            CompilerError::AstDumpError(format!("HTML generation error: {:?}", e))
-        })?;
+        let html = dumper
+            .generate_html()
+            .map_err(|e| CompilerError::AstDumpError(format!("HTML generation error: {:?}", e)))?;
 
         println!("Dumping AST to {}...", output_path.display());
         fs::write(&output_path, html)
@@ -309,4 +308,12 @@ impl OutputHandler {
 
         Ok(())
     }
+}
+pub struct AstDumpArgs<'a> {
+    pub ast: &'a Ast,
+    pub symbol_table: &'a SymbolTable,
+    pub diagnostics: &'a mut DiagnosticEngine,
+    pub source_manager: &'a mut SourceManager,
+    pub lang_options: &'a LangOptions,
+    pub target_triple: &'a Triple,
 }

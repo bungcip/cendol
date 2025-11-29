@@ -1,8 +1,8 @@
 //! Core compilation pipeline orchestration module
-//!
-//! This module contains the main compiler driver that orchestrates
-//! the compilation pipeline including preprocessing, lexing, parsing,
-//! semantic analysis, and output generation.
+// //!
+// //! This module contains the main compiler driver that orchestrates
+// //! the compilation pipeline including preprocessing, lexing, parsing,
+// //! semantic analysis, and output generation.
 
 use std::path::Path;
 
@@ -17,7 +17,7 @@ use crate::source_manager::SourceManager;
 use target_lexicon::Triple;
 
 use super::cli::CompileConfig;
-use super::output::OutputHandler;
+use super::output::{AstDumpArgs, OutputHandler};
 
 /// Main compiler driver
 pub struct CompilerDriver {
@@ -91,7 +91,10 @@ impl CompilerDriver {
                     if self.diagnostics.has_errors() {
                         return Ok(());
                     } else {
-                        return Err(CompilerError::PreprocessorError(format!("Preprocessing failed: {:?}", e)));
+                        return Err(CompilerError::PreprocessorError(format!(
+                            "Preprocessing failed: {:?}",
+                            e
+                        )));
                     }
                 }
             }
@@ -104,15 +107,17 @@ impl CompilerDriver {
 
         // If preprocess only, dump the preprocessed output
         if self.config.preprocess_only {
-            self.output_handler.dump_preprocessed_output(&pp_tokens, self.config.suppress_line_markers, &self.source_manager)?;
+            self.output_handler.dump_preprocessed_output(
+                &pp_tokens,
+                self.config.suppress_line_markers,
+                &self.source_manager,
+            )?;
             return Ok(());
         }
 
         // 3. Lexing phase
         let tokens = {
-            let mut lexer = Lexer::new(
-                &pp_tokens,
-            );
+            let mut lexer = Lexer::new(&pp_tokens);
 
             // Lexer is dropped here, releasing the borrow on diagnostics
             lexer.tokenize_all()
@@ -168,15 +173,15 @@ impl CompilerDriver {
 
         // 6. AST dumping (if requested)
         if self.config.dump_ast {
-            self.output_handler.dump_ast(
-                &ast,
-                &symbol_table,
-                &mut self.diagnostics,
-                &mut self.source_manager,
-                &lang_options,
-                &target_triple,
-                &self.config,
-            )?;
+            let mut args = AstDumpArgs {
+                ast: &ast,
+                symbol_table: &symbol_table,
+                diagnostics: &mut self.diagnostics,
+                source_manager: &mut self.source_manager,
+                lang_options: &lang_options,
+                target_triple: &target_triple,
+            };
+            self.output_handler.dump_ast(&mut args, &self.config)?;
         }
 
         Ok(())

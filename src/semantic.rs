@@ -1,13 +1,13 @@
 //! Semantic analysis module.
-//!
-//! This module provides comprehensive semantic analysis for C11 code, including:
-//! - Symbol collection and scope management
-//! - Name resolution
-//! - Type checking
-//! - Semantic validation
-//!
-//! The analysis is performed in distinct phases using the visitor pattern
-//! for clean separation of concerns and maintainable code.
+// //!
+// //! This module provides comprehensive semantic analysis for C11 code, including:
+// //! - Symbol collection and scope management
+// //! - Name resolution
+// //! - Type checking
+// //! - Semantic validation
+// //!
+// //! The analysis is performed in distinct phases using the visitor pattern
+// //! for clean separation of concerns and maintainable code.
 
 pub mod symbol_table;
 pub mod name_resolver;
@@ -497,7 +497,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
         declarator: &Declarator,
     ) -> (Option<Symbol>, Vec<FunctionParameter>) {
         // Find the function declarator that has the identifier as its direct base
-        let (name, params) = self.find_function_with_name(declarator);
+        let (name, params) = find_function_with_name(declarator);
         if let Some((func_decl, params)) = name.zip(params) {
             debug!(
                 "Found function declarator with name: {}, params={}",
@@ -531,23 +531,6 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
         } else {
             debug!("No function with name found");
             (None, Vec::new())
-        }
-    }
-
-    fn find_function_with_name<'a>(&self, declarator: &'a Declarator) -> (Option<Symbol>, Option<&'a ThinVec<ParamData>>) {
-        match declarator {
-            Declarator::Function(base, params) => {
-                if let Declarator::Identifier(name, _, _) = base.as_ref() {
-                    // Found it
-                    (Some(*name), Some(params))
-                } else {
-                    // Recurse
-                    self.find_function_with_name(base)
-                }
-            }
-            Declarator::Pointer(_, Some(base)) => self.find_function_with_name(base),
-            Declarator::Array(base, _) => self.find_function_with_name(base),
-            _ => (None, None)
         }
     }
 
@@ -655,4 +638,19 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
         children
     }
 }
-
+fn find_function_with_name(declarator: &Declarator) -> (Option<Symbol>, Option<&ThinVec<ParamData>>) {
+    match declarator {
+        Declarator::Function(base, params) => {
+            if let Declarator::Identifier(name, _, _) = base.as_ref() {
+                // Found it
+                (Some(*name), Some(params))
+            } else {
+                // Recurse
+                find_function_with_name(base)
+            }
+        }
+        Declarator::Pointer(_, Some(base)) => find_function_with_name(base),
+        Declarator::Array(base, _) => find_function_with_name(base),
+        _ => (None, None),
+    }
+}

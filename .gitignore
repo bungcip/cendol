@@ -1,3 +1,4 @@
-﻿target
+target
 ast_dump.html
 c-testsuite
+coverage_report/

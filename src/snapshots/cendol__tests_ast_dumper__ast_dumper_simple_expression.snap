@@ -1,0 +1,99 @@
+---
+source: src/tests_ast_dumper.rs
+expression: relevant_html
+---
+<h2>Abstract Syntax Tree</h2>
+<div class="ast-controls">
+<div class="search-container">
+<input type="text" id="ast-search" placeholder="Search AST nodes...">
+</div>
+<div class="tree-controls">
+<button onclick="expandAllAst()">Expand All</button>
+<button onclick="collapseAllAst()">Collapse All</button>
+</div>
+<div class="node-filter">
+<label for="node-type-filter">Filter by type:</label>
+<select id="node-type-filter">
+<option value="">All Types</option>
+<option value="FunctionDef">FunctionDef</option>
+<option value="Declaration">Declaration</option>
+<option value="BinaryOp">BinaryOp</option>
+<option value="UnaryOp">UnaryOp</option>
+<option value="If">If</option>
+<option value="While">While</option>
+<option value="For">For</option>
+<option value="Return">Return</option>
+<option value="CompoundStatement">CompoundStatement</option>
+</select>
+</div>
+</div>
+<div id="ast-tree">
+<ul class="ast-tree">
+<li class="ast-node" id="node_0">
+<div class="node-content" onclick="toggleAstNode(this)">
+<span class="toggle-icon">▶</span>
+<span class="node-type">TranslationUnit</span>
+<span class="span-info">[0:0-0:28]</span>
+</div>
+<div class="source-code"><span class="c-number">1</span><span class="c-operator">:</span> <span class="c-keyword">int</span> <span class="c-identifier">main</span><span class="c-operator">(</span><span class="c-operator">)</span> <span class="c-operator">{</span> <span class="c-keyword">return</span> <span class="c-number">1</span> <span class="c-operator">+</span> <span class="c-number">2</span><span class="c-operator">;</span> <span class="c-operator">}</span></div>
+<ul class="ast-tree">
+<li class="ast-node collapsed" id="node_0">
+<div class="node-content" onclick="toggleAstNode(this)">
+<span class="toggle-icon">▶</span>
+<span class="node-type">FunctionDef</span>
+<span class="span-info">[0:0-0:28]</span>
+</div>
+<div class="source-code"><span class="c-number">1</span><span class="c-operator">:</span> <span class="c-keyword">int</span> <span class="c-identifier">main</span><span class="c-operator">(</span><span class="c-operator">)</span> <span class="c-operator">{</span> <span class="c-keyword">return</span> <span class="c-number">1</span> <span class="c-operator">+</span> <span class="c-number">2</span><span class="c-operator">;</span> <span class="c-operator">}</span></div>
+<ul class="ast-tree">
+<li class="ast-node collapsed" id="node_11">
+<div class="node-content" onclick="toggleAstNode(this)">
+<span class="toggle-icon">▶</span>
+<span class="node-type">CompoundStatement</span>
+<span class="span-info">[0:11-0:28]</span>
+</div>
+<div class="source-code"><span class="c-number">1</span><span class="c-operator">:</span> <span class="c-operator">{</span> <span class="c-keyword">return</span> <span class="c-number">1</span> <span class="c-operator">+</span> <span class="c-number">2</span><span class="c-operator">;</span> <span class="c-operator">}</span></div>
+<ul class="ast-tree">
+<li class="ast-node collapsed" id="node_13">
+<div class="node-content" onclick="toggleAstNode(this)">
+<span class="toggle-icon">▶</span>
+<span class="node-type">Return</span>
+<span class="span-info">[0:13-0:26]</span>
+</div>
+<div class="source-code"><span class="c-number">1</span><span class="c-operator">:</span> <span class="c-keyword">return</span> <span class="c-number">1</span> <span class="c-operator">+</span> <span class="c-number">2</span><span class="c-operator">;</span></div>
+<ul class="ast-tree">
+<li class="ast-node collapsed" id="node_20">
+<div class="node-content" onclick="toggleAstNode(this)">
+<span class="toggle-icon">▶</span>
+<span class="node-type">BinaryOp(Add)</span>
+<span class="span-info">[0:20-0:25]</span>
+</div>
+<div class="source-code"><span class="c-number">1</span><span class="c-operator">:</span> <span class="c-number">1</span> <span class="c-operator">+</span> <span class="c-number">2</span></div>
+<ul class="ast-tree">
+<li class="ast-node collapsed" id="node_20">
+<div class="node-content">
+<span class="node-type">LiteralInt</span>
+<span class="span-info">[0:20-0:21]</span>
+</div>
+<div class="source-code"><span class="c-number">1</span><span class="c-operator">:</span> <span class="c-number">1</span></div>
+</li>
+</ul>
+<ul class="ast-tree">
+<li class="ast-node collapsed" id="node_24">
+<div class="node-content">
+<span class="node-type">LiteralInt</span>
+<span class="span-info">[0:24-0:25]</span>
+</div>
+<div class="source-code"><span class="c-number">1</span><span class="c-operator">:</span> <span class="c-number">2</span></div>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>

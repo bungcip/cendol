@@ -305,9 +305,15 @@ pub fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarator, Pars
     // Parse direct abstract declarator (parenthesized or array/function)
     let base_declarator = if parser.matches(&[TokenKind::LeftParen]) {
         parser.advance(); // Consume '('
-        let inner_declarator = parse_abstract_declarator(parser)?;
-        parser.expect(TokenKind::RightParen)?; // Consume ')'
-        inner_declarator
+        if parser.matches(&[TokenKind::RightParen]) {
+            // Empty parameter list: ()
+            parser.advance(); // Consume ')'
+            Declarator::Function(Box::new(Declarator::Abstract), ThinVec::new())
+        } else {
+            let inner_declarator = parse_abstract_declarator(parser)?;
+            parser.expect(TokenKind::RightParen)?; // Consume ')'
+            inner_declarator
+        }
     } else {
         Declarator::Abstract
     };

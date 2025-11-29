@@ -50,6 +50,7 @@ impl OutputHandler {
         let mut current_file_id = first_token.location.source_id();
         let mut current_buffer = source_manager.get_buffer(current_file_id);
         let mut last_pos = 0u32;
+        let mut last_was_macro_expanded = false;
 
         for token in pp_tokens {
             if token.kind == crate::pp::PPTokenKind::Eof {
@@ -79,14 +80,20 @@ impl OutputHandler {
                 current_file_id = token.location.source_id();
                 current_buffer = source_manager.get_buffer(current_file_id);
                 last_pos = token.location.offset();
+                last_was_macro_expanded = false;
             }
 
             // Handle macro-expanded tokens (Level A: use canonical spelling)
             if token.flags.contains(crate::pp::PPTokenFlags::MACRO_EXPANDED) {
+                // Add space between consecutive macro-expanded tokens
+                if last_was_macro_expanded {
+                    print!(" ");
+                }
                 // For macro-expanded tokens, just print the canonical spelling
                 // No whitespace reconstruction for Level A - these tokens don't have
                 // meaningful source locations for whitespace calculation
                 print!("{}", token.get_text());
+                last_was_macro_expanded = true;
                 // Don't update last_pos for macro-expanded tokens
                 continue;
             }
@@ -113,6 +120,7 @@ impl OutputHandler {
             }
 
             last_pos = token_end;
+            last_was_macro_expanded = false;
         }
 
         println!();

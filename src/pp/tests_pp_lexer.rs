@@ -228,6 +228,24 @@ fn test_adjacent_string_literals_not_combined() {
     assert!(lexer.next_token().is_none());
 }
 
+/// Test that line splicing is handled correctly in skip_whitespace_and_comments
+/// This prevents regression of the bug where backslash-newline in macro definitions
+/// caused Unknown tokens due to improper splicing in whitespace skipping.
+#[test]
+fn test_line_splicing_in_skip_whitespace() {
+    // This simulates the scenario in macro definitions where backslash-newline
+    // appears after skipping initial whitespace, and ensures no Unknown tokens
+    let source = "   \\\n   identifier";
+    let mut lexer = create_test_pp_lexer(source);
+
+    // The lexer should skip the whitespace and handle the splicing,
+    // then lex "identifier" without producing Unknown for the space after splicing
+    test_tokens!(lexer, ("identifier", PPTokenKind::Identifier(_)));
+
+    // Should be no more tokens
+    assert!(lexer.next_token().is_none());
+}
+
 /// Test that single # tokens always have STARTS_PP_LINE flag set
 #[test]
 fn test_hash_starts_pp_line() {

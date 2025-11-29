@@ -227,25 +227,30 @@ impl PPLexer {
         // Handle line splicing: backslash followed by newline or carriage return
         if result == b'\\'
             && (self.position as usize) < self.buffer.len() {
-                let next = self.buffer[self.position as usize];
-                if next == b'\n' || next == b'\r' {
+            let next = self.buffer[self.position as usize];
+            if next == b'\n' || next == b'\r' {
+                self.position += 1;
+                if next == b'\r' && (self.position as usize) < self.buffer.len() && self.buffer[self.position as usize] == b'\n' {
                     self.position += 1;
-                    if next == b'\r' && (self.position as usize) < self.buffer.len() && self.buffer[self.position as usize] == b'\n' {
-                        self.position += 1;
-                    }
-                    // Update line starts - remove the newline from line tracking
-                    if self.line_starts.len() > 1 {
-                        self.line_starts.pop();
-                    }
-                    // Get the character after the line ending for splicing
-                    if (self.position as usize) < self.buffer.len() {
-                        result = self.buffer[self.position as usize];
-                        self.position += 1;
-                    } else {
-                        return None;
-                    }
+                }
+                // Update line starts - remove the newline from line tracking
+                if self.line_starts.len() > 1 {
+                    self.line_starts.pop();
+                }
+                // Get the character after the line ending for splicing
+                if (self.position as usize) < self.buffer.len() {
+                    result = self.buffer[self.position as usize];
+                    self.position += 1;
+                } else {
+                    return None;
                 }
             }
+        }
+
+        // Update line starts for regular newlines
+        if result == b'\n' {
+            self.line_starts.push(self.position);
+        }
 
         Some(result)
     }
@@ -773,14 +778,10 @@ impl PPLexer {
 
     fn skip_whitespace_and_comments(&mut self) {
         loop {
-            // Skip whitespace, tracking lines
-            while (self.position as usize) < self.buffer.len() {
-                let ch = self.buffer[self.position as usize];
-                if ch == b'\n' {
-                    self.line_starts.push(self.position + 1);
-                    self.position += 1;
-                } else if ch.is_ascii_whitespace() {
-                    self.position += 1;
+            // Skip whitespace, handling line splicing
+            while let Some(ch) = self.peek_char() {
+                if ch.is_ascii_whitespace() {
+                    self.next_char();
                 } else {
                     break;
                 }
@@ -790,39 +791,37 @@ impl PPLexer {
                 break;
             }
 
-            let ch = self.buffer[self.position as usize];
-            if ch == b'/' && self.position as usize + 1 < self.buffer.len() {
-                let next_ch = self.buffer[self.position as usize + 1];
-                if next_ch == b'/' {
-                    // Line comment: skip to end of line
-                    self.position += 2;
-                    while (self.position as usize) < self.buffer.len()
-                        && self.buffer[self.position as usize] != b'\n'
-                    {
-                        self.position += 1;
+            // Check for comments by temporarily consuming
+            let saved_position = self.position;
+            let saved_line_starts = self.line_starts.clone();
+
+            let ch1 = self.next_char();
+            let ch2 = self.next_char();
+
+            if ch1 == Some(b'/') && ch2 == Some(b'/') {
+                // Line comment, skip to end of line
+                while let Some(ch) = self.next_char() {
+                    if ch == b'\n' {
+                        break;
                     }
-                    // Continue the loop to skip more whitespace/comments
-                } else if next_ch == b'*' {
-                    // Block comment: skip to */
-                    self.position += 2;
-                    while self.position as usize + 1 < self.buffer.len() {
-                        if self.buffer[self.position as usize] == b'*'
-                            && self.buffer[self.position as usize + 1] == b'/'
-                        {
-                            self.position += 2;
+                }
+                // Continue loop
+            } else if ch1 == Some(b'/') && ch2 == Some(b'*') {
+                // Block comment, skip to */
+                while let Some(ch) = self.next_char() {
+                    if ch == b'*' {
+                        if self.peek_char() == Some(b'/') {
+                            self.next_char(); // consume '/'
                             break;
                         }
-                        if self.buffer[self.position as usize] == b'\n' {
-                            self.line_starts.push(self.position + 1);
-                        }
-                        self.position += 1;
                     }
-                    // Continue the loop to skip more whitespace/comments
-                } else {
-                    break; // Not a comment, exit loop
                 }
+                // Continue loop
             } else {
-                break; // Not whitespace or comment start, exit loop
+                // Not a comment, restore position
+                self.position = saved_position;
+                self.line_starts = saved_line_starts;
+                break;
             }
         }
     }

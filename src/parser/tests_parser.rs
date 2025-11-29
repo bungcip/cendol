@@ -180,7 +180,7 @@ fn extract_declarator_kind(declarator: &Declarator) -> String {
         Declarator::Identifier(_, _, _) => "identifier".to_string(),
         Declarator::Pointer(_, Some(inner)) => {
             let inner_kind = extract_declarator_kind(inner);
-            if inner_kind == "identifier" {
+            if inner_kind == "identifier" || inner_kind == "abstract" {
                 "pointer".to_string()
             } else {
                 format!("pointer to {}", inner_kind)
@@ -189,7 +189,7 @@ fn extract_declarator_kind(declarator: &Declarator) -> String {
         Declarator::Pointer(_, None) => "pointer".to_string(),
         Declarator::Array(inner, _) => {
             let inner_kind = extract_declarator_kind(inner);
-            if inner_kind == "identifier" {
+            if inner_kind == "identifier" || inner_kind == "abstract" {
                 "array".to_string()
             } else {
                 format!("array of {}", inner_kind)
@@ -223,6 +223,8 @@ fn extract_declarator_kind(declarator: &Declarator) -> String {
                         let param_kind = extract_declarator_kind(decl);
                         if param_kind == "identifier" {
                             base_type
+                        } else if param_kind.starts_with("function(") && param_kind.ends_with(") -> int") {
+                            param_kind
                         } else {
                             format!("{} {}", base_type, param_kind)
                         }
@@ -232,11 +234,14 @@ fn extract_declarator_kind(declarator: &Declarator) -> String {
                 }).collect::<Vec<_>>().join(", ")
             };
 
-            if return_type == "identifier" {
-                format!("function({}) -> int", param_str)
+            let return_type_str = if return_type == "abstract" {
+                "int".to_string()
+            } else if return_type == "identifier" {
+                "int".to_string()
             } else {
-                format!("function({}) -> {}", param_str, return_type)
-            }
+                return_type
+            };
+            format!("function({}) -> {}", param_str, return_type_str)
         }
         Declarator::Abstract => "abstract".to_string(),
         Declarator::AnonymousRecord(is_union, _) => if *is_union { "union".to_string() } else { "struct".to_string() },
@@ -341,16 +346,19 @@ fn parse_declaration_with_errors(source: &str) -> Result<ResolvedNodeKind, Vec<S
     let mut parser = Parser::new(&tokens, &mut ast, &mut diag);
     let result = parser.parse_declaration();
 
-    if diag.diagnostics.is_empty() {
-        match result {
-            Ok(node_ref) => Ok(resolve_node(&ast, node_ref)),
-            Err(_) => Err(vec!["Parse error".to_string()]),
+    let errors: Vec<String> = diag.diagnostics.iter()
+        .map(|d| d.message.clone())
+        .collect();
+
+    match result {
+        Ok(node_ref) => {
+            if errors.is_empty() {
+                Ok(resolve_node(&ast, node_ref))
+            } else {
+                Err(errors)
+            }
         }
-    } else {
-        let errors = diag.diagnostics.iter()
-            .map(|d| d.message.clone())
-            .collect();
-        Err(errors)
+        Err(e) => Err(vec![format!("Parse error: {:?}", e)]),
     }
 }
 
@@ -809,4 +817,17 @@ fn test_enum_declaration_with_values() {
         - "enum Color { RED = 1, GREEN = 2, BLUE }"
       init_declarators: []
     "#);
+}
+
+#[test]
+fn test_function_with_array_abstract_declarator() {
+    let resolved = parse_declaration("int f(int ([4]));");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    Declaration:
+      specifiers:
+        - int
+      init_declarators:
+        - name: f
+          kind: function(int array) -> int
+    ");
 }

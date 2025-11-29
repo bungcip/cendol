@@ -178,7 +178,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<Vec<ParamData>, Pars
                 let start_idx = parser.current_idx;
                 let saved_diagnostic_count = parser.diag.diagnostics.len();
 
-                let specifiers = match super::declarations::parse_declaration_specifiers(parser) {
+                let specifiers = match super::declaration_core::parse_declaration_specifiers(parser) {
                     Ok(specifiers) => {
                         debug!(
                             "parse_function_parameters: successfully parsed specifiers, current token: {:?}",

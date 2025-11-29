@@ -461,7 +461,7 @@ impl<'src> Lexer<'src> {
                 result.push(concatenated_token);
                 i = next_pos;
             } else {
-                result.push(tokens[i].clone());
+                result.push(tokens[i]);
                 i += 1;
             }
         }

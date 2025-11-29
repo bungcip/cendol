@@ -1,0 +1,146 @@
+//! Type specifier parsing module
+//!
+//! This module handles parsing of C type specifiers including basic types,
+//! typedef names, struct/union/enum specifiers, and atomic types.
+
+use crate::ast::*;
+use crate::diagnostic::ParseError;
+use crate::lexer::TokenKind;
+use crate::source_manager::SourceSpan;
+use symbol_table::GlobalSymbol as Symbol;
+
+use super::Parser;
+
+/// Parse type specifier
+pub(crate) fn parse_type_specifier(parser: &mut Parser) -> Result<TypeSpecifier, ParseError> {
+    parse_type_specifier_with_context(parser, false)
+}
+
+/// Parse type specifier with context
+pub(crate) fn parse_type_specifier_with_context(
+    parser: &mut Parser,
+    in_struct_member: bool,
+) -> Result<TypeSpecifier, ParseError> {
+    let token = parser
+        .try_current_token()
+        .ok_or_else(|| ParseError::SyntaxError {
+            message: "Expected type specifier".to_string(),
+            location: SourceSpan::empty(),
+        })?;
+
+    match token.kind {
+        TokenKind::Void => {
+            parser.advance();
+            Ok(TypeSpecifier::Void)
+        }
+        TokenKind::Char => {
+            parser.advance();
+            Ok(TypeSpecifier::Char)
+        }
+        TokenKind::Short => {
+            parser.advance();
+            Ok(TypeSpecifier::Short)
+        }
+        TokenKind::Int => {
+            parser.advance();
+            Ok(TypeSpecifier::Int)
+        }
+        TokenKind::Long => {
+            parser.advance();
+            // Check for long long or long double
+            if let Some(next_token) = parser.try_current_token() {
+                match next_token.kind {
+                    TokenKind::Long => {
+                        parser.advance();
+                        Ok(TypeSpecifier::LongLong)
+                    }
+                    TokenKind::Double => {
+                        parser.advance();
+                        Ok(TypeSpecifier::LongDouble)
+                    }
+                    _ => Ok(TypeSpecifier::Long),
+                }
+            } else {
+                Ok(TypeSpecifier::Long)
+            }
+        }
+        TokenKind::Float => {
+            parser.advance();
+            Ok(TypeSpecifier::Float)
+        }
+        TokenKind::Double => {
+            parser.advance();
+            Ok(TypeSpecifier::Double)
+        }
+        TokenKind::Signed => {
+            parser.advance();
+            Ok(TypeSpecifier::Signed)
+        }
+        TokenKind::Unsigned => {
+            parser.advance();
+            Ok(TypeSpecifier::Unsigned)
+        }
+        TokenKind::Bool => {
+            parser.advance();
+            Ok(TypeSpecifier::Bool)
+        }
+        TokenKind::Complex => {
+            parser.advance();
+            // Parse optional base type for _Complex (C11 allows _Complex float, _Complex double, etc.)
+            // For now, just consume the base type - full implementation would create proper type
+            if parser.matches(&[TokenKind::Float, TokenKind::Double, TokenKind::Long]) {
+                // For now, just consume the base type - full implementation would create proper type
+                parser.advance();
+                if parser.matches(&[TokenKind::Double]) {
+                    parser.advance(); // consume double for long double
+                }
+            }
+            Ok(TypeSpecifier::Complex)
+        }
+        TokenKind::Atomic => {
+            parser.advance();
+            parser.expect(TokenKind::LeftParen)?;
+            let type_ref = super::declaration_core::parse_type_name(parser)?;
+            parser.expect(TokenKind::RightParen)?;
+            Ok(TypeSpecifier::Atomic(type_ref))
+        }
+        TokenKind::Struct => {
+            parser.advance();
+            super::struct_parsing::parse_record_specifier_with_context(parser, false, in_struct_member)
+        }
+        TokenKind::Union => {
+            parser.advance();
+            super::struct_parsing::parse_record_specifier_with_context(parser, true, in_struct_member)
+        }
+        TokenKind::Enum => {
+            parser.advance();
+            super::enum_parsing::parse_enum_specifier(parser)
+        }
+        TokenKind::Identifier(symbol) => {
+            parser.advance();
+            Ok(TypeSpecifier::TypedefName(symbol))
+        }
+        _ => Err(ParseError::UnexpectedToken {
+            expected: vec![
+                TokenKind::Void,
+                TokenKind::Char,
+                TokenKind::Short,
+                TokenKind::Int,
+                TokenKind::Long,
+                TokenKind::Float,
+                TokenKind::Double,
+                TokenKind::Signed,
+                TokenKind::Unsigned,
+                TokenKind::Bool,
+                TokenKind::Complex,
+                TokenKind::Atomic,
+                TokenKind::Struct,
+                TokenKind::Union,
+                TokenKind::Enum,
+                TokenKind::Identifier(Symbol::new("")),
+            ],
+            found: token.kind,
+            location: token.location,
+        }),
+    }
+}

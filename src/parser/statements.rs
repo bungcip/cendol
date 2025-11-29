@@ -308,13 +308,13 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     } else if super::declarations::is_declaration_start(parser) {
         debug!("parse_for_statement: parsing declaration in init");
         // Parse declaration specifiers
-        let specifiers = super::declarations::parse_declaration_specifiers(parser)?;
+        let specifiers = super::declaration_core::parse_declaration_specifiers(parser)?;
         // Parse declarator
         let declarator = super::declarator::parse_declarator(parser, None)?;
         // Parse initializer if present
         let initializer = if parser.matches(&[TokenKind::Assign]) {
             parser.advance(); // consume '='
-            Some(super::declarations::parse_initializer(parser)?)
+            Some(super::declaration_core::parse_initializer(parser)?)
         } else {
             None
         };

@@ -12,9 +12,13 @@ use std::collections::HashSet;
 use symbol_table::GlobalSymbol as Symbol;
 
 pub mod declarations;
+pub mod declaration_core;
 pub mod declarator;
+pub mod enum_parsing;
 pub mod expressions;
 pub mod statements;
+pub mod struct_parsing;
+pub mod type_specifiers;
 pub mod utils;
 
 // Re-export commonly used types

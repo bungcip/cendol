@@ -1,5 +1,7 @@
 //! Shared utility functions for semantic analysis.
 
+use thin_vec::ThinVec;
+
 use crate::ast::*;
 
 /// Extract function name and parameters from a declarator
@@ -27,7 +29,7 @@ pub fn extract_function_info(declarator: &Declarator) -> (Option<Symbol>, Vec<Fu
     }
 }
 
-pub fn find_function_with_name(declarator: &Declarator) -> (Option<Symbol>, Option<&Vec<ParamData>>) {
+pub fn find_function_with_name(declarator: &Declarator) -> (Option<Symbol>, Option<&ThinVec<ParamData>>) {
     match declarator {
         Declarator::Function(base, params) => {
             if let Declarator::Identifier(name, _, _) = base.as_ref() {

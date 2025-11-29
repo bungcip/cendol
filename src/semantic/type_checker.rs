@@ -4,6 +4,8 @@
 //! and type inference on the AST. It validates type compatibility, performs
 //! implicit conversions, and ensures type safety according to C11 semantics.
 
+use thin_vec::ThinVec;
+
 use crate::ast::*;
 use crate::diagnostic::DiagnosticEngine;
 use crate::semantic::symbol_table::{ScopeId, SymbolTable};
@@ -148,7 +150,7 @@ fn extract_function_info(declarator: &Declarator) -> (Option<Symbol>, Vec<Functi
     }
 }
 
-fn find_function_with_name(declarator: &Declarator) -> (Option<Symbol>, Option<&Vec<ParamData>>) {
+fn find_function_with_name(declarator: &Declarator) -> (Option<Symbol>, Option<&ThinVec<ParamData>>) {
     match declarator {
         Declarator::Function(base, params) => {
             if let Declarator::Identifier(name, _, _) = base.as_ref() {

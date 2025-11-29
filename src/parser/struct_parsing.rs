@@ -3,6 +3,8 @@
 //! This module handles parsing of struct and union declarations,
 //! including member declarations and anonymous structs/unions.
 
+use thin_vec::{ThinVec, thin_vec};
+
 use crate::ast::*;
 use crate::diagnostic::ParseError;
 use crate::lexer::TokenKind;
@@ -77,10 +79,10 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
             let init_declarators = if parser.matches(&[TokenKind::Semicolon]) {
                 // Anonymous struct member: struct { members };
                 parser.expect(TokenKind::Semicolon)?;
-                Vec::new()
+                ThinVec::new()
             } else {
                 // Variable declaration with anonymous struct type: struct { members } variable;
-                vec![InitDeclarator {
+                thin_vec![InitDeclarator {
                     declarator: super::declarator::parse_declarator(parser, None)?,
                     initializer: None,
                 }]
@@ -96,7 +98,7 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
                 }),
             );
 
-            let specifiers = vec![DeclSpecifier {
+            let specifiers = thin_vec![DeclSpecifier {
                 storage_class: None,
                 type_qualifiers: TypeQualifiers::empty(),
                 function_specifiers: FunctionSpecifiers::empty(),
@@ -137,10 +139,10 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
                 let init_declarators = if parser.matches(&[TokenKind::Semicolon]) {
                     // Named struct definition: struct tag { members };
                     parser.expect(TokenKind::Semicolon)?;
-                    Vec::new()
+                    ThinVec::new()
                 } else {
                     // Variable declaration with named struct type: struct tag { members } variable;
-                    vec![InitDeclarator {
+                    thin_vec![InitDeclarator {
                         declarator: super::declarator::parse_declarator(parser, None)?,
                         initializer: None,
                     }]
@@ -156,7 +158,7 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
                     }),
                 );
 
-                let specifiers = vec![DeclSpecifier {
+                let specifiers = thin_vec![DeclSpecifier {
                     storage_class: None,
                     type_qualifiers: TypeQualifiers::empty(),
                     function_specifiers: FunctionSpecifiers::empty(),
@@ -178,7 +180,7 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
                 let type_specifier = TypeSpecifier::Record(is_union, tag, None);
                 let declarator = super::declarator::parse_declarator(parser, None)?;
 
-                let specifiers = vec![DeclSpecifier {
+                let specifiers = thin_vec![DeclSpecifier {
                     storage_class: None,
                     type_qualifiers: TypeQualifiers::empty(),
                     function_specifiers: FunctionSpecifiers::empty(),
@@ -190,7 +192,7 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
 
                 Ok(DeclarationData {
                     specifiers,
-                    init_declarators: vec![InitDeclarator {
+                    init_declarators: thin_vec![InitDeclarator {
                         declarator,
                         initializer: None,
                     }],
@@ -201,7 +203,7 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
         // Regular member: type specifier + multiple declarators
         let type_specifier = super::type_specifiers::parse_type_specifier_with_context(parser, true)?;
 
-        let mut init_declarators = Vec::new();
+        let mut init_declarators = ThinVec::new();
         loop {
             let declarator = super::declarator::parse_declarator(parser, None)?;
             init_declarators.push(InitDeclarator {
@@ -215,7 +217,7 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
             parser.advance(); // consume comma
         }
 
-        let specifiers = vec![DeclSpecifier {
+        let specifiers = thin_vec![DeclSpecifier {
             storage_class: None,
             type_qualifiers: TypeQualifiers::empty(),
             function_specifiers: FunctionSpecifiers::empty(),

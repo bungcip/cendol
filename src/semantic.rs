@@ -18,6 +18,7 @@ pub mod visitor;
 // Re-export key types for public API
 pub use symbol_table::{ScopeId, ScopeKind, Scope, SymbolTable};
 pub use name_resolver::NameResolver;
+use thin_vec::ThinVec;
 pub use type_checker::TypeChecker;
 
 use bitvec::prelude::*;
@@ -533,7 +534,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
         }
     }
 
-    fn find_function_with_name<'a>(&self, declarator: &'a Declarator) -> (Option<Symbol>, Option<&'a Vec<ParamData>>) {
+    fn find_function_with_name<'a>(&self, declarator: &'a Declarator) -> (Option<Symbol>, Option<&'a ThinVec<ParamData>>) {
         match declarator {
             Declarator::Function(base, params) => {
                 if let Declarator::Identifier(name, _, _) = base.as_ref() {

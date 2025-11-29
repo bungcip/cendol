@@ -166,6 +166,7 @@ dependencies = [
  "serde_yaml",
  "symbol_table",
  "target-lexicon",
+ "thin-vec",
  "thiserror",
 ]
 
@@ -668,6 +669,15 @@ name = "target-lexicon"
 version = "0.12.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
+
+[[package]]
+name = "thin-vec"
+version = "0.2.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "144f754d318415ac792f9d69fc87abbbfc043ce2ef041c60f16ad828f638717d"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "thiserror"

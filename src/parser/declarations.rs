@@ -10,6 +10,7 @@ use crate::lexer::{Token, TokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
 use log::debug;
 use symbol_table::GlobalSymbol as Symbol;
+use thin_vec::ThinVec;
 
 use super::Parser;
 
@@ -80,7 +81,7 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
             let declaration_data = DeclarationData {
                 specifiers,
-                init_declarators: Vec::new(),
+                init_declarators: ThinVec::new(),
             };
 
             let end_span = parser.current_token()?.location.end;
@@ -181,7 +182,7 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     }
 
     // Parse init declarators
-    let mut init_declarators = Vec::new();
+    let mut init_declarators = ThinVec::new();
 
     loop {
         let declarator_start_idx = parser.current_idx;

@@ -10,6 +10,7 @@ use crate::lexer::TokenKind;
 use crate::source_manager::SourceSpan;
 use log::debug;
 use symbol_table::GlobalSymbol as Symbol;
+use thin_vec::{ThinVec, thin_vec};
 
 use super::Parser;
 
@@ -159,8 +160,8 @@ fn parse_array_size(parser: &mut Parser) -> Result<ArraySize, ParseError> {
 }
 
 /// Helper to parse function parameters
-fn parse_function_parameters(parser: &mut Parser) -> Result<Vec<ParamData>, ParseError> {
-    let mut params = Vec::new();
+fn parse_function_parameters(parser: &mut Parser) -> Result<ThinVec<ParamData>, ParseError> {
+    let mut params = ThinVec::new();
 
     if !parser.matches(&[TokenKind::RightParen]) {
         if parser.matches(&[TokenKind::Void]) {
@@ -196,7 +197,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<Vec<ParamData>, Pars
                         parser.diag.diagnostics.truncate(saved_diagnostic_count);
 
                         // Create a simple default specifier
-                        vec![DeclSpecifier {
+                        thin_vec![DeclSpecifier {
                             storage_class: None,
                             type_qualifiers: TypeQualifiers::empty(),
                             function_specifiers: FunctionSpecifiers::empty(),

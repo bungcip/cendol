@@ -6,6 +6,7 @@
 
 use std::cell::Cell;
 use serde::Serialize;
+use thin_vec::ThinVec;
 
 use crate::ast::{Symbol, NodeRef, TypeRef, SymbolEntryRef, InitializerRef};
 
@@ -117,8 +118,8 @@ pub struct ForStmt {
 // Declaration data
 #[derive(Debug, Clone, Serialize)]
 pub struct DeclarationData {
-    pub specifiers: Vec<DeclSpecifier>,
-    pub init_declarators: Vec<InitDeclarator>,
+    pub specifiers: ThinVec<DeclSpecifier>,
+    pub init_declarators: ThinVec<InitDeclarator>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -129,7 +130,7 @@ pub struct InitDeclarator {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct FunctionDefData {
-    pub specifiers: Vec<DeclSpecifier>,
+    pub specifiers: ThinVec<DeclSpecifier>,
     pub declarator: Declarator,
     pub body: NodeRef, // A CompoundStatement
 }
@@ -251,13 +252,13 @@ pub enum Declarator {
     Abstract,                                                    // for abstract declarator
     Pointer(TypeQualifiers, Option<Box<Declarator>>),            // e.g., `*`
     Array(Box<Declarator>, ArraySize),                           // e.g., `[10]`
-    Function(Box<Declarator>, Vec<ParamData> /* parameters */),  // e.g., `(int x)`
-    AnonymousRecord(bool /* is_union */, Vec<DeclarationData> /* members */), // C11 anonymous struct/union
+    Function(Box<Declarator>, ThinVec<ParamData> /* parameters */),  // e.g., `(int x)`
+    AnonymousRecord(bool /* is_union */, ThinVec<DeclarationData> /* members */), // C11 anonymous struct/union
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ParamData {
-    pub specifiers: Vec<DeclSpecifier>,
+    pub specifiers: ThinVec<DeclSpecifier>,
     pub declarator: Option<Declarator>, // Optional name for abstract declarator
 }
 
@@ -356,8 +357,8 @@ impl IfStmtBuilder {
 /// Builder for DeclarationData
 #[derive(Debug)]
 pub struct DeclarationDataBuilder {
-    specifiers: Vec<DeclSpecifier>,
-    init_declarators: Vec<InitDeclarator>,
+    specifiers: ThinVec<DeclSpecifier>,
+    init_declarators: ThinVec<InitDeclarator>,
 }
 
 impl Default for DeclarationDataBuilder {
@@ -369,8 +370,8 @@ impl Default for DeclarationDataBuilder {
 impl DeclarationDataBuilder {
     pub fn new() -> Self {
         DeclarationDataBuilder {
-            specifiers: Vec::new(),
-            init_declarators: Vec::new(),
+            specifiers: ThinVec::new(),
+            init_declarators: ThinVec::new(),
         }
     }
 

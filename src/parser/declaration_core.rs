@@ -9,12 +9,13 @@ use crate::diagnostic::ParseError;
 use crate::lexer::TokenKind;
 use crate::source_manager::SourceSpan;
 use log::debug;
+use thin_vec::ThinVec;
 
 use super::Parser;
 
 /// Parse declaration specifiers
-pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<Vec<DeclSpecifier>, ParseError> {
-    let mut specifiers = Vec::new();
+pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVec<DeclSpecifier>, ParseError> {
+    let mut specifiers = ThinVec::new();
     let mut has_type_specifier = false;
     let start_idx = parser.current_idx;
 

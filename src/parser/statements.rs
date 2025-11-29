@@ -10,7 +10,7 @@ use crate::source_manager::{SourceLoc, SourceSpan};
 use log::debug;
 use std::cell::Cell;
 use symbol_table::GlobalSymbol as Symbol;
-
+use thin_vec::thin_vec;
 use super::Parser;
 
 /// Parse a statement
@@ -326,7 +326,7 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
         let declaration_data = DeclarationData {
             specifiers,
-            init_declarators: vec![init_declarator],
+            init_declarators: thin_vec![init_declarator],
         };
 
         // Don't consume semicolon here - it will be consumed by the normal for loop flow

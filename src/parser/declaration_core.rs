@@ -176,16 +176,8 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                         AlignmentSpecifier::Type(type_ref)
                     } else {
                         // _Alignas(constant-expression)
-                        let expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN)?;
-                        let expr = match expr_result {
-                            super::ParseExprOutput::Expression(node) => node,
-                            _ => {
-                                return Err(ParseError::SyntaxError {
-                                    message: "Expected expression in _Alignas".to_string(),
-                                    location: parser.current_token().unwrap().location,
-                                });
-                            }
-                        };
+                        let expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN);
+                        let expr = super::utils::unwrap_expr_result(parser, expr_result, "expression in _Alignas")?;
                         parser.expect(TokenKind::RightParen)?;
                         AlignmentSpecifier::Expr(expr)
                     }

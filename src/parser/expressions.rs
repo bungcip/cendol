@@ -240,15 +240,10 @@ pub(crate) fn parse_prefix(parser: &mut Parser) -> Result<NodeRef, ParseError> {
                 }
             } else {
                 // Regular parenthesized expression
-                let expr = parse_expression(parser, BindingPower::MIN)?;
+                let expr_result = parse_expression(parser, BindingPower::MIN);
+                let expr = super::utils::unwrap_expr_result(parser, expr_result, "expression in parentheses")?;
                 parser.expect(TokenKind::RightParen)?;
-                match expr {
-                    super::ParseExprOutput::Expression(node) => Ok(node),
-                    _ => Err(ParseError::SyntaxError {
-                        message: "Expected expression in parentheses".to_string(),
-                        location: left_paren_token.location,
-                    }),
-                }
+                Ok(expr)
             }
         }
         TokenKind::Plus
@@ -430,16 +425,8 @@ fn parse_function_call(parser: &mut Parser, function: NodeRef) -> Result<NodeRef
     } else {
         debug!("parse_function_call: parsing arguments");
         loop {
-            let arg_result = parse_expression(parser, BindingPower::ASSIGNMENT)?;
-            let arg = match arg_result {
-                super::ParseExprOutput::Expression(node) => node,
-                _ => {
-                    return Err(ParseError::SyntaxError {
-                        message: "Expected expression in function call argument".to_string(),
-                        location: parser.current_token().unwrap().location,
-                    });
-                }
-            };
+        let arg_result = parse_expression(parser, BindingPower::ASSIGNMENT);
+        let arg = super::utils::unwrap_expr_result(parser, arg_result, "expression in function call argument")?;
             args.push(arg);
             debug!(
                 "parse_function_call: parsed argument, count: {}",
@@ -502,19 +489,8 @@ fn parse_index_access(parser: &mut Parser, array: NodeRef) -> Result<NodeRef, Pa
         debug!(
             "parse_index_access: unexpected token in array access, trying to parse expression"
         );
-        let index_result = parse_expression(parser, BindingPower::MIN)?;
-        match index_result {
-            super::ParseExprOutput::Expression(node) => {
-                debug!("parse_index_access: parsed index expression");
-                node
-            }
-            _ => {
-                return Err(ParseError::SyntaxError {
-                    message: "Expected expression in array index".to_string(),
-                    location: parser.current_token().unwrap().location,
-                });
-            }
-        }
+        let index_result = parse_expression(parser, BindingPower::MIN);
+        super::utils::unwrap_expr_result(parser, index_result, "expression in array index")?
     };
 
     // The RightBracket should now be the current token, consume it
@@ -612,16 +588,8 @@ pub fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, ParseErro
     parser.expect(TokenKind::Generic)?;
     parser.expect(TokenKind::LeftParen)?;
 
-    let controlling_expr_result = parse_expression(parser, BindingPower::MIN)?;
-    let controlling_expr = match controlling_expr_result {
-        super::ParseExprOutput::Expression(node) => node,
-        _ => {
-            return Err(ParseError::SyntaxError {
-                message: "Expected expression in _Generic controlling expression".to_string(),
-                location: parser.current_token().unwrap().location,
-            });
-        }
-    };
+    let controlling_expr_result = parse_expression(parser, BindingPower::MIN);
+    let controlling_expr = super::utils::unwrap_expr_result(parser, controlling_expr_result, "expression in _Generic controlling expression")?;
 
     parser.expect(TokenKind::Comma)?;
 
@@ -637,16 +605,8 @@ pub fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, ParseErro
 
         parser.expect(TokenKind::Colon)?;
 
-        let result_expr_result = parse_expression(parser, BindingPower::MIN)?;
-        let result_expr = match result_expr_result {
-            super::ParseExprOutput::Expression(node) => node,
-            _ => {
-                return Err(ParseError::SyntaxError {
-                    message: "Expected expression in _Generic association".to_string(),
-                    location: parser.current_token().unwrap().location,
-                });
-                }
-        };
+        let result_expr_result = parse_expression(parser, BindingPower::MIN);
+        let result_expr = super::utils::unwrap_expr_result(parser, result_expr_result, "expression in _Generic association")?;
 
         associations.push(GenericAssociation {
             type_name,
@@ -741,16 +701,8 @@ pub fn parse_sizeof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
                 .push_node(Node::new(NodeKind::SizeOfType(type_ref), span))
         } else {
             debug!("parse_sizeof: detected expression, parsing expression");
-            let expr_result = parse_expression(parser, BindingPower::MIN)?;
-            let expr = match expr_result {
-                super::ParseExprOutput::Expression(node) => node,
-                _ => {
-                    return Err(ParseError::SyntaxError {
-                        message: "Expected expression in sizeof".to_string(),
-                        location: parser.current_token().unwrap().location,
-                    });
-                }
-            };
+            let expr_result = parse_expression(parser, BindingPower::MIN);
+            let expr = super::utils::unwrap_expr_result(parser, expr_result, "expression in sizeof")?;
             let right_paren_token = parser.expect(TokenKind::RightParen)?;
 
             let end_span = right_paren_token.location.end;
@@ -762,16 +714,8 @@ pub fn parse_sizeof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         }
     } else {
         debug!("parse_sizeof: no '(', parsing unary expression");
-        let expr_result = parse_expression(parser, BindingPower::UNARY)?;
-        let expr = match expr_result {
-            super::ParseExprOutput::Expression(node) => node,
-            _ => {
-                return Err(ParseError::SyntaxError {
-                    message: "Expected expression in sizeof".to_string(),
-                    location: parser.current_token().unwrap().location,
-                });
-            }
-        };
+        let expr_result = parse_expression(parser, BindingPower::UNARY);
+        let expr = super::utils::unwrap_expr_result(parser, expr_result, "expression in sizeof")?;
 
         let end_span = parser.ast.get_node(expr).span.end;
         let span = SourceSpan::new(start_span, end_span);
@@ -927,19 +871,8 @@ pub(crate) fn parse_cast_expression_from_type_and_paren(
     right_paren_token: Token,
 ) -> Result<NodeRef, ParseError> {
     // Parse the expression being cast
-    let expr_result = parse_expression(parser, BindingPower::CAST)?;
-    let expr_node = match expr_result {
-        super::ParseExprOutput::Expression(node) => {
-            debug!("parse_cast_expression: parsed operand expression");
-            node
-        }
-        _ => {
-            return Err(ParseError::SyntaxError {
-                message: "Expected expression after cast".to_string(),
-                location: right_paren_token.location,
-            });
-        }
-    };
+    let expr_result = parse_expression(parser, BindingPower::CAST);
+    let expr_node = super::utils::unwrap_expr_result(parser, expr_result, "expression after cast")?;
 
     let span = SourceSpan::new(
         right_paren_token.location.start, // Start from the opening paren

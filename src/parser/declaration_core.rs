@@ -199,7 +199,7 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<Initializer, Pars
 
         while !parser.matches(&[TokenKind::RightBrace]) {
             // Check if this is a designated initializer (starts with . or [)
-            let is_designated = parser.matches(&[TokenKind::Dot]) || parser.matches(&[TokenKind::LeftBracket]);
+            let is_designated = parser.matches(&[TokenKind::Dot, TokenKind::LeftBracket]);
 
             let initializer = if is_designated {
                 // Parse designated initializer
@@ -224,10 +224,9 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<Initializer, Pars
 
             initializers.push(initializer);
 
-            if !parser.matches(&[TokenKind::Comma]) {
+            if parser.accept(TokenKind::Comma).is_none() {
                 break;
             }
-            parser.advance(); // consume comma
         }
 
         parser.expect(TokenKind::RightBrace)?;
@@ -245,7 +244,7 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<Initializer, Pars
 
 /// Parse designated initializer
 fn parse_designated_initializer(parser: &mut Parser) -> Result<DesignatedInitializer, ParseError> {
-    let designation = if parser.matches(&[TokenKind::Dot]) || parser.matches(&[TokenKind::LeftBracket]) {
+    let designation = if parser.matches(&[TokenKind::Dot, TokenKind::LeftBracket]) {
         parse_designation(parser)?
     } else {
         Vec::new()
@@ -264,7 +263,7 @@ fn parse_designated_initializer(parser: &mut Parser) -> Result<DesignatedInitial
 fn parse_designation(parser: &mut Parser) -> Result<Vec<Designator>, ParseError> {
     let mut designators = Vec::new();
 
-    while parser.matches(&[TokenKind::Dot]) || parser.matches(&[TokenKind::LeftBracket]) {
+    while parser.matches(&[TokenKind::Dot, TokenKind::LeftBracket]) {
         if parser.accept(TokenKind::Dot).is_some() {
             let token = parser.try_current_token().ok_or_else(|| ParseError::SyntaxError {
                 message: "Expected field name".to_string(),

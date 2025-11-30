@@ -27,8 +27,7 @@ pub fn parse_enum_specifier(parser: &mut Parser) -> Result<TypeSpecifier, ParseE
         None
     };
 
-    let enumerators = if parser.matches(&[TokenKind::LeftBrace]) {
-        parser.advance(); // consume '{'
+    let enumerators = if parser.accept(TokenKind::LeftBrace).is_some() {
         let enums = parse_enumerator_list(parser)?;
         parser.expect(TokenKind::RightBrace)?;
         Some(enums)

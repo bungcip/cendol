@@ -566,8 +566,7 @@ pub fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, ParseErro
     let mut associations = Vec::new();
 
     loop {
-        let type_name = if parser.matches(&[TokenKind::Default]) {
-            parser.advance(); // consume 'default'
+        let type_name = if parser.accept(TokenKind::Default).is_some() {
             None
         } else {
             Some(super::declaration_core::parse_type_name(parser)?)
@@ -645,8 +644,7 @@ pub fn parse_sizeof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         parser.current_token_kind()
     );
 
-    let node = if parser.matches(&[TokenKind::LeftParen]) {
-        parser.advance(); // consume '('
+    let node = if parser.accept(TokenKind::LeftParen).is_some() {
         debug!(
             "parse_sizeof: found '(', now at position {}, token {:?}",
             parser.current_idx,

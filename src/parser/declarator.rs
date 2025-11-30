@@ -301,7 +301,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<ThinVec<ParamData>, 
                     parser.current_idx
                 );
 
-                if !parser.matches(&[TokenKind::Comma]) {
+                if parser.accept(TokenKind::Comma).is_none() {
                     debug!(
                         "parse_function_parameters: no comma found, breaking from parameter loop. Current token: {:?}, position: {}",
                         parser.current_token_kind(),
@@ -309,8 +309,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<ThinVec<ParamData>, 
                     );
                     break;
                 }
-                debug!("parse_function_parameters: found comma, consuming and continuing to next parameter");
-                parser.advance(); // consume comma
+                debug!("parse_function_parameters: found comma, continuing to next parameter");
 
                 // After consuming comma, verify we're in a good state to continue
                 if parser.matches(&[TokenKind::RightParen]) {

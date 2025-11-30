@@ -30,8 +30,7 @@ pub fn parse_record_specifier_with_context(
 
     // In struct member context, only parse members if we have a specific tag
     // to avoid confusion with anonymous nested structs
-    let definition = if parser.matches(&[TokenKind::LeftBrace]) && (!in_struct_member || tag.is_some()) {
-        parser.advance(); // consume '{'
+    let definition = if parser.accept(TokenKind::LeftBrace).is_some() && (!in_struct_member || tag.is_some()) {
         let members = parse_struct_declaration_list(parser)?;
         parser.expect(TokenKind::RightBrace)?;
         Some(RecordDefData {
@@ -61,9 +60,9 @@ pub fn parse_struct_declaration_list(parser: &mut Parser) -> Result<Vec<Declarat
 /// Parse struct declaration
 pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, ParseError> {
     // Check if we have an anonymous struct/union
-    if parser.matches(&[TokenKind::Struct, TokenKind::Union]) {
-        let is_union = parser.matches(&[TokenKind::Union]);
-        parser.advance(); // consume struct/union
+    let is_struct = parser.accept(TokenKind::Struct).is_some();
+    let is_union = if !is_struct { parser.accept(TokenKind::Union).is_some() } else { false };
+    if is_struct || is_union {
 
         // Check if this is an anonymous struct
         if parser.matches(&[TokenKind::LeftBrace]) {
@@ -192,10 +191,9 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
                 initializer: None,
             });
 
-            if !parser.matches(&[TokenKind::Comma]) {
+            if parser.accept(TokenKind::Comma).is_none() {
                 break;
             }
-            parser.advance(); // consume comma
         }
 
         let specifiers = thin_vec![DeclSpecifier::TypeSpecifier(type_specifier)];

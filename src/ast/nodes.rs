@@ -134,12 +134,12 @@ pub struct FunctionDefData {
 
 // Declaration specifiers and related types
 #[derive(Debug, Clone, Serialize)]
-pub struct DeclSpecifier {
-    pub storage_class: Option<StorageClass>,
-    pub type_qualifiers: TypeQualifiers,
-    pub function_specifiers: FunctionSpecifiers,
-    pub alignment_specifier: Option<AlignmentSpecifier>,
-    pub type_specifier: TypeSpecifier,
+pub enum DeclSpecifier {
+    StorageClass(StorageClass),
+    TypeQualifiers(TypeQualifiers),
+    FunctionSpecifiers(FunctionSpecifiers),
+    AlignmentSpecifier(AlignmentSpecifier),
+    TypeSpecifier(TypeSpecifier),
 }
 
 // Type specifiers

@@ -1,5 +1,5 @@
 #![cfg(test)]
-use crate::ast::{Ast, NodeKind, NodeRef, BinaryOp, UnaryOp, Declarator};
+use crate::ast::{Ast, BinaryOp, DeclSpecifier, Declarator, NodeKind, NodeRef, TypeSpecifier, UnaryOp};
 use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::LangOptions;
 use crate::lexer::Lexer;
@@ -108,40 +108,48 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
         }
         NodeKind::Declaration(decl) => {
             let specifiers = decl.specifiers.iter().map(|s| {
-                match &s.type_specifier {
-                    crate::ast::nodes::TypeSpecifier::Void => "void".to_string(),
-                    crate::ast::nodes::TypeSpecifier::Bool => "_Bool".to_string(),
-                    crate::ast::nodes::TypeSpecifier::Char => "char".to_string(),
-                    crate::ast::nodes::TypeSpecifier::Short => "short".to_string(),
-                    crate::ast::nodes::TypeSpecifier::Int => "int".to_string(),
-                    crate::ast::nodes::TypeSpecifier::Long => "long".to_string(),
-                    crate::ast::nodes::TypeSpecifier::Float => "float".to_string(),
-                    crate::ast::nodes::TypeSpecifier::Double => "double".to_string(),
-                    crate::ast::nodes::TypeSpecifier::Signed => "signed".to_string(),
-                    crate::ast::nodes::TypeSpecifier::Unsigned => "unsigned".to_string(),
-                    crate::ast::nodes::TypeSpecifier::Complex => "_Complex".to_string(),
-                    crate::ast::nodes::TypeSpecifier::Enum(tag, enumerators) => {
-                        let tag_str = tag.as_ref().map(|s| s.as_str()).unwrap_or("");
-                        if let Some(enums) = enumerators {
-                            let enum_parts: Vec<String> = enums.iter().map(|&node_ref| {
-                                match &ast.get_node(node_ref).kind {
-                                    NodeKind::EnumConstant(name, Some(value_expr)) => {
-                                        let value = resolve_node(ast, *value_expr);
-                                        match value {
-                                            ResolvedNodeKind::LiteralInt(val) => format!("{} = {}", name, val),
-                                            _ => format!("{} = <expr>", name),
+                match s {
+                    DeclSpecifier::TypeSpecifier(ts) => {
+                        match ts {
+                            TypeSpecifier::Void => "void".to_string(),
+                            TypeSpecifier::Bool => "_Bool".to_string(),
+                            TypeSpecifier::Char => "char".to_string(),
+                            TypeSpecifier::Short => "short".to_string(),
+                            TypeSpecifier::Int => "int".to_string(),
+                            TypeSpecifier::Long => "long".to_string(),
+                            TypeSpecifier::Float => "float".to_string(),
+                            TypeSpecifier::Double => "double".to_string(),
+                            TypeSpecifier::Signed => "signed".to_string(),
+                            TypeSpecifier::Unsigned => "unsigned".to_string(),
+                            TypeSpecifier::Complex => "_Complex".to_string(),
+                            TypeSpecifier::Enum(tag, enumerators) => {
+                                let tag_str = tag.as_ref().map(|s| s.as_str()).unwrap_or("");
+                                if let Some(enums) = enumerators {
+                                    let enum_parts: Vec<String> = enums.iter().map(|&node_ref| {
+                                        match &ast.get_node(node_ref).kind {
+                                            NodeKind::EnumConstant(name, Some(value_expr)) => {
+                                                let value = resolve_node(ast, *value_expr);
+                                                match value {
+                                                    ResolvedNodeKind::LiteralInt(val) => format!("{} = {}", name, val),
+                                                    _ => format!("{} = <expr>", name),
+                                                }
+                                            }
+                                            NodeKind::EnumConstant(name, None) => name.to_string(),
+                                            _ => "<invalid>".to_string(),
                                         }
-                                    }
-                                    NodeKind::EnumConstant(name, None) => name.to_string(),
-                                    _ => "<invalid>".to_string(),
+                                    }).collect();
+                                    format!("enum {} {{ {} }}", tag_str, enum_parts.join(", "))
+                                } else {
+                                    format!("enum {}", tag_str)
                                 }
-                            }).collect();
-                            format!("enum {} {{ {} }}", tag_str, enum_parts.join(", "))
-                        } else {
-                            format!("enum {}", tag_str)
+                            }
+                            _ => format!("{:?}", ts),
                         }
                     }
-                    _ => format!("{:?}", s.type_specifier),
+                    DeclSpecifier::StorageClass(sc) => format!("{:?}", sc),
+                    DeclSpecifier::TypeQualifiers(tq) => format!("{:?}", tq),
+                    DeclSpecifier::FunctionSpecifiers(fs) => format!("{:?}", fs),
+                    DeclSpecifier::AlignmentSpecifier(aspec) => format!("{:?}", aspec),
                 }
             }).collect();
             let init_declarators = decl.init_declarators.iter().map(|init_decl| {
@@ -204,17 +212,19 @@ fn extract_declarator_kind(declarator: &Declarator) -> String {
                     // Extract parameter type from specifiers
                     let mut type_parts = Vec::new();
                     for spec in &param.specifiers {
-                        match &spec.type_specifier {
-                            crate::ast::nodes::TypeSpecifier::Void => type_parts.push("void"),
-                            crate::ast::nodes::TypeSpecifier::Char => type_parts.push("char"),
-                            crate::ast::nodes::TypeSpecifier::Short => type_parts.push("short"),
-                            crate::ast::nodes::TypeSpecifier::Int => type_parts.push("int"),
-                            crate::ast::nodes::TypeSpecifier::Long => type_parts.push("long"),
-                            crate::ast::nodes::TypeSpecifier::Float => type_parts.push("float"),
-                            crate::ast::nodes::TypeSpecifier::Double => type_parts.push("double"),
-                            crate::ast::nodes::TypeSpecifier::Signed => type_parts.push("signed"),
-                            crate::ast::nodes::TypeSpecifier::Unsigned => type_parts.push("unsigned"),
-                            _ => type_parts.push("..."),
+                        if let DeclSpecifier::TypeSpecifier(ts) = spec {
+                            match ts {
+                                TypeSpecifier::Void => type_parts.push("void"),
+                                TypeSpecifier::Char => type_parts.push("char"),
+                                TypeSpecifier::Short => type_parts.push("short"),
+                                TypeSpecifier::Int => type_parts.push("int"),
+                                TypeSpecifier::Long => type_parts.push("long"),
+                                TypeSpecifier::Float => type_parts.push("float"),
+                                TypeSpecifier::Double => type_parts.push("double"),
+                                TypeSpecifier::Signed => type_parts.push("signed"),
+                                TypeSpecifier::Unsigned => type_parts.push("unsigned"),
+                                _ => type_parts.push("..."),
+                            }
                         }
                     }
                     let base_type = if type_parts.is_empty() { "int".to_string() } else { type_parts.join(" ") };

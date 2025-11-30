@@ -338,12 +338,12 @@ pub struct EnumDefData {
 
 // Declaration Specifiers combine StorageClass, TypeQualifiers, FunctionSpecifiers, and TypeSpecifiers
 #[derive(Debug)]
-pub struct DeclSpecifier {
-    pub storage_class: Option<StorageClass>,
-    pub type_qualifiers: TypeQualifiers,
-    pub function_specifiers: FunctionSpecifiers,
-    pub alignment_specifier: Option<AlignmentSpecifier>,
-    pub type_specifier: TypeSpecifier,
+pub enum DeclSpecifier {
+    StorageClass(StorageClass),
+    TypeQualifiers(TypeQualifiers),
+    FunctionSpecifiers(FunctionSpecifiers),
+    AlignmentSpecifier(AlignmentSpecifier),
+    TypeSpecifier(TypeSpecifier),
 }
 
 // Type Specifiers (C11)

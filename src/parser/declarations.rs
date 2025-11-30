@@ -7,6 +7,7 @@
 use crate::ast::*;
 use crate::diagnostic::ParseError;
 use crate::lexer::{Token, TokenKind};
+use crate::parser::declaration_core::parse_declaration_specifiers;
 use crate::source_manager::{SourceLoc, SourceSpan};
 use log::debug;
 use symbol_table::GlobalSymbol as Symbol;
@@ -32,7 +33,7 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     }
 
     // Try to parse declaration specifiers
-    let specifiers = match super::declaration_core::parse_declaration_specifiers(transaction.parser) {
+    let specifiers = match parse_declaration_specifiers(transaction.parser) {
         Ok(specifiers) => {
             debug!(
                 "parse_declaration: parsed {} specifiers, current token {:?}",
@@ -46,7 +47,10 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
             if let Some(last_specifier) = specifiers.last() {
                 debug!(
                     "parse_declaration: last specifier type: {:?}",
-                    std::mem::discriminant(&last_specifier.type_specifier)
+                    match last_specifier {
+                        DeclSpecifier::TypeSpecifier(ts) => std::mem::discriminant(ts),
+                        _ => std::mem::discriminant(&TypeSpecifier::Void),
+                    }
                 );
             }
             specifiers
@@ -58,12 +62,11 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     // Special handling for struct/union/enum declarations
     // Check if any specifier is a struct/union/enum specifier (definition or forward declaration)
-    let is_record_enum_specifier = specifiers.iter().any(|s| {
-        matches!(
-            &s.type_specifier,
-            TypeSpecifier::Record(_, _, _) | TypeSpecifier::Enum(_, _)
-        ) && s.storage_class.is_none()
+    let has_record_enum_type = specifiers.iter().any(|s| {
+        matches!(s, DeclSpecifier::TypeSpecifier(TypeSpecifier::Record(_, _, _) | TypeSpecifier::Enum(_, _)))
     });
+    let has_storage_class = specifiers.iter().any(|s| matches!(s, DeclSpecifier::StorageClass(_)));
+    let is_record_enum_specifier = has_record_enum_type && !has_storage_class;
 
     // If we have a struct/union/enum specifier, we need to check if there are declarators following
     // The logic should be:
@@ -118,15 +121,15 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     if !has_declarators {
         // Check if this looks like a record/enum definition
         // by looking at the last parsed specifier
-        if let Some(last_specifier) = specifiers.last() {
-            match &last_specifier.type_specifier {
-                TypeSpecifier::Record(_, _tag, _definition) => {
+        if let Some(DeclSpecifier::TypeSpecifier(ts)) = specifiers.last() {
+            match ts {
+                TypeSpecifier::Record(_, _, _) => {
                     return Err(ParseError::SyntaxError {
                         message: "Expected ';' after struct/union definition".to_string(),
                         location: transaction.parser.current_token()?.location,
                     });
                 }
-                TypeSpecifier::Enum(_tag, _definition) => {
+                TypeSpecifier::Enum(_, _) => {
                     return Err(ParseError::SyntaxError {
                         message: "Expected ';' after enum definition".to_string(),
                         location: transaction.parser.current_token()?.location,
@@ -228,7 +231,7 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     // Track typedef names for disambiguation
     for specifier in &specifiers {
-        if specifier.storage_class == Some(StorageClass::Typedef) {
+        if matches!(specifier, DeclSpecifier::StorageClass(StorageClass::Typedef)) {
             debug!("Found Typedef specifier, adding typedef names");
             for init_declarator in &init_declarators {
                 let name = transaction.parser.get_declarator_name(&init_declarator.declarator);
@@ -263,7 +266,7 @@ pub fn parse_function_definition(parser: &mut Parser) -> Result<NodeRef, ParseEr
     let start_span = parser.current_token()?.location.start;
 
     // Parse declaration specifiers
-    let specifiers = super::declaration_core::parse_declaration_specifiers(parser)?;
+    let specifiers = parse_declaration_specifiers(parser)?;
 
     // Parse declarator (should be a function declarator)
     let declarator = super::declarator::parse_declarator(parser, None)?;

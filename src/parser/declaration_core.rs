@@ -52,13 +52,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                     _ => unreachable!(),
                 };
                 parser.advance();
-                specifiers.push(DeclSpecifier {
-                    storage_class: Some(storage_class),
-                    type_qualifiers: TypeQualifiers::empty(),
-                    function_specifiers: FunctionSpecifiers::empty(),
-                    alignment_specifier: None,
-                    type_specifier: TypeSpecifier::Void, // Placeholder
-                });
+                specifiers.push(DeclSpecifier::StorageClass(storage_class));
             }
 
             // Type qualifiers
@@ -74,13 +68,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                     }
                     parser.advance();
                 }
-                specifiers.push(DeclSpecifier {
-                    storage_class: None,
-                    type_qualifiers: qualifiers,
-                    function_specifiers: FunctionSpecifiers::empty(),
-                    alignment_specifier: None,
-                    type_specifier: TypeSpecifier::Void, // Placeholder
-                });
+                specifiers.push(DeclSpecifier::TypeQualifiers(qualifiers));
             }
 
             // Function specifiers
@@ -94,13 +82,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                     }
                     parser.advance();
                 }
-                specifiers.push(DeclSpecifier {
-                    storage_class: None,
-                    type_qualifiers: TypeQualifiers::empty(),
-                    function_specifiers: func_specs,
-                    alignment_specifier: None,
-                    type_specifier: TypeSpecifier::Void, // Placeholder
-                });
+                specifiers.push(DeclSpecifier::FunctionSpecifiers(func_specs));
             }
 
             // Type specifiers
@@ -119,13 +101,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
             | TokenKind::Union
             | TokenKind::Enum => {
                 let type_specifier = super::type_specifiers::parse_type_specifier(parser)?;
-                specifiers.push(DeclSpecifier {
-                    storage_class: None,
-                    type_qualifiers: TypeQualifiers::empty(),
-                    function_specifiers: FunctionSpecifiers::empty(),
-                    alignment_specifier: None,
-                    type_specifier,
-                });
+                specifiers.push(DeclSpecifier::TypeSpecifier(type_specifier));
                 has_type_specifier = true;
             }
 
@@ -145,13 +121,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                         symbol
                     );
                     let type_specifier = super::type_specifiers::parse_type_specifier(parser)?;
-                    specifiers.push(DeclSpecifier {
-                        storage_class: None,
-                        type_qualifiers: TypeQualifiers::empty(),
-                        function_specifiers: FunctionSpecifiers::empty(),
-                        alignment_specifier: None,
-                        type_specifier,
-                    });
+                    specifiers.push(DeclSpecifier::TypeSpecifier(type_specifier));
                     has_type_specifier = true;
                 } else {
                     debug!(
@@ -185,13 +155,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                     });
                 };
 
-                specifiers.push(DeclSpecifier {
-                    storage_class: None,
-                    type_qualifiers: TypeQualifiers::empty(),
-                    function_specifiers: FunctionSpecifiers::empty(),
-                    alignment_specifier: Some(alignment),
-                    type_specifier: TypeSpecifier::Void, // Placeholder
-                });
+                specifiers.push(DeclSpecifier::AlignmentSpecifier(alignment));
             }
 
             _ => {

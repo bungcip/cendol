@@ -8,6 +8,8 @@ use super::{BindingPower, parse_expression, unwrap_expr_result};
 use crate::ast::*;
 use crate::diagnostic::ParseError;
 use crate::lexer::TokenKind;
+use crate::parser::declaration_core::parse_declaration_specifiers;
+use crate::parser::declarator::parse_declarator;
 use crate::source_manager::{SourceLoc, SourceSpan};
 use log::debug;
 use std::cell::Cell;
@@ -263,9 +265,9 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     } else if super::declarations::is_declaration_start(parser) {
         debug!("parse_for_statement: parsing declaration in init");
         // Parse declaration specifiers
-        let specifiers = super::declaration_core::parse_declaration_specifiers(parser)?;
+        let specifiers = parse_declaration_specifiers(parser)?;
         // Parse declarator
-        let declarator = super::declarator::parse_declarator(parser, None)?;
+        let declarator = parse_declarator(parser, None)?;
         // Parse initializer if present
         let initializer = if parser.accept(TokenKind::Assign).is_some() {
             Some(super::declaration_core::parse_initializer(parser)?)

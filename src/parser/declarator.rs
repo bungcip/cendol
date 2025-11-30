@@ -7,6 +7,7 @@
 use crate::ast::*;
 use crate::diagnostic::ParseError;
 use crate::lexer::TokenKind;
+use crate::parser::declaration_core::parse_declaration_specifiers;
 use log::debug;
 use symbol_table::GlobalSymbol as Symbol;
 use thin_vec::{ThinVec, thin_vec};
@@ -203,7 +204,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<ThinVec<ParamData>, 
                     }
                 );
 
-                let specifiers = match super::declaration_core::parse_declaration_specifiers(parser) {
+                let specifiers = match parse_declaration_specifiers(parser) {
                     Ok(specifiers) => {
                         debug!(
                             "parse_function_parameters: successfully parsed specifiers, current token: {:?}",
@@ -224,13 +225,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<ThinVec<ParamData>, 
                         parser.diag.diagnostics.truncate(saved_diagnostic_count);
 
                         // Create a simple default specifier
-                        thin_vec![DeclSpecifier {
-                            storage_class: None,
-                            type_qualifiers: TypeQualifiers::empty(),
-                            function_specifiers: FunctionSpecifiers::empty(),
-                            alignment_specifier: None,
-                            type_specifier: TypeSpecifier::Int,
-                        }]
+                        thin_vec![DeclSpecifier::TypeSpecifier(TypeSpecifier::Int)]
                     }
                 };
 

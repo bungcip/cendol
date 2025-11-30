@@ -471,7 +471,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
 
     fn collect_enum_constants_from_declaration(&mut self, decl: &DeclarationData, span: SourceSpan) {
         for specifier in &decl.specifiers {
-            if let TypeSpecifier::Enum(tag, Some(enumerators)) = &specifier.type_specifier {
+            if let DeclSpecifier::TypeSpecifier(TypeSpecifier::Enum(tag, Some(enumerators))) = specifier {
                 debug!(
                     "Found enum declaration with tag {:?} and {} enumerators",
                     tag.as_ref().map(|s| s.as_str()),

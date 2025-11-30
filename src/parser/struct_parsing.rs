@@ -97,13 +97,7 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
                 }),
             );
 
-            let specifiers = thin_vec![DeclSpecifier {
-                storage_class: None,
-                type_qualifiers: TypeQualifiers::empty(),
-                function_specifiers: FunctionSpecifiers::empty(),
-                alignment_specifier: None,
-                type_specifier,
-            }];
+            let specifiers = thin_vec![DeclSpecifier::TypeSpecifier(type_specifier)];
 
             // Only expect semicolon if we haven't already consumed it in the anonymous case
             if !init_declarators.is_empty() {
@@ -157,13 +151,7 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
                     }),
                 );
 
-                let specifiers = thin_vec![DeclSpecifier {
-                    storage_class: None,
-                    type_qualifiers: TypeQualifiers::empty(),
-                    function_specifiers: FunctionSpecifiers::empty(),
-                    alignment_specifier: None,
-                    type_specifier,
-                }];
+                let specifiers = thin_vec![DeclSpecifier::TypeSpecifier(type_specifier)];
 
                 // Only expect semicolon if we haven't already consumed it
                 if !init_declarators.is_empty() {
@@ -179,13 +167,7 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
                 let type_specifier = TypeSpecifier::Record(is_union, tag, None);
                 let declarator = super::declarator::parse_declarator(parser, None)?;
 
-                let specifiers = thin_vec![DeclSpecifier {
-                    storage_class: None,
-                    type_qualifiers: TypeQualifiers::empty(),
-                    function_specifiers: FunctionSpecifiers::empty(),
-                    alignment_specifier: None,
-                    type_specifier,
-                }];
+                let specifiers = thin_vec![DeclSpecifier::TypeSpecifier(type_specifier)];
 
                 parser.expect(TokenKind::Semicolon)?;
 
@@ -216,13 +198,7 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
             parser.advance(); // consume comma
         }
 
-        let specifiers = thin_vec![DeclSpecifier {
-            storage_class: None,
-            type_qualifiers: TypeQualifiers::empty(),
-            function_specifiers: FunctionSpecifiers::empty(),
-            alignment_specifier: None,
-            type_specifier,
-        }];
+        let specifiers = thin_vec![DeclSpecifier::TypeSpecifier(type_specifier)];
 
         parser.expect(TokenKind::Semicolon)?;
 

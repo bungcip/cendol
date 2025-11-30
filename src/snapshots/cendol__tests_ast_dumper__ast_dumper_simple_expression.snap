@@ -2,6 +2,7 @@
 source: src/tests_ast_dumper.rs
 expression: relevant_html
 ---
+
 <h2>Abstract Syntax Tree</h2>
 <div class="ast-controls">
 <div class="search-container">

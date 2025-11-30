@@ -2,8 +2,8 @@ use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::LangOptions;
 use crate::source_manager::{SourceId, SourceLoc, SourceManager, SourceSpan};
 use chrono::{DateTime, Datelike, Timelike, Utc};
-use std::collections::HashSet;
 use hashbrown::HashMap;
+use std::collections::HashSet;
 
 use crate::pp::interpreter::Interpreter;
 use std::path::{Path, PathBuf};
@@ -165,39 +165,26 @@ pub struct HeaderSearch {
 impl HeaderSearch {
     /// Add a system include path
     pub fn add_system_path(&mut self, path: PathBuf) {
-        self.system_path.push(SearchPath {
-            path,
-            is_system: true,
-        });
+        self.system_path.push(SearchPath { path, is_system: true });
     }
 
     /// Add a quoted include path (-iquote)
     pub fn add_quoted_path(&mut self, path: PathBuf) {
-        self.quoted_includes
-            .push(path.to_string_lossy().to_string());
+        self.quoted_includes.push(path.to_string_lossy().to_string());
     }
 
     /// Add an angled include path (-I)
     pub fn add_angled_path(&mut self, path: PathBuf) {
-        self.angled_includes
-            .push(path.to_string_lossy().to_string());
+        self.angled_includes.push(path.to_string_lossy().to_string());
     }
 
     /// Add a framework path
     pub fn add_framework_path(&mut self, path: PathBuf) {
-        self.framework_path.push(SearchPath {
-            path,
-            is_system: true,
-        });
+        self.framework_path.push(SearchPath { path, is_system: true });
     }
 
     /// Resolve an include path to an absolute path
-    pub fn resolve_path(
-        &self,
-        include_path: &str,
-        is_angled: bool,
-        current_dir: &Path,
-    ) -> Option<PathBuf> {
+    pub fn resolve_path(&self, include_path: &str, is_angled: bool, current_dir: &Path) -> Option<PathBuf> {
         if is_angled {
             // Angled includes: search angled_includes, then system_path, then framework_path
             for include_path_str in &self.angled_includes {
@@ -308,7 +295,6 @@ pub struct Preprocessor<'src> {
     include_depth: usize,
     skipping: bool, // Whether we are currently skipping tokens due to conditional compilation
 }
-
 
 /// Preprocessor errors
 #[derive(Debug, thiserror::Error)]
@@ -426,22 +412,12 @@ impl<'src> Preprocessor<'src> {
         let now: DateTime<Utc> = Utc::now();
 
         // __DATE__
-        let date_str = format!(
-            "\"{:02} {:02} {}\"",
-            now.format("%b"),
-            now.day(),
-            now.year()
-        );
+        let date_str = format!("\"{:02} {:02} {}\"", now.format("%b"), now.day(), now.year());
         let date_tokens = self.tokenize_string(&date_str);
         self.define_builtin_macro("__DATE__", date_tokens);
 
         // __TIME__
-        let time_str = format!(
-            "\"{:02}:{:02}:{:02}\"",
-            now.hour(),
-            now.minute(),
-            now.second()
-        );
+        let time_str = format!("\"{:02}:{:02}:{:02}\"", now.hour(), now.minute(), now.second());
         let time_tokens = self.tokenize_string(&time_str);
         self.define_builtin_macro("__TIME__", time_tokens);
 
@@ -563,12 +539,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Define a built-in function-like macro
-    fn define_builtin_function_macro(
-        &mut self,
-        name: &str,
-        params: Vec<Symbol>,
-        tokens: Vec<PPToken>,
-    ) {
+    fn define_builtin_function_macro(&mut self, name: &str, params: Vec<Symbol>, tokens: Vec<PPToken>) {
         let symbol = Symbol::new(name);
         let macro_info = MacroInfo {
             location: SourceLoc::builtin(),
@@ -601,11 +572,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Process source file and return preprocessed tokens
-    pub fn process(
-        &mut self,
-        source_id: SourceId,
-        _config: &PPConfig,
-    ) -> Result<Vec<PPToken>, PPError> {
+    pub fn process(&mut self, source_id: SourceId, _config: &PPConfig) -> Result<Vec<PPToken>, PPError> {
         // Initialize lexer for main file
         let buffer = self.source_manager.get_buffer(source_id);
         let buffer_len = buffer.len() as u32;
@@ -637,8 +604,7 @@ impl<'src> Preprocessor<'src> {
                 match token.kind {
                     PPTokenKind::Identifier(symbol) => {
                         if symbol.as_str() == "__LINE__" {
-                            let line = if let Some(presumed) =
-                                self.source_manager.get_presumed_location(token.location)
+                            let line = if let Some(presumed) = self.source_manager.get_presumed_location(token.location)
                             {
                                 presumed.0
                             } else {
@@ -730,8 +696,7 @@ impl<'src> Preprocessor<'src> {
         }
 
         if tokens.is_empty() {
-            let location =
-                SourceSpan::new(self.get_current_location(), self.get_current_location());
+            let location = SourceSpan::new(self.get_current_location(), self.get_current_location());
             let diag = crate::diagnostic::Diagnostic {
                 level: crate::diagnostic::DiagnosticLevel::Error,
                 message: "Invalid conditional expression".to_string(),
@@ -753,18 +718,13 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Evaluate a conditional expression (simplified - handle defined and basic arithmetic)
-    fn evaluate_conditional_expression(
-        &mut self,
-        tokens: &[PPToken],
-    ) -> Result<bool, PPError> {
+    fn evaluate_conditional_expression(&mut self, tokens: &[PPToken]) -> Result<bool, PPError> {
         if tokens.is_empty() {
             return Err(PPError::InvalidConditionalExpression);
         }
 
         // Check for defined(identifier) or defined identifier before macro expansion
-        if tokens.len() >= 2
-            && matches!(tokens[0].kind, PPTokenKind::Identifier(sym) if sym == self.defined_symbol())
-        {
+        if tokens.len() >= 2 && matches!(tokens[0].kind, PPTokenKind::Identifier(sym) if sym == self.defined_symbol()) {
             if tokens.len() == 2 {
                 // defined identifier
                 if let PPTokenKind::Identifier(sym) = &tokens[1].kind {
@@ -790,10 +750,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Evaluate a simple arithmetic expression for #if/#elif
-    fn evaluate_arithmetic_expression(
-        &mut self,
-        tokens: &[PPToken],
-    ) -> Result<bool, PPError> {
+    fn evaluate_arithmetic_expression(&mut self, tokens: &[PPToken]) -> Result<bool, PPError> {
         if tokens.is_empty() {
             return Err(PPError::InvalidConditionalExpression);
         }
@@ -833,10 +790,8 @@ impl<'src> Preprocessor<'src> {
                     // EOF reached, pop the lexer
                     let popped_lexer = self.lexer_stack.pop().unwrap();
                     // Set the line_starts from the lexer to the source manager
-                    self.source_manager.set_line_starts(
-                        popped_lexer.source_id,
-                        popped_lexer.get_line_starts().clone(),
-                    );
+                    self.source_manager
+                        .set_line_starts(popped_lexer.source_id, popped_lexer.get_line_starts().clone());
                     if self.lexer_stack.is_empty() {
                         return None;
                     }
@@ -850,9 +805,7 @@ impl<'src> Preprocessor<'src> {
 
     /// Handle preprocessor directives
     fn handle_directive(&mut self) -> Result<(), PPError> {
-        let token = self
-            .lex_token()
-            .ok_or(PPError::UnexpectedEndOfFile)?;
+        let token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
 
         match token.kind {
             PPTokenKind::Identifier(sym) => {
@@ -921,9 +874,7 @@ impl<'src> Preprocessor<'src> {
 
     /// Handle #define directive
     fn handle_define(&mut self) -> Result<(), PPError> {
-        let name_token = self
-            .lex_token()
-            .ok_or(PPError::UnexpectedEndOfFile)?;
+        let name_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
         let name = match name_token.kind {
             PPTokenKind::Identifier(sym) => sym,
             _ => return Err(PPError::ExpectedIdentifier),
@@ -962,9 +913,7 @@ impl<'src> Preprocessor<'src> {
                 if let Some(fp) = first_param {
                     if matches!(
                         fp.kind,
-                        PPTokenKind::RightParen
-                            | PPTokenKind::Identifier(_)
-                            | PPTokenKind::Ellipsis
+                        PPTokenKind::RightParen | PPTokenKind::Identifier(_) | PPTokenKind::Ellipsis
                     ) {
                         flags |= MacroFlags::FUNCTION_LIKE;
                         if let Some(lexer) = self.lexer_stack.last_mut() {
@@ -972,9 +921,7 @@ impl<'src> Preprocessor<'src> {
                         }
                         // parse params
                         loop {
-                            let param_token = self
-                                .lex_token()
-                                .ok_or(PPError::UnexpectedEndOfFile)?;
+                            let param_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
                             match param_token.kind {
                                 PPTokenKind::RightParen => break,
                                 PPTokenKind::Identifier(sym) => {
@@ -982,22 +929,16 @@ impl<'src> Preprocessor<'src> {
                                         return Err(PPError::InvalidMacroParameter);
                                     }
                                     params.push(sym);
-                                    let sep = self
-                                        .lex_token()
-                                        .ok_or(PPError::UnexpectedEndOfFile)?;
+                                    let sep = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
                                     match sep.kind {
                                         PPTokenKind::Comma => continue,
                                         PPTokenKind::RightParen => break,
                                         PPTokenKind::Ellipsis => {
                                             variadic = Some(sym);
                                             flags |= MacroFlags::C99_VARARGS;
-                                            let rparen = self
-                                                .lex_token()
-                                                .ok_or(PPError::UnexpectedEndOfFile)?;
+                                            let rparen = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
                                             if rparen.kind != PPTokenKind::RightParen {
-                                                return Err(
-                                                    PPError::InvalidMacroParameter,
-                                                );
+                                                return Err(PPError::InvalidMacroParameter);
                                             }
                                             break;
                                         }
@@ -1007,9 +948,7 @@ impl<'src> Preprocessor<'src> {
                                 PPTokenKind::Ellipsis => {
                                     flags |= MacroFlags::GNU_VARARGS;
                                     variadic = Some(Symbol::new("__VA_ARGS__"));
-                                    let rparen = self
-                                        .lex_token()
-                                        .ok_or(PPError::UnexpectedEndOfFile)?;
+                                    let rparen = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
                                     if rparen.kind != PPTokenKind::RightParen {
                                         return Err(PPError::InvalidMacroParameter);
                                     }
@@ -1056,9 +995,7 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
     fn handle_undef(&mut self) -> Result<(), PPError> {
-        let name_token = self
-            .lex_token()
-            .ok_or(PPError::UnexpectedEndOfFile)?;
+        let name_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
         let name = match name_token.kind {
             PPTokenKind::Identifier(sym) => sym,
             _ => return Err(PPError::ExpectedIdentifier),
@@ -1069,9 +1006,7 @@ impl<'src> Preprocessor<'src> {
     }
     fn handle_include(&mut self) -> Result<(), PPError> {
         // Parse the include path
-        let token = self
-            .lex_token()
-            .ok_or(PPError::UnexpectedEndOfFile)?;
+        let token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
         let is_angled = matches!(token.kind, PPTokenKind::Less);
         let path_str = match token.kind {
             PPTokenKind::StringLiteral(symbol) => {
@@ -1087,9 +1022,7 @@ impl<'src> Preprocessor<'src> {
                 // Angled include: collect tokens until >
                 let mut path_parts = Vec::new();
                 loop {
-                    let part_token = self
-                        .lex_token()
-                        .ok_or(PPError::UnexpectedEndOfFile)?;
+                    let part_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
                     match part_token.kind {
                         PPTokenKind::Greater => break,
                         _ => path_parts.push(part_token),
@@ -1136,28 +1069,22 @@ impl<'src> Preprocessor<'src> {
                 let current_dir = current_file_info.path.parent().unwrap_or(Path::new("."));
 
                 // Resolve the path
-                let resolved_path =
-                    self.header_search
-                        .resolve_path(&path_str, is_angled, current_dir);
+                let resolved_path = self.header_search.resolve_path(&path_str, is_angled, current_dir);
                 if let Some(resolved_path) = resolved_path {
                     // Load the file
-                    self.source_manager
-                        .add_file_from_path(&resolved_path)
-                        .map_err(|_| {
-                            // Emit diagnostic for file not found
-                            let diag = crate::diagnostic::Diagnostic {
-                                level: crate::diagnostic::DiagnosticLevel::Error,
-                                message: format!("Include file '{}' not found", path_str),
-                                location: SourceSpan::new(token.location, token.location),
-                                code: Some("include_file_not_found".to_string()),
-                                hints: vec![
-                                    "Check the include path and ensure the file exists".to_string(),
-                                ],
-                                related: Vec::new(),
-                            };
-                            self.diag.report_diagnostic(diag);
-                            PPError::FileNotFound
-                        })?
+                    self.source_manager.add_file_from_path(&resolved_path).map_err(|_| {
+                        // Emit diagnostic for file not found
+                        let diag = crate::diagnostic::Diagnostic {
+                            level: crate::diagnostic::DiagnosticLevel::Error,
+                            message: format!("Include file '{}' not found", path_str),
+                            location: SourceSpan::new(token.location, token.location),
+                            code: Some("include_file_not_found".to_string()),
+                            hints: vec!["Check the include path and ensure the file exists".to_string()],
+                            related: Vec::new(),
+                        };
+                        self.diag.report_diagnostic(diag);
+                        PPError::FileNotFound
+                    })?
                 } else {
                     // For angled includes, if not found, emit warning and skip
                     let diag = crate::diagnostic::Diagnostic {
@@ -1165,9 +1092,7 @@ impl<'src> Preprocessor<'src> {
                         message: format!("Include file '{}' not found, skipping", path_str),
                         location: SourceSpan::new(token.location, token.location),
                         code: Some("include_file_not_found".to_string()),
-                        hints: vec![
-                            "Check the include path and ensure the file exists".to_string(),
-                        ],
+                        hints: vec!["Check the include path and ensure the file exists".to_string()],
                         related: Vec::new(),
                     };
                     self.diag.report_diagnostic(diag);
@@ -1181,9 +1106,7 @@ impl<'src> Preprocessor<'src> {
             let current_dir = current_file_info.path.parent().unwrap_or(Path::new("."));
 
             // Resolve the path
-            let resolved_path = self
-                .header_search
-                .resolve_path(&path_str, is_angled, current_dir);
+            let resolved_path = self.header_search.resolve_path(&path_str, is_angled, current_dir);
 
             if let Some(resolved_path) = resolved_path {
                 // Load the file
@@ -1237,9 +1160,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn handle_ifdef(&mut self) -> Result<(), PPError> {
-        let name_token = self
-            .lex_token()
-            .ok_or(PPError::UnexpectedEndOfFile)?;
+        let name_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
         let name = match name_token.kind {
             PPTokenKind::Identifier(sym) => sym,
             _ => return Err(PPError::ExpectedIdentifier),
@@ -1262,9 +1183,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn handle_ifndef(&mut self) -> Result<(), PPError> {
-        let name_token = self
-            .lex_token()
-            .ok_or(PPError::UnexpectedEndOfFile)?;
+        let name_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
         let name = match name_token.kind {
             PPTokenKind::Identifier(sym) => sym,
             _ => return Err(PPError::ExpectedIdentifier),
@@ -1382,8 +1301,7 @@ impl<'src> Preprocessor<'src> {
         let logical_line = match &tokens[0].kind {
             PPTokenKind::Number(symbol) => {
                 let text = symbol.as_str();
-                text.parse::<u32>()
-                    .map_err(|_| PPError::InvalidLineDirective)?
+                text.parse::<u32>().map_err(|_| PPError::InvalidLineDirective)?
             }
             _ => return Err(PPError::InvalidLineDirective),
         };
@@ -1426,11 +1344,7 @@ impl<'src> Preprocessor<'src> {
         if let Some(lexer) = self.lexer_stack.last()
             && let Some(line_map) = self.source_manager.get_line_map_mut(lexer.source_id)
         {
-            let entry = crate::source_manager::LineDirective::new(
-                physical_line,
-                entry_logical_line,
-                logical_file,
-            );
+            let entry = crate::source_manager::LineDirective::new(physical_line, entry_logical_line, logical_file);
             line_map.add_entry(entry);
         }
 
@@ -1438,9 +1352,7 @@ impl<'src> Preprocessor<'src> {
     }
     fn handle_pragma(&mut self) -> Result<(), PPError> {
         // Parse the pragma directive
-        let pragma_token = self
-            .lex_token()
-            .ok_or(PPError::UnexpectedEndOfFile)?;
+        let pragma_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
         match pragma_token.kind {
             PPTokenKind::Identifier(symbol) => {
                 let pragma_name = symbol.as_str();
@@ -1738,10 +1650,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Parse macro arguments from the current lexer
-    fn parse_macro_args_from_lexer(
-        &mut self,
-        macro_info: &MacroInfo,
-    ) -> Result<Vec<Vec<PPToken>>, PPError> {
+    fn parse_macro_args_from_lexer(&mut self, macro_info: &MacroInfo) -> Result<Vec<Vec<PPToken>>, PPError> {
         // Skip whitespace and expect '('
         let mut found_lparen = false;
         while let Some(token) = self.lex_token() {
@@ -1805,9 +1714,7 @@ impl<'src> Preprocessor<'src> {
                     bracket_depth -= 1;
                     current_arg.push(token);
                 }
-                PPTokenKind::Comma
-                    if paren_depth == 0 && brace_depth == 0 && bracket_depth == 0 =>
-                {
+                PPTokenKind::Comma if paren_depth == 0 && brace_depth == 0 && bracket_depth == 0 => {
                     // Argument separator
                     args.push(current_arg);
                     current_arg = Vec::new();
@@ -1872,11 +1779,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Substitute parameters in macro body
-    fn substitute_macro(
-        &mut self,
-        macro_info: &MacroInfo,
-        args: &[Vec<PPToken>],
-    ) -> Result<Vec<PPToken>, PPError> {
+    fn substitute_macro(&mut self, macro_info: &MacroInfo, args: &[Vec<PPToken>]) -> Result<Vec<PPToken>, PPError> {
         let mut result = Vec::new();
         let mut i = 0;
 
@@ -1889,28 +1792,19 @@ impl<'src> Preprocessor<'src> {
                     if i + 1 < macro_info.tokens.len() {
                         let next_token = &macro_info.tokens[i + 1];
                         if let PPTokenKind::Identifier(param_symbol) = next_token.kind {
-                            if let Some(param_index) = macro_info
-                                .parameter_list
-                                .iter()
-                                .position(|&p| p == param_symbol)
+                            if let Some(param_index) = macro_info.parameter_list.iter().position(|&p| p == param_symbol)
                             {
                                 let arg_tokens = &args[param_index];
-                                let stringified =
-                                    self.stringify_tokens(arg_tokens, token.location)?;
+                                let stringified = self.stringify_tokens(arg_tokens, token.location)?;
                                 result.push(stringified);
                                 i += 2;
                                 continue;
                             } else if macro_info.variadic_arg == Some(param_symbol) {
                                 // Handle variadic argument
                                 let start_index = macro_info.parameter_list.len();
-                                let variadic_args = args
-                                    .iter()
-                                    .skip(start_index)
-                                    .flatten()
-                                    .cloned()
-                                    .collect::<Vec<_>>();
-                                let stringified =
-                                    self.stringify_tokens(&variadic_args, token.location)?;
+                                let variadic_args =
+                                    args.iter().skip(start_index).flatten().cloned().collect::<Vec<_>>();
+                                let stringified = self.stringify_tokens(&variadic_args, token.location)?;
                                 result.push(stringified);
                                 i += 2;
                                 continue;
@@ -1926,21 +1820,18 @@ impl<'src> Preprocessor<'src> {
                         let right_token = &macro_info.tokens[i + 1];
 
                         // Substitute the right token if it's a parameter
-                        let right_substituted =
-                            if let PPTokenKind::Identifier(symbol) = right_token.kind {
-                                if let Some(param_index) =
-                                    macro_info.parameter_list.iter().position(|&p| p == symbol)
-                                {
-                                    args[param_index].clone()
-                                } else if macro_info.variadic_arg == Some(symbol) {
-                                    let start_index = macro_info.parameter_list.len();
-                                    args.iter().skip(start_index).flatten().cloned().collect()
-                                } else {
-                                    vec![*right_token]
-                                }
+                        let right_substituted = if let PPTokenKind::Identifier(symbol) = right_token.kind {
+                            if let Some(param_index) = macro_info.parameter_list.iter().position(|&p| p == symbol) {
+                                args[param_index].clone()
+                            } else if macro_info.variadic_arg == Some(symbol) {
+                                let start_index = macro_info.parameter_list.len();
+                                args.iter().skip(start_index).flatten().cloned().collect()
                             } else {
                                 vec![*right_token]
-                            };
+                            }
+                        } else {
+                            vec![*right_token]
+                        };
 
                         // Paste with the first token of right_substituted
                         if let Some(right) = right_substituted.first() {
@@ -1954,9 +1845,7 @@ impl<'src> Preprocessor<'src> {
                 }
                 PPTokenKind::Identifier(symbol) => {
                     // Parameter substitution
-                    if let Some(param_index) =
-                        macro_info.parameter_list.iter().position(|&p| p == symbol)
-                    {
+                    if let Some(param_index) = macro_info.parameter_list.iter().position(|&p| p == symbol) {
                         result.extend(args[param_index].clone());
                     } else if macro_info.variadic_arg == Some(symbol) {
                         // Handle variadic argument
@@ -1989,11 +1878,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Stringify tokens for # operator
-    fn stringify_tokens(
-        &self,
-        tokens: &[PPToken],
-        location: SourceLoc,
-    ) -> Result<PPToken, PPError> {
+    fn stringify_tokens(&self, tokens: &[PPToken], location: SourceLoc) -> Result<PPToken, PPError> {
         let mut result = String::new();
         result.push('"');
 
@@ -2033,11 +1918,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Paste tokens for ## operator
-    fn paste_tokens(
-        &self,
-        left: &PPToken,
-        right: &PPToken,
-    ) -> Result<Vec<PPToken>, PPError> {
+    fn paste_tokens(&self, left: &PPToken, right: &PPToken) -> Result<Vec<PPToken>, PPError> {
         // Get text of both tokens
         let left_buffer = self.source_manager.get_buffer(left.location.source_id());
         let left_start = left.location.offset() as usize;
@@ -2080,9 +1961,7 @@ impl<'src> Preprocessor<'src> {
             if let PPTokenKind::Identifier(symbol) = &token.kind
                 && symbol.as_str() == "__LINE__"
             {
-                let line = if let Some(presumed) =
-                    self.source_manager.get_presumed_location(token.location)
-                {
+                let line = if let Some(presumed) = self.source_manager.get_presumed_location(token.location) {
                     presumed.0
                 } else {
                     1

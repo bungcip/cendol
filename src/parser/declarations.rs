@@ -13,6 +13,7 @@ use symbol_table::GlobalSymbol as Symbol;
 use thin_vec::ThinVec;
 
 use super::Parser;
+use super::{BindingPower, parse_expression, unwrap_expr_result};
 
 /// Parse a declaration
 pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
@@ -57,7 +58,12 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     // Special handling for struct/union/enum declarations
     // Check if any specifier is a struct/union/enum specifier (definition or forward declaration)
-    let is_record_enum_specifier = specifiers.iter().any(|s| matches!(&s.type_specifier, TypeSpecifier::Record(_, _, _) | TypeSpecifier::Enum(_, _)) && s.storage_class.is_none());
+    let is_record_enum_specifier = specifiers.iter().any(|s| {
+        matches!(
+            &s.type_specifier,
+            TypeSpecifier::Record(_, _, _) | TypeSpecifier::Enum(_, _)
+        ) && s.storage_class.is_none()
+    });
 
     // If we have a struct/union/enum specifier, we need to check if there are declarators following
     // The logic should be:
@@ -90,9 +96,7 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         } else {
             // This is a record/enum specifier with declarators
             // Continue with normal declaration parsing (e.g., "struct foo { ... } var;")
-            debug!(
-                "parse_declaration: record/enum specifier with declarators, continuing with normal parsing"
-            );
+            debug!("parse_declaration: record/enum specifier with declarators, continuing with normal parsing");
         }
     }
 
@@ -132,8 +136,7 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
                     // Not a record/enum definition, this is likely an error
                     // But let's rollback and let the statement parser handle it
                     return Err(ParseError::SyntaxError {
-                        message: "Expected declarator or identifier after type specifier"
-                            .to_string(),
+                        message: "Expected declarator or identifier after type specifier".to_string(),
                         location: transaction.parser.current_token()?.location,
                     });
                 }
@@ -255,19 +258,6 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     Ok(node)
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 /// Parse function definition
 pub fn parse_function_definition(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let start_span = parser.current_token()?.location.start;
@@ -351,10 +341,9 @@ pub fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError
     }
 
     let span = SourceSpan::new(start_span, end_span);
-    let node = parser.ast.push_node(Node::new(
-        NodeKind::TranslationUnit(top_level_declarations),
-        span,
-    ));
+    let node = parser
+        .ast
+        .push_node(Node::new(NodeKind::TranslationUnit(top_level_declarations), span));
 
     parser.ast.set_root_node(node);
 
@@ -363,10 +352,7 @@ pub fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError
 
 /// Check if current tokens indicate start of a declaration
 pub fn is_declaration_start(parser: &Parser) -> bool {
-    debug!(
-        "is_declaration_start: checking token {:?}",
-        parser.current_token_kind()
-    );
+    debug!("is_declaration_start: checking token {:?}", parser.current_token_kind());
     if let Some(token) = parser.try_current_token() {
         match token.kind {
             TokenKind::Typedef
@@ -471,17 +457,15 @@ pub fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<No
     let start_span = start_token.location.start;
     parser.expect(TokenKind::LeftParen)?;
 
-    let condition_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN);
-    let condition = super::utils::unwrap_expr_result(parser, condition_result, "expression in _Static_assert condition")?;
+    let condition_result = parse_expression(parser, BindingPower::MIN);
+    let condition = unwrap_expr_result(parser, condition_result, "expression in _Static_assert condition")?;
 
     parser.expect(TokenKind::Comma)?;
 
-    let token = parser
-        .try_current_token()
-        .ok_or_else(|| ParseError::SyntaxError {
-            message: "Expected string literal in _Static_assert".to_string(),
-            location: SourceSpan::empty(),
-        })?;
+    let token = parser.try_current_token().ok_or_else(|| ParseError::SyntaxError {
+        message: "Expected string literal in _Static_assert".to_string(),
+        location: SourceSpan::empty(),
+    })?;
 
     let message = match token.kind {
         TokenKind::StringLiteral(symbol) => symbol,
@@ -501,6 +485,8 @@ pub fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<No
 
     let span = SourceSpan::new(start_span, end_span);
 
-    let node = parser.ast.push_node(Node::new(NodeKind::StaticAssert(condition, message), span));
+    let node = parser
+        .ast
+        .push_node(Node::new(NodeKind::StaticAssert(condition, message), span));
     Ok(node)
 }

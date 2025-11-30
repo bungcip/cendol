@@ -37,16 +37,10 @@ pub enum ParseError {
     },
 
     #[error("Missing token: expected {expected:?}")]
-    MissingToken {
-        expected: TokenKind,
-        location: SourceSpan,
-    },
+    MissingToken { expected: TokenKind, location: SourceSpan },
 
     #[error("Syntax error: {message}")]
-    SyntaxError {
-        message: String,
-        location: SourceSpan,
-    },
+    SyntaxError { message: String, location: SourceSpan },
 
     #[error("Invalid integer constant: {text}")]
     InvalidIntegerConstant { text: String, location: SourceSpan },
@@ -94,9 +88,7 @@ impl DiagnosticEngine {
                 format!("Type mismatch: expected {}, found {}", expected, found),
                 location,
             ),
-            SemanticError::IncompleteType { name, location } => {
-                (format!("Incomplete type '{}'", name), location)
-            }
+            SemanticError::IncompleteType { name, location } => (format!("Incomplete type '{}'", name), location),
         };
         let diag = Diagnostic {
             level: DiagnosticLevel::Error,
@@ -122,9 +114,7 @@ impl DiagnosticEngine {
                 format!("Implicit conversion from {} to {}", from_type, to_type),
                 location,
             ),
-            SemanticWarning::UnreachableCode { location } => {
-                ("Unreachable code".to_string(), location)
-            }
+            SemanticWarning::UnreachableCode { location } => ("Unreachable code".to_string(), location),
             SemanticWarning::Redefinition {
                 name,
                 first_def: _first_def,
@@ -149,10 +139,7 @@ impl DiagnosticEngine {
                 found,
                 location,
             } => (
-                format!(
-                    "Unexpected token: expected {:?}, found {:?}",
-                    expected, found
-                ),
+                format!("Unexpected token: expected {:?}, found {:?}", expected, found),
                 location,
             ),
             ParseError::MissingToken { expected, location } => {
@@ -165,9 +152,7 @@ impl DiagnosticEngine {
             ParseError::InvalidFloatConstant { text, location } => {
                 (format!("Invalid float constant: {}", text), location)
             }
-            ParseError::InvalidDeclarator { location } => {
-                ("Invalid declarator".to_string(), location)
-            }
+            ParseError::InvalidDeclarator { location } => ("Invalid declarator".to_string(), location),
         };
         let diag = Diagnostic {
             level: DiagnosticLevel::Error,
@@ -197,9 +182,7 @@ impl DiagnosticEngine {
     }
 
     pub fn has_errors(&self) -> bool {
-        self.diagnostics
-            .iter()
-            .any(|d| d.level == DiagnosticLevel::Error)
+        self.diagnostics.iter().any(|d| d.level == DiagnosticLevel::Error)
     }
 
     pub fn diagnostics(&self) -> &[Diagnostic] {
@@ -281,17 +264,18 @@ impl ErrorFormatter {
 
         // Add source location if available
         if let Some(file_info) = source_manager.get_file_info(diag.location.source_id()) {
-            let (line, col, filename) = if let Some((presumed_line, presumed_col, presumed_file)) = source_manager.get_presumed_location(diag.location.start) {
-                (presumed_line, presumed_col, presumed_file.unwrap_or_else(|| file_info.path.to_str().unwrap_or("<invalid>")))
+            let (line, col, filename) = if let Some((presumed_line, presumed_col, presumed_file)) =
+                source_manager.get_presumed_location(diag.location.start)
+            {
+                (
+                    presumed_line,
+                    presumed_col,
+                    presumed_file.unwrap_or_else(|| file_info.path.to_str().unwrap_or("<invalid>")),
+                )
             } else {
                 (1, 1, file_info.path.to_str().unwrap_or("<invalid>"))
             };
-            result.push_str(&format!(
-                " at {}:{}:{}",
-                filename,
-                line,
-                col
-            ));
+            result.push_str(&format!(" at {}:{}:{}", filename, line, col));
         }
 
         // Add hints if enabled
@@ -304,21 +288,14 @@ impl ErrorFormatter {
         // Add source code snippet if enabled
         if self.show_source {
             let source_text = source_manager.get_source_text(diag.location);
-            result.push_str(&format!(
-                "\n  |\n  | {}\n  |",
-                source_text.replace('\n', "\n  | ")
-            ));
+            result.push_str(&format!("\n  |\n  | {}\n  |", source_text.replace('\n', "\n  | ")));
         }
 
         result
     }
 
     /// Format multiple diagnostics
-    pub fn format_diagnostics(
-        &self,
-        diagnostics: &[Diagnostic],
-        source_manager: &SourceManager,
-    ) -> String {
+    pub fn format_diagnostics(&self, diagnostics: &[Diagnostic], source_manager: &SourceManager) -> String {
         diagnostics
             .iter()
             .map(|diag| self.format_diagnostic(diag, source_manager))

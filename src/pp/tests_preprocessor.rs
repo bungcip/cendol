@@ -260,10 +260,7 @@ int x = X;
 
     // Check that a macro redefinition warning was emitted
     assert_eq!(diagnostics.len(), 1, "Should have exactly one diagnostic");
-    assert_eq!(
-        diagnostics[0].level,
-        crate::diagnostic::DiagnosticLevel::Warning
-    );
+    assert_eq!(diagnostics[0].level, crate::diagnostic::DiagnosticLevel::Warning);
     assert!(diagnostics[0].message.contains("Redefinition of macro 'X'"));
     assert_eq!(diagnostics[0].code, Some("macro_redefinition".to_string()));
 }
@@ -290,11 +287,7 @@ const int a = __STDC__;
     // Ensure __STDC__ was expanded
     for token in &significant_tokens {
         if let PPTokenKind::Identifier(sym) = &token.kind {
-            assert_ne!(
-                sym.as_str(),
-                "__STDC__",
-                "__STDC__ should have been expanded"
-            );
+            assert_ne!(sym.as_str(), "__STDC__", "__STDC__ should have been expanded");
         }
     }
 }
@@ -310,10 +303,7 @@ fn test_error_directive_produces_failure() {
 
     // This should fail due to #error directive
     let result = setup_preprocessor_test_with_diagnostics(src);
-    assert!(
-        result.is_err(),
-        "Preprocessor should fail on #error directive"
-    );
+    assert!(result.is_err(), "Preprocessor should fail on #error directive");
 
     if let Err(PPError::ErrorDirective(message)) = result {
         assert_eq!(message, "\"this should be reported\"");

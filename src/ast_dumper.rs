@@ -5,7 +5,7 @@ use crate::ast::*;
 use crate::diagnostic::*;
 use crate::lang_options::LangOptions;
 use crate::lexer::{Lexer, TokenKind};
-use crate::pp::{Preprocessor, PPConfig};
+use crate::pp::{PPConfig, Preprocessor};
 use crate::semantic::*;
 use crate::source_manager::*;
 use target_lexicon::Triple as TargetTriple;
@@ -612,20 +612,11 @@ impl<'src> AstDumper<'src> {
         writeln!(html, "<nav id=\"table-of-contents\">")?;
         writeln!(html, "<h2>Table of Contents</h2>")?;
         writeln!(html, "<ul>")?;
-        writeln!(
-            html,
-            "<li><a href=\"#ast-section\">Abstract Syntax Tree</a></li>"
-        )?;
-        writeln!(
-            html,
-            "<li><a href=\"#symbols-section\">Symbol Table</a></li>"
-        )?;
+        writeln!(html, "<li><a href=\"#ast-section\">Abstract Syntax Tree</a></li>")?;
+        writeln!(html, "<li><a href=\"#symbols-section\">Symbol Table</a></li>")?;
         writeln!(html, "<li><a href=\"#scopes-section\">Scope Table</a></li>")?;
         writeln!(html, "<li><a href=\"#types-section\">Type Table</a></li>")?;
-        writeln!(
-            html,
-            "<li><a href=\"#diagnostics-section\">Diagnostics</a></li>"
-        )?;
+        writeln!(html, "<li><a href=\"#diagnostics-section\">Diagnostics</a></li>")?;
         writeln!(html, "</ul>")?;
         writeln!(html, "</nav>")?;
         Ok(())
@@ -644,20 +635,11 @@ impl<'src> AstDumper<'src> {
         )?;
         writeln!(html, "</div>")?;
         writeln!(html, "<div class=\"tree-controls\">")?;
-        writeln!(
-            html,
-            "<button onclick=\"expandAllAst()\">Expand All</button>"
-        )?;
-        writeln!(
-            html,
-            "<button onclick=\"collapseAllAst()\">Collapse All</button>"
-        )?;
+        writeln!(html, "<button onclick=\"expandAllAst()\">Expand All</button>")?;
+        writeln!(html, "<button onclick=\"collapseAllAst()\">Collapse All</button>")?;
         writeln!(html, "</div>")?;
         writeln!(html, "<div class=\"node-filter\">")?;
-        writeln!(
-            html,
-            "<label for=\"node-type-filter\">Filter by type:</label>"
-        )?;
+        writeln!(html, "<label for=\"node-type-filter\">Filter by type:</label>")?;
         writeln!(html, "<select id=\"node-type-filter\">")?;
         writeln!(html, "<option value=\"\">All Types</option>")?;
         writeln!(html, "<option value=\"FunctionDef\">FunctionDef</option>")?;
@@ -668,10 +650,7 @@ impl<'src> AstDumper<'src> {
         writeln!(html, "<option value=\"While\">While</option>")?;
         writeln!(html, "<option value=\"For\">For</option>")?;
         writeln!(html, "<option value=\"Return\">Return</option>")?;
-        writeln!(
-            html,
-            "<option value=\"CompoundStatement\">CompoundStatement</option>"
-        )?;
+        writeln!(html, "<option value=\"CompoundStatement\">CompoundStatement</option>")?;
         writeln!(html, "</select>")?;
         writeln!(html, "</div>")?;
         writeln!(html, "</div>")?;
@@ -690,12 +669,7 @@ impl<'src> AstDumper<'src> {
         Ok(())
     }
 
-    fn generate_ast_tree(
-        &mut self,
-        html: &mut String,
-        node: &Node,
-        depth: usize,
-    ) -> Result<(), std::fmt::Error> {
+    fn generate_ast_tree(&mut self, html: &mut String, node: &Node, depth: usize) -> Result<(), std::fmt::Error> {
         if let Some(max_depth) = self.config.max_depth
             && depth > max_depth
         {
@@ -704,11 +678,7 @@ impl<'src> AstDumper<'src> {
         }
 
         let node_type = self.get_node_type_name(&node.kind);
-        let span_info = format!(
-            "[0:{}-0:{}]",
-            node.span.start.offset(),
-            node.span.end.offset()
-        );
+        let span_info = format!("[0:{}-0:{}]", node.span.start.offset(), node.span.end.offset());
 
         let has_children = self.node_has_children(node);
         let collapsed_class = if depth > 0 { " collapsed" } else { "" };
@@ -721,10 +691,7 @@ impl<'src> AstDumper<'src> {
             node.span.start.offset()
         )?;
         if has_children {
-            writeln!(
-                html,
-                "<div class=\"node-content\" onclick=\"toggleAstNode(this)\">"
-            )?;
+            writeln!(html, "<div class=\"node-content\" onclick=\"toggleAstNode(this)\">")?;
             writeln!(html, "<span class=\"toggle-icon\">▶</span>")?;
         } else {
             writeln!(html, "<div class=\"node-content\">")?;
@@ -746,10 +713,7 @@ impl<'src> AstDumper<'src> {
             let raw_text = self.source_manager.get_source_text(node.span);
             let escaped_text = self.escape_html(raw_text);
             let lines: Vec<&str> = escaped_text.split('\n').collect();
-            let (start_line, _) = self
-                .source_manager
-                .get_line_column(node.span.start)
-                .unwrap_or((1, 1));
+            let (start_line, _) = self.source_manager.get_line_column(node.span.start).unwrap_or((1, 1));
             let mut text_with_lines = String::new();
 
             // Apply truncation if max_source_lines is set
@@ -841,11 +805,7 @@ impl<'src> AstDumper<'src> {
         }
     }
 
-    fn generate_semantic_info(
-        &self,
-        html: &mut String,
-        node: &Node,
-    ) -> Result<(), std::fmt::Error> {
+    fn generate_semantic_info(&self, html: &mut String, node: &Node) -> Result<(), std::fmt::Error> {
         let mut info_parts = Vec::new();
 
         if let Some(type_ref) = node.resolved_type.get() {
@@ -882,12 +842,7 @@ impl<'src> AstDumper<'src> {
         Ok(())
     }
 
-    fn generate_child_nodes(
-        &mut self,
-        html: &mut String,
-        node: &Node,
-        depth: usize,
-    ) -> Result<(), std::fmt::Error> {
+    fn generate_child_nodes(&mut self, html: &mut String, node: &Node, depth: usize) -> Result<(), std::fmt::Error> {
         match &node.kind {
             NodeKind::TranslationUnit(nodes) => {
                 for &node_ref in nodes {
@@ -1181,10 +1136,7 @@ impl<'src> AstDumper<'src> {
                 entry.type_info.get(),
                 self.get_type_display_name(entry.type_info)
             );
-            let scope_link = format!(
-                "<a href=\"#scope_{}\">{}</a>",
-                entry.scope_id, entry.scope_id
-            );
+            let scope_link = format!("<a href=\"#scope_{}\">{}</a>", entry.scope_id, entry.scope_id);
             let location = format!(
                 "[{}:{}-{}:{}]",
                 entry.definition_span.start.source_id(),
@@ -1239,9 +1191,7 @@ impl<'src> AstDumper<'src> {
                     format!(
                         "<a href=\"#sym_{}\">{}</a>",
                         ref_.get(),
-                        self.escape_html(
-                            &self.symbol_table.get_symbol_entry(ref_).name.to_string()
-                        )
+                        self.escape_html(&self.symbol_table.get_symbol_entry(ref_).name.to_string())
                     )
                 })
                 .collect();
@@ -1284,10 +1234,7 @@ impl<'src> AstDumper<'src> {
             let kind = self.get_type_kind_display(&ty.kind);
             let base = self.get_type_base_display(&ty.kind);
             let qualifiers = self.escape_html(&format!("{:?}", ty.qualifiers));
-            let size = ty
-                .size
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "Unknown".to_string());
+            let size = ty.size.map(|s| s.to_string()).unwrap_or_else(|| "Unknown".to_string());
             let details = self.get_type_details(&ty.kind);
 
             writeln!(html, "<tr id=\"type_{}\">", id)?;
@@ -1325,9 +1272,7 @@ impl<'src> AstDumper<'src> {
             let id = i + 1;
             let level = match diag.level {
                 crate::diagnostic::DiagnosticLevel::Error => "<span class=\"error\">Error</span>",
-                crate::diagnostic::DiagnosticLevel::Warning => {
-                    "<span class=\"warning\">Warning</span>"
-                }
+                crate::diagnostic::DiagnosticLevel::Warning => "<span class=\"warning\">Warning</span>",
                 crate::diagnostic::DiagnosticLevel::Note => "Note",
             };
             let message = self.escape_html(&diag.message);
@@ -1441,12 +1386,8 @@ impl<'src> AstDumper<'src> {
                 is_long_long: true,
             } => "unsigned long long".to_string(),
             TypeKind::Float => "float".to_string(),
-            TypeKind::Double {
-                is_long_double: false,
-            } => "double".to_string(),
-            TypeKind::Double {
-                is_long_double: true,
-            } => "long double".to_string(),
+            TypeKind::Double { is_long_double: false } => "double".to_string(),
+            TypeKind::Double { is_long_double: true } => "long double".to_string(),
             TypeKind::Pointer { .. } => {
                 format!("{}*", self.get_type_display_name(TypeRef::new(1).unwrap()))
             } // Simplified
@@ -1457,9 +1398,7 @@ impl<'src> AstDumper<'src> {
                 tag.map(|t| format!("{} {}", kind, t))
                     .unwrap_or_else(|| kind.to_string())
             }
-            TypeKind::Enum { tag, .. } => tag
-                .map(|t| format!("enum {}", t))
-                .unwrap_or_else(|| "enum".to_string()),
+            TypeKind::Enum { tag, .. } => tag.map(|t| format!("enum {}", t)).unwrap_or_else(|| "enum".to_string()),
             TypeKind::Typedef { name, .. } => name.to_string(),
             TypeKind::Incomplete => "incomplete".to_string(),
             TypeKind::Error => "error".to_string(),
@@ -1485,24 +1424,12 @@ impl<'src> AstDumper<'src> {
         display
     }
 
-    fn get_enhanced_symbol_info(
-        &self,
-        _symbol_ref: SymbolEntryRef,
-        symbol: &SymbolEntry,
-    ) -> String {
+    fn get_enhanced_symbol_info(&self, _symbol_ref: SymbolEntryRef, symbol: &SymbolEntry) -> String {
         let mut info_parts = Vec::new();
 
         // Add definition/referenced status
-        let def_status = if symbol.is_defined {
-            "defined"
-        } else {
-            "declared"
-        };
-        let ref_status = if symbol.is_referenced {
-            "referenced"
-        } else {
-            "unused"
-        };
+        let def_status = if symbol.is_defined { "defined" } else { "declared" };
+        let ref_status = if symbol.is_referenced { "referenced" } else { "unused" };
         info_parts.push(format!("({} {})", def_status, ref_status));
 
         // Add storage class if present
@@ -1566,10 +1493,7 @@ impl<'src> AstDumper<'src> {
             SymbolKind::EnumConstant { value } => {
                 info_parts.push(format!("value: {}", value));
             }
-            SymbolKind::Label {
-                is_defined,
-                is_used,
-            } => {
+            SymbolKind::Label { is_defined, is_used } => {
                 let def_status = if *is_defined { "defined" } else { "undeclared" };
                 let use_status = if *is_used { "used" } else { "unused" };
                 info_parts.push(format!(
@@ -1584,11 +1508,7 @@ impl<'src> AstDumper<'src> {
                 size,
                 alignment,
             } => {
-                let complete_status = if *is_complete {
-                    "complete"
-                } else {
-                    "incomplete"
-                };
+                let complete_status = if *is_complete { "complete" } else { "incomplete" };
                 info_parts.push(format!(
                     "record: {} ({} members)",
                     self.escape_html(complete_status),
@@ -1625,9 +1545,7 @@ impl<'src> AstDumper<'src> {
             TypeKind::Pointer { .. } => "Pointer".to_string(),
             TypeKind::Array { .. } => "Array".to_string(),
             TypeKind::Function { .. } => "Function".to_string(),
-            TypeKind::Record { is_union, .. } => {
-                if *is_union { "Union" } else { "Struct" }.to_string()
-            }
+            TypeKind::Record { is_union, .. } => if *is_union { "Union" } else { "Struct" }.to_string(),
             TypeKind::Enum { .. } => "Enum".to_string(),
             TypeKind::Typedef { .. } => "Typedef".to_string(),
             TypeKind::Incomplete => "Incomplete".to_string(),
@@ -1664,15 +1582,9 @@ impl<'src> AstDumper<'src> {
                 format!("{} parameters{}", param_count, variadic)
             }
             TypeKind::Record {
-                members,
-                is_complete,
-                ..
+                members, is_complete, ..
             } => {
-                let complete = if *is_complete {
-                    "complete"
-                } else {
-                    "incomplete"
-                };
+                let complete = if *is_complete { "complete" } else { "incomplete" };
                 format!("{} members, {}", members.len(), complete)
             }
             TypeKind::Enum {
@@ -1680,11 +1592,7 @@ impl<'src> AstDumper<'src> {
                 is_complete,
                 ..
             } => {
-                let complete = if *is_complete {
-                    "complete"
-                } else {
-                    "incomplete"
-                };
+                let complete = if *is_complete { "complete" } else { "incomplete" };
                 format!("{} enumerators, {}", enumerators.len(), complete)
             }
             _ => "-".to_string(),
@@ -1694,9 +1602,7 @@ impl<'src> AstDumper<'src> {
     #[allow(dead_code)]
     fn format_source_text(&self, text: &str) -> String {
         let escaped = self.escape_html(text);
-        escaped
-            .replace("\n", "<br>")
-            .replace("\t", "&nbsp;&nbsp;&nbsp;&nbsp;")
+        escaped.replace("\n", "<br>").replace("\t", "&nbsp;&nbsp;&nbsp;&nbsp;")
     }
 
     /// Apply syntax highlighting to source code using the lexer
@@ -1725,9 +1631,7 @@ impl<'src> AstDumper<'src> {
         };
 
         // Create lexer and tokenize
-        let mut lexer = Lexer::new(
-            &pp_tokens,
-        );
+        let mut lexer = Lexer::new(&pp_tokens);
 
         let tokens = lexer.tokenize_all();
 

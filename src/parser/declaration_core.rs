@@ -12,6 +12,7 @@ use log::debug;
 use thin_vec::ThinVec;
 
 use super::Parser;
+use super::{BindingPower, parse_expression, unwrap_expr_result};
 
 /// Parse declaration specifiers
 pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVec<DeclSpecifier>, ParseError> {
@@ -61,10 +62,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
             }
 
             // Type qualifiers
-            TokenKind::Const
-            | TokenKind::Volatile
-            | TokenKind::Restrict
-            | TokenKind::Atomic => {
+            TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Atomic => {
                 let mut qualifiers = TypeQualifiers::empty();
                 while let Some(token) = parser.try_current_token() {
                     match token.kind {
@@ -175,8 +173,8 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                         AlignmentSpecifier::Type(type_ref)
                     } else {
                         // _Alignas(constant-expression)
-                        let expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN);
-                        let expr = super::utils::unwrap_expr_result(parser, expr_result, "expression in _Alignas")?;
+                        let expr_result = parse_expression(parser, BindingPower::MIN);
+                        let expr = unwrap_expr_result(parser, expr_result, "expression in _Alignas")?;
                         parser.expect(TokenKind::RightParen)?;
                         AlignmentSpecifier::Expr(expr)
                     }
@@ -237,8 +235,7 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<Initializer, Pars
 
         while !parser.matches(&[TokenKind::RightBrace]) {
             // Check if this is a designated initializer (starts with . or [)
-            let is_designated =
-                parser.matches(&[TokenKind::Dot]) || parser.matches(&[TokenKind::LeftBracket]);
+            let is_designated = parser.matches(&[TokenKind::Dot]) || parser.matches(&[TokenKind::LeftBracket]);
 
             let initializer = if is_designated {
                 // Parse designated initializer
@@ -284,12 +281,11 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<Initializer, Pars
 
 /// Parse designated initializer
 fn parse_designated_initializer(parser: &mut Parser) -> Result<DesignatedInitializer, ParseError> {
-    let designation =
-        if parser.matches(&[TokenKind::Dot]) || parser.matches(&[TokenKind::LeftBracket]) {
-            parse_designation(parser)?
-        } else {
-            Vec::new()
-        };
+    let designation = if parser.matches(&[TokenKind::Dot]) || parser.matches(&[TokenKind::LeftBracket]) {
+        parse_designation(parser)?
+    } else {
+        Vec::new()
+    };
 
     parser.expect(TokenKind::Assign)?;
     let initializer = parse_initializer(parser)?;
@@ -306,12 +302,10 @@ fn parse_designation(parser: &mut Parser) -> Result<Vec<Designator>, ParseError>
 
     while parser.matches(&[TokenKind::Dot]) || parser.matches(&[TokenKind::LeftBracket]) {
         if parser.accept(TokenKind::Dot).is_some() {
-            let token = parser
-                .try_current_token()
-                .ok_or_else(|| ParseError::SyntaxError {
-                    message: "Expected field name".to_string(),
-                    location: SourceSpan::empty(),
-                })?;
+            let token = parser.try_current_token().ok_or_else(|| ParseError::SyntaxError {
+                message: "Expected field name".to_string(),
+                location: SourceSpan::empty(),
+            })?;
 
             let field_name = match token.kind {
                 TokenKind::Identifier(symbol) => symbol,
@@ -330,7 +324,7 @@ fn parse_designation(parser: &mut Parser) -> Result<Vec<Designator>, ParseError>
             })?;
             designators.push(Designator::FieldName(field_name));
         } else if parser.accept(TokenKind::LeftBracket).is_some() {
-            let expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN)?;
+            let expr_result = parse_expression(parser, BindingPower::MIN)?;
             let index_expr = match expr_result {
                 super::ParseExprOutput::Expression(node) => node,
                 _ => {
@@ -353,7 +347,7 @@ fn parse_initializer_expression(parser: &mut Parser) -> Result<NodeRef, ParseErr
     // Parse expressions in initializers, but stop at comma operators to avoid
     // consuming declarator-separating commas. Use assignment precedence to allow
     // most binary operators but prevent comma operators.
-    let expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::ASSIGNMENT)?;
+    let expr_result = parse_expression(parser, BindingPower::ASSIGNMENT)?;
     match expr_result {
         super::ParseExprOutput::Expression(node) => Ok(node),
         _ => Err(ParseError::SyntaxError {

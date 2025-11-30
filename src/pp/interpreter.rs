@@ -1,7 +1,7 @@
+use crate::ast::{BinaryOp, UnaryOp};
+use crate::pp::Preprocessor;
 use crate::pp::pp_lexer::{PPToken, PPTokenKind};
 use crate::pp::preprocessor::PPError;
-use crate::pp::Preprocessor;
-use crate::ast::{BinaryOp, UnaryOp};
 use symbol_table::GlobalSymbol as Symbol;
 
 #[derive(Debug)]
@@ -13,8 +13,6 @@ pub enum PPExpr {
     Unary(UnaryOp, Box<PPExpr>),
     Conditional(Box<PPExpr>, Box<PPExpr>, Box<PPExpr>),
 }
-
-
 
 impl PPExpr {
     pub fn evaluate(&self, pp: &Preprocessor) -> Result<i64, PPError> {

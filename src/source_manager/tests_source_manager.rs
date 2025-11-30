@@ -166,7 +166,6 @@ fn test_source_manager_get_source_text_invalid_range() {
     sm.get_source_text(span);
 }
 
-
 #[test]
 fn test_source_manager_empty_file() {
     let mut sm = SourceManager::new();
@@ -194,7 +193,6 @@ fn test_source_manager_add_buffer() {
 
     assert_eq!(sm.get_buffer(file_id), bytes);
 }
-
 
 #[test]
 fn test_line_map_empty() {

@@ -1,5 +1,5 @@
-use std::{num::NonZeroU32, path::PathBuf, cmp::Ordering};
 use hashbrown::HashMap;
+use std::{cmp::Ordering, num::NonZeroU32, path::PathBuf};
 
 /// Source ID for identifying source files
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -59,12 +59,7 @@ impl SourceLoc {
 
 impl std::fmt::Display for SourceLoc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "SourceLoc(source_id={}, offset={})",
-            self.source_id(),
-            self.offset()
-        )
+        write!(f, "SourceLoc(source_id={}, offset={})", self.source_id(), self.offset())
     }
 }
 
@@ -142,16 +137,17 @@ pub struct LineMap {
 
 impl LineMap {
     pub fn new() -> Self {
-        LineMap {
-            entries: Vec::new(),
-        }
+        LineMap { entries: Vec::new() }
     }
 
     /// Add a line directive entry. Must be added in sorted order by physical_line.
     pub fn add_entry(&mut self, entry: LineDirective) {
         // Ensure monotonic addition
         if let Some(last) = self.entries.last() {
-            assert!(entry.physical_line >= last.physical_line, "Line directives must be added in sorted order");
+            assert!(
+                entry.physical_line >= last.physical_line,
+                "Line directives must be added in sorted order"
+            );
         }
         self.entries.push(entry);
     }
@@ -214,10 +210,7 @@ impl SourceManager {
 
     /// Add a file to the source manager from a file path
     /// Since we only support UTF-8, we can read directly as bytes and assume validity
-    pub fn add_file_from_path(
-        &mut self,
-        path: &std::path::Path,
-    ) -> Result<SourceId, std::io::Error> {
+    pub fn add_file_from_path(&mut self, path: &std::path::Path) -> Result<SourceId, std::io::Error> {
         let buffer = std::fs::read(path)?;
         let path_str = path.to_str().unwrap_or("<invalid-utf8>");
         Ok(self.add_buffer(buffer, path_str))
@@ -285,7 +278,6 @@ impl SourceManager {
         &self.buffers[info.buffer_index][..]
     }
 
-
     /// Get file info for a given source ID
     pub fn get_file_info(&self, source_id: SourceId) -> Option<&FileInfo> {
         self.file_infos.get(&source_id)
@@ -344,7 +336,6 @@ impl SourceManager {
         }
     }
 
-
     /// Get line and column for a source location
     pub fn get_line_column(&self, loc: SourceLoc) -> Option<(u32, u32)> {
         let file_info = self.get_file_info(loc.source_id())?;
@@ -393,7 +384,6 @@ impl SourceManager {
         Some((logical_line, column, filename))
     }
 }
-
 
 impl Default for SourceManager {
     fn default() -> Self {

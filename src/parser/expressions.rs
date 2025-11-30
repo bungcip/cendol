@@ -11,7 +11,7 @@ use log::{debug, trace};
 use std::cell::Cell;
 use symbol_table::GlobalSymbol as Symbol;
 
-use super::{Parser, utils::ParserExt};
+use super::{Parser, unwrap_expr_result, utils::ParserExt};
 
 /// Binding power for Pratt parser operator precedence
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -79,23 +79,16 @@ impl PrattParser {
             TokenKind::And => Some((BindingPower::BITWISE_AND, Associativity::Left)),
 
             // Comparison operators (left-associative)
-            TokenKind::Equal | TokenKind::NotEqual => {
-                Some((BindingPower::EQUALITY, Associativity::Left))
+            TokenKind::Equal | TokenKind::NotEqual => Some((BindingPower::EQUALITY, Associativity::Left)),
+            TokenKind::Less | TokenKind::Greater | TokenKind::LessEqual | TokenKind::GreaterEqual => {
+                Some((BindingPower::RELATIONAL, Associativity::Left))
             }
-            TokenKind::Less
-            | TokenKind::Greater
-            | TokenKind::LessEqual
-            | TokenKind::GreaterEqual => Some((BindingPower::RELATIONAL, Associativity::Left)),
 
             // Shift operators (left-associative)
-            TokenKind::LeftShift | TokenKind::RightShift => {
-                Some((BindingPower::SHIFT, Associativity::Left))
-            }
+            TokenKind::LeftShift | TokenKind::RightShift => Some((BindingPower::SHIFT, Associativity::Left)),
 
             // Additive operators (left-associative)
-            TokenKind::Plus | TokenKind::Minus => {
-                Some((BindingPower::ADDITIVE, Associativity::Left))
-            }
+            TokenKind::Plus | TokenKind::Minus => Some((BindingPower::ADDITIVE, Associativity::Left)),
 
             // Multiplicative operators (left-associative)
             TokenKind::Star | TokenKind::Slash | TokenKind::Percent => {
@@ -120,10 +113,7 @@ pub fn parse_expression(
     parser: &mut Parser,
     min_binding_power: BindingPower,
 ) -> Result<super::ParseExprOutput, ParseError> {
-    trace!(
-        "parse_expression: min_binding_power={}",
-        min_binding_power.0
-    );
+    trace!("parse_expression: min_binding_power={}", min_binding_power.0);
     let mut left = parse_prefix(parser)?;
 
     while let Some(current_token) = parser.try_current_token() {
@@ -132,9 +122,7 @@ pub fn parse_expression(
             current_token.kind, min_binding_power.0
         );
 
-        let Some((binding_power, associativity)) =
-            PrattParser::get_binding_power(current_token.kind)
-        else {
+        let Some((binding_power, associativity)) = PrattParser::get_binding_power(current_token.kind) else {
             debug!(
                 "parse_expression: no binding power for {:?}, breaking",
                 current_token.kind
@@ -162,10 +150,7 @@ pub fn parse_expression(
             message: "Expected operator".to_string(),
             location: SourceSpan::empty(),
         })?;
-        trace!(
-            "parse_expression: parsing infix operator {:?}",
-            op_token.kind
-        );
+        trace!("parse_expression: parsing infix operator {:?}", op_token.kind);
         let right = parse_infix(parser, left, op_token, next_min_bp)?;
         left = right;
     }
@@ -175,22 +160,19 @@ pub fn parse_expression(
 
 /// Parse prefix expression
 pub(crate) fn parse_prefix(parser: &mut Parser) -> Result<NodeRef, ParseError> {
-    let token = parser
-        .try_current_token()
-        .ok_or_else(|| ParseError::SyntaxError {
-            message: "Unexpected end of input".to_string(),
-            location: SourceSpan::empty(),
-        })?;
+    let token = parser.try_current_token().ok_or_else(|| ParseError::SyntaxError {
+        message: "Unexpected end of input".to_string(),
+        location: SourceSpan::empty(),
+    })?;
 
     debug!("parse_prefix: token={:?} at {}", token.kind, token.location);
     match token.kind {
         TokenKind::Identifier(symbol) => {
             parser.advance();
             debug!("parse_prefix: parsed identifier {:?}", symbol);
-            let node = parser.ast.push_node(Node::new(
-                NodeKind::Ident(symbol, Cell::new(None)),
-                token.location,
-            ));
+            let node = parser
+                .ast
+                .push_node(Node::new(NodeKind::Ident(symbol, Cell::new(None)), token.location));
             Ok(node)
         }
         TokenKind::IntegerConstant(value) => {
@@ -203,17 +185,23 @@ pub(crate) fn parse_prefix(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         TokenKind::FloatConstant(text) => {
             parser.advance();
             let value = parser.parse_c11_float_literal(text)?;
-            let node = parser.ast.push_node(Node::new(NodeKind::LiteralFloat(value), token.location));
+            let node = parser
+                .ast
+                .push_node(Node::new(NodeKind::LiteralFloat(value), token.location));
             Ok(node)
         }
         TokenKind::StringLiteral(symbol) => {
             parser.advance();
-            let node = parser.ast.push_node(Node::new(NodeKind::LiteralString(symbol), token.location));
+            let node = parser
+                .ast
+                .push_node(Node::new(NodeKind::LiteralString(symbol), token.location));
             Ok(node)
         }
         TokenKind::CharacterConstant(codepoint) => {
             parser.advance();
-            let node = parser.ast.push_node(Node::new(NodeKind::LiteralChar(codepoint), token.location));
+            let node = parser
+                .ast
+                .push_node(Node::new(NodeKind::LiteralChar(codepoint), token.location));
             Ok(node)
         }
         TokenKind::LeftParen => {
@@ -241,7 +229,7 @@ pub(crate) fn parse_prefix(parser: &mut Parser) -> Result<NodeRef, ParseError> {
             } else {
                 // Regular parenthesized expression
                 let expr_result = parse_expression(parser, BindingPower::MIN);
-                let expr = super::utils::unwrap_expr_result(parser, expr_result, "expression in parentheses")?;
+                let expr = unwrap_expr_result(parser, expr_result, "expression in parentheses")?;
                 parser.expect(TokenKind::RightParen)?;
                 Ok(expr)
             }
@@ -300,12 +288,11 @@ fn parse_unary_operator(parser: &mut Parser, token: Token) -> Result<NodeRef, Pa
     parser.advance();
     let operand_node = parser.parse_expr_unary()?;
 
-    let span = SourceSpan::new(
-        token.location.start,
-        parser.ast.get_node(operand_node).span.end,
-    );
+    let span = SourceSpan::new(token.location.start, parser.ast.get_node(operand_node).span.end);
 
-    let node = parser.ast.push_node(Node::new(NodeKind::UnaryOp(op, operand_node), span));
+    let node = parser
+        .ast
+        .push_node(Node::new(NodeKind::UnaryOp(op, operand_node), span));
     Ok(node)
 }
 
@@ -392,11 +379,7 @@ fn parse_infix(
 }
 
 /// Parse ternary operator
-fn parse_ternary(
-    parser: &mut Parser,
-    condition: NodeRef,
-    true_expr: NodeRef,
-) -> Result<NodeRef, ParseError> {
+fn parse_ternary(parser: &mut Parser, condition: NodeRef, true_expr: NodeRef) -> Result<NodeRef, ParseError> {
     parser.expect(TokenKind::Colon)?;
     let false_expr = parser.parse_expr_conditional()?;
 
@@ -405,7 +388,9 @@ fn parse_ternary(
         parser.ast.get_node(false_expr).span.end,
     );
 
-    let node = parser.ast.push_node(Node::new(NodeKind::TernaryOp(condition, true_expr, false_expr), span));
+    let node = parser
+        .ast
+        .push_node(Node::new(NodeKind::TernaryOp(condition, true_expr, false_expr), span));
     Ok(node)
 }
 
@@ -425,13 +410,10 @@ fn parse_function_call(parser: &mut Parser, function: NodeRef) -> Result<NodeRef
     } else {
         debug!("parse_function_call: parsing arguments");
         loop {
-        let arg_result = parse_expression(parser, BindingPower::ASSIGNMENT);
-        let arg = super::utils::unwrap_expr_result(parser, arg_result, "expression in function call argument")?;
+            let arg_result = parse_expression(parser, BindingPower::ASSIGNMENT);
+            let arg = unwrap_expr_result(parser, arg_result, "expression in function call argument")?;
             args.push(arg);
-            debug!(
-                "parse_function_call: parsed argument, count: {}",
-                args.len()
-            );
+            debug!("parse_function_call: parsed argument, count: {}", args.len());
 
             if parser.accept(TokenKind::Comma).is_some() {
                 debug!("parse_function_call: found comma, continuing to next argument");
@@ -448,12 +430,11 @@ fn parse_function_call(parser: &mut Parser, function: NodeRef) -> Result<NodeRef
             args.len()
         );
 
-        let span = SourceSpan::new(
-            parser.ast.get_node(function).span.start,
-            right_paren_token.location.end,
-        );
+        let span = SourceSpan::new(parser.ast.get_node(function).span.start, right_paren_token.location.end);
 
-        let node = parser.ast.push_node(Node::new(NodeKind::FunctionCall(function, args), span));
+        let node = parser
+            .ast
+            .push_node(Node::new(NodeKind::FunctionCall(function, args), span));
         return Ok(node);
     }
 
@@ -464,7 +445,9 @@ fn parse_function_call(parser: &mut Parser, function: NodeRef) -> Result<NodeRef
         parser.current_token_span()?.start,
     );
 
-    let node = parser.ast.push_node(Node::new(NodeKind::FunctionCall(function, args), span));
+    let node = parser
+        .ast
+        .push_node(Node::new(NodeKind::FunctionCall(function, args), span));
     Ok(node)
 }
 
@@ -483,14 +466,15 @@ fn parse_index_access(parser: &mut Parser, array: NodeRef) -> Result<NodeRef, Pa
     let index_node = if parser.matches(&[TokenKind::RightBracket]) {
         debug!("parse_index_access: empty array index []");
         // Create a placeholder for empty index
-        parser.ast.push_node(Node::new(NodeKind::LiteralInt(0), parser.current_token().unwrap().location)) // Use 0 as placeholder
+        parser.ast.push_node(Node::new(
+            NodeKind::LiteralInt(0),
+            parser.current_token().unwrap().location,
+        )) // Use 0 as placeholder
     } else {
         // This should not happen in normal array access, but handle it just in case
-        debug!(
-            "parse_index_access: unexpected token in array access, trying to parse expression"
-        );
+        debug!("parse_index_access: unexpected token in array access, trying to parse expression");
         let index_result = parse_expression(parser, BindingPower::MIN);
-        super::utils::unwrap_expr_result(parser, index_result, "expression in array index")?
+        unwrap_expr_result(parser, index_result, "expression in array index")?
     };
 
     // The RightBracket should now be the current token, consume it
@@ -504,27 +488,20 @@ fn parse_index_access(parser: &mut Parser, array: NodeRef) -> Result<NodeRef, Pa
         parser.current_token_kind()
     );
 
-    let span = SourceSpan::new(
-        parser.ast.get_node(array).span.start,
-        right_bracket_token.location.end,
-    );
+    let span = SourceSpan::new(parser.ast.get_node(array).span.start, right_bracket_token.location.end);
 
-    let node = parser.ast.push_node(Node::new(NodeKind::IndexAccess(array, index_node), span));
+    let node = parser
+        .ast
+        .push_node(Node::new(NodeKind::IndexAccess(array, index_node), span));
     Ok(node)
 }
 
 /// Parse member access
-fn parse_member_access(
-    parser: &mut Parser,
-    object: NodeRef,
-    is_arrow: bool,
-) -> Result<NodeRef, ParseError> {
-    let member_token = parser
-        .try_current_token()
-        .ok_or_else(|| ParseError::SyntaxError {
-            message: "Expected member name".to_string(),
-            location: SourceSpan::empty(),
-        })?;
+fn parse_member_access(parser: &mut Parser, object: NodeRef, is_arrow: bool) -> Result<NodeRef, ParseError> {
+    let member_token = parser.try_current_token().ok_or_else(|| ParseError::SyntaxError {
+        message: "Expected member name".to_string(),
+        location: SourceSpan::empty(),
+    })?;
 
     let member_symbol = match member_token.kind {
         TokenKind::Identifier(symbol) => symbol,
@@ -539,12 +516,11 @@ fn parse_member_access(
 
     parser.advance();
 
-    let span = SourceSpan::new(
-        parser.ast.get_node(object).span.start,
-        member_token.location.end,
-    );
+    let span = SourceSpan::new(parser.ast.get_node(object).span.start, member_token.location.end);
 
-    let node = parser.ast.push_node(Node::new(NodeKind::MemberAccess(object, member_symbol, is_arrow), span));
+    let node = parser
+        .ast
+        .push_node(Node::new(NodeKind::MemberAccess(object, member_symbol, is_arrow), span));
     Ok(node)
 }
 
@@ -554,14 +530,9 @@ fn parse_postfix_increment(
     operand: NodeRef,
     operator_token: Token,
 ) -> Result<NodeRef, ParseError> {
-    let span = SourceSpan::new(
-        parser.ast.get_node(operand).span.start,
-        operator_token.location.end,
-    );
+    let span = SourceSpan::new(parser.ast.get_node(operand).span.start, operator_token.location.end);
 
-    let node = parser
-        .ast
-        .push_node(Node::new(NodeKind::PostIncrement(operand), span));
+    let node = parser.ast.push_node(Node::new(NodeKind::PostIncrement(operand), span));
     Ok(node)
 }
 
@@ -571,14 +542,9 @@ fn parse_postfix_decrement(
     operand: NodeRef,
     operator_token: Token,
 ) -> Result<NodeRef, ParseError> {
-    let span = SourceSpan::new(
-        parser.ast.get_node(operand).span.start,
-        operator_token.location.end,
-    );
+    let span = SourceSpan::new(parser.ast.get_node(operand).span.start, operator_token.location.end);
 
-    let node = parser
-        .ast
-        .push_node(Node::new(NodeKind::PostDecrement(operand), span));
+    let node = parser.ast.push_node(Node::new(NodeKind::PostDecrement(operand), span));
     Ok(node)
 }
 
@@ -589,7 +555,11 @@ pub fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, ParseErro
     parser.expect(TokenKind::LeftParen)?;
 
     let controlling_expr_result = parse_expression(parser, BindingPower::MIN);
-    let controlling_expr = super::utils::unwrap_expr_result(parser, controlling_expr_result, "expression in _Generic controlling expression")?;
+    let controlling_expr = unwrap_expr_result(
+        parser,
+        controlling_expr_result,
+        "expression in _Generic controlling expression",
+    )?;
 
     parser.expect(TokenKind::Comma)?;
 
@@ -606,12 +576,9 @@ pub fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, ParseErro
         parser.expect(TokenKind::Colon)?;
 
         let result_expr_result = parse_expression(parser, BindingPower::MIN);
-        let result_expr = super::utils::unwrap_expr_result(parser, result_expr_result, "expression in _Generic association")?;
+        let result_expr = unwrap_expr_result(parser, result_expr_result, "expression in _Generic association")?;
 
-        associations.push(GenericAssociation {
-            type_name,
-            result_expr,
-        });
+        associations.push(GenericAssociation { type_name, result_expr });
 
         if !parser.matches(&[TokenKind::Comma]) {
             break;
@@ -625,7 +592,10 @@ pub fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, ParseErro
 
     let span = SourceSpan::new(start_span, end_span);
 
-    let node = parser.ast.push_node(Node::new(NodeKind::GenericSelection(controlling_expr, associations), span));
+    let node = parser.ast.push_node(Node::new(
+        NodeKind::GenericSelection(controlling_expr, associations),
+        span,
+    ));
     Ok(node)
 }
 
@@ -653,7 +623,9 @@ pub(crate) fn parse_compound_literal_from_type_and_start(
     };
 
     let initializer_ref = parser.ast.push_initializer(initializer);
-    let node = parser.ast.push_node(Node::new(NodeKind::CompoundLiteral(type_ref, initializer_ref), span));
+    let node = parser
+        .ast
+        .push_node(Node::new(NodeKind::CompoundLiteral(type_ref, initializer_ref), span));
     Ok(node)
 }
 
@@ -697,32 +669,29 @@ pub fn parse_sizeof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
             let span = SourceSpan::new(start_span, end_span);
 
             debug!("parse_sizeof: successfully parsed sizeof(type)");
-            parser.ast
-                .push_node(Node::new(NodeKind::SizeOfType(type_ref), span))
+            parser.ast.push_node(Node::new(NodeKind::SizeOfType(type_ref), span))
         } else {
             debug!("parse_sizeof: detected expression, parsing expression");
             let expr_result = parse_expression(parser, BindingPower::MIN);
-            let expr = super::utils::unwrap_expr_result(parser, expr_result, "expression in sizeof")?;
+            let expr = unwrap_expr_result(parser, expr_result, "expression in sizeof")?;
             let right_paren_token = parser.expect(TokenKind::RightParen)?;
 
             let end_span = right_paren_token.location.end;
             let span = SourceSpan::new(start_span, end_span);
 
             debug!("parse_sizeof: successfully parsed sizeof(expression)");
-            parser.ast
-                .push_node(Node::new(NodeKind::SizeOfExpr(expr), span))
+            parser.ast.push_node(Node::new(NodeKind::SizeOfExpr(expr), span))
         }
     } else {
         debug!("parse_sizeof: no '(', parsing unary expression");
         let expr_result = parse_expression(parser, BindingPower::UNARY);
-        let expr = super::utils::unwrap_expr_result(parser, expr_result, "expression in sizeof")?;
+        let expr = unwrap_expr_result(parser, expr_result, "expression in sizeof")?;
 
         let end_span = parser.ast.get_node(expr).span.end;
         let span = SourceSpan::new(start_span, end_span);
 
         debug!("parse_sizeof: successfully parsed sizeof unary expression");
-        parser.ast
-            .push_node(Node::new(NodeKind::SizeOfExpr(expr), span))
+        parser.ast.push_node(Node::new(NodeKind::SizeOfExpr(expr), span))
     };
 
     Ok(node)
@@ -741,9 +710,7 @@ pub fn parse_alignof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     let span = SourceSpan::new(start_span, end_span);
 
-    let node = parser
-        .ast
-        .push_node(Node::new(NodeKind::AlignOf(type_ref), span));
+    let node = parser.ast.push_node(Node::new(NodeKind::AlignOf(type_ref), span));
     Ok(node)
 }
 
@@ -828,10 +795,7 @@ pub(crate) fn is_cast_expression_start_advanced(parser: &Parser) -> bool {
     // After pointers, look for type qualifiers
     while let Some(token) = parser.tokens.get(idx) {
         match token.kind {
-            TokenKind::Const
-            | TokenKind::Volatile
-            | TokenKind::Restrict
-            | TokenKind::Atomic => {
+            TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Atomic => {
                 idx += 1;
                 continue;
             }
@@ -872,14 +836,16 @@ pub(crate) fn parse_cast_expression_from_type_and_paren(
 ) -> Result<NodeRef, ParseError> {
     // Parse the expression being cast
     let expr_result = parse_expression(parser, BindingPower::CAST);
-    let expr_node = super::utils::unwrap_expr_result(parser, expr_result, "expression after cast")?;
+    let expr_node = unwrap_expr_result(parser, expr_result, "expression after cast")?;
 
     let span = SourceSpan::new(
         right_paren_token.location.start, // Start from the opening paren
         parser.ast.get_node(expr_node).span.end,
     );
 
-    let node = parser.ast.push_node(Node::new(NodeKind::Cast(type_ref, expr_node), span));
+    let node = parser
+        .ast
+        .push_node(Node::new(NodeKind::Cast(type_ref, expr_node), span));
 
     debug!("parse_cast_expression: successfully parsed cast expression");
     Ok(node)

@@ -162,10 +162,7 @@ impl SymbolTable {
 
     pub fn set_current_scope(&mut self, scope_id: ScopeId) {
         self.current_scope_id = scope_id;
-        debug!(
-            "SymbolTable: Set current_scope_id to {}",
-            self.current_scope_id.get()
-        );
+        debug!("SymbolTable: Set current_scope_id to {}", self.current_scope_id.get());
     }
 
     pub fn get_scope(&self, scope_id: ScopeId) -> &Scope {
@@ -203,11 +200,7 @@ impl SymbolTable {
         None
     }
 
-    pub fn lookup_symbol_in_scope(
-        &self,
-        name: Symbol,
-        scope_id: ScopeId,
-    ) -> Option<SymbolEntryRef> {
+    pub fn lookup_symbol_in_scope(&self, name: Symbol, scope_id: ScopeId) -> Option<SymbolEntryRef> {
         self.get_scope(scope_id).symbols.get(&name).copied()
     }
 

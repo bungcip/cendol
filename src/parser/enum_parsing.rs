@@ -9,6 +9,7 @@ use crate::source_manager::SourceSpan;
 use symbol_table::GlobalSymbol as Symbol;
 
 use super::Parser;
+use super::{BindingPower, parse_expression, unwrap_expr_result};
 
 /// Parse enum specifier
 pub fn parse_enum_specifier(parser: &mut Parser) -> Result<TypeSpecifier, ParseError> {
@@ -62,12 +63,10 @@ pub fn parse_enumerator_list(parser: &mut Parser) -> Result<Vec<NodeRef>, ParseE
 
 /// Parse enumerator
 pub fn parse_enumerator(parser: &mut Parser) -> Result<NodeRef, ParseError> {
-    let token = parser
-        .try_current_token()
-        .ok_or_else(|| ParseError::SyntaxError {
-            message: "Expected enumerator name".to_string(),
-            location: SourceSpan::empty(),
-        })?;
+    let token = parser.try_current_token().ok_or_else(|| ParseError::SyntaxError {
+        message: "Expected enumerator name".to_string(),
+        location: SourceSpan::empty(),
+    })?;
 
     let name = match token.kind {
         TokenKind::Identifier(symbol) => symbol,
@@ -86,8 +85,12 @@ pub fn parse_enumerator(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     })?;
 
     let value = if parser.accept(TokenKind::Assign).is_some() {
-        let expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::ASSIGNMENT);
-        Some(super::utils::unwrap_expr_result(parser, expr_result, "expression for enumerator value")?)
+        let expr_result = parse_expression(parser, BindingPower::ASSIGNMENT);
+        Some(unwrap_expr_result(
+            parser,
+            expr_result,
+            "expression for enumerator value",
+        )?)
     } else {
         None
     };

@@ -3,6 +3,8 @@
 //! This module handles all statement parsing logic, including control flow
 //! statements, compound statements, and expression statements.
 
+use super::Parser;
+use super::{BindingPower, parse_expression, unwrap_expr_result};
 use crate::ast::*;
 use crate::diagnostic::ParseError;
 use crate::lexer::TokenKind;
@@ -11,16 +13,13 @@ use log::debug;
 use std::cell::Cell;
 use symbol_table::GlobalSymbol as Symbol;
 use thin_vec::thin_vec;
-use super::Parser;
 
 /// Parse a statement
 pub fn parse_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
-    let token = parser
-        .try_current_token()
-        .ok_or_else(|| ParseError::SyntaxError {
-            message: "Expected statement".to_string(),
-            location: SourceSpan::empty(),
-        })?;
+    let token = parser.try_current_token().ok_or_else(|| ParseError::SyntaxError {
+        message: "Expected statement".to_string(),
+        location: SourceSpan::empty(),
+    })?;
 
     // Check for label: identifier :
     if let TokenKind::Identifier(label_symbol) = token.kind
@@ -84,10 +83,7 @@ pub fn parse_compound_statement(parser: &mut Parser) -> Result<(NodeRef, SourceL
                     transaction.commit();
                 }
                 Err(decl_error) => {
-                    debug!(
-                        "parse_compound_statement: declaration parsing failed: {:?}",
-                        decl_error
-                    );
+                    debug!("parse_compound_statement: declaration parsing failed: {:?}", decl_error);
                     declaration_attempt = Some(Err(decl_error));
                 }
             }
@@ -144,8 +140,8 @@ fn parse_if_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     parser.expect(TokenKind::If)?;
     parser.expect(TokenKind::LeftParen)?;
 
-    let condition_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN);
-    let condition = super::utils::unwrap_expr_result(parser, condition_result, "expression in if condition")?;
+    let condition_result = parse_expression(parser, BindingPower::MIN);
+    let condition = unwrap_expr_result(parser, condition_result, "expression in if condition")?;
 
     parser.expect(TokenKind::RightParen)?;
 
@@ -180,8 +176,8 @@ fn parse_switch_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     parser.expect(TokenKind::Switch)?;
     parser.expect(TokenKind::LeftParen)?;
 
-    let condition_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN);
-    let condition = super::utils::unwrap_expr_result(parser, condition_result, "expression in switch condition")?;
+    let condition_result = parse_expression(parser, BindingPower::MIN);
+    let condition = unwrap_expr_result(parser, condition_result, "expression in switch condition")?;
 
     parser.expect(TokenKind::RightParen)?;
 
@@ -208,8 +204,8 @@ fn parse_while_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     parser.expect(TokenKind::While)?;
     parser.expect(TokenKind::LeftParen)?;
 
-    let condition_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN);
-    let condition = super::utils::unwrap_expr_result(parser, condition_result, "expression in while condition")?;
+    let condition_result = parse_expression(parser, BindingPower::MIN);
+    let condition = unwrap_expr_result(parser, condition_result, "expression in while condition")?;
 
     parser.expect(TokenKind::RightParen)?;
 
@@ -221,9 +217,7 @@ fn parse_while_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     let while_stmt = WhileStmt { condition, body };
 
-    let node = parser
-        .ast
-        .push_node(Node::new(NodeKind::While(while_stmt), span));
+    let node = parser.ast.push_node(Node::new(NodeKind::While(while_stmt), span));
     Ok(node)
 }
 
@@ -237,8 +231,8 @@ fn parse_do_while_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> 
     parser.expect(TokenKind::While)?;
     parser.expect(TokenKind::LeftParen)?;
 
-    let condition_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN);
-    let condition = super::utils::unwrap_expr_result(parser, condition_result, "expression in do-while condition")?;
+    let condition_result = parse_expression(parser, BindingPower::MIN);
+    let condition = unwrap_expr_result(parser, condition_result, "expression in do-while condition")?;
 
     parser.expect(TokenKind::RightParen)?;
     let semicolon_token = parser.expect(TokenKind::Semicolon)?;
@@ -293,13 +287,18 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         let span = SourceSpan::new(start_span, parser.current_token().unwrap().location.end);
 
         Some(
-            parser.ast
+            parser
+                .ast
                 .push_node(Node::new(NodeKind::Declaration(declaration_data), span)),
         )
     } else {
         debug!("parse_for_statement: parsing expression in init");
-        let expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN);
-        Some(super::utils::unwrap_expr_result(parser, expr_result, "expression or declaration in for init")?)
+        let expr_result = parse_expression(parser, BindingPower::MIN);
+        Some(unwrap_expr_result(
+            parser,
+            expr_result,
+            "expression or declaration in for init",
+        )?)
     };
 
     parser.expect(TokenKind::Semicolon)?;
@@ -310,8 +309,8 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let condition = if parser.matches(&[TokenKind::Semicolon]) {
         None
     } else {
-        let expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN);
-        Some(super::utils::unwrap_expr_result(parser, expr_result, "expression in for condition")?)
+        let expr_result = parse_expression(parser, BindingPower::MIN);
+        Some(unwrap_expr_result(parser, expr_result, "expression in for condition")?)
     };
 
     parser.expect(TokenKind::Semicolon)?;
@@ -322,8 +321,8 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let increment = if parser.matches(&[TokenKind::RightParen]) {
         None
     } else {
-        let expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN);
-        Some(super::utils::unwrap_expr_result(parser, expr_result, "expression in for increment")?)
+        let expr_result = parse_expression(parser, BindingPower::MIN);
+        Some(unwrap_expr_result(parser, expr_result, "expression in for increment")?)
     };
 
     parser.expect(TokenKind::RightParen)?;
@@ -350,12 +349,10 @@ fn parse_goto_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let start_span = parser.current_token()?.location.start;
     parser.expect(TokenKind::Goto)?;
 
-    let token = parser
-        .try_current_token()
-        .ok_or_else(|| ParseError::SyntaxError {
-            message: "Expected label name".to_string(),
-            location: SourceSpan::empty(),
-        })?;
+    let token = parser.try_current_token().ok_or_else(|| ParseError::SyntaxError {
+        message: "Expected label name".to_string(),
+        location: SourceSpan::empty(),
+    })?;
 
     let label = match token.kind {
         TokenKind::Identifier(symbol) => symbol,
@@ -420,8 +417,8 @@ fn parse_return_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
             "parse_return_statement: parsing return expression with current token {:?}",
             parser.current_token_kind()
         );
-        let expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN);
-        let expr = super::utils::unwrap_expr_result(parser, expr_result, "expression in return statement")?;
+        let expr_result = parse_expression(parser, BindingPower::MIN);
+        let expr = unwrap_expr_result(parser, expr_result, "expression in return statement")?;
         debug!("parse_return_statement: parsed expression successfully");
         Some(expr)
     };
@@ -444,9 +441,7 @@ fn parse_empty_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     let span = SourceSpan::new(start_span, end_span);
 
-    let node = parser
-        .ast
-        .push_node(Node::new(NodeKind::EmptyStatement, span));
+    let node = parser.ast.push_node(Node::new(NodeKind::EmptyStatement, span));
     Ok(node)
 }
 
@@ -456,13 +451,13 @@ fn parse_case_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     parser.expect(TokenKind::Case)?;
 
-    let start_expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN);
-    let start_expr = super::utils::unwrap_expr_result(parser, start_expr_result, "constant expression in case")?;
+    let start_expr_result = parse_expression(parser, BindingPower::MIN);
+    let start_expr = unwrap_expr_result(parser, start_expr_result, "constant expression in case")?;
 
     // Check for GNU case range extension: case 1 ... 10:
     let (end_expr, is_range) = if parser.accept(TokenKind::Ellipsis).is_some() {
-        let end_expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN);
-        let end_expr = super::utils::unwrap_expr_result(parser, end_expr_result, "constant expression after '...' in case range")?;
+        let end_expr_result = parse_expression(parser, BindingPower::MIN);
+        let end_expr = unwrap_expr_result(parser, end_expr_result, "constant expression after '...' in case range")?;
         (Some(end_expr), true)
     } else {
         (None, false)
@@ -506,9 +501,7 @@ fn parse_default_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     let span = SourceSpan::new(start_span, end_span);
 
-    let node = parser
-        .ast
-        .push_node(Node::new(NodeKind::Default(statement), span));
+    let node = parser.ast.push_node(Node::new(NodeKind::Default(statement), span));
     Ok(node)
 }
 
@@ -534,21 +527,19 @@ fn parse_label_statement(parser: &mut Parser, label_symbol: Symbol) -> Result<No
 fn parse_expression_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let start_span = parser.current_token()?.location.start;
 
-    let expression = if parser.matches(&[TokenKind::Semicolon]) {
-        None
+    let (semi, expr) = if let Some(token) = parser.accept(TokenKind::Semicolon) {
+        (token, None)
     } else {
-        let expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN);
-        Some(super::utils::unwrap_expr_result(parser, expr_result, "expression in expression statement")?)
+        let expr_result = parse_expression(parser, BindingPower::MIN);
+        let expr = unwrap_expr_result(parser, expr_result, "expression in expression statement")?;
+        (parser.expect(TokenKind::Semicolon)?, Some(expr))
     };
 
-    // Always expect a semicolon
-    let semicolon_token = parser.expect(TokenKind::Semicolon)?;
-    let end_span = semicolon_token.location.end;
-
+    let end_span = semi.location.end;
     let span = SourceSpan::new(start_span, end_span);
 
     let node = parser
         .ast
-        .push_node(Node::new(NodeKind::ExpressionStatement(expression), span));
+        .push_node(Node::new(NodeKind::ExpressionStatement(expr), span));
     Ok(node)
 }

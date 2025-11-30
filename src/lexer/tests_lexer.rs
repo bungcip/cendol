@@ -1,11 +1,10 @@
 use super::*;
 use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::LangOptions;
-use crate::pp::{Preprocessor, PPConfig};
+use crate::pp::{PPConfig, Preprocessor};
 use crate::source_manager::SourceManager;
 use symbol_table::GlobalSymbol as Symbol;
 use target_lexicon::Triple;
-
 
 /// Helper function to test lexing from string to TokenKind
 /// This tests the full pipeline: string -> PPToken -> TokenKind
@@ -37,15 +36,14 @@ fn lex_string_to_token_kind_with_eof(input: &str, include_eof: bool) -> Vec<Toke
         preprocessor.process(source_id, &pp_config).unwrap()
     }; // preprocessor is dropped here
 
-    let mut lexer = Lexer::new(
-        &pp_tokens,
-    );
+    let mut lexer = Lexer::new(&pp_tokens);
 
     let tokens = lexer.tokenize_all();
     if include_eof {
         tokens.into_iter().map(|t| t.kind).collect()
     } else {
-        tokens.into_iter()
+        tokens
+            .into_iter()
             .filter(|t| !matches!(t.kind, TokenKind::EndOfFile))
             .map(|t| t.kind)
             .collect()
@@ -72,8 +70,7 @@ mod tests {
 
         for keyword in keywords {
             let symbol = Symbol::new(keyword);
-            let expected_kind = super::is_keyword(symbol)
-                .expect(&format!("{} should be a keyword", keyword));
+            let expected_kind = super::is_keyword(symbol).expect(&format!("{} should be a keyword", keyword));
 
             let token_kinds = lex_string_to_token_kind(keyword);
             assert_eq!(token_kinds.len(), 1, "Expected 1 token for keyword: {}", keyword);

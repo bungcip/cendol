@@ -9,15 +9,15 @@
 // //! The analysis is performed in distinct phases using the visitor pattern
 // //! for clean separation of concerns and maintainable code.
 
-pub mod symbol_table;
 pub mod name_resolver;
+pub mod symbol_table;
 pub mod type_checker;
 pub mod utils;
 pub mod visitor;
 
 // Re-export key types for public API
-pub use symbol_table::{ScopeId, ScopeKind, Scope, SymbolTable};
 pub use name_resolver::NameResolver;
+pub use symbol_table::{Scope, ScopeId, ScopeKind, SymbolTable};
 use thin_vec::ThinVec;
 pub use type_checker::TypeChecker;
 
@@ -52,10 +52,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
     }
 
     pub fn analyze(&mut self) -> SemanticOutput {
-        debug!(
-            "Starting semantic analysis with {} nodes",
-            self.ast.nodes.len()
-        );
+        debug!("Starting semantic analysis with {} nodes", self.ast.nodes.len());
 
         // Phase 1: Collect symbols
         self.collect_symbols();
@@ -82,10 +79,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
         // Get the root node reference for stack-based traversal
         let _root_node_ref = self.ast.root.unwrap();
 
-        debug!(
-            "Starting symbol collection from root node: {}",
-            _root_node_ref.get()
-        );
+        debug!("Starting symbol collection from root node: {}", _root_node_ref.get());
 
         // Collect function definitions and ONLY global declarations (top-level)
         let mut function_defs = Vec::new();
@@ -93,10 +87,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
 
         // Get the translation unit children to identify top-level items
         let root_node_children = self.get_child_nodes(_root_node_ref);
-        debug!(
-            "Translation unit has {} top-level items",
-            root_node_children.len()
-        );
+        debug!("Translation unit has {} top-level items", root_node_children.len());
 
         for top_level_node_ref in &root_node_children {
             let node = self.ast.get_node(*top_level_node_ref);
@@ -218,11 +209,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
         }
     }
 
-    fn collect_function_and_params(
-        &mut self,
-        func_def: &FunctionDefData,
-        span: SourceSpan,
-    ) -> ScopeId {
+    fn collect_function_and_params(&mut self, func_def: &FunctionDefData, span: SourceSpan) -> ScopeId {
         debug!(
             "collect_function_and_params called with declarator: {:?}",
             func_def.declarator
@@ -370,26 +357,18 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                     if let Some(init_node_ref) = for_stmt.init {
                         // Extract the node information first
                         let init_node = self.ast.get_node(init_node_ref);
-                        debug!(
-                            "Init node kind: {:?}",
-                            std::mem::discriminant(&init_node.kind)
-                        );
+                        debug!("Init node kind: {:?}", std::mem::discriminant(&init_node.kind));
                         let node_kind = init_node.kind.clone();
                         let span = init_node.span;
 
                         let _ = init_node; // Drop the borrow
 
                         if let NodeKind::Declaration(decl) = node_kind {
-                            debug!(
-                                "For loop has declaration in init, processing with special scope"
-                            );
+                            debug!("For loop has declaration in init, processing with special scope");
 
                             // Create a scope for the for loop variable that covers the entire loop
                             let for_scope_id = self.symbol_table.push_scope(ScopeKind::Block);
-                            debug!(
-                                "Created for loop scope {} for loop variable",
-                                for_scope_id.get()
-                            );
+                            debug!("Created for loop scope {} for loop variable", for_scope_id.get());
 
                             // Process the for loop body in this scope
                             stack.push((for_stmt.body, for_scope_id, false));
@@ -465,10 +444,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                         is_global: self.symbol_table.current_scope().get() == 1,
                         is_static: false,
                         is_extern: false,
-                        initializer: init_declarator
-                            .initializer
-                            .as_ref()
-                            .map(|_| NodeRef::new(1).unwrap()),
+                        initializer: init_declarator.initializer.as_ref().map(|_| NodeRef::new(1).unwrap()),
                     },
                     type_info: safe_type_ref,
                     storage_class: None,
@@ -521,7 +497,10 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                                 current_value = val;
                                 val
                             } else {
-                                debug!("Failed to evaluate enum constant value, using current_value {}", current_value);
+                                debug!(
+                                    "Failed to evaluate enum constant value, using current_value {}",
+                                    current_value
+                                );
                                 current_value
                             }
                         } else {
@@ -604,10 +583,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
         }
     }
 
-    fn extract_function_info(
-        &self,
-        declarator: &Declarator,
-    ) -> (Option<Symbol>, Vec<FunctionParameter>) {
+    fn extract_function_info(&self, declarator: &Declarator) -> (Option<Symbol>, Vec<FunctionParameter>) {
         // Find the function declarator that has the identifier as its direct base
         let (name, params) = find_function_with_name(declarator);
         if let Some((func_decl, params)) = name.zip(params) {
@@ -624,10 +600,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                     debug!("Processing param {}: declarator={:?}", i, param.declarator);
                     if let Some(decl) = &param.declarator {
                         let param_name = Self::extract_identifier(decl);
-                        debug!(
-                            "  Extracted param name: {:?}",
-                            param_name.as_ref().map(|s| s.as_str())
-                        );
+                        debug!("  Extracted param name: {:?}", param_name.as_ref().map(|s| s.as_str()));
                         param_name.map(|name| FunctionParameter {
                             param_type: TypeRef::new(1).unwrap(),
                             name: Some(name),
@@ -734,10 +707,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
             NodeKind::SizeOfExpr(expr) => vec![*expr],
             NodeKind::TernaryOp(cond, then_expr, else_expr) => vec![*cond, *then_expr, *else_expr],
             _ => {
-                debug!(
-                    "No children for discriminant: {:?}",
-                    std::mem::discriminant(&node.kind)
-                );
+                debug!("No children for discriminant: {:?}", std::mem::discriminant(&node.kind));
                 Vec::new()
             }
         };

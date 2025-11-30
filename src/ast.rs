@@ -54,7 +54,7 @@ pub use types::*;
 pub use visitor::*;
 
 // Re-export operators that are used throughout the codebase
-pub use nodes::{UnaryOp, BinaryOp};
+pub use nodes::{BinaryOp, UnaryOp};
 
 /// The flattened AST storage.
 /// Contains all AST nodes, types, symbol entries, and initializers in contiguous vectors.

@@ -4,11 +4,11 @@
 //! and associated data structures. It provides constructors and builder patterns
 //! for creating complex AST nodes ergonomically.
 
-use std::cell::Cell;
 use serde::Serialize;
+use std::cell::Cell;
 use thin_vec::ThinVec;
 
-use crate::ast::{Symbol, NodeRef, TypeRef, SymbolEntryRef, InitializerRef};
+use crate::ast::{InitializerRef, NodeRef, Symbol, SymbolEntryRef, TypeRef};
 
 /// The core enum defining all possible AST node types for C11.
 /// Variants use NodeIndex for child references, enabling flattened storage.
@@ -62,10 +62,7 @@ pub enum NodeKind {
     Goto(Symbol),
     Label(Symbol, NodeRef /* statement */),
 
-    Switch(
-        NodeRef, /* condition */
-        NodeRef, /* body statement */
-    ),
+    Switch(NodeRef /* condition */, NodeRef /* body statement */),
     Case(NodeRef /* const_expr */, NodeRef /* statement */),
     CaseRange(
         NodeRef, /* start_expr */
@@ -162,8 +159,15 @@ pub enum TypeSpecifier {
     Bool,
     Complex,
     Atomic(TypeRef), // _Bool, _Complex, _Atomic
-    Record(bool /* is_union */, Option<Symbol> /* tag */, Option<RecordDefData> /* definition */),
-    Enum(Option<Symbol> /* tag */, Option<Vec<NodeRef>> /* enumerators */),
+    Record(
+        bool,                  /* is_union */
+        Option<Symbol>,        /* tag */
+        Option<RecordDefData>, /* definition */
+    ),
+    Enum(
+        Option<Symbol>,       /* tag */
+        Option<Vec<NodeRef>>, /* enumerators */
+    ),
     TypedefName(Symbol),
 }
 
@@ -252,7 +256,7 @@ pub enum Declarator {
     Abstract,                                                    // for abstract declarator
     Pointer(TypeQualifiers, Option<Box<Declarator>>),            // e.g., `*`
     Array(Box<Declarator>, ArraySize),                           // e.g., `[10]`
-    Function(Box<Declarator>, ThinVec<ParamData> /* parameters */),  // e.g., `(int x)`
+    Function(Box<Declarator>, ThinVec<ParamData> /* parameters */), // e.g., `(int x)`
     AnonymousRecord(bool /* is_union */, ThinVec<DeclarationData> /* members */), // C11 anonymous struct/union
 }
 
@@ -265,10 +269,19 @@ pub struct ParamData {
 // Array sizes
 #[derive(Debug, Clone, Serialize)]
 pub enum ArraySize {
-    Expression { expr: NodeRef, qualifiers: TypeQualifiers },
-    Star { qualifiers: TypeQualifiers }, // [*] VLA
-    Incomplete,                                        // []
-    VlaSpecifier { is_static: bool, qualifiers: TypeQualifiers, size: Option<NodeRef> }, // for VLA
+    Expression {
+        expr: NodeRef,
+        qualifiers: TypeQualifiers,
+    },
+    Star {
+        qualifiers: TypeQualifiers,
+    }, // [*] VLA
+    Incomplete, // []
+    VlaSpecifier {
+        is_static: bool,
+        qualifiers: TypeQualifiers,
+        size: Option<NodeRef>,
+    }, // for VLA
 }
 
 // Record definitions

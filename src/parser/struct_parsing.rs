@@ -30,19 +30,18 @@ pub fn parse_record_specifier_with_context(
 
     // In struct member context, only parse members if we have a specific tag
     // to avoid confusion with anonymous nested structs
-    let definition =
-        if parser.matches(&[TokenKind::LeftBrace]) && (!in_struct_member || tag.is_some()) {
-            parser.advance(); // consume '{'
-            let members = parse_struct_declaration_list(parser)?;
-            parser.expect(TokenKind::RightBrace)?;
-            Some(RecordDefData {
-                tag,
-                members: Some(members),
-                is_union,
-            })
-        } else {
-            None
-        };
+    let definition = if parser.matches(&[TokenKind::LeftBrace]) && (!in_struct_member || tag.is_some()) {
+        parser.advance(); // consume '{'
+        let members = parse_struct_declaration_list(parser)?;
+        parser.expect(TokenKind::RightBrace)?;
+        Some(RecordDefData {
+            tag,
+            members: Some(members),
+            is_union,
+        })
+    } else {
+        None
+    };
 
     Ok(TypeSpecifier::Record(is_union, tag, definition))
 }

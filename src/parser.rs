@@ -12,8 +12,8 @@ use log::debug;
 use std::collections::HashSet;
 use symbol_table::GlobalSymbol as Symbol;
 
-pub mod declarations;
 pub mod declaration_core;
+pub mod declarations;
 pub mod declarator;
 pub mod enum_parsing;
 pub mod expressions;
@@ -23,7 +23,10 @@ pub mod type_specifiers;
 pub mod utils;
 
 // Re-export commonly used types
-pub use expressions::{BindingPower, Associativity, PrattParser};
+pub use expressions::{Associativity, BindingPower, PrattParser};
+
+use expressions::parse_expression;
+use utils::unwrap_expr_result;
 
 /// Type context for tracking typedef names and other type-related state
 #[derive(Debug)]
@@ -118,11 +121,7 @@ pub struct Parser<'arena, 'src> {
 
 impl<'arena, 'src> Parser<'arena, 'src> {
     /// Create a new parser
-    pub fn new(
-        tokens: &'src [Token],
-        ast: &'arena mut Ast,
-        diag: &'src mut DiagnosticEngine,
-    ) -> Self {
+    pub fn new(tokens: &'src [Token], ast: &'arena mut Ast, diag: &'src mut DiagnosticEngine) -> Self {
         Parser {
             tokens,
             current_idx: 0,
@@ -143,11 +142,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Get the current token (returns error if at end of input)
     fn current_token(&self) -> Result<Token, ParseError> {
-        self.try_current_token()
-            .ok_or_else(|| ParseError::SyntaxError {
-                message: "Unexpected end of input".to_string(),
-                location: SourceSpan::empty(),
-            })
+        self.try_current_token().ok_or_else(|| ParseError::SyntaxError {
+            message: "Unexpected end of input".to_string(),
+            location: SourceSpan::empty(),
+        })
     }
 
     /// Get the current token kind
@@ -211,9 +209,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Check if current token matches any of the given kinds
     fn matches(&self, kinds: &[TokenKind]) -> bool {
-        self.current_token_kind()
-            .map(|k| kinds.contains(&k))
-            .unwrap_or(false)
+        self.current_token_kind().map(|k| kinds.contains(&k)).unwrap_or(false)
     }
 
     /// Skip tokens until we find a synchronization point
@@ -286,12 +282,13 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         // or 0[xX][hexdigits][.hexdigits][p|P[+|-]digits][f|F|l|L]
 
         // Strip suffix (f, F, l, L) for parsing
-        let text_without_suffix = if text_str.ends_with('f') || text_str.ends_with('F') ||
-                                   text_str.ends_with('l') || text_str.ends_with('L') {
-            &text_str[..text_str.len() - 1]
-        } else {
-            text_str
-        };
+        let text_without_suffix =
+            if text_str.ends_with('f') || text_str.ends_with('F') || text_str.ends_with('l') || text_str.ends_with('L')
+            {
+                &text_str[..text_str.len() - 1]
+            } else {
+                text_str
+            };
 
         // Handle hexadecimal floating-point literals (C99/C11)
         if text_str.starts_with("0x") || text_str.starts_with("0X") {
@@ -399,10 +396,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             }
 
             exponent = exp_str.parse().map_err(|_| ParseError::SyntaxError {
-                message: format!(
-                    "Invalid exponent '{}' in hexadecimal float literal",
-                    exp_str
-                ),
+                message: format!("Invalid exponent '{}' in hexadecimal float literal", exp_str),
                 location,
             })?;
 
@@ -432,7 +426,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         &mut self,
         min_binding_power: expressions::BindingPower,
     ) -> Result<ParseExprOutput, ParseError> {
-        expressions::parse_expression(self, min_binding_power)
+        parse_expression(self, min_binding_power)
     }
 
     /// Parse a declaration
@@ -518,12 +512,20 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     // }
 
     /// Parse cast expression given the already parsed type and right paren token
-    fn parse_cast_expression_from_type_and_paren(&mut self, type_ref: TypeRef, right_paren_token: Token) -> Result<NodeRef, ParseError> {
+    fn parse_cast_expression_from_type_and_paren(
+        &mut self,
+        type_ref: TypeRef,
+        right_paren_token: Token,
+    ) -> Result<NodeRef, ParseError> {
         expressions::parse_cast_expression_from_type_and_paren(self, type_ref, right_paren_token)
     }
 
     /// Parse compound literal given the type and start location
-    fn parse_compound_literal_from_type_and_start(&mut self, type_ref: TypeRef, start_loc: SourceLoc) -> Result<NodeRef, ParseError> {
+    fn parse_compound_literal_from_type_and_start(
+        &mut self,
+        type_ref: TypeRef,
+        start_loc: SourceLoc,
+    ) -> Result<NodeRef, ParseError> {
         expressions::parse_compound_literal_from_type_and_start(self, type_ref, start_loc)
     }
 

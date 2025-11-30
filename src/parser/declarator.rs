@@ -12,6 +12,7 @@ use symbol_table::GlobalSymbol as Symbol;
 use thin_vec::{ThinVec, thin_vec};
 
 use super::Parser;
+use super::{BindingPower, parse_expression, unwrap_expr_result};
 
 /// Helper enum for reconstructing complex declarators
 #[derive(Debug)]
@@ -20,13 +21,14 @@ enum DeclaratorComponent {
 }
 
 /// Parse declarator
-pub fn parse_declarator(
-    parser: &mut Parser,
-    initial_declarator: Option<Symbol>,
-) -> Result<Declarator, ParseError> {
-    debug!("parse_declarator: starting at position {}, token: {:?}, initial_declarator: {:?}",
-           parser.current_idx, parser.current_token_kind(), initial_declarator);
-    
+pub fn parse_declarator(parser: &mut Parser, initial_declarator: Option<Symbol>) -> Result<Declarator, ParseError> {
+    debug!(
+        "parse_declarator: starting at position {}, token: {:?}, initial_declarator: {:?}",
+        parser.current_idx,
+        parser.current_token_kind(),
+        initial_declarator
+    );
+
     let mut declarator_chain: Vec<DeclaratorComponent> = Vec::new();
     let mut _current_qualifiers = TypeQualifiers::empty();
 
@@ -41,7 +43,10 @@ pub fn parse_declarator(
     let base_declarator = if parser.accept(TokenKind::LeftParen).is_some() {
         debug!("parse_declarator: found LeftParen, parsing parenthesized declarator");
         let inner_declarator = parse_declarator(parser, None)?;
-        debug!("parse_declarator: consumed RightParen, current token: {:?}", parser.current_token_kind());
+        debug!(
+            "parse_declarator: consumed RightParen, current token: {:?}",
+            parser.current_token_kind()
+        );
         parser.expect(TokenKind::RightParen)?; // Consume ')'
         inner_declarator
     } else if let Some(ident_symbol) = initial_declarator {
@@ -84,7 +89,10 @@ pub fn parse_declarator(
         } else if parser.accept(TokenKind::LeftParen).is_some() {
             // Function declarator
             let parameters = parse_function_parameters(parser)?;
-            debug!("parse_abstract_declarator: parsed function parameters, count: {}", parameters.len());
+            debug!(
+                "parse_abstract_declarator: parsed function parameters, count: {}",
+                parameters.len()
+            );
             parser.expect(TokenKind::RightParen)?; // Consume ')'
             current_base = Declarator::Function(Box::new(current_base), parameters);
         } else {
@@ -144,12 +152,19 @@ fn parse_array_size(parser: &mut Parser) -> Result<ArraySize, ParseError> {
         Ok(ArraySize::Incomplete)
     } else {
         // Assume it's an expression for the size
-        let expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN);
-        let expr_node = super::utils::unwrap_expr_result(parser, expr_result, "array size expression")?;
+        let expr_result = parse_expression(parser, BindingPower::MIN);
+        let expr_node = unwrap_expr_result(parser, expr_result, "array size expression")?;
         if is_static || !qualifiers.is_empty() {
-            Ok(ArraySize::VlaSpecifier { is_static, qualifiers, size: Some(expr_node) })
+            Ok(ArraySize::VlaSpecifier {
+                is_static,
+                qualifiers,
+                size: Some(expr_node),
+            })
         } else {
-            Ok(ArraySize::Expression { expr: expr_node, qualifiers })
+            Ok(ArraySize::Expression {
+                expr: expr_node,
+                qualifiers,
+            })
         }
     }
 }
@@ -234,7 +249,10 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<ThinVec<ParamData>, 
                                 Some(abstract_decl)
                             }
                             Err(e) => {
-                                debug!("parse_function_parameters: abstract declarator failed: {:?}, rolling back to {}", e, start_idx);
+                                debug!(
+                                    "parse_function_parameters: abstract declarator failed: {:?}, rolling back to {}",
+                                    e, start_idx
+                                );
                                 parser.current_idx = start_idx;
                                 // Try regular declarator parsing as fallback
                                 match parse_declarator(parser, None) {
@@ -243,7 +261,9 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<ThinVec<ParamData>, 
                                         Some(decl)
                                     }
                                     Err(_) => {
-                                        debug!("parse_function_parameters: both abstract and regular declarator parsing failed");
+                                        debug!(
+                                            "parse_function_parameters: both abstract and regular declarator parsing failed"
+                                        );
                                         None
                                     }
                                 }
@@ -278,17 +298,20 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<ThinVec<ParamData>, 
                     None
                 };
 
-                params.push(ParamData {
-                    specifiers,
-                    declarator,
-                });
+                params.push(ParamData { specifiers, declarator });
 
-                debug!("parse_function_parameters: pushed parameter, current token: {:?}, position: {}", 
-                       parser.current_token_kind(), parser.current_idx);
+                debug!(
+                    "parse_function_parameters: pushed parameter, current token: {:?}, position: {}",
+                    parser.current_token_kind(),
+                    parser.current_idx
+                );
 
                 if !parser.matches(&[TokenKind::Comma]) {
-                    debug!("parse_function_parameters: no comma found, breaking from parameter loop. Current token: {:?}, position: {}", 
-                           parser.current_token_kind(), parser.current_idx);
+                    debug!(
+                        "parse_function_parameters: no comma found, breaking from parameter loop. Current token: {:?}, position: {}",
+                        parser.current_token_kind(),
+                        parser.current_idx
+                    );
                     break;
                 }
                 debug!("parse_function_parameters: found comma, consuming and continuing to next parameter");
@@ -395,16 +418,25 @@ pub fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarator, Pars
                 } else {
                     let start_idx = parser.current_idx;
                     let inner_declarator = parse_abstract_declarator(parser)?;
-                    debug!("parse_abstract_declarator: inner declarator parsed, current token: {:?}", parser.current_token_kind());
+                    debug!(
+                        "parse_abstract_declarator: inner declarator parsed, current token: {:?}",
+                        parser.current_token_kind()
+                    );
                     if parser.accept(TokenKind::RightParen).is_some() {
                         inner_declarator
                     } else {
                         // Check if we're dealing with a function parameter syntax like "int (int)"
                         // In this case, the closing paren might be part of the parameter list context
-                        debug!("parse_abstract_declarator: expected RightParen but found {:?}, position: {}", parser.current_token_kind(), parser.current_idx);
+                        debug!(
+                            "parse_abstract_declarator: expected RightParen but found {:?}, position: {}",
+                            parser.current_token_kind(),
+                            parser.current_idx
+                        );
                         // Try to parse as function declarator if we see another LeftParen
                         if parser.accept(TokenKind::LeftParen).is_some() {
-                            debug!("parse_abstract_declarator: found another LeftParen, treating as function declarator");
+                            debug!(
+                                "parse_abstract_declarator: found another LeftParen, treating as function declarator"
+                            );
                             let parameters = parse_function_parameters(parser)?;
                             parser.expect(TokenKind::RightParen)?; // Consume ')'
                             Declarator::Function(Box::new(inner_declarator), parameters)
@@ -454,7 +486,10 @@ pub fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarator, Pars
             current_base = Declarator::Array(Box::new(current_base), array_size);
         } else if parser.accept(TokenKind::LeftParen).is_some() {
             let parameters = parse_function_parameters(parser)?;
-            debug!("parse_abstract_declarator: parsed function parameters, count: {}", parameters.len());
+            debug!(
+                "parse_abstract_declarator: parsed function parameters, count: {}",
+                parameters.len()
+            );
             parser.expect(TokenKind::RightParen)?; // Consume ')'
             current_base = Declarator::Function(Box::new(current_base), parameters);
         } else {

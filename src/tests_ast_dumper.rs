@@ -14,11 +14,7 @@ fn setup() {
     });
 }
 
-fn run_compiler_and_dump_ast(
-    input_path: &str,
-    output_path: &str,
-    dump_ast: bool,
-) -> Result<String, String> {
+fn run_compiler_and_dump_ast(input_path: &str, output_path: &str, dump_ast: bool) -> Result<String, String> {
     setup();
 
     let cli_args = if dump_ast {
@@ -43,11 +39,7 @@ fn test_ast_dumper_simple_expression() {
 
     fs::write(&input_path, source_code).unwrap();
 
-    let result = run_compiler_and_dump_ast(
-        input_path.to_str().unwrap(),
-        output_path.to_str().unwrap(),
-        true,
-    );
+    let result = run_compiler_and_dump_ast(input_path.to_str().unwrap(), output_path.to_str().unwrap(), true);
 
     assert!(result.is_ok(), "Compiler driver failed: {:?}", result.err());
     let html_output = result.unwrap();

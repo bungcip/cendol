@@ -12,10 +12,10 @@ pub use crate::diagnostic::DiagnosticEngine;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TokenKind {
     // === LITERALS ===
-    IntegerConstant(i64),   // Parsed integer literal value
-    FloatConstant(Symbol),  // Raw float literal text
-    CharacterConstant(u8),  // Byte value of character constant
-    StringLiteral(Symbol),  // Interned string literal
+    IntegerConstant(i64),  // Parsed integer literal value
+    FloatConstant(Symbol), // Raw float literal text
+    CharacterConstant(u8), // Byte value of character constant
+    StringLiteral(Symbol), // Interned string literal
 
     // === IDENTIFIERS ===
     Identifier(Symbol), // Interned identifier
@@ -304,9 +304,7 @@ pub struct Lexer<'src> {
 
 impl<'src> Lexer<'src> {
     /// Create a new lexer with the given preprocessor token stream
-    pub fn new(
-        tokens: &'src [PPToken],
-    ) -> Self {
+    pub fn new(tokens: &'src [PPToken]) -> Self {
         Lexer {
             tokens,
             current_index: 0,

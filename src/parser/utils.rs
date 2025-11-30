@@ -6,12 +6,12 @@
 
 use crate::ast::*;
 use crate::diagnostic::ParseError;
-use crate::source_manager::{SourceLoc, SourceSpan};
 use crate::lexer::Token;
+use crate::source_manager::{SourceLoc, SourceSpan};
 use log::debug;
 
-use super::{Parser, ParseExprOutput, ParserState};
 use super::expressions::BindingPower;
+use super::{ParseExprOutput, Parser, ParserState};
 
 /// Result of parsing an expression with binding power
 pub type ExprResult = Result<ParseExprOutput, ParseError>;
@@ -160,10 +160,7 @@ pub mod error_patterns {
 
     /// Create a syntax error for missing token
     pub fn missing_token(expected: TokenKind, location: SourceSpan) -> ParseError {
-        ParseError::MissingToken {
-            expected,
-            location,
-        }
+        ParseError::MissingToken { expected, location }
     }
 
     /// Create a generic syntax error
@@ -359,11 +356,18 @@ impl<'a, 'arena, 'src> Drop for ParserTransaction<'a, 'arena, 'src> {
     }
 }
 
-pub fn unwrap_expr_result(parser: &mut Parser, result: Result<ParseExprOutput, ParseError>, context: &str) -> Result<NodeRef, ParseError> {
+pub fn unwrap_expr_result(
+    parser: &mut Parser,
+    result: Result<ParseExprOutput, ParseError>,
+    context: &str,
+) -> Result<NodeRef, ParseError> {
     match result? {
         ParseExprOutput::Expression(node) => Ok(node),
         _ => {
-            let location = parser.current_token().map(|t| t.location).unwrap_or(SourceSpan::empty());
+            let location = parser
+                .current_token()
+                .map(|t| t.location)
+                .unwrap_or(SourceSpan::empty());
             Err(ParseError::SyntaxError {
                 message: format!("Expected {}", context),
                 location,
@@ -374,8 +378,8 @@ pub fn unwrap_expr_result(parser: &mut Parser, result: Result<ParseExprOutput, P
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::ast_iterators::AstIteratorExt;
+    use super::*;
     use crate::ast::Ast;
 
     #[test]
@@ -387,7 +391,7 @@ mod tests {
         let right = ast.push_node(Node::new(NodeKind::LiteralInt(2), SourceSpan::empty()));
         let root = ast.push_node(Node::new(
             NodeKind::BinaryOp(BinaryOp::Add, left, right),
-            SourceSpan::empty()
+            SourceSpan::empty(),
         ));
 
         let iter = ast.iter_subtree(root);

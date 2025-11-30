@@ -66,9 +66,7 @@ impl CompilerDriver {
         let source_id = self
             .source_manager
             .add_file_from_path(source_path)
-            .map_err(|e| {
-                CompilerError::IoError(format!("Failed to read {}: {}", source_path.display(), e))
-            })?;
+            .map_err(|e| CompilerError::IoError(format!("Failed to read {}: {}", source_path.display(), e)))?;
 
         // 2. Preprocessing phase
         let pp_tokens = {

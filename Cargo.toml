@@ -29,3 +29,5 @@ tempfile = "3.10"
 [features]
 insta = []
 
+[lints.clippy]
+bool_comparison = "allow" ## reason: `== false` is more readable in some cases

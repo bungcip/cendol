@@ -42,7 +42,7 @@ pub fn find_function_with_name(declarator: &Declarator) -> (Option<Symbol>, Opti
         }
         Declarator::Pointer(_, Some(base)) => find_function_with_name(base),
         Declarator::Array(base, _) => find_function_with_name(base),
-        _ => (None, None)
+        _ => (None, None),
     }
 }
 
@@ -53,6 +53,6 @@ pub fn extract_identifier(declarator: &Declarator) -> Option<Symbol> {
         Declarator::Array(base, _) => extract_identifier(base),
         Declarator::Function(base, _) => extract_identifier(base),
         Declarator::Abstract => None,
-        _ => None
+        _ => None,
     }
 }

@@ -946,12 +946,7 @@ impl PPLexer {
         let symbol = Symbol::new(&text);
         let kind = PPTokenKind::Identifier(symbol);
 
-        PPToken::text(
-            kind,
-            flags,
-            SourceLoc::new(self.source_id, start_pos),
-            &text,
-        )
+        PPToken::text(kind, flags, SourceLoc::new(self.source_id, start_pos), &text)
     }
 
     fn lex_number(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {

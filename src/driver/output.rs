@@ -185,11 +185,9 @@ impl OutputHandler {
             NodeKind::CompoundLiteral(ty, init) => {
                 println!("CompoundLiteral({}, {})", ty.get(), init.get())
             }
-            NodeKind::GenericSelection(ctrl, assocs) => println!(
-                "GenericSelection({}, {} associations)",
-                ctrl.get(),
-                assocs.len()
-            ),
+            NodeKind::GenericSelection(ctrl, assocs) => {
+                println!("GenericSelection({}, {} associations)", ctrl.get(), assocs.len())
+            }
             NodeKind::VaArg(va_list, ty) => println!("VaArg({}, {})", va_list.get(), ty.get()),
             NodeKind::CompoundStatement(stmts) => println!(
                 "CompoundStatement([{}])",
@@ -214,10 +212,7 @@ impl OutputHandler {
             }
             NodeKind::For(for_stmt) => println!(
                 "For(init={}, condition={}, increment={}, body={})",
-                for_stmt
-                    .init
-                    .map(|r| r.get().to_string())
-                    .unwrap_or("none".to_string()),
+                for_stmt.init.map(|r| r.get().to_string()).unwrap_or("none".to_string()),
                 for_stmt
                     .condition
                     .map(|r| r.get().to_string())
@@ -230,8 +225,7 @@ impl OutputHandler {
             ),
             NodeKind::Return(expr) => println!(
                 "Return({})",
-                expr.map(|r| r.get().to_string())
-                    .unwrap_or("void".to_string())
+                expr.map(|r| r.get().to_string()).unwrap_or("void".to_string())
             ),
             NodeKind::Break => println!("Break"),
             NodeKind::Continue => println!("Continue"),
@@ -247,8 +241,7 @@ impl OutputHandler {
             NodeKind::Default(stmt) => println!("Default({})", stmt.get()),
             NodeKind::ExpressionStatement(expr) => println!(
                 "ExpressionStatement({})",
-                expr.map(|r| r.get().to_string())
-                    .unwrap_or("none".to_string())
+                expr.map(|r| r.get().to_string()).unwrap_or("none".to_string())
             ),
             NodeKind::EmptyStatement => println!("EmptyStatement"),
             NodeKind::Declaration(decl) => {
@@ -269,9 +262,7 @@ impl OutputHandler {
             NodeKind::EnumConstant(name, value) => println!(
                 "EnumConstant({}, {})",
                 name,
-                value
-                    .map(|r| r.get().to_string())
-                    .unwrap_or("auto".to_string())
+                value.map(|r| r.get().to_string()).unwrap_or("auto".to_string())
             ),
             NodeKind::StaticAssert(cond, msg) => {
                 println!("StaticAssert(condition={}, message={})", cond.get(), msg)
@@ -281,11 +272,7 @@ impl OutputHandler {
     }
 
     /// Dump AST to HTML file
-    pub fn dump_ast(
-        &self,
-        args: &mut AstDumpArgs,
-        config: &CompileConfig,
-    ) -> Result<(), CompilerError> {
+    pub fn dump_ast(&self, args: &mut AstDumpArgs, config: &CompileConfig) -> Result<(), CompilerError> {
         let output_path = config
             .output_path
             .clone()

@@ -87,6 +87,12 @@ pub struct ErrorRecoveryPoint {
     pub context: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct ParserState {
+    current_idx: usize,
+    diag_len: usize,
+}
+
 /// Main parser structure
 pub struct Parser<'arena, 'src> {
     tokens: &'src [Token],
@@ -525,6 +531,22 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     pub fn add_typedef(&mut self, symbol: Symbol) {
         debug!("add_typedef: adding {:?} to typedef_names", symbol);
         self.type_context.add_typedef(symbol);
+    }
+
+    fn save_state(&self) -> ParserState {
+        ParserState {
+            current_idx: self.current_idx,
+            diag_len: self.diag.diagnostics.len(),
+        }
+    }
+
+    fn restore_state(&mut self, state: ParserState) {
+        self.current_idx = state.current_idx;
+        self.diag.diagnostics.truncate(state.diag_len);
+    }
+
+    pub fn start_transaction(&mut self) -> utils::ParserTransaction<'_, 'arena, 'src> {
+        utils::ParserTransaction::new(self)
     }
 }
 

@@ -150,19 +150,12 @@ fn parse_array_size(parser: &mut Parser) -> Result<ArraySize, ParseError> {
         Ok(ArraySize::Incomplete)
     } else {
         // Assume it's an expression for the size
-        let expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN)?;
-        match expr_result {
-            super::ParseExprOutput::Expression(expr_node) => {
-                if is_static || !qualifiers.is_empty() {
-                    Ok(ArraySize::VlaSpecifier { is_static, qualifiers, size: Some(expr_node) })
-                } else {
-                    Ok(ArraySize::Expression { expr: expr_node, qualifiers })
-                }
-            }
-            _ => Err(ParseError::SyntaxError {
-                message: "Expected array size expression".to_string(),
-                location: parser.current_token().unwrap().location,
-            }),
+        let expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN);
+        let expr_node = super::utils::unwrap_expr_result(parser, expr_result, "array size expression")?;
+        if is_static || !qualifiers.is_empty() {
+            Ok(ArraySize::VlaSpecifier { is_static, qualifiers, size: Some(expr_node) })
+        } else {
+            Ok(ArraySize::Expression { expr: expr_node, qualifiers })
         }
     }
 }

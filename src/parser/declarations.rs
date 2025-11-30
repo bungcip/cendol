@@ -16,32 +16,31 @@ use super::Parser;
 
 /// Parse a declaration
 pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
-    let start_span = parser.current_token()?.location.start;
-    let initial_idx = parser.current_idx; // Save initial position for potential rollback
-    let saved_diagnostic_count = parser.diag.diagnostics.len();
+    let transaction = parser.start_transaction();
+    let start_span = transaction.parser.current_token()?.location.start;
 
     debug!(
         "parse_declaration: starting at position {}, token {:?}",
-        initial_idx,
-        parser.current_token_kind()
+        transaction.parser.current_idx,
+        transaction.parser.current_token_kind()
     );
 
     // Check for _Static_assert (C11)
-    if let Some(token) = parser.accept(TokenKind::StaticAssert) {
-        return parse_static_assert(parser, token);
+    if let Some(token) = transaction.parser.accept(TokenKind::StaticAssert) {
+        return parse_static_assert(transaction.parser, token);
     }
 
     // Try to parse declaration specifiers
-    let specifiers = match super::declaration_core::parse_declaration_specifiers(parser) {
+    let specifiers = match super::declaration_core::parse_declaration_specifiers(transaction.parser) {
         Ok(specifiers) => {
             debug!(
                 "parse_declaration: parsed {} specifiers, current token {:?}",
                 specifiers.len(),
-                parser.current_token_kind()
+                transaction.parser.current_token_kind()
             );
             debug!(
                 "parse_declaration: current token after specifiers: {:?}",
-                parser.current_token_kind()
+                transaction.parser.current_token_kind()
             );
             if let Some(last_specifier) = specifiers.last() {
                 debug!(
@@ -52,13 +51,6 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
             specifiers
         }
         Err(e) => {
-            // If declaration specifiers parsing fails, roll back completely
-            parser.current_idx = initial_idx;
-            parser.diag.diagnostics.truncate(saved_diagnostic_count);
-            debug!(
-                "parse_declaration: specifier parsing failed, rolled back to {}",
-                initial_idx
-            );
             return Err(e);
         }
     };
@@ -72,28 +64,30 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     // - If next token is semicolon: treat as record/enum declaration (definition or forward)
     // - If next token is declarator-starting token: continue with normal declaration parsing
     if is_record_enum_specifier {
-        if parser.matches(&[TokenKind::Semicolon]) {
+        if transaction.parser.matches(&[TokenKind::Semicolon]) {
             // This is either:
             // 1. A pure struct/union/enum definition like "struct foo { ... };" or "enum E { ... };"
             // 2. A forward struct/union/enum declaration like "struct foo;" or "enum E;"
             // In both cases, consume the semicolon and create declaration with no declarators
-            parser.expect(TokenKind::Semicolon)?;
+            transaction.parser.expect(TokenKind::Semicolon)?;
 
             let declaration_data = DeclarationData {
                 specifiers,
                 init_declarators: ThinVec::new(),
             };
 
-            let end_span = parser.current_token()?.location.end;
+            let end_span = transaction.parser.current_token()?.location.end;
             let span = SourceSpan::new(start_span, end_span);
 
-            let node = parser
+            let node = transaction
+                .parser
                 .ast
                 .push_node(Node::new(NodeKind::Declaration(declaration_data), span));
             debug!(
                 "parse_declaration: successfully parsed record/enum declaration, node_id={}",
                 node.get()
             );
+            transaction.commit();
             return Ok(node);
         } else {
             // This is a record/enum specifier with declarators
@@ -105,14 +99,14 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     }
 
     // For all other cases, check if we have declarators
-    let has_declarators = if parser.matches(&[TokenKind::Semicolon]) {
+    let has_declarators = if transaction.parser.matches(&[TokenKind::Semicolon]) {
         // Definitely no declarators
         false
     } else {
         // Check if we have a declarator-starting token
         // This includes: identifier, star, or left paren
         matches!(
-            parser.current_token_kind(),
+            transaction.parser.current_token_kind(),
             Some(TokenKind::Identifier(_)) | Some(TokenKind::Star) | Some(TokenKind::LeftParen)
         )
     };
@@ -125,58 +119,32 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         if let Some(last_specifier) = specifiers.last() {
             match &last_specifier.type_specifier {
                 TypeSpecifier::Record(_, _tag, _definition) => {
-                    // This should not happen due to the check above, but just in case
-                    parser.current_idx = initial_idx;
-                    parser.diag.diagnostics.truncate(saved_diagnostic_count);
-                    debug!(
-                        "parse_declaration: record definition with no declarators and no semicolon, rolled back to {}",
-                        initial_idx
-                    );
                     return Err(ParseError::SyntaxError {
                         message: "Expected ';' after struct/union definition".to_string(),
-                        location: parser.current_token()?.location,
+                        location: transaction.parser.current_token()?.location,
                     });
                 }
                 TypeSpecifier::Enum(_tag, _definition) => {
-                    // This should not happen due to the check above, but just in case
-                    parser.current_idx = initial_idx;
-                    parser.diag.diagnostics.truncate(saved_diagnostic_count);
-                    debug!(
-                        "parse_declaration: enum definition with no declarators and no semicolon, rolled back to {}",
-                        initial_idx
-                    );
                     return Err(ParseError::SyntaxError {
                         message: "Expected ';' after enum definition".to_string(),
-                        location: parser.current_token()?.location,
+                        location: transaction.parser.current_token()?.location,
                     });
                 }
                 _ => {
                     // Not a record/enum definition, this is likely an error
                     // But let's rollback and let the statement parser handle it
-                    parser.current_idx = initial_idx;
-                    parser.diag.diagnostics.truncate(saved_diagnostic_count);
-                    debug!(
-                        "parse_declaration: no declarators found, rolled back to {}",
-                        initial_idx
-                    );
                     return Err(ParseError::SyntaxError {
                         message: "Expected declarator or identifier after type specifier"
                             .to_string(),
-                        location: parser.current_token()?.location,
+                        location: transaction.parser.current_token()?.location,
                     });
                 }
             }
         } else {
             // No specifiers at all - this shouldn't happen
-            parser.current_idx = initial_idx;
-            parser.diag.diagnostics.truncate(saved_diagnostic_count);
-            debug!(
-                "parse_declaration: no specifiers, rolled back to {}",
-                initial_idx
-            );
             return Err(ParseError::SyntaxError {
                 message: "Expected type specifiers".to_string(),
-                location: parser.current_token()?.location,
+                location: transaction.parser.current_token()?.location,
             });
         }
     }
@@ -185,57 +153,43 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let mut init_declarators = ThinVec::new();
 
     loop {
-        let declarator_start_idx = parser.current_idx;
+        let declarator_start_idx = transaction.parser.current_idx;
         debug!(
             "parse_declaration: parsing declarator at position {}, token {:?}",
             declarator_start_idx,
-            parser.current_token_kind()
+            transaction.parser.current_token_kind()
         );
 
-        let declarator = match super::declarator::parse_declarator(parser, None) {
+        let declarator = match super::declarator::parse_declarator(transaction.parser, None) {
             Ok(declarator) => {
                 debug!(
                     "parse_declaration: parsed declarator, current token {:?}",
-                    parser.current_token_kind()
+                    transaction.parser.current_token_kind()
                 );
                 declarator
             }
             Err(e) => {
-                // If declarator parsing fails, roll back completely
-                parser.current_idx = initial_idx;
-                parser.diag.diagnostics.truncate(saved_diagnostic_count);
-                debug!(
-                    "parse_declaration: declarator parsing failed, rolled back to {}",
-                    initial_idx
-                );
                 return Err(e);
             }
         };
 
-        let _initializer_start_idx = parser.current_idx;
-        let initializer = if parser.matches(&[TokenKind::Assign]) {
-            parser.advance(); // consume '='
+        let _initializer_start_idx = transaction.parser.current_idx;
+        let initializer = if transaction.parser.matches(&[TokenKind::Assign]) {
+            transaction.parser.advance(); // consume '='
             debug!(
                 "parse_declaration: found '=', parsing initializer at position {}",
-                parser.current_idx
+                transaction.parser.current_idx
             );
-            match super::declaration_core::parse_initializer(parser) {
+            match super::declaration_core::parse_initializer(transaction.parser) {
                 Ok(initializer) => {
                     debug!(
                         "parse_declaration: parsed initializer, now at position {} with token {:?}",
-                        parser.current_idx,
-                        parser.current_token_kind()
+                        transaction.parser.current_idx,
+                        transaction.parser.current_token_kind()
                     );
                     Some(initializer)
                 }
                 Err(e) => {
-                    // If initializer parsing fails, roll back completely
-                    parser.current_idx = initial_idx;
-                    parser.diag.diagnostics.truncate(saved_diagnostic_count);
-                    debug!(
-                        "parse_declaration: initializer parsing failed, rolled back to {}",
-                        initial_idx
-                    );
                     return Err(e);
                 }
             }
@@ -248,33 +202,26 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
             initializer,
         });
 
-        if !parser.matches(&[TokenKind::Comma]) {
+        if !transaction.parser.matches(&[TokenKind::Comma]) {
             break;
         }
-        parser.advance(); // consume comma
+        transaction.parser.advance(); // consume comma
     }
 
     // Check for semicolon at current position
     debug!(
         "parse_declaration: expecting semicolon, current token {:?}",
-        parser.current_token_kind()
+        transaction.parser.current_token_kind()
     );
-    let semicolon_token = if parser.matches(&[TokenKind::Semicolon]) {
-        parser.advance().ok_or_else(|| ParseError::SyntaxError {
+    let semicolon_token = if transaction.parser.matches(&[TokenKind::Semicolon]) {
+        transaction.parser.advance().ok_or_else(|| ParseError::SyntaxError {
             message: "Unexpected end of input".to_string(),
             location: SourceSpan::empty(),
         })?
     } else {
-        // If semicolon is missing, roll back completely
-        parser.current_idx = initial_idx;
-        parser.diag.diagnostics.truncate(saved_diagnostic_count);
-        debug!(
-            "parse_declaration: missing semicolon, rolled back to {}",
-            initial_idx
-        );
         return Err(ParseError::SyntaxError {
             message: "Expected ';' after declaration".to_string(),
-            location: parser.current_token()?.location,
+            location: transaction.parser.current_token()?.location,
         });
     };
 
@@ -287,11 +234,11 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         if specifier.storage_class == Some(StorageClass::Typedef) {
             debug!("Found Typedef specifier, adding typedef names");
             for init_declarator in &init_declarators {
-                let name = parser.get_declarator_name(&init_declarator.declarator);
+                let name = transaction.parser.get_declarator_name(&init_declarator.declarator);
                 debug!("get_declarator_name returned: {:?}", name);
                 if let Some(name) = name {
                     debug!("Adding typedef name: {:?}", name);
-                    parser.add_typedef(name);
+                    transaction.parser.add_typedef(name);
                 }
             }
         }
@@ -302,13 +249,15 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         init_declarators,
     };
 
-    let node = parser
+    let node = transaction
+        .parser
         .ast
         .push_node(Node::new(NodeKind::Declaration(declaration_data), span));
     debug!(
         "parse_declaration: successfully parsed declaration, node_id={}",
         node.get()
     );
+    transaction.commit();
     Ok(node)
 }
 
@@ -528,16 +477,8 @@ pub fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<No
     let start_span = start_token.location.start;
     parser.expect(TokenKind::LeftParen)?;
 
-    let condition_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN)?;
-    let condition = match condition_result {
-        super::ParseExprOutput::Expression(node) => node,
-        _ => {
-            return Err(ParseError::SyntaxError {
-                message: "Expected expression in _Static_assert condition".to_string(),
-                location: parser.current_token().unwrap().location,
-            });
-        }
-    };
+    let condition_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN);
+    let condition = super::utils::unwrap_expr_result(parser, condition_result, "expression in _Static_assert condition")?;
 
     parser.expect(TokenKind::Comma)?;
 

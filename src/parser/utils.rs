@@ -10,7 +10,7 @@ use crate::source_manager::{SourceLoc, SourceSpan};
 use crate::lexer::Token;
 use log::debug;
 
-use super::{Parser, ParseExprOutput};
+use super::{Parser, ParseExprOutput, ParserState};
 use super::expressions::BindingPower;
 
 /// Result of parsing an expression with binding power
@@ -322,6 +322,52 @@ pub mod ast_iterators {
     impl AstIteratorExt for Ast {
         fn iter_subtree(&self, root: NodeRef) -> AstIterator<'_> {
             AstIterator::new(self, root)
+        }
+    }
+}
+
+pub struct ParserTransaction<'a, 'arena, 'src> {
+    pub parser: &'a mut Parser<'arena, 'src>,
+    state: ParserState,
+    committed: bool,
+}
+
+impl<'a, 'arena, 'src> ParserTransaction<'a, 'arena, 'src> {
+    pub fn new(parser: &'a mut Parser<'arena, 'src>) -> Self {
+        let state = parser.save_state();
+        Self {
+            parser,
+            state,
+            committed: false,
+        }
+    }
+
+    pub fn commit(mut self) {
+        self.committed = true;
+    }
+
+    pub fn rollback(self) {
+        // This is implicitly handled by Drop, but can be called for clarity
+    }
+}
+
+impl<'a, 'arena, 'src> Drop for ParserTransaction<'a, 'arena, 'src> {
+    fn drop(&mut self) {
+        if !self.committed {
+            self.parser.restore_state(self.state.clone());
+        }
+    }
+}
+
+pub fn unwrap_expr_result(parser: &mut Parser, result: Result<ParseExprOutput, ParseError>, context: &str) -> Result<NodeRef, ParseError> {
+    match result? {
+        ParseExprOutput::Expression(node) => Ok(node),
+        _ => {
+            let location = parser.current_token().map(|t| t.location).unwrap_or(SourceSpan::empty());
+            Err(ParseError::SyntaxError {
+                message: format!("Expected {}", context),
+                location,
+            })
         }
     }
 }

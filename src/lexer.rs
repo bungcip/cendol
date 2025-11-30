@@ -346,9 +346,7 @@ impl<'src> Lexer<'src> {
         // Check for suffixes in order of length (longest first)
         if lower_text.ends_with("ull") || lower_text.ends_with("llu") {
             &text[..text.len() - 3]
-        } else if lower_text.ends_with("ul") || lower_text.ends_with("lu") {
-            &text[..text.len() - 2]
-        } else if lower_text.ends_with("ll") {
+        } else if lower_text.ends_with("ul") || lower_text.ends_with("lu") || lower_text.ends_with("ll") {
             &text[..text.len() - 2]
         } else if lower_text.ends_with('u') || lower_text.ends_with('l') {
             &text[..text.len() - 1]

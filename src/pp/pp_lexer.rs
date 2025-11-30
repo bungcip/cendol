@@ -65,10 +65,10 @@ pub enum PPTokenKind {
     Hash,
     HashHash, // # ##
     // Literals and identifiers
-    Identifier(Symbol),    // Interned identifier
-    StringLiteral(Symbol), // Interned string literal
+    Identifier(Symbol),      // Interned identifier
+    StringLiteral(Symbol),   // Interned string literal
     CharLiteral(u8, Symbol), // byte char value and raw text
-    Number(Symbol),        // Raw numeric literal text for parser
+    Number(Symbol),          // Raw numeric literal text for parser
     // Special
     Eof,
     Unknown,
@@ -193,7 +193,7 @@ pub struct PPLexer {
     put_back_token: Option<PPToken>,
     pub line_offset: u32,
     pub filename_override: Option<String>,
-    pub in_directive: bool, // Whether we are lexing a directive name
+    pub in_directive: bool,  // Whether we are lexing a directive name
     pub in_expression: bool, // Whether we are lexing a preprocessor expression
 }
 
@@ -225,12 +225,14 @@ impl PPLexer {
         self.position += 1;
 
         // Handle line splicing: backslash followed by newline or carriage return
-        if result == b'\\'
-            && (self.position as usize) < self.buffer.len() {
+        if result == b'\\' && (self.position as usize) < self.buffer.len() {
             let next = self.buffer[self.position as usize];
             if next == b'\n' || next == b'\r' {
                 self.position += 1;
-                if next == b'\r' && (self.position as usize) < self.buffer.len() && self.buffer[self.position as usize] == b'\n' {
+                if next == b'\r'
+                    && (self.position as usize) < self.buffer.len()
+                    && self.buffer[self.position as usize] == b'\n'
+                {
                     self.position += 1;
                 }
                 // Update line starts - remove the newline from line tracking
@@ -282,7 +284,11 @@ impl PPLexer {
             return None;
         }
 
-        let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+        let flags = if had_leading_space {
+            PPTokenFlags::LEADING_SPACE
+        } else {
+            PPTokenFlags::empty()
+        };
 
         let start_pos = self.position;
         let ch = self.next_char().unwrap_or(b' ');
@@ -326,7 +332,11 @@ impl PPLexer {
                 }
             }
             b'+' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'+') {
                     self.next_char();
@@ -354,7 +364,11 @@ impl PPLexer {
                 }
             }
             b'-' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'-') {
                     self.next_char();
@@ -390,7 +404,11 @@ impl PPLexer {
                 }
             }
             b'*' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'=') {
                     self.next_char();
@@ -410,7 +428,11 @@ impl PPLexer {
                 }
             }
             b'/' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'=') {
                     self.next_char();
@@ -430,7 +452,11 @@ impl PPLexer {
                 }
             }
             b'%' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'=') {
                     self.next_char();
@@ -450,7 +476,11 @@ impl PPLexer {
                 }
             }
             b'=' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'=') {
                     self.next_char();
@@ -470,7 +500,11 @@ impl PPLexer {
                 }
             }
             b'!' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'=') {
                     self.next_char();
@@ -490,7 +524,11 @@ impl PPLexer {
                 }
             }
             b'<' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'<') {
                     self.next_char();
@@ -529,7 +567,11 @@ impl PPLexer {
                 }
             }
             b'>' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'>') {
                     self.next_char();
@@ -568,7 +610,11 @@ impl PPLexer {
                 }
             }
             b'&' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'&') {
                     self.next_char();
@@ -596,7 +642,11 @@ impl PPLexer {
                 }
             }
             b'|' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'|') {
                     self.next_char();
@@ -624,7 +674,11 @@ impl PPLexer {
                 }
             }
             b'^' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 let next_ch = self.peek_char();
                 if next_ch == Some(b'=') {
                     self.next_char();
@@ -644,16 +698,24 @@ impl PPLexer {
                 }
             }
             b'~' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 Some(PPToken::new(
                     PPTokenKind::Tilde,
                     flags,
                     SourceLoc::new(self.source_id, start_pos),
                     1,
                 ))
-            },
+            }
             b'.' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 let next_ch = self.peek_char();
                 let next_next_ch = self.peek_char();
                 if next_ch == Some(b'.') && next_next_ch == Some(b'.') {
@@ -675,104 +737,148 @@ impl PPLexer {
                 }
             }
             b'?' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 Some(PPToken::new(
                     PPTokenKind::Question,
                     flags,
                     SourceLoc::new(self.source_id, start_pos),
                     1,
                 ))
-            },
+            }
             b':' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 Some(PPToken::new(
                     PPTokenKind::Colon,
                     flags,
                     SourceLoc::new(self.source_id, start_pos),
                     1,
                 ))
-            },
+            }
             b',' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 Some(PPToken::new(
                     PPTokenKind::Comma,
                     flags,
                     SourceLoc::new(self.source_id, start_pos),
                     1,
                 ))
-            },
+            }
             b';' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 Some(PPToken::new(
                     PPTokenKind::Semicolon,
                     flags,
                     SourceLoc::new(self.source_id, start_pos),
                     1,
                 ))
-            },
+            }
             b'(' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 Some(PPToken::new(
                     PPTokenKind::LeftParen,
                     flags,
                     SourceLoc::new(self.source_id, start_pos),
                     1,
                 ))
-            },
+            }
             b')' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 Some(PPToken::new(
                     PPTokenKind::RightParen,
                     flags,
                     SourceLoc::new(self.source_id, start_pos),
                     1,
                 ))
-            },
+            }
             b'[' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 Some(PPToken::new(
                     PPTokenKind::LeftBracket,
                     flags,
                     SourceLoc::new(self.source_id, start_pos),
                     1,
                 ))
-            },
+            }
             b']' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 Some(PPToken::new(
                     PPTokenKind::RightBracket,
                     flags,
                     SourceLoc::new(self.source_id, start_pos),
                     1,
                 ))
-            },
+            }
             b'{' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 Some(PPToken::new(
                     PPTokenKind::LeftBrace,
                     flags,
                     SourceLoc::new(self.source_id, start_pos),
                     1,
                 ))
-            },
+            }
             b'}' => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 Some(PPToken::new(
                     PPTokenKind::RightBrace,
                     flags,
                     SourceLoc::new(self.source_id, start_pos),
                     1,
                 ))
-            },
+            }
             _ => {
-                let flags = if had_leading_space { PPTokenFlags::LEADING_SPACE } else { PPTokenFlags::empty() };
+                let flags = if had_leading_space {
+                    PPTokenFlags::LEADING_SPACE
+                } else {
+                    PPTokenFlags::empty()
+                };
                 Some(PPToken::new(
                     PPTokenKind::Unknown,
                     flags,
                     SourceLoc::new(self.source_id, start_pos),
                     1,
                 ))
-            },
+            }
         }
     }
 
@@ -809,11 +915,9 @@ impl PPLexer {
             } else if ch1 == Some(b'/') && ch2 == Some(b'*') {
                 // Block comment, skip to */
                 while let Some(ch) = self.next_char() {
-                    if ch == b'*' {
-                        if self.peek_char() == Some(b'/') {
-                            self.next_char(); // consume '/'
-                            break;
-                        }
+                    if ch == b'*' && self.peek_char() == Some(b'/') {
+                        self.next_char(); // consume '/'
+                        break;
                     }
                 }
                 // Continue loop
@@ -842,7 +946,12 @@ impl PPLexer {
         let symbol = Symbol::new(&text);
         let kind = PPTokenKind::Identifier(symbol);
 
-        PPToken::text(kind, flags, SourceLoc::new(self.source_id, start_pos), &text)
+        PPToken::text(
+            kind,
+            flags,
+            SourceLoc::new(self.source_id, start_pos),
+            &text,
+        )
     }
 
     fn lex_number(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
@@ -945,13 +1054,13 @@ impl PPLexer {
         } else if content_len == 2 && chars[content_start] == b'\\' {
             // Handle escape sequences
             match chars[content_start + 1] {
-                b'0' => 0,   // null
-                b'n' => 10,  // newline
-                b't' => 9,   // tab
-                b'r' => 13,  // carriage return
-                b'\\' => 92, // backslash
-                b'\'' => 39, // single quote
-                b'"' => 34,  // double quote
+                b'0' => 0,                     // null
+                b'n' => 10,                    // newline
+                b't' => 9,                     // tab
+                b'r' => 13,                    // carriage return
+                b'\\' => 92,                   // backslash
+                b'\'' => 39,                   // single quote
+                b'"' => 34,                    // double quote
                 _ => chars[content_start + 1], // fallback to the escaped char
             }
         } else {

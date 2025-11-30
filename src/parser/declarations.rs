@@ -285,8 +285,12 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     // Track typedef names for disambiguation
     for specifier in &specifiers {
         if specifier.storage_class == Some(StorageClass::Typedef) {
+            debug!("Found Typedef specifier, adding typedef names");
             for init_declarator in &init_declarators {
-                if let Some(name) = parser.get_declarator_name(&init_declarator.declarator) {
+                let name = parser.get_declarator_name(&init_declarator.declarator);
+                debug!("get_declarator_name returned: {:?}", name);
+                if let Some(name) = name {
+                    debug!("Adding typedef name: {:?}", name);
                     parser.add_typedef(name);
                 }
             }

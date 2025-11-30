@@ -19,11 +19,7 @@ fn setup_preprocessor_test_with_diagnostics(
 
     let mut source_manager = SourceManager::new();
     let mut diagnostics = DiagnosticEngine::new();
-    let lang_options = LangOptions {
-        c11: true,
-        gnu_mode: false,
-        ms_extensions: false,
-    };
+    let lang_options = LangOptions::c11();
     let target_info = Triple::host();
     let config = PPConfig {
         max_include_depth: 100,

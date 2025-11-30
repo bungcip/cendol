@@ -8,6 +8,7 @@ use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, ParseError};
 use crate::lexer::{Token, TokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
+use log::debug;
 use std::collections::HashSet;
 use symbol_table::GlobalSymbol as Symbol;
 
@@ -61,7 +62,9 @@ impl TypeContext {
 
     /// Check if a symbol is a typedef name
     pub fn is_type_name(&self, symbol: Symbol) -> bool {
-        self.typedef_names.contains(&symbol)
+        let result = self.typedef_names.contains(&symbol);
+        debug!("is_type_name({:?}) = {}", symbol, result);
+        result
     }
 
     /// Add a typedef name
@@ -520,6 +523,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Add a typedef name to the type context
     pub fn add_typedef(&mut self, symbol: Symbol) {
+        debug!("add_typedef: adding {:?} to typedef_names", symbol);
         self.type_context.add_typedef(symbol);
     }
 }

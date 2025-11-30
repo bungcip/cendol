@@ -831,3 +831,16 @@ fn test_function_with_array_abstract_declarator() {
           kind: function(int array) -> int
     ");
 }
+
+#[test]
+fn test_complex_abstract_declarator_function() {
+    let resolved = parse_declaration("int f5(int (*fp)(int));");
+    insta::assert_yaml_snapshot!(&resolved, @r#"
+    Declaration:
+      specifiers:
+        - int
+      init_declarators:
+        - name: f5
+          kind: function(int function(int) -> pointer) -> int
+    "#);
+}

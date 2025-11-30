@@ -59,11 +59,7 @@ impl CompilerDriver {
     /// Compile a single file through the full pipeline
     fn compile_file(&mut self, source_path: &Path) -> Result<(), CompilerError> {
         log::debug!("Starting compilation of file: {}", source_path.display());
-        let lang_options = LangOptions {
-            c11: true,
-            gnu_mode: false,
-            ms_extensions: false,
-        };
+        let lang_options = LangOptions::c11();
         let target_triple = Triple::host();
 
         // 1. Load source file through SourceManager

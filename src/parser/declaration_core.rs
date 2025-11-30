@@ -39,7 +39,10 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
             | TokenKind::Register
             | TokenKind::ThreadLocal => {
                 let storage_class = match token.kind {
-                    TokenKind::Typedef => StorageClass::Typedef,
+                    TokenKind::Typedef => {
+                        debug!("Found Typedef token, setting storage_class Typedef");
+                        StorageClass::Typedef
+                    }
                     TokenKind::Extern => StorageClass::Extern,
                     TokenKind::Static => StorageClass::Static,
                     TokenKind::Auto => StorageClass::Auto,
@@ -133,7 +136,12 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                     "parse_declaration_specifiers: found identifier {:?}, calling is_type_name, current position: {}",
                     symbol, parser.current_idx
                 );
-                if parser.is_type_name(symbol) && !has_type_specifier {
+                let is_type = parser.is_type_name(symbol);
+                debug!(
+                    "parse_declaration_specifiers: is_type_name({:?}) = {}, has_type_specifier = {}",
+                    symbol, is_type, has_type_specifier
+                );
+                if is_type && !has_type_specifier {
                     debug!(
                         "parse_declaration_specifiers: {:?} is a type name and no type specifier yet, parsing type specifier",
                         symbol

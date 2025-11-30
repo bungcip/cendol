@@ -136,7 +136,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
             TokenKind::Alignas => {
                 parser.advance(); // consume _Alignas
                 let alignment = if parser.accept(TokenKind::LeftParen).is_some() {
-                    if parser.matches(&[TokenKind::Identifier(symbol_table::GlobalSymbol::new(""))]) {
+                    if parser.is_token(TokenKind::Identifier(symbol_table::GlobalSymbol::new(""))) {
                         // _Alignas(type-name)
                         let type_ref = parse_type_name(parser)?;
                         parser.expect(TokenKind::RightParen)?;
@@ -197,7 +197,7 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<Initializer, Pars
         // Compound initializer
         let mut initializers = Vec::new();
 
-        while !parser.matches(&[TokenKind::RightBrace]) {
+        while !parser.is_token(TokenKind::RightBrace) {
             // Check if this is a designated initializer (starts with . or [)
             let is_designated = parser.matches(&[TokenKind::Dot, TokenKind::LeftBracket]);
 
@@ -206,7 +206,7 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<Initializer, Pars
                 parse_designated_initializer(parser)?
             } else {
                 // Parse regular initializer (expression or nested compound initializer)
-                let expr_or_compound = if parser.matches(&[TokenKind::LeftBrace]) {
+                let expr_or_compound = if parser.is_token(TokenKind::LeftBrace) {
                     // Nested compound initializer
                     parse_initializer(parser)?
                 } else {

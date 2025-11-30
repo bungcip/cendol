@@ -116,7 +116,7 @@ pub mod expr_patterns {
         debug!("parse_expr_list: parsing expression list");
         let mut args = Vec::new();
 
-        if parser.matches(&[crate::lexer::TokenKind::RightParen]) {
+        if parser.is_token(crate::lexer::TokenKind::RightParen) {
             return Ok(args);
         }
 
@@ -124,7 +124,7 @@ pub mod expr_patterns {
             let arg = parser.parse_expr_min()?;
             args.push(arg);
 
-            if !parser.matches(&[crate::lexer::TokenKind::Comma]) {
+            if !parser.is_token(crate::lexer::TokenKind::Comma) {
                 break;
             }
             parser.advance(); // consume comma
@@ -135,7 +135,7 @@ pub mod expr_patterns {
 
     /// Parse an optional expression (for cases like return statements)
     pub fn parse_optional_expr(parser: &mut Parser) -> Result<Option<NodeRef>, ParseError> {
-        if parser.matches(&[crate::lexer::TokenKind::Semicolon]) {
+        if parser.is_token(crate::lexer::TokenKind::Semicolon) {
             Ok(None)
         } else {
             let expr = parser.parse_expr_min()?;

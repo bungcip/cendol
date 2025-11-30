@@ -46,13 +46,13 @@ pub fn parse_enumerator_list(parser: &mut Parser) -> Result<Vec<NodeRef>, ParseE
         let enumerator = parse_enumerator(parser)?;
         enumerators.push(enumerator);
 
-        if !parser.matches(&[TokenKind::Comma]) {
+        if !parser.is_token(TokenKind::Comma) {
             break;
         }
         parser.advance(); // consume comma
 
         // Allow trailing comma
-        if parser.matches(&[TokenKind::RightBrace]) {
+        if parser.is_token(TokenKind::RightBrace) {
             break;
         }
     }

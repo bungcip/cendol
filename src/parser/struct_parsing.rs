@@ -49,7 +49,7 @@ pub fn parse_record_specifier_with_context(
 pub fn parse_struct_declaration_list(parser: &mut Parser) -> Result<Vec<DeclarationData>, ParseError> {
     let mut declarations = Vec::new();
 
-    while !parser.matches(&[TokenKind::RightBrace]) {
+    while !parser.is_token(TokenKind::RightBrace) {
         let declaration = parse_struct_declaration(parser)?;
         declarations.push(declaration);
     }
@@ -65,7 +65,7 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
     if is_struct || is_union {
 
         // Check if this is an anonymous struct
-        if parser.matches(&[TokenKind::LeftBrace]) {
+        if parser.is_token(TokenKind::LeftBrace) {
             // Anonymous struct definition
             parser.expect(TokenKind::LeftBrace)?;
             let members = parse_struct_declaration_list(parser)?;
@@ -74,7 +74,7 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
             // After parsing { members }, check the next token
             // If the next token is ';', treat it as an anonymous struct member (no declarator needed)
             // If the next token is an identifier or declarator start, continue with variable declaration parsing
-            let init_declarators = if parser.matches(&[TokenKind::Semicolon]) {
+            let init_declarators = if parser.is_token(TokenKind::Semicolon) {
                 // Anonymous struct member: struct { members };
                 parser.expect(TokenKind::Semicolon)?;
                 ThinVec::new()
@@ -121,14 +121,14 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
             };
 
             // Check if it's defined inline
-            if parser.matches(&[TokenKind::LeftBrace]) {
+            if parser.is_token(TokenKind::LeftBrace) {
                 // Named struct with definition
                 parser.expect(TokenKind::LeftBrace)?;
                 let members = parse_struct_declaration_list(parser)?;
                 parser.expect(TokenKind::RightBrace)?;
 
                 // After parsing { members }, check the next token
-                let init_declarators = if parser.matches(&[TokenKind::Semicolon]) {
+                let init_declarators = if parser.is_token(TokenKind::Semicolon) {
                     // Named struct definition: struct tag { members };
                     parser.expect(TokenKind::Semicolon)?;
                     ThinVec::new()

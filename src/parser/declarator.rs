@@ -148,7 +148,7 @@ fn parse_array_size(parser: &mut Parser) -> Result<ArraySize, ParseError> {
 
     if parser.accept(TokenKind::Star).is_some() {
         Ok(ArraySize::Star { qualifiers })
-    } else if parser.matches(&[TokenKind::RightBracket]) {
+    } else if parser.is_token(TokenKind::RightBracket) {
         // Empty []
         Ok(ArraySize::Incomplete)
     } else {
@@ -174,7 +174,7 @@ fn parse_array_size(parser: &mut Parser) -> Result<ArraySize, ParseError> {
 fn parse_function_parameters(parser: &mut Parser) -> Result<ThinVec<ParamData>, ParseError> {
     let mut params = ThinVec::new();
 
-    if !parser.matches(&[TokenKind::RightParen]) {
+    if !parser.is_token(TokenKind::RightParen) {
         if parser.accept(TokenKind::Void).is_some() {
             // void parameter list
         } else {
@@ -230,9 +230,9 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<ThinVec<ParamData>, 
                 };
 
                 // Try to parse declarator, but be more careful about failures
-                let declarator = if !parser.matches(&[TokenKind::Comma])
-                    && !parser.matches(&[TokenKind::RightParen])
-                    && !parser.matches(&[TokenKind::Ellipsis])
+                let declarator = if !parser.is_token(TokenKind::Comma)
+                    && !parser.is_token(TokenKind::RightParen)
+                    && !parser.is_token(TokenKind::Ellipsis)
                 {
                     // Special handling for abstract declarators in parameter context
                     if parser.matches(&[TokenKind::LeftParen]) {
@@ -312,7 +312,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<ThinVec<ParamData>, 
                 debug!("parse_function_parameters: found comma, continuing to next parameter");
 
                 // After consuming comma, verify we're in a good state to continue
-                if parser.matches(&[TokenKind::RightParen]) {
+                if parser.is_token(TokenKind::RightParen) {
                     debug!("parse_function_parameters: found unexpected right paren after comma, breaking");
                     break;
                 }

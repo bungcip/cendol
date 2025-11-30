@@ -104,7 +104,7 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     }
 
     // For all other cases, check if we have declarators
-    let has_declarators = if transaction.parser.matches(&[TokenKind::Semicolon]) {
+    let has_declarators = if transaction.parser.is_token(TokenKind::Semicolon) {
         // Definitely no declarators
         false
     } else {
@@ -205,7 +205,7 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
             initializer,
         });
 
-        if !transaction.parser.matches(&[TokenKind::Comma]) {
+        if !transaction.parser.is_token(TokenKind::Comma) {
             break;
         }
         transaction.parser.advance(); // consume comma

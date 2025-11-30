@@ -59,7 +59,7 @@ pub fn parse_compound_statement(parser: &mut Parser) -> Result<(NodeRef, SourceL
 
     let mut block_items = Vec::new();
 
-    while !parser.matches(&[TokenKind::RightBrace]) {
+    while !parser.is_token(TokenKind::RightBrace) {
         let initial_idx = parser.current_idx;
 
         debug!(
@@ -260,7 +260,7 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     debug!("parse_for_statement: parsing initialization");
 
     // Parse initialization
-    let init = if parser.matches(&[TokenKind::Semicolon]) {
+    let init = if parser.is_token(TokenKind::Semicolon) {
         None
     } else if super::declarations::is_declaration_start(parser) {
         debug!("parse_for_statement: parsing declaration in init");
@@ -308,7 +308,7 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     debug!("parse_for_statement: parsing condition");
 
     // Parse condition
-    let condition = if parser.matches(&[TokenKind::Semicolon]) {
+    let condition = if parser.is_token(TokenKind::Semicolon) {
         None
     } else {
         let expr_result = parse_expression(parser, BindingPower::MIN);
@@ -320,7 +320,7 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     debug!("parse_for_statement: parsing increment");
 
     // Parse increment
-    let increment = if parser.matches(&[TokenKind::RightParen]) {
+    let increment = if parser.is_token(TokenKind::RightParen) {
         None
     } else {
         let expr_result = parse_expression(parser, BindingPower::MIN);
@@ -411,7 +411,7 @@ fn parse_return_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let _return_token = parser.expect(TokenKind::Return)?;
     debug!("parse_return_statement: parsing return expression");
 
-    let value = if parser.matches(&[TokenKind::Semicolon]) {
+    let value = if parser.is_token(TokenKind::Semicolon) {
         debug!("parse_return_statement: empty return");
         None
     } else {

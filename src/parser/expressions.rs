@@ -184,7 +184,7 @@ pub(crate) fn parse_prefix(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         }
         TokenKind::FloatConstant(text) => {
             parser.advance();
-            let value = parser.parse_c11_float_literal(text)?;
+            let value = parser.parse_c11_float_literal(text, token.location)?;
             let node = parser
                 .ast
                 .push_node(Node::new(NodeKind::LiteralFloat(value), token.location));
@@ -215,7 +215,7 @@ pub(crate) fn parse_prefix(parser: &mut Parser) -> Result<NodeRef, ParseError> {
                 parser.expect(TokenKind::RightParen)?;
 
                 // Check if this is a compound literal (next token is '{')
-                if parser.matches(&[TokenKind::LeftBrace]) {
+                if parser.is_token(TokenKind::LeftBrace) {
                     // This is a compound literal: (type-name){initializer}
                     parser.parse_compound_literal_from_type_and_start(type_ref, left_paren_token.location.start)
                 } else {
@@ -463,7 +463,7 @@ fn parse_index_access(parser: &mut Parser, array: NodeRef) -> Result<NodeRef, Pa
     // we need to handle the case where RightBracket is the current token.
     // This means we have an empty index [].
 
-    let index_node = if parser.matches(&[TokenKind::RightBracket]) {
+    let index_node = if parser.is_token(TokenKind::RightBracket) {
         debug!("parse_index_access: empty array index []");
         // Create a placeholder for empty index
         parser.ast.push_node(Node::new(
@@ -579,7 +579,7 @@ pub fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, ParseErro
 
         associations.push(GenericAssociation { type_name, result_expr });
 
-        if !parser.matches(&[TokenKind::Comma]) {
+        if !parser.is_token(TokenKind::Comma) {
             break;
         }
         parser.advance(); // consume comma

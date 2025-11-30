@@ -212,6 +212,11 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         self.current_token_kind().map(|k| kinds.contains(&k)).unwrap_or(false)
     }
 
+    /// Check if current token matches the given kind
+    fn is_token(&self, kind: TokenKind) -> bool {
+        self.current_token_kind() == Some(kind)
+    }
+
     /// Skip tokens until we find a synchronization point
     fn synchronize(&mut self) {
         let mut brace_depth = 0;
@@ -272,9 +277,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Parse C11 floating-point literal syntax
-    fn parse_c11_float_literal(&self, text: Symbol) -> Result<f64, ParseError> {
+    fn parse_c11_float_literal(&self, text: Symbol, location: SourceSpan) -> Result<f64, ParseError> {
         let text_str = text.as_str();
-        let token = self.try_current_token().unwrap();
 
         // C11 floating-point literal format:
         // [digits][.digits][e|E[+|-]digits][f|F|l|L]
@@ -292,14 +296,14 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
         // Handle hexadecimal floating-point literals (C99/C11)
         if text_str.starts_with("0x") || text_str.starts_with("0X") {
-            self.parse_hex_float_literal(text_without_suffix, token.location)
+            self.parse_hex_float_literal(text_without_suffix, location)
         } else {
             // Use Rust's built-in parsing for decimal floats
             match text_without_suffix.parse::<f64>() {
                 Ok(val) => Ok(val),
                 Err(_) => Err(ParseError::SyntaxError {
                     message: format!("Invalid floating-point constant: {}", text_str),
-                    location: token.location,
+                    location,
                 }),
             }
         }

@@ -151,8 +151,7 @@ fn parse_if_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     let then_branch = parse_statement(parser)?;
 
-    let else_branch = if parser.matches(&[TokenKind::Else]) {
-        parser.advance(); // consume 'else'
+    let else_branch = if parser.accept(TokenKind::Else).is_some() {
         Some(parse_statement(parser)?)
     } else {
         None
@@ -274,8 +273,7 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         // Parse declarator
         let declarator = super::declarator::parse_declarator(parser, None)?;
         // Parse initializer if present
-        let initializer = if parser.matches(&[TokenKind::Assign]) {
-            parser.advance(); // consume '='
+        let initializer = if parser.accept(TokenKind::Assign).is_some() {
             Some(super::declaration_core::parse_initializer(parser)?)
         } else {
             None
@@ -462,8 +460,7 @@ fn parse_case_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let start_expr = super::utils::unwrap_expr_result(parser, start_expr_result, "constant expression in case")?;
 
     // Check for GNU case range extension: case 1 ... 10:
-    let (end_expr, is_range) = if parser.matches(&[TokenKind::Ellipsis]) {
-        parser.advance(); // consume '...'
+    let (end_expr, is_range) = if parser.accept(TokenKind::Ellipsis).is_some() {
         let end_expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN);
         let end_expr = super::utils::unwrap_expr_result(parser, end_expr_result, "constant expression after '...' in case range")?;
         (Some(end_expr), true)

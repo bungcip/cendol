@@ -167,8 +167,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
             // Alignment specifier
             TokenKind::Alignas => {
                 parser.advance(); // consume _Alignas
-                let alignment = if parser.matches(&[TokenKind::LeftParen]) {
-                    parser.advance(); // consume '('
+                let alignment = if parser.accept(TokenKind::LeftParen).is_some() {
                     if parser.matches(&[TokenKind::Identifier(symbol_table::GlobalSymbol::new(""))]) {
                         // _Alignas(type-name)
                         let type_ref = parse_type_name(parser)?;
@@ -231,10 +230,9 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<Initializer, Pars
         parser.current_idx,
         parser.current_token_kind()
     );
-    if parser.matches(&[TokenKind::LeftBrace]) {
+    if parser.accept(TokenKind::LeftBrace).is_some() {
         debug!("parse_initializer: found LeftBrace, parsing compound initializer");
         // Compound initializer
-        parser.advance(); // consume '{'
         let mut initializers = Vec::new();
 
         while !parser.matches(&[TokenKind::RightBrace]) {
@@ -307,8 +305,7 @@ fn parse_designation(parser: &mut Parser) -> Result<Vec<Designator>, ParseError>
     let mut designators = Vec::new();
 
     while parser.matches(&[TokenKind::Dot]) || parser.matches(&[TokenKind::LeftBracket]) {
-        if parser.matches(&[TokenKind::Dot]) {
-            parser.advance(); // consume '.'
+        if parser.accept(TokenKind::Dot).is_some() {
             let token = parser
                 .try_current_token()
                 .ok_or_else(|| ParseError::SyntaxError {
@@ -332,8 +329,7 @@ fn parse_designation(parser: &mut Parser) -> Result<Vec<Designator>, ParseError>
                 location: SourceSpan::empty(),
             })?;
             designators.push(Designator::FieldName(field_name));
-        } else if parser.matches(&[TokenKind::LeftBracket]) {
-            parser.advance(); // consume '['
+        } else if parser.accept(TokenKind::LeftBracket).is_some() {
             let expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN)?;
             let index_expr = match expr_result {
                 super::ParseExprOutput::Expression(node) => node,

@@ -31,17 +31,15 @@ pub fn parse_declarator(
     let mut _current_qualifiers = TypeQualifiers::empty();
 
     // Parse leading pointers and their qualifiers
-    while parser.matches(&[TokenKind::Star]) {
-        parser.advance(); // Consume '*'
+    while parser.accept(TokenKind::Star).is_some() {
         _current_qualifiers = parse_type_qualifiers(parser)?;
         declarator_chain.push(DeclaratorComponent::Pointer(_current_qualifiers));
         _current_qualifiers = TypeQualifiers::empty(); // Reset for next component
     }
 
     // Parse direct declarator (identifier or parenthesized declarator)
-    let base_declarator = if parser.matches(&[TokenKind::LeftParen]) {
+    let base_declarator = if parser.accept(TokenKind::LeftParen).is_some() {
         debug!("parse_declarator: found LeftParen, parsing parenthesized declarator");
-        parser.advance(); // Consume '('
         let inner_declarator = parse_declarator(parser, None)?;
         debug!("parse_declarator: consumed RightParen, current token: {:?}", parser.current_token_kind());
         parser.expect(TokenKind::RightParen)?; // Consume ')'
@@ -78,16 +76,13 @@ pub fn parse_declarator(
     // Parse trailing array and function declarators
     let mut current_base = base_declarator;
     loop {
-        if parser.matches(&[TokenKind::LeftBracket]) {
+        if parser.accept(TokenKind::LeftBracket).is_some() {
             // Array declarator
-            parser.advance(); // Consume '['
             let array_size = parse_array_size(parser)?;
             parser.expect(TokenKind::RightBracket)?; // Consume ']'
             current_base = Declarator::Array(Box::new(current_base), array_size);
-        } else if parser.matches(&[TokenKind::LeftParen]) {
+        } else if parser.accept(TokenKind::LeftParen).is_some() {
             // Function declarator
-            debug!("parse_abstract_declarator: found function declarator at position {}, token: {:?}", parser.current_idx, parser.current_token_kind());
-            parser.advance(); // Consume '('
             let parameters = parse_function_parameters(parser)?;
             debug!("parse_abstract_declarator: parsed function parameters, count: {}", parameters.len());
             parser.expect(TokenKind::RightParen)?; // Consume ')'
@@ -142,8 +137,7 @@ fn parse_array_size(parser: &mut Parser) -> Result<ArraySize, ParseError> {
     let is_static = parser.accept(TokenKind::Static).is_some();
     let qualifiers = parse_type_qualifiers(parser)?;
 
-    if parser.matches(&[TokenKind::Star]) {
-        parser.advance();
+    if parser.accept(TokenKind::Star).is_some() {
         Ok(ArraySize::Star { qualifiers })
     } else if parser.matches(&[TokenKind::RightBracket]) {
         // Empty []
@@ -165,14 +159,12 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<ThinVec<ParamData>, 
     let mut params = ThinVec::new();
 
     if !parser.matches(&[TokenKind::RightParen]) {
-        if parser.matches(&[TokenKind::Void]) {
+        if parser.accept(TokenKind::Void).is_some() {
             // void parameter list
-            parser.advance();
         } else {
             loop {
-                if parser.matches(&[TokenKind::Ellipsis]) {
+                if parser.accept(TokenKind::Ellipsis).is_some() {
                     // Variadic function
-                    parser.advance();
                     break;
                 }
 
@@ -352,8 +344,7 @@ pub fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarator, Pars
     let mut _current_qualifiers = TypeQualifiers::empty();
 
     // Parse leading pointers and their qualifiers
-    while parser.matches(&[TokenKind::Star]) {
-        parser.advance(); // Consume '*'
+    while parser.accept(TokenKind::Star).is_some() {
         _current_qualifiers = parse_type_qualifiers(parser)?;
         declarator_chain.push(DeclaratorComponent::Pointer(_current_qualifiers));
         _current_qualifiers = TypeQualifiers::empty(); // Reset for next component
@@ -398,23 +389,21 @@ pub fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarator, Pars
             TokenKind::LeftParen => {
                 debug!("parse_abstract_declarator: found LeftParen, parsing parenthesized");
                 parser.advance(); // Consume '('
-                if parser.matches(&[TokenKind::RightParen]) {
+                if parser.accept(TokenKind::RightParen).is_some() {
                     // Empty parameter list: ()
-                    parser.advance(); // Consume ')'
                     Declarator::Function(Box::new(Declarator::Abstract), ThinVec::new())
                 } else {
                     let start_idx = parser.current_idx;
                     let inner_declarator = parse_abstract_declarator(parser)?;
                     debug!("parse_abstract_declarator: inner declarator parsed, current token: {:?}", parser.current_token_kind());
-                    if parser.matches(&[TokenKind::RightParen]) {
-                        parser.advance(); // Consume ')'
+                    if parser.accept(TokenKind::RightParen).is_some() {
                         inner_declarator
                     } else {
                         // Check if we're dealing with a function parameter syntax like "int (int)"
                         // In this case, the closing paren might be part of the parameter list context
                         debug!("parse_abstract_declarator: expected RightParen but found {:?}, position: {}", parser.current_token_kind(), parser.current_idx);
                         // Try to parse as function declarator if we see another LeftParen
-                        if parser.matches(&[TokenKind::LeftParen]) {
+                        if parser.accept(TokenKind::LeftParen).is_some() {
                             debug!("parse_abstract_declarator: found another LeftParen, treating as function declarator");
                             let parameters = parse_function_parameters(parser)?;
                             parser.expect(TokenKind::RightParen)?; // Consume ')'
@@ -458,16 +447,12 @@ pub fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarator, Pars
     // Parse trailing array and function declarators
     let mut current_base = base_declarator;
     loop {
-        if parser.matches(&[TokenKind::LeftBracket]) {
+        if parser.accept(TokenKind::LeftBracket).is_some() {
             // Array declarator
-            parser.advance(); // Consume '['
             let array_size = parse_array_size(parser)?;
             parser.expect(TokenKind::RightBracket)?; // Consume ']'
             current_base = Declarator::Array(Box::new(current_base), array_size);
-        } else if parser.matches(&[TokenKind::LeftParen]) {
-            // Function declarator
-            debug!("parse_abstract_declarator: found function declarator at position {}, token: {:?}", parser.current_idx, parser.current_token_kind());
-            parser.advance(); // Consume '('
+        } else if parser.accept(TokenKind::LeftParen).is_some() {
             let parameters = parse_function_parameters(parser)?;
             debug!("parse_abstract_declarator: parsed function parameters, count: {}", parameters.len());
             parser.expect(TokenKind::RightParen)?; // Consume ')'

@@ -85,8 +85,7 @@ pub fn parse_enumerator(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         location: SourceSpan::empty(),
     })?;
 
-    let value = if parser.matches(&[TokenKind::Assign]) {
-        parser.advance(); // consume '='
+    let value = if parser.accept(TokenKind::Assign).is_some() {
         let expr_result = super::expressions::parse_expression(parser, super::expressions::BindingPower::ASSIGNMENT);
         Some(super::utils::unwrap_expr_result(parser, expr_result, "expression for enumerator value")?)
     } else {

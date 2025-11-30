@@ -64,19 +64,17 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     // - If next token is semicolon: treat as record/enum declaration (definition or forward)
     // - If next token is declarator-starting token: continue with normal declaration parsing
     if is_record_enum_specifier {
-        if transaction.parser.matches(&[TokenKind::Semicolon]) {
+        if let Some(semi) = transaction.parser.accept(TokenKind::Semicolon) {
             // This is either:
             // 1. A pure struct/union/enum definition like "struct foo { ... };" or "enum E { ... };"
             // 2. A forward struct/union/enum declaration like "struct foo;" or "enum E;"
             // In both cases, consume the semicolon and create declaration with no declarators
-            transaction.parser.expect(TokenKind::Semicolon)?;
-
             let declaration_data = DeclarationData {
                 specifiers,
                 init_declarators: ThinVec::new(),
             };
 
-            let end_span = transaction.parser.current_token()?.location.end;
+            let end_span = semi.location.end;
             let span = SourceSpan::new(start_span, end_span);
 
             let node = transaction
@@ -174,8 +172,7 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         };
 
         let _initializer_start_idx = transaction.parser.current_idx;
-        let initializer = if transaction.parser.matches(&[TokenKind::Assign]) {
-            transaction.parser.advance(); // consume '='
+        let initializer = if transaction.parser.accept(TokenKind::Assign).is_some() {
             debug!(
                 "parse_declaration: found '=', parsing initializer at position {}",
                 transaction.parser.current_idx
@@ -213,11 +210,8 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         "parse_declaration: expecting semicolon, current token {:?}",
         transaction.parser.current_token_kind()
     );
-    let semicolon_token = if transaction.parser.matches(&[TokenKind::Semicolon]) {
-        transaction.parser.advance().ok_or_else(|| ParseError::SyntaxError {
-            message: "Unexpected end of input".to_string(),
-            location: SourceSpan::empty(),
-        })?
+    let semicolon_token = if let Some(token) = transaction.parser.accept(TokenKind::Semicolon) {
+        token
     } else {
         return Err(ParseError::SyntaxError {
             message: "Expected ';' after declaration".to_string(),

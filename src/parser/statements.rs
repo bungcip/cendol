@@ -331,31 +331,15 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
 /// Parse goto statement
 fn parse_goto_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
-    let start_span = parser.current_token()?.location.start;
-    parser.expect(TokenKind::Goto)?;
+    let start_token = parser.expect(TokenKind::Goto)?;
+    let start_span = start_token.location.start;
 
-    let token = parser.try_current_token().ok_or_else(|| ParseError::SyntaxError {
-        message: "Expected label name".to_string(),
-        location: SourceSpan::empty(),
-    })?;
+    let (label, _) = parser.expect_name()?;
 
-    let label = match token.kind {
-        TokenKind::Identifier(symbol) => symbol,
-        _ => {
-            return Err(ParseError::UnexpectedToken {
-                expected: vec![TokenKind::Identifier(Symbol::new(""))],
-                found: token.kind,
-                location: parser.current_token().unwrap().location,
-            });
-        }
-    };
-
-    parser.advance();
     let semicolon_token = parser.expect(TokenKind::Semicolon)?;
     let end_span = semicolon_token.location.end;
 
     let span = SourceSpan::new(start_span, end_span);
-
     let node = parser.push_node(NodeKind::Goto(label), span);
     Ok(node)
 }

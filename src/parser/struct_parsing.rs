@@ -109,16 +109,7 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
             })
         } else {
             // Named struct - read the tag first
-            let tag = if let Some(token) = parser.try_current_token() {
-                if let TokenKind::Identifier(symbol) = token.kind {
-                    parser.advance();
-                    Some(symbol)
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
+            let tag = parser.accept_name();
 
             // Check if it's defined inline
             if parser.is_token(TokenKind::LeftBrace) {

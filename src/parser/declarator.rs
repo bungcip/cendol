@@ -73,6 +73,7 @@ pub fn parse_declarator(parser: &mut Parser, initial_declarator: Option<Symbol>)
             if token.kind == TokenKind::RightParen {
                 break;
             }
+            debug!("parse_declarator: unexpected token {:?}, consuming", token.kind);
             parser.advance();
         }
         // For abstract declarator, if no token, it's abstract

@@ -469,26 +469,9 @@ fn parse_index_access(parser: &mut Parser, array: NodeRef) -> Result<NodeRef, Pa
 
 /// Parse member access
 fn parse_member_access(parser: &mut Parser, object: NodeRef, is_arrow: bool) -> Result<NodeRef, ParseError> {
-    let member_token = parser.try_current_token().ok_or_else(|| ParseError::SyntaxError {
-        message: "Expected member name".to_string(),
-        location: SourceSpan::empty(),
-    })?;
-
-    let member_symbol = match member_token.kind {
-        TokenKind::Identifier(symbol) => symbol,
-        _ => {
-            return Err(ParseError::UnexpectedToken {
-                expected: vec![TokenKind::Identifier(Symbol::new(""))],
-                found: member_token.kind,
-                location: member_token.location,
-            });
-        }
-    };
-
-    parser.advance();
-
-    let span = SourceSpan::new(parser.ast.get_node(object).span.start, member_token.location.end);
-    let node = parser.push_node(NodeKind::MemberAccess(object, member_symbol, is_arrow), span);
+    let (symbol, location) = parser.expect_name()?; 
+    let span = SourceSpan::new(parser.ast.get_node(object).span.start, location.end);
+    let node = parser.push_node(NodeKind::MemberAccess(object, symbol, is_arrow), span);
     Ok(node)
 }
 

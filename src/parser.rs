@@ -528,6 +528,32 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         expressions::parse_compound_literal_from_type_and_start(self, type_ref, start_loc)
     }
 
+    /// parse and accept an identifier name, returning the symbol
+    fn accept_name(&mut self) -> Option<Symbol> {
+        if let Some(token) = self.try_current_token()
+            && let TokenKind::Identifier(symbol) = token.kind
+        {
+            self.advance();
+            return Some(symbol);
+        }
+        None
+    }
+
+    /// expect and accept an identifier name, returning the symbol or error
+    fn expect_name(&mut self) -> Result<(Symbol, SourceSpan), ParseError> {
+        let token = self.current_token()?;
+        if let TokenKind::Identifier(symbol) = token.kind {
+            self.advance();
+            Ok((symbol, token.location))
+        } else {
+            Err(ParseError::UnexpectedToken {
+                expected: vec![TokenKind::Identifier(Symbol::new(""))],
+                found: token.kind,
+                location: token.location,
+            })
+        }
+    }
+
     /// Add a typedef name to the type context
     pub fn add_typedef(&mut self, symbol: Symbol) {
         debug!("add_typedef: adding {:?} to typedef_names", symbol);

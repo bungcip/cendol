@@ -7,6 +7,9 @@ pub mod cli;
 pub mod compiler;
 pub mod output;
 
+#[cfg(test)]
+mod tests_compiler;
+
 // Re-export public API
 pub use cli::Cli;
 pub use compiler::{CompilerDriver, CompilerError};

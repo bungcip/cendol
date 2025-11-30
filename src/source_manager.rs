@@ -216,6 +216,11 @@ impl SourceManager {
         Ok(self.add_buffer(buffer, path_str))
     }
 
+    /// Add a source file from a string
+    pub fn add_source_file(&mut self, source: String, path: String) -> SourceId {
+        self.add_buffer(source.into_bytes(), &path)
+    }
+
     /// Add a buffer to the source manager with raw bytes (UTF-8 assumed)
     pub fn add_buffer(&mut self, buffer: Vec<u8>, path: &str) -> SourceId {
         let file_id = SourceId::new(self.next_file_id);

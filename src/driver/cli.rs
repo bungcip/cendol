@@ -63,7 +63,7 @@ pub struct PreprocessorOptions {
 }
 
 /// Configuration for compilation
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct CompileConfig {
     pub input_files: Vec<PathBuf>,
     pub output_path: Option<PathBuf>,
@@ -109,6 +109,17 @@ impl Cli {
             suppress_line_markers: self.suppress_line_markers,
             include_paths: self.include_paths,
             defines,
+        }
+    }
+}
+
+impl CompileConfig {
+    /// Create a new configuration for testing purposes.
+    #[cfg(test)]
+    pub fn new_for_test() -> Self {
+        Self {
+            input_files: vec![],
+            ..Self::default()
         }
     }
 }

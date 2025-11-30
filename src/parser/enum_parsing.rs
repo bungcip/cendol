@@ -94,13 +94,7 @@ pub fn parse_enumerator(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         None
     };
 
-    let span = SourceSpan::new(token.location.start, token.location.end);
-
-    let node = parser.ast.push_node(Node {
-        kind: NodeKind::EnumConstant(name, value),
-        span,
-        resolved_type: std::cell::Cell::new(None),
-        resolved_symbol: std::cell::Cell::new(None),
-    });
+    let span = token.location;
+    let node = parser.push_node(NodeKind::EnumConstant(name, value), span);
     Ok(node)
 }

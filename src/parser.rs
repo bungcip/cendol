@@ -551,4 +551,11 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 }
 
+/// contain functions related to AST nodes
+impl<'arena, 'src> Parser<'arena, 'src> {
+    /// Push a node to the AST and return its reference
+    pub(crate) fn push_node(&mut self, kind: NodeKind, span: SourceSpan) -> NodeRef {
+        self.ast.push_node(Node::new(kind, span))
+    }
+}
 mod tests_parser;

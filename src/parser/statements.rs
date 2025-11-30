@@ -12,7 +12,6 @@ use crate::parser::declaration_core::parse_declaration_specifiers;
 use crate::parser::declarator::parse_declarator;
 use crate::source_manager::{SourceLoc, SourceSpan};
 use log::debug;
-use std::cell::Cell;
 use symbol_table::GlobalSymbol as Symbol;
 use thin_vec::thin_vec;
 
@@ -73,16 +72,16 @@ pub fn parse_compound_statement(parser: &mut Parser) -> Result<(NodeRef, SourceL
         let mut declaration_attempt: Option<Result<NodeRef, ParseError>> = None;
 
         if should_try_declaration {
-            let transaction = parser.start_transaction();
+            let trx = parser.start_transaction();
             debug!(
                 "parse_compound_statement: trying declaration parsing at position {}",
-                transaction.parser.current_idx
+                trx.parser.current_idx
             );
-            match super::declarations::parse_declaration(transaction.parser) {
+            match super::declarations::parse_declaration(trx.parser) {
                 Ok(declaration) => {
                     debug!("parse_compound_statement: successfully parsed declaration");
                     block_items.push(declaration);
-                    transaction.commit();
+                    trx.commit();
                 }
                 Err(decl_error) => {
                     debug!("parse_compound_statement: declaration parsing failed: {:?}", decl_error);
@@ -130,9 +129,7 @@ pub fn parse_compound_statement(parser: &mut Parser) -> Result<(NodeRef, SourceL
 
     let span = SourceSpan::new(start_span, end_span);
 
-    let node = parser
-        .ast
-        .push_node(Node::new(NodeKind::CompoundStatement(block_items), span));
+    let node = parser.push_node(NodeKind::CompoundStatement(block_items), span);
     Ok((node, end_span))
 }
 
@@ -168,7 +165,7 @@ fn parse_if_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         else_branch,
     };
 
-    let node = parser.ast.push_node(Node::new(NodeKind::If(if_stmt), span));
+    let node = parser.push_node(NodeKind::If(if_stmt), span);
     Ok(node)
 }
 
@@ -191,12 +188,7 @@ fn parse_switch_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     let span = SourceSpan::new(start_span, end_span);
 
-    let node = parser.ast.push_node(Node {
-        kind: NodeKind::Switch(condition, body),
-        span,
-        resolved_type: Cell::new(None),
-        resolved_symbol: Cell::new(None),
-    });
+    let node = parser.push_node(NodeKind::Switch(condition, body), span);
     Ok(node)
 }
 
@@ -219,7 +211,7 @@ fn parse_while_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     let while_stmt = WhileStmt { condition, body };
 
-    let node = parser.ast.push_node(Node::new(NodeKind::While(while_stmt), span));
+    let node = parser.push_node(NodeKind::While(while_stmt), span);
     Ok(node)
 }
 
@@ -242,12 +234,7 @@ fn parse_do_while_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> 
 
     let span = SourceSpan::new(start_span, end_span);
 
-    let node = parser.ast.push_node(Node {
-        kind: NodeKind::DoWhile(body, condition),
-        span,
-        resolved_type: Cell::new(None),
-        resolved_symbol: Cell::new(None),
-    });
+    let node = parser.push_node(NodeKind::DoWhile(body, condition), span);
     Ok(node)
 }
 
@@ -288,11 +275,7 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         // Don't consume semicolon here - it will be consumed by the normal for loop flow
         let span = SourceSpan::new(start_span, parser.current_token().unwrap().location.end);
 
-        Some(
-            parser
-                .ast
-                .push_node(Node::new(NodeKind::Declaration(declaration_data), span)),
-        )
+        Some(parser.push_node(NodeKind::Declaration(declaration_data), span))
     } else {
         debug!("parse_for_statement: parsing expression in init");
         let expr_result = parse_expression(parser, BindingPower::MIN);
@@ -342,7 +325,7 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         body,
     };
 
-    let node = parser.ast.push_node(Node::new(NodeKind::For(for_stmt), span));
+    let node = parser.push_node(NodeKind::For(for_stmt), span);
     Ok(node)
 }
 
@@ -373,7 +356,7 @@ fn parse_goto_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     let span = SourceSpan::new(start_span, end_span);
 
-    let node = parser.ast.push_node(Node::new(NodeKind::Goto(label), span));
+    let node = parser.push_node(NodeKind::Goto(label), span);
     Ok(node)
 }
 
@@ -386,7 +369,7 @@ fn parse_continue_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> 
 
     let span = SourceSpan::new(start_span, end_span);
 
-    let node = parser.ast.push_node(Node::new(NodeKind::Continue, span));
+    let node = parser.push_node(NodeKind::Continue, span);
     Ok(node)
 }
 
@@ -400,7 +383,7 @@ fn parse_break_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     let span = SourceSpan::new(start_span, end_span);
 
-    let node = parser.ast.push_node(Node::new(NodeKind::Break, span));
+    let node = parser.push_node(NodeKind::Break, span);
     Ok(node)
 }
 
@@ -430,7 +413,7 @@ fn parse_return_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     let span = SourceSpan::new(start_span, end_span);
 
-    let node = parser.ast.push_node(Node::new(NodeKind::Return(value), span));
+    let node = parser.push_node(NodeKind::Return(value), span);
     Ok(node)
 }
 
@@ -443,7 +426,7 @@ fn parse_empty_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     let span = SourceSpan::new(start_span, end_span);
 
-    let node = parser.ast.push_node(Node::new(NodeKind::EmptyStatement, span));
+    let node = parser.push_node(NodeKind::EmptyStatement, span);
     Ok(node)
 }
 
@@ -474,19 +457,9 @@ fn parse_case_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let span = SourceSpan::new(start_span, end_span);
 
     let node = if is_range {
-        parser.ast.push_node(Node {
-            kind: NodeKind::CaseRange(start_expr, end_expr.unwrap(), statement),
-            span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        })
+        parser.push_node(NodeKind::CaseRange(start_expr, end_expr.unwrap(), statement), span)
     } else {
-        parser.ast.push_node(Node {
-            kind: NodeKind::Case(start_expr, statement),
-            span,
-            resolved_type: Cell::new(None),
-            resolved_symbol: Cell::new(None),
-        })
+        parser.push_node(NodeKind::Case(start_expr, statement), span)
     };
     Ok(node)
 }
@@ -503,7 +476,7 @@ fn parse_default_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     let span = SourceSpan::new(start_span, end_span);
 
-    let node = parser.ast.push_node(Node::new(NodeKind::Default(statement), span));
+    let node = parser.push_node(NodeKind::Default(statement), span);
     Ok(node)
 }
 
@@ -519,9 +492,7 @@ fn parse_label_statement(parser: &mut Parser, label_symbol: Symbol) -> Result<No
 
     let span = SourceSpan::new(start_span, end_span);
 
-    let node = parser
-        .ast
-        .push_node(Node::new(NodeKind::Label(label_symbol, statement), span));
+    let node = parser.push_node(NodeKind::Label(label_symbol, statement), span);
     Ok(node)
 }
 
@@ -540,8 +511,6 @@ fn parse_expression_statement(parser: &mut Parser) -> Result<NodeRef, ParseError
     let end_span = semi.location.end;
     let span = SourceSpan::new(start_span, end_span);
 
-    let node = parser
-        .ast
-        .push_node(Node::new(NodeKind::ExpressionStatement(expr), span));
+    let node = parser.push_node(NodeKind::ExpressionStatement(expr), span);
     Ok(node)
 }

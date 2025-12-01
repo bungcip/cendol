@@ -40,7 +40,7 @@ fn setup_preprocessor_test_with_diagnostics(
 
     let significant_tokens: Vec<_> = tokens
         .into_iter()
-        .filter(|t| !matches!(t.kind, PPTokenKind::Eof))
+        .filter(|t| !matches!(t.kind, PPTokenKind::Eof | PPTokenKind::Eod))
         .collect();
 
     Ok((significant_tokens, diagnostics.diagnostics().to_vec()))
@@ -587,8 +587,8 @@ int x = 1;
 #[test]
 fn test_circular_include_error() {
     let mut sm = SourceManager::new();
-    let source_id_a = sm.add_buffer("#include \"b.c\"".as_bytes().to_vec(), "a.c");
-    sm.add_buffer("#include \"a.c\"".as_bytes().to_vec(), "b.c");
+    let source_id_a = sm.add_buffer("#include \"b.c\"\n".as_bytes().to_vec(), "a.c");
+    sm.add_buffer("#include \"a.c\"\n".as_bytes().to_vec(), "b.c");
 
     let mut diag = DiagnosticEngine::new();
     let lang_opts = LangOptions::c11();
@@ -635,4 +635,18 @@ int x = 1;
     } else {
         panic!("Expected InvalidLineDirective error");
     }
+}
+
+#[test]
+fn test_multiline_macro_definition_only() {
+    let src = r#"
+#define EMPTY(X)  \
+  X               \
+  X
+"#;
+
+    let significant_tokens = setup_preprocessor_test(src);
+
+    // Should produce no output since macro is defined but not used
+    assert_eq!(significant_tokens.len(), 0);
 }

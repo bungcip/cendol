@@ -407,6 +407,7 @@ impl<'src> Lexer<'src> {
                     .unwrap_or_else(|_| TokenKind::FloatConstant(value))
             }
             PPTokenKind::Eof => TokenKind::EndOfFile,
+            PPTokenKind::Eod => TokenKind::Unknown,
             // Handle punctuation tokens systematically
             pptoken_kind => PUNCTUATION_MAP
                 .get_or_init(init_punctuation_map)

@@ -341,6 +341,8 @@ pub enum PPError {
     InvalidStringification,
     #[error("Circular include detected")]
     CircularInclude,
+    #[error("Expected end of directive")]
+    ExpectedEod,
 }
 
 impl<'src> Preprocessor<'src> {
@@ -571,6 +573,15 @@ impl<'src> Preprocessor<'src> {
         self.directive_keywords.defined_symbol()
     }
 
+    /// Expect and consume an Eod token or end of file
+    fn expect_eod(&mut self) -> Result<(), PPError> {
+        match self.lex_token() {
+            Some(token) if token.kind == PPTokenKind::Eod => Ok(()),
+            None => Ok(()), // End of file is acceptable
+            Some(_) => Err(PPError::ExpectedEod),
+        }
+    }
+
     /// Process source file and return preprocessed tokens
     pub fn process(&mut self, source_id: SourceId, _config: &PPConfig) -> Result<Vec<PPToken>, PPError> {
         // Initialize lexer for main file
@@ -579,6 +590,8 @@ impl<'src> Preprocessor<'src> {
 
         let lexer = PPLexer::new(source_id, buffer.to_vec());
         self.lexer_stack.push(lexer);
+        
+        // FIXNE: need to create line_start on the fly instead of computing all at once
         // Set line starts for the source manager so presumed locations work during processing
         let mut line_starts = vec![0];
         for (i, &byte) in buffer.iter().enumerate() {
@@ -600,8 +613,9 @@ impl<'src> Preprocessor<'src> {
                     // Skip tokens when in conditional compilation skip mode
                     continue;
                 }
-
+        
                 match token.kind {
+                    PPTokenKind::Eod => continue,
                     PPTokenKind::Identifier(symbol) => {
                         if symbol.as_str() == "__LINE__" {
                             let line = if let Some(presumed) = self.source_manager.get_presumed_location(token.location)
@@ -896,13 +910,6 @@ impl<'src> Preprocessor<'src> {
             self.diag.report_diagnostic(diag);
         }
 
-        // Now, collect replacement tokens
-        let start_line = if let Some(lexer) = self.lexer_stack.last() {
-            lexer.get_current_line()
-        } else {
-            0
-        };
-
         let mut flags = MacroFlags::empty();
         let mut params = Vec::new();
         let mut variadic = None;
@@ -970,15 +977,7 @@ impl<'src> Preprocessor<'src> {
         }
         let mut tokens = Vec::new();
         while let Some(token) = self.lex_token() {
-            let token_line = if let Some(lexer) = self.lexer_stack.last() {
-                lexer.get_line(token.location.0)
-            } else {
-                0
-            };
-            if token_line != start_line {
-                if let Some(lexer) = self.lexer_stack.last_mut() {
-                    lexer.put_back(token);
-                }
+            if token.kind == PPTokenKind::Eod {
                 break;
             }
             tokens.push(token);
@@ -994,6 +993,7 @@ impl<'src> Preprocessor<'src> {
         self.macros.insert(name, macro_info);
         Ok(())
     }
+
     fn handle_undef(&mut self) -> Result<(), PPError> {
         let name_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
         let name = match name_token.kind {
@@ -1002,8 +1002,12 @@ impl<'src> Preprocessor<'src> {
         };
         // Remove the macro from the table if it exists
         self.macros.remove(&name);
+
+        self.expect_eod()?;
+
         Ok(())
     }
+    
     fn handle_include(&mut self) -> Result<(), PPError> {
         // Parse the include path
         let token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
@@ -1132,6 +1136,8 @@ impl<'src> Preprocessor<'src> {
             location: token.location,
         });
 
+        self.expect_eod()?;
+
         // Create lexer for the included file
         let buffer = self.source_manager.get_buffer(include_source_id);
         let lexer = PPLexer::new(include_source_id, buffer.to_vec());
@@ -1179,6 +1185,8 @@ impl<'src> Preprocessor<'src> {
             self.set_skipping(true);
         }
 
+        self.expect_eod()?;
+
         Ok(())
     }
 
@@ -1201,6 +1209,8 @@ impl<'src> Preprocessor<'src> {
         if defined {
             self.set_skipping(true);
         }
+
+        self.expect_eod()?;
 
         Ok(())
     }
@@ -1247,6 +1257,8 @@ impl<'src> Preprocessor<'src> {
             self.set_skipping(true);
         }
 
+        self.expect_eod()?;
+
         Ok(())
     }
 
@@ -1258,6 +1270,8 @@ impl<'src> Preprocessor<'src> {
         let info = self.conditional_stack.pop().unwrap();
         // Restore previous skipping state
         self.set_skipping(info.was_skipping);
+
+        self.expect_eod()?;
 
         Ok(())
     }
@@ -1271,16 +1285,7 @@ impl<'src> Preprocessor<'src> {
         };
 
         while let Some(token) = self.lex_token() {
-            let token_line = if let Some(lexer) = self.lexer_stack.last() {
-                lexer.get_line(token.location.0)
-            } else {
-                0
-            };
-            if token_line != start_line {
-                // Put back the token from the next line
-                if let Some(lexer) = self.lexer_stack.last_mut() {
-                    lexer.put_back(token);
-                }
+            if token.kind == PPTokenKind::Eod {
                 break;
             }
             tokens.push(token);
@@ -1370,16 +1375,8 @@ impl<'src> Preprocessor<'src> {
         }
         // Skip to end of line
         while let Some(token) = self.lex_token() {
-            if let Some(lexer) = self.lexer_stack.last() {
-                let current_line = lexer.get_current_line();
-                let token_line = lexer.get_line(token.location.0);
-                if token_line != current_line {
-                    // Put back the token from the next line
-                    if let Some(lexer) = self.lexer_stack.last_mut() {
-                        lexer.put_back(token);
-                    }
-                    break;
-                }
+            if token.kind == PPTokenKind::Eod {
+                break;
             }
         }
         Ok(())
@@ -1388,21 +1385,9 @@ impl<'src> Preprocessor<'src> {
     fn handle_error(&mut self) -> Result<(), PPError> {
         if self.is_currently_skipping() {
             // Skip to end of line
-            let directive_line = if let Some(lexer) = self.lexer_stack.last() {
-                lexer.get_current_line()
-            } else {
-                0
-            };
             while let Some(token) = self.lex_token() {
-                if let Some(lexer) = self.lexer_stack.last() {
-                    let token_line = lexer.get_line(token.location.0);
-                    if token_line != directive_line {
-                        // Put back the token from the next line
-                        if let Some(lexer) = self.lexer_stack.last_mut() {
-                            lexer.put_back(token);
-                        }
-                        break;
-                    }
+                if token.kind == PPTokenKind::Eod {
+                    break;
                 }
             }
             return Ok(());
@@ -1415,21 +1400,9 @@ impl<'src> Preprocessor<'src> {
         } else {
             SourceLoc(0)
         };
-        let directive_line = if let Some(lexer) = self.lexer_stack.last() {
-            lexer.get_current_line()
-        } else {
-            0
-        };
         while let Some(token) = self.lex_token() {
-            if let Some(lexer) = self.lexer_stack.last() {
-                let token_line = lexer.get_line(token.location.0);
-                if token_line != directive_line {
-                    // Put back the token from the next line
-                    if let Some(lexer) = self.lexer_stack.last_mut() {
-                        lexer.put_back(token);
-                    }
-                    break;
-                }
+            if token.kind == PPTokenKind::Eod {
+                break;
             }
             // Get token text
             let buffer = self.source_manager.get_buffer(token.location.source_id());
@@ -1462,16 +1435,8 @@ impl<'src> Preprocessor<'src> {
             SourceLoc(0)
         };
         while let Some(token) = self.lex_token() {
-            if let Some(lexer) = self.lexer_stack.last() {
-                let current_line = lexer.get_current_line();
-                let token_line = lexer.get_line(token.location.0);
-                if token_line != current_line {
-                    // Put back the token from the next line
-                    if let Some(lexer) = self.lexer_stack.last_mut() {
-                        lexer.put_back(token);
-                    }
-                    break;
-                }
+            if token.kind == PPTokenKind::Eod {
+                break;
             }
             // Get token text
             let buffer = self.source_manager.get_buffer(token.location.source_id());

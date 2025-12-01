@@ -71,6 +71,7 @@ pub enum PPTokenKind {
     Number(Symbol),          // Raw numeric literal text for parser
     // Special
     Eof,
+    Eod,
     Unknown,
 }
 
@@ -179,6 +180,7 @@ impl PPToken {
             PPTokenKind::Hash => "#".to_string(),
             PPTokenKind::HashHash => "##".to_string(),
             PPTokenKind::Eof => "".to_string(),
+            PPTokenKind::Eod => "".to_string(),
             PPTokenKind::Unknown => "?".to_string(),
         }
     }
@@ -193,8 +195,9 @@ pub struct PPLexer {
     put_back_token: Option<PPToken>,
     pub line_offset: u32,
     pub filename_override: Option<String>,
-    pub in_directive: bool,  // Whether we are lexing a directive name
-    pub in_expression: bool, // Whether we are lexing a preprocessor expression
+    pub in_directive: bool,     // Whether we are lexing a directive name
+    pub in_expression: bool,    // Whether we are lexing a preprocessor expression
+    pub in_directive_line: bool, // Whether we are currently processing tokens on a directive line
 }
 
 impl PPLexer {
@@ -211,6 +214,7 @@ impl PPLexer {
             filename_override: None,
             in_directive: false,
             in_expression: false,
+            in_directive_line: false,
         }
     }
 
@@ -234,10 +238,6 @@ impl PPLexer {
                     && self.buffer[self.position as usize] == b'\n'
                 {
                     self.position += 1;
-                }
-                // Update line starts - remove the newline from line tracking
-                if self.line_starts.len() > 1 {
-                    self.line_starts.pop();
                 }
                 // Get the character after the line ending for splicing
                 if (self.position as usize) < self.buffer.len() {
@@ -281,7 +281,17 @@ impl PPLexer {
         let had_leading_space = self.position > saved_position;
 
         if self.position as usize >= self.buffer.len() {
-            return None;
+            if self.in_directive_line {
+                self.in_directive_line = false;
+                return Some(PPToken::new(
+                    PPTokenKind::Eod,
+                    PPTokenFlags::empty(),
+                    SourceLoc::new(self.source_id, self.position),
+                    0,
+                ));
+            } else {
+                return None;
+            }
         }
 
         let flags = if had_leading_space {
@@ -292,6 +302,18 @@ impl PPLexer {
 
         let start_pos = self.position;
         let ch = self.next_char().unwrap_or(b' ');
+
+        // Check if this is a newline that ends a directive line
+        // Only \n triggers Eod, \r is treated as whitespace (Windows \r\n support)
+        if ch == b'\n' && self.in_directive_line {
+            self.in_directive_line = false;
+            return Some(PPToken::new(
+                PPTokenKind::Eod,
+                flags,
+                SourceLoc::new(self.source_id, start_pos),
+                1,
+            ));
+        }
 
         match ch {
             b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
@@ -324,6 +346,8 @@ impl PPLexer {
                         2,
                     ))
                 } else {
+                    // Set directive line flag when we encounter a # that starts a preprocessor line
+                    self.in_directive_line = true;
                     Some(PPToken::with_flags(
                         PPTokenKind::Hash,
                         token_flags,
@@ -885,8 +909,9 @@ impl PPLexer {
     fn skip_whitespace_and_comments(&mut self) {
         loop {
             // Skip whitespace, handling line splicing
+            // But don't skip newlines if we're in a directive line (let them be processed as tokens)
             while let Some(ch) = self.peek_char() {
-                if ch.is_ascii_whitespace() {
+                if ch.is_ascii_whitespace() && !(ch == b'\n' && self.in_directive_line) {
                     self.next_char();
                 } else {
                     break;

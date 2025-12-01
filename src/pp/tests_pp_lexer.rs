@@ -310,3 +310,69 @@ fn test_wide_string_literals() {
     // Should be no more tokens
     assert!(lexer.next_token().is_none());
 }
+
+/// Test that Eod (End of Directive) tokens are produced at the end of directive lines
+#[test]
+fn test_eod_token_production() {
+    // Test simple directive
+    let source = "#define x 1\n";
+    let mut lexer = create_test_pp_lexer(source);
+    
+    test_tokens!(lexer,
+        ("#", PPTokenKind::Hash),
+        ("define", PPTokenKind::Identifier(_)),
+        ("x", PPTokenKind::Identifier(_)),
+        ("1", PPTokenKind::Number(_)),
+        ("", PPTokenKind::Eod),
+    );
+}
+
+
+/// Test that Eod tokens are produced for various directive types
+#[test]
+fn test_eod_for_various_directives() {
+    // Test various directive types that should all end with Eod
+    let test_cases = vec![
+        "#ifdef TEST\n",
+        "#ifndef TEST\n",
+        "#elif 1\n",
+        "#else\n",
+        "#endif\n",
+        "#include \"test.h\"\n",
+        "#undef TEST\n",
+        "#line 100\n",
+        "#pragma once\n",
+        "#error message\n",
+        "#warning message\n",
+    ];
+
+    for directive in test_cases {
+        let mut lexer = create_test_pp_lexer(directive);
+        let tokens: Vec<_> = std::iter::from_fn(|| lexer.next_token()).collect();
+
+        // Should have at least Hash token and Eod token
+        assert!(tokens.len() >= 2, "Should have tokens for directive: {}", directive);
+        assert_eq!(tokens[0].kind, PPTokenKind::Hash, "First token should be Hash for: {}", directive);
+        assert_eq!(tokens.last().unwrap().kind, PPTokenKind::Eod,
+                   "Should end with Eod for directive: {}", directive);
+    }
+}
+
+/// Test that Eod is produced at EOF when in directive line (clang compatibility)
+#[test]
+fn test_eod_at_eof_in_directive() {
+    // Directive at end of file without newline
+    let source = "#define x 1";
+    let mut lexer = create_test_pp_lexer(source);
+
+    test_tokens!(lexer,
+        ("#", PPTokenKind::Hash),
+        ("define", PPTokenKind::Identifier(_)),
+        ("x", PPTokenKind::Identifier(_)),
+        ("1", PPTokenKind::Number(_)),
+        ("", PPTokenKind::Eod),
+    );
+
+    // Should be no more tokens
+    assert!(lexer.next_token().is_none());
+}

@@ -274,7 +274,7 @@ fn resolve_initializer(ast: &Ast, initializer: &crate::ast::Initializer) -> Reso
 }
 
 /// Generic helper function for parsing source code with common setup
-fn parse_source<F, T>(source: &str, parse_fn: F) -> (Ast, T)
+fn setup_source<F, T>(source: &str, parse_fn: F) -> (Ast, T)
 where
     F: FnOnce(&mut Parser<'_, '_>) -> T,
 {
@@ -306,8 +306,8 @@ where
     (ast, result)
 }
 
-fn parse_expression(source: &str) -> ResolvedNodeKind {
-    let (ast, expr_result) = parse_source(source, |parser| {
+fn setup_expr(source: &str) -> ResolvedNodeKind {
+    let (ast, expr_result) = setup_source(source, |parser| {
         parser.parse_expression(crate::parser::BindingPower::MIN)
     });
 
@@ -319,8 +319,8 @@ fn parse_expression(source: &str) -> ResolvedNodeKind {
     }
 }
 
-fn parse_declaration(source: &str) -> ResolvedNodeKind {
-    let (ast, decl_result) = parse_source(source, |parser| {
+fn setup_declaration(source: &str) -> ResolvedNodeKind {
+    let (ast, decl_result) = setup_source(source, |parser| {
         parser.parse_declaration()
     });
 
@@ -374,7 +374,7 @@ fn parse_declaration_with_errors(source: &str) -> Result<ResolvedNodeKind, Vec<S
 
 #[test]
 fn test_simple_addition() {
-    let resolved = parse_expression("1 + 2");
+    let resolved = setup_expr("1 + 2");
     insta::assert_yaml_snapshot!(&resolved, @r"
     BinaryOp:
       - Add
@@ -385,7 +385,7 @@ fn test_simple_addition() {
 
 #[test]
 fn test_unary_operators() {
-    let resolved = parse_expression("-1");
+    let resolved = setup_expr("-1");
     insta::assert_yaml_snapshot!(&resolved, @r"
     UnaryOp:
       - Minus
@@ -395,7 +395,7 @@ fn test_unary_operators() {
 
 #[test]
 fn test_precedence() {
-    let resolved = parse_expression("1 + 2 * 3");
+    let resolved = setup_expr("1 + 2 * 3");
     insta::assert_yaml_snapshot!(&resolved, @r"
     BinaryOp:
       - Add
@@ -409,7 +409,7 @@ fn test_precedence() {
 
 #[test]
 fn test_parenthesized_expression() {
-    let resolved = parse_expression("(1 + 2) * 3");
+    let resolved = setup_expr("(1 + 2) * 3");
     insta::assert_yaml_snapshot!(&resolved, @r"
     BinaryOp:
       - Mul
@@ -423,7 +423,7 @@ fn test_parenthesized_expression() {
 
 #[test]
 fn test_assignment() {
-    let resolved = parse_expression("a = 1");
+    let resolved = setup_expr("a = 1");
     insta::assert_yaml_snapshot!(&resolved, @r"
     BinaryOp:
       - Assign
@@ -434,7 +434,7 @@ fn test_assignment() {
 
 #[test]
 fn test_function_call() {
-    let resolved = parse_expression("foo(1, 2)");
+    let resolved = setup_expr("foo(1, 2)");
     insta::assert_yaml_snapshot!(&resolved, @r"
     FunctionCall:
       - Ident: foo
@@ -445,7 +445,7 @@ fn test_function_call() {
 
 #[test]
 fn test_member_access() {
-    let resolved = parse_expression("a.b");
+    let resolved = setup_expr("a.b");
     insta::assert_yaml_snapshot!(&resolved, @r"
     MemberAccess:
       - Ident: a
@@ -456,7 +456,7 @@ fn test_member_access() {
 
 #[test]
 fn test_array_indexing() {
-    let resolved = parse_expression("a[1]");
+    let resolved = setup_expr("a[1]");
     insta::assert_yaml_snapshot!(&resolved, @r"
     IndexAccess:
       - Ident: a
@@ -466,7 +466,7 @@ fn test_array_indexing() {
 
 #[test]
 fn test_sizeof_expression() {
-    let resolved = parse_expression("sizeof(a)");
+    let resolved = setup_expr("sizeof(a)");
     insta::assert_yaml_snapshot!(&resolved, @r"
     SizeOfExpr:
       Ident: a
@@ -475,7 +475,7 @@ fn test_sizeof_expression() {
 
 #[test]
 fn test_complex_expression() {
-    let resolved = parse_expression("a + b * c[d] - e.f");
+    let resolved = setup_expr("a + b * c[d] - e.f");
     insta::assert_yaml_snapshot!(&resolved, @r"
     BinaryOp:
       - Add
@@ -497,7 +497,7 @@ fn test_complex_expression() {
 
 #[test]
 fn test_simple_declaration() {
-    let resolved = parse_declaration("int x;");
+    let resolved = setup_declaration("int x;");
     insta::assert_yaml_snapshot!(&resolved, @r"
     Declaration:
       specifiers:
@@ -509,7 +509,7 @@ fn test_simple_declaration() {
 
 #[test]
 fn test_declaration_with_initializer() {
-    let resolved = parse_declaration("int x = 42;");
+    let resolved = setup_declaration("int x = 42;");
     insta::assert_yaml_snapshot!(&resolved, @r"
     Declaration:
       specifiers:
@@ -523,7 +523,7 @@ fn test_declaration_with_initializer() {
 
 #[test]
 fn test_multiple_declarators() {
-    let resolved = parse_declaration("int x, y = 1, z;");
+    let resolved = setup_declaration("int x, y = 1, z;");
     insta::assert_yaml_snapshot!(&resolved, @r"
     Declaration:
       specifiers:
@@ -539,7 +539,7 @@ fn test_multiple_declarators() {
 
 #[test]
 fn test_pointer_declaration() {
-    let resolved = parse_declaration("int *p;");
+    let resolved = setup_declaration("int *p;");
     insta::assert_yaml_snapshot!(&resolved, @r"
     Declaration:
       specifiers:
@@ -552,7 +552,7 @@ fn test_pointer_declaration() {
 
 #[test]
 fn test_array_declaration() {
-    let resolved = parse_declaration("int arr[10];");
+    let resolved = setup_declaration("int arr[10];");
     insta::assert_yaml_snapshot!(&resolved, @r"
     Declaration:
       specifiers:
@@ -565,7 +565,7 @@ fn test_array_declaration() {
 
 #[test]
 fn test_array_declaration_with_initializer() {
-    let resolved = parse_declaration("int arr[3] = {1, 2, 3};");
+    let resolved = setup_declaration("int arr[3] = {1, 2, 3};");
     insta::assert_yaml_snapshot!(&resolved, @r"
     Declaration:
       specifiers:
@@ -583,7 +583,7 @@ fn test_array_declaration_with_initializer() {
 
 #[test]
 fn test_complex_declaration() {
-    let resolved = parse_declaration("int a = 1, *b[3], c(struct X, int), d = (1, 2, 3);");
+    let resolved = setup_declaration("int a = 1, *b[3], c(struct X, int), d = (1, 2, 3);");
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
@@ -610,7 +610,7 @@ fn test_complex_declaration() {
 
 #[test]
 fn test_function_with_array_of_pointer_param() {
-    let resolved = parse_declaration("int f(int (*arr)[3]);");
+    let resolved = setup_declaration("int f(int (*arr)[3]);");
     insta::assert_yaml_snapshot!(&resolved, @r"
     Declaration:
       specifiers:
@@ -623,7 +623,7 @@ fn test_function_with_array_of_pointer_param() {
 
 #[test]
 fn test_array_of_function_pointers() {
-    let resolved = parse_declaration("int (*callbacks[10])(int, float);");
+    let resolved = setup_declaration("int (*callbacks[10])(int, float);");
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
@@ -636,7 +636,7 @@ fn test_array_of_function_pointers() {
 
 #[test]
 fn test_function_pointer_with_initializer() {
-    let resolved = parse_declaration("int (*f)(int) = 0;");
+    let resolved = setup_declaration("int (*f)(int) = 0;");
     insta::assert_yaml_snapshot!(&resolved, @r"
     Declaration:
       specifiers:
@@ -651,7 +651,7 @@ fn test_function_pointer_with_initializer() {
 
 #[test]
 fn test_array_of_pointers_with_initializer() {
-    let resolved = parse_declaration("int *p[3] = { &x, 0, &y };");
+    let resolved = setup_declaration("int *p[3] = { &x, 0, &y };");
     insta::assert_yaml_snapshot!(&resolved, @r"
     Declaration:
       specifiers:
@@ -673,7 +673,7 @@ fn test_array_of_pointers_with_initializer() {
 
 #[test]
 fn test_function_pointer_with_cast_initializer() {
-    let resolved = parse_declaration("int (*fp)(int) = (int (*)(int))0;");
+    let resolved = setup_declaration("int (*fp)(int) = (int (*)(int))0;");
     insta::assert_yaml_snapshot!(&resolved, @r"
     Declaration:
       specifiers:
@@ -690,7 +690,7 @@ fn test_function_pointer_with_cast_initializer() {
 
 #[test]
 fn test_mixed_declarators_simple() {
-    let resolved = parse_declaration("int *a, (*b)(int), c[10];");
+    let resolved = setup_declaration("int *a, (*b)(int), c[10];");
     insta::assert_yaml_snapshot!(&resolved, @r"
     Declaration:
       specifiers:
@@ -707,7 +707,7 @@ fn test_mixed_declarators_simple() {
 
 #[test]
 fn test_deeply_mixed_declarators() {
-    let resolved = parse_declaration("int *a, (*b[5])(double), c(struct X, int), d = (1, 2);");
+    let resolved = setup_declaration("int *a, (*b[5])(double), c(struct X, int), d = (1, 2);");
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
@@ -730,7 +730,7 @@ fn test_deeply_mixed_declarators() {
 
 #[test]
 fn test_madness_with_parentheses() {
-    let resolved = parse_declaration("int (*a)(int), *(*b)(float), (*c[3])(int, int);");
+    let resolved = setup_declaration("int (*a)(int), *(*b)(float), (*c[3])(int, int);");
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
@@ -747,7 +747,7 @@ fn test_madness_with_parentheses() {
 
 #[test]
 fn test_callback_style_function() {
-    let resolved = parse_declaration("int sort(int (*cmp)(int, int));");
+    let resolved = setup_declaration("int sort(int (*cmp)(int, int));");
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
@@ -760,7 +760,7 @@ fn test_callback_style_function() {
 
 #[test]
 fn test_function_returning_pointer_to_function() {
-    let resolved = parse_declaration("int (*make_cb(int (*cmp)(int, int)))(int, int);");
+    let resolved = setup_declaration("int (*make_cb(int (*cmp)(int, int)))(int, int);");
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
@@ -773,7 +773,7 @@ fn test_function_returning_pointer_to_function() {
 
 #[test]
 fn test_parentheses_that_do_nothing() {
-    let resolved = parse_declaration("int (((a)));");
+    let resolved = setup_declaration("int (((a)));");
     insta::assert_yaml_snapshot!(&resolved, @r"
     Declaration:
       specifiers:
@@ -785,7 +785,7 @@ fn test_parentheses_that_do_nothing() {
 
 #[test]
 fn test_insane_parentheses_on_pointer_to_array_to_function() {
-    let resolved = parse_declaration("int (*(((*f))(int)))[5];");
+    let resolved = setup_declaration("int (*(((*f))(int)))[5];");
     insta::assert_yaml_snapshot!(&resolved, @r"
     Declaration:
       specifiers:
@@ -820,7 +820,7 @@ fn test_ellipsis_not_last_parameter_rejected() {
 
 #[test]
 fn test_enum_declaration_with_values() {
-    let resolved = parse_declaration("enum Color { RED = 1, GREEN = 2, BLUE };");
+    let resolved = setup_declaration("enum Color { RED = 1, GREEN = 2, BLUE };");
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
@@ -831,7 +831,7 @@ fn test_enum_declaration_with_values() {
 
 #[test]
 fn test_function_with_array_abstract_declarator() {
-    let resolved = parse_declaration("int f(int ([4]));");
+    let resolved = setup_declaration("int f(int ([4]));");
     insta::assert_yaml_snapshot!(&resolved, @r"
     Declaration:
       specifiers:
@@ -844,7 +844,7 @@ fn test_function_with_array_abstract_declarator() {
 
 #[test]
 fn test_complex_abstract_declarator_function() {
-    let resolved = parse_declaration("int f5(int (*fp)(int));");
+    let resolved = setup_declaration("int f5(int (*fp)(int));");
     insta::assert_yaml_snapshot!(&resolved, @r"
     Declaration:
       specifiers:

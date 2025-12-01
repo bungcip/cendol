@@ -505,11 +505,6 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         expressions::is_cast_expression_start(self)
     }
 
-    // /// Helper for more complex cast expression detection
-    // fn is_cast_expression_start_advanced(&self) -> bool {
-    //     expressions::is_cast_expression_start_advanced(self)
-    // }
-
     /// Parse cast expression given the already parsed type and right paren token
     fn parse_cast_expression_from_type_and_paren(
         &mut self,

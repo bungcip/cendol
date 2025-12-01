@@ -7,7 +7,6 @@
 use crate::ast::*;
 use crate::diagnostic::ParseError;
 use crate::lexer::TokenKind;
-use crate::source_manager::SourceSpan;
 use log::debug;
 use thin_vec::ThinVec;
 
@@ -265,38 +264,11 @@ fn parse_designation(parser: &mut Parser) -> Result<Vec<Designator>, ParseError>
 
     while parser.matches(&[TokenKind::Dot, TokenKind::LeftBracket]) {
         if parser.accept(TokenKind::Dot).is_some() {
-            let token = parser.try_current_token().ok_or_else(|| ParseError::SyntaxError {
-                message: "Expected field name".to_string(),
-                location: SourceSpan::empty(),
-            })?;
-
-            let field_name = match token.kind {
-                TokenKind::Identifier(symbol) => symbol,
-                _ => {
-                    return Err(ParseError::UnexpectedToken {
-                        expected: vec![TokenKind::Identifier(symbol_table::GlobalSymbol::new(""))],
-                        found: token.kind,
-                        location: token.location,
-                    });
-                }
-            };
-
-            parser.advance().ok_or_else(|| ParseError::SyntaxError {
-                message: "Unexpected end of input".to_string(),
-                location: SourceSpan::empty(),
-            })?;
+            let (field_name, _) = parser.expect_name()?;
             designators.push(Designator::FieldName(field_name));
         } else if parser.accept(TokenKind::LeftBracket).is_some() {
-            let expr_result = parse_expression(parser, BindingPower::MIN)?;
-            let index_expr = match expr_result {
-                super::ParseExprOutput::Expression(node) => node,
-                _ => {
-                    return Err(ParseError::SyntaxError {
-                        message: "Expected expression in array designator".to_string(),
-                        location: parser.current_token().unwrap().location,
-                    });
-                }
-            };
+            let expr_result = parse_expression(parser, BindingPower::MIN);
+            let index_expr = unwrap_expr_result(parser, expr_result, "expression in array designator")?;
             parser.expect(TokenKind::RightBracket)?;
             designators.push(Designator::ArrayIndex(index_expr));
         }
@@ -310,14 +282,8 @@ fn parse_initializer_expression(parser: &mut Parser) -> Result<NodeRef, ParseErr
     // Parse expressions in initializers, but stop at comma operators to avoid
     // consuming declarator-separating commas. Use assignment precedence to allow
     // most binary operators but prevent comma operators.
-    let expr_result = parse_expression(parser, BindingPower::ASSIGNMENT)?;
-    match expr_result {
-        super::ParseExprOutput::Expression(node) => Ok(node),
-        _ => Err(ParseError::SyntaxError {
-            message: "Expected expression in initializer".to_string(),
-            location: parser.current_token().unwrap().location,
-        }),
-    }
+    let expr_result = parse_expression(parser, BindingPower::ASSIGNMENT);
+    unwrap_expr_result(parser, expr_result, "expression in initializer")
 }
 
 /// Parse type name (for casts, sizeof, etc.)

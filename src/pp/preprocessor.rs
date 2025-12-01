@@ -1045,9 +1045,31 @@ impl<'src> Preprocessor<'src> {
         }
 
         // Check for circular includes
+        let canonical_path = if self.built_in_headers.contains_key(path_str.as_str()) {
+            PathBuf::from(&path_str)
+        } else {
+            let current_file_id = self.lexer_stack.last().unwrap().source_id;
+            let current_file_info = self.source_manager.get_file_info(current_file_id).unwrap();
+            let current_dir = current_file_info.path.parent().unwrap_or(Path::new("."));
+            self.header_search.resolve_path(&path_str, is_angled, current_dir)
+                .and_then(|p| if p.exists() { p.canonicalize().ok() } else { Some(p) })
+                .unwrap_or_else(|| PathBuf::from(&path_str))
+        };
+
         if self.include_stack.iter().any(|info| {
             let file_info = self.source_manager.get_file_info(info.file_id);
-            file_info.is_some_and(|fi| fi.path == Path::new(&path_str))
+            if let Some(fi) = file_info {
+                let existing_path = &fi.path;
+                let existing_canonical = if existing_path.exists() {
+                    existing_path.canonicalize().ok()
+                } else {
+                    Some(existing_path.clone())
+                };
+                if let Some(existing_canonical) = existing_canonical {
+                    return existing_canonical == canonical_path;
+                }
+            }
+            false
         }) {
             return Err(PPError::CircularInclude);
         }

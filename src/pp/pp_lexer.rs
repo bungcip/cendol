@@ -195,8 +195,6 @@ pub struct PPLexer {
     put_back_token: Option<PPToken>,
     pub line_offset: u32,
     pub filename_override: Option<String>,
-    pub in_directive: bool,     // Whether we are lexing a directive name
-    pub in_expression: bool,    // Whether we are lexing a preprocessor expression
     pub in_directive_line: bool, // Whether we are currently processing tokens on a directive line
 }
 
@@ -212,8 +210,6 @@ impl PPLexer {
             put_back_token: None,
             line_offset: 0,
             filename_override: None,
-            in_directive: false,
-            in_expression: false,
             in_directive_line: false,
         }
     }

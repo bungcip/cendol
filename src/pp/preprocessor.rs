@@ -681,11 +681,6 @@ impl<'src> Preprocessor<'src> {
 
     /// Parse a conditional expression for #if and #elif
     fn parse_conditional_expression(&mut self) -> Result<Vec<PPToken>, PPError> {
-        // Set expression mode for the lexer
-        if let Some(lexer) = self.lexer_stack.last_mut() {
-            lexer.in_expression = true;
-        }
-
         let mut tokens = Vec::new();
         let start_line = if let Some(lexer) = self.lexer_stack.last() {
             lexer.get_current_line()
@@ -721,11 +716,6 @@ impl<'src> Preprocessor<'src> {
             };
             self.diag.report_diagnostic(diag);
             return Err(PPError::InvalidConditionalExpression);
-        }
-
-        // Reset expression mode
-        if let Some(lexer) = self.lexer_stack.last_mut() {
-            lexer.in_expression = false;
         }
 
         Ok(tokens)

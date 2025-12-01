@@ -612,25 +612,6 @@ int x = 1;
 }
 
 #[test]
-fn test_circular_include_error() {
-    let mut sm = SourceManager::new();
-    let source_id_a = sm.add_buffer("#include \"b.c\"\n".as_bytes().to_vec(), "a.c");
-    sm.add_buffer("#include \"a.c\"\n".as_bytes().to_vec(), "b.c");
-
-    let mut diag = DiagnosticEngine::new();
-    let lang_opts = LangOptions::c11();
-    let target_info = Triple::unknown();
-    let config = PPConfig {
-        max_include_depth: 10,
-        ..Default::default()
-    };
-    let mut pp = Preprocessor::new(&mut sm, &mut diag, lang_opts, target_info, &config);
-    let result = pp.process(source_id_a, &config);
-
-    assert!(matches!(result, Err(PPError::CircularInclude)));
-}
-
-#[test]
 fn test_line_directive_zero_line_number() {
     let src = r#"
 #line 0

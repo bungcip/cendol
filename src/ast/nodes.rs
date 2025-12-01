@@ -140,6 +140,7 @@ pub enum DeclSpecifier {
     FunctionSpecifiers(FunctionSpecifiers),
     AlignmentSpecifier(AlignmentSpecifier),
     TypeSpecifier(TypeSpecifier),
+    Attribute,
 }
 
 // Type specifiers

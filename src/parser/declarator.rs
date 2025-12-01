@@ -31,13 +31,9 @@ pub fn parse_declarator(parser: &mut Parser, initial_declarator: Option<Symbol>)
     );
 
     // Check for __attribute__ before declarator (GCC extension)
-    if let Some(token) = parser.try_current_token() {
-        if let TokenKind::Identifier(symbol) = &token.kind {
-            if *symbol == super::declaration_core::get_attribute_symbol() {
-                if let Err(_e) = super::declaration_core::parse_attribute(parser) {
-                    debug!("parse_declarator: failed to parse __attribute__: {:?}", _e);
-                }
-            }
+    if parser.is_token(TokenKind::Attribute) {
+        if let Err(_e) = super::declaration_core::parse_attribute(parser) {
+            debug!("parse_declarator: failed to parse __attribute__: {:?}", _e);
         }
     }
 
@@ -370,13 +366,9 @@ pub fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarator, Pars
     );
 
     // Check for __attribute__ at the beginning (GCC extension)
-    if let Some(token) = parser.try_current_token() {
-        if let TokenKind::Identifier(symbol) = &token.kind {
-            if *symbol == super::declaration_core::get_attribute_symbol() {
-                if let Err(_e) = super::declaration_core::parse_attribute(parser) {
-                    debug!("parse_abstract_declarator: failed to parse __attribute__: {:?}", _e);
-                }
-            }
+    if parser.is_token(TokenKind::Attribute) {
+        if let Err(_e) = super::declaration_core::parse_attribute(parser) {
+            debug!("parse_abstract_declarator: failed to parse __attribute__: {:?}", _e);
         }
     }
 

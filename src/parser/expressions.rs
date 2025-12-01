@@ -635,7 +635,8 @@ pub(crate) fn is_cast_expression_start(parser: &Parser) -> bool {
             | TokenKind::Enum
             | TokenKind::Const
             | TokenKind::Volatile
-            | TokenKind::Restrict => {
+            | TokenKind::Restrict
+            | TokenKind::Attribute => {
                 debug!(
                     "is_cast_expression_start: found direct type specifier: {:?}",
                     token.kind

@@ -76,6 +76,7 @@ pub enum TokenKind {
     Sizeof,
     StaticAssert,
     Typedef,
+    Attribute,
 
     // === OPERATORS ===
     // Arithmetic operators
@@ -208,6 +209,7 @@ impl TokenKind {
             || self.is_type_qualifier()
             || self.is_function_specifier()
             || self.is_alignment_specifier()
+            || matches!(self, TokenKind::Attribute)
     }
 }
 
@@ -275,6 +277,10 @@ fn init_keywords() -> HashMap<&'static str, TokenKind> {
     map.insert("_Pragma", TokenKind::Pragma);
     map.insert("_Static_assert", TokenKind::StaticAssert);
     map.insert("_Thread_local", TokenKind::ThreadLocal);
+
+    // GCC extensions
+    map.insert("__attribute__", TokenKind::Attribute);
+    map.insert("__attribute", TokenKind::Attribute);
 
     map
 }

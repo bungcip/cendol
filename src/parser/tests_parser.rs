@@ -150,6 +150,7 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
                     DeclSpecifier::TypeQualifiers(tq) => format!("{:?}", tq),
                     DeclSpecifier::FunctionSpecifiers(fs) => format!("{:?}", fs),
                     DeclSpecifier::AlignmentSpecifier(aspec) => format!("{:?}", aspec),
+                    DeclSpecifier::Attribute => "__attribute__".to_string(),
                 }
             }).collect();
             let init_declarators = decl.init_declarators.iter().map(|init_decl| {
@@ -852,5 +853,15 @@ fn test_complex_abstract_declarator_function() {
       init_declarators:
         - name: f5
           kind: function(int function(int) -> pointer) -> int
+    ");
+}
+
+#[test]
+fn test_attribute_in_cast() {
+    let resolved = setup_expr("(__attribute__((__noinline__)) int) 1");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    Cast:
+      - type_1
+      - LiteralInt: 1
     ");
 }

@@ -433,7 +433,7 @@ fn parse_index_access(parser: &mut Parser, array: NodeRef) -> Result<NodeRef, Pa
 
 /// Parse member access
 fn parse_member_access(parser: &mut Parser, object: NodeRef, is_arrow: bool) -> Result<NodeRef, ParseError> {
-    let (symbol, location) = parser.expect_name()?; 
+    let (symbol, location) = parser.expect_name()?;
     let span = SourceSpan::new(parser.ast.get_node(object).span.start, location.end);
     let node = parser.push_node(NodeKind::MemberAccess(object, symbol, is_arrow), span);
     Ok(node)

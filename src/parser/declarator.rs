@@ -31,20 +31,18 @@ pub fn parse_declarator(parser: &mut Parser, initial_declarator: Option<Symbol>)
     );
 
     // Check for __attribute__ before declarator (GCC extension)
-    if parser.is_token(TokenKind::Attribute) {
-        if let Err(_e) = super::declaration_core::parse_attribute(parser) {
-            debug!("parse_declarator: failed to parse __attribute__: {:?}", _e);
-        }
+    if parser.is_token(TokenKind::Attribute)
+        && let Err(_e) = super::declaration_core::parse_attribute(parser)
+    {
+        debug!("parse_declarator: failed to parse __attribute__: {:?}", _e);
     }
 
     let mut declarator_chain: Vec<DeclaratorComponent> = Vec::new();
-    let mut _current_qualifiers = TypeQualifiers::empty();
 
     // Parse leading pointers and their qualifiers
     while parser.accept(TokenKind::Star).is_some() {
-        _current_qualifiers = parse_type_qualifiers(parser)?;
-        declarator_chain.push(DeclaratorComponent::Pointer(_current_qualifiers));
-        _current_qualifiers = TypeQualifiers::empty(); // Reset for next component
+        let current_qualifiers = parse_type_qualifiers(parser)?;
+        declarator_chain.push(DeclaratorComponent::Pointer(current_qualifiers));
     }
 
     // Parse direct declarator (identifier or parenthesized declarator)
@@ -366,20 +364,18 @@ pub fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarator, Pars
     );
 
     // Check for __attribute__ at the beginning (GCC extension)
-    if parser.is_token(TokenKind::Attribute) {
-        if let Err(_e) = super::declaration_core::parse_attribute(parser) {
-            debug!("parse_abstract_declarator: failed to parse __attribute__: {:?}", _e);
-        }
+    if parser.is_token(TokenKind::Attribute)
+        && let Err(_e) = super::declaration_core::parse_attribute(parser)
+    {
+        debug!("parse_abstract_declarator: failed to parse __attribute__: {:?}", _e);
     }
 
     let mut declarator_chain: Vec<DeclaratorComponent> = Vec::new();
-    let mut _current_qualifiers = TypeQualifiers::empty();
 
     // Parse leading pointers and their qualifiers
     while parser.accept(TokenKind::Star).is_some() {
-        _current_qualifiers = parse_type_qualifiers(parser)?;
-        declarator_chain.push(DeclaratorComponent::Pointer(_current_qualifiers));
-        _current_qualifiers = TypeQualifiers::empty(); // Reset for next component
+        let current_qualifiers = parse_type_qualifiers(parser)?;
+        declarator_chain.push(DeclaratorComponent::Pointer(current_qualifiers));
     }
 
     // Parse direct abstract declarator (parenthesized or array/function)

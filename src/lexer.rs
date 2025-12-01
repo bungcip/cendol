@@ -186,10 +186,7 @@ impl TokenKind {
 
     /// Check if the token is a type qualifier
     pub fn is_type_qualifier(&self) -> bool {
-        matches!(
-            self,
-            TokenKind::Const | TokenKind::Restrict | TokenKind::Volatile
-        )
+        matches!(self, TokenKind::Const | TokenKind::Restrict | TokenKind::Volatile)
     }
 
     /// Check if the token is a function specifier

@@ -187,7 +187,6 @@ pub mod expr_patterns {
     }
 }
 
-
 /// Iterator patterns for AST traversal
 pub mod ast_iterators {
     use super::*;

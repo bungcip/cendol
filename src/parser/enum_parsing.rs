@@ -11,7 +11,7 @@ use super::utils::ParserExt;
 
 /// Parse enum specifier
 pub fn parse_enum_specifier(parser: &mut Parser) -> Result<TypeSpecifier, ParseError> {
-    let tag = parser.accept_name(); 
+    let tag = parser.accept_name();
     let enumerators = if parser.accept(TokenKind::LeftBrace).is_some() {
         let enums = parse_enumerator_list(parser)?;
         parser.expect(TokenKind::RightBrace)?;

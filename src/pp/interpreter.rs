@@ -356,12 +356,11 @@ impl<'a> Interpreter<'a> {
                     i64::from_str_radix(num_text, 8)
                 } else {
                     num_text.parse::<i64>()
-                }.map_err(|_| PPError::InvalidConditionalExpression)?;
+                }
+                .map_err(|_| PPError::InvalidConditionalExpression)?;
                 Ok(PPExpr::Number(num))
             }
-            PPTokenKind::CharLiteral(codepoint, _) => {
-                Ok(PPExpr::Number(*codepoint as i64))
-            }
+            PPTokenKind::CharLiteral(codepoint, _) => Ok(PPExpr::Number(*codepoint as i64)),
             PPTokenKind::Identifier(sym) => {
                 // Identifiers are 0 if not defined, but since we expanded macros, should be numbers
                 Ok(PPExpr::Identifier(sym.as_str().to_string()))

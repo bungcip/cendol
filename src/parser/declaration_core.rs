@@ -184,7 +184,6 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
         specifiers.len()
     );
 
-
     if specifiers.is_empty() {
         return Err(ParseError::SyntaxError {
             message: "Expected declaration specifiers".to_string(),
@@ -335,10 +334,10 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<(), ParseError> {
 /// Parse type name (for casts, sizeof, etc.)
 pub(crate) fn parse_type_name(parser: &mut Parser) -> Result<TypeRef, ParseError> {
     // Check for __attribute__ at the beginning (GCC extension)
-    if parser.is_token(TokenKind::Attribute) {
-        if let Err(_e) = parse_attribute(parser) {
-            // For now, ignore attribute parsing errors
-        }
+    if parser.is_token(TokenKind::Attribute)
+        && let Err(_e) = parse_attribute(parser)
+    {
+        // For now, ignore attribute parsing errors
     }
 
     // Parse declaration specifiers

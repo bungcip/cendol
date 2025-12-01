@@ -82,13 +82,6 @@ pub enum ParseExprOutput {
     Declaration(NodeRef), // For cases where we parse a declaration instead
 }
 
-/// Error recovery point for backtracking
-#[derive(Debug)]
-pub struct ErrorRecoveryPoint {
-    pub token_index: usize,
-    pub context: String,
-}
-
 #[derive(Debug, Clone)]
 pub struct ParserState {
     current_idx: usize,
@@ -102,18 +95,6 @@ pub struct Parser<'arena, 'src> {
     ast: &'arena mut Ast,
     diag: &'src mut DiagnosticEngine,
 
-    // Parsing context
-    #[allow(unused)]
-    in_function_body: bool,
-    #[allow(unused)]
-    in_struct_declaration: bool,
-    #[allow(unused)]
-    in_enum_declaration: bool,
-
-    // Error recovery state
-    #[allow(unused)]
-    error_recovery_points: Vec<ErrorRecoveryPoint>,
-
     // Type context for typedef tracking
     type_context: TypeContext,
 }
@@ -126,10 +107,6 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             current_idx: 0,
             ast,
             diag,
-            in_function_body: false,
-            in_struct_declaration: false,
-            in_enum_declaration: false,
-            error_recovery_points: Vec::new(),
             type_context: TypeContext::new(),
         }
     }

@@ -6,7 +6,7 @@
 use bitflags::bitflags;
 use serde::Serialize;
 
-use crate::ast::{Symbol, TypeRef, FunctionParameter, StructMember, EnumConstant};
+use crate::ast::{EnumConstant, FunctionParameter, StructMember, Symbol, TypeRef};
 
 /// Type representation (for semantic analysis)
 /// This is a canonical type, distinct from TypeSpecifier which is a syntax construct.

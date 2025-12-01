@@ -18,22 +18,13 @@ pub fn parse_record_specifier_with_context(
     in_struct_member: bool,
 ) -> Result<TypeSpecifier, ParseError> {
     // Check for __attribute__ after struct/union keyword (GCC extension)
-    if parser.is_token(TokenKind::Attribute) {
-        if let Err(_e) = super::declaration_core::parse_attribute(parser) {
-            // For now, ignore attribute parsing errors
-        }
+    if parser.is_token(TokenKind::Attribute)
+        && let Err(_e) = super::declaration_core::parse_attribute(parser)
+    {
+        // For now, ignore attribute parsing errors
     }
 
-    let tag = if let Some(token) = parser.try_current_token() {
-        if let TokenKind::Identifier(symbol) = token.kind {
-            parser.advance();
-            Some(symbol)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
+    let tag = parser.accept_name();
 
     // In struct member context, only parse members if we have a specific tag
     // to avoid confusion with anonymous nested structs
@@ -42,10 +33,10 @@ pub fn parse_record_specifier_with_context(
         parser.expect(TokenKind::RightBrace)?;
 
         // Check for __attribute__ after struct definition (GCC extension)
-        if parser.is_token(TokenKind::Attribute) {
-            if let Err(_e) = super::declaration_core::parse_attribute(parser) {
-                // For now, ignore attribute parsing errors
-            }
+        if parser.is_token(TokenKind::Attribute)
+            && let Err(_e) = super::declaration_core::parse_attribute(parser)
+        {
+            // For now, ignore attribute parsing errors
         }
 
         Some(RecordDefData {
@@ -76,9 +67,12 @@ pub fn parse_struct_declaration_list(parser: &mut Parser) -> Result<Vec<Declarat
 pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, ParseError> {
     // Check if we have an anonymous struct/union
     let is_struct = parser.accept(TokenKind::Struct).is_some();
-    let is_union = if !is_struct { parser.accept(TokenKind::Union).is_some() } else { false };
+    let is_union = if !is_struct {
+        parser.accept(TokenKind::Union).is_some()
+    } else {
+        false
+    };
     if is_struct || is_union {
-
         // Check if this is an anonymous struct
         if parser.is_token(TokenKind::LeftBrace) {
             // Anonymous struct definition

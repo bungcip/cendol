@@ -86,7 +86,10 @@ pub(crate) fn parse_type_specifier_with_context(
             parser.advance();
             // Parse optional base type for _Complex (C11 allows _Complex float, _Complex double, etc.)
             // For now, just consume the base type - full implementation would create proper type
-            if parser.accept(TokenKind::Float).is_some() || parser.accept(TokenKind::Double).is_some() || parser.accept(TokenKind::Long).is_some() {
+            if parser.accept(TokenKind::Float).is_some()
+                || parser.accept(TokenKind::Double).is_some()
+                || parser.accept(TokenKind::Long).is_some()
+            {
                 // For now, just consume the base type - full implementation would create proper type
                 if parser.accept(TokenKind::Double).is_some() {
                     // consume double for long double

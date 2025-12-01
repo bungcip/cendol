@@ -139,7 +139,6 @@ fn parse_if_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.expect(TokenKind::If)?;
     let start_span = token.location.start;
 
-
     let condition = parse_parenthesized_expr(parser)?;
     let then_branch = parse_statement(parser)?;
 
@@ -389,7 +388,6 @@ fn parse_empty_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 fn parse_case_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.expect(TokenKind::Case)?;
     let start_span = token.location.start;
-
 
     let start_expr = parser.parse_expr_min()?;
 

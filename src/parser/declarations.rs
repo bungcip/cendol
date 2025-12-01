@@ -121,36 +121,21 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     if !has_declarators {
         // Check if this looks like a record/enum definition
         // by looking at the last parsed specifier
-        if let Some(DeclSpecifier::TypeSpecifier(ts)) = specifiers.last() {
+        let message = if let Some(DeclSpecifier::TypeSpecifier(ts)) = specifiers.last() {
             match ts {
-                TypeSpecifier::Record(_, _, _) => {
-                    return Err(ParseError::SyntaxError {
-                        message: "Expected ';' after struct/union definition".to_string(),
-                        location: trx.parser.current_token()?.location,
-                    });
-                }
-                TypeSpecifier::Enum(_, _) => {
-                    return Err(ParseError::SyntaxError {
-                        message: "Expected ';' after enum definition".to_string(),
-                        location: trx.parser.current_token()?.location,
-                    });
-                }
-                _ => {
-                    // Not a record/enum definition, this is likely an error
-                    // But let's rollback and let the statement parser handle it
-                    return Err(ParseError::SyntaxError {
-                        message: "Expected declarator or identifier after type specifier".to_string(),
-                        location: trx.parser.current_token()?.location,
-                    });
-                }
+                TypeSpecifier::Record(_, _, _) => "Expected ';' after struct/union definition",
+                TypeSpecifier::Enum(_, _) => "Expected ';' after enum definition",
+                _ => "Expected declarator or identifier after type specifier",
             }
         } else {
             // No specifiers at all - this shouldn't happen
-            return Err(ParseError::SyntaxError {
-                message: "Expected type specifiers".to_string(),
-                location: trx.parser.current_token()?.location,
-            });
-        }
+            "Expected type specifiers"
+        };
+
+        return Err(ParseError::SyntaxError {
+            message: message.to_string(),
+            location: trx.parser.current_token()?.location,
+        });
     }
 
     // Parse init declarators
@@ -352,8 +337,6 @@ pub fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError
 
     Ok(node)
 }
-
-
 
 /// Parse static assert (C11)
 pub fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<NodeRef, ParseError> {

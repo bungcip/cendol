@@ -152,13 +152,9 @@ pub struct PPConditionalInfo {
 pub struct HeaderSearch {
     #[allow(unused)]
     search_path: Vec<SearchPath>,
-    #[allow(unused)]
     system_path: Vec<SearchPath>,
-    #[allow(unused)]
     framework_path: Vec<SearchPath>,
-    #[allow(unused)]
     quoted_includes: Vec<String>,
-    #[allow(unused)]
     angled_includes: Vec<String>,
 }
 
@@ -590,7 +586,7 @@ impl<'src> Preprocessor<'src> {
 
         let lexer = PPLexer::new(source_id, buffer.to_vec());
         self.lexer_stack.push(lexer);
-        
+
         // FIXNE: need to create line_start on the fly instead of computing all at once
         // Set line starts for the source manager so presumed locations work during processing
         let mut line_starts = vec![0];
@@ -613,7 +609,7 @@ impl<'src> Preprocessor<'src> {
                     // Skip tokens when in conditional compilation skip mode
                     continue;
                 }
-        
+
                 match token.kind {
                     PPTokenKind::Eod => continue,
                     PPTokenKind::Identifier(symbol) => {
@@ -997,7 +993,7 @@ impl<'src> Preprocessor<'src> {
 
         Ok(())
     }
-    
+
     fn handle_include(&mut self) -> Result<(), PPError> {
         // Parse the include path
         let token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
@@ -1051,7 +1047,8 @@ impl<'src> Preprocessor<'src> {
             let current_file_id = self.lexer_stack.last().unwrap().source_id;
             let current_file_info = self.source_manager.get_file_info(current_file_id).unwrap();
             let current_dir = current_file_info.path.parent().unwrap_or(Path::new("."));
-            self.header_search.resolve_path(&path_str, is_angled, current_dir)
+            self.header_search
+                .resolve_path(&path_str, is_angled, current_dir)
                 .and_then(|p| if p.exists() { p.canonicalize().ok() } else { Some(p) })
                 .unwrap_or_else(|| PathBuf::from(&path_str))
         };

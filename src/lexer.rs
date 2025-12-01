@@ -147,6 +147,70 @@ pub enum TokenKind {
     Unknown,
 }
 
+impl TokenKind {
+    /// Check if the token is a storage class specifier
+    pub fn is_storage_class_specifier(&self) -> bool {
+        matches!(
+            self,
+            TokenKind::Typedef
+                | TokenKind::Extern
+                | TokenKind::Static
+                | TokenKind::ThreadLocal
+                | TokenKind::Auto
+                | TokenKind::Register
+        )
+    }
+
+    /// Check if the token is a type specifier
+    pub fn is_type_specifier(&self) -> bool {
+        matches!(
+            self,
+            TokenKind::Void
+                | TokenKind::Char
+                | TokenKind::Short
+                | TokenKind::Int
+                | TokenKind::Long
+                | TokenKind::Float
+                | TokenKind::Double
+                | TokenKind::Signed
+                | TokenKind::Unsigned
+                | TokenKind::Bool
+                | TokenKind::Complex
+                | TokenKind::Atomic
+                | TokenKind::Struct
+                | TokenKind::Union
+                | TokenKind::Enum
+        )
+    }
+
+    /// Check if the token is a type qualifier
+    pub fn is_type_qualifier(&self) -> bool {
+        matches!(
+            self,
+            TokenKind::Const | TokenKind::Restrict | TokenKind::Volatile
+        )
+    }
+
+    /// Check if the token is a function specifier
+    pub fn is_function_specifier(&self) -> bool {
+        matches!(self, TokenKind::Inline | TokenKind::Noreturn)
+    }
+
+    /// Check if the token is an alignment specifier
+    pub fn is_alignment_specifier(&self) -> bool {
+        matches!(self, TokenKind::Alignas)
+    }
+
+    /// Check if the token can start a declaration specifier
+    pub fn is_declaration_specifier_start(&self) -> bool {
+        self.is_storage_class_specifier()
+            || self.is_type_specifier()
+            || self.is_type_qualifier()
+            || self.is_function_specifier()
+            || self.is_alignment_specifier()
+    }
+}
+
 /// Token with source location for the parser
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Token {

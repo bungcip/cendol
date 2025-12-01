@@ -448,3 +448,131 @@ impl NodeKind {
 
     // Add more constructors as needed...
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::{Ast, Node};
+    use crate::source_manager::SourceSpan;
+
+    #[test]
+    fn test_literal_int_constructor() {
+        let node = NodeKind::literal_int(42);
+        assert!(matches!(node, NodeKind::LiteralInt(42)));
+    }
+
+    #[test]
+    fn test_literal_float_constructor() {
+        let node = NodeKind::literal_float(3.14);
+        assert!(matches!(node, NodeKind::LiteralFloat(3.14)));
+    }
+
+    #[test]
+    fn test_literal_string_constructor() {
+        let symbol: Symbol = "hello".into();
+        let node = NodeKind::literal_string(symbol);
+        assert!(matches!(node, NodeKind::LiteralString(s) if s == symbol));
+    }
+
+    #[test]
+    fn test_literal_char_constructor() {
+        let node = NodeKind::literal_char(b'a');
+        assert!(matches!(node, NodeKind::LiteralChar(b'a')));
+    }
+
+    #[test]
+    fn test_ident_constructor() {
+        let symbol: Symbol = "x".into();
+        let node = NodeKind::ident(symbol);
+        assert!(matches!(node, NodeKind::Ident(s, _) if s == symbol));
+    }
+
+    #[test]
+    fn test_binary_op_constructor() {
+        let mut ast = Ast::new();
+        let left = ast.push_node(Node::new(
+            NodeKind::LiteralInt(1),
+            SourceSpan::empty(),
+        ));
+        let right = ast.push_node(Node::new(
+            NodeKind::LiteralInt(2),
+            SourceSpan::empty(),
+        ));
+        let node = NodeKind::binary_op(BinaryOp::Add, left, right);
+        assert!(
+            matches!(node, NodeKind::BinaryOp(BinaryOp::Add, l, r) if l == left && r == right)
+        );
+    }
+
+    #[test]
+    fn test_function_call_constructor() {
+        let mut ast = Ast::new();
+        let func = ast.push_node(Node::new(
+            NodeKind::ident("my_func".into()),
+            SourceSpan::empty(),
+        ));
+        let arg = ast.push_node(Node::new(
+            NodeKind::LiteralInt(42),
+            SourceSpan::empty(),
+        ));
+        let node = NodeKind::function_call(func, vec![arg]);
+        assert!(matches!(node, NodeKind::FunctionCall(f, args) if f == func && args[0] == arg));
+    }
+
+    #[test]
+    fn test_if_stmt_builder_success() {
+        let mut ast = Ast::new();
+        let cond = ast.push_node(Node::new(
+            NodeKind::LiteralInt(1),
+            SourceSpan::empty(),
+        ));
+        let then = ast.push_node(Node::new(
+            NodeKind::EmptyStatement,
+            SourceSpan::empty(),
+        ));
+        let if_stmt = IfStmtBuilder::new()
+            .condition(cond)
+            .then_branch(then)
+            .build()
+            .unwrap();
+        assert_eq!(if_stmt.condition, cond);
+        assert_eq!(if_stmt.then_branch, then);
+        assert!(if_stmt.else_branch.is_none());
+    }
+
+    #[test]
+    fn test_if_stmt_builder_missing_condition() {
+        let mut ast = Ast::new();
+        let then = ast.push_node(Node::new(
+            NodeKind::EmptyStatement,
+            SourceSpan::empty(),
+        ));
+        let result = IfStmtBuilder::new().then_branch(then).build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_declaration_data_builder() {
+        let builder = DeclarationDataBuilder::new();
+        let specifier = DeclSpecifier::TypeSpecifier(TypeSpecifier::Int);
+        let init_declarator = InitDeclarator {
+            declarator: Declarator::Identifier("x".into(), Default::default(), None),
+            initializer: None,
+        };
+        let decl_data = builder
+            .add_specifier(specifier.clone())
+            .add_init_declarator(init_declarator.clone())
+            .build();
+
+        assert_eq!(decl_data.specifiers.len(), 1);
+        assert_eq!(decl_data.init_declarators.len(), 1);
+        assert!(matches!(
+            &decl_data.specifiers[0],
+            DeclSpecifier::TypeSpecifier(TypeSpecifier::Int)
+        ));
+        assert!(
+            matches!(&decl_data.init_declarators[0].declarator, Declarator::Identifier(s, _, None) if s == &"x".into())
+        );
+    }
+
+}

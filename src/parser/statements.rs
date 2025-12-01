@@ -10,6 +10,7 @@ use crate::diagnostic::ParseError;
 use crate::lexer::TokenKind;
 use crate::parser::declaration_core::parse_declaration_specifiers;
 use crate::parser::declarator::parse_declarator;
+use crate::parser::utils::expr_patterns::parse_parenthesized_expr;
 use crate::source_manager::{SourceLoc, SourceSpan};
 use log::debug;
 use symbol_table::GlobalSymbol as Symbol;
@@ -137,12 +138,8 @@ pub fn parse_compound_statement(parser: &mut Parser) -> Result<(NodeRef, SourceL
 fn parse_if_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let start_span = parser.current_token()?.location.start;
     parser.expect(TokenKind::If)?;
-    parser.expect(TokenKind::LeftParen)?;
 
-    let condition = parser.parse_expr_min()?;
-
-    parser.expect(TokenKind::RightParen)?;
-
+    let condition = parse_parenthesized_expr(parser)?;
     let then_branch = parse_statement(parser)?;
 
     let else_branch = if parser.accept(TokenKind::Else).is_some() {
@@ -172,11 +169,8 @@ fn parse_if_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 fn parse_switch_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let start_span = parser.current_token()?.location.start;
     parser.expect(TokenKind::Switch)?;
-    parser.expect(TokenKind::LeftParen)?;
 
-    let condition = parser.parse_expr_min()?;
-
-    parser.expect(TokenKind::RightParen)?;
+    let condition = parse_parenthesized_expr(parser)?;
 
     debug!("parse_for_statement: parsing body");
 
@@ -194,12 +188,7 @@ fn parse_switch_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 fn parse_while_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let start_span = parser.current_token()?.location.start;
     parser.expect(TokenKind::While)?;
-    parser.expect(TokenKind::LeftParen)?;
-
-    let condition = parser.parse_expr_min()?;
-
-    parser.expect(TokenKind::RightParen)?;
-
+    let condition = parse_parenthesized_expr(parser)?;
     let body = parse_statement(parser)?;
 
     let end_span = parser.ast.get_node(body).span.end;
@@ -220,11 +209,7 @@ fn parse_do_while_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> 
     let body = parse_statement(parser)?;
 
     parser.expect(TokenKind::While)?;
-    parser.expect(TokenKind::LeftParen)?;
-
-    let condition = parser.parse_expr_min()?;
-
-    parser.expect(TokenKind::RightParen)?;
+    let condition = parse_parenthesized_expr(parser)?;
     let semicolon_token = parser.expect(TokenKind::Semicolon)?;
     let end_span = semicolon_token.location.end;
 

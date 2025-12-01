@@ -6,8 +6,7 @@
 
 use crate::ast::*;
 use crate::diagnostic::ParseError;
-use crate::lexer::Token;
-use crate::source_manager::{SourceLoc, SourceSpan};
+use crate::source_manager::SourceSpan;
 use log::debug;
 
 use super::expressions::BindingPower;
@@ -39,15 +38,6 @@ pub trait ParserExt {
         result: Result<ParseExprOutput, ParseError>,
         context: &str,
     ) -> Result<NodeRef, ParseError>;
-
-    /// Calculate span from start location to current token end
-    fn span_from_start(&self, start: SourceLoc) -> Result<SourceSpan, ParseError>;
-
-    /// Calculate span from start token to end token
-    fn span_from_tokens(&self, start_token: &Token, end_token: &Token) -> SourceSpan;
-
-    /// Calculate span from node start to current position
-    fn span_from_node(&self, node: NodeRef) -> Result<SourceSpan, ParseError>;
 
     /// Check if current tokens indicate start of a declaration
     fn is_declaration_start(&self) -> bool;
@@ -98,21 +88,6 @@ impl<'arena, 'src> ParserExt for Parser<'arena, 'src> {
             }),
             Err(e) => Err(e),
         }
-    }
-
-    fn span_from_start(&self, start: SourceLoc) -> Result<SourceSpan, ParseError> {
-        let end = self.current_token_span()?.end;
-        Ok(SourceSpan::new(start, end))
-    }
-
-    fn span_from_tokens(&self, start_token: &Token, end_token: &Token) -> SourceSpan {
-        SourceSpan::new(start_token.location.start, end_token.location.end)
-    }
-
-    fn span_from_node(&self, node: NodeRef) -> Result<SourceSpan, ParseError> {
-        let node_span = self.ast.get_node(node).span;
-        let current_end = self.current_token_span()?.end;
-        Ok(SourceSpan::new(node_span.start, current_end))
     }
 
     fn is_declaration_start(&self) -> bool {
@@ -211,54 +186,6 @@ pub mod expr_patterns {
     }
 }
 
-/// Common error handling patterns
-pub mod error_patterns {
-    use super::*;
-    use crate::lexer::TokenKind;
-
-    /// Create a syntax error for unexpected token
-    pub fn unexpected_token(expected: &[TokenKind], found: TokenKind, location: SourceSpan) -> ParseError {
-        ParseError::UnexpectedToken {
-            expected: expected.to_vec(),
-            found,
-            location,
-        }
-    }
-
-    /// Create a syntax error for missing token
-    pub fn missing_token(expected: TokenKind, location: SourceSpan) -> ParseError {
-        ParseError::MissingToken { expected, location }
-    }
-
-    /// Create a generic syntax error
-    pub fn syntax_error(message: &str, location: SourceSpan) -> ParseError {
-        ParseError::SyntaxError {
-            message: message.to_string(),
-            location,
-        }
-    }
-}
-
-/// Span calculation utilities
-pub mod span_utils {
-    use super::*;
-
-    /// Create span from two locations
-    pub fn from_locs(start: SourceLoc, end: SourceLoc) -> SourceSpan {
-        SourceSpan::new(start, end)
-    }
-
-    /// Create span from two tokens
-    pub fn from_tokens(start_token: &Token, end_token: &Token) -> SourceSpan {
-        SourceSpan::new(start_token.location.start, end_token.location.end)
-    }
-
-    /// Create span from node and additional end location
-    pub fn extend_node(node: NodeRef, end: SourceLoc, ast: &Ast) -> SourceSpan {
-        let node_start = ast.get_node(node).span.start;
-        SourceSpan::new(node_start, end)
-    }
-}
 
 /// Iterator patterns for AST traversal
 pub mod ast_iterators {

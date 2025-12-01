@@ -650,3 +650,22 @@ fn test_multiline_macro_definition_only() {
     // Should produce no output since macro is defined but not used
     assert_eq!(significant_tokens.len(), 0);
 }
+
+#[test]
+fn test_token_pasting_with_empty_argument() {
+    let src = r#"
+#define P(A,B) A ## B
+int x = P(foo,);
+"#;
+
+    let significant_tokens = setup_preprocessor_test(src);
+
+    assert_token_kinds!(
+        significant_tokens,
+        PPTokenKind::Identifier(Symbol::new("int")),
+        PPTokenKind::Identifier(Symbol::new("x")),
+        PPTokenKind::Assign,
+        PPTokenKind::Identifier(Symbol::new("foo")),
+        PPTokenKind::Semicolon
+    );
+}

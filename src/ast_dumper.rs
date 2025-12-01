@@ -1724,7 +1724,8 @@ impl<'src> AstDumper<'src> {
             | TokenKind::Noreturn
             | TokenKind::Pragma
             | TokenKind::StaticAssert
-            | TokenKind::ThreadLocal => "c-keyword",
+            | TokenKind::ThreadLocal
+            | TokenKind::Attribute => "c-keyword",
 
             TokenKind::Identifier(_) => "c-identifier",
 

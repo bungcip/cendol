@@ -8,18 +8,10 @@ use crate::ast::*;
 use crate::diagnostic::ParseError;
 use crate::lexer::TokenKind;
 use log::debug;
-use symbol_table::GlobalSymbol as Symbol;
 use thin_vec::ThinVec;
 
 use super::Parser;
 use super::utils::ParserExt;
-
-// Interned symbol for __attribute__
-static ATTRIBUTE_SYMBOL: std::sync::OnceLock<Symbol> = std::sync::OnceLock::new();
-
-pub(crate) fn get_attribute_symbol() -> Symbol {
-    *ATTRIBUTE_SYMBOL.get_or_init(|| Symbol::new("__attribute__"))
-}
 
 /// Parse declaration specifiers
 pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVec<DeclSpecifier>, ParseError> {
@@ -92,13 +84,12 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                 specifiers.push(DeclSpecifier::FunctionSpecifiers(func_specs));
             }
 
-            // GCC __attribute__ (attribute-specifier-seq)
-            TokenKind::Identifier(symbol) if symbol == get_attribute_symbol() => {
+            TokenKind::Attribute => {
                 debug!("parse_declaration_specifiers: found __attribute__, parsing it");
                 if let Err(_e) = parse_attribute(parser) {
                     // For now, ignore attribute parsing errors
                 }
-                // Don't add to specifiers, just skip
+                specifiers.push(DeclSpecifier::Attribute);
             }
 
             // Type specifiers
@@ -310,30 +301,7 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<(), ParseError> {
     debug!("parse_attribute: parsing __attribute__ construct");
 
     // Expect __attribute__
-    if let Some(token) = parser.try_current_token() {
-        if let TokenKind::Identifier(symbol) = token.kind {
-            if symbol == get_attribute_symbol() {
-                parser.advance(); // consume __attribute__
-            } else {
-                return Err(ParseError::UnexpectedToken {
-                    expected: vec![TokenKind::Identifier(get_attribute_symbol())],
-                    found: token.kind,
-                    location: token.location,
-                });
-            }
-        } else {
-            return Err(ParseError::UnexpectedToken {
-                expected: vec![TokenKind::Identifier(get_attribute_symbol())],
-                found: token.kind,
-                location: token.location,
-            });
-        }
-    } else {
-        return Err(ParseError::MissingToken {
-            expected: TokenKind::Identifier(get_attribute_symbol()),
-            location: SourceSpan::empty(),
-        });
-    }
+    parser.expect(TokenKind::Attribute)?;
 
     // Expect opening (
     parser.expect(TokenKind::LeftParen)?;
@@ -342,25 +310,22 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<(), ParseError> {
     parser.expect(TokenKind::LeftParen)?;
 
     // Skip attribute list until we find ))
-    let mut paren_depth = 0;
+    let mut paren_depth = 2;
     while let Some(token) = parser.try_current_token() {
         match token.kind {
             TokenKind::LeftParen => {
                 paren_depth += 1;
-                parser.advance();
             }
             TokenKind::RightParen => {
                 paren_depth -= 1;
-                parser.advance();
                 if paren_depth == 0 {
-                    // Found matching ))
+                    parser.advance();
                     break;
                 }
             }
-            _ => {
-                parser.advance();
-            }
+            _ => {}
         }
+        parser.advance();
     }
 
     debug!("parse_attribute: successfully parsed __attribute__ construct");
@@ -370,13 +335,9 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<(), ParseError> {
 /// Parse type name (for casts, sizeof, etc.)
 pub(crate) fn parse_type_name(parser: &mut Parser) -> Result<TypeRef, ParseError> {
     // Check for __attribute__ at the beginning (GCC extension)
-    if let Some(token) = parser.try_current_token() {
-        if let TokenKind::Identifier(symbol) = &token.kind {
-            if *symbol == get_attribute_symbol() {
-                if let Err(_e) = parse_attribute(parser) {
-                    // For now, ignore attribute parsing errors
-                }
-            }
+    if parser.is_token(TokenKind::Attribute) {
+        if let Err(_e) = parse_attribute(parser) {
+            // For now, ignore attribute parsing errors
         }
     }
 

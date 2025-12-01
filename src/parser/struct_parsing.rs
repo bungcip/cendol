@@ -18,13 +18,9 @@ pub fn parse_record_specifier_with_context(
     in_struct_member: bool,
 ) -> Result<TypeSpecifier, ParseError> {
     // Check for __attribute__ after struct/union keyword (GCC extension)
-    if let Some(token) = parser.try_current_token() {
-        if let TokenKind::Identifier(symbol) = &token.kind {
-            if *symbol == super::declaration_core::get_attribute_symbol() {
-                if let Err(_e) = super::declaration_core::parse_attribute(parser) {
-                    // For now, ignore attribute parsing errors
-                }
-            }
+    if parser.is_token(TokenKind::Attribute) {
+        if let Err(_e) = super::declaration_core::parse_attribute(parser) {
+            // For now, ignore attribute parsing errors
         }
     }
 
@@ -46,13 +42,9 @@ pub fn parse_record_specifier_with_context(
         parser.expect(TokenKind::RightBrace)?;
 
         // Check for __attribute__ after struct definition (GCC extension)
-        if let Some(token) = parser.try_current_token() {
-            if let crate::lexer::TokenKind::Identifier(symbol) = &token.kind {
-                if *symbol == super::declaration_core::get_attribute_symbol() {
-                    if let Err(_e) = super::declaration_core::parse_attribute(parser) {
-                        // For now, ignore attribute parsing errors
-                    }
-                }
+        if parser.is_token(TokenKind::Attribute) {
+            if let Err(_e) = super::declaration_core::parse_attribute(parser) {
+                // For now, ignore attribute parsing errors
             }
         }
 

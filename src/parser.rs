@@ -477,11 +477,6 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         expressions::parse_alignof(self)
     }
 
-    /// Check if current token starts a type name
-    fn is_type_name_start(&self) -> bool {
-        declarations::is_type_name_start(self)
-    }
-
     /// Check if current token starts an abstract declarator
     fn is_abstract_declarator_start(&self) -> bool {
         declarator::is_abstract_declarator_start(self)

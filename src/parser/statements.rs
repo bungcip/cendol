@@ -68,7 +68,7 @@ pub fn parse_compound_statement(parser: &mut Parser) -> Result<(NodeRef, SourceL
         );
 
         // Try parsing as declaration first, but only if it looks like a declaration start
-        let should_try_declaration = super::declarations::is_declaration_start(parser);
+        let should_try_declaration = parser.is_declaration_start();
         let mut declaration_attempt: Option<Result<NodeRef, ParseError>> = None;
 
         if should_try_declaration {
@@ -245,7 +245,7 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     // Parse initialization
     let init = if parser.is_token(TokenKind::Semicolon) {
         None
-    } else if super::declarations::is_declaration_start(parser) {
+    } else if parser.is_declaration_start() {
         debug!("parse_for_statement: parsing declaration in init");
         // Parse declaration specifiers
         let specifiers = parse_declaration_specifiers(parser)?;

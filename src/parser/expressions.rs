@@ -11,7 +11,7 @@ use log::{debug, trace};
 use std::cell::Cell;
 use symbol_table::GlobalSymbol as Symbol;
 
-use super::{Parser, unwrap_expr_result, utils::ParserExt};
+use super::{Parser, utils::ParserExt};
 
 /// Binding power for Pratt parser operator precedence
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -218,8 +218,7 @@ pub(crate) fn parse_prefix(parser: &mut Parser) -> Result<NodeRef, ParseError> {
                 }
             } else {
                 // Regular parenthesized expression
-                let expr_result = parse_expression(parser, BindingPower::MIN);
-                let expr = unwrap_expr_result(parser, expr_result, "expression in parentheses")?;
+                let expr = parser.parse_expr_min()?;
                 parser.expect(TokenKind::RightParen)?;
                 Ok(expr)
             }
@@ -392,8 +391,7 @@ fn parse_function_call(parser: &mut Parser, function: NodeRef) -> Result<NodeRef
     } else {
         debug!("parse_function_call: parsing arguments");
         loop {
-            let arg_result = parse_expression(parser, BindingPower::ASSIGNMENT);
-            let arg = unwrap_expr_result(parser, arg_result, "expression in function call argument")?;
+            let arg = parser.parse_expr_assignment()?;
             args.push(arg);
             debug!("parse_function_call: parsed argument, count: {}", args.len());
 
@@ -447,8 +445,7 @@ fn parse_index_access(parser: &mut Parser, array: NodeRef) -> Result<NodeRef, Pa
     } else {
         // This should not happen in normal array access, but handle it just in case
         debug!("parse_index_access: unexpected token in array access, trying to parse expression");
-        let index_result = parse_expression(parser, BindingPower::MIN);
-        unwrap_expr_result(parser, index_result, "expression in array index")?
+        parser.parse_expr_min()?
     };
 
     // The RightBracket should now be the current token, consume it
@@ -503,12 +500,7 @@ pub fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, ParseErro
     parser.expect(TokenKind::Generic)?;
     parser.expect(TokenKind::LeftParen)?;
 
-    let controlling_expr_result = parse_expression(parser, BindingPower::MIN);
-    let controlling_expr = unwrap_expr_result(
-        parser,
-        controlling_expr_result,
-        "expression in _Generic controlling expression",
-    )?;
+    let controlling_expr = parser.parse_expr_min()?;
 
     parser.expect(TokenKind::Comma)?;
 
@@ -523,8 +515,7 @@ pub fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, ParseErro
 
         parser.expect(TokenKind::Colon)?;
 
-        let result_expr_result = parse_expression(parser, BindingPower::MIN);
-        let result_expr = unwrap_expr_result(parser, result_expr_result, "expression in _Generic association")?;
+        let result_expr = parser.parse_expr_min()?;
 
         associations.push(GenericAssociation { type_name, result_expr });
 
@@ -608,8 +599,7 @@ pub fn parse_sizeof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
             parser.push_node(NodeKind::SizeOfType(type_ref), span)
         } else {
             debug!("parse_sizeof: detected expression, parsing expression");
-            let expr_result = parse_expression(parser, BindingPower::MIN);
-            let expr = unwrap_expr_result(parser, expr_result, "expression in sizeof")?;
+            let expr = parser.parse_expr_min()?;
             let right_paren_token = parser.expect(TokenKind::RightParen)?;
 
             let end_span = right_paren_token.location.end;
@@ -620,8 +610,7 @@ pub fn parse_sizeof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         }
     } else {
         debug!("parse_sizeof: no '(', parsing unary expression");
-        let expr_result = parse_expression(parser, BindingPower::UNARY);
-        let expr = unwrap_expr_result(parser, expr_result, "expression in sizeof")?;
+        let expr = parser.parse_expr_unary()?;
 
         let end_span = parser.ast.get_node(expr).span.end;
         let span = SourceSpan::new(start_span, end_span);
@@ -771,8 +760,7 @@ pub(crate) fn parse_cast_expression_from_type_and_paren(
     right_paren_token: Token,
 ) -> Result<NodeRef, ParseError> {
     // Parse the expression being cast
-    let expr_result = parse_expression(parser, BindingPower::CAST);
-    let expr_node = unwrap_expr_result(parser, expr_result, "expression after cast")?;
+    let expr_node = parser.parse_expr_cast()?;
 
     let span = SourceSpan::new(
         right_paren_token.location.start, // Start from the opening paren

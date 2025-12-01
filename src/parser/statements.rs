@@ -4,7 +4,7 @@
 //! statements, compound statements, and expression statements.
 
 use super::Parser;
-use super::{BindingPower, parse_expression, unwrap_expr_result};
+use super::utils::ParserExt;
 use crate::ast::*;
 use crate::diagnostic::ParseError;
 use crate::lexer::TokenKind;
@@ -139,8 +139,7 @@ fn parse_if_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     parser.expect(TokenKind::If)?;
     parser.expect(TokenKind::LeftParen)?;
 
-    let condition_result = parse_expression(parser, BindingPower::MIN);
-    let condition = unwrap_expr_result(parser, condition_result, "expression in if condition")?;
+    let condition = parser.parse_expr_min()?;
 
     parser.expect(TokenKind::RightParen)?;
 
@@ -175,8 +174,7 @@ fn parse_switch_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     parser.expect(TokenKind::Switch)?;
     parser.expect(TokenKind::LeftParen)?;
 
-    let condition_result = parse_expression(parser, BindingPower::MIN);
-    let condition = unwrap_expr_result(parser, condition_result, "expression in switch condition")?;
+    let condition = parser.parse_expr_min()?;
 
     parser.expect(TokenKind::RightParen)?;
 
@@ -198,8 +196,7 @@ fn parse_while_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     parser.expect(TokenKind::While)?;
     parser.expect(TokenKind::LeftParen)?;
 
-    let condition_result = parse_expression(parser, BindingPower::MIN);
-    let condition = unwrap_expr_result(parser, condition_result, "expression in while condition")?;
+    let condition = parser.parse_expr_min()?;
 
     parser.expect(TokenKind::RightParen)?;
 
@@ -225,8 +222,7 @@ fn parse_do_while_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> 
     parser.expect(TokenKind::While)?;
     parser.expect(TokenKind::LeftParen)?;
 
-    let condition_result = parse_expression(parser, BindingPower::MIN);
-    let condition = unwrap_expr_result(parser, condition_result, "expression in do-while condition")?;
+    let condition = parser.parse_expr_min()?;
 
     parser.expect(TokenKind::RightParen)?;
     let semicolon_token = parser.expect(TokenKind::Semicolon)?;
@@ -278,12 +274,7 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         Some(parser.push_node(NodeKind::Declaration(declaration_data), span))
     } else {
         debug!("parse_for_statement: parsing expression in init");
-        let expr_result = parse_expression(parser, BindingPower::MIN);
-        Some(unwrap_expr_result(
-            parser,
-            expr_result,
-            "expression or declaration in for init",
-        )?)
+        Some(parser.parse_expr_min()?)
     };
 
     parser.expect(TokenKind::Semicolon)?;
@@ -294,8 +285,7 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let condition = if parser.is_token(TokenKind::Semicolon) {
         None
     } else {
-        let expr_result = parse_expression(parser, BindingPower::MIN);
-        Some(unwrap_expr_result(parser, expr_result, "expression in for condition")?)
+        Some(parser.parse_expr_min()?)
     };
 
     parser.expect(TokenKind::Semicolon)?;
@@ -306,8 +296,7 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let increment = if parser.is_token(TokenKind::RightParen) {
         None
     } else {
-        let expr_result = parse_expression(parser, BindingPower::MIN);
-        Some(unwrap_expr_result(parser, expr_result, "expression in for increment")?)
+        Some(parser.parse_expr_min()?)
     };
 
     parser.expect(TokenKind::RightParen)?;
@@ -386,8 +375,7 @@ fn parse_return_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
             "parse_return_statement: parsing return expression with current token {:?}",
             parser.current_token_kind()
         );
-        let expr_result = parse_expression(parser, BindingPower::MIN);
-        let expr = unwrap_expr_result(parser, expr_result, "expression in return statement")?;
+        let expr = parser.parse_expr_min()?;
         debug!("parse_return_statement: parsed expression successfully");
         Some(expr)
     };
@@ -420,13 +408,11 @@ fn parse_case_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     parser.expect(TokenKind::Case)?;
 
-    let start_expr_result = parse_expression(parser, BindingPower::MIN);
-    let start_expr = unwrap_expr_result(parser, start_expr_result, "constant expression in case")?;
+    let start_expr = parser.parse_expr_min()?;
 
     // Check for GNU case range extension: case 1 ... 10:
     let (end_expr, is_range) = if parser.accept(TokenKind::Ellipsis).is_some() {
-        let end_expr_result = parse_expression(parser, BindingPower::MIN);
-        let end_expr = unwrap_expr_result(parser, end_expr_result, "constant expression after '...' in case range")?;
+        let end_expr = parser.parse_expr_min()?;
         (Some(end_expr), true)
     } else {
         (None, false)
@@ -487,8 +473,7 @@ fn parse_expression_statement(parser: &mut Parser) -> Result<NodeRef, ParseError
     let (semi, expr) = if let Some(token) = parser.accept(TokenKind::Semicolon) {
         (token, None)
     } else {
-        let expr_result = parse_expression(parser, BindingPower::MIN);
-        let expr = unwrap_expr_result(parser, expr_result, "expression in expression statement")?;
+        let expr = parser.parse_expr_min()?;
         (parser.expect(TokenKind::Semicolon)?, Some(expr))
     };
 

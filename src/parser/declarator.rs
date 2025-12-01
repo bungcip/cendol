@@ -13,7 +13,7 @@ use symbol_table::GlobalSymbol as Symbol;
 use thin_vec::{ThinVec, thin_vec};
 
 use super::Parser;
-use super::{BindingPower, parse_expression, unwrap_expr_result};
+use super::utils::ParserExt;
 
 /// Helper enum for reconstructing complex declarators
 #[derive(Debug)]
@@ -154,8 +154,7 @@ fn parse_array_size(parser: &mut Parser) -> Result<ArraySize, ParseError> {
         Ok(ArraySize::Incomplete)
     } else {
         // Assume it's an expression for the size
-        let expr_result = parse_expression(parser, BindingPower::MIN);
-        let expr_node = unwrap_expr_result(parser, expr_result, "array size expression")?;
+        let expr_node = parser.parse_expr_min()?;
         if is_static || !qualifiers.is_empty() {
             Ok(ArraySize::VlaSpecifier {
                 is_static,

@@ -11,7 +11,7 @@ use log::debug;
 use thin_vec::ThinVec;
 
 use super::Parser;
-use super::{BindingPower, parse_expression, unwrap_expr_result};
+use super::utils::ParserExt;
 
 /// Parse declaration specifiers
 pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVec<DeclSpecifier>, ParseError> {
@@ -142,8 +142,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                         AlignmentSpecifier::Type(type_ref)
                     } else {
                         // _Alignas(constant-expression)
-                        let expr_result = parse_expression(parser, BindingPower::MIN);
-                        let expr = unwrap_expr_result(parser, expr_result, "expression in _Alignas")?;
+                        let expr = parser.parse_expr_min()?;
                         parser.expect(TokenKind::RightParen)?;
                         AlignmentSpecifier::Expr(expr)
                     }
@@ -267,8 +266,7 @@ fn parse_designation(parser: &mut Parser) -> Result<Vec<Designator>, ParseError>
             let (field_name, _) = parser.expect_name()?;
             designators.push(Designator::FieldName(field_name));
         } else if parser.accept(TokenKind::LeftBracket).is_some() {
-            let expr_result = parse_expression(parser, BindingPower::MIN);
-            let index_expr = unwrap_expr_result(parser, expr_result, "expression in array designator")?;
+            let index_expr = parser.parse_expr_min()?;
             parser.expect(TokenKind::RightBracket)?;
             designators.push(Designator::ArrayIndex(index_expr));
         }
@@ -282,8 +280,7 @@ fn parse_initializer_expression(parser: &mut Parser) -> Result<NodeRef, ParseErr
     // Parse expressions in initializers, but stop at comma operators to avoid
     // consuming declarator-separating commas. Use assignment precedence to allow
     // most binary operators but prevent comma operators.
-    let expr_result = parse_expression(parser, BindingPower::ASSIGNMENT);
-    unwrap_expr_result(parser, expr_result, "expression in initializer")
+    parser.parse_expr_assignment()
 }
 
 /// Parse type name (for casts, sizeof, etc.)

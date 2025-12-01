@@ -153,8 +153,8 @@ pub mod expr_patterns {
         Ok(expr)
     }
 
-    /// Parse a comma-separated list of expressions
-    pub fn parse_expr_list(parser: &mut Parser) -> Result<Vec<NodeRef>, ParseError> {
+    /// Parse a comma-separated list of expressions with specified binding power
+    pub fn parse_expr_list(parser: &mut Parser, binding_power: BindingPower) -> Result<Vec<NodeRef>, ParseError> {
         debug!("parse_expr_list: parsing expression list");
         let mut args = Vec::new();
 
@@ -163,7 +163,8 @@ pub mod expr_patterns {
         }
 
         loop {
-            let arg = parser.parse_expr_min()?;
+            let expr_result = parser.parse_expression(binding_power)?;
+            let arg = parser.unwrap_expr_result(Ok(expr_result), "expression in list")?;
             args.push(arg);
 
             if !parser.is_token(crate::lexer::TokenKind::Comma) {

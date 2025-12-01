@@ -246,7 +246,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<ThinVec<ParamData>, 
                     && !parser.is_token(TokenKind::Ellipsis)
                 {
                     // Special handling for abstract declarators in parameter context
-                    if parser.matches(&[TokenKind::LeftParen]) {
+                    if parser.is_token(TokenKind::LeftParen) {
                         debug!("parse_function_parameters: found LeftParen, trying abstract declarator parsing");
                         let start_idx = parser.current_idx;
                         match parse_abstract_declarator(parser) {

@@ -378,50 +378,17 @@ fn parse_ternary(parser: &mut Parser, condition: NodeRef, true_expr: NodeRef) ->
 /// Parse function call
 fn parse_function_call(parser: &mut Parser, function: NodeRef) -> Result<NodeRef, ParseError> {
     debug!("parse_function_call: parsing function call with LeftParen");
-    let mut args = Vec::new();
 
-    // Handle empty argument list: foo()
-    if parser.accept(TokenKind::RightParen).is_some() {
-        debug!("parse_function_call: empty argument list");
-        // Empty argument list - RightParen already consumed, no need to expect it again
-        debug!(
-            "parse_function_call: successfully parsed function call with {} arguments",
-            args.len()
-        );
-    } else {
-        debug!("parse_function_call: parsing arguments");
-        loop {
-            let arg = parser.parse_expr_assignment()?;
-            args.push(arg);
-            debug!("parse_function_call: parsed argument, count: {}", args.len());
+    // Parse the argument list using the utility function
+    let args = super::utils::expr_patterns::parse_expr_list(parser, BindingPower::ASSIGNMENT)?;
 
-            if parser.accept(TokenKind::Comma).is_some() {
-                debug!("parse_function_call: found comma, continuing to next argument");
-                // Continue to next argument - the loop will parse it
-            } else {
-                debug!("parse_function_call: no comma found, expecting RightParen");
-                break;
-            }
-        }
-
-        let right_paren_token = parser.expect(TokenKind::RightParen)?;
-        debug!(
-            "parse_function_call: successfully parsed function call with {} arguments",
-            args.len()
-        );
-
-        let span = SourceSpan::new(parser.ast.get_node(function).span.start, right_paren_token.location.end);
-        let node = parser.push_node(NodeKind::FunctionCall(function, args), span);
-        return Ok(node);
-    }
-
-    // Handle the empty argument case - create the node here
-    let span = SourceSpan::new(
-        parser.ast.get_node(function).span.start,
-        // Use the current token location since we don't have the right paren token
-        parser.current_token_span()?.start,
+    let right_paren_token = parser.expect(TokenKind::RightParen)?;
+    debug!(
+        "parse_function_call: successfully parsed function call with {} arguments",
+        args.len()
     );
 
+    let span = SourceSpan::new(parser.ast.get_node(function).span.start, right_paren_token.location.end);
     let node = parser.push_node(NodeKind::FunctionCall(function, args), span);
     Ok(node)
 }

@@ -215,9 +215,7 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         if let TokenKind::Identifier(symbol) = &token.kind {
             if *symbol == super::declaration_core::get_attribute_symbol() {
                 debug!("parse_declaration: found __attribute__ after declarator, parsing it");
-                if let Err(_e) = super::declaration_core::parse_attribute(trx.parser) {
-                    debug!("parse_declaration: failed to parse __attribute__: {:?}", _e);
-                }
+                super::declaration_core::parse_attribute(trx.parser)?;
             }
         }
     }
@@ -390,10 +388,10 @@ pub fn is_declaration_start(parser: &Parser) -> bool {
             | TokenKind::Enum
             | TokenKind::Alignas => true,
             TokenKind::Identifier(symbol) => {
-                // Check if it's a typedef name
-                let is_type = parser.is_type_name(symbol);
+                // Check if it's a typedef name or `__attribute__`
+                let is_type = parser.is_type_name(symbol) || symbol == super::declaration_core::get_attribute_symbol();
                 debug!(
-                    "is_declaration_start: identifier {:?}, is_type_name={}",
+                    "is_declaration_start: identifier {:?}, is_type={}",
                     symbol, is_type
                 );
                 is_type
@@ -439,8 +437,9 @@ pub fn is_type_name_start(parser: &Parser) -> bool {
         );
 
         // For identifiers, only consider them type name starts if they are actually typedef names
+        // or the __attribute__ keyword, which can precede a type name.
         let is_identifier_type = if let TokenKind::Identifier(symbol) = token.kind {
-            parser.is_type_name(symbol)
+            parser.is_type_name(symbol) || symbol == super::declaration_core::get_attribute_symbol()
         } else {
             false
         };

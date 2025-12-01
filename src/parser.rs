@@ -7,7 +7,7 @@
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, ParseError};
 use crate::lexer::{Token, TokenKind};
-use crate::source_manager::{SourceLoc, SourceSpan};
+use crate::source_manager::SourceSpan;
 use log::debug;
 use std::collections::HashSet;
 use symbol_table::GlobalSymbol as Symbol;
@@ -155,6 +155,15 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     /// Get the current token location
     fn current_token_span(&self) -> Result<SourceSpan, ParseError> {
         Ok(self.current_token()?.location)
+    }
+
+    /// Get the location of the last token
+    fn last_token_location(&self) -> SourceSpan {
+        if self.current_idx > 0 {
+            self.tokens[self.current_idx - 1].location
+        } else {
+            SourceSpan::empty()
+        }
     }
 
     /// Peek at the next token without consuming it
@@ -498,29 +507,6 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         self.type_context.is_type_name(symbol)
     }
 
-    /// Check if a cast expression starts at the current position
-    /// This is called after consuming an opening parenthesis
-    fn is_cast_expression_start(&self) -> bool {
-        expressions::is_cast_expression_start(self)
-    }
-
-    /// Parse cast expression given the already parsed type and right paren token
-    fn parse_cast_expression_from_type_and_paren(
-        &mut self,
-        type_ref: TypeRef,
-        right_paren_token: Token,
-    ) -> Result<NodeRef, ParseError> {
-        expressions::parse_cast_expression_from_type_and_paren(self, type_ref, right_paren_token)
-    }
-
-    /// Parse compound literal given the type and start location
-    fn parse_compound_literal_from_type_and_start(
-        &mut self,
-        type_ref: TypeRef,
-        start_loc: SourceLoc,
-    ) -> Result<NodeRef, ParseError> {
-        expressions::parse_compound_literal_from_type_and_start(self, type_ref, start_loc)
-    }
 
     /// parse and accept an identifier name, returning the symbol
     fn accept_name(&mut self) -> Option<Symbol> {

@@ -195,33 +195,39 @@ pub(crate) fn parse_prefix(parser: &mut Parser) -> Result<NodeRef, ParseError> {
             Ok(node)
         }
         TokenKind::LeftParen => {
-            let left_paren_token = token; // Save the opening paren token for span calculation
-            parser.advance();
-            // Check if this is a cast expression or compound literal by looking ahead for a type name
-            if parser.is_cast_expression_start() {
-                // Parse the type name
-                let type_ref = super::declaration_core::parse_type_name(parser)?;
-                // Expect closing parenthesis
+            parser.advance(); // consume '('
+            if parser.is_type_name_start() {
+                // This could be a cast or a compound literal
+                let type_name = super::declaration_core::parse_type_name(parser)?;
                 parser.expect(TokenKind::RightParen)?;
-
-                // Check if this is a compound literal (next token is '{')
                 if parser.is_token(TokenKind::LeftBrace) {
-                    // This is a compound literal: (type-name){initializer}
-                    parser.parse_compound_literal_from_type_and_start(type_ref, left_paren_token.location.start)
-                } else {
-                    // This is a cast expression: (type-name)expression
-                    let dummy_right_paren = Token {
-                        kind: TokenKind::RightParen,
-                        location: SourceSpan::new(left_paren_token.location.end, left_paren_token.location.end),
-                    };
-                    parser.parse_cast_expression_from_type_and_paren(type_ref, dummy_right_paren)
+                    // Compound literal
+                    let start_loc = token.location.start;
+                    return parse_compound_literal_from_type_and_start(parser, type_name, start_loc);
                 }
-            } else {
-                // Regular parenthesized expression
-                let expr = parser.parse_expr_min()?;
-                parser.expect(TokenKind::RightParen)?;
-                Ok(expr)
+                // Cast expression
+                let expr = parse_expression(parser, BindingPower::CAST)?;
+                let span = SourceSpan::new(token.location.start, parser.last_token_location().end);
+                let expr_node = match expr {
+                    super::ParseExprOutput::Expression(node) => node,
+                    _ => return Err(ParseError::SyntaxError {
+                        message: "Expected expression after cast".to_string(),
+                        location: span,
+                    }),
+                };
+                return Ok(parser.push_node(NodeKind::Cast(type_name, expr_node), span));
             }
+            // Regular parenthesized expression
+            let expr = parse_expression(parser, BindingPower::MIN)?;
+            parser.expect(TokenKind::RightParen)?;
+            let expr_node = match expr {
+                super::ParseExprOutput::Expression(node) => node,
+                _ => return Err(ParseError::SyntaxError {
+                    message: "Expected expression in parentheses".to_string(),
+                    location: token.location,
+                }),
+            };
+            Ok(expr_node)
         }
         TokenKind::Plus
         | TokenKind::Minus
@@ -639,136 +645,3 @@ pub fn parse_alignof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     Ok(node)
 }
 
-/// Check if a cast expression starts at the current position
-/// This is called after consuming an opening parenthesis
-pub(crate) fn is_cast_expression_start(parser: &Parser) -> bool {
-    debug!(
-        "is_cast_expression_start: checking at position {}, token {:?}",
-        parser.current_idx,
-        parser.current_token_kind()
-    );
-
-    if let Some(token) = parser.try_current_token() {
-        match token.kind {
-            // Direct type specifiers
-            TokenKind::Void
-            | TokenKind::Char
-            | TokenKind::Short
-            | TokenKind::Int
-            | TokenKind::Long
-            | TokenKind::Float
-            | TokenKind::Double
-            | TokenKind::Signed
-            | TokenKind::Unsigned
-            | TokenKind::Bool
-            | TokenKind::Complex
-            | TokenKind::Atomic
-            | TokenKind::Struct
-            | TokenKind::Union
-            | TokenKind::Enum
-            | TokenKind::Const
-            | TokenKind::Volatile
-            | TokenKind::Restrict => {
-                debug!(
-                    "is_cast_expression_start: found direct type specifier: {:?}",
-                    token.kind
-                );
-                true
-            }
-            TokenKind::Star => {
-                // Could be a pointer to a type, look further
-                debug!("is_cast_expression_start: found Star, looking ahead");
-                is_cast_expression_start_advanced(parser)
-            }
-            TokenKind::Identifier(symbol) => {
-                // Could be a typedef name
-                let is_type = parser.is_type_name(symbol);
-                debug!(
-                    "is_cast_expression_start: found identifier {:?}, is_type={}",
-                    symbol, is_type
-                );
-                is_type
-            }
-            _ => {
-                debug!(
-                    "is_cast_expression_start: token {:?} not recognized as cast start",
-                    token.kind
-                );
-                false
-            }
-        }
-    } else {
-        debug!("is_cast_expression_start: no token available");
-        false
-    }
-}
-
-/// Helper for more complex cast expression detection
-pub(crate) fn is_cast_expression_start_advanced(parser: &Parser) -> bool {
-    // Look ahead to see if we have a type pattern
-    let mut idx = parser.current_idx;
-
-    // Skip stars (pointers)
-    while let Some(token) = parser.tokens.get(idx) {
-        if token.kind == TokenKind::Star {
-            idx += 1;
-            continue;
-        }
-        break;
-    }
-
-    // After pointers, look for type qualifiers
-    while let Some(token) = parser.tokens.get(idx) {
-        match token.kind {
-            TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Atomic => {
-                idx += 1;
-                continue;
-            }
-            _ => break,
-        }
-    }
-
-    // Finally, check for a type name
-    if let Some(token) = parser.tokens.get(idx) {
-        match token.kind {
-            TokenKind::Void
-            | TokenKind::Char
-            | TokenKind::Short
-            | TokenKind::Int
-            | TokenKind::Long
-            | TokenKind::Float
-            | TokenKind::Double
-            | TokenKind::Signed
-            | TokenKind::Unsigned
-            | TokenKind::Bool
-            | TokenKind::Complex
-            | TokenKind::Struct
-            | TokenKind::Union
-            | TokenKind::Enum => true,
-            TokenKind::Identifier(symbol) => parser.is_type_name(symbol),
-            _ => false,
-        }
-    } else {
-        false
-    }
-}
-
-/// Parse cast expression given the already parsed type and right paren token
-pub(crate) fn parse_cast_expression_from_type_and_paren(
-    parser: &mut Parser,
-    type_ref: TypeRef,
-    right_paren_token: Token,
-) -> Result<NodeRef, ParseError> {
-    // Parse the expression being cast
-    let expr_node = parser.parse_expr_cast()?;
-
-    let span = SourceSpan::new(
-        right_paren_token.location.start, // Start from the opening paren
-        parser.ast.get_node(expr_node).span.end,
-    );
-
-    let node = parser.push_node(NodeKind::Cast(type_ref, expr_node), span);
-
-    debug!("parse_cast_expression: successfully parsed cast expression");
-    Ok(node)
-}

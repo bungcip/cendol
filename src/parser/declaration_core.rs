@@ -95,9 +95,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
             // GCC __attribute__ (attribute-specifier-seq)
             TokenKind::Identifier(symbol) if symbol == get_attribute_symbol() => {
                 debug!("parse_declaration_specifiers: found __attribute__, parsing it");
-                if let Err(_e) = parse_attribute(parser) {
-                    // For now, ignore attribute parsing errors
-                }
+                parse_attribute(parser)?;
                 // Don't add to specifiers, just skip
             }
 
@@ -341,26 +339,30 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<(), ParseError> {
     // Expect opening (
     parser.expect(TokenKind::LeftParen)?;
 
-    // Skip attribute list until we find ))
-    let mut paren_depth = 0;
-    while let Some(token) = parser.try_current_token() {
+    let mut paren_depth = 2;
+    while paren_depth > 0 {
+        let token = match parser.try_current_token() {
+            Some(t) => t,
+            None => {
+                return Err(ParseError::SyntaxError {
+                    message: "Unterminated __attribute__ directive at end of file".to_string(),
+                    location: parser.last_token_location(),
+                });
+            }
+        };
+
         match token.kind {
-            TokenKind::LeftParen => {
-                paren_depth += 1;
-                parser.advance();
+            TokenKind::LeftParen => paren_depth += 1,
+            TokenKind::RightParen => paren_depth -= 1,
+            TokenKind::EndOfFile => {
+                return Err(ParseError::SyntaxError {
+                    message: "Unterminated __attribute__ directive".to_string(),
+                    location: token.location,
+                });
             }
-            TokenKind::RightParen => {
-                paren_depth -= 1;
-                parser.advance();
-                if paren_depth == 0 {
-                    // Found matching ))
-                    break;
-                }
-            }
-            _ => {
-                parser.advance();
-            }
+            _ => {}
         }
+        parser.advance();
     }
 
     debug!("parse_attribute: successfully parsed __attribute__ construct");
@@ -373,9 +375,7 @@ pub(crate) fn parse_type_name(parser: &mut Parser) -> Result<TypeRef, ParseError
     if let Some(token) = parser.try_current_token() {
         if let TokenKind::Identifier(symbol) = &token.kind {
             if *symbol == get_attribute_symbol() {
-                if let Err(_e) = parse_attribute(parser) {
-                    // For now, ignore attribute parsing errors
-                }
+                parse_attribute(parser)?;
             }
         }
     }

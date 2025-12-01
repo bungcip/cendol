@@ -854,3 +854,41 @@ fn test_complex_abstract_declarator_function() {
           kind: function(int function(int) -> pointer) -> int
     ");
 }
+
+#[test]
+fn test_attribute_in_cast() {
+    let source = r#"
+        #define ATTR __attribute__((__noinline__))
+        int main() {
+            void *function_pointer = (void*)0;
+            int a = ((ATTR int(*) (void)) function_pointer)();
+            return 0;
+        }
+    "#;
+    let (ast, result) = setup_source(source, |parser| {
+        // A function definition is a top-level construct, so parse a translation unit
+        parser.parse_translation_unit()
+    });
+    // Check that parsing was successful and that some nodes were generated.
+    assert!(result.is_ok(), "Parsing failed: {:?}", result.err());
+    assert!(ast.nodes.len() > 0, "No AST nodes were generated");
+}
+
+#[test]
+fn test_attribute_in_cast_complex() {
+    let source = r#"
+        #define ATTR __attribute__((__noinline__))
+        int main() {
+            void *function_pointer = (void*)0;
+            int b = ( (int(ATTR *)(void))  function_pointer)();
+            return 0;
+        }
+    "#;
+    let (ast, result) = setup_source(source, |parser| {
+        // A function definition is a top-level construct, so parse a translation unit
+        parser.parse_translation_unit()
+    });
+    // Check that parsing was successful and that some nodes were generated.
+    assert!(result.is_ok(), "Parsing failed: {:?}", result.err());
+    assert!(ast.nodes.len() > 0, "No AST nodes were generated");
+}

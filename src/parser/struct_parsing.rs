@@ -21,9 +21,7 @@ pub fn parse_record_specifier_with_context(
     if let Some(token) = parser.try_current_token() {
         if let TokenKind::Identifier(symbol) = &token.kind {
             if *symbol == super::declaration_core::get_attribute_symbol() {
-                if let Err(_e) = super::declaration_core::parse_attribute(parser) {
-                    // For now, ignore attribute parsing errors
-                }
+                super::declaration_core::parse_attribute(parser)?;
             }
         }
     }
@@ -49,9 +47,7 @@ pub fn parse_record_specifier_with_context(
         if let Some(token) = parser.try_current_token() {
             if let crate::lexer::TokenKind::Identifier(symbol) = &token.kind {
                 if *symbol == super::declaration_core::get_attribute_symbol() {
-                    if let Err(_e) = super::declaration_core::parse_attribute(parser) {
-                        // For now, ignore attribute parsing errors
-                    }
+                    super::declaration_core::parse_attribute(parser)?;
                 }
             }
         }

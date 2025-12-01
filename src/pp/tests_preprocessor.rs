@@ -464,6 +464,33 @@ int result = 42;
 }
 
 #[test]
+fn test_circular_include_error_with_temp_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let path_a = dir.path().join("a.h");
+    let path_b = dir.path().join("b.h");
+    let path_main = dir.path().join("main.c");
+
+    std::fs::write(&path_a, "#include \"b.h\"").unwrap();
+    std::fs::write(&path_b, "#include \"a.h\"").unwrap();
+    std::fs::write(&path_main, "#include \"a.h\"").unwrap();
+
+    let mut sm = SourceManager::new();
+    let source_id_main = sm.add_file_from_path(&path_main).unwrap();
+
+    let mut diag = DiagnosticEngine::new();
+    let lang_opts = LangOptions::c11();
+    let target_info = Triple::unknown();
+    let config = PPConfig {
+        max_include_depth: 10,
+        ..Default::default()
+    };
+    let mut pp = Preprocessor::new(&mut sm, &mut diag, lang_opts, target_info, &config);
+    let result = pp.process(source_id_main, &config);
+
+    assert!(matches!(result, Err(PPError::CircularInclude)));
+}
+
+#[test]
 fn test_function_like_macro_not_expanded_when_not_followed_by_paren() {
     let src = r#"
 #define x(y) ((y) + 1)

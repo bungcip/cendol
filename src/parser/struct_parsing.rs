@@ -17,6 +17,17 @@ pub fn parse_record_specifier_with_context(
     is_union: bool,
     in_struct_member: bool,
 ) -> Result<TypeSpecifier, ParseError> {
+    // Check for __attribute__ after struct/union keyword (GCC extension)
+    if let Some(token) = parser.try_current_token() {
+        if let TokenKind::Identifier(symbol) = &token.kind {
+            if *symbol == super::declaration_core::get_attribute_symbol() {
+                if let Err(_e) = super::declaration_core::parse_attribute(parser) {
+                    // For now, ignore attribute parsing errors
+                }
+            }
+        }
+    }
+
     let tag = if let Some(token) = parser.try_current_token() {
         if let TokenKind::Identifier(symbol) = token.kind {
             parser.advance();
@@ -33,6 +44,18 @@ pub fn parse_record_specifier_with_context(
     let definition = if parser.accept(TokenKind::LeftBrace).is_some() && (!in_struct_member || tag.is_some()) {
         let members = parse_struct_declaration_list(parser)?;
         parser.expect(TokenKind::RightBrace)?;
+
+        // Check for __attribute__ after struct definition (GCC extension)
+        if let Some(token) = parser.try_current_token() {
+            if let crate::lexer::TokenKind::Identifier(symbol) = &token.kind {
+                if *symbol == super::declaration_core::get_attribute_symbol() {
+                    if let Err(_e) = super::declaration_core::parse_attribute(parser) {
+                        // For now, ignore attribute parsing errors
+                    }
+                }
+            }
+        }
+
         Some(RecordDefData {
             tag,
             members: Some(members),

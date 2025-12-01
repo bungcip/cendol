@@ -30,6 +30,17 @@ pub fn parse_declarator(parser: &mut Parser, initial_declarator: Option<Symbol>)
         initial_declarator
     );
 
+    // Check for __attribute__ before declarator (GCC extension)
+    if let Some(token) = parser.try_current_token() {
+        if let TokenKind::Identifier(symbol) = &token.kind {
+            if *symbol == super::declaration_core::get_attribute_symbol() {
+                if let Err(_e) = super::declaration_core::parse_attribute(parser) {
+                    debug!("parse_declarator: failed to parse __attribute__: {:?}", _e);
+                }
+            }
+        }
+    }
+
     let mut declarator_chain: Vec<DeclaratorComponent> = Vec::new();
     let mut _current_qualifiers = TypeQualifiers::empty();
 
@@ -357,6 +368,18 @@ pub fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarator, Pars
         parser.current_idx,
         parser.current_token_kind()
     );
+
+    // Check for __attribute__ at the beginning (GCC extension)
+    if let Some(token) = parser.try_current_token() {
+        if let TokenKind::Identifier(symbol) = &token.kind {
+            if *symbol == super::declaration_core::get_attribute_symbol() {
+                if let Err(_e) = super::declaration_core::parse_attribute(parser) {
+                    debug!("parse_abstract_declarator: failed to parse __attribute__: {:?}", _e);
+                }
+            }
+        }
+    }
+
     let mut declarator_chain: Vec<DeclaratorComponent> = Vec::new();
     let mut _current_qualifiers = TypeQualifiers::empty();
 

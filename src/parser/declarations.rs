@@ -210,6 +210,18 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         trx.parser.advance(); // consume comma
     }
 
+    // Check for __attribute__ after declarator (GCC extension)
+    if let Some(token) = trx.parser.try_current_token() {
+        if let TokenKind::Identifier(symbol) = &token.kind {
+            if *symbol == super::declaration_core::get_attribute_symbol() {
+                debug!("parse_declaration: found __attribute__ after declarator, parsing it");
+                if let Err(_e) = super::declaration_core::parse_attribute(trx.parser) {
+                    debug!("parse_declaration: failed to parse __attribute__: {:?}", _e);
+                }
+            }
+        }
+    }
+
     // Check for semicolon at current position
     debug!(
         "parse_declaration: expecting semicolon, current token {:?}",

@@ -150,7 +150,7 @@ pub enum ArraySizeType {
 
 bitflags! {
     /// Type qualifiers (using bitflags for efficient storage)
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Default)]
     pub struct TypeQualifiers: u8 {
         const CONST = 1 << 0;
         const VOLATILE = 1 << 1;

@@ -151,6 +151,193 @@ pub fn visit_node<'ast, V: AstVisitor<'ast>>(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::Ast;
+    use crate::source_manager::SourceSpan;
+    use std::cell::Cell;
+
+    struct TestVisitor {
+        visited_nodes: Vec<String>,
+    }
+
+    impl<'ast> AstVisitor<'ast> for TestVisitor {
+        type Context = ();
+
+        fn visit_literal_int(&mut self, value: i64, _: SourceSpan, _: &mut Self::Context) {
+            self.visited_nodes
+                .push(format!("LiteralInt({})", value));
+        }
+
+        fn visit_binary_op(
+            &mut self,
+            op: BinaryOp,
+            _: NodeRef,
+            _: NodeRef,
+            _: SourceSpan,
+            _: &mut Self::Context,
+        ) {
+            self.visited_nodes
+                .push(format!("BinaryOp({:?})", op));
+        }
+
+        fn visit_ident(
+            &mut self,
+            name: Symbol,
+            _: &Cell<Option<SymbolEntryRef>>,
+            _: SourceSpan,
+            _: &mut Self::Context,
+        ) {
+            self.visited_nodes.push(format!("Ident({})", name));
+        }
+
+        fn visit_function_def(
+            &mut self,
+            _: &FunctionDefData,
+            _: SourceSpan,
+            _: &mut Self::Context,
+        ) {
+            self.visited_nodes.push("FunctionDef".to_string());
+        }
+
+        fn visit_compound_statement(
+            &mut self,
+            _: &[NodeRef],
+            _: SourceSpan,
+            _: &mut Self::Context,
+        ) {
+            self.visited_nodes.push("CompoundStatement".to_string());
+        }
+
+        fn visit_return(&mut self, _: Option<NodeRef>, _: SourceSpan, _: &mut Self::Context) {
+            self.visited_nodes.push("Return".to_string());
+        }
+    }
+
+    #[test]
+    fn test_walk_ast() {
+        let mut ast = Ast::new();
+
+        // Create a simple function definition: int main() { return 1 + 2; }
+        let lit1 = ast.push_node(Node::new(
+            NodeKind::LiteralInt(1),
+            SourceSpan::empty(),
+        ));
+        let lit2 = ast.push_node(Node::new(
+            NodeKind::LiteralInt(2),
+            SourceSpan::empty(),
+        ));
+        let add_expr = ast.push_node(Node::new(
+            NodeKind::BinaryOp(BinaryOp::Add, lit1, lit2),
+            SourceSpan::empty(),
+        ));
+        let return_stmt = ast.push_node(Node::new(
+            NodeKind::Return(Some(add_expr)),
+            SourceSpan::empty(),
+        ));
+        let compound_stmt = ast.push_node(Node::new(
+            NodeKind::CompoundStatement(vec![return_stmt]),
+            SourceSpan::empty(),
+        ));
+
+        let func_def_data = FunctionDefData {
+            specifiers: vec![DeclSpecifier::TypeSpecifier(TypeSpecifier::Int)].into(),
+            declarator: Declarator::Identifier(
+                "main".into(),
+                Default::default(),
+                Some(Box::new(Declarator::Function(
+                    Box::new(Declarator::Abstract),
+                    vec![].into(),
+                ))),
+            ),
+            body: compound_stmt,
+        };
+
+        let func_def = ast.push_node(Node::new(
+            NodeKind::FunctionDef(func_def_data),
+            SourceSpan::empty(),
+        ));
+
+        let mut visitor = TestVisitor {
+            visited_nodes: Vec::new(),
+        };
+
+        walk_ast(&mut visitor, &ast, func_def, &mut ());
+
+        let expected_nodes = vec![
+            "FunctionDef",
+            "CompoundStatement",
+            "Return",
+            "BinaryOp(Add)",
+            "LiteralInt(1)",
+            "LiteralInt(2)",
+        ];
+
+        assert_eq!(visitor.visited_nodes, expected_nodes);
+    }
+}
+
+fn walk_declarator<'ast, V: AstVisitor<'ast>>(
+    visitor: &mut V,
+    ast: &'ast Ast,
+    declarator: &Declarator,
+    context: &mut V::Context,
+) {
+    match declarator {
+        Declarator::Identifier(_, _, Some(d)) => {
+            walk_declarator(visitor, ast, d, context);
+        }
+        Declarator::Pointer(_, Some(d)) => {
+            walk_declarator(visitor, ast, d, context);
+        }
+        Declarator::Array(d, size) => {
+            walk_declarator(visitor, ast, d, context);
+            match size {
+                ArraySize::Expression { expr, .. } => {
+                    walk_ast(visitor, ast, *expr, context);
+                }
+                ArraySize::VlaSpecifier { size: Some(s), .. } => {
+                    walk_ast(visitor, ast, *s, context);
+                }
+                _ => {}
+            }
+        }
+        Declarator::Function(d, params) => {
+            walk_declarator(visitor, ast, d, context);
+            for p in params {
+                if let Some(decl) = &p.declarator {
+                    walk_declarator(visitor, ast, decl, context);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn walk_initializer<'ast, V: AstVisitor<'ast>>(
+    visitor: &mut V,
+    ast: &'ast Ast,
+    initializer: &Initializer,
+    context: &mut V::Context,
+) {
+    match initializer {
+        Initializer::Expression(expr) => {
+            walk_ast(visitor, ast, *expr, context);
+        }
+        Initializer::List(list) => {
+            for item in list {
+                for designator in &item.designation {
+                    if let Designator::ArrayIndex(expr) = designator {
+                        walk_ast(visitor, ast, *expr, context);
+                    }
+                }
+                walk_initializer(visitor, ast, &item.initializer, context);
+            }
+        }
+    }
+}
+
 /// Helper function for walking the AST with a visitor
 pub fn walk_ast<'ast, V: AstVisitor<'ast>>(
     visitor: &mut V,
@@ -162,9 +349,154 @@ pub fn walk_ast<'ast, V: AstVisitor<'ast>>(
     visit_node(visitor, ast, node_ref, context);
 
     // Recursively visit children based on node type
-    let _node = ast.get_node(node_ref);
+    let node = ast.get_node(node_ref);
 
-    // This would need to be implemented based on the new structure
-    // For now, placeholder
-    {}
+    match &node.kind {
+        // Expressions
+        NodeKind::UnaryOp(_, expr)
+        | NodeKind::PostIncrement(expr)
+        | NodeKind::PostDecrement(expr)
+        | NodeKind::SizeOfExpr(expr) => {
+            walk_ast(visitor, ast, *expr, context);
+        }
+        NodeKind::BinaryOp(_, left, right)
+        | NodeKind::Assignment(_, left, right)
+        | NodeKind::IndexAccess(left, right) => {
+            walk_ast(visitor, ast, *left, context);
+            walk_ast(visitor, ast, *right, context);
+        }
+        NodeKind::TernaryOp(cond, then, else_) => {
+            walk_ast(visitor, ast, *cond, context);
+            walk_ast(visitor, ast, *then, context);
+            walk_ast(visitor, ast, *else_, context);
+        }
+        NodeKind::FunctionCall(func, args) => {
+            walk_ast(visitor, ast, *func, context);
+            for &arg in args {
+                walk_ast(visitor, ast, arg, context);
+            }
+        }
+        NodeKind::MemberAccess(object, ..) => {
+            walk_ast(visitor, ast, *object, context);
+        }
+        NodeKind::Cast(_, expr) => {
+            walk_ast(visitor, ast, *expr, context);
+        }
+        NodeKind::GenericSelection(controlling_expr, associations) => {
+            walk_ast(visitor, ast, *controlling_expr, context);
+            for assoc in associations {
+                walk_ast(visitor, ast, assoc.result_expr, context);
+            }
+        }
+        NodeKind::VaArg(va_list, _) => {
+            walk_ast(visitor, ast, *va_list, context);
+        }
+        NodeKind::CompoundLiteral(_, initializer_ref) => {
+            let initializer = ast.get_initializer(*initializer_ref);
+            walk_initializer(visitor, ast, initializer, context);
+        }
+
+        // Statements
+        NodeKind::CompoundStatement(items) => {
+            for &item in items {
+                walk_ast(visitor, ast, item, context);
+            }
+        }
+        NodeKind::If(if_stmt) => {
+            walk_ast(visitor, ast, if_stmt.condition, context);
+            walk_ast(visitor, ast, if_stmt.then_branch, context);
+            if let Some(else_branch) = if_stmt.else_branch {
+                walk_ast(visitor, ast, else_branch, context);
+            }
+        }
+        NodeKind::While(while_stmt) => {
+            walk_ast(visitor, ast, while_stmt.condition, context);
+            walk_ast(visitor, ast, while_stmt.body, context);
+        }
+        NodeKind::DoWhile(body, condition) => {
+            walk_ast(visitor, ast, *body, context);
+            walk_ast(visitor, ast, *condition, context);
+        }
+        NodeKind::For(for_stmt) => {
+            if let Some(init) = for_stmt.init {
+                walk_ast(visitor, ast, init, context);
+            }
+            if let Some(cond) = for_stmt.condition {
+                walk_ast(visitor, ast, cond, context);
+            }
+            if let Some(inc) = for_stmt.increment {
+                walk_ast(visitor, ast, inc, context);
+            }
+            walk_ast(visitor, ast, for_stmt.body, context);
+        }
+        NodeKind::Return(expr) => {
+            if let Some(e) = expr {
+                walk_ast(visitor, ast, *e, context);
+            }
+        }
+        NodeKind::Label(_, stmt) | NodeKind::Default(stmt) => {
+            walk_ast(visitor, ast, *stmt, context);
+        }
+        NodeKind::Switch(cond, body) => {
+            walk_ast(visitor, ast, *cond, context);
+            walk_ast(visitor, ast, *body, context);
+        }
+        NodeKind::Case(expr, stmt) => {
+            walk_ast(visitor, ast, *expr, context);
+            walk_ast(visitor, ast, *stmt, context);
+        }
+        NodeKind::CaseRange(start, end, stmt) => {
+            walk_ast(visitor, ast, *start, context);
+            walk_ast(visitor, ast, *end, context);
+            walk_ast(visitor, ast, *stmt, context);
+        }
+        NodeKind::ExpressionStatement(expr) => {
+            if let Some(e) = expr {
+                walk_ast(visitor, ast, *e, context);
+            }
+        }
+
+        // Declarations
+        NodeKind::Declaration(decl) => {
+            for init_declarator in &decl.init_declarators {
+                if let Some(initializer) = &init_declarator.initializer {
+                    walk_initializer(visitor, ast, initializer, context);
+                }
+                walk_declarator(visitor, ast, &init_declarator.declarator, context);
+            }
+        }
+        NodeKind::FunctionDef(func_def) => {
+            walk_declarator(visitor, ast, &func_def.declarator, context);
+            walk_ast(visitor, ast, func_def.body, context);
+        }
+        NodeKind::EnumConstant(_, value) => {
+            if let Some(v) = value {
+                walk_ast(visitor, ast, *v, context);
+            }
+        }
+        NodeKind::StaticAssert(cond, _) => {
+            walk_ast(visitor, ast, *cond, context);
+        }
+
+        // Top Level
+        NodeKind::TranslationUnit(decls) => {
+            for &decl in decls {
+                walk_ast(visitor, ast, decl, context);
+            }
+        }
+
+        // Literals, Idents, Simple statements - no children to walk
+        NodeKind::LiteralInt(_)
+        | NodeKind::LiteralFloat(_)
+        | NodeKind::LiteralString(_)
+        | NodeKind::LiteralChar(_)
+        | NodeKind::Ident(_, _)
+        | NodeKind::SizeOfType(_)
+        | NodeKind::AlignOf(_)
+        | NodeKind::Break
+        | NodeKind::Continue
+        | NodeKind::Goto(_)
+        | NodeKind::EmptyStatement
+        | NodeKind::Dummy => {}
+    }
 }

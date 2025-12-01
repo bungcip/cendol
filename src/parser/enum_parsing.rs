@@ -7,7 +7,7 @@ use crate::diagnostic::ParseError;
 use crate::lexer::TokenKind;
 
 use super::Parser;
-use super::{BindingPower, parse_expression, unwrap_expr_result};
+use super::utils::ParserExt;
 
 /// Parse enum specifier
 pub fn parse_enum_specifier(parser: &mut Parser) -> Result<TypeSpecifier, ParseError> {
@@ -49,12 +49,7 @@ pub fn parse_enumerator_list(parser: &mut Parser) -> Result<Vec<NodeRef>, ParseE
 pub fn parse_enumerator(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let (name, mut span) = parser.expect_name()?;
     let value = if parser.accept(TokenKind::Assign).is_some() {
-        let expr_result = parse_expression(parser, BindingPower::ASSIGNMENT);
-        let expr = unwrap_expr_result(
-            parser,
-            expr_result,
-            "expression for enumerator value",
-        )?;
+        let expr = parser.parse_expr_assignment()?;
         span.end = parser.ast.get_node(expr).span.end;
         Some(expr)
     } else {

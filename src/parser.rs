@@ -26,7 +26,6 @@ pub mod utils;
 pub use expressions::{Associativity, BindingPower, PrattParser};
 
 use expressions::parse_expression;
-use utils::unwrap_expr_result;
 
 /// Type context for tracking typedef names and other type-related state
 #[derive(Debug)]

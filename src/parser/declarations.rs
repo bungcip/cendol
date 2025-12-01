@@ -8,13 +8,13 @@ use crate::ast::*;
 use crate::diagnostic::ParseError;
 use crate::lexer::{Token, TokenKind};
 use crate::parser::declaration_core::parse_declaration_specifiers;
+use crate::parser::utils::ParserExt;
 use crate::source_manager::{SourceLoc, SourceSpan};
 use log::debug;
 use symbol_table::GlobalSymbol as Symbol;
 use thin_vec::ThinVec;
 
 use super::Parser;
-use super::{BindingPower, parse_expression, unwrap_expr_result};
 
 /// Parse a declaration
 pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
@@ -452,8 +452,7 @@ pub fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<No
     let start_span = start_token.location.start;
     parser.expect(TokenKind::LeftParen)?;
 
-    let condition_result = parse_expression(parser, BindingPower::MIN);
-    let condition = unwrap_expr_result(parser, condition_result, "expression in _Static_assert condition")?;
+    let condition = parser.parse_expr_min()?;
 
     parser.expect(TokenKind::Comma)?;
 

@@ -34,7 +34,11 @@ pub trait ParserExt {
     fn parse_expr_assignment(&mut self) -> Result<NodeRef, ParseError>;
 
     /// Unwrap a ParseExprOutput to get the NodeRef, returning an error if it's not an expression
-    fn unwrap_expr_result(&self, result: ParseExprOutput, context: &str) -> Result<NodeRef, ParseError>;
+    fn unwrap_expr_result(
+        &self,
+        result: Result<ParseExprOutput, ParseError>,
+        context: &str,
+    ) -> Result<NodeRef, ParseError>;
 
     /// Calculate span from start location to current token end
     fn span_from_start(&self, start: SourceLoc) -> Result<SourceSpan, ParseError>;
@@ -48,37 +52,45 @@ pub trait ParserExt {
 
 impl<'arena, 'src> ParserExt for Parser<'arena, 'src> {
     fn parse_expr_min(&mut self) -> Result<NodeRef, ParseError> {
-        let result = self.parse_expression(BindingPower::MIN)?;
+        let result = self.parse_expression(BindingPower::MIN);
         self.unwrap_expr_result(result, "expression")
     }
 
     fn parse_expr_unary(&mut self) -> Result<NodeRef, ParseError> {
-        let result = self.parse_expression(BindingPower::UNARY)?;
+        let result = self.parse_expression(BindingPower::UNARY);
         self.unwrap_expr_result(result, "unary expression")
     }
 
     fn parse_expr_cast(&mut self) -> Result<NodeRef, ParseError> {
-        let result = self.parse_expression(BindingPower::CAST)?;
+        let result = self.parse_expression(BindingPower::CAST);
         self.unwrap_expr_result(result, "cast expression")
     }
 
     fn parse_expr_conditional(&mut self) -> Result<NodeRef, ParseError> {
-        let result = self.parse_expression(BindingPower::CONDITIONAL)?;
+        let result = self.parse_expression(BindingPower::CONDITIONAL);
         self.unwrap_expr_result(result, "conditional expression")
     }
 
     fn parse_expr_assignment(&mut self) -> Result<NodeRef, ParseError> {
-        let result = self.parse_expression(BindingPower::ASSIGNMENT)?;
+        let result = self.parse_expression(BindingPower::ASSIGNMENT);
         self.unwrap_expr_result(result, "assignment expression")
     }
 
-    fn unwrap_expr_result(&self, result: ParseExprOutput, context: &str) -> Result<NodeRef, ParseError> {
+    fn unwrap_expr_result(
+        &self,
+        result: Result<ParseExprOutput, ParseError>,
+        context: &str,
+    ) -> Result<NodeRef, ParseError> {
         match result {
-            ParseExprOutput::Expression(node) => Ok(node),
-            ParseExprOutput::Declaration(_) => Err(ParseError::SyntaxError {
+            Ok(ParseExprOutput::Expression(node)) => Ok(node),
+            Ok(ParseExprOutput::Declaration(_)) => Err(ParseError::SyntaxError {
                 message: format!("Expected {} but found declaration", context),
-                location: SourceSpan::empty(),
+                location: self
+                    .try_current_token()
+                    .map(|t| t.location)
+                    .unwrap_or_else(SourceSpan::empty),
             }),
+            Err(e) => Err(e),
         }
     }
 
@@ -352,26 +364,6 @@ impl<'a, 'arena, 'src> Drop for ParserTransaction<'a, 'arena, 'src> {
     fn drop(&mut self) {
         if !self.committed {
             self.parser.restore_state(self.state.clone());
-        }
-    }
-}
-
-pub fn unwrap_expr_result(
-    parser: &mut Parser,
-    result: Result<ParseExprOutput, ParseError>,
-    context: &str,
-) -> Result<NodeRef, ParseError> {
-    match result? {
-        ParseExprOutput::Expression(node) => Ok(node),
-        _ => {
-            let location = parser
-                .current_token()
-                .map(|t| t.location)
-                .unwrap_or(SourceSpan::empty());
-            Err(ParseError::SyntaxError {
-                message: format!("Expected {}", context),
-                location,
-            })
         }
     }
 }

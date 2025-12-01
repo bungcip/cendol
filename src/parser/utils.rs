@@ -48,6 +48,12 @@ pub trait ParserExt {
 
     /// Calculate span from node start to current position
     fn span_from_node(&self, node: NodeRef) -> Result<SourceSpan, ParseError>;
+
+    /// Check if current tokens indicate start of a declaration
+    fn is_declaration_start(&self) -> bool;
+
+    /// Check if current token starts a type name
+    fn is_type_name_start(&self) -> bool;
 }
 
 impl<'arena, 'src> ParserExt for Parser<'arena, 'src> {
@@ -107,6 +113,55 @@ impl<'arena, 'src> ParserExt for Parser<'arena, 'src> {
         let node_span = self.ast.get_node(node).span;
         let current_end = self.current_token_span()?.end;
         Ok(SourceSpan::new(node_span.start, current_end))
+    }
+
+    fn is_declaration_start(&self) -> bool {
+        debug!("is_declaration_start: checking token {:?}", self.current_token_kind());
+
+        if let Some(token) = self.try_current_token() {
+            if token.kind.is_declaration_specifier_start() {
+                return true;
+            }
+
+            if let crate::lexer::TokenKind::Identifier(symbol) = token.kind {
+                // Check if it's a typedef name
+                let is_type = self.is_type_name(symbol);
+                debug!(
+                    "is_declaration_start: identifier {:?}, is_type_name={}",
+                    symbol, is_type
+                );
+                return is_type;
+            }
+        }
+        false
+    }
+
+    fn is_type_name_start(&self) -> bool {
+        debug!(
+            "is_type_name_start: checking token {:?} at position {}",
+            self.current_token_kind(),
+            self.current_idx
+        );
+
+        if let Some(token) = self.try_current_token() {
+            let is_specifier = token.kind.is_type_specifier() || token.kind.is_type_qualifier();
+
+            let is_identifier_type = if let crate::lexer::TokenKind::Identifier(symbol) = token.kind {
+                self.is_type_name(symbol)
+            } else {
+                false
+            };
+
+            let final_result = is_specifier || is_identifier_type;
+            debug!(
+                "is_type_name_start: token {:?} is type name start: {} (specifier: {}, identifier: {})",
+                token.kind, final_result, is_specifier, is_identifier_type
+            );
+            final_result
+        } else {
+            debug!("is_type_name_start: no token available");
+            false
+        }
     }
 }
 

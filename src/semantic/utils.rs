@@ -5,7 +5,7 @@ use thin_vec::ThinVec;
 use crate::ast::*;
 
 /// Extract function name and parameters from a declarator
-pub fn extract_function_info(declarator: &Declarator) -> (Option<Symbol>, Vec<FunctionParameter>) {
+pub(crate) fn extract_function_info(declarator: &Declarator) -> (Option<Symbol>, Vec<FunctionParameter>) {
     // Find the function declarator that has the identifier as its direct base
     let (name, params) = find_function_with_name(declarator);
     if let Some((func_decl, params)) = name.zip(params) {
@@ -29,7 +29,7 @@ pub fn extract_function_info(declarator: &Declarator) -> (Option<Symbol>, Vec<Fu
     }
 }
 
-pub fn find_function_with_name(declarator: &Declarator) -> (Option<Symbol>, Option<&ThinVec<ParamData>>) {
+pub(crate) fn find_function_with_name(declarator: &Declarator) -> (Option<Symbol>, Option<&ThinVec<ParamData>>) {
     match declarator {
         Declarator::Function(base, params) => {
             if let Declarator::Identifier(name, _, _) = base.as_ref() {
@@ -46,7 +46,21 @@ pub fn find_function_with_name(declarator: &Declarator) -> (Option<Symbol>, Opti
     }
 }
 
-pub fn extract_identifier(declarator: &Declarator) -> Option<Symbol> {
+/// Extract the identifier name from a declarator, handling nested declarators.
+///
+/// This function recursively traverses through pointer, array, and function declarators
+/// to find the base identifier name. Returns None for abstract declarators or other
+/// declarator types that don't contain identifiers.
+///
+/// # Examples
+///
+/// ```rust
+/// // For `int *x` -> returns Some("x")
+/// // For `int (*func)(int)` -> returns Some("func")
+/// // For `int arr[10]` -> returns Some("arr")
+/// // For abstract declarators -> returns None
+/// ```
+pub(crate) fn extract_identifier(declarator: &Declarator) -> Option<Symbol> {
     match declarator {
         Declarator::Identifier(name, _, _) => Some(*name),
         Declarator::Pointer(_, Some(base)) => extract_identifier(base),

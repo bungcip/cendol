@@ -107,7 +107,6 @@ impl PPExpr {
 pub struct Interpreter<'a> {
     tokens: &'a [PPToken],
     pos: usize,
-    #[allow(dead_code)]
     preprocessor: &'a Preprocessor<'a>,
 }
 

@@ -4,14 +4,13 @@
 //! and type inference on the AST. It validates type compatibility, performs
 //! implicit conversions, and ensures type safety according to C11 semantics.
 
-use thin_vec::ThinVec;
-
 use std::cell::Cell;
 
 use crate::ast::*;
 use crate::diagnostic::DiagnosticEngine;
 use crate::semantic::symbol_table::{ScopeId, SymbolTable};
 use crate::semantic::visitor::{SemanticVisitor, visit_node};
+use crate::semantic::utils::{extract_function_info};
 
 /// Context for type checking
 pub struct TypeCheckContext<'a> {
@@ -239,8 +238,12 @@ impl TypeChecker {
                     }
                 }
                 BinaryOp::Sub => {
-                    if !((left_is_pointer || left_is_arithmetic) && right_is_arithmetic ||
-                         left_is_pointer && right_is_pointer) {
+                    if left_is_pointer && right_is_pointer {
+                        // Pointer - pointer: check compatibility
+                        if !self.types_compatible_for_pointer_arithmetic(left_ty, right_ty, context.ast) {
+                            self.report_type_error("Invalid operands to binary -: incompatible pointer types", left_ty, right_ty, span, context);
+                        }
+                    } else if !((left_is_pointer || left_is_arithmetic) && right_is_arithmetic) {
                         self.report_type_error("Invalid operands to binary -", left_ty, right_ty, span, context);
                     }
                 }
@@ -307,6 +310,42 @@ impl TypeChecker {
                 };
                 self.report_type_error(&format!("Invalid operands to binary {}", op_str), left_ty, right_ty, span, context);
             }
+        }
+    }
+
+    /// Check if two types are compatible for pointer arithmetic
+    fn types_compatible_for_pointer_arithmetic(&self, left_ty: &Type, right_ty: &Type, ast: &Ast) -> bool {
+        match (&left_ty.kind, &right_ty.kind) {
+            (TypeKind::Pointer { pointee: left_pointee }, TypeKind::Pointer { pointee: right_pointee }) => {
+                // Pointers are compatible if their pointee types are compatible, or if either is void*
+                let left_pointee_ty = ast.get_type(*left_pointee);
+                let right_pointee_ty = ast.get_type(*right_pointee);
+
+                // If either pointee is void, they're compatible
+                if left_pointee_ty.is_void() || right_pointee_ty.is_void() {
+                    return true;
+                }
+
+                // Otherwise, check if pointee types are the same (simplified compatibility)
+                // In a full implementation, this would check for compatible types more thoroughly
+                self.types_equal_for_arithmetic(left_pointee_ty, right_pointee_ty)
+            }
+            _ => false,
+        }
+    }
+
+    /// Check if two types are equal for arithmetic purposes (simplified)
+    fn types_equal_for_arithmetic(&self, left: &Type, right: &Type) -> bool {
+        match (&left.kind, &right.kind) {
+            (TypeKind::Void, TypeKind::Void) => true,
+            (TypeKind::Bool, TypeKind::Bool) => true,
+            (TypeKind::Char { is_signed: ls }, TypeKind::Char { is_signed: rs }) => ls == rs,
+            (TypeKind::Short { is_signed: ls }, TypeKind::Short { is_signed: rs }) => ls == rs,
+            (TypeKind::Int { is_signed: ls }, TypeKind::Int { is_signed: rs }) => ls == rs,
+            (TypeKind::Long { is_signed: ls, is_long_long: ll }, TypeKind::Long { is_signed: rs, is_long_long: rl }) => ls == rs && ll == rl,
+            (TypeKind::Float, TypeKind::Float) => true,
+            (TypeKind::Double { is_long_double: ld }, TypeKind::Double { is_long_double: rd }) => ld == rd,
+            _ => false,
         }
     }
 
@@ -421,55 +460,4 @@ impl<'ast> SemanticVisitor<'ast> for TypeResolver {
     }
 
     // Other visitor methods can be added as needed for type resolution
-}
-
-/// Extract function name and parameters from a declarator
-fn extract_function_info(declarator: &Declarator) -> (Option<Symbol>, Vec<FunctionParameter>) {
-    // Find the function declarator that has the identifier as its direct base
-    let (name, params) = find_function_with_name(declarator);
-    if let Some((func_decl, params)) = name.zip(params) {
-        let func_params: Vec<FunctionParameter> = params
-            .iter()
-            .filter_map(|param| {
-                if let Some(decl) = &param.declarator {
-                    let param_name = extract_identifier(decl);
-                    param_name.map(|name| FunctionParameter {
-                        param_type: TypeRef::new(1).unwrap(), // Placeholder
-                        name: Some(name),
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect();
-        (Some(func_decl), func_params)
-    } else {
-        (None, Vec::new())
-    }
-}
-
-fn find_function_with_name(declarator: &Declarator) -> (Option<Symbol>, Option<&ThinVec<ParamData>>) {
-    match declarator {
-        Declarator::Function(base, params) => {
-            if let Declarator::Identifier(name, _, _) = base.as_ref() {
-                (Some(*name), Some(params))
-            } else {
-                find_function_with_name(base)
-            }
-        }
-        Declarator::Pointer(_, Some(base)) => find_function_with_name(base),
-        Declarator::Array(base, _) => find_function_with_name(base),
-        _ => (None, None)
-    }
-}
-
-fn extract_identifier(declarator: &Declarator) -> Option<Symbol> {
-    match declarator {
-        Declarator::Identifier(name, _, _) => Some(*name),
-        Declarator::Pointer(_, Some(base)) => extract_identifier(base),
-        Declarator::Array(base, _) => extract_identifier(base),
-        Declarator::Function(base, _) => extract_identifier(base),
-        Declarator::Abstract => None,
-        _ => None
-    }
 }

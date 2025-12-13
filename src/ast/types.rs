@@ -185,27 +185,6 @@ pub mod utils {
         ty.alignment
     }
 
-    /// Check if two types are compatible for assignment
-    pub fn types_compatible_for_assignment(left: &Type, right: &Type) -> bool {
-        // Simplified compatibility check
-        // In a real implementation, this would be much more complex
-        match (&left.kind, &right.kind) {
-            (TypeKind::Void, TypeKind::Void) => true,
-            (TypeKind::Bool, TypeKind::Bool) => true,
-            (TypeKind::Char { is_signed: ls }, TypeKind::Char { is_signed: rs }) => ls == rs,
-            (TypeKind::Short { is_signed: ls }, TypeKind::Short { is_signed: rs }) => ls == rs,
-            (TypeKind::Int { is_signed: ls }, TypeKind::Int { is_signed: rs }) => ls == rs,
-            (TypeKind::Long { is_signed: ls, is_long_long: ll }, TypeKind::Long { is_signed: rs, is_long_long: rl }) => ls == rs && ll == rl,
-            (TypeKind::Float, TypeKind::Float) => true,
-            (TypeKind::Double { is_long_double: ld }, TypeKind::Double { is_long_double: rd }) => ld == rd,
-            (TypeKind::Pointer { .. }, TypeKind::Pointer { .. }) => {
-                // Pointer compatibility is more complex
-                // For now, assume compatible if both are pointers
-                true
-            }
-            _ => false,
-        }
-    }
 
     /// Create a pointer type to the given type
     pub fn make_pointer_type(pointee: TypeRef, qualifiers: TypeQualifiers) -> Type {

@@ -18,7 +18,6 @@ pub mod visitor;
 // Re-export key types for public API
 pub use name_resolver::NameResolver;
 pub use symbol_table::{Scope, ScopeId, ScopeKind, SymbolTable};
-use thin_vec::ThinVec;
 pub use type_checker::{TypeChecker, TypeResolver};
 
 use bitvec::prelude::*;
@@ -26,6 +25,7 @@ use log::debug;
 
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticWarning};
+use crate::semantic::utils::{extract_identifier, find_function_with_name};
 
 /// Output of semantic analysis
 #[derive(Debug)]
@@ -440,7 +440,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
     fn collect_declaration_symbols(&mut self, decl: &DeclarationData, span: SourceSpan) {
         for init_declarator in &decl.init_declarators {
             // Use extract_identifier to handle all declarator types (Identifier, Pointer, Array, etc.)
-            if let Some(name) = Self::extract_identifier(&init_declarator.declarator) {
+            if let Some(name) = extract_identifier(&init_declarator.declarator) {
                 // Check for redeclaration
                 if let Some(existing_entry_ref) = self
                     .symbol_table
@@ -489,38 +489,88 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
         }
     }
 
-    fn create_type_from_declarator(&mut self, declarator: &Declarator, _specifiers: &[DeclSpecifier]) -> TypeRef {
-        // For now, create a simple type based on whether it's a pointer or not
-        // This is a simplified implementation
+    fn create_type_from_declarator(&mut self, declarator: &Declarator, specifiers: &[DeclSpecifier]) -> TypeRef {
+        // Build base type from specifiers
+        let base_type_ref = self.create_base_type_from_specifiers(specifiers);
 
-        // Check if it's a pointer declarator
-        let is_pointer = self.is_pointer_declarator(declarator);
-
-        if is_pointer {
-            // Create a pointer type
-            let pointee_type = self.get_safe_type_ref(); // int for now
-            let pointer_type = Type {
-                kind: TypeKind::Pointer { pointee: pointee_type },
-                qualifiers: TypeQualifiers::empty(),
-                size: None,
-                alignment: None,
-            };
-            self.ast.push_type(pointer_type)
-        } else {
-            // Create a regular type
-            self.get_safe_type_ref()
-        }
+        // Apply declarator transformations
+        self.apply_declarator_to_type(base_type_ref, declarator)
     }
 
-    fn is_pointer_declarator(&self, declarator: &Declarator) -> bool {
+    fn create_base_type_from_specifiers(&mut self, specifiers: &[DeclSpecifier]) -> TypeRef {
+        // Simple implementation: look for the first type specifier
+        for specifier in specifiers {
+            if let DeclSpecifier::TypeSpecifier(type_spec) = specifier {
+                match type_spec {
+                    TypeSpecifier::Void => {
+                        let ty = Type::new(TypeKind::Void);
+                        return self.ast.push_type(ty);
+                    }
+                    TypeSpecifier::Bool => {
+                        let ty = Type::new(TypeKind::Bool);
+                        return self.ast.push_type(ty);
+                    }
+                    TypeSpecifier::Char => {
+                        let ty = Type::new(TypeKind::Char { is_signed: true });
+                        return self.ast.push_type(ty);
+                    }
+                    TypeSpecifier::Short => {
+                        let ty = Type::new(TypeKind::Short { is_signed: true });
+                        return self.ast.push_type(ty);
+                    }
+                    TypeSpecifier::Int => {
+                        let ty = Type::new(TypeKind::Int { is_signed: true });
+                        return self.ast.push_type(ty);
+                    }
+                    TypeSpecifier::Long => {
+                        let ty = Type::new(TypeKind::Long { is_signed: true, is_long_long: false });
+                        return self.ast.push_type(ty);
+                    }
+                    TypeSpecifier::Float => {
+                        let ty = Type::new(TypeKind::Float);
+                        return self.ast.push_type(ty);
+                    }
+                    TypeSpecifier::Double => {
+                        let ty = Type::new(TypeKind::Double { is_long_double: false });
+                        return self.ast.push_type(ty);
+                    }
+                    _ => {} // Handle other types later
+                }
+            }
+        }
+        // Default to int
+        self.get_safe_type_ref()
+    }
+
+    fn apply_declarator_to_type(&mut self, base_type_ref: TypeRef, declarator: &Declarator) -> TypeRef {
         match declarator {
-            Declarator::Pointer(_, _) => true,
-            Declarator::Identifier(_, _, _) => false,
-            Declarator::Array(base, _) => self.is_pointer_declarator(base),
-            Declarator::Function(base, _) => self.is_pointer_declarator(base),
-            _ => false,
+            Declarator::Pointer(_, next) => {
+                let pointee_type = if let Some(next_decl) = next {
+                    self.apply_declarator_to_type(base_type_ref, next_decl)
+                } else {
+                    base_type_ref
+                };
+                let pointer_type = Type {
+                    kind: TypeKind::Pointer { pointee: pointee_type },
+                    qualifiers: TypeQualifiers::empty(),
+                    size: None,
+                    alignment: None,
+                };
+                self.ast.push_type(pointer_type)
+            }
+            Declarator::Identifier(_, _, _) => base_type_ref,
+            Declarator::Array(base, _) => {
+                // For now, treat arrays as pointers
+                self.apply_declarator_to_type(base_type_ref, base)
+            }
+            Declarator::Function(base, _) => {
+                // For now, treat functions as the return type
+                self.apply_declarator_to_type(base_type_ref, base)
+            }
+            _ => base_type_ref,
         }
     }
+
 
     fn collect_enum_constants_from_declaration(&mut self, decl: &DeclarationData, span: SourceSpan) {
         for specifier in &decl.specifiers {
@@ -652,7 +702,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                 .filter_map(|(i, param)| {
                     debug!("Processing param {}: declarator={:?}", i, param.declarator);
                     if let Some(decl) = &param.declarator {
-                        let param_name = Self::extract_identifier(decl);
+                        let param_name = extract_identifier(decl);
                         debug!("  Extracted param name: {:?}", param_name.as_ref().map(|s| s.as_str()));
                         param_name.map(|name| FunctionParameter {
                             param_type: TypeRef::new(1).unwrap(),
@@ -669,35 +719,6 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
         } else {
             debug!("No function with name found");
             (None, Vec::new())
-        }
-    }
-
-    fn extract_identifier(declarator: &Declarator) -> Option<Symbol> {
-        match declarator {
-            Declarator::Identifier(name, _, _) => {
-                debug!("Found identifier: {}", name.as_str());
-                Some(*name)
-            }
-            Declarator::Pointer(_, Some(base)) => {
-                debug!("Pointer to base: recursing");
-                Self::extract_identifier(base)
-            }
-            Declarator::Array(base, _) => {
-                debug!("Array of base: recursing");
-                Self::extract_identifier(base)
-            }
-            Declarator::Function(base, _) => {
-                debug!("Function returning base: recursing");
-                Self::extract_identifier(base)
-            }
-            Declarator::Abstract => {
-                debug!("Abstract declarator: no identifier");
-                None
-            }
-            _ => {
-                debug!("Other declarator type: no identifier");
-                None
-            }
         }
     }
 
@@ -771,21 +792,5 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
             children.len()
         );
         children
-    }
-}
-fn find_function_with_name(declarator: &Declarator) -> (Option<Symbol>, Option<&ThinVec<ParamData>>) {
-    match declarator {
-        Declarator::Function(base, params) => {
-            if let Declarator::Identifier(name, _, _) = base.as_ref() {
-                // Found it
-                (Some(*name), Some(params))
-            } else {
-                // Recurse
-                find_function_with_name(base)
-            }
-        }
-        Declarator::Pointer(_, Some(base)) => find_function_with_name(base),
-        Declarator::Array(base, _) => find_function_with_name(base),
-        _ => (None, None),
     }
 }

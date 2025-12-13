@@ -93,3 +93,53 @@ int main() {
 
     assert!(!has_type_error, "Unexpected type error for int + int. Diagnostics: {:?}", output.diagnostics);
 }
+
+#[test]
+fn test_incompatible_type_subtraction() {
+    // Test code with incompatible pointer types: int* - double*
+    let source_code = r#"
+int main() {
+    int x = 5;
+    double y = 10.0;
+    int *a = &x;
+    double *b = &y;
+    long d = a - b; // Should raise a type error
+    return 0;
+}
+"#;
+
+    let output = run_semantic_analysis(source_code);
+
+    // Check that we have a type error
+    let has_type_error = output.diagnostics.iter().any(|diag| {
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
+        diag.message.contains("Invalid operands to binary -: incompatible pointer types")
+    });
+
+    assert!(has_type_error, "Expected type error for incompatible pointer subtraction, but none found. Diagnostics: {:?}", output.diagnostics);
+}
+
+#[test]
+fn test_compatible_pointer_subtraction() {
+    // Test code with compatible pointer types: int* - int*
+    let source_code = r#"
+int main() {
+    int x = 5;
+    int y = 10;
+    int *a = &x;
+    int *b = &y;
+    long d = a - b; // This should be OK
+    return 0;
+}
+"#;
+
+    let output = run_semantic_analysis(source_code);
+
+    // Check that we don't have type errors
+    let has_type_error = output.diagnostics.iter().any(|diag| {
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
+        diag.message.contains("Invalid operands to binary -")
+    });
+
+    assert!(!has_type_error, "Unexpected type error for compatible pointer subtraction. Diagnostics: {:?}", output.diagnostics);
+}

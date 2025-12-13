@@ -89,10 +89,19 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
                 ThinVec::new()
             } else {
                 // Variable declaration with anonymous struct type: struct { members } variable;
-                thin_vec![InitDeclarator {
-                    declarator: super::declarator::parse_declarator(parser, None)?,
-                    initializer: None,
-                }]
+                let mut init_declarators = ThinVec::new();
+                loop {
+                    let declarator = super::declarator::parse_declarator(parser, None)?;
+                    init_declarators.push(InitDeclarator {
+                        declarator,
+                        initializer: None,
+                    });
+
+                    if parser.accept(TokenKind::Comma).is_none() {
+                        break;
+                    }
+                }
+                init_declarators
             };
 
             let type_specifier = TypeSpecifier::Record(
@@ -134,10 +143,19 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
                     ThinVec::new()
                 } else {
                     // Variable declaration with named struct type: struct tag { members } variable;
-                    thin_vec![InitDeclarator {
-                        declarator: super::declarator::parse_declarator(parser, None)?,
-                        initializer: None,
-                    }]
+                    let mut init_declarators = ThinVec::new();
+                    loop {
+                        let declarator = super::declarator::parse_declarator(parser, None)?;
+                        init_declarators.push(InitDeclarator {
+                            declarator,
+                            initializer: None,
+                        });
+
+                        if parser.accept(TokenKind::Comma).is_none() {
+                            break;
+                        }
+                    }
+                    init_declarators
                 };
 
                 let type_specifier = TypeSpecifier::Record(
@@ -162,26 +180,48 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
                     init_declarators,
                 })
             } else {
-                // Just a forward declaration or reference to named struct
+                // Named struct type with declarators: struct tag declarator1, declarator2;
+                // OR forward declaration: struct tag;
                 let type_specifier = TypeSpecifier::Record(is_union, tag, None);
-                let declarator = super::declarator::parse_declarator(parser, None)?;
-
+                
                 let specifiers = thin_vec![DeclSpecifier::TypeSpecifier(type_specifier)];
 
-                parser.expect(TokenKind::Semicolon)?;
+                // Check if there are declarators following
+                if parser.is_token(TokenKind::Semicolon) {
+                    // Just a forward declaration: struct tag;
+                    parser.expect(TokenKind::Semicolon)?;
+                    
+                    Ok(DeclarationData {
+                        specifiers,
+                        init_declarators: ThinVec::new(),
+                    })
+                } else {
+                    // Named struct type with declarators: struct tag declarator1, declarator2;
+                    let mut init_declarators = ThinVec::new();
+                    loop {
+                        let declarator = super::declarator::parse_declarator(parser, None)?;
+                        init_declarators.push(InitDeclarator {
+                            declarator,
+                            initializer: None,
+                        });
 
-                Ok(DeclarationData {
-                    specifiers,
-                    init_declarators: thin_vec![InitDeclarator {
-                        declarator,
-                        initializer: None,
-                    }],
-                })
+                        if parser.accept(TokenKind::Comma).is_none() {
+                            break;
+                        }
+                    }
+
+                    parser.expect(TokenKind::Semicolon)?;
+
+                    Ok(DeclarationData {
+                        specifiers,
+                        init_declarators,
+                    })
+                }
             }
         }
     } else {
-        // Regular member: type specifier + multiple declarators
-        let type_specifier = super::type_specifiers::parse_type_specifier_with_context(parser, true)?;
+        // Regular member: declaration specifiers + multiple declarators
+        let specifiers = super::declaration_core::parse_declaration_specifiers(parser)?;
 
         let mut init_declarators = ThinVec::new();
         loop {
@@ -195,8 +235,6 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
                 break;
             }
         }
-
-        let specifiers = thin_vec![DeclSpecifier::TypeSpecifier(type_specifier)];
 
         parser.expect(TokenKind::Semicolon)?;
 

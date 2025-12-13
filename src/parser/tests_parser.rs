@@ -974,5 +974,16 @@ fn test_gnu_statement_expression() {
           - Add
           - Ident: x
           - LiteralInt: 2
-    ");
+  ");
+}
+
+#[test]
+fn test_struct_member_multiple_declarators() {
+  let resolved = setup_declaration("struct flowi6 { struct in6_addr saddr, daddr; };");
+  insta::assert_yaml_snapshot!(&resolved, @r#"
+  Declaration:
+    specifiers:
+      - "struct flowi6 { ... }"
+    init_declarators: []
+  "#);
 }

@@ -115,8 +115,17 @@ impl TypeChecker {
                     self.walk_initializer(ast, &designated.initializer, context);
                     // Also handle designators that might contain expressions
                     for designator in &designated.designation {
-                        if let Designator::ArrayIndex(index_expr) = designator {
-                            self.walk_ast(ast, *index_expr, context);
+                        match designator {
+                            Designator::ArrayIndex(index_expr) => {
+                                self.walk_ast(ast, *index_expr, context);
+                            }
+                            Designator::GnuArrayRange(start_expr, end_expr) => {
+                                self.walk_ast(ast, *start_expr, context);
+                                self.walk_ast(ast, *end_expr, context);
+                            }
+                            Designator::FieldName(_) => {
+                                // Field names don't need type checking
+                            }
                         }
                     }
                 }

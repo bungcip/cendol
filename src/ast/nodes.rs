@@ -311,6 +311,7 @@ pub struct DesignatedInitializer {
 pub enum Designator {
     FieldName(Symbol),
     ArrayIndex(NodeRef), // Index expression
+    GnuArrayRange(NodeRef, NodeRef), // GCC extension: Range expression [start ... end]
 }
 
 // Generic selection

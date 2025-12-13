@@ -987,3 +987,104 @@ fn test_struct_member_multiple_declarators() {
     init_declarators: []
   "#);
 }
+
+#[test]
+fn test_designated_initializer_simple_array() {
+  let resolved = setup_declaration("int arr[10] = { [5] = 42 };");
+  insta::assert_yaml_snapshot!(&resolved, @r"
+  Declaration:
+    specifiers:
+      - int
+    init_declarators:
+      - name: arr
+        kind: array
+        initializer:
+          InitializerList:
+            - LiteralInt: 42
+  ");
+}
+
+#[test]
+fn test_designated_initializer_range_syntax() {
+  let resolved = setup_declaration("int arr[10] = { [1 ... 5] = 9 };");
+  insta::assert_yaml_snapshot!(&resolved, @r"
+  Declaration:
+    specifiers:
+      - int
+    init_declarators:
+      - name: arr
+        kind: array
+        initializer:
+          InitializerList:
+            - LiteralInt: 9
+  ");
+}
+
+#[test]
+fn test_designated_initializer_multiple_ranges() {
+  let resolved = setup_declaration("int arr[20] = { [1 ... 5] = 9, [10 ... 15] = 42 };");
+  insta::assert_yaml_snapshot!(&resolved, @r"
+  Declaration:
+    specifiers:
+      - int
+    init_declarators:
+      - name: arr
+        kind: array
+        initializer:
+          InitializerList:
+            - LiteralInt: 9
+            - LiteralInt: 42
+  ");
+}
+
+#[test]
+fn test_designated_initializer_mixed_single_and_range() {
+  let resolved = setup_declaration("int arr[10] = { [0] = 1, [2 ... 5] = 9, [8] = 42 };");
+  insta::assert_yaml_snapshot!(&resolved, @r"
+  Declaration:
+    specifiers:
+      - int
+    init_declarators:
+      - name: arr
+        kind: array
+        initializer:
+          InitializerList:
+            - LiteralInt: 1
+            - LiteralInt: 9
+            - LiteralInt: 42
+  ");
+}
+
+#[test]
+fn test_designated_initializer_range_with_expressions() {
+  let resolved = setup_declaration("int arr[10] = { [1 ... 2+3] = 9 };");
+  insta::assert_yaml_snapshot!(&resolved, @r"
+  Declaration:
+    specifiers:
+      - int
+    init_declarators:
+      - name: arr
+        kind: array
+        initializer:
+          InitializerList:
+            - LiteralInt: 9
+  ");
+}
+
+#[test]
+fn test_designated_initializer_struct_with_range() {
+  let resolved = setup_declaration("struct T { int s[16]; int a; } lt2 = { { [1 ... 5] = 9, [6 ... 10] = 42 }, 1 };");
+  insta::assert_yaml_snapshot!(&resolved, @r#"
+  Declaration:
+    specifiers:
+      - "struct T { ... }"
+    init_declarators:
+      - name: lt2
+        initializer:
+          InitializerList:
+            - InitializerList:
+                - LiteralInt: 9
+                - LiteralInt: 42
+            - LiteralInt: 1
+  "#);
+}

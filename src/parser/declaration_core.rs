@@ -277,9 +277,19 @@ fn parse_designation(parser: &mut Parser) -> Result<Vec<Designator>, ParseError>
             let (field_name, _) = parser.expect_name()?;
             designators.push(Designator::FieldName(field_name));
         } else if parser.accept(TokenKind::LeftBracket).is_some() {
-            let index_expr = parser.parse_expr_min()?;
-            parser.expect(TokenKind::RightBracket)?;
-            designators.push(Designator::ArrayIndex(index_expr));
+            // Check if this is a range designator (contains ellipsis)
+            let start_expr = parser.parse_expr_min()?;
+            
+            // Check for ellipsis token indicating range syntax
+            if parser.accept(TokenKind::Ellipsis).is_some() {
+                let end_expr = parser.parse_expr_min()?;
+                parser.expect(TokenKind::RightBracket)?;
+                designators.push(Designator::GnuArrayRange(start_expr, end_expr));
+            } else {
+                // Single index designator
+                parser.expect(TokenKind::RightBracket)?;
+                designators.push(Designator::ArrayIndex(start_expr));
+            }
         }
     }
 

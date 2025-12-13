@@ -421,8 +421,7 @@ fn extract_last_expression_from_compound_statement(
     }
 
     // Fallback: create a dummy expression
-    let dummy_expr = parser.push_node(NodeKind::Dummy, compound_stmt_node.span);
-    dummy_expr
+    parser.push_node(NodeKind::Dummy, compound_stmt_node.span)
 }
 
 /// Parse function call

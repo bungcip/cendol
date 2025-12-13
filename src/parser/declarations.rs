@@ -18,7 +18,7 @@ use super::Parser;
 /// Parse a declaration
 pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let trx = parser.start_transaction();
-    let start_span = trx.parser.current_token()?.location.start;
+    let start_loc = trx.parser.current_token_span()?.start;
 
     debug!(
         "parse_declaration: starting at position {}, token {:?}",
@@ -85,8 +85,8 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
                 init_declarators: ThinVec::new(),
             };
 
-            let end_span = semi.location.end;
-            let span = SourceSpan::new(start_span, end_span);
+            let end_loc = semi.location.end;
+            let span = SourceSpan::new(start_loc, end_loc);
 
             let node = trx.parser.push_node(NodeKind::Declaration(declaration_data), span);
             debug!(
@@ -216,9 +216,9 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         });
     };
 
-    let end_span = semicolon_token.location.end;
+    let end_loc = semicolon_token.location.end;
 
-    let span = SourceSpan::new(start_span, end_span);
+    let span = SourceSpan::new(start_loc, end_loc);
 
     // Track typedef names for disambiguation
     for specifier in &specifiers {
@@ -251,7 +251,7 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
 /// Parse function definition
 pub fn parse_function_definition(parser: &mut Parser) -> Result<NodeRef, ParseError> {
-    let start_span = parser.current_token()?.location.start;
+    let start_loc = parser.current_token()?.location.start;
 
     // Parse declaration specifiers
     let specifiers = parse_declaration_specifiers(parser)?;
@@ -260,9 +260,9 @@ pub fn parse_function_definition(parser: &mut Parser) -> Result<NodeRef, ParseEr
     let declarator = super::declarator::parse_declarator(parser, None)?;
 
     // Parse function body
-    let (body, body_end_span) = super::statements::parse_compound_statement(parser)?;
+    let (body, body_end_loc) = super::statements::parse_compound_statement(parser)?;
 
-    let span = SourceSpan::new(start_span, body_end_span);
+    let span = SourceSpan::new(start_loc, body_end_loc);
 
     let function_def = FunctionDefData {
         specifiers,
@@ -276,8 +276,8 @@ pub fn parse_function_definition(parser: &mut Parser) -> Result<NodeRef, ParseEr
 
 /// Parse translation unit (top level)
 pub fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError> {
-    let start_span = parser.current_token()?.location.start;
-    let mut end_span = SourceLoc::empty();
+    let start_loc = parser.current_token()?.location.start;
+    let mut end_loc = SourceLoc::empty();
 
     let mut top_level_declarations = Vec::new();
     let mut iteration_count = 0;
@@ -285,7 +285,7 @@ pub fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError
 
     while let Some(token) = parser.try_current_token() {
         if token.kind == TokenKind::EndOfFile {
-            end_span = token.location.end;
+            end_loc = token.location.end;
             break;
         }
 
@@ -329,7 +329,7 @@ pub fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError
         }
     }
 
-    let span = SourceSpan::new(start_span, end_span);
+    let span = SourceSpan::new(start_loc, end_loc);
     let node = parser.push_node(NodeKind::TranslationUnit(top_level_declarations), span);
 
     parser.ast.set_root_node(node);
@@ -340,7 +340,7 @@ pub fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError
 /// Parse static assert (C11)
 pub fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<NodeRef, ParseError> {
     // already consumed `_Static_assert`
-    let start_span = start_token.location.start;
+    let start_loc = start_token.location.start;
     parser.expect(TokenKind::LeftParen)?;
 
     let condition = parser.parse_expr_min()?;
@@ -366,8 +366,8 @@ pub fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<No
     parser.advance();
     parser.expect(TokenKind::RightParen)?;
     let semicolon_token = parser.expect(TokenKind::Semicolon)?;
-    let end_span = semicolon_token.location.end;
-    let span = SourceSpan::new(start_span, end_span);
+    let end_loc = semicolon_token.location.end;
+    let span = SourceSpan::new(start_loc, end_loc);
     let node = parser.push_node(NodeKind::StaticAssert(condition, message), span);
     Ok(node)
 }

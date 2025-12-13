@@ -386,8 +386,8 @@ pub(crate) fn parse_gnu_statement_expression(
     // We need to extract it from the compound statement
     let result_expr = extract_last_expression_from_compound_statement(parser, compound_stmt);
 
-    let end_span = right_paren_token.location.end;
-    let span = SourceSpan::new(start_loc, end_span);
+    let end_loc = right_paren_token.location.end;
+    let span = SourceSpan::new(start_loc, end_loc);
 
     let node = parser.push_node(NodeKind::GnuStatementExpression(compound_stmt, result_expr), span);
     debug!("parse_gnu_statement_expression: successfully parsed GNU statement expression");
@@ -510,7 +510,7 @@ fn parse_postfix_decrement(
 /// Parse _Generic selection (C11)
 pub(crate) fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.expect(TokenKind::Generic)?;
-    let start_span = token.location.start;
+    let start_loc = token.location.start;
 
     parser.expect(TokenKind::LeftParen)?;
 
@@ -541,8 +541,8 @@ pub(crate) fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, Pa
     }
 
     let right_paren_token = parser.expect(TokenKind::RightParen)?;
-    let end_span = right_paren_token.location.end;
-    let span = SourceSpan::new(start_span, end_span);
+    let end_loc = right_paren_token.location.end;
+    let span = SourceSpan::new(start_loc, end_loc);
     let node = parser.push_node(NodeKind::GenericSelection(controlling_expr, associations), span);
     Ok(node)
 }
@@ -550,12 +550,12 @@ pub(crate) fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, Pa
 /// Parse compound literal (C99)
 pub(crate) fn parse_compound_literal(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.expect(TokenKind::LeftParen)?;
-    let start_span = token.location.start;
+    let start_loc = token.location.start;
 
     let type_ref = super::declaration_core::parse_type_name(parser)?;
     parser.expect(TokenKind::RightParen)?;
 
-    parse_compound_literal_from_type_and_start(parser, type_ref, start_span)
+    parse_compound_literal_from_type_and_start(parser, type_ref, start_loc)
 }
 
 /// Parse compound literal given the type and start location
@@ -577,7 +577,7 @@ pub(crate) fn parse_compound_literal_from_type_and_start(
 /// Parse sizeof expression or type
 pub fn parse_sizeof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.expect(TokenKind::Sizeof)?;
-    let start_span = token.location.start;
+    let start_loc = token.location.start;
 
     let node = if parser.accept(TokenKind::LeftParen).is_some() {
         debug!(
@@ -598,8 +598,8 @@ pub fn parse_sizeof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
             let right_paren_token = parser.expect(TokenKind::RightParen)?;
 
-            let end_span = right_paren_token.location.end;
-            let span = SourceSpan::new(start_span, end_span);
+            let end_loc = right_paren_token.location.end;
+            let span = SourceSpan::new(start_loc, end_loc);
 
             debug!("parse_sizeof: successfully parsed sizeof(type)");
             parser.push_node(NodeKind::SizeOfType(type_ref), span)
@@ -608,8 +608,8 @@ pub fn parse_sizeof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
             let expr = parser.parse_expr_min()?;
             let right_paren_token = parser.expect(TokenKind::RightParen)?;
 
-            let end_span = right_paren_token.location.end;
-            let span = SourceSpan::new(start_span, end_span);
+            let end_loc = right_paren_token.location.end;
+            let span = SourceSpan::new(start_loc, end_loc);
 
             debug!("parse_sizeof: successfully parsed sizeof(expression)");
             parser.push_node(NodeKind::SizeOfExpr(expr), span)
@@ -618,8 +618,8 @@ pub fn parse_sizeof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         debug!("parse_sizeof: no '(', parsing unary expression");
         let expr = parser.parse_expr_unary()?;
 
-        let end_span = parser.ast.get_node(expr).span.end;
-        let span = SourceSpan::new(start_span, end_span);
+        let end_loc = parser.ast.get_node(expr).span.end;
+        let span = SourceSpan::new(start_loc, end_loc);
 
         debug!("parse_sizeof: successfully parsed sizeof unary expression");
         parser.push_node(NodeKind::SizeOfExpr(expr), span)
@@ -631,16 +631,16 @@ pub fn parse_sizeof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 /// Parse _Alignof (C11)
 pub fn parse_alignof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.expect(TokenKind::Alignof)?;
-    let start_span = token.location.start;
+    let start_loc = token.location.start;
     
     parser.expect(TokenKind::LeftParen)?;
 
     let type_ref = super::declaration_core::parse_type_name(parser)?;
     let right_paren_token = parser.expect(TokenKind::RightParen)?;
 
-    let end_span = right_paren_token.location.end;
+    let end_loc = right_paren_token.location.end;
 
-    let span = SourceSpan::new(start_span, end_span);
+    let span = SourceSpan::new(start_loc, end_loc);
 
     let node = parser.push_node(NodeKind::AlignOf(type_ref), span);
     Ok(node)

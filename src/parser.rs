@@ -118,9 +118,13 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Get the current token (returns error if at end of input)
     fn current_token(&self) -> Result<Token, ParseError> {
-        self.try_current_token().ok_or_else(|| ParseError::SyntaxError {
-            message: "Unexpected end of input".to_string(),
-            location: SourceSpan::empty(),
+        self.try_current_token().ok_or_else(|| {
+            let prev = self.tokens.get(self.current_idx - 1);
+            let span = match prev {
+                Some(token) => token.location,
+                None => SourceSpan::empty()
+            };
+            ParseError::UnexpectedEof { location: span }
         })
     }
 
@@ -161,24 +165,15 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Expect a specific token kind, consume it if found
     fn expect(&mut self, expected: TokenKind) -> Result<Token, ParseError> {
-        if let Some(token) = self.try_current_token() {
-            if token.kind == expected {
-                self.advance().ok_or_else(|| ParseError::SyntaxError {
-                    message: "Unexpected end of input".to_string(),
-                    location: token.location,
-                })?;
-                Ok(token)
-            } else {
-                Err(ParseError::UnexpectedToken {
-                    expected_tokens: format!("{:?}", expected),
-                    found: token.kind,
-                    location: token.location,
-                })
-            }
+        let token = self.current_token()?;
+        if token.kind == expected {
+            self.advance();
+            Ok(token)
         } else {
-            Err(ParseError::MissingToken {
-                expected,
-                location: SourceSpan::empty(),
+            Err(ParseError::UnexpectedToken {
+                expected_tokens: format!("{:?}", expected),
+                found: token.kind,
+                location: token.location,
             })
         }
     }

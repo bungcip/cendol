@@ -159,10 +159,7 @@ pub fn parse_expression(
 
 /// Parse prefix expression
 pub(crate) fn parse_prefix(parser: &mut Parser) -> Result<NodeRef, ParseError> {
-    let token = parser.try_current_token().ok_or_else(|| ParseError::SyntaxError {
-        message: "Unexpected end of input".to_string(),
-        location: SourceSpan::empty(),
-    })?;
+    let token = parser.current_token()?;
 
     debug!("parse_prefix: token={:?} at {}", token.kind, token.location);
     match token.kind {

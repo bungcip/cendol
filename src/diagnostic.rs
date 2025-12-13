@@ -36,8 +36,8 @@ pub enum ParseError {
         location: SourceSpan,
     },
 
-    #[error("Missing token: expected {expected:?}")]
-    MissingToken { expected: TokenKind, location: SourceSpan },
+    #[error("Unexpected End of File")]
+    UnexpectedEof { location: SourceSpan },
 
     #[error("Syntax error: {message}")]
     SyntaxError { message: String, location: SourceSpan },
@@ -145,8 +145,8 @@ impl DiagnosticEngine {
                 ),
                 location,
             ),
-            ParseError::MissingToken { expected, location } => {
-                (format!("Missing token: expected {:?}", expected), location)
+            ParseError::UnexpectedEof { location } => {
+                ("Unexpected End of File".to_string(), location)
             }
             ParseError::SyntaxError { message, location } => (message, location),
             ParseError::InvalidIntegerConstant { text, location } => {

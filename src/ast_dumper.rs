@@ -1077,6 +1077,13 @@ impl<'src> AstDumper<'src> {
                 }
                 self.generate_declarator_children(html, decl, depth)?;
             }
+            Declarator::BitField(decl, bit_width_expr) => {
+                // Generate the bit width expression as a child
+                let expr_node = self.ast.get_node(*bit_width_expr);
+                self.generate_ast_tree(html, expr_node, depth)?;
+                // Also generate children for the inner declarator
+                self.generate_declarator_children(html, decl, depth)?;
+            }
             Declarator::AnonymousRecord(_, members) => {
                 for member in members {
                     for init_decl in &member.init_declarators {

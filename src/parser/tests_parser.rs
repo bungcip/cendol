@@ -207,6 +207,7 @@ fn extract_declarator_name(declarator: &Declarator) -> Option<String> {
         Declarator::Pointer(_, next) => next.as_ref().and_then(|d| extract_declarator_name(d)),
         Declarator::Array(next, _) => extract_declarator_name(next),
         Declarator::Function(next, _) => extract_declarator_name(next),
+        Declarator::BitField(next, _) => extract_declarator_name(next),
         Declarator::Abstract => None,
         _ => None,
     }
@@ -281,6 +282,10 @@ fn extract_declarator_kind(declarator: &Declarator) -> String {
                 return_type
             };
             format!("function({}) -> {}", param_str, return_type_str)
+        }
+        Declarator::BitField(inner, _) => {
+            let inner_kind = extract_declarator_kind(inner);
+            format!("bitfield {}", inner_kind)
         }
         Declarator::Abstract => "abstract".to_string(),
         Declarator::AnonymousRecord(is_union, _) => if *is_union { "union".to_string() } else { "struct".to_string() },
@@ -984,6 +989,39 @@ fn test_struct_member_multiple_declarators() {
   Declaration:
     specifiers:
       - "struct flowi6 { ... }"
+    init_declarators: []
+  "#);
+}
+
+#[test]
+fn test_bitfield_declaration() {
+  let resolved = setup_declaration("struct Test { int x: 8; unsigned y: 1; };");
+  insta::assert_yaml_snapshot!(&resolved, @r#"
+  Declaration:
+    specifiers:
+      - "struct Test { ... }"
+    init_declarators: []
+  "#);
+}
+
+#[test]
+fn test_bitfield_with_mixed_members() {
+  let resolved = setup_declaration("struct Mixed { int regular; int bitfield: 4; int another_regular; unsigned flag: 1; };");
+  insta::assert_yaml_snapshot!(&resolved, @r#"
+  Declaration:
+    specifiers:
+      - "struct Mixed { ... }"
+    init_declarators: []
+  "#);
+}
+
+#[test]
+fn test_bitfield_with_large_width() {
+  let resolved = setup_declaration("struct LargeBitfield { unsigned long value: 32; };");
+  insta::assert_yaml_snapshot!(&resolved, @r#"
+  Declaration:
+    specifiers:
+      - "struct LargeBitfield { ... }"
     init_declarators: []
   "#);
 }

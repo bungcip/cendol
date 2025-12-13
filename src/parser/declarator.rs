@@ -102,6 +102,10 @@ pub fn parse_declarator(parser: &mut Parser, initial_declarator: Option<Symbol>)
             );
             parser.expect(TokenKind::RightParen)?; // Consume ')'
             current_base = Declarator::Function(Box::new(current_base), parameters);
+        } else if parser.accept(TokenKind::Colon).is_some() {
+            // Bit-field declarator: name : width
+            let bit_width_expr = parser.parse_expr_min()?;
+            current_base = Declarator::BitField(Box::new(current_base), bit_width_expr);
         } else {
             break;
         }
@@ -349,6 +353,7 @@ pub fn get_declarator_name(declarator: &Declarator) -> Option<Symbol> {
         Declarator::Pointer(_, Some(inner)) => get_declarator_name(inner),
         Declarator::Array(inner, _) => get_declarator_name(inner),
         Declarator::Function(inner, _) => get_declarator_name(inner),
+        Declarator::BitField(inner, _) => get_declarator_name(inner),
         Declarator::AnonymousRecord(_, _) => None,
         Declarator::Abstract => None,
         Declarator::Pointer(_, None) => None,
@@ -497,6 +502,10 @@ pub fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarator, Pars
             );
             parser.expect(TokenKind::RightParen)?; // Consume ')'
             current_base = Declarator::Function(Box::new(current_base), parameters);
+        } else if parser.accept(TokenKind::Colon).is_some() {
+            // Bit-field declarator: name : width
+            let bit_width_expr = parser.parse_expr_min()?;
+            current_base = Declarator::BitField(Box::new(current_base), bit_width_expr);
         } else {
             break;
         }

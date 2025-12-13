@@ -9,7 +9,6 @@ use crate::lexer::{Token, TokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
 use log::{debug, trace};
 use std::cell::Cell;
-use symbol_table::GlobalSymbol as Symbol;
 
 use super::{Parser, utils::ParserExt};
 
@@ -178,9 +177,8 @@ pub(crate) fn parse_prefix(parser: &mut Parser) -> Result<NodeRef, ParseError> {
             let node = parser.push_node(NodeKind::LiteralInt(value), token.location);
             Ok(node)
         }
-        TokenKind::FloatConstant(text) => {
+        TokenKind::FloatConstant(value) => {
             parser.advance();
-            let value = parser.parse_c11_float_literal(text, token.location)?;
             let node = parser.push_node(NodeKind::LiteralFloat(value), token.location);
             Ok(node)
         }
@@ -240,18 +238,14 @@ pub(crate) fn parse_prefix(parser: &mut Parser) -> Result<NodeRef, ParseError> {
             );
             parse_sizeof(parser)
         }
-        _ => Err(ParseError::UnexpectedToken {
-            expected: vec![
-                TokenKind::Identifier(Symbol::new("")),
-                TokenKind::IntegerConstant(0),
-                TokenKind::FloatConstant(Symbol::new("0.0")),
-                TokenKind::StringLiteral(Symbol::new("")),
-                TokenKind::CharacterConstant(0),
-                TokenKind::LeftParen,
-            ],
-            found: token.kind,
-            location: token.location,
-        }),
+        _ => {
+            let expected = "identifier, integer, float, string, char, or '('";
+            Err(ParseError::UnexpectedToken {
+                expected_tokens: expected.to_string(),
+                found: token.kind,
+                location: token.location,
+            })
+        }
     }
 }
 

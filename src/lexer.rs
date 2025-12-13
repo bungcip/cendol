@@ -9,11 +9,11 @@ use std::sync::OnceLock;
 pub use crate::diagnostic::DiagnosticEngine;
 
 /// C11 token kinds for the lexical analyzer
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenKind {
     // === LITERALS ===
     IntegerConstant(i64),  // Parsed integer literal value
-    FloatConstant(Symbol), // Raw float literal text
+    FloatConstant(f64),    // Parsed float literal value
     CharacterConstant(u8), // Byte value of character constant
     StringLiteral(Symbol), // Interned string literal
 
@@ -208,10 +208,23 @@ impl TokenKind {
             || self.is_alignment_specifier()
             || matches!(self, TokenKind::Attribute)
     }
+
+    /// Check if the token can start a declaration (including typedefs)
+    pub fn is_declaration_start(&self, is_typedef: bool) -> bool {
+        if self.is_declaration_specifier_start() {
+            return true;
+        }
+
+        if let TokenKind::Identifier(_) = self {
+            return is_typedef;
+        }
+
+        false
+    }
 }
 
 /// Token with source location for the parser
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Token {
     pub kind: TokenKind,
     pub location: SourceSpan,
@@ -468,10 +481,14 @@ impl<'src> Lexer<'src> {
             PPTokenKind::StringLiteral(symbol) => TokenKind::StringLiteral(symbol),
             PPTokenKind::CharLiteral(codepoint, _) => TokenKind::CharacterConstant(codepoint),
             PPTokenKind::Number(value) => {
-                // Try to parse as integer first
-                self.parse_c11_integer_literal(value)
-                    .map(TokenKind::IntegerConstant)
-                    .unwrap_or_else(|_| TokenKind::FloatConstant(value))
+                // Try to parse as integer first, then float, then unknown
+                if let Ok(int_val) = self.parse_c11_integer_literal(value) {
+                    TokenKind::IntegerConstant(int_val)
+                } else if let Ok(float_val) = self.parse_c11_float_literal(value) {
+                    TokenKind::FloatConstant(float_val)
+                } else {
+                    TokenKind::Unknown // Could not parse as integer or float
+                }
             }
             PPTokenKind::Eof => TokenKind::EndOfFile,
             PPTokenKind::Eod => TokenKind::Unknown,
@@ -511,6 +528,138 @@ impl<'src> Lexer<'src> {
         tokens = self.concatenate_string_literals(tokens);
 
         tokens
+    }
+
+    /// Parse C11 floating-point literal syntax
+    fn parse_c11_float_literal(&self, text: Symbol) -> Result<f64, ()> {
+        let text_str = text.as_str();
+
+        // C11 floating-point literal format:
+        // [digits][.digits][e|E[+|-]digits][f|F|l|L]
+        // or [digits][e|E[+|-]digits][f|F|l|L]
+        // or 0[xX][hexdigits][.hexdigits][p|P[+|-]digits][f|F|l|L]
+
+        // Strip suffix (f, F, l, L) for parsing
+        let text_without_suffix =
+            if text_str.ends_with('f') || text_str.ends_with('F') || text_str.ends_with('l') || text_str.ends_with('L')
+            {
+                &text_str[..text_str.len() - 1]
+            } else {
+                text_str
+            };
+
+        // Handle hexadecimal floating-point literals (C99/C11)
+        if text_str.starts_with("0x") || text_str.starts_with("0X") {
+            self.parse_hex_float_literal(text_without_suffix)
+        } else {
+            // Use Rust's built-in parsing for decimal floats
+            match text_without_suffix.parse::<f64>() {
+                Ok(val) => Ok(val),
+                Err(_) => {
+                    // Invalid float, treat as unknown
+                    Err(())
+                }
+            }
+        }
+    }
+
+    /// Parse hexadecimal floating-point literal (C99/C11)
+    fn parse_hex_float_literal(&self, text: &str) -> Result<f64, ()> {
+        // Format: 0[xX][hexdigits][.hexdigits][pP[+|-]digits][fFlL]
+        // Example: 0x1.2p3, 0x1p-5f, 0x.8p10L
+
+        let mut chars = text.chars().peekable();
+        let mut result = 0.0f64;
+        let mut exponent = 0i32;
+        let mut seen_dot = false;
+        let mut fraction_digits = 0;
+
+        // Skip "0x" or "0X"
+        chars.next(); // '0'
+        chars.next(); // 'x' or 'X'
+
+        // Parse hexadecimal digits before decimal point
+        while let Some(&c) = chars.peek() {
+            if c.is_ascii_hexdigit() {
+                let digit = c.to_digit(16).unwrap() as f64;
+                result = result * 16.0 + digit;
+                chars.next();
+            } else if c == '.' && !seen_dot {
+                seen_dot = true;
+                chars.next();
+                break;
+            } else if c == 'p' || c == 'P' {
+                break;
+            } else {
+                return Err(());
+            }
+        }
+
+        // Parse hexadecimal digits after decimal point
+        if seen_dot {
+            while let Some(&c) = chars.peek() {
+                if c.is_ascii_hexdigit() {
+                    let digit = c.to_digit(16).unwrap() as f64;
+                    result = result * 16.0 + digit;
+                    fraction_digits += 1;
+                    chars.next();
+                } else if c == 'p' || c == 'P' {
+                    break;
+                } else {
+                    return Err(());
+                }
+            }
+        }
+
+        // Parse binary exponent
+        if let Some(&c) = chars.peek()
+            && (c == 'p' || c == 'P')
+        {
+            chars.next(); // consume 'p' or 'P'
+
+            // Parse optional sign
+            let mut exp_negative = false;
+            if let Some(&sign) = chars.peek() {
+                if sign == '+' {
+                    chars.next();
+                } else if sign == '-' {
+                    exp_negative = true;
+                    chars.next();
+                }
+            }
+
+            // Parse exponent digits
+            let mut exp_str = String::new();
+            while let Some(&c) = chars.peek() {
+                if c.is_ascii_digit() {
+                    exp_str.push(c);
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
+
+            if exp_str.is_empty() {
+                return Err(());
+            }
+
+            exponent = exp_str.parse().map_err(|_| ())?;
+            if exp_negative {
+                exponent = -exponent;
+            }
+        }
+
+        // Apply fractional adjustment
+        if fraction_digits > 0 {
+            result /= 16.0f64.powi(fraction_digits);
+        }
+
+        // Apply binary exponent
+        if exponent != 0 {
+            result *= 2.0f64.powi(exponent);
+        }
+
+        Ok(result)
     }
 
     /// Concatenate adjacent string literals (C11 6.4.5)

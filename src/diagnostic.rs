@@ -29,9 +29,9 @@ pub struct SemanticOutput {
 /// Parse errors
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
-    #[error("Unexpected token: expected {expected:?}, found {found:?}")]
+    #[error("Unexpected token: expected {expected_tokens}, found {found:?}")]
     UnexpectedToken {
-        expected: Vec<TokenKind>,
+        expected_tokens: String,
         found: TokenKind,
         location: SourceSpan,
     },
@@ -135,11 +135,14 @@ impl DiagnosticEngine {
     pub fn report_parse_error(&mut self, error: ParseError) {
         let (message, location) = match error {
             ParseError::UnexpectedToken {
-                expected,
+                expected_tokens,
                 found,
                 location,
             } => (
-                format!("Unexpected token: expected {:?}, found {:?}", expected, found),
+                format!(
+                    "Unexpected token: expected one of {}, found {:?}",
+                    expected_tokens, found
+                ),
                 location,
             ),
             ParseError::MissingToken { expected, location } => {

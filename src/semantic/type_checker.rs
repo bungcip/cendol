@@ -9,8 +9,8 @@ use std::cell::Cell;
 use crate::ast::*;
 use crate::diagnostic::DiagnosticEngine;
 use crate::semantic::symbol_table::{ScopeId, SymbolTable};
+use crate::semantic::utils::extract_function_info;
 use crate::semantic::visitor::{SemanticVisitor, visit_node};
-use crate::semantic::utils::{extract_function_info};
 
 /// Context for type checking
 pub struct TypeCheckContext<'a> {
@@ -71,7 +71,9 @@ impl TypeChecker {
         match &node.kind {
             NodeKind::FunctionDef(func_def) => {
                 // For function definitions, we need to check in the function scope
-                let func_name = extract_function_info(&func_def.declarator).0.unwrap_or_else(|| Symbol::new("<anonymous>"));
+                let func_name = extract_function_info(&func_def.declarator)
+                    .0
+                    .unwrap_or_else(|| Symbol::new("<anonymous>"));
                 if let Some((symbol_ref, _)) = context.symbol_table.lookup_symbol(func_name) {
                     let symbol_entry = context.symbol_table.get_symbol_entry(symbol_ref);
                     let func_scope_id = ScopeId::new(symbol_entry.scope_id).unwrap();
@@ -88,6 +90,15 @@ impl TypeChecker {
                 // For declarations, we need to traverse into initializers
                 for init_declarator in &decl.init_declarators {
                     if let Some(initializer) = &init_declarator.initializer {
+                        // Get the type of the variable being initialized
+                        // Look up the symbol for the variable being initialized
+                        if let Declarator::Identifier(name, _, _) = &init_declarator.declarator
+                            && let Some((symbol_ref, _)) = context.symbol_table.lookup_symbol(*name)
+                        {
+                            let symbol_entry = context.symbol_table.get_symbol_entry(symbol_ref);
+                            let var_type = symbol_entry.type_info;
+                            self.check_initializer_type(ast, initializer, var_type, context);
+                        }
                         self.walk_initializer(ast, initializer, context);
                     }
                 }
@@ -132,23 +143,82 @@ impl TypeChecker {
             }
         }
     }
+
+    /// Check initializer type compatibility
+    fn check_initializer_type<'a>(
+        &mut self,
+        ast: &'a Ast,
+        initializer: &Initializer,
+        var_type: TypeRef,
+        context: &mut TypeCheckContext<'a>,
+    ) {
+        match initializer {
+            Initializer::Expression(expr_node) => {
+                let expr_type = self.get_node_type(*expr_node, context);
+                if let Some(expr_type_ref) = expr_type {
+                    let var_type_info = context.ast.get_type(var_type);
+                    let expr_type_info = context.ast.get_type(expr_type_ref);
+
+                    log::debug!(
+                        "Checking initializer type compatibility: var type {:?}, expr type {:?}",
+                        var_type_info.kind,
+                        expr_type_info.kind
+                    );
+
+                    // Check for incompatible pointer to integer conversion
+                    if matches!(expr_type_info.kind, TypeKind::Pointer { .. }) && var_type_info.is_integer() {
+                        // Check if the pointer is a void pointer
+                        if let TypeKind::Pointer { pointee } = &expr_type_info.kind {
+                            let pointee_type = context.ast.get_type(*pointee);
+                            if pointee_type.is_void() {
+                                log::debug!("Detected void pointer to int initialization");
+                                self.report_type_error(
+                                    "incompatible pointer to integer conversion initializing 'int' with an expression of type 'void *'",
+                                    var_type_info,
+                                    expr_type_info,
+                                    ast.get_node(*expr_node).span,
+                                    context,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            Initializer::List(designated_inits) => {
+                for designated in designated_inits {
+                    self.check_initializer_type(ast, &designated.initializer, var_type, context);
+                }
+            }
+        }
+    }
 }
 
 impl<'ast> SemanticVisitor<'ast> for TypeChecker {
     type Context = TypeCheckContext<'ast>;
 
-    fn visit_binary_op(&mut self, op: BinaryOp, left: NodeRef, right: NodeRef, span: SourceSpan, context: &mut Self::Context) {
+    fn visit_binary_op(
+        &mut self,
+        op: BinaryOp,
+        left: NodeRef,
+        right: NodeRef,
+        span: SourceSpan,
+        context: &mut Self::Context,
+    ) {
         // Get the types of the left and right operands
         let left_type = self.get_node_type(left, context);
         let right_type = self.get_node_type(right, context);
-
 
         // Check type compatibility based on the operation
         match op {
             BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => {
                 self.check_arithmetic_operation(left_type, right_type, op, span, context);
             }
-            BinaryOp::Equal | BinaryOp::NotEqual | BinaryOp::Less | BinaryOp::LessEqual | BinaryOp::Greater | BinaryOp::GreaterEqual => {
+            BinaryOp::Equal
+            | BinaryOp::NotEqual
+            | BinaryOp::Less
+            | BinaryOp::LessEqual
+            | BinaryOp::Greater
+            | BinaryOp::GreaterEqual => {
                 self.check_comparison_operation(left_type, right_type, span, context);
             }
             BinaryOp::LogicAnd | BinaryOp::LogicOr => {
@@ -167,9 +237,47 @@ impl<'ast> SemanticVisitor<'ast> for TypeChecker {
         }
     }
 
-    fn visit_assignment(&mut self, op: BinaryOp, lhs: NodeRef, rhs: NodeRef, span: SourceSpan, context: &mut Self::Context) {
-        // Placeholder: Check assignment compatibility
-        let _ = (op, lhs, rhs, span, context);
+    fn visit_assignment(
+        &mut self,
+        _op: BinaryOp,
+        lhs: NodeRef,
+        rhs: NodeRef,
+        span: SourceSpan,
+        context: &mut Self::Context,
+    ) {
+        // Get the types of the left and right operands
+        let lhs_type = self.get_node_type(lhs, context);
+        let rhs_type = self.get_node_type(rhs, context);
+
+        if let (Some(lhs_ty), Some(rhs_ty)) = (lhs_type, rhs_type) {
+            let lhs_type_info = context.ast.get_type(lhs_ty);
+            let rhs_type_info = context.ast.get_type(rhs_ty);
+
+            // Debug output
+            log::debug!(
+                "Assignment: lhs type: {:?}, rhs type: {:?}",
+                lhs_type_info.kind,
+                rhs_type_info.kind
+            );
+
+            // Check for incompatible pointer to integer conversion
+            if matches!(rhs_type_info.kind, TypeKind::Pointer { .. }) && lhs_type_info.is_integer() {
+                // Check if the pointer is a void pointer
+                if let TypeKind::Pointer { pointee } = &rhs_type_info.kind {
+                    let pointee_type = context.ast.get_type(*pointee);
+                    if pointee_type.is_void() {
+                        log::debug!("Detected void pointer to int assignment");
+                        self.report_type_error(
+                            "incompatible pointer to integer conversion initializing 'int' with an expression of type 'void *'",
+                            lhs_type_info,
+                            rhs_type_info,
+                            span,
+                            context,
+                        );
+                    }
+                }
+            }
+        }
     }
 
     fn visit_function_call(&mut self, func: NodeRef, args: &[NodeRef], span: SourceSpan, context: &mut Self::Context) {
@@ -227,7 +335,14 @@ impl TypeChecker {
     }
 
     /// Check arithmetic operation compatibility
-    fn check_arithmetic_operation(&self, left_type: Option<TypeRef>, right_type: Option<TypeRef>, op: BinaryOp, span: SourceSpan, context: &mut TypeCheckContext) {
+    fn check_arithmetic_operation(
+        &self,
+        left_type: Option<TypeRef>,
+        right_type: Option<TypeRef>,
+        op: BinaryOp,
+        span: SourceSpan,
+        context: &mut TypeCheckContext,
+    ) {
         if let (Some(left), Some(right)) = (left_type, right_type) {
             let left_ty = context.ast.get_type(left);
             let right_ty = context.ast.get_type(right);
@@ -240,8 +355,8 @@ impl TypeChecker {
 
             match op {
                 BinaryOp::Add => {
-                    let is_valid = (left_is_pointer || left_is_arithmetic) && right_is_arithmetic ||
-                                    left_is_arithmetic && right_is_pointer;
+                    let is_valid = (left_is_pointer || left_is_arithmetic) && right_is_arithmetic
+                        || left_is_arithmetic && right_is_pointer;
                     if !is_valid {
                         self.report_type_error("Invalid operands to binary +", left_ty, right_ty, span, context);
                     }
@@ -250,7 +365,13 @@ impl TypeChecker {
                     if left_is_pointer && right_is_pointer {
                         // Pointer - pointer: check compatibility
                         if !self.types_compatible_for_pointer_arithmetic(left_ty, right_ty, context.ast) {
-                            self.report_type_error("Invalid operands to binary -: incompatible pointer types", left_ty, right_ty, span, context);
+                            self.report_type_error(
+                                "Invalid operands to binary -: incompatible pointer types",
+                                left_ty,
+                                right_ty,
+                                span,
+                                context,
+                            );
                         }
                     } else if !((left_is_pointer || left_is_arithmetic) && right_is_arithmetic) {
                         self.report_type_error("Invalid operands to binary -", left_ty, right_ty, span, context);
@@ -264,7 +385,13 @@ impl TypeChecker {
                             BinaryOp::Mod => "%",
                             _ => "?",
                         };
-                        self.report_type_error(&format!("Invalid operands to binary {}", op_str), left_ty, right_ty, span, context);
+                        self.report_type_error(
+                            &format!("Invalid operands to binary {}", op_str),
+                            left_ty,
+                            right_ty,
+                            span,
+                            context,
+                        );
                     }
                 }
                 _ => {}
@@ -273,7 +400,13 @@ impl TypeChecker {
     }
 
     /// Check comparison operation compatibility
-    fn check_comparison_operation(&self, left_type: Option<TypeRef>, right_type: Option<TypeRef>, span: SourceSpan, context: &mut TypeCheckContext) {
+    fn check_comparison_operation(
+        &self,
+        left_type: Option<TypeRef>,
+        right_type: Option<TypeRef>,
+        span: SourceSpan,
+        context: &mut TypeCheckContext,
+    ) {
         if let (Some(left), Some(right)) = (left_type, right_type) {
             let left_ty = context.ast.get_type(left);
             let right_ty = context.ast.get_type(right);
@@ -289,20 +422,39 @@ impl TypeChecker {
     }
 
     /// Check logical operation compatibility
-    fn check_logical_operation(&self, left_type: Option<TypeRef>, right_type: Option<TypeRef>, span: SourceSpan, context: &mut TypeCheckContext) {
+    fn check_logical_operation(
+        &self,
+        left_type: Option<TypeRef>,
+        right_type: Option<TypeRef>,
+        span: SourceSpan,
+        context: &mut TypeCheckContext,
+    ) {
         if let (Some(left), Some(right)) = (left_type, right_type) {
             let left_ty = context.ast.get_type(left);
             let right_ty = context.ast.get_type(right);
 
             // Logical operations require scalar types
             if !left_ty.is_scalar() || !right_ty.is_scalar() {
-                self.report_type_error("Invalid operands to logical operation", left_ty, right_ty, span, context);
+                self.report_type_error(
+                    "Invalid operands to logical operation",
+                    left_ty,
+                    right_ty,
+                    span,
+                    context,
+                );
             }
         }
     }
 
     /// Check bitwise operation compatibility
-    fn check_bitwise_operation(&self, left_type: Option<TypeRef>, right_type: Option<TypeRef>, op: BinaryOp, span: SourceSpan, context: &mut TypeCheckContext) {
+    fn check_bitwise_operation(
+        &self,
+        left_type: Option<TypeRef>,
+        right_type: Option<TypeRef>,
+        op: BinaryOp,
+        span: SourceSpan,
+        context: &mut TypeCheckContext,
+    ) {
         if let (Some(left), Some(right)) = (left_type, right_type) {
             let left_ty = context.ast.get_type(left);
             let right_ty = context.ast.get_type(right);
@@ -317,7 +469,13 @@ impl TypeChecker {
                     BinaryOp::RShift => ">>",
                     _ => "?",
                 };
-                self.report_type_error(&format!("Invalid operands to binary {}", op_str), left_ty, right_ty, span, context);
+                self.report_type_error(
+                    &format!("Invalid operands to binary {}", op_str),
+                    left_ty,
+                    right_ty,
+                    span,
+                    context,
+                );
             }
         }
     }
@@ -351,7 +509,16 @@ impl TypeChecker {
             (TypeKind::Char { is_signed: ls }, TypeKind::Char { is_signed: rs }) => ls == rs,
             (TypeKind::Short { is_signed: ls }, TypeKind::Short { is_signed: rs }) => ls == rs,
             (TypeKind::Int { is_signed: ls }, TypeKind::Int { is_signed: rs }) => ls == rs,
-            (TypeKind::Long { is_signed: ls, is_long_long: ll }, TypeKind::Long { is_signed: rs, is_long_long: rl }) => ls == rs && ll == rl,
+            (
+                TypeKind::Long {
+                    is_signed: ls,
+                    is_long_long: ll,
+                },
+                TypeKind::Long {
+                    is_signed: rs,
+                    is_long_long: rl,
+                },
+            ) => ls == rs && ll == rl,
             (TypeKind::Float, TypeKind::Float) => true,
             (TypeKind::Double { is_long_double: ld }, TypeKind::Double { is_long_double: rd }) => ld == rd,
             _ => false,
@@ -359,7 +526,14 @@ impl TypeChecker {
     }
 
     /// Report a type mismatch error
-    fn report_type_error(&self, message: &str, _left_ty: &Type, _right_ty: &Type, span: SourceSpan, context: &mut TypeCheckContext) {
+    fn report_type_error(
+        &self,
+        message: &str,
+        _left_ty: &Type,
+        _right_ty: &Type,
+        span: SourceSpan,
+        context: &mut TypeCheckContext,
+    ) {
         use crate::diagnostic::SemanticError;
 
         context.diag.report_error(SemanticError::TypeMismatch {
@@ -368,7 +542,6 @@ impl TypeChecker {
             location: span,
         });
     }
-
 }
 
 /// Context for type resolution
@@ -428,7 +601,9 @@ impl TypeResolver {
         match &node.kind {
             NodeKind::FunctionDef(func_def) => {
                 // For function definitions, we need to resolve in the function scope
-                let func_name = extract_function_info(&func_def.declarator).0.unwrap_or_else(|| Symbol::new("<anonymous>"));
+                let func_name = extract_function_info(&func_def.declarator)
+                    .0
+                    .unwrap_or_else(|| Symbol::new("<anonymous>"));
                 if let Some((symbol_ref, _)) = context.symbol_table.lookup_symbol(func_name) {
                     let symbol_entry = context.symbol_table.get_symbol_entry(symbol_ref);
                     let func_scope_id = ScopeId::new(symbol_entry.scope_id).unwrap();
@@ -459,7 +634,13 @@ impl<'ast> SemanticVisitor<'ast> for TypeResolver {
         // This is a simplification; in a full implementation, we'd set types here
     }
 
-    fn visit_ident(&mut self, _name: Symbol, resolved_symbol: &Cell<Option<SymbolEntryRef>>, _span: SourceSpan, _context: &mut Self::Context) {
+    fn visit_ident(
+        &mut self,
+        _name: Symbol,
+        resolved_symbol: &Cell<Option<SymbolEntryRef>>,
+        _span: SourceSpan,
+        _context: &mut Self::Context,
+    ) {
         if let Some(_symbol_ref) = resolved_symbol.get() {
             // Set the resolved type on the identifier node
             // Note: We can't directly modify the AST here because we have a borrow conflict

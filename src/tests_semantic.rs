@@ -143,3 +143,40 @@ int main() {
 
     assert!(!has_type_error, "Unexpected type error for compatible pointer subtraction. Diagnostics: {:?}", output.diagnostics);
 }
+
+#[test]
+fn test_incompatible_void_ptr_to_int_initialization() {
+    // Test code with incompatible pointer to integer conversion: void* to int
+    let source_code = r#"
+void *p;
+int x = p; // This should be an error
+"#;
+
+    let output = run_semantic_analysis(source_code);
+
+    // Check that we have a type error
+    let has_type_error = output.diagnostics.iter().any(|diag| {
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
+        diag.message.contains("incompatible pointer to integer conversion")
+    });
+
+    assert!(has_type_error, "Expected type error for void* to int initialization, but none found. Diagnostics: {:?}", output.diagnostics);
+}
+
+#[test]
+fn test_compatible_int_initialization() {
+    // Test code with compatible integer initialization: int to int
+    let source_code = r#"
+int x = 5; // This should be OK
+"#;
+
+    let output = run_semantic_analysis(source_code);
+
+    // Check that we don't have type errors
+    let has_type_error = output.diagnostics.iter().any(|diag| {
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
+        diag.message.contains("incompatible pointer to integer conversion")
+    });
+
+    assert!(!has_type_error, "Unexpected type error for int initialization. Diagnostics: {:?}", output.diagnostics);
+}

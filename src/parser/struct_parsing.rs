@@ -164,7 +164,18 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
             } else {
                 // Just a forward declaration or reference to named struct
                 let type_specifier = TypeSpecifier::Record(is_union, tag, None);
-                let declarator = super::declarator::parse_declarator(parser, None)?;
+                let mut init_declarators = ThinVec::new();
+                loop {
+                    let declarator = super::declarator::parse_declarator(parser, None)?;
+                    init_declarators.push(InitDeclarator {
+                        declarator,
+                        initializer: None,
+                    });
+
+                    if parser.accept(TokenKind::Comma).is_none() {
+                        break;
+                    }
+                }
 
                 let specifiers = thin_vec![DeclSpecifier::TypeSpecifier(type_specifier)];
 
@@ -172,16 +183,13 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
 
                 Ok(DeclarationData {
                     specifiers,
-                    init_declarators: thin_vec![InitDeclarator {
-                        declarator,
-                        initializer: None,
-                    }],
+                    init_declarators,
                 })
             }
         }
     } else {
-        // Regular member: type specifier + multiple declarators
-        let type_specifier = super::type_specifiers::parse_type_specifier_with_context(parser, true)?;
+        // Regular member: declaration specifiers + multiple declarators
+        let specifiers = super::declaration_core::parse_declaration_specifiers(parser)?;
 
         let mut init_declarators = ThinVec::new();
         loop {
@@ -195,8 +203,6 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
                 break;
             }
         }
-
-        let specifiers = thin_vec![DeclSpecifier::TypeSpecifier(type_specifier)];
 
         parser.expect(TokenKind::Semicolon)?;
 

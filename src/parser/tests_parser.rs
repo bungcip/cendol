@@ -976,3 +976,19 @@ fn test_gnu_statement_expression() {
           - LiteralInt: 2
     ");
 }
+
+#[test]
+fn parse_nested_struct_declarations() {
+    let (ast, result) = setup_source(
+        r#"
+        struct in6_addr {
+            unsigned char s6_addr[16];
+        };
+        struct flowi6 {
+            struct in6_addr saddr, daddr;
+        };
+        "#,
+        |parser| parser.parse_translation_unit(),
+    );
+    assert!(result.is_ok());
+}

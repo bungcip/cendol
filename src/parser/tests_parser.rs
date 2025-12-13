@@ -36,7 +36,15 @@ enum ResolvedNodeKind {
     ExpressionStatement(Option<Box<ResolvedNodeKind>>), // Expression statement
     CompoundStatement(Vec<ResolvedNodeKind>), // Compound statement { ... }
     GnuStatementExpression(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // GNU statement expression ({ ... })
+    GenericSelection(Box<ResolvedNodeKind>, Vec<ResolvedGenericAssociation>), // _Generic selection
     // Add more as needed for tests
+}
+
+/// Simplified resolved generic association for testing
+#[derive(Debug, Serialize)]
+struct ResolvedGenericAssociation {
+    type_name: Option<String>, // None for 'default:'
+    result_expr: ResolvedNodeKind,
 }
 
 /// Simplified resolved init declarator for testing
@@ -196,6 +204,19 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
             Box::new(resolve_node(ast, *compound_stmt)),
             Box::new(resolve_node(ast, *result_expr)),
         ),
+        NodeKind::GenericSelection(controlling_expr, associations) => {
+            let resolved_controlling = Box::new(resolve_node(ast, *controlling_expr));
+            let resolved_associations = associations.iter().map(|assoc| {
+                let type_name = assoc.type_name.map(|type_ref| {
+                    // For simplicity, just show a placeholder type name
+                    // In a full implementation, we'd resolve the actual type
+                    format!("type_{}", type_ref.get())
+                });
+                let result_expr = resolve_node(ast, assoc.result_expr);
+                ResolvedGenericAssociation { type_name, result_expr }
+            }).collect();
+            ResolvedNodeKind::GenericSelection(resolved_controlling, resolved_associations)
+        }
         // Add more cases as needed for other NodeKind variants used in tests
         _ => panic!("Unsupported NodeKind for resolution: {:?}", node.kind),
     }
@@ -1126,3 +1147,60 @@ fn test_designated_initializer_struct_with_range() {
             - LiteralInt: 1
   "#);
 }
+
+#[test]
+fn test_generic_selection_simple() {
+    let resolved = setup_expr("_Generic(a, int: a_f)");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    GenericSelection:
+      - Ident: a
+      - - type_name: type_1
+          result_expr:
+            Ident: a_f
+    ");
+}
+
+#[test]
+fn test_generic_selection_with_multiple_associations() {
+    let resolved = setup_expr("_Generic(a, int: a_f, const int: b_f)");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    GenericSelection:
+      - Ident: a
+      - - type_name: type_1
+          result_expr:
+            Ident: a_f
+        - type_name: type_2
+          result_expr:
+            Ident: b_f
+    ");
+}
+
+#[test]
+fn test_generic_selection_with_default() {
+    let resolved = setup_expr("_Generic(a, int: a_f, default: b_f)");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    GenericSelection:
+      - Ident: a
+      - - type_name: type_1
+          result_expr:
+            Ident: a_f
+        - type_name: ~
+          result_expr:
+            Ident: b_f
+    ");
+}
+
+#[test]
+fn test_generic_selection_with_function_call() {
+    let resolved = setup_expr("_Generic(a, int: a_f)()");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    FunctionCall:
+      - GenericSelection:
+          - Ident: a
+          - - type_name: type_1
+              result_expr:
+                Ident: a_f
+      - []
+    ");
+}
+

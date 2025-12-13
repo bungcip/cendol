@@ -517,7 +517,8 @@ pub(crate) fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, Pa
 
     parser.expect(TokenKind::LeftParen)?;
 
-    let controlling_expr = parser.parse_expr_min()?;
+    // Parse controlling expression, but stop before comma to avoid treating it as comma operator
+    let controlling_expr = parser.parse_expr_conditional()?;
 
     parser.expect(TokenKind::Comma)?;
 
@@ -532,7 +533,7 @@ pub(crate) fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, Pa
 
         parser.expect(TokenKind::Colon)?;
 
-        let result_expr = parser.parse_expr_min()?;
+        let result_expr = parser.parse_expr_conditional()?;
 
         associations.push(GenericAssociation { type_name, result_expr });
 

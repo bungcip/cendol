@@ -783,6 +783,7 @@ impl<'src> AstDumper<'src> {
             NodeKind::CompoundLiteral(_, _) => "CompoundLiteral".to_string(),
             NodeKind::GenericSelection(_, _) => "GenericSelection".to_string(),
             NodeKind::VaArg(_, _) => "VaArg".to_string(),
+            NodeKind::GnuStatementExpression(_, _) => "GnuStatementExpression".to_string(),
             NodeKind::CompoundStatement(_) => "CompoundStatement".to_string(),
             NodeKind::If(_) => "If".to_string(),
             NodeKind::While(_) => "While".to_string(),
@@ -939,6 +940,12 @@ impl<'src> AstDumper<'src> {
             NodeKind::VaArg(va_list_expr, _) => {
                 let expr_node = self.ast.get_node(*va_list_expr);
                 self.generate_ast_tree(html, expr_node, depth + 1)?;
+            }
+            NodeKind::GnuStatementExpression(compound_stmt, result_expr) => {
+                let compound_node = self.ast.get_node(*compound_stmt);
+                let result_node = self.ast.get_node(*result_expr);
+                self.generate_ast_tree(html, compound_node, depth + 1)?;
+                self.generate_ast_tree(html, result_node, depth + 1)?;
             }
             NodeKind::If(if_stmt) => {
                 let condition = self.ast.get_node(if_stmt.condition);
@@ -1821,6 +1828,7 @@ impl<'src> AstDumper<'src> {
             NodeKind::CompoundLiteral(_, _) => true,
             NodeKind::GenericSelection(_, associations) => !associations.is_empty(),
             NodeKind::VaArg(_, _) => true,
+            NodeKind::GnuStatementExpression(_, _) => true,
             NodeKind::If(_) => true,
             NodeKind::While(_) => true,
             NodeKind::DoWhile(_, _) => true,

@@ -33,6 +33,9 @@ enum ResolvedNodeKind {
     Declaration { specifiers: Vec<String>, init_declarators: Vec<ResolvedInitDeclarator> }, // Simplified declaration
     EnumConstant(String, Option<Box<ResolvedNodeKind>>),
     InitializerList(Vec<ResolvedNodeKind>), // For initializer lists like {1, 2, 3}
+    ExpressionStatement(Option<Box<ResolvedNodeKind>>), // Expression statement
+    CompoundStatement(Vec<ResolvedNodeKind>), // Compound statement { ... }
+    GnuStatementExpression(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // GNU statement expression ({ ... })
     // Add more as needed for tests
 }
 
@@ -182,6 +185,16 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
         NodeKind::EnumConstant(name, value_expr) => ResolvedNodeKind::EnumConstant(
             name.to_string(),
             value_expr.map(|expr| Box::new(resolve_node(ast, expr))),
+        ),
+        NodeKind::ExpressionStatement(expr) => ResolvedNodeKind::ExpressionStatement(
+            expr.map(|e| Box::new(resolve_node(ast, e))),
+        ),
+        NodeKind::CompoundStatement(statements) => ResolvedNodeKind::CompoundStatement(
+            statements.iter().map(|&stmt| resolve_node(ast, stmt)).collect(),
+        ),
+        NodeKind::GnuStatementExpression(compound_stmt, result_expr) => ResolvedNodeKind::GnuStatementExpression(
+            Box::new(resolve_node(ast, *compound_stmt)),
+            Box::new(resolve_node(ast, *result_expr)),
         ),
         // Add more cases as needed for other NodeKind variants used in tests
         _ => panic!("Unsupported NodeKind for resolution: {:?}", node.kind),
@@ -936,5 +949,30 @@ fn test_attribute_in_cast() {
     Cast:
       - type_1
       - LiteralInt: 1
+    ");
+}
+
+#[test]
+fn test_gnu_statement_expression() {
+    let resolved = setup_expr("({ int x = 1; x + 2; })");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    GnuStatementExpression:
+      - CompoundStatement:
+          - Declaration:
+              specifiers:
+                - int
+              init_declarators:
+                - name: x
+                  initializer:
+                    LiteralInt: 1
+          - ExpressionStatement:
+              BinaryOp:
+                - Add
+                - Ident: x
+                - LiteralInt: 2
+      - BinaryOp:
+          - Add
+          - Ident: x
+          - LiteralInt: 2
     ");
 }

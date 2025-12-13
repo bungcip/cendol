@@ -78,6 +78,9 @@ pub trait SemanticVisitor<'ast> {
     /// Visit a va_arg node
     fn visit_va_arg(&mut self, _va_list_expr: NodeRef, _type_ref: TypeRef, _span: SourceSpan, _context: &mut Self::Context) {}
 
+    /// Visit a GNU statement expression node
+    fn visit_gnu_statement_expression(&mut self, _compound_stmt: NodeRef, _result_expr: NodeRef, _span: SourceSpan, _context: &mut Self::Context) {}
+
     /// Visit a compound statement node
     fn visit_compound_statement(&mut self, _statements: &[NodeRef], _span: SourceSpan, _context: &mut Self::Context) {}
 
@@ -177,6 +180,7 @@ pub fn visit_node<'ast, V: SemanticVisitor<'ast>>(
         NodeKind::CompoundLiteral(type_ref, initializer) => visitor.visit_compound_literal(*type_ref, *initializer, node.span, context),
         NodeKind::GenericSelection(controlling_expr, associations) => visitor.visit_generic_selection(*controlling_expr, associations, node.span, context),
         NodeKind::VaArg(va_list_expr, type_ref) => visitor.visit_va_arg(*va_list_expr, *type_ref, node.span, context),
+        NodeKind::GnuStatementExpression(compound_stmt, result_expr) => visitor.visit_gnu_statement_expression(*compound_stmt, *result_expr, node.span, context),
         NodeKind::CompoundStatement(statements) => visitor.visit_compound_statement(statements, node.span, context),
         NodeKind::If(stmt) => visitor.visit_if(stmt, node.span, context),
         NodeKind::While(stmt) => visitor.visit_while(stmt, node.span, context),
@@ -255,6 +259,7 @@ pub fn get_child_nodes(node: &Node) -> Vec<NodeRef> {
         NodeKind::ExpressionStatement(expr) => expr.map_or(vec![], |e| vec![e]),
         NodeKind::EnumConstant(_, value_expr) => value_expr.map_or(vec![], |e| vec![e]),
         NodeKind::StaticAssert(condition, _) => vec![*condition],
+        NodeKind::GnuStatementExpression(compound_stmt, result_expr) => vec![*compound_stmt, *result_expr],
         // Leaf nodes or nodes that don't need child traversal
         _ => vec![],
     }

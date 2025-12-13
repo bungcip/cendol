@@ -42,6 +42,7 @@ pub trait AstVisitor<'ast> {
     fn visit_compound_literal(&mut self, _type_ref: TypeRef, _initializer: InitializerRef, _span: SourceSpan, _context: &mut Self::Context) {}
     fn visit_generic_selection(&mut self, _controlling_expr: NodeRef, _associations: &[GenericAssociation], _span: SourceSpan, _context: &mut Self::Context) {}
     fn visit_va_arg(&mut self, _va_list_expr: NodeRef, _type_ref: TypeRef, _span: SourceSpan, _context: &mut Self::Context) {}
+    fn visit_gnu_statement_expression(&mut self, _compound_stmt: NodeRef, _result_expr: NodeRef, _span: SourceSpan, _context: &mut Self::Context) {}
 
     // --- Statements ---
     fn visit_compound_statement(&mut self, _statements: &[NodeRef], _span: SourceSpan, _context: &mut Self::Context) {}
@@ -126,6 +127,7 @@ pub fn visit_node<'ast, V: AstVisitor<'ast>>(
         NodeKind::CompoundLiteral(type_ref, initializer) => visitor.visit_compound_literal(*type_ref, *initializer, node.span, context),
         NodeKind::GenericSelection(controlling_expr, associations) => visitor.visit_generic_selection(*controlling_expr, associations, node.span, context),
         NodeKind::VaArg(va_list_expr, type_ref) => visitor.visit_va_arg(*va_list_expr, *type_ref, node.span, context),
+        NodeKind::GnuStatementExpression(compound_stmt, result_expr) => visitor.visit_gnu_statement_expression(*compound_stmt, *result_expr, node.span, context),
         NodeKind::CompoundStatement(statements) => visitor.visit_compound_statement(statements, node.span, context),
         NodeKind::If(stmt) => visitor.visit_if(stmt, node.span, context),
         NodeKind::While(stmt) => visitor.visit_while(stmt, node.span, context),
@@ -394,6 +396,10 @@ pub fn walk_ast<'ast, V: AstVisitor<'ast>>(
         NodeKind::CompoundLiteral(_, initializer_ref) => {
             let initializer = ast.get_initializer(*initializer_ref);
             walk_initializer(visitor, ast, initializer, context);
+        }
+        NodeKind::GnuStatementExpression(compound_stmt, result_expr) => {
+            walk_ast(visitor, ast, *compound_stmt, context);
+            walk_ast(visitor, ast, *result_expr, context);
         }
 
         // Statements

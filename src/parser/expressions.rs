@@ -214,6 +214,9 @@ pub(crate) fn parse_prefix(parser: &mut Parser) -> Result<NodeRef, ParseError> {
                     };
                     parser.parse_cast_expression_from_type_and_paren(type_ref, dummy_right_paren)
                 }
+            } else if parser.is_token(TokenKind::LeftBrace) {
+                // This is a GNU statement expression: ({ ... })
+                parse_gnu_statement_expression(parser, left_paren_token.location.start)
             } else {
                 // Regular parenthesized expression
                 let expr = parser.parse_expr_min()?;
@@ -369,6 +372,59 @@ fn parse_ternary(parser: &mut Parser, condition: NodeRef, true_expr: NodeRef) ->
     Ok(node)
 }
 
+/// Parse GNU statement expression: ({ compound-statement })
+pub(crate) fn parse_gnu_statement_expression(
+    parser: &mut Parser,
+    start_loc: SourceLoc,
+) -> Result<NodeRef, ParseError> {
+    debug!("parse_gnu_statement_expression: parsing GNU statement expression");
+
+    // Parse the compound statement (parse_compound_statement expects LeftBrace)
+    let (compound_stmt, _) = super::statements::parse_compound_statement(parser)?;
+
+    // Expect the closing parenthesis
+    let right_paren_token = parser.expect(TokenKind::RightParen)?;
+
+    // For GNU statement expressions, the result is the last expression in the compound statement
+    // We need to extract it from the compound statement
+    let result_expr = extract_last_expression_from_compound_statement(parser, compound_stmt);
+
+    let end_span = right_paren_token.location.end;
+    let span = SourceSpan::new(start_loc, end_span);
+
+    let node = parser.push_node(NodeKind::GnuStatementExpression(compound_stmt, result_expr), span);
+    debug!("parse_gnu_statement_expression: successfully parsed GNU statement expression");
+    Ok(node)
+}
+
+/// Extract the last expression from a compound statement for GNU statement expressions
+fn extract_last_expression_from_compound_statement(
+    parser: &mut Parser,
+    compound_stmt_node_ref: NodeRef,
+) -> NodeRef {
+    // Get the compound statement node
+    let compound_stmt_node = parser.ast.get_node(compound_stmt_node_ref);
+
+    if let NodeKind::CompoundStatement(statements) = &compound_stmt_node.kind {
+        // Find the last expression statement in the compound statement
+        for &stmt_ref in statements.iter().rev() {
+            let stmt_node = parser.ast.get_node(stmt_ref);
+            if let NodeKind::ExpressionStatement(Some(expr)) = &stmt_node.kind {
+                return *expr;
+            }
+        }
+
+        // If no expression statement found, create a dummy expression
+        // This shouldn't happen in valid GNU statement expressions
+        let dummy_expr = parser.push_node(NodeKind::Dummy, compound_stmt_node.span);
+        return dummy_expr;
+    }
+
+    // Fallback: create a dummy expression
+    let dummy_expr = parser.push_node(NodeKind::Dummy, compound_stmt_node.span);
+    dummy_expr
+}
+
 /// Parse function call
 fn parse_function_call(parser: &mut Parser, function: NodeRef) -> Result<NodeRef, ParseError> {
     debug!("parse_function_call: parsing function call with LeftParen");
@@ -456,9 +512,10 @@ fn parse_postfix_decrement(
 }
 
 /// Parse _Generic selection (C11)
-pub fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, ParseError> {
-    let start_span = parser.current_token()?.location.start;
-    parser.expect(TokenKind::Generic)?;
+pub(crate) fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, ParseError> {
+    let token = parser.expect(TokenKind::Generic)?;
+    let start_span = token.location.start;
+
     parser.expect(TokenKind::LeftParen)?;
 
     let controlling_expr = parser.parse_expr_min()?;
@@ -494,12 +551,14 @@ pub fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, ParseErro
 }
 
 /// Parse compound literal (C99)
-pub fn parse_compound_literal(parser: &mut Parser) -> Result<NodeRef, ParseError> {
-    let start_token = parser.expect(TokenKind::LeftParen)?;
+pub(crate) fn parse_compound_literal(parser: &mut Parser) -> Result<NodeRef, ParseError> {
+    let token = parser.expect(TokenKind::LeftParen)?;
+    let start_span = token.location.start;
+
     let type_ref = super::declaration_core::parse_type_name(parser)?;
     parser.expect(TokenKind::RightParen)?;
 
-    parse_compound_literal_from_type_and_start(parser, type_ref, start_token.location.start)
+    parse_compound_literal_from_type_and_start(parser, type_ref, start_span)
 }
 
 /// Parse compound literal given the type and start location
@@ -520,19 +579,8 @@ pub(crate) fn parse_compound_literal_from_type_and_start(
 
 /// Parse sizeof expression or type
 pub fn parse_sizeof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
-    let start_span = parser.current_token()?.location.start;
-    debug!(
-        "parse_sizeof: starting at position {}, token {:?}",
-        parser.current_idx,
-        parser.current_token_kind()
-    );
-
-    parser.expect(TokenKind::Sizeof)?;
-    debug!(
-        "parse_sizeof: consumed sizeof token, now at position {}, token {:?}",
-        parser.current_idx,
-        parser.current_token_kind()
-    );
+    let token = parser.expect(TokenKind::Sizeof)?;
+    let start_span = token.location.start;
 
     let node = if parser.accept(TokenKind::LeftParen).is_some() {
         debug!(
@@ -585,8 +633,9 @@ pub fn parse_sizeof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
 /// Parse _Alignof (C11)
 pub fn parse_alignof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
-    let start_span = parser.current_token()?.location.start;
-    parser.expect(TokenKind::Alignof)?;
+    let token = parser.expect(TokenKind::Alignof)?;
+    let start_span = token.location.start;
+    
     parser.expect(TokenKind::LeftParen)?;
 
     let type_ref = super::declaration_core::parse_type_name(parser)?;

@@ -240,6 +240,9 @@ pub mod ast_iterators {
                     NodeKind::VaArg(_, _) => {
                         // VaArg has expression arguments but we skip for simplicity
                     }
+                    NodeKind::GnuStatementExpression(_, result_expr) => {
+                        self.queue.push_back(*result_expr);
+                    }
                     NodeKind::CompoundStatement(_) => {
                         // Compound statements contain statements, not expressions
                     }

@@ -1,7 +1,7 @@
 //! Output formatting and file writing module
-// //!
-// //! This module handles various output formats including preprocessed source,
-// //! parser AST dumps, and HTML AST dumps.
+//!
+//! This module handles various output formats including preprocessed source,
+//! parser AST dumps, and HTML AST dumps.
 
 use itertools::Itertools;
 use std::fs;
@@ -74,7 +74,7 @@ impl OutputHandler {
                         .unwrap_or("<unknown>");
 
                     // For now, use flag "1" for entering file (simplified)
-                    println!("# {} \\\"{}\\\" 1", line, filename);
+                    println!("# {} \"{}\" 1", line, filename);
                 }
 
                 current_file_id = token.location.source_id();
@@ -189,6 +189,9 @@ impl OutputHandler {
                 println!("GenericSelection({}, {} associations)", ctrl.get(), assocs.len())
             }
             NodeKind::VaArg(va_list, ty) => println!("VaArg({}, {})", va_list.get(), ty.get()),
+            NodeKind::GnuStatementExpression(compound_stmt, result_expr) => {
+                println!("GnuStatementExpression({}, {})", compound_stmt.get(), result_expr.get())
+            }
             NodeKind::CompoundStatement(stmts) => println!(
                 "CompoundStatement([{}])",
                 stmts.iter().map(|&r| r.get().to_string()).join(", ")

@@ -1,8 +1,8 @@
 //! Core compilation pipeline orchestration module
-// //!
-// //! This module contains the main compiler driver that orchestrates
-// //! the compilation pipeline including preprocessing, lexing, parsing,
-// //! semantic analysis, and output generation.
+//!
+//! This module contains the main compiler driver that orchestrates
+//! the compilation pipeline including preprocessing, lexing, parsing,
+//! semantic analysis, and output generation.
 
 use std::path::Path;
 

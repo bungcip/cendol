@@ -27,6 +27,7 @@ pub enum NodeKind {
     UnaryOp(UnaryOp, NodeRef),
     BinaryOp(BinaryOp, NodeRef, NodeRef),
     TernaryOp(NodeRef, NodeRef, NodeRef),
+    GnuStatementExpression(NodeRef /* compound statement */, NodeRef /* result expression */),
 
     PostIncrement(NodeRef),
     PostDecrement(NodeRef),

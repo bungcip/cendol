@@ -190,7 +190,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<ThinVec<ParamData>, 
                 }
 
                 // Check if we have a valid start for parameter declaration
-                if !parser.is_declaration_start() {
+                if !parser.starts_declaration() {
                     break;
                 }
 

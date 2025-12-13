@@ -170,7 +170,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 Ok(token)
             } else {
                 Err(ParseError::UnexpectedToken {
-                    expected: vec![expected],
+                    expected_tokens: format!("{:?}", expected),
                     found: token.kind,
                     location: token.location,
                 })
@@ -250,155 +250,6 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         if !any_advance {
             self.advance();
         }
-    }
-
-    /// Parse C11 floating-point literal syntax
-    fn parse_c11_float_literal(&self, text: Symbol, location: SourceSpan) -> Result<f64, ParseError> {
-        let text_str = text.as_str();
-
-        // C11 floating-point literal format:
-        // [digits][.digits][e|E[+|-]digits][f|F|l|L]
-        // or [digits][e|E[+|-]digits][f|F|l|L]
-        // or 0[xX][hexdigits][.hexdigits][p|P[+|-]digits][f|F|l|L]
-
-        // Strip suffix (f, F, l, L) for parsing
-        let text_without_suffix =
-            if text_str.ends_with('f') || text_str.ends_with('F') || text_str.ends_with('l') || text_str.ends_with('L')
-            {
-                &text_str[..text_str.len() - 1]
-            } else {
-                text_str
-            };
-
-        // Handle hexadecimal floating-point literals (C99/C11)
-        if text_str.starts_with("0x") || text_str.starts_with("0X") {
-            self.parse_hex_float_literal(text_without_suffix, location)
-        } else {
-            // Use Rust's built-in parsing for decimal floats
-            match text_without_suffix.parse::<f64>() {
-                Ok(val) => Ok(val),
-                Err(_) => Err(ParseError::SyntaxError {
-                    message: format!("Invalid floating-point constant: {}", text_str),
-                    location,
-                }),
-            }
-        }
-    }
-
-    /// Parse hexadecimal floating-point literal (C99/C11)
-    fn parse_hex_float_literal(&self, text: &str, location: SourceSpan) -> Result<f64, ParseError> {
-        // Format: 0[xX][hexdigits][.hexdigits][pP[+|-]digits][fFlL]
-        // Example: 0x1.2p3, 0x1p-5f, 0x.8p10L
-
-        let mut chars = text.chars().peekable();
-        let mut result = 0.0f64;
-        let mut exponent = 0i32;
-        let _is_negative = false;
-        let mut seen_dot = false;
-        let mut fraction_digits = 0;
-
-        // Skip "0x" or "0X"
-        chars.next(); // '0'
-        chars.next(); // 'x' or 'X'
-
-        // Parse hexadecimal digits before decimal point
-        while let Some(&c) = chars.peek() {
-            if c.is_ascii_hexdigit() {
-                let digit = c.to_digit(16).unwrap() as f64;
-                result = result * 16.0 + digit;
-                chars.next();
-            } else if c == '.' && !seen_dot {
-                seen_dot = true;
-                chars.next();
-                break;
-            } else if c == 'p' || c == 'P' {
-                break;
-            } else {
-                return Err(ParseError::SyntaxError {
-                    message: format!("Invalid character '{}' in hexadecimal float literal", c),
-                    location,
-                });
-            }
-        }
-
-        // Parse hexadecimal digits after decimal point
-        if seen_dot {
-            while let Some(&c) = chars.peek() {
-                if c.is_ascii_hexdigit() {
-                    let digit = c.to_digit(16).unwrap() as f64;
-                    result = result * 16.0 + digit;
-                    fraction_digits += 1;
-                    chars.next();
-                } else if c == 'p' || c == 'P' {
-                    break;
-                } else {
-                    return Err(ParseError::SyntaxError {
-                        message: format!("Invalid character '{}' in hexadecimal float literal", c),
-                        location,
-                    });
-                }
-            }
-        }
-
-        // Parse binary exponent
-        if let Some(&c) = chars.peek()
-            && (c == 'p' || c == 'P')
-        {
-            chars.next(); // consume 'p' or 'P'
-
-            // Parse optional sign
-            let mut exp_negative = false;
-            if let Some(&sign) = chars.peek() {
-                if sign == '+' {
-                    chars.next();
-                } else if sign == '-' {
-                    exp_negative = true;
-                    chars.next();
-                }
-            }
-
-            // Parse exponent digits
-            let mut exp_str = String::new();
-            while let Some(&c) = chars.peek() {
-                if c.is_ascii_digit() {
-                    exp_str.push(c);
-                    chars.next();
-                } else {
-                    break;
-                }
-            }
-
-            if exp_str.is_empty() {
-                return Err(ParseError::SyntaxError {
-                    message: "Missing exponent digits in hexadecimal float literal".to_string(),
-                    location,
-                });
-            }
-
-            exponent = exp_str.parse().map_err(|_| ParseError::SyntaxError {
-                message: format!("Invalid exponent '{}' in hexadecimal float literal", exp_str),
-                location,
-            })?;
-
-            if exp_negative {
-                exponent = -exponent;
-            }
-        }
-
-        // Apply fractional adjustment
-        if fraction_digits > 0 {
-            result /= 16.0f64.powi(fraction_digits);
-        }
-
-        // Apply binary exponent
-        if exponent != 0 {
-            result *= 2.0f64.powi(exponent);
-        }
-
-        // Handle suffix (f, F, l, L) - for now we ignore and return double
-        // In a full implementation, we'd return different types based on suffix
-
-        Ok(result)
     }
 
     /// Main expression parsing using Pratt algorithm
@@ -513,7 +364,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             Ok((symbol, token.location))
         } else {
             Err(ParseError::UnexpectedToken {
-                expected: vec![TokenKind::Identifier(Symbol::new(""))],
+                expected_tokens: "identifier".to_string(),
                 found: token.kind,
                 location: token.location,
             })
@@ -540,6 +391,20 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     pub fn start_transaction(&mut self) -> utils::ParserTransaction<'_, 'arena, 'src> {
         utils::ParserTransaction::new(self)
+    }
+
+    /// Check if the current token can start a declaration
+    pub fn starts_declaration(&self) -> bool {
+        if let Some(token) = self.try_current_token() {
+            let is_typedef = if let TokenKind::Identifier(symbol) = token.kind {
+                self.is_type_name(symbol)
+            } else {
+                false
+            };
+            token.kind.is_declaration_start(is_typedef)
+        } else {
+            false
+        }
     }
 }
 

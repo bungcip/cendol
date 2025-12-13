@@ -69,7 +69,7 @@ pub fn parse_compound_statement(parser: &mut Parser) -> Result<(NodeRef, SourceL
         );
 
         // Try parsing as declaration first, but only if it looks like a declaration start
-        let should_try_declaration = parser.is_declaration_start();
+        let should_try_declaration = parser.starts_declaration();
         let mut declaration_attempt: Option<Result<NodeRef, ParseError>> = None;
 
         if should_try_declaration {
@@ -232,9 +232,10 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     // Parse initialization
     let init = if parser.is_token(TokenKind::Semicolon) {
         None
-    } else if parser.is_declaration_start() {
-        debug!("parse_for_statement: parsing declaration in init");
-        // Parse declaration specifiers
+    } else {
+        if parser.starts_declaration() {
+            debug!("parse_for_statement: parsing declaration in init");
+            // Parse declaration specifiers
         let specifiers = parse_declaration_specifiers(parser)?;
         // Parse declarator
         let declarator = parse_declarator(parser, None)?;
@@ -259,9 +260,10 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         let span = SourceSpan::new(start_span, parser.current_token().unwrap().location.end);
 
         Some(parser.push_node(NodeKind::Declaration(declaration_data), span))
-    } else {
-        debug!("parse_for_statement: parsing expression in init");
-        Some(parser.parse_expr_min()?)
+        } else {
+            debug!("parse_for_statement: parsing expression in init");
+            Some(parser.parse_expr_min()?)
+        }
     };
 
     parser.expect(TokenKind::Semicolon)?;

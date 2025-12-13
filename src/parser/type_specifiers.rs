@@ -7,7 +7,6 @@ use crate::ast::*;
 use crate::diagnostic::ParseError;
 use crate::lexer::TokenKind;
 use crate::source_manager::SourceSpan;
-use symbol_table::GlobalSymbol as Symbol;
 
 use super::Parser;
 
@@ -120,27 +119,13 @@ pub(crate) fn parse_type_specifier_with_context(
             parser.advance();
             Ok(TypeSpecifier::TypedefName(symbol))
         }
-        _ => Err(ParseError::UnexpectedToken {
-            expected: vec![
-                TokenKind::Void,
-                TokenKind::Char,
-                TokenKind::Short,
-                TokenKind::Int,
-                TokenKind::Long,
-                TokenKind::Float,
-                TokenKind::Double,
-                TokenKind::Signed,
-                TokenKind::Unsigned,
-                TokenKind::Bool,
-                TokenKind::Complex,
-                TokenKind::Atomic,
-                TokenKind::Struct,
-                TokenKind::Union,
-                TokenKind::Enum,
-                TokenKind::Identifier(Symbol::new("")),
-            ],
-            found: token.kind,
-            location: token.location,
-        }),
+        _ => {
+            let expected = "void, char, short, int, long, float, double, signed, unsigned, bool, complex, atomic, struct, union, enum, or identifier";
+            Err(ParseError::UnexpectedToken {
+                expected_tokens: expected.to_string(),
+                found: token.kind,
+                location: token.location,
+            })
+        }
     }
 }

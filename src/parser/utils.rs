@@ -39,9 +39,6 @@ pub trait ParserExt {
         context: &str,
     ) -> Result<NodeRef, ParseError>;
 
-    /// Check if current tokens indicate start of a declaration
-    fn is_declaration_start(&self) -> bool;
-
     /// Check if current token starts a type name
     fn is_type_name_start(&self) -> bool;
 }
@@ -88,27 +85,6 @@ impl<'arena, 'src> ParserExt for Parser<'arena, 'src> {
             }),
             Err(e) => Err(e),
         }
-    }
-
-    fn is_declaration_start(&self) -> bool {
-        debug!("is_declaration_start: checking token {:?}", self.current_token_kind());
-
-        if let Some(token) = self.try_current_token() {
-            if token.kind.is_declaration_specifier_start() {
-                return true;
-            }
-
-            if let crate::lexer::TokenKind::Identifier(symbol) = token.kind {
-                // Check if it's a typedef name
-                let is_type = self.is_type_name(symbol);
-                debug!(
-                    "is_declaration_start: identifier {:?}, is_type_name={}",
-                    symbol, is_type
-                );
-                return is_type;
-            }
-        }
-        false
     }
 
     fn is_type_name_start(&self) -> bool {

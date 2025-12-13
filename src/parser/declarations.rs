@@ -11,7 +11,6 @@ use crate::parser::declaration_core::parse_declaration_specifiers;
 use crate::parser::utils::ParserExt;
 use crate::source_manager::{SourceLoc, SourceSpan};
 use log::debug;
-use symbol_table::GlobalSymbol as Symbol;
 use thin_vec::ThinVec;
 
 use super::Parser;
@@ -357,7 +356,7 @@ pub fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<No
         TokenKind::StringLiteral(symbol) => symbol,
         _ => {
             return Err(ParseError::UnexpectedToken {
-                expected: vec![TokenKind::StringLiteral(Symbol::new(""))],
+                expected_tokens: "string literal".to_string(),
                 found: token.kind,
                 location: token.location,
             });

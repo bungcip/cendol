@@ -143,6 +143,21 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
                                     format!("enum {}", tag_str)
                                 }
                             }
+                            TypeSpecifier::Record(is_union, tag, def) => {
+                                let record_kind = if *is_union { "union" } else { "struct" };
+                                let tag_str = tag.as_ref().map(|s| s.as_str()).unwrap_or("");
+                                let has_body = def.as_ref().map_or(false, |d| d.members.is_some());
+
+                                let mut s = record_kind.to_string();
+                                if !tag_str.is_empty() {
+                                    s.push(' ');
+                                    s.push_str(tag_str);
+                                }
+                                if has_body {
+                                    s.push_str(" { ... }");
+                                }
+                                s
+                            }
                             _ => format!("{:?}", ts),
                         }
                     }
@@ -392,6 +407,64 @@ fn test_unary_operators() {
       - Minus
       - LiteralInt: 1
     ");
+}
+
+#[test]
+fn test_simple_struct_declaration() {
+    let resolved = setup_declaration("struct Point;");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    Declaration:
+      specifiers:
+        - struct Point
+      init_declarators: []
+    ");
+}
+
+#[test]
+fn test_struct_declaration_with_body() {
+    let resolved = setup_declaration("struct Point { int x; int y; };");
+    insta::assert_yaml_snapshot!(&resolved, @r#"
+    Declaration:
+      specifiers:
+        - "struct Point { ... }"
+      init_declarators: []
+    "#);
+}
+
+#[test]
+fn test_struct_variable_declaration() {
+    let resolved = setup_declaration("struct Point p;");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    Declaration:
+      specifiers:
+        - struct Point
+      init_declarators:
+        - name: p
+    ");
+}
+
+#[test]
+fn test_struct_definition_and_variable() {
+    let resolved = setup_declaration("struct Point { int x; } p;");
+    insta::assert_yaml_snapshot!(&resolved, @r#"
+    Declaration:
+      specifiers:
+        - "struct Point { ... }"
+      init_declarators:
+        - name: p
+    "#);
+}
+
+#[test]
+fn test_anonymous_struct_declaration() {
+    let resolved = setup_declaration("struct { int x; } p;");
+    insta::assert_yaml_snapshot!(&resolved, @r#"
+    Declaration:
+      specifiers:
+        - "struct { ... }"
+      init_declarators:
+        - name: p
+    "#);
 }
 
 #[test]

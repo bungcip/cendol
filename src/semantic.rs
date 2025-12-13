@@ -19,7 +19,7 @@ pub mod visitor;
 pub use name_resolver::NameResolver;
 pub use symbol_table::{Scope, ScopeId, ScopeKind, SymbolTable};
 use thin_vec::ThinVec;
-pub use type_checker::TypeChecker;
+pub use type_checker::{TypeChecker, TypeResolver};
 
 use bitvec::prelude::*;
 use log::debug;
@@ -60,7 +60,10 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
         // Phase 2: Resolve names
         self.resolve_names();
 
-        // Phase 3: Type checking (placeholder for now)
+        // Phase 3: Resolve types (set resolved_type on AST nodes)
+        self.resolve_types();
+
+        // Phase 4: Type checking
         self.check_types();
 
         // Return diagnostics
@@ -176,6 +179,21 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
         name_resolver.resolve_names(self.ast, &mut self.symbol_table, self.diag, root_node_ref);
 
         debug!("Name resolution complete");
+    }
+
+    fn resolve_types(&mut self) {
+        let Some(_root_node) = self.ast.get_root_node() else {
+            debug!("No root node found, skipping type resolution");
+            return;
+        };
+
+        let root_node_ref = self.ast.root.unwrap();
+        debug!("Starting type resolution from root node: {}", root_node_ref.get());
+
+        let mut type_resolver = TypeResolver::new();
+        type_resolver.resolve_types(self.ast, &mut self.symbol_table, self.diag, root_node_ref);
+
+        debug!("Type resolution complete");
     }
 
     fn check_types(&mut self) {
@@ -437,7 +455,9 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                     continue;
                 }
 
-                let safe_type_ref = self.get_safe_type_ref();
+                // Create appropriate type based on declarator
+                let type_ref = self.create_type_from_declarator(&init_declarator.declarator, &decl.specifiers);
+
                 let entry = SymbolEntry {
                     name,
                     kind: SymbolKind::Variable {
@@ -446,7 +466,7 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                         is_extern: false,
                         initializer: init_declarator.initializer.as_ref().map(|_| NodeRef::new(1).unwrap()),
                     },
-                    type_info: safe_type_ref,
+                    type_info: type_ref,
                     storage_class: None,
                     scope_id: self.symbol_table.current_scope().get(),
                     definition_span: span,
@@ -466,6 +486,39 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                     std::mem::discriminant(&init_declarator.declarator)
                 );
             }
+        }
+    }
+
+    fn create_type_from_declarator(&mut self, declarator: &Declarator, _specifiers: &[DeclSpecifier]) -> TypeRef {
+        // For now, create a simple type based on whether it's a pointer or not
+        // This is a simplified implementation
+
+        // Check if it's a pointer declarator
+        let is_pointer = self.is_pointer_declarator(declarator);
+
+        if is_pointer {
+            // Create a pointer type
+            let pointee_type = self.get_safe_type_ref(); // int for now
+            let pointer_type = Type {
+                kind: TypeKind::Pointer { pointee: pointee_type },
+                qualifiers: TypeQualifiers::empty(),
+                size: None,
+                alignment: None,
+            };
+            self.ast.push_type(pointer_type)
+        } else {
+            // Create a regular type
+            self.get_safe_type_ref()
+        }
+    }
+
+    fn is_pointer_declarator(&self, declarator: &Declarator) -> bool {
+        match declarator {
+            Declarator::Pointer(_, _) => true,
+            Declarator::Identifier(_, _, _) => false,
+            Declarator::Array(base, _) => self.is_pointer_declarator(base),
+            Declarator::Function(base, _) => self.is_pointer_declarator(base),
+            _ => false,
         }
     }
 

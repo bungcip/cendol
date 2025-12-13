@@ -232,10 +232,9 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     // Parse initialization
     let init = if parser.is_token(TokenKind::Semicolon) {
         None
-    } else {
-        if parser.starts_declaration() {
-            debug!("parse_for_statement: parsing declaration in init");
-            // Parse declaration specifiers
+    } else if parser.starts_declaration() {
+        debug!("parse_for_statement: parsing declaration in init");
+        // Parse declaration specifiers
         let specifiers = parse_declaration_specifiers(parser)?;
         // Parse declarator
         let declarator = parse_declarator(parser, None)?;
@@ -260,10 +259,9 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         let span = SourceSpan::new(start_span, parser.current_token().unwrap().location.end);
 
         Some(parser.push_node(NodeKind::Declaration(declaration_data), span))
-        } else {
-            debug!("parse_for_statement: parsing expression in init");
-            Some(parser.parse_expr_min()?)
-        }
+    } else {
+        debug!("parse_for_statement: parsing expression in init");
+        Some(parser.parse_expr_min()?)
     };
 
     parser.expect(TokenKind::Semicolon)?;

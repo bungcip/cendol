@@ -89,6 +89,19 @@ impl NameResolver {
                     self.walk_ast(ast, func_def.body, context);
                 }
             }
+            NodeKind::Declaration(decl) => {
+                // For declarations, we need to traverse into initializers
+                for init_declarator in &decl.init_declarators {
+                    if let Some(initializer) = &init_declarator.initializer {
+                        self.walk_initializer(ast, initializer, context);
+                    }
+                }
+                // Also traverse regular children
+                use crate::semantic::visitor::get_child_nodes;
+                for child in get_child_nodes(node) {
+                    self.walk_ast(ast, child, context);
+                }
+            }
             NodeKind::CompoundStatement(nodes) => {
                 // For compound statements, we might need to handle scope changes
                 // For now, just visit all children
@@ -194,6 +207,26 @@ impl NameResolver {
             }
             // Leaf nodes or nodes that don't need child traversal
             _ => {}
+        }
+    }
+
+    /// Walk initializer recursively
+    fn walk_initializer<'a>(&mut self, ast: &'a Ast, initializer: &Initializer, context: &mut NameResolutionContext<'a>) {
+        match initializer {
+            Initializer::Expression(expr_node) => {
+                self.walk_ast(ast, *expr_node, context);
+            }
+            Initializer::List(designated_inits) => {
+                for designated in designated_inits {
+                    self.walk_initializer(ast, &designated.initializer, context);
+                    // Also handle designators that might contain expressions
+                    for designator in &designated.designation {
+                        if let Designator::ArrayIndex(index_expr) = designator {
+                            self.walk_ast(ast, *index_expr, context);
+                        }
+                    }
+                }
+            }
         }
     }
 }

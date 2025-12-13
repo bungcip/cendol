@@ -11,3 +11,5 @@ pub mod source_manager;
 
 #[cfg(test)]
 mod tests_ast_dumper;
+#[cfg(test)]
+mod tests_semantic;

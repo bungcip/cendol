@@ -20,6 +20,7 @@ pub mod expressions;
 pub mod statements;
 pub mod struct_parsing;
 pub mod type_specifiers;
+pub mod type_builder;
 pub mod utils;
 
 // Re-export commonly used types

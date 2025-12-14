@@ -796,7 +796,7 @@ fn test_function_pointer_with_cast_initializer() {
           kind: function(int) -> pointer
           initializer:
             Cast:
-              - type_1
+              - type_4
               - LiteralInt: 0
     ");
 }
@@ -1204,3 +1204,17 @@ fn test_generic_selection_with_function_call() {
     ");
 }
 
+#[test]
+fn test_generic_selection_with_qualified_type() {
+    let resolved = setup_expr("_Generic(i, const int: 1, default: 0)");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    GenericSelection:
+      - Ident: i
+      - - type_name: type_1
+          result_expr:
+            LiteralInt: 1
+        - type_name: ~
+          result_expr:
+            LiteralInt: 0
+    ");
+}

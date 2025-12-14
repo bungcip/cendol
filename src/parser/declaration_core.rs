@@ -341,31 +341,20 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<(), ParseError> {
     Ok(())
 }
 
+use super::type_builder;
+
 /// Parse type name (for casts, sizeof, etc.)
 pub(crate) fn parse_type_name(parser: &mut Parser) -> Result<TypeRef, ParseError> {
-    // Check for __attribute__ at the beginning (GCC extension)
-    if parser.is_token(TokenKind::Attribute)
-        && let Err(_e) = parse_attribute(parser)
-    {
-        // For now, ignore attribute parsing errors
-    }
-
     // Parse declaration specifiers
-    let _specifiers = parse_declaration_specifiers(parser)?;
+    let specifiers = parse_declaration_specifiers(parser)?;
 
     // Parse abstract declarator (optional)
-    let _declarator = if parser.is_abstract_declarator_start() {
+    let declarator = if parser.is_abstract_declarator_start() {
         Some(super::declarator::parse_abstract_declarator(parser)?)
     } else {
         None
     };
 
     // Build the type from specifiers and declarator
-    // TODO: Implement proper type construction from specifiers and declarator
-    Ok(parser.ast.push_type(Type {
-        kind: TypeKind::Void,
-        qualifiers: TypeQualifiers::empty(),
-        size: None,
-        alignment: None,
-    }))
+    type_builder::build_type_from_specifiers(parser, &specifiers, declarator.as_ref())
 }

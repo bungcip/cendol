@@ -454,7 +454,7 @@ fn parse_index_access(parser: &mut Parser, array: NodeRef) -> Result<NodeRef, Pa
     let index_node = if parser.is_token(TokenKind::RightBracket) {
         debug!("parse_index_access: empty array index []");
         // Create a placeholder for empty index
-        parser.push_node(NodeKind::LiteralInt(0), parser.current_token().unwrap().location) // Use 0 as placeholder
+        parser.push_node(NodeKind::Dummy, parser.current_token_span()?) // Use 0 as placeholder
     } else {
         // This should not happen in normal array access, but handle it just in case
         debug!("parse_index_access: unexpected token in array access, trying to parse expression");

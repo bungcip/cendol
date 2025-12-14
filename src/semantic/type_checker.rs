@@ -166,7 +166,7 @@ impl TypeChecker {
                     );
 
                     // Check for incompatible pointer to integer conversion
-                    if matches!(expr_type_info.kind, TypeKind::Pointer { .. }) && var_type_info.is_integer() {
+                    if expr_type_info.is_pointer() && var_type_info.is_integer() {
                         // Check if the pointer is a void pointer
                         if let TypeKind::Pointer { pointee } = &expr_type_info.kind {
                             let pointee_type = context.ast.get_type(*pointee);
@@ -261,7 +261,7 @@ impl<'ast> SemanticVisitor<'ast> for TypeChecker {
             );
 
             // Check for incompatible pointer to integer conversion
-            if matches!(rhs_type_info.kind, TypeKind::Pointer { .. }) && lhs_type_info.is_integer() {
+            if rhs_type_info.is_pointer() && lhs_type_info.is_integer() {
                 // Check if the pointer is a void pointer
                 if let TypeKind::Pointer { pointee } = &rhs_type_info.kind {
                     let pointee_type = context.ast.get_type(*pointee);
@@ -275,6 +275,28 @@ impl<'ast> SemanticVisitor<'ast> for TypeChecker {
                             context,
                         );
                     }
+                }
+            }
+        }
+    }
+
+    fn visit_unary_op(&mut self, op: UnaryOp, expr: NodeRef, span: SourceSpan, context: &mut Self::Context) {
+        // Check dereferencing operations
+        if op == UnaryOp::Deref {
+            // Get the type of the expression being dereferenced
+            if let Some(expr_type) = self.get_node_type(expr, context) {
+                let expr_type_info = context.ast.get_type(expr_type);
+                
+                // Check if the expression is a pointer type
+                if !expr_type_info.is_pointer() {
+                    // This is an error - trying to dereference a non-pointer type
+                    use crate::diagnostic::SemanticError;
+                    
+                    context.diag.report_error(SemanticError::TypeMismatch {
+                        expected: "pointer type".to_string(),
+                        found: format!("{:?}", expr_type_info.kind),
+                        location: span,
+                    });
                 }
             }
         }
@@ -350,8 +372,8 @@ impl TypeChecker {
             // Check if both are arithmetic types or pointers (for add/sub)
             let left_is_arithmetic = left_ty.is_arithmetic();
             let right_is_arithmetic = right_ty.is_arithmetic();
-            let left_is_pointer = matches!(left_ty.kind, TypeKind::Pointer { .. });
-            let right_is_pointer = matches!(right_ty.kind, TypeKind::Pointer { .. });
+            let left_is_pointer = left_ty.is_pointer();
+            let right_is_pointer = right_ty.is_pointer();
 
             match op {
                 BinaryOp::Add => {
@@ -412,8 +434,8 @@ impl TypeChecker {
             let right_ty = context.ast.get_type(right);
 
             // Comparisons are allowed between arithmetic types and pointers
-            let left_is_valid = left_ty.is_arithmetic() || matches!(left_ty.kind, TypeKind::Pointer { .. });
-            let right_is_valid = right_ty.is_arithmetic() || matches!(right_ty.kind, TypeKind::Pointer { .. });
+            let left_is_valid = left_ty.is_arithmetic() || left_ty.is_pointer();
+            let right_is_valid = right_ty.is_arithmetic() || right_ty.is_pointer();
 
             if !left_is_valid || !right_is_valid {
                 self.report_type_error("Invalid operands to comparison", left_ty, right_ty, span, context);

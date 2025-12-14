@@ -187,7 +187,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
     if specifiers.is_empty() {
         return Err(ParseError::SyntaxError {
             message: "Expected declaration specifiers".to_string(),
-            location: parser.current_token().unwrap().location,
+            location: parser.current_token_span()?,
         });
     }
 

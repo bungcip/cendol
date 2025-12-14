@@ -15,8 +15,8 @@ use crate::ast::{EnumConstant, FunctionParameter, StructMember, Symbol, TypeRef}
 pub struct Type {
     pub kind: TypeKind,
     pub qualifiers: TypeQualifiers,
-    pub size: Option<usize>,      // Computed during semantic analysis
-    pub alignment: Option<usize>, // Computed during semantic analysis
+    pub size: Option<u16>,      // Computed during semantic analysis
+    pub alignment: Option<u16>, // Computed during semantic analysis
 }
 
 impl Type {
@@ -81,7 +81,12 @@ impl Type {
 
     /// Check if this is a scalar type
     pub fn is_scalar(&self) -> bool {
-        self.is_arithmetic() || matches!(self.kind, TypeKind::Pointer { .. } | TypeKind::Enum { .. })
+        self.is_arithmetic() || self.is_pointer() || matches!(self.kind, TypeKind::Enum { .. })
+    }
+
+    /// Check if this is a pointer type
+    pub fn is_pointer(&self) -> bool {
+        matches!(self.kind, TypeKind::Pointer { .. })
     }
 
     /// Check if this is a complete type
@@ -176,12 +181,12 @@ pub mod utils {
     use super::*;
 
     /// Get the size of a type in bytes (if known)
-    pub fn type_size(ty: &Type) -> Option<usize> {
+    pub fn type_size(ty: &Type) -> Option<u16> {
         ty.size
     }
 
     /// Get the alignment of a type in bytes (if known)
-    pub fn type_alignment(ty: &Type) -> Option<usize> {
+    pub fn type_alignment(ty: &Type) -> Option<u16> {
         ty.alignment
     }
 

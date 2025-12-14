@@ -134,7 +134,7 @@ pub enum SymbolKind {
 
 ## Analysis Algorithm
 
-The semantic analyzer performs a two-pass traversal of the flattened AST:
+The semantic analyzer performs a four-phase traversal of the flattened AST:
 
 1. **Symbol Collection Pass** (`collect_symbols`):
    - Traverse AST to collect all declarations and function definitions
@@ -143,11 +143,22 @@ The semantic analyzer performs a two-pass traversal of the flattened AST:
    - Detect redeclaration errors within the same scope
    - Create function scopes for each function definition
 
-2. **Type Resolution Pass** (`resolve_types`):
+2. **Name Resolution Pass** (`resolve_names`):
    - Resolve identifier references to their symbol declarations
    - Annotate AST nodes with symbol references using interior mutability
    - Mark symbols as referenced when they are used
    - Report undeclared identifier errors
+
+3. **Type Resolution Pass** (`resolve_types`):
+   - Set resolved_type on AST nodes based on symbol information
+   - Build canonical type representations for semantic analysis
+   - Propagate type information through expressions
+
+4. **Type Checking Pass** (`check_types`):
+   - Validate type compatibility in expressions and assignments
+   - Check function call argument types against parameter types
+   - Detect incompatible pointer operations and conversions
+   - Report semantic type errors
 
 ## Key Analysis Features
 

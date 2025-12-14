@@ -19,11 +19,11 @@ Cendol utilizes several external crates to streamline development, enhance funct
 - **Explanation**: Used by the compiler driver to define and parse command-line options provided by the user. It offers a declarative way to build robust and user-friendly CLIs.
 - **Reference**: See [Compiler Driver Design](compiler_driver_design.md) for its usage in defining CLI options.
 
-### 2. `bumpalo`
+### 2. `thin-vec`
 
-- **Purpose**: Fast arena allocator.
-- **Explanation**: Essential for the AST design, `bumpalo` provides a highly efficient way to allocate AST nodes and other transient data structures in a contiguous memory region. This significantly improves cache locality and reduces allocation/deallocation overhead, crucial for compiler performance.
-- **Reference**: See [Abstract Syntax Tree (AST) Design](ast_design.md) for details on arena allocation.
+- **Purpose**: Thin vector implementation for small collections.
+- **Explanation**: Used for collections that are often small (like parameter lists, struct members) to reduce memory overhead. Provides the same interface as `Vec` but with better memory efficiency for small collections.
+- **Reference**: Used throughout the AST and parser for collections like `Vec<NodeRef>`, `Vec<FunctionParameter>`, etc.
 
 ### 3. `hashbrown`
 

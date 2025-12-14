@@ -21,7 +21,7 @@ The lexer processes the token stream produced by the preprocessor and converts i
 pub enum TokenKind {
     // === LITERALS ===
     IntegerConstant(i64),   // Parsed integer literal value
-    FloatConstant(Symbol),  // Raw float literal text
+    FloatConstant(f64),     // Parsed float literal value
     CharacterConstant(u8),  // Byte value of character constant
     StringLiteral(Symbol),  // Interned string literal
 

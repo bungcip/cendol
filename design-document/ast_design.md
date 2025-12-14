@@ -62,11 +62,13 @@ Instead of arena allocation, the AST is stored in a single `Vec<Node>`, providin
 
 ```rust
 /// The flattened AST storage.
+/// Contains all AST nodes, types, symbol entries, and initializers in contiguous vectors.
 pub struct Ast {
     pub nodes: Vec<Node>,
     pub types: Vec<Type>,
     pub symbol_entries: Vec<SymbolEntry>,
     pub initializers: Vec<Initializer>,
+    pub root: Option<NodeRef>,
 }
 
 /// Node reference type for referencing child nodes.
@@ -77,51 +79,79 @@ pub type InitializerRef = NonZeroU32;
 
 /// Helper methods for Ast.
 impl Ast {
+    /// Create a new empty AST
     pub fn new() -> Self {
         Ast {
             nodes: Vec::new(),
             types: Vec::new(),
             symbol_entries: Vec::new(),
             initializers: Vec::new(),
+            root: None,
         }
     }
 
+    /// Get the root node of the AST
+    pub fn get_root_node(&self) -> Option<&Node> {
+        self.root.map(|node_ref| self.get_node(node_ref))
+    }
+
+    /// Set the root node of the AST
+    pub fn set_root_node(&mut self, node_ref: NodeRef) {
+        self.root = Some(node_ref);
+    }
+
+    /// Add a node to the AST and return its reference
     pub fn push_node(&mut self, node: Node) -> NodeRef {
         let index = self.nodes.len() as u32 + 1; // Start from 1 for NonZeroU32
         self.nodes.push(node);
         NodeRef::new(index).expect("NodeRef overflow")
     }
 
+    /// Get a node by its reference
     pub fn get_node(&self, index: NodeRef) -> &Node {
         &self.nodes[(index.get() - 1) as usize]
     }
 
+    /// Add a type to the AST and return its reference
     pub fn push_type(&mut self, ty: Type) -> TypeRef {
         let index = self.types.len() as u32 + 1;
         self.types.push(ty);
         TypeRef::new(index).expect("TypeRef overflow")
     }
 
+    /// Get a type by its reference
     pub fn get_type(&self, index: TypeRef) -> &Type {
-        &self.types[(index.get() - 1) as usize]
+        let idx = (index.get() - 1) as usize;
+        if idx >= self.types.len() {
+            panic!(
+                "Type index {} out of bounds: types vector has {} elements",
+                index.get(),
+                self.types.len()
+            );
+        }
+        &self.types[idx]
     }
 
+    /// Add a symbol entry to the AST and return its reference
     pub fn push_symbol_entry(&mut self, entry: SymbolEntry) -> SymbolEntryRef {
         let index = self.symbol_entries.len() as u32 + 1;
         self.symbol_entries.push(entry);
         SymbolEntryRef::new(index).expect("SymbolEntryRef overflow")
     }
 
+    /// Get a symbol entry by its reference
     pub fn get_symbol_entry(&self, index: SymbolEntryRef) -> &SymbolEntry {
         &self.symbol_entries[(index.get() - 1) as usize]
     }
 
+    /// Add an initializer to the AST and return its reference
     pub fn push_initializer(&mut self, init: Initializer) -> InitializerRef {
         let index = self.initializers.len() as u32 + 1;
         self.initializers.push(init);
         InitializerRef::new(index).expect("InitializerRef overflow")
     }
 
+    /// Get an initializer by its reference
     pub fn get_initializer(&self, index: InitializerRef) -> &Initializer {
         &self.initializers[(index.get() - 1) as usize]
     }
@@ -144,7 +174,7 @@ use std::cell::Cell; // For interior mutability (e.g., type annotation)
 /// The primary AST node structure.
 /// Stored in the flattened Vec<Node>, with index-based references.
 /// Designed to be small and cache-friendly.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Node {
     pub kind: NodeKind,
     pub span: SourceSpan,
@@ -169,6 +199,7 @@ pub struct SymbolEntry {
     pub is_defined: bool,
     pub is_referenced: bool,
     pub is_completed: bool,
+    // Add other relevant symbol information here (e.g., value for constants, linkage)
 }
 
 /// Defines the kind of symbol.
@@ -207,14 +238,15 @@ pub enum SymbolKind {
 }
 
 /// The core enum defining all possible AST node types for C11.
-/// Variants use NodeRef for child references, enabling flattened storage.
-#[derive(Debug)]
+/// Variants use NodeIndex for child references, enabling flattened storage.
+/// Maintained original structure for compatibility, but moved to this module.
+#[derive(Debug, Clone, Serialize)]
 pub enum NodeKind {
     // --- Literals (Inline storage for common types) ---
-    LiteralInt(i64),
-    LiteralFloat(Symbol), // Raw text for float literals
+    LiteralInt(i64), // Parsed integer literal value
+    LiteralFloat(f64),
     LiteralString(Symbol),
-    LiteralChar(char),
+    LiteralChar(u8),
 
     // --- Expressions ---
     // Ident now includes a Cell for resolved SymbolEntry after semantic analysis
@@ -222,13 +254,18 @@ pub enum NodeKind {
     UnaryOp(UnaryOp, NodeRef),
     BinaryOp(BinaryOp, NodeRef, NodeRef),
     TernaryOp(NodeRef, NodeRef, NodeRef),
+    GnuStatementExpression(NodeRef /* compound statement */, NodeRef /* result expression */),
 
     PostIncrement(NodeRef),
     PostDecrement(NodeRef),
 
     Assignment(BinaryOp, NodeRef /* lhs */, NodeRef /* rhs */),
     FunctionCall(NodeRef /* func */, Vec<NodeRef> /* args */),
-    MemberAccess(NodeRef /* object */, Symbol /* field */, bool /* is_arrow */),
+    MemberAccess(
+        NodeRef, /* object */
+        Symbol,  /* field */
+        bool,    /* is_arrow */
+    ),
     IndexAccess(NodeRef /* array */, NodeRef /* index */),
 
     Cast(TypeRef, NodeRef),
@@ -255,7 +292,11 @@ pub enum NodeKind {
 
     Switch(NodeRef /* condition */, NodeRef /* body statement */),
     Case(NodeRef /* const_expr */, NodeRef /* statement */),
-    CaseRange(NodeRef /* start_expr */, NodeRef /* end_expr */, NodeRef /* statement */), // GNU Extension often supported
+    CaseRange(
+        NodeRef, /* start_expr */
+        NodeRef, /* end_expr */
+        NodeRef, /* statement */
+    ), // GNU Extension often supported
     Default(NodeRef /* statement */),
 
     ExpressionStatement(Option<NodeRef> /* expression */), // Expression followed by ';'

@@ -6,13 +6,13 @@ The preprocessor is responsible for transforming C source code before it reaches
 
 ### Key Components
 
-Following Clang's design, the preprocessor consists of several key components:
+The preprocessor is organized into specialized modules for different aspects of preprocessing:
 
-1. **Preprocessor**: The main orchestrator that manages the preprocessing pipeline
-2. **PPTokenLexer**: Specialized lexer for macro expansion and token manipulation
-3. **MacroInfo**: Represents macro definitions and their properties
-4. **PPLexer**: Manages lexing from different source buffers
-5. **SourceManager**: Handles source file management and location tracking
+1. **preprocessor.rs**: Main preprocessor orchestrator and pipeline management
+2. **pp_lexer.rs**: PPToken lexer for tokenizing preprocessor input
+3. **interpreter.rs**: Expression evaluation for `#if` directives
+4. **tests_pp_lexer.rs**: Testing utilities for the PP lexer
+5. **tests_preprocessor.rs**: Testing utilities for the main preprocessor
 
 ### Responsibilities
 

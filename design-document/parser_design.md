@@ -13,6 +13,22 @@ The parser processes the token stream from the lexer and constructs a flattened 
 - **Error Recovery**: Comprehensive error recovery with synchronization points
 - **C11 Feature Support**: Complete implementation of C11 standard including generics, atomics, etc.
 
+## Modular Architecture
+
+The parser is organized into specialized modules for different language constructs:
+
+- **`parser.rs`**: Main parser coordination, public API, and state management
+- **`expressions.rs`**: Pratt parser implementation for expressions and operators
+- **`statements.rs`**: Statement parsing (compound, if, loops, etc.)
+- **`declarations.rs`**: Declaration and function definition parsing
+- **`declaration_core.rs`**: Core declaration parsing logic
+- **`declarator.rs`**: Complex declarator parsing for C's type system
+- **`enum_parsing.rs`**: Enumeration type parsing
+- **`struct_parsing.rs`**: Structure and union parsing
+- **`type_specifiers.rs`**: Type specifier parsing
+- **`type_builder.rs`**: Type construction utilities
+- **`utils.rs`**: Parser utilities and helper functions
+
 ## Core Data Structures
 
 ```rust

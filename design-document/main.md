@@ -36,8 +36,11 @@ graph TD
     Lexer --> TokenStream[Token Stream]
     TokenStream --> Parser
     Parser --> FlattenedAST[Flattened AST]
-    FlattenedAST --> SemanticAnalyzer[Semantic Analysis]
-    SemanticAnalyzer --> AnnotatedAST[Annotated AST + Symbol Table]
+    FlattenedAST --> SymbolCollection[Symbol Collection]
+    SymbolCollection --> NameResolution[Name Resolution]
+    NameResolution --> TypeResolution[Type Resolution]
+    TypeResolution --> TypeChecking[Type Checking]
+    TypeChecking --> AnnotatedAST[Annotated AST + Symbol Table]
     AnnotatedAST --> ASTDumper[AST Dumper]
     ASTDumper --> HTML[HTML Output]
 ```
@@ -90,12 +93,13 @@ Constructs a flattened Abstract Syntax Tree from the token stream using Pratt pa
 Performs comprehensive analysis of the AST to ensure semantic correctness, building symbol tables and resolving types.
 
 **Key Features:**
-- Two-pass analysis: symbol collection followed by type resolution
+- Four-phase analysis: symbol collection, name resolution, type resolution, and type checking
 - Hierarchical scope management with `ScopeId` for efficient scope references
 - Symbol table with flattened storage (`Vec<SymbolEntry>`, `Vec<Scope>`)
 - Type checking and compatibility validation
 - Identifier resolution with proper scope rules
 - Declaration validation and redeclaration checking
+- Modular design with separate `NameResolver`, `TypeResolver`, and `TypeChecker` components
 
 ### 5. AST Dumper Phase
 Generates interactive HTML visualization of the compiler's internal state for debugging and analysis.

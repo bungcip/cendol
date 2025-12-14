@@ -1221,3 +1221,21 @@ fn test_generic_selection_with_qualified_type() {
             LiteralInt: 0
     ");
 }
+
+#[test]
+fn test_generic_selection_with_pointer_types() {
+    let resolved = setup_expr("_Generic(ptr, int *:1, int * const:2, default:20)");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    GenericSelection:
+      - Ident: ptr
+      - - type_name: type_2
+          result_expr:
+            LiteralInt: 1
+        - type_name: type_4
+          result_expr:
+            LiteralInt: 2
+        - type_name: ~
+          result_expr:
+            LiteralInt: 20
+    ");
+}

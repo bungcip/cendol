@@ -470,10 +470,7 @@ pub fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarator, Pars
                 Declarator::Pointer(qualifiers, Some(Box::new(Declarator::Abstract)))
             }
             _ => {
-                // invalid token, consume if not )
-                if token.kind != TokenKind::RightParen {
-                    parser.advance();
-                }
+                // invalid token, don't consume
                 Declarator::Abstract
             }
         }
@@ -502,10 +499,6 @@ pub fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarator, Pars
             );
             parser.expect(TokenKind::RightParen)?; // Consume ')'
             current_base = Declarator::Function(Box::new(current_base), parameters);
-        } else if parser.accept(TokenKind::Colon).is_some() {
-            // Bit-field declarator: name : width
-            let bit_width_expr = parser.parse_expr_min()?;
-            current_base = Declarator::BitField(Box::new(current_base), bit_width_expr);
         } else {
             break;
         }

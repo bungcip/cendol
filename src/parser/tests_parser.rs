@@ -591,20 +591,20 @@ fn test_complex_expression() {
     let resolved = setup_expr("a + b * c[d] - e.f");
     insta::assert_yaml_snapshot!(&resolved, @r"
     BinaryOp:
-      - Add
-      - Ident: a
+      - Sub
       - BinaryOp:
-          - Mul
-          - Ident: b
+          - Add
+          - Ident: a
           - BinaryOp:
-              - Sub
+              - Mul
+              - Ident: b
               - IndexAccess:
                   - Ident: c
                   - Ident: d
-              - MemberAccess:
-                  - Ident: e
-                  - f
-                  - false
+      - MemberAccess:
+          - Ident: e
+          - f
+          - false
     ");
 }
 
@@ -713,11 +713,11 @@ fn test_complex_declaration() {
           initializer:
             BinaryOp:
               - Comma
-              - LiteralInt: 1
               - BinaryOp:
                   - Comma
+                  - LiteralInt: 1
                   - LiteralInt: 2
-                  - LiteralInt: 3
+              - LiteralInt: 3
     "#);
 }
 
@@ -1206,13 +1206,16 @@ fn test_generic_selection_with_function_call() {
 
 #[test]
 fn test_generic_selection_with_qualified_type() {
-    let resolved = setup_expr("_Generic(i, const int: 1, default: 0)");
+    let resolved = setup_expr("_Generic(i, const int: 1/1, default: 0)");
     insta::assert_yaml_snapshot!(&resolved, @r"
     GenericSelection:
       - Ident: i
       - - type_name: type_1
           result_expr:
-            LiteralInt: 1
+            BinaryOp:
+              - Div
+              - LiteralInt: 1
+              - LiteralInt: 1
         - type_name: ~
           result_expr:
             LiteralInt: 0

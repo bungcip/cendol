@@ -129,10 +129,15 @@ pub fn parse_expression(
             break;
         };
 
-        if binding_power < min_binding_power {
+        let should_break = match associativity {
+            Associativity::Left => binding_power <= min_binding_power,
+            Associativity::Right => binding_power < min_binding_power,
+        };
+
+        if should_break {
             debug!(
-                "parse_expression: binding power {:?} < min {:?}, breaking",
-                binding_power.0, min_binding_power.0
+                "parse_expression: binding power {:?} should break at min {:?} (assoc {:?}), breaking",
+                binding_power.0, min_binding_power.0, associativity
             );
             break;
         }
@@ -300,7 +305,15 @@ fn parse_infix(
     }
 
     // For all other operators, parse the right operand
-    let right_node = parser.parse_expr_min()?;
+    let right_node = match parser.parse_expression(_min_bp)? {
+        super::ParseExprOutput::Expression(node) => node,
+        super::ParseExprOutput::Declaration(_) => {
+            return Err(ParseError::SyntaxError {
+                message: "Declaration not allowed in expression context".to_string(),
+                location: parser.current_token_span()?,
+            });
+        }
+    };
 
     let op = match operator_token.kind {
         TokenKind::Plus => BinaryOp::Add,
@@ -530,7 +543,15 @@ pub(crate) fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, Pa
 
         parser.expect(TokenKind::Colon)?;
 
-        let result_expr = parser.parse_expr_conditional()?;
+        let result_expr = match parser.parse_expression(BindingPower(2))? {
+            super::ParseExprOutput::Expression(node) => node,
+            super::ParseExprOutput::Declaration(_) => {
+                return Err(ParseError::SyntaxError {
+                    message: "Declaration not allowed in _Generic association".to_string(),
+                    location: parser.current_token_span()?,
+                });
+            }
+        };
 
         associations.push(GenericAssociation { type_name, result_expr });
 

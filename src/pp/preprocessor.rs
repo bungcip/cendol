@@ -383,6 +383,7 @@ impl<'src> Preprocessor<'src> {
         built_in_headers.insert("stddef.h", include_str!("../../custom-include/stddef.h"));
         built_in_headers.insert("stdarg.h", include_str!("../../custom-include/stdarg.h"));
         built_in_headers.insert("stdio.h", include_str!("../../custom-include/stdio.h"));
+        built_in_headers.insert("wchar.h", include_str!("../../custom-include/wchar.h"));
 
         let mut preprocessor = Preprocessor {
             source_manager,

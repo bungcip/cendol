@@ -1947,6 +1947,8 @@ impl<'src> Preprocessor<'src> {
     /// Expand tokens by rescanning for further macro expansion
     fn expand_tokens(&mut self, tokens: &mut Vec<PPToken>) -> Result<(), PPError> {
         let mut i = 0;
+        let max_expansions = 10000; // Safety limit to prevent infinite recursion
+        
         while i < tokens.len() {
             let token = &tokens[i];
             if let PPTokenKind::Identifier(symbol) = &token.kind
@@ -2036,6 +2038,13 @@ impl<'src> Preprocessor<'src> {
                     }
                     // Substitute
                     let substituted = self.substitute_macro(&macro_info, &args)?;
+                    
+                    // Safety check for excessive expansions
+                    let expansion_count = substituted.len();
+                    if expansion_count > max_expansions {
+                        return Err(PPError::MacroRecursion);
+                    }
+                    
                     // Replace i..end_j+1 with substituted
                     tokens.splice(i..end_j + 1, substituted);
                     // Mark as used
@@ -2062,6 +2071,7 @@ impl<'src> Preprocessor<'src> {
             }
             i += 1;
         }
+        
         Ok(())
     }
 }

@@ -517,6 +517,7 @@ impl<'src> Lexer<'src> {
     /// Get all tokens from the stream
     pub fn tokenize_all(&mut self) -> Vec<Token> {
         let mut tokens = Vec::new();
+        
         while let Some(token) = self.next_token() {
             tokens.push(token);
             if matches!(token.kind, TokenKind::EndOfFile) {
@@ -666,17 +667,33 @@ impl<'src> Lexer<'src> {
     fn concatenate_string_literals(&self, tokens: Vec<Token>) -> Vec<Token> {
         let mut result = Vec::new();
         let mut i = 0;
+        let mut concatenation_count = 0;
+        let max_concatenations = 1000; // Safety limit to prevent infinite loops
 
-        while i < tokens.len() {
+        while i < tokens.len() && concatenation_count < max_concatenations {
             if let TokenKind::StringLiteral(_) = tokens[i].kind {
+                concatenation_count += 1;
+                
                 // Try to concatenate string literals starting from position i
                 let (concatenated_token, next_pos) = self.concatenate_from_position(&tokens, i);
-                result.push(concatenated_token);
-                i = next_pos;
+                
+                // Safety check: if position didn't advance, we've hit an infinite loop
+                if next_pos == i {
+                    result.push(tokens[i].clone());
+                    i += 1;
+                } else {
+                    result.push(concatenated_token);
+                    i = next_pos;
+                }
             } else {
                 result.push(tokens[i]);
                 i += 1;
             }
+        }
+        
+        // Copy remaining tokens if we hit the limit
+        if i < tokens.len() {
+            result.extend_from_slice(&tokens[i..]);
         }
 
         result

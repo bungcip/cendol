@@ -1023,6 +1023,23 @@ impl PPLexer {
                         continue;
                     }
                 }
+            } else if ch >= 0x80 {
+                // Handle UTF-8 multi-byte characters (BMP and beyond)
+                // This is the start of a UTF-8 sequence, consume continuation bytes properly
+                let utf8_sequence_valid = self.is_valid_utf8_start(ch);
+                if utf8_sequence_valid {
+                    // Consume continuation bytes for valid UTF-8 sequences
+                    while let Some(continuation_ch) = self.peek_char() {
+                        if continuation_ch >= 0x80 && continuation_ch < 0xC0 {
+                            // This is a UTF-8 continuation byte
+                            chars.push(self.next_char().unwrap());
+                        } else {
+                            // Not a continuation byte, stop consuming
+                            break;
+                        }
+                    }
+                }
+                // If not a valid UTF-8 start, just continue (fallback behavior)
             }
         }
 
@@ -1035,6 +1052,16 @@ impl PPLexer {
             SourceLoc::new(self.source_id, start_pos),
             &text,
         )
+    }
+
+    /// Check if a byte is a valid start of a UTF-8 sequence
+    /// Returns true if this could be the start of a valid UTF-8 sequence
+    fn is_valid_utf8_start(&self, byte: u8) -> bool {
+        // Valid UTF-8 start bytes:
+        // 0x00-0x7F: ASCII (single byte, handled elsewhere)
+        // 0xC2-0xF4: Start of multi-byte sequence
+        // Invalid starts: 0x80-0xBF (continuation bytes), 0xC0, 0xC1, 0xF5-0xFF
+        byte >= 0xC2 && byte <= 0xF4
     }
 
     fn lex_char_literal(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
@@ -1057,6 +1084,21 @@ impl PPLexer {
                 if let Some(escaped) = self.next_char() {
                     chars.push(escaped);
                 }
+            } else if ch >= 0x80 {
+                // Handle UTF-8 multi-byte characters in char literals
+                // Use the same validation logic as string literals
+                let utf8_sequence_valid = self.is_valid_utf8_start(ch);
+                if utf8_sequence_valid {
+                    // Consume continuation bytes for valid UTF-8 sequences
+                    while let Some(continuation_ch) = self.peek_char() {
+                        if continuation_ch >= 0x80 && continuation_ch < 0xC0 {
+                            chars.push(self.next_char().unwrap());
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                // If not a valid UTF-8 start, just continue (fallback behavior)
             }
         }
 

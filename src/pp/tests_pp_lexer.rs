@@ -206,26 +206,11 @@ fn test_adjacent_string_literals_not_combined() {
     let source = "\"hello\" \"world\"";
     let mut lexer = create_test_pp_lexer(source);
 
-    // First string literal
-    let token1 = lexer.next_token().unwrap();
-    match token1.kind {
-        PPTokenKind::StringLiteral(symbol) => {
-            assert_eq!(symbol.as_str(), "\"hello\"");
-        }
-        _ => panic!("Expected first string literal token"),
-    }
-
-    // Second string literal (should be separate, not combined)
-    let token2 = lexer.next_token().unwrap();
-    match token2.kind {
-        PPTokenKind::StringLiteral(symbol) => {
-            assert_eq!(symbol.as_str(), "\"world\"");
-        }
-        _ => panic!("Expected second string literal token"),
-    }
-
-    // Should be no more tokens
-    assert!(lexer.next_token().is_none());
+    test_tokens!(
+        lexer,
+        ("\"hello\"", PPTokenKind::StringLiteral(_)),
+        ("\"world\"", PPTokenKind::StringLiteral(_)),
+    );
 }
 
 /// Test that line splicing is handled correctly in skip_whitespace_and_comments
@@ -375,4 +360,87 @@ fn test_eod_at_eof_in_directive() {
 
     // Should be no more tokens
     assert!(lexer.next_token().is_none());
+}
+
+/// Test string literals with BMP (Basic Multilingual Plane) Unicode characters
+#[test]
+fn test_bmp_unicode_string_literals() {
+    // Test the specific target string with mixed ASCII and BMP characters
+    let source = r#"L"hello$$你好¢¢世界€€world""#;
+    let mut lexer = create_test_pp_lexer(source);
+
+    test_tokens!(lexer, (source, PPTokenKind::StringLiteral(_)));
+}
+
+/// Test various BMP character types in string literals
+#[test]
+fn test_various_bmp_characters() {
+    let test_cases = vec![
+        // Chinese characters (3-byte UTF-8 sequences)
+        (r#"L"你好世界""#, "L\"你好世界\""),
+        // Currency symbols (2-byte and 3-byte UTF-8 sequences)
+        (r#"L"€$¢£¥""#, "L\"€$¢£¥\""),
+        // Mixed ASCII and BMP
+        (r#"L"hello¢world€test""#, "L\"hello¢world€test\""),
+        // Extended Latin characters (2-byte UTF-8 sequences)
+        (r#"L"café naïve résumé""#, "L\"café naïve résumé\""),
+        // Greek characters (2-byte UTF-8 sequences)
+        (r#"L"αβγδε""#, "L\"αβγδε\""),
+        // Cyrillic characters (2-byte UTF-8 sequences)
+        (r#"L"привет мир""#, "L\"привет мир\""),
+    ];
+
+    for (source, expected) in test_cases {
+        let mut lexer = create_test_pp_lexer(source);
+        test_tokens!(lexer, (expected, PPTokenKind::StringLiteral(_)));
+    }
+}
+
+/// Test edge cases and special characters in string literals
+#[test]
+fn test_special_characters_in_strings() {
+    // Test with various special characters that might cause issues
+    let test_cases = vec![
+        // Regular ASCII with quotes and backslashes
+        (r#"L"hello \"world\" \\test""#, r#"L"hello \"world\" \\test""#),
+        // Mixed quotes and special chars
+        (r#"L"café's \"test\" \\value""#, r#"L"café's \"test\" \\value""#),
+        // String with newlines (line splicing) - should splice the newline
+        (r#"L"hello\
+world""#, r#"L"helloworld""#),
+        // String with all types of quotes
+        (r#"""#, r#"""#),
+        (r#"L"""#, r#"L"""#),
+        (r#"u"""#, r#"u"""#),
+        (r#"U"""#, r#"U"""#),
+    ];
+
+    for (source, expected) in test_cases {
+        let mut lexer = create_test_pp_lexer(source);
+        test_tokens!(lexer, (expected, PPTokenKind::StringLiteral(_)));
+    }
+}
+
+/// Test UTF-8 sequences of different lengths
+#[test]
+fn test_utf8_sequence_lengths() {
+    // 1-byte sequence (ASCII)
+    let source1 = r#"L"abc""#;
+    let mut lexer1 = create_test_pp_lexer(source1);
+    test_tokens!(lexer1, (source1, PPTokenKind::StringLiteral(_)));
+
+    // 2-byte sequence (extended ASCII)
+    let source2 = r#"L"café""#;
+    let mut lexer2 = create_test_pp_lexer(source2);
+    test_tokens!(lexer2, (source2, PPTokenKind::StringLiteral(_)));
+
+    // 3-byte sequence (BMP Chinese)
+    let source3 = r#"L"你好""#;
+    let mut lexer3 = create_test_pp_lexer(source3);
+    test_tokens!(lexer3, (source3, PPTokenKind::StringLiteral(_)));
+
+    // Mixed sequences
+    let source4 = r#"L"café你好""#;
+    let mut lexer4 = create_test_pp_lexer(source4);
+    test_tokens!(lexer4, (source4, PPTokenKind::StringLiteral(_)));
 }

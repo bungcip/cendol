@@ -1042,7 +1042,7 @@ impl<'src> Preprocessor<'src> {
         }
 
         // Check for circular includes
-        let canonical_path = if self.built_in_headers.contains_key(path_str.as_str()) {
+        let path_to_check = if self.built_in_headers.contains_key(path_str.as_str()) {
             PathBuf::from(&path_str)
         } else {
             let current_file_id = self.lexer_stack.last().unwrap().source_id;
@@ -1050,24 +1050,25 @@ impl<'src> Preprocessor<'src> {
             let current_dir = current_file_info.path.parent().unwrap_or(Path::new("."));
             self.header_search
                 .resolve_path(&path_str, is_angled, current_dir)
-                .and_then(|p| if p.exists() { p.canonicalize().ok() } else { Some(p) })
                 .unwrap_or_else(|| PathBuf::from(&path_str))
         };
 
+        // Try to canonicalize, fall back to the given path if it fails.
+        // This handles both non-existent files and in-memory buffers.
+        let comparable_path_for_new_include =
+            path_to_check.canonicalize().unwrap_or_else(|_| path_to_check.clone());
+
         if self.include_stack.iter().any(|info| {
-            let file_info = self.source_manager.get_file_info(info.file_id);
-            if let Some(fi) = file_info {
-                let existing_path = &fi.path;
-                let existing_canonical = if existing_path.exists() {
-                    existing_path.canonicalize().ok()
-                } else {
-                    Some(existing_path.clone())
-                };
-                if let Some(existing_canonical) = existing_canonical {
-                    return existing_canonical == canonical_path;
-                }
+            if let Some(file_info) = self.source_manager.get_file_info(info.file_id) {
+                let existing_path = &file_info.path;
+                let comparable_existing_path = existing_path
+                    .canonicalize()
+                    .unwrap_or_else(|_| existing_path.clone());
+
+                comparable_existing_path == comparable_path_for_new_include
+            } else {
+                false
             }
-            false
         }) {
             return Err(PPError::CircularInclude);
         }

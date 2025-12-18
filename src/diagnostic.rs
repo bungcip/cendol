@@ -90,6 +90,7 @@ impl DiagnosticEngine {
             ),
             SemanticError::IncompleteType { name, location } => (format!("Incomplete type '{}'", name), location),
             SemanticError::InvalidOperand { operation, location } => (format!("Invalid operand: {}", operation), location),
+            SemanticError::NotLValue { operation, location } => (format!("{}", operation), location),
         };
         let diag = Diagnostic {
             level: DiagnosticLevel::Error,
@@ -215,6 +216,8 @@ pub enum SemanticError {
     IncompleteType { name: Symbol, location: SourceSpan },
     #[error("Invalid operand: {operation}")]
     InvalidOperand { operation: String, location: SourceSpan },
+    #[error("Not lvalue: {operation}")]
+    NotLValue { operation: String, location: SourceSpan },
 }
 
 /// Semantic warnings

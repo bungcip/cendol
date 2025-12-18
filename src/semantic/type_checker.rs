@@ -299,13 +299,17 @@ impl<'ast> SemanticVisitor<'ast> for TypeChecker {
                 }
             }
             UnaryOp::AddrOf => {
-                // Address-of operator can be applied to any lvalue
-                // Basic validation - could be enhanced further
-                if let Some(expr_type) = self.get_node_type(expr, context) {
+                // Address-of operator can be applied to any lvalue according to C11 6.5.3.2 p1
+                // First check if the operand is an lvalue
+                if !self.is_lvalue(expr, context) {
+                    context.diag.report_error(SemanticError::NotLValue {
+                        operation: "cannot take address of rvalue".to_string(),
+                        location: span,
+                    });
+                } else if let Some(expr_type) = self.get_node_type(expr, context) {
                     let expr_type_info = context.ast.get_type(expr_type);
                     
-                    // Check if trying to take address of function designators or arrays
-                    // This is a simplified check - full implementation would be more complex
+                    // Additional check: cannot take address of arrays (they decay to pointers automatically)
                     if expr_type_info.is_array() {
                         context.diag.report_error(SemanticError::InvalidOperand {
                             operation: "cannot take address of array".to_string(),
@@ -404,6 +408,42 @@ impl TypeChecker {
             TypeKind::Complex { .. } => "complex".to_string(),
             TypeKind::Incomplete => "incomplete".to_string(),
             TypeKind::Error => "error".to_string(),
+        }
+    }
+
+    /// Check if an expression is an lvalue according to C11 6.3.2.1
+    fn is_lvalue(&self, expr: NodeRef, context: &TypeCheckContext) -> bool {
+        let node = context.ast.get_node(expr);
+        
+        match &node.kind {
+            // Identifiers are lvalues if they refer to objects
+            NodeKind::Ident(_, resolved_symbol) => {
+                // Check if this identifier has been resolved to a symbol
+                if let Some(symbol_ref) = resolved_symbol.get() {
+                    let symbol_entry = context.symbol_table.get_symbol_entry(symbol_ref);
+                    // For now, assume all resolved identifiers are lvalues
+                    // In a more complete implementation, we'd check the symbol properties
+                    true
+                } else {
+                    // Unresolved identifier - not an lvalue
+                    false
+                }
+            }
+            
+            // Array subscript expressions are lvalues
+            NodeKind::IndexAccess(_, _) => true,
+            
+            // Member access expressions are lvalues
+            NodeKind::MemberAccess(_, _, _) => true,
+            
+            // Unary * expressions are lvalues (dereferencing gives an lvalue)
+            NodeKind::UnaryOp(UnaryOp::Deref, _) => true,
+            
+            // Parenthesized expressions preserve lvalue-ness
+            // Note: We don't have a specific Paren expression, so this doesn't apply directly
+            
+            // All other expressions are not lvalues
+            _ => false,
         }
     }
 }

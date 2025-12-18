@@ -315,3 +315,221 @@ int main() {
     // For now, we're mainly testing that our dereference checking works
     println!("Diagnostics for void* dereference test: {:?}", output.diagnostics);
 }
+
+#[test]
+fn test_invalid_address_of_rvalue_literal() {
+    // Test code with invalid address-of: taking address of integer literal
+    let source_code = r#"
+int main() {
+    int *ptr = &5;  // This should be an error - cannot take address of rvalue
+    return 0;
+}
+"#;
+
+    let output = run_semantic_analysis(source_code);
+
+    // Check that we have an error for taking address of rvalue
+    let has_addr_error = output.diagnostics.iter().any(|diag| {
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
+        diag.message.contains("cannot take address of rvalue")
+    });
+
+    assert!(has_addr_error, "Expected error for taking address of literal, but none found. Diagnostics: {:?}", output.diagnostics);
+}
+
+#[test]
+fn test_invalid_address_of_rvalue_expression() {
+    // Test code with invalid address-of: taking address of arithmetic expression
+    let source_code = r#"
+int main() {
+    int x = 5;
+    int y = 10;
+    int *ptr = &(x + y);  // This should be an error - cannot take address of rvalue
+    return 0;
+}
+"#;
+
+    let output = run_semantic_analysis(source_code);
+
+    // Check that we have an error for taking address of rvalue
+    let has_addr_error = output.diagnostics.iter().any(|diag| {
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
+        diag.message.contains("cannot take address of rvalue")
+    });
+
+    assert!(has_addr_error, "Expected error for taking address of arithmetic expression, but none found. Diagnostics: {:?}", output.diagnostics);
+}
+
+#[test]
+fn test_invalid_address_of_rvalue_function_call() {
+    // Test code with invalid address-of: taking address of function call result
+    let source_code = r#"
+int get_value() {
+    return 42;
+}
+
+int main() {
+    int *ptr = &get_value();  // This should be an error - cannot take address of rvalue
+    return 0;
+}
+"#;
+
+    let output = run_semantic_analysis(source_code);
+
+    // Check that we have an error for taking address of rvalue
+    let has_addr_error = output.diagnostics.iter().any(|diag| {
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
+        diag.message.contains("cannot take address of rvalue")
+    });
+
+    assert!(has_addr_error, "Expected error for taking address of function call, but none found. Diagnostics: {:?}", output.diagnostics);
+}
+
+#[test]
+fn test_invalid_address_of_rvalue_cast() {
+    // Test code with invalid address-of: taking address of cast expression
+    let source_code = r#"
+int main() {
+    int x = 5;
+    int *ptr = &(int *)x;  // This should be an error - cannot take address of rvalue
+    return 0;
+}
+"#;
+
+    let output = run_semantic_analysis(source_code);
+
+    // Check that we have an error for taking address of rvalue
+    let has_addr_error = output.diagnostics.iter().any(|diag| {
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
+        diag.message.contains("cannot take address of rvalue")
+    });
+
+    assert!(has_addr_error, "Expected error for taking address of cast expression, but none found. Diagnostics: {:?}", output.diagnostics);
+}
+
+#[test]
+fn test_valid_address_of_variable() {
+    // Test code with valid address-of: taking address of variable
+    let source_code = r#"
+int main() {
+    int x = 5;
+    int *ptr = &x;  // This should be OK - variable is an lvalue
+    return 0;
+}
+"#;
+
+    let output = run_semantic_analysis(source_code);
+
+    // Check that we don't have errors for valid address-of operation
+    let has_addr_error = output.diagnostics.iter().any(|diag| {
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
+        (diag.message.contains("cannot take address of rvalue") ||
+         diag.message.contains("Invalid operand"))
+    });
+
+    assert!(!has_addr_error, "Unexpected error for valid address-of variable. Diagnostics: {:?}", output.diagnostics);
+}
+
+#[test]
+fn test_valid_address_of_dereference() {
+    // Test code with valid address-of: taking address of dereferenced pointer
+    let source_code = r#"
+int main() {
+    int x = 5;
+    int *ptr = &x;
+    int **ptr2 = &ptr;  // This should be OK - *ptr is an lvalue
+    return 0;
+}
+"#;
+
+    let output = run_semantic_analysis(source_code);
+
+    // Check that we don't have errors for valid address-of dereference
+    let has_addr_error = output.diagnostics.iter().any(|diag| {
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
+        (diag.message.contains("cannot take address of rvalue") ||
+         diag.message.contains("Invalid operand"))
+    });
+
+    assert!(!has_addr_error, "Unexpected error for valid address-of dereference. Diagnostics: {:?}", output.diagnostics);
+}
+
+#[test]
+fn test_valid_address_of_array_element() {
+    // Test code with valid address-of: taking address of array element
+    let source_code = r#"
+int main() {
+    int arr[5] = {1, 2, 3, 4, 5};
+    int *ptr = &arr[2];  // This should be OK - array element is an lvalue
+    return 0;
+}
+"#;
+
+    let output = run_semantic_analysis(source_code);
+
+    // Check that we don't have errors for valid address-of array element
+    let has_addr_error = output.diagnostics.iter().any(|diag| {
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
+        (diag.message.contains("cannot take address of rvalue") ||
+         diag.message.contains("Invalid operand"))
+    });
+
+    assert!(!has_addr_error, "Unexpected error for valid address-of array element. Diagnostics: {:?}", output.diagnostics);
+}
+
+#[test]
+fn test_valid_address_of_struct_member() {
+    // Test code with valid address-of: taking address of struct member
+    let source_code = r#"
+struct Point {
+    int x;
+    int y;
+};
+
+int main() {
+    struct Point p = {1, 2};
+    int *ptr = &p.x;  // This should be OK - struct member is an lvalue
+    return 0;
+}
+"#;
+
+    let output = run_semantic_analysis(source_code);
+
+    // Check that we don't have errors for valid address-of struct member
+    let has_addr_error = output.diagnostics.iter().any(|diag| {
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
+        (diag.message.contains("cannot take address of rvalue") ||
+         diag.message.contains("Invalid operand"))
+    });
+
+    assert!(!has_addr_error, "Unexpected error for valid address-of struct member. Diagnostics: {:?}", output.diagnostics);
+}
+
+#[test]
+fn test_valid_address_of_pointer_to_struct() {
+    // Test code with valid address-of: taking address through pointer to struct
+    let source_code = r#"
+struct Point {
+    int x;
+    int y;
+};
+
+int main() {
+    struct Point p = {1, 2};
+    struct Point *ptr = &p;
+    int *x_ptr = &ptr->x;  // This should be OK - arrow access gives lvalue
+    return 0;
+}
+"#;
+
+    let output = run_semantic_analysis(source_code);
+
+    // Check that we don't have errors for valid address-of pointer to struct
+    let has_addr_error = output.diagnostics.iter().any(|diag| {
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
+        (diag.message.contains("cannot take address of rvalue") ||
+         diag.message.contains("Invalid operand"))
+    });
+
+    assert!(!has_addr_error, "Unexpected error for valid address-of pointer to struct. Diagnostics: {:?}", output.diagnostics);
+}

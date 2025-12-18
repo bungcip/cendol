@@ -55,6 +55,8 @@ pub enum ParseError {
 /// Diagnostic engine for collecting and reporting semantic errors and warnings
 pub struct DiagnosticEngine {
     pub diagnostics: Vec<Diagnostic>,
+    pub warnings_as_errors: bool,
+    pub disable_all_warnings: bool,
 }
 
 impl Default for DiagnosticEngine {
@@ -67,6 +69,18 @@ impl DiagnosticEngine {
     pub fn new() -> Self {
         DiagnosticEngine {
             diagnostics: Vec::new(),
+            warnings_as_errors: false,
+            disable_all_warnings: false,
+        }
+    }
+
+    pub fn from_warnings(warnings: &[String]) -> Self {
+        let warnings_as_errors = warnings.iter().any(|w| w == "error");
+        let disable_all_warnings = warnings.iter().any(|w| w == "no-warnings");
+        Self {
+            diagnostics: Vec::new(),
+            warnings_as_errors,
+            disable_all_warnings,
         }
     }
 
@@ -106,6 +120,10 @@ impl DiagnosticEngine {
     }
 
     pub fn report_warning(&mut self, warning: SemanticWarning) {
+        if self.disable_all_warnings {
+            return;
+        }
+
         let (message, location) = match warning {
             SemanticWarning::UnusedDeclaration { name, location } => {
                 (format!("Unused declaration '{}'", name), location)
@@ -125,8 +143,13 @@ impl DiagnosticEngine {
                 second_def,
             } => (format!("Redefinition of '{}'", name), second_def),
         };
+        let level = if self.warnings_as_errors {
+            DiagnosticLevel::Error
+        } else {
+            DiagnosticLevel::Warning
+        };
         let diag = Diagnostic {
-            level: DiagnosticLevel::Warning,
+            level,
             message,
             location,
             code: None,

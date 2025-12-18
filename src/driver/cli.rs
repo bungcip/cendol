@@ -75,6 +75,32 @@ pub struct CompileConfig {
     pub suppress_line_markers: bool,
     pub include_paths: Vec<PathBuf>,
     pub defines: Vec<(String, Option<String>)>, // NAME -> VALUE
+    _temp_file: Option<tempfile::TempPath>,
+}
+
+impl CompileConfig {
+    /// Create a new CompileConfig from a string of source code
+    pub fn from_source_code(source: String) -> Self {
+        use std::io::Write;
+        let mut tmpfile = tempfile::Builder::new().suffix(".c").tempfile().unwrap();
+        write!(tmpfile, "{}", source).unwrap();
+        let temp_path = tmpfile.into_temp_path();
+        let path = temp_path.to_path_buf();
+
+        Self {
+            input_files: vec![path],
+            output_path: None,
+            dump_ast: false,
+            dump_parser: false,
+            preprocess_only: false,
+            verbose: false,
+            preprocessor: crate::pp::PPConfig::default(),
+            suppress_line_markers: false,
+            include_paths: vec![],
+            defines: vec![],
+            _temp_file: Some(temp_path),
+        }
+    }
 }
 
 impl Cli {
@@ -109,6 +135,7 @@ impl Cli {
             suppress_line_markers: self.suppress_line_markers,
             include_paths: self.include_paths,
             defines,
+            _temp_file: None,
         }
     }
 }

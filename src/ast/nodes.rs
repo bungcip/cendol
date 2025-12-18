@@ -302,6 +302,15 @@ pub enum Initializer {
     List(Vec<DesignatedInitializer>), // = { .x = 1, [0] = 2 }
 }
 
+impl Initializer {
+    pub fn get_expression(&self) -> NodeRef {
+        match self {
+            Initializer::Expression(node_ref) => *node_ref,
+            _ => panic!("Initializer is not an expression"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct DesignatedInitializer {
     pub designation: Vec<Designator>,

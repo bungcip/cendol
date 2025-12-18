@@ -14,6 +14,7 @@ use crate::parser::Parser;
 use crate::pp::Preprocessor;
 use crate::semantic::{SemanticAnalyzer, SymbolTable};
 use crate::source_manager::SourceManager;
+use crate::codegen::CodeGenerator;
 use target_lexicon::Triple;
 
 use super::cli::CompileConfig;
@@ -47,7 +48,14 @@ impl CompilerDriver {
     pub fn run(&mut self) -> Result<(), CompilerError> {
         // Process each input file
         for input_file in self.config.input_files.clone() {
-            self.compile_file(&input_file)?;
+            let (ast, _symbol_table) = self.compile_file(&input_file)?;
+            if let Some(output_path) = &self.config.output_path {
+                if !self.config.dump_ast {
+                    let codegen = CodeGenerator::new(&ast);
+                    let object_file = codegen.compile().unwrap();
+                    std::fs::write(output_path, object_file).unwrap();
+                }
+            }
         }
 
         // Report errors if any
@@ -56,8 +64,15 @@ impl CompilerDriver {
         Ok(())
     }
 
+    pub fn compile_to_ast(&mut self) -> Result<Ast, CompilerError> {
+        let input_file = self.config.input_files[0].clone();
+        let (ast, _) = self.compile_file(&input_file)?;
+        self.report_errors()?;
+        Ok(ast)
+    }
+
     /// Compile a single file through the full pipeline
-    fn compile_file(&mut self, source_path: &Path) -> Result<(), CompilerError> {
+    fn compile_file(&mut self, source_path: &Path) -> Result<(Ast, SymbolTable), CompilerError> {
         log::debug!("Starting compilation of file: {}", source_path.display());
         let lang_options = LangOptions::c11();
         let target_triple = Triple::host();
@@ -83,7 +98,7 @@ impl CompilerDriver {
                 Ok(t) => t,
                 Err(e) => {
                     if self.diagnostics.has_errors() {
-                        return Ok(());
+                        return Err(CompilerError::CompilationFailed);
                     } else {
                         return Err(CompilerError::PreprocessorError(format!(
                             "Preprocessing failed: {:?}",
@@ -96,7 +111,7 @@ impl CompilerDriver {
 
         // Check for preprocessing errors and stop if any
         if self.diagnostics.has_errors() {
-            return Ok(()); // Stop processing this file
+            return Err(CompilerError::CompilationFailed);
         }
 
         // If preprocess only, dump the preprocessed output
@@ -106,7 +121,7 @@ impl CompilerDriver {
                 self.config.suppress_line_markers,
                 &self.source_manager,
             )?;
-            return Ok(());
+            return Ok((Ast::new(), SymbolTable::new()));
         }
 
         // 3. Lexing phase
@@ -119,7 +134,7 @@ impl CompilerDriver {
 
         // Check for lexing errors and stop if any
         if self.diagnostics.has_errors() {
-            return Ok(()); // Stop processing this file
+            return Err(CompilerError::CompilationFailed);
         }
 
         // 4. Parsing phase
@@ -139,13 +154,15 @@ impl CompilerDriver {
 
         // Check for parsing errors and stop if any
         if self.diagnostics.has_errors() {
-            return Ok(()); // Stop processing this file
+            return Err(CompilerError::CompilationFailed);
         }
 
         // print parser AST to check
         if self.config.dump_parser {
             self.output_handler.dump_parser(&ast);
-            return Ok(());
+            // This is a special case. We want to stop after dumping the parser output.
+            // We'll return an empty symbol table.
+            return Ok((ast, SymbolTable::new()));
         }
 
         // 5. Semantic analysis phase
@@ -162,7 +179,7 @@ impl CompilerDriver {
 
         // Check for semantic analysis errors and stop if any
         if self.diagnostics.has_errors() {
-            return Ok(()); // Stop processing this file
+            return Err(CompilerError::CompilationFailed);
         }
 
         // 6. AST dumping (if requested)
@@ -178,7 +195,7 @@ impl CompilerDriver {
             self.output_handler.dump_ast(&mut args, &self.config)?;
         }
 
-        Ok(())
+        Ok((ast, symbol_table))
     }
 
     /// Report any accumulated errors

@@ -9,7 +9,6 @@ use std::path::Path;
 use crate::ast::Ast;
 use crate::codegen::CodeGenerator;
 use crate::diagnostic::DiagnosticEngine;
-use crate::lang_options::LangOptions;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 use crate::pp::Preprocessor;
@@ -55,11 +54,11 @@ impl CompilerDriver {
             {
                 let codegen = CodeGenerator::new(&ast);
                 let object_file = codegen.compile().unwrap();
-                
+
                 // Write the object file to a temporary file
                 let temp_object_path = format!("{}.o", output_path.display());
                 std::fs::write(&temp_object_path, object_file).unwrap();
-                
+
                 // Link the object file into an executable using clang
                 let status = std::process::Command::new("clang")
                     .arg(&temp_object_path)
@@ -67,16 +66,16 @@ impl CompilerDriver {
                     .arg(output_path)
                     .status()
                     .expect("Failed to execute clang for linking");
-                
+
                 if !status.success() {
                     return Err(CompilerError::IoError(
                         "Failed to link object file into executable".to_string(),
                     ));
                 }
-                
+
                 // Remove the temporary object file
                 std::fs::remove_file(&temp_object_path).unwrap();
-                
+
                 // Set executable permissions on the output file
                 use std::os::unix::fs::PermissionsExt;
                 if let Ok(metadata) = std::fs::metadata(output_path) {
@@ -105,7 +104,7 @@ impl CompilerDriver {
     /// Compile a single file through the full pipeline
     fn compile_file(&mut self, source_path: &Path) -> Result<(Ast, SymbolTable), CompilerError> {
         log::debug!("Starting compilation of file: {}", source_path.display());
-        let lang_options = LangOptions::c11();
+        let lang_options = self.config.lang_options.clone();
         let target_triple = Triple::host();
 
         // 1. Load source file through SourceManager

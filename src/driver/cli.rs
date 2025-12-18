@@ -6,9 +6,11 @@
 use clap::{Args, Parser as CliParser};
 use std::path::PathBuf;
 
+use crate::lang_options::LangOptions;
+
 /// CLI interface using clap
 #[derive(CliParser, Debug)]
-#[clap(name = "cendol", about = "C11 Compiler written in Rust")]
+#[clap(name = "cendol", about = "C11 Compiler written in Rust", allow_hyphen_values = true)]
 pub struct Cli {
     /// Input C source files
     #[clap(value_parser, required = true)]
@@ -57,6 +59,18 @@ pub struct Cli {
     /// Compiler warnings
     #[clap(short = 'W', action = clap::ArgAction::Append)]
     pub warnings: Vec<String>,
+
+    /// Enable pedantic mode (strict standards compliance)
+    #[clap(long = "pedantic")]
+    pub pedantic: bool,
+
+    /// Enable all warnings
+    #[clap(long = "Wall")]
+    pub wall: bool,
+
+    /// Set C language standard (e.g., c99, c11)
+    #[clap(long = "std", value_name = "STANDARD")]
+    pub c_standard: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -80,6 +94,7 @@ pub struct CompileConfig {
     pub include_paths: Vec<PathBuf>,
     pub defines: Vec<(String, Option<String>)>, // NAME -> VALUE
     pub warnings: Vec<String>,
+    pub lang_options: LangOptions,
     _temp_file: Option<tempfile::TempPath>,
 }
 
@@ -104,6 +119,7 @@ impl CompileConfig {
             include_paths: vec![],
             defines: vec![],
             warnings: vec![],
+            lang_options: LangOptions::default(),
             _temp_file: Some(temp_path),
         }
     }
@@ -127,6 +143,21 @@ impl Cli {
             })
             .collect();
 
+        // Handle -Wall flag by adding "all" to warnings if -Wall is specified
+        let mut warnings = self.warnings;
+        if self.wall {
+            warnings.push("all".to_string());
+        }
+
+        // Build language options
+        let lang_options = LangOptions {
+            c11: false, // Default to false, will be overridden by -std flag
+            gnu_mode: false,
+            ms_extensions: false,
+            pedantic: self.pedantic,
+            c_standard: self.c_standard,
+        };
+
         CompileConfig {
             input_files: self.input_files,
             output_path: self.output,
@@ -141,7 +172,8 @@ impl Cli {
             suppress_line_markers: self.suppress_line_markers,
             include_paths: self.include_paths,
             defines,
-            warnings: self.warnings,
+            warnings,
+            lang_options,
             _temp_file: None,
         }
     }

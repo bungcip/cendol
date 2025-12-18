@@ -443,10 +443,7 @@ fn parse_declaration_with_errors(source: &str) -> Result<ResolvedNodeKind, Vec<S
 #[test]
 fn test_function_returning_array_rejected() {
     let result = parse_declaration_with_errors("int f(int)[3];");
-    assert!(
-        result.is_err(),
-        "Parser should reject function returning array"
-    );
+    assert!(result.is_err(), "Parser should reject function returning array");
 }
 
 #[test]
@@ -940,10 +937,7 @@ fn test_array_of_functions_rejected() {
 #[test]
 fn test_function_returning_function_rejected() {
     let result = parse_declaration_with_errors("int f(int)(float);");
-    assert!(
-        result.is_err(),
-        "Parser should reject function returning function"
-    );
+    assert!(result.is_err(), "Parser should reject function returning function");
 }
 
 #[test]

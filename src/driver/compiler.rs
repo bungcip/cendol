@@ -55,7 +55,37 @@ impl CompilerDriver {
             {
                 let codegen = CodeGenerator::new(&ast);
                 let object_file = codegen.compile().unwrap();
-                std::fs::write(output_path, object_file).unwrap();
+                
+                // Write the object file to a temporary file
+                let temp_object_path = format!("{}.o", output_path.display());
+                std::fs::write(&temp_object_path, object_file).unwrap();
+                
+                // Link the object file into an executable using clang
+                let status = std::process::Command::new("clang")
+                    .arg(&temp_object_path)
+                    .arg("-o")
+                    .arg(output_path)
+                    .status()
+                    .expect("Failed to execute clang for linking");
+                
+                if !status.success() {
+                    return Err(CompilerError::IoError(
+                        "Failed to link object file into executable".to_string(),
+                    ));
+                }
+                
+                // Remove the temporary object file
+                std::fs::remove_file(&temp_object_path).unwrap();
+                
+                // Set executable permissions on the output file
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(metadata) = std::fs::metadata(output_path) {
+                    let mut permissions = metadata.permissions();
+                    permissions.set_mode(0o755); // rwxr-xr-x
+                    if let Err(e) = std::fs::set_permissions(output_path, permissions) {
+                        eprintln!("Warning: Failed to set executable permissions: {}", e);
+                    }
+                }
             }
         }
 

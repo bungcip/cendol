@@ -15,6 +15,28 @@ use thin_vec::ThinVec;
 
 use super::Parser;
 
+/// Helper to extract function parameters from a potentially complex declarator
+fn get_function_params(declarator: &Declarator) -> Option<&ThinVec<ParamData>> {
+    let mut current = declarator;
+    // Traverse the declarator to find the function part, which contains the parameters.
+    // This handles cases like pointers to functions, e.g., `int (*f)(int a)`.
+    loop {
+        match current {
+            Declarator::Function(_, params) => return Some(params),
+            Declarator::Pointer(_, Some(inner)) |
+            Declarator::Array(inner, _) |
+            Declarator::BitField(inner, _) => {
+                current = inner;
+            }
+            // These are terminal declarators that don't have parameters.
+            Declarator::Identifier(_, _, _) |
+            Declarator::AnonymousRecord(_, _) |
+            Declarator::Abstract |
+            Declarator::Pointer(_, None) => return None,
+        }
+    }
+}
+
 /// Parse a declaration
 pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let trx = parser.start_transaction();
@@ -220,17 +242,16 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     let span = SourceSpan::new(start_loc, end_loc);
 
-    // Track typedef names for disambiguation
-    for specifier in &specifiers {
-        if matches!(specifier, DeclSpecifier::StorageClass(StorageClass::Typedef)) {
-            debug!("Found Typedef specifier, adding typedef names");
-            for init_declarator in &init_declarators {
-                let name = trx.parser.get_declarator_name(&init_declarator.declarator);
-                debug!("get_declarator_name returned: {:?}", name);
-                if let Some(name) = name {
-                    debug!("Adding typedef name: {:?}", name);
-                    trx.parser.add_typedef(name);
-                }
+    // Track typedef and variable names for disambiguation
+    let is_typedef = specifiers.iter().any(|s| matches!(s, DeclSpecifier::StorageClass(StorageClass::Typedef)));
+    for init_declarator in &init_declarators {
+        if let Some(name) = trx.parser.get_declarator_name(&init_declarator.declarator) {
+            if is_typedef {
+                debug!("Adding typedef name: {:?}", name);
+                trx.parser.add_typedef(name);
+            } else {
+                debug!("Adding variable to current scope: {:?}", name);
+                trx.parser.add_variable_to_current_scope(name);
             }
         }
     }
@@ -259,8 +280,26 @@ pub fn parse_function_definition(parser: &mut Parser) -> Result<NodeRef, ParseEr
     // Parse declarator (should be a function declarator)
     let declarator = super::declarator::parse_declarator(parser, None)?;
 
-    // Parse function body
+    // A function definition introduces a new scope for its parameters.
+    parser.enter_scope();
+
+    // Extract parameter names from the declarator and add them to the new scope.
+    if let Some(params) = get_function_params(&declarator) {
+        for param in params {
+            if let Some(declarator) = &param.declarator {
+                if let Some(name) = parser.get_declarator_name(declarator) {
+                    parser.add_variable_to_current_scope(name);
+                }
+            }
+        }
+    }
+
+    // Parse function body. `parse_compound_statement` will also create a new scope for the body
+    // and correctly handle exiting both the body scope and the parameter scope.
     let (body, body_end_loc) = super::statements::parse_compound_statement(parser)?;
+
+    // After parsing the body, the parameter scope is no longer needed.
+    parser.exit_scope();
 
     let span = SourceSpan::new(start_loc, body_end_loc);
 

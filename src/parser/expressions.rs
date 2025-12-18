@@ -708,7 +708,20 @@ pub(crate) fn is_cast_expression_start(parser: &Parser) -> bool {
                 is_cast_expression_start_advanced(parser)
             }
             TokenKind::Identifier(symbol) => {
-                // Could be a typedef name
+                // This is the core of the ambiguity resolution.
+                // An identifier in this context can be a typedef name (making it a cast)
+                // or a variable name (making it a parenthesized expression).
+                // C grammar rule: if it *can* be a type name, it is.
+                // However, a local variable with the same name shadows the typedef.
+                if parser.is_variable_in_scope(symbol) {
+                    debug!(
+                        "is_cast_expression_start: identifier {:?} is a known variable, so not a cast",
+                        symbol
+                    );
+                    return false;
+                }
+
+                // If it's not a known variable, check if it's a typedef.
                 let is_type = parser.is_type_name(symbol);
                 debug!(
                     "is_cast_expression_start: found identifier {:?}, is_type={}",

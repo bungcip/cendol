@@ -57,6 +57,8 @@ pub fn parse_compound_statement(parser: &mut Parser) -> Result<(NodeRef, SourceL
     let token = parser.expect(TokenKind::LeftBrace)?;
     let start_loc = token.location.start;
 
+    parser.enter_scope();
+
     let mut block_items = Vec::new();
 
     while !parser.is_token(TokenKind::RightBrace) {
@@ -127,6 +129,8 @@ pub fn parse_compound_statement(parser: &mut Parser) -> Result<(NodeRef, SourceL
 
     let right_brace_token = parser.expect(TokenKind::RightBrace)?;
     let end_loc = right_brace_token.location.end;
+
+    parser.exit_scope();
 
     let span = SourceSpan::new(start_loc, end_loc);
 

@@ -98,6 +98,9 @@ pub struct Parser<'arena, 'src> {
 
     // Type context for typedef tracking
     type_context: TypeContext,
+
+    // Scope stack for variable names to resolve typedef/variable ambiguity
+    variable_scope_stack: Vec<HashSet<Symbol>>,
 }
 
 impl<'arena, 'src> Parser<'arena, 'src> {
@@ -109,6 +112,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             ast,
             diag,
             type_context: TypeContext::new(),
+            variable_scope_stack: vec![HashSet::new()], // Global scope
         }
     }
 
@@ -401,6 +405,28 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         } else {
             false
         }
+    }
+
+    /// Enter a new scope
+    pub fn enter_scope(&mut self) {
+        self.variable_scope_stack.push(HashSet::new());
+    }
+
+    /// Exit the current scope
+    pub fn exit_scope(&mut self) {
+        self.variable_scope_stack.pop();
+    }
+
+    /// Add a variable to the current scope
+    pub fn add_variable_to_current_scope(&mut self, symbol: Symbol) {
+        if let Some(scope) = self.variable_scope_stack.last_mut() {
+            scope.insert(symbol);
+        }
+    }
+
+    /// Check if a symbol is a variable in the current or any parent scope
+    pub fn is_variable_in_scope(&self, symbol: Symbol) -> bool {
+        self.variable_scope_stack.iter().any(|scope| scope.contains(&symbol))
     }
 }
 

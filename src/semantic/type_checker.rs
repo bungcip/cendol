@@ -11,6 +11,7 @@ use crate::diagnostic::DiagnosticEngine;
 use crate::semantic::symbol_table::{ScopeId, SymbolTable};
 use crate::semantic::utils::extract_function_info;
 use crate::semantic::visitor::{SemanticVisitor, visit_node};
+use crate::diagnostic::SemanticError;
 
 /// Context for type checking
 pub struct TypeCheckContext<'a> {
@@ -281,22 +282,51 @@ impl<'ast> SemanticVisitor<'ast> for TypeChecker {
     }
 
     fn visit_unary_op(&mut self, op: UnaryOp, expr: NodeRef, span: SourceSpan, context: &mut Self::Context) {
-        // Check dereferencing operations
-        if op == UnaryOp::Deref {
-            // Get the type of the expression being dereferenced
-            if let Some(expr_type) = self.get_node_type(expr, context) {
-                let expr_type_info = context.ast.get_type(expr_type);
-                
-                // Check if the expression is a pointer type
-                if !expr_type_info.is_pointer() {
-                    // This is an error - trying to dereference a non-pointer type
-                    use crate::diagnostic::SemanticError;
+        match op {
+            UnaryOp::Deref => {
+                // Check dereferencing operations - must be pointer type
+                if let Some(expr_type) = self.get_node_type(expr, context) {
+                    let expr_type_info = context.ast.get_type(expr_type);
                     
-                    context.diag.report_error(SemanticError::TypeMismatch {
-                        expected: "pointer type".to_string(),
-                        found: format!("{:?}", expr_type_info.kind),
-                        location: span,
-                    });
+                    // Check if the expression is a pointer type
+                    if !expr_type_info.is_pointer() {
+                        // This is an error - trying to dereference a non-pointer type
+                        context.diag.report_error(SemanticError::InvalidOperand {
+                            operation: format!("dereferencing non-pointer type '{}'", Self::format_type_name(expr_type_info)),
+                            location: span,
+                        });
+                    }
+                }
+            }
+            UnaryOp::AddrOf => {
+                // Address-of operator can be applied to any lvalue
+                // Basic validation - could be enhanced further
+                if let Some(expr_type) = self.get_node_type(expr, context) {
+                    let expr_type_info = context.ast.get_type(expr_type);
+                    
+                    // Check if trying to take address of function designators or arrays
+                    // This is a simplified check - full implementation would be more complex
+                    if expr_type_info.is_array() {
+                        context.diag.report_error(SemanticError::InvalidOperand {
+                            operation: "cannot take address of array".to_string(),
+                            location: span,
+                        });
+                    }
+                }
+            }
+            // Other unary operations (Plus, Minus, BitNot, LogicNot, PreIncrement, PreDecrement)
+            // require scalar types
+            _ => {
+                if let Some(expr_type) = self.get_node_type(expr, context) {
+                    let expr_type_info = context.ast.get_type(expr_type);
+                    
+                    // Check if the operand is a scalar type for arithmetic/logical operations
+                    if !expr_type_info.is_scalar() {
+                        context.diag.report_error(SemanticError::InvalidOperand {
+                            operation: format!("invalid operand to unary operator '{}'", Self::format_unary_op(op)),
+                            location: span,
+                        });
+                    }
                 }
             }
         }
@@ -318,6 +348,64 @@ impl<'ast> SemanticVisitor<'ast> for TypeChecker {
     }
 
     // Other type checking methods can be added here as needed
+}
+
+impl TypeChecker {
+    /// Format unary operator for error messages
+    fn format_unary_op(op: UnaryOp) -> &'static str {
+        match op {
+            UnaryOp::Plus => "+",
+            UnaryOp::Minus => "-",
+            UnaryOp::BitNot => "~",
+            UnaryOp::LogicNot => "!",
+            UnaryOp::PreIncrement => "++",
+            UnaryOp::PreDecrement => "--",
+            UnaryOp::Deref => "*",
+            UnaryOp::AddrOf => "&",
+        }
+    }
+    
+    /// Format type name for error messages
+    fn format_type_name(ty: &Type) -> String {
+        match &ty.kind {
+            TypeKind::Void => "void".to_string(),
+            TypeKind::Bool => "_Bool".to_string(),
+            TypeKind::Char { is_signed } => if *is_signed { "signed char" } else { "unsigned char" }.to_string(),
+            TypeKind::Short { is_signed } => if *is_signed { "short" } else { "unsigned short" }.to_string(),
+            TypeKind::Int { is_signed } => if *is_signed { "int" } else { "unsigned int" }.to_string(),
+            TypeKind::Long { is_signed, is_long_long } => {
+                if *is_long_long {
+                    if *is_signed { "long long" } else { "unsigned long long" }.to_string()
+                } else {
+                    if *is_signed { "long" } else { "unsigned long" }.to_string()
+                }
+            }
+            TypeKind::Float => "float".to_string(),
+            TypeKind::Double { is_long_double } => if *is_long_double { "long double" } else { "double" }.to_string(),
+            TypeKind::Pointer { .. } => "pointer".to_string(), // Simplified
+            TypeKind::Array { .. } => "array".to_string(),
+            TypeKind::Function { .. } => "function".to_string(),
+            TypeKind::Record { is_union, tag, .. } => {
+                if let Some(tag) = tag {
+                    format!("{} {}", if *is_union { "union" } else { "struct" }, tag)
+                } else {
+                    format!("{} {}", if *is_union { "union" } else { "struct" }, "unnamed")
+                }
+            }
+            TypeKind::Enum { tag, .. } => {
+                if let Some(tag) = tag {
+                    format!("enum {}", tag)
+                } else {
+                    "enum".to_string()
+                }
+            }
+            TypeKind::Typedef { name, .. } => name.to_string(),
+            TypeKind::Atomic { .. } => "_Atomic".to_string(), // Simplified
+            TypeKind::Complex { .. } => "complex".to_string(),
+            TypeKind::Incomplete => "incomplete".to_string(),
+            TypeKind::Error => "error".to_string(),
+        }
+    }
 }
 
 impl TypeChecker {
@@ -556,8 +644,6 @@ impl TypeChecker {
         span: SourceSpan,
         context: &mut TypeCheckContext,
     ) {
-        use crate::diagnostic::SemanticError;
-
         context.diag.report_error(SemanticError::TypeMismatch {
             expected: message.to_string(),
             found: "".to_string(),

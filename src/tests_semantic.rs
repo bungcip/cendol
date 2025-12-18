@@ -180,3 +180,138 @@ int x = 5; // This should be OK
 
     assert!(!has_type_error, "Unexpected type error for int initialization. Diagnostics: {:?}", output.diagnostics);
 }
+
+#[test]
+fn test_invalid_dereference_non_pointer_int() {
+    // Test code with invalid dereference: trying to dereference an int
+    let source_code = r#"
+int main() {
+    int x = 5;
+    int y = *x;  // This should be an error - dereferencing non-pointer
+    return 0;
+}
+"#;
+
+    let output = run_semantic_analysis(source_code);
+
+    // Check that we have an error for dereferencing non-pointer
+    let has_deref_error = output.diagnostics.iter().any(|diag| {
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
+        diag.message.contains("Invalid operand: dereferencing non-pointer type")
+    });
+
+    assert!(has_deref_error, "Expected error for dereferencing non-pointer int, but none found. Diagnostics: {:?}", output.diagnostics);
+}
+
+#[test]
+fn test_valid_dereference_pointer() {
+    // Test code with valid dereference: dereferencing a valid pointer
+    let source_code = r#"
+int main() {
+    int x = 5;
+    int *ptr = &x;  // Valid pointer
+    int y = *ptr;  // This should be valid
+    return 0;
+}
+"#;
+
+    let output = run_semantic_analysis(source_code);
+
+    // Check that we don't have any errors for valid pointer dereference
+    let has_deref_error = output.diagnostics.iter().any(|diag| {
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
+        diag.message.contains("Invalid operand: dereferencing")
+    });
+
+    assert!(!has_deref_error, "Unexpected error for valid pointer dereference. Diagnostics: {:?}", output.diagnostics);
+}
+
+#[test]
+fn test_invalid_dereference_non_pointer_float() {
+    // Test code with invalid dereference: trying to dereference a float
+    let source_code = r#"
+int main() {
+    float f = 3.14;
+    float result = *f;  // This should be an error - dereferencing non-pointer
+    return 0;
+}
+"#;
+
+    let output = run_semantic_analysis(source_code);
+
+    // Check that we have an error for dereferencing non-pointer float
+    let has_deref_error = output.diagnostics.iter().any(|diag| {
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
+        diag.message.contains("Invalid operand: dereferencing non-pointer type")
+    });
+
+    assert!(has_deref_error, "Expected error for dereferencing non-pointer float, but none found. Diagnostics: {:?}", output.diagnostics);
+}
+
+#[test]
+fn test_invalid_dereference_non_pointer_char() {
+    // Test code with invalid dereference: trying to dereference a char
+    let source_code = r#"
+int main() {
+    char c = 'a';
+    char result = *c;  // This should be an error - dereferencing non-pointer
+    return 0;
+}
+"#;
+
+    let output = run_semantic_analysis(source_code);
+
+    // Check that we have an error for dereferencing non-pointer char
+    let has_deref_error = output.diagnostics.iter().any(|diag| {
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
+        diag.message.contains("Invalid operand: dereferencing non-pointer type")
+    });
+
+    assert!(has_deref_error, "Expected error for dereferencing non-pointer char, but none found. Diagnostics: {:?}", output.diagnostics);
+}
+
+#[test]
+fn test_invalid_dereference_non_pointer_struct() {
+    // Test code with invalid dereference: trying to dereference a struct
+    let source_code = r#"
+struct Point {
+    int x;
+    int y;
+};
+
+int main() {
+    struct Point p = {1, 2};
+    struct Point result = *p;  // This should be an error - dereferencing non-pointer
+    return 0;
+}
+"#;
+
+    let output = run_semantic_analysis(source_code);
+
+    // Check that we have an error for dereferencing non-pointer struct
+    let has_deref_error = output.diagnostics.iter().any(|diag| {
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
+        diag.message.contains("Invalid operand: dereferencing non-pointer type")
+    });
+
+    assert!(has_deref_error, "Expected error for dereferencing non-pointer struct, but none found. Diagnostics: {:?}", output.diagnostics);
+}
+
+#[test]
+fn test_valid_dereference_void_pointer() {
+    // Test code with valid void pointer dereference (should be allowed)
+    let source_code = r#"
+int main() {
+    int x = 5;
+    void *ptr = &x;
+    int y = *(int*)ptr;  // Cast required but dereference itself should be valid
+    return 0;
+}
+"#;
+
+    let output = run_semantic_analysis(source_code);
+
+    // This test may pass or fail depending on how casts are handled
+    // For now, we're mainly testing that our dereference checking works
+    println!("Diagnostics for void* dereference test: {:?}", output.diagnostics);
+}

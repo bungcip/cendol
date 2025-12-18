@@ -100,6 +100,11 @@ impl Type {
             _ => true,
         }
     }
+
+    /// Check if this is an array type
+    pub fn is_array(&self) -> bool {
+        matches!(self.kind, TypeKind::Array { .. })
+    }
 }
 
 /// The kind of type

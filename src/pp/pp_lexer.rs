@@ -1030,7 +1030,7 @@ impl PPLexer {
                 if utf8_sequence_valid {
                     // Consume continuation bytes for valid UTF-8 sequences
                     while let Some(continuation_ch) = self.peek_char() {
-                        if continuation_ch >= 0x80 && continuation_ch < 0xC0 {
+                        if (0x80..0xC0).contains(&continuation_ch) {
                             // This is a UTF-8 continuation byte
                             chars.push(self.next_char().unwrap());
                         } else {
@@ -1061,7 +1061,7 @@ impl PPLexer {
         // 0x00-0x7F: ASCII (single byte, handled elsewhere)
         // 0xC2-0xF4: Start of multi-byte sequence
         // Invalid starts: 0x80-0xBF (continuation bytes), 0xC0, 0xC1, 0xF5-0xFF
-        byte >= 0xC2 && byte <= 0xF4
+        (0xC2..=0xF4).contains(&byte)
     }
 
     fn lex_char_literal(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
@@ -1091,7 +1091,7 @@ impl PPLexer {
                 if utf8_sequence_valid {
                     // Consume continuation bytes for valid UTF-8 sequences
                     while let Some(continuation_ch) = self.peek_char() {
-                        if continuation_ch >= 0x80 && continuation_ch < 0xC0 {
+                        if (0x80..0xC0).contains(&continuation_ch) {
                             chars.push(self.next_char().unwrap());
                         } else {
                             break;

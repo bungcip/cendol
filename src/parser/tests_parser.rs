@@ -1259,3 +1259,31 @@ fn test_generic_selection_with_pointer_types() {
             LiteralInt: 20
     ");
 }
+
+#[test]
+fn test_chained_assignment() {
+    let resolved = setup_expr("a = b = c");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    BinaryOp:
+      - Assign
+      - Ident: a
+      - BinaryOp:
+          - Assign
+          - Ident: b
+          - Ident: c
+    ");
+}
+
+#[test]
+fn test_chained_subtraction() {
+    let resolved = setup_expr("a - b - c");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    BinaryOp:
+      - Sub
+      - BinaryOp:
+          - Sub
+          - Ident: a
+          - Ident: b
+      - Ident: c
+    ");
+}

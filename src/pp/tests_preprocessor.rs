@@ -464,6 +464,26 @@ int result = 42;
 }
 
 #[test]
+fn test_circular_include_in_memory() {
+    let mut sm = SourceManager::new();
+    sm.add_buffer("#include \"b.h\"".as_bytes().to_vec(), "a.h");
+    sm.add_buffer("#include \"a.h\"".as_bytes().to_vec(), "b.h");
+    let main_id = sm.add_buffer("#include \"a.h\"".as_bytes().to_vec(), "main.c");
+
+    let mut diag = DiagnosticEngine::new();
+    let lang_opts = LangOptions::c11();
+    let target_info = Triple::unknown();
+    let config = PPConfig {
+        max_include_depth: 10,
+        ..Default::default()
+    };
+    let mut pp = Preprocessor::new(&mut sm, &mut diag, lang_opts, target_info, &config);
+    let result = pp.process(main_id, &config);
+
+    assert!(matches!(result, Err(PPError::CircularInclude)));
+}
+
+#[test]
 fn test_circular_include_error_with_temp_files() {
     let dir = tempfile::tempdir().unwrap();
     let path_a = dir.path().join("a.h");

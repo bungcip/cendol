@@ -53,6 +53,10 @@ pub struct Cli {
     /// Preprocessor macro definitions
     #[clap(short = 'D', long = "define", value_name = "NAME[=VALUE]", action = clap::ArgAction::Append)]
     pub defines: Vec<String>,
+
+    /// Compiler warnings
+    #[clap(short = 'W', action = clap::ArgAction::Append)]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Args, Debug)]
@@ -75,6 +79,7 @@ pub struct CompileConfig {
     pub suppress_line_markers: bool,
     pub include_paths: Vec<PathBuf>,
     pub defines: Vec<(String, Option<String>)>, // NAME -> VALUE
+    pub warnings: Vec<String>,
     _temp_file: Option<tempfile::TempPath>,
 }
 
@@ -98,6 +103,7 @@ impl CompileConfig {
             suppress_line_markers: false,
             include_paths: vec![],
             defines: vec![],
+            warnings: vec![],
             _temp_file: Some(temp_path),
         }
     }
@@ -135,6 +141,7 @@ impl Cli {
             suppress_line_markers: self.suppress_line_markers,
             include_paths: self.include_paths,
             defines,
+            warnings: self.warnings,
             _temp_file: None,
         }
     }

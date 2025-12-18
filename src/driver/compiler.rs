@@ -36,8 +36,9 @@ impl CompilerDriver {
 
     /// Create a new compiler driver from configuration
     pub fn from_config(config: CompileConfig) -> Self {
+        let diagnostics = DiagnosticEngine::from_warnings(&config.warnings);
         CompilerDriver {
-            diagnostics: DiagnosticEngine::new(),
+            diagnostics,
             source_manager: SourceManager::new(),
             output_handler: OutputHandler::new(),
             config,

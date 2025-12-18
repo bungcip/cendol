@@ -8,6 +8,7 @@ pub mod parser;
 pub mod pp;
 pub mod semantic;
 pub mod source_manager;
+pub mod codegen;
 
 #[cfg(test)]
 mod tests_ast_dumper;

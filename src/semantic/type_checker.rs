@@ -419,8 +419,7 @@ impl TypeChecker {
             // Identifiers are lvalues if they refer to objects
             NodeKind::Ident(_, resolved_symbol) => {
                 // Check if this identifier has been resolved to a symbol
-                if let Some(symbol_ref) = resolved_symbol.get() {
-                    let symbol_entry = context.symbol_table.get_symbol_entry(symbol_ref);
+                if resolved_symbol.get().is_some() {
                     // For now, assume all resolved identifiers are lvalues
                     // In a more complete implementation, we'd check the symbol properties
                     true

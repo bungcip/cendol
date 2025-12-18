@@ -18,23 +18,23 @@ pub struct BindingPower(u8);
 
 impl BindingPower {
     pub const MIN: Self = Self(0);
-    pub const COMMA: Self = Self(1);
-    pub const ASSIGNMENT: Self = Self(2);
-    pub const CONDITIONAL: Self = Self(3);
-    pub const LOGICAL_OR: Self = Self(4);
-    pub const LOGICAL_AND: Self = Self(5);
-    pub const BITWISE_OR: Self = Self(6);
-    pub const BITWISE_XOR: Self = Self(7);
-    pub const BITWISE_AND: Self = Self(8);
-    pub const EQUALITY: Self = Self(9);
-    pub const RELATIONAL: Self = Self(10);
-    pub const SHIFT: Self = Self(11);
-    pub const ADDITIVE: Self = Self(12);
-    pub const MULTIPLICATIVE: Self = Self(13);
-    pub const CAST: Self = Self(14);
-    pub const UNARY: Self = Self(15);
-    pub const POSTFIX: Self = Self(16);
-    pub const PRIMARY: Self = Self(17);
+    pub const COMMA: Self = Self(2);
+    pub const ASSIGNMENT: Self = Self(4);
+    pub const CONDITIONAL: Self = Self(6);
+    pub const LOGICAL_OR: Self = Self(8);
+    pub const LOGICAL_AND: Self = Self(10);
+    pub const BITWISE_OR: Self = Self(12);
+    pub const BITWISE_XOR: Self = Self(14);
+    pub const BITWISE_AND: Self = Self(16);
+    pub const EQUALITY: Self = Self(18);
+    pub const RELATIONAL: Self = Self(20);
+    pub const SHIFT: Self = Self(22);
+    pub const ADDITIVE: Self = Self(24);
+    pub const MULTIPLICATIVE: Self = Self(26);
+    pub const CAST: Self = Self(28);
+    pub const UNARY: Self = Self(30);
+    pub const POSTFIX: Self = Self(32);
+    pub const PRIMARY: Self = Self(34);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -142,10 +142,14 @@ pub fn parse_expression(
             break;
         }
 
-        // Handle associativity
-        let next_min_bp = if associativity == Associativity::Right {
+        // Handle associativity by adjusting the binding power for the next recursive call
+        let next_min_bp = if associativity == Associativity::Left {
+            // For left-associative operators, we want to stop parsing when we see another
+            // operator of the same precedence. Bumping the minimum binding power ensures this.
             BindingPower(binding_power.0 + 1)
         } else {
+            // For right-associative operators, we want to continue parsing operators of the
+            // same precedence. Keeping the binding power the same allows this.
             binding_power
         };
 

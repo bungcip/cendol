@@ -196,7 +196,7 @@ impl CompilerDriver {
         }
 
         // 5. Semantic analysis phase
-        let symbol_table = {
+        let mut symbol_table = {
             let mut analyzer = SemanticAnalyzer::new(&mut ast, &mut self.diagnostics);
             let _semantic_output = analyzer.analyze();
             // Analyzer is dropped here, releasing the borrow on diagnostics
@@ -208,6 +208,17 @@ impl CompilerDriver {
         };
 
         // Check for semantic analysis errors and stop if any
+        if self.diagnostics.has_errors() {
+            return Err(CompilerError::CompilationFailed);
+        }
+
+        // 5.5. Semantic lowering phase - transform declarations to concrete types
+        {
+            use crate::semantic::lower::run_semantic_lowering;
+            run_semantic_lowering(&mut ast, &mut self.diagnostics, &mut symbol_table);
+        }
+
+        // Check for semantic lowering errors and stop if any
         if self.diagnostics.has_errors() {
             return Err(CompilerError::CompilationFailed);
         }

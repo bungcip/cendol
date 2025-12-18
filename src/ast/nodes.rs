@@ -84,6 +84,12 @@ pub enum NodeKind {
     EnumConstant(Symbol, Option<NodeRef> /* value expr */),
     StaticAssert(NodeRef /* condition */, Symbol /* message */),
 
+    // --- Semantic Nodes (Type-Resolved) ---
+    VarDecl(VarDeclData),
+    FunctionDecl(FunctionDeclData),
+    TypedefDecl(TypedefDeclData),
+    RecordDecl(RecordDeclData),
+
     // --- Top Level ---
     TranslationUnit(Vec<NodeRef> /* top-level declarations */),
 
@@ -134,6 +140,37 @@ pub struct FunctionDefData {
     pub specifiers: ThinVec<DeclSpecifier>,
     pub declarator: Declarator,
     pub body: NodeRef, // A CompoundStatement
+}
+
+// Semantic node data structures (type-resolved)
+#[derive(Debug, Clone, Serialize)]
+pub struct VarDeclData {
+    pub name: Symbol,
+    pub ty: TypeRef,
+    pub storage: Option<StorageClass>,
+    pub init: Option<Initializer>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FunctionDeclData {
+    pub name: Symbol,
+    pub ty: TypeRef,
+    pub storage: Option<StorageClass>,
+    pub body: Option<NodeRef>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TypedefDeclData {
+    pub name: Symbol,
+    pub ty: TypeRef,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RecordDeclData {
+    pub name: Option<Symbol>,
+    pub ty: TypeRef,
+    pub members: Vec<VarDeclData>,
+    pub is_union: bool,
 }
 
 // Declaration specifiers and related types

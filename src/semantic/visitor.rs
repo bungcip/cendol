@@ -250,6 +250,19 @@ pub trait SemanticVisitor<'ast> {
 
     /// Visit a dummy node
     fn visit_dummy(&mut self, _span: SourceSpan, _context: &mut Self::Context) {}
+
+    /// Visit a variable declaration node
+    fn visit_var_decl(&mut self, _var_decl: &VarDeclData, _span: SourceSpan, _context: &mut Self::Context) {}
+
+    /// Visit a function declaration node
+    fn visit_function_decl(&mut self, _func_decl: &FunctionDeclData, _span: SourceSpan, _context: &mut Self::Context) {}
+
+    /// Visit a typedef declaration node
+    fn visit_typedef_decl(&mut self, _typedef_decl: &TypedefDeclData, _span: SourceSpan, _context: &mut Self::Context) {
+    }
+
+    /// Visit a record declaration node
+    fn visit_record_decl(&mut self, _record_decl: &RecordDeclData, _span: SourceSpan, _context: &mut Self::Context) {}
 }
 
 /// Helper function to dispatch a node to the appropriate visitor method
@@ -320,6 +333,11 @@ pub fn visit_node<'ast, V: SemanticVisitor<'ast>>(
         }
         NodeKind::TranslationUnit(declarations) => visitor.visit_translation_unit(declarations, node.span, context),
         NodeKind::Dummy => visitor.visit_dummy(node.span, context),
+        // Semantic nodes
+        NodeKind::VarDecl(var_decl) => visitor.visit_var_decl(var_decl, node.span, context),
+        NodeKind::FunctionDecl(func_decl) => visitor.visit_function_decl(func_decl, node.span, context),
+        NodeKind::TypedefDecl(typedef_decl) => visitor.visit_typedef_decl(typedef_decl, node.span, context),
+        NodeKind::RecordDecl(record_decl) => visitor.visit_record_decl(record_decl, node.span, context),
     }
 }
 

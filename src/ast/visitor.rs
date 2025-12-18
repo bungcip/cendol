@@ -172,6 +172,13 @@ pub trait AstVisitor<'ast> {
     ) {
     }
 
+    // --- Semantic Nodes ---
+    fn visit_var_decl(&mut self, _var_decl: &VarDeclData, _span: SourceSpan, _context: &mut Self::Context) {}
+    fn visit_function_decl(&mut self, _func_decl: &FunctionDeclData, _span: SourceSpan, _context: &mut Self::Context) {}
+    fn visit_typedef_decl(&mut self, _typedef_decl: &TypedefDeclData, _span: SourceSpan, _context: &mut Self::Context) {
+    }
+    fn visit_record_decl(&mut self, _record_decl: &RecordDeclData, _span: SourceSpan, _context: &mut Self::Context) {}
+
     // --- Top Level ---
     fn visit_translation_unit(&mut self, _declarations: &[NodeRef], _span: SourceSpan, _context: &mut Self::Context) {}
 
@@ -272,6 +279,11 @@ pub fn visit_node<'ast, V: AstVisitor<'ast>>(
         }
         NodeKind::TranslationUnit(declarations) => visitor.visit_translation_unit(declarations, node.span, context),
         NodeKind::Dummy => visitor.visit_dummy(node.span, context),
+        // Semantic nodes
+        NodeKind::VarDecl(var_decl) => visitor.visit_var_decl(var_decl, node.span, context),
+        NodeKind::FunctionDecl(func_decl) => visitor.visit_function_decl(func_decl, node.span, context),
+        NodeKind::TypedefDecl(typedef_decl) => visitor.visit_typedef_decl(typedef_decl, node.span, context),
+        NodeKind::RecordDecl(record_decl) => visitor.visit_record_decl(record_decl, node.span, context),
     }
 }
 
@@ -594,6 +606,11 @@ pub fn walk_ast<'ast, V: AstVisitor<'ast>>(
         | NodeKind::Continue
         | NodeKind::Goto(_)
         | NodeKind::EmptyStatement
-        | NodeKind::Dummy => {}
+        | NodeKind::Dummy
+        // Semantic nodes - no children to walk
+        | NodeKind::VarDecl(_)
+        | NodeKind::FunctionDecl(_)
+        | NodeKind::TypedefDecl(_)
+        | NodeKind::RecordDecl(_) => {}
     }
 }

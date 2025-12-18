@@ -803,6 +803,11 @@ impl<'src> AstDumper<'src> {
             NodeKind::EnumConstant(_, _) => "EnumConstant".to_string(),
             NodeKind::StaticAssert(_, _) => "StaticAssert".to_string(),
             NodeKind::Dummy => "Dummy".to_string(),
+            // Semantic nodes
+            NodeKind::VarDecl(_) => "VarDecl".to_string(),
+            NodeKind::FunctionDecl(_) => "FunctionDecl".to_string(),
+            NodeKind::TypedefDecl(_) => "TypedefDecl".to_string(),
+            NodeKind::RecordDecl(_) => "RecordDecl".to_string(),
         }
     }
 
@@ -1850,6 +1855,10 @@ impl<'src> AstDumper<'src> {
             NodeKind::ExpressionStatement(Some(_)) => true,
             NodeKind::EnumConstant(_, Some(_)) => true,
             NodeKind::StaticAssert(_, _) => true,
+            // Semantic nodes - no children
+            NodeKind::VarDecl(_) | NodeKind::FunctionDecl(_) | NodeKind::TypedefDecl(_) | NodeKind::RecordDecl(_) => {
+                false
+            }
             _ => false,
         }
     }

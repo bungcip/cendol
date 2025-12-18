@@ -1,14 +1,15 @@
 //! Semantic analysis module.
-// //!
-// //! This module provides comprehensive semantic analysis for C11 code, including:
-// //! - Symbol collection and scope management
-// //! - Name resolution
-// //! - Type checking
-// //! - Semantic validation
-// //!
-// //! The analysis is performed in distinct phases using the visitor pattern
-// //! for clean separation of concerns and maintainable code.
+//!
+//! This module provides comprehensive semantic analysis for C11 code, including:
+//! - Symbol collection and scope management
+//! - Name resolution
+//! - Type checking
+//! - Semantic validation
+//!
+//! The analysis is performed in distinct phases using the visitor pattern
+//! for clean separation of concerns and maintainable code.
 
+pub mod lower;
 pub mod name_resolver;
 pub mod symbol_table;
 pub mod type_checker;
@@ -16,6 +17,7 @@ pub mod utils;
 pub mod visitor;
 
 // Re-export key types for public API
+pub use lower::{DeclSpecInfo, LowerCtx};
 pub use name_resolver::NameResolver;
 pub use symbol_table::{Scope, ScopeId, ScopeKind, SymbolTable};
 pub use type_checker::{TypeChecker, TypeResolver};
@@ -60,10 +62,10 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
         // Phase 2: Resolve names
         self.resolve_names();
 
-        // Phase 3: Resolve types (set resolved_type on AST nodes)
+        // Phase 4: Resolve types (set resolved_type on AST nodes)
         self.resolve_types();
 
-        // Phase 4: Type checking
+        // Phase 5: Type checking
         self.check_types();
 
         // Return diagnostics

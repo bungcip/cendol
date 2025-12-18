@@ -274,6 +274,10 @@ pub mod ast_iterators {
                     | NodeKind::ExpressionStatement(_)
                     | NodeKind::EmptyStatement
                     | NodeKind::EnumConstant(_, _)
+                    | NodeKind::VarDecl(_)
+                    | NodeKind::FunctionDecl(_)
+                    | NodeKind::TypedefDecl(_)
+                    | NodeKind::RecordDecl(_)
                     | NodeKind::Dummy => {}
                 }
 

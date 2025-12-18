@@ -270,6 +270,33 @@ impl OutputHandler {
             NodeKind::StaticAssert(cond, msg) => {
                 println!("StaticAssert(condition={}, message={})", cond.get(), msg)
             }
+            NodeKind::VarDecl(var_decl) => {
+                println!(
+                    "VarDecl(name={}, ty={}, storage={:?})",
+                    var_decl.name,
+                    var_decl.ty.get(),
+                    var_decl.storage
+                )
+            }
+            NodeKind::FunctionDecl(func_decl) => {
+                println!(
+                    "FunctionDecl(name={}, ty={}, storage={:?})",
+                    func_decl.name,
+                    func_decl.ty.get(),
+                    func_decl.storage
+                )
+            }
+            NodeKind::TypedefDecl(typedef_decl) => {
+                println!("TypedefDecl(name={}, ty={})", typedef_decl.name, typedef_decl.ty.get())
+            }
+            NodeKind::RecordDecl(record_decl) => {
+                println!(
+                    "RecordDecl(name={:?}, ty={}, is_union={})",
+                    record_decl.name,
+                    record_decl.ty.get(),
+                    record_decl.is_union
+                )
+            }
             NodeKind::Dummy => println!("DUMMY"),
         }
     }

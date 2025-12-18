@@ -107,6 +107,16 @@ impl DiagnosticEngine {
                 (format!("Invalid operand: {}", operation), location)
             }
             SemanticError::NotLValue { operation, location } => (operation.to_string(), location),
+
+            // Semantic lowering errors
+            SemanticError::DuplicateStorageClass => {
+                ("Duplicate storage class specifier".to_string(), SourceSpan::empty())
+            }
+            SemanticError::IllegalTypedefStorage => {
+                ("Illegal storage class with typedef".to_string(), SourceSpan::empty())
+            }
+            SemanticError::MissingBaseType => ("Missing base type in declaration".to_string(), SourceSpan::empty()),
+            SemanticError::InvalidTypeCombination => ("Invalid type combination".to_string(), SourceSpan::empty()),
         };
         let diag = Diagnostic {
             level: DiagnosticLevel::Error,
@@ -241,6 +251,16 @@ pub enum SemanticError {
     InvalidOperand { operation: String, location: SourceSpan },
     #[error("Not lvalue: {operation}")]
     NotLValue { operation: String, location: SourceSpan },
+
+    // Semantic lowering errors
+    #[error("Duplicate storage class specifier")]
+    DuplicateStorageClass,
+    #[error("Illegal storage class with typedef")]
+    IllegalTypedefStorage,
+    #[error("Missing base type in declaration")]
+    MissingBaseType,
+    #[error("Invalid type combination")]
+    InvalidTypeCombination,
 }
 
 /// Semantic warnings

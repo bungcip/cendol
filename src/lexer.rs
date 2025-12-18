@@ -419,18 +419,36 @@ impl<'src> Lexer<'src> {
 
     /// Strip integer literal suffix (u, l, ll, ul, ull, etc.)
     fn strip_integer_suffix(text: &str) -> &str {
-        let lower_text = text.to_lowercase();
+        // Performance: Use case-insensitive comparison to avoid heap allocation from `to_lowercase()`.
+        // C11 integer suffixes are case-insensitive (e.g., U, l, LL).
+        // Check for longest suffixes first for correctness.
+        let len = text.len();
 
-        // Check for suffixes in order of length (longest first)
-        if lower_text.ends_with("ull") || lower_text.ends_with("llu") {
-            &text[..text.len() - 3]
-        } else if lower_text.ends_with("ul") || lower_text.ends_with("lu") || lower_text.ends_with("ll") {
-            &text[..text.len() - 2]
-        } else if lower_text.ends_with('u') || lower_text.ends_with('l') {
-            &text[..text.len() - 1]
-        } else {
-            text
+        if len >= 3 {
+            let suffix = &text[len - 3..];
+            if suffix.eq_ignore_ascii_case("ull") || suffix.eq_ignore_ascii_case("llu") {
+                return &text[..len - 3];
+            }
         }
+
+        if len >= 2 {
+            let suffix = &text[len - 2..];
+            if suffix.eq_ignore_ascii_case("ul")
+                || suffix.eq_ignore_ascii_case("lu")
+                || suffix.eq_ignore_ascii_case("ll")
+            {
+                return &text[..len - 2];
+            }
+        }
+
+        if len >= 1 {
+            let suffix = &text[len - 1..];
+            if suffix.eq_ignore_ascii_case("u") || suffix.eq_ignore_ascii_case("l") {
+                return &text[..len - 1];
+            }
+        }
+
+        text
     }
 
     /// Parse integer value from digits and base

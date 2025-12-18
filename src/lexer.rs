@@ -546,16 +546,14 @@ impl<'src> Lexer<'src> {
                             consumed_pptoken.location.offset() + consumed_pptoken.length as u32,
                         );
 
-                        content.push_str(
-                            &Self::extract_string_content(&next_symbol_pp).unwrap_or_default(),
-                        );
+                        content.push_str(&Self::extract_string_content(&next_symbol_pp).unwrap_or_default());
                     } else {
                         // Not a string literal, stop concatenation
                         break;
                     }
                 }
 
-                token.kind = TokenKind::StringLiteral(Symbol::new(&format!("\"{}\"", content)));
+                token.kind = TokenKind::StringLiteral(Symbol::new(format!("\"{}\"", content)));
                 token.location.end = end_location;
             }
 
@@ -700,7 +698,6 @@ impl<'src> Lexer<'src> {
 
         Ok(result)
     }
-
 
     /// Extract content from a string literal symbol, removing quotes
     fn extract_string_content(symbol: &Symbol) -> Option<String> {

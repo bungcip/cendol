@@ -183,14 +183,14 @@ pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, 
                 // Named struct type with declarators: struct tag declarator1, declarator2;
                 // OR forward declaration: struct tag;
                 let type_specifier = TypeSpecifier::Record(is_union, tag, None);
-                
+
                 let specifiers = thin_vec![DeclSpecifier::TypeSpecifier(type_specifier)];
 
                 // Check if there are declarators following
                 if parser.is_token(TokenKind::Semicolon) {
                     // Just a forward declaration: struct tag;
                     parser.expect(TokenKind::Semicolon)?;
-                    
+
                     Ok(DeclarationData {
                         specifiers,
                         init_declarators: ThinVec::new(),

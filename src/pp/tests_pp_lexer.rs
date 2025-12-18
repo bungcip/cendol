@@ -37,13 +37,13 @@ world
 world\"
 ";
     let mut lexer = create_test_pp_lexer(source);
-    test_tokens!(lexer, 
+    test_tokens!(
+        lexer,
         ("hello", PPTokenKind::Identifier(_)),
         ("helloworld", PPTokenKind::Identifier(_)),
         ("123456", PPTokenKind::Number(_)),
         ("\"helloworld\"", PPTokenKind::StringLiteral(_)),
     );
-
 
     // Line splicing with whitespace
     let source = "hel  \\
@@ -51,11 +51,11 @@ world\"
     let mut lexer = create_test_pp_lexer(source);
     test_tokens!(lexer, ("hel", PPTokenKind::Identifier(_)));
 
-
     // No line splicing (regular newline)
     let source = "hello\nworld";
     let mut lexer = create_test_pp_lexer(source);
-    test_tokens!(lexer, 
+    test_tokens!(
+        lexer,
         ("hello", PPTokenKind::Identifier(_)),
         ("world", PPTokenKind::Identifier(_)),
     );
@@ -64,7 +64,6 @@ world\"
     let source = "test\\";
     let mut lexer = create_test_pp_lexer(source);
     test_tokens!(lexer, ("test", PPTokenKind::Identifier(_)));
-
 
     // Line splicing with CRLF
     let source = "hel\\\r\nlo";
@@ -100,7 +99,6 @@ b";
     assert_eq!(lexer.peek_char(), Some(b'b'));
     assert_eq!(lexer.position, 1);
 }
-
 
 /// Test that PPLexer can produce all punctuation tokens
 #[test]
@@ -264,7 +262,6 @@ fn test_hashhash_no_starts_pp_line() {
     assert!(!token.flags.contains(PPTokenFlags::STARTS_PP_LINE));
 }
 
-
 /// Test wide character literals with L, u, U prefixes
 #[test]
 fn test_wide_character_literals() {
@@ -286,7 +283,8 @@ fn test_wide_string_literals() {
     let source = "L\"hello\" u\"world\" U\"test\"";
     let mut lexer = create_test_pp_lexer(source);
 
-    test_tokens!(lexer,
+    test_tokens!(
+        lexer,
         ("L\"hello\"", PPTokenKind::StringLiteral(_)),
         ("u\"world\"", PPTokenKind::StringLiteral(_)),
         ("U\"test\"", PPTokenKind::StringLiteral(_)),
@@ -302,8 +300,9 @@ fn test_eod_token_production() {
     // Test simple directive
     let source = "#define x 1\n";
     let mut lexer = create_test_pp_lexer(source);
-    
-    test_tokens!(lexer,
+
+    test_tokens!(
+        lexer,
         ("#", PPTokenKind::Hash),
         ("define", PPTokenKind::Identifier(_)),
         ("x", PPTokenKind::Identifier(_)),
@@ -311,7 +310,6 @@ fn test_eod_token_production() {
         ("", PPTokenKind::Eod),
     );
 }
-
 
 /// Test that Eod tokens are produced for various directive types
 #[test]
@@ -337,9 +335,18 @@ fn test_eod_for_various_directives() {
 
         // Should have at least Hash token and Eod token
         assert!(tokens.len() >= 2, "Should have tokens for directive: {}", directive);
-        assert_eq!(tokens[0].kind, PPTokenKind::Hash, "First token should be Hash for: {}", directive);
-        assert_eq!(tokens.last().unwrap().kind, PPTokenKind::Eod,
-                   "Should end with Eod for directive: {}", directive);
+        assert_eq!(
+            tokens[0].kind,
+            PPTokenKind::Hash,
+            "First token should be Hash for: {}",
+            directive
+        );
+        assert_eq!(
+            tokens.last().unwrap().kind,
+            PPTokenKind::Eod,
+            "Should end with Eod for directive: {}",
+            directive
+        );
     }
 }
 
@@ -350,7 +357,8 @@ fn test_eod_at_eof_in_directive() {
     let source = "#define x 1";
     let mut lexer = create_test_pp_lexer(source);
 
-    test_tokens!(lexer,
+    test_tokens!(
+        lexer,
         ("#", PPTokenKind::Hash),
         ("define", PPTokenKind::Identifier(_)),
         ("x", PPTokenKind::Identifier(_)),
@@ -406,8 +414,11 @@ fn test_special_characters_in_strings() {
         // Mixed quotes and special chars
         (r#"L"café's \"test\" \\value""#, r#"L"café's \"test\" \\value""#),
         // String with newlines (line splicing) - should splice the newline
-        (r#"L"hello\
-world""#, r#"L"helloworld""#),
+        (
+            r#"L"hello\
+world""#,
+            r#"L"helloworld""#,
+        ),
         // String with all types of quotes
         (r#"""#, r#"""#),
         (r#"L"""#, r#"L"""#),

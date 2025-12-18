@@ -279,7 +279,7 @@ fn parse_designation(parser: &mut Parser) -> Result<Vec<Designator>, ParseError>
         } else if parser.accept(TokenKind::LeftBracket).is_some() {
             // Check if this is a range designator (contains ellipsis)
             let start_expr = parser.parse_expr_min()?;
-            
+
             // Check for ellipsis token indicating range syntax
             if parser.accept(TokenKind::Ellipsis).is_some() {
                 let end_expr = parser.parse_expr_min()?;

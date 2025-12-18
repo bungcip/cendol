@@ -383,10 +383,7 @@ fn parse_ternary(parser: &mut Parser, condition: NodeRef, true_expr: NodeRef) ->
 }
 
 /// Parse GNU statement expression: ({ compound-statement })
-pub(crate) fn parse_gnu_statement_expression(
-    parser: &mut Parser,
-    start_loc: SourceLoc,
-) -> Result<NodeRef, ParseError> {
+pub(crate) fn parse_gnu_statement_expression(parser: &mut Parser, start_loc: SourceLoc) -> Result<NodeRef, ParseError> {
     debug!("parse_gnu_statement_expression: parsing GNU statement expression");
 
     // Parse the compound statement (parse_compound_statement expects LeftBrace)
@@ -408,10 +405,7 @@ pub(crate) fn parse_gnu_statement_expression(
 }
 
 /// Extract the last expression from a compound statement for GNU statement expressions
-fn extract_last_expression_from_compound_statement(
-    parser: &mut Parser,
-    compound_stmt_node_ref: NodeRef,
-) -> NodeRef {
+fn extract_last_expression_from_compound_statement(parser: &mut Parser, compound_stmt_node_ref: NodeRef) -> NodeRef {
     // Get the compound statement node
     let compound_stmt_node = parser.ast.get_node(compound_stmt_node_ref);
 
@@ -653,7 +647,7 @@ pub fn parse_sizeof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 pub fn parse_alignof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.expect(TokenKind::Alignof)?;
     let start_loc = token.location.start;
-    
+
     parser.expect(TokenKind::LeftParen)?;
 
     let type_ref = super::declaration_core::parse_type_name(parser)?;

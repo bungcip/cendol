@@ -1,11 +1,11 @@
 use crate::ast::*;
 use crate::diagnostic::DiagnosticEngine;
+use crate::lang_options::LangOptions;
 use crate::lexer::{Lexer, Token};
 use crate::parser::Parser;
 use crate::pp::{PPConfig, Preprocessor};
 use crate::semantic::SemanticAnalyzer;
 use crate::source_manager::SourceManager;
-use crate::lang_options::LangOptions;
 use target_lexicon::Triple;
 
 /// Helper function to run semantic analysis on source code
@@ -64,11 +64,15 @@ int main() {
 
     // Check that we have a type error
     let has_type_error = output.diagnostics.iter().any(|diag| {
-        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
-        diag.message.contains("Invalid operands to binary +")
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error)
+            && diag.message.contains("Invalid operands to binary +")
     });
 
-    assert!(has_type_error, "Expected type error for pointer + pointer, but none found. Diagnostics: {:?}", output.diagnostics);
+    assert!(
+        has_type_error,
+        "Expected type error for pointer + pointer, but none found. Diagnostics: {:?}",
+        output.diagnostics
+    );
 }
 
 #[test]
@@ -87,11 +91,14 @@ int main() {
 
     // Check that we don't have type errors
     let has_type_error = output.diagnostics.iter().any(|diag| {
-        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
-        diag.message.contains("Invalid operands")
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) && diag.message.contains("Invalid operands")
     });
 
-    assert!(!has_type_error, "Unexpected type error for int + int. Diagnostics: {:?}", output.diagnostics);
+    assert!(
+        !has_type_error,
+        "Unexpected type error for int + int. Diagnostics: {:?}",
+        output.diagnostics
+    );
 }
 
 #[test]
@@ -112,11 +119,17 @@ int main() {
 
     // Check that we have a type error
     let has_type_error = output.diagnostics.iter().any(|diag| {
-        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
-        diag.message.contains("Invalid operands to binary -: incompatible pointer types")
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error)
+            && diag
+                .message
+                .contains("Invalid operands to binary -: incompatible pointer types")
     });
 
-    assert!(has_type_error, "Expected type error for incompatible pointer subtraction, but none found. Diagnostics: {:?}", output.diagnostics);
+    assert!(
+        has_type_error,
+        "Expected type error for incompatible pointer subtraction, but none found. Diagnostics: {:?}",
+        output.diagnostics
+    );
 }
 
 #[test]
@@ -137,11 +150,15 @@ int main() {
 
     // Check that we don't have type errors
     let has_type_error = output.diagnostics.iter().any(|diag| {
-        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
-        diag.message.contains("Invalid operands to binary -")
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error)
+            && diag.message.contains("Invalid operands to binary -")
     });
 
-    assert!(!has_type_error, "Unexpected type error for compatible pointer subtraction. Diagnostics: {:?}", output.diagnostics);
+    assert!(
+        !has_type_error,
+        "Unexpected type error for compatible pointer subtraction. Diagnostics: {:?}",
+        output.diagnostics
+    );
 }
 
 #[test]
@@ -156,11 +173,15 @@ int x = p; // This should be an error
 
     // Check that we have a type error
     let has_type_error = output.diagnostics.iter().any(|diag| {
-        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
-        diag.message.contains("incompatible pointer to integer conversion")
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error)
+            && diag.message.contains("incompatible pointer to integer conversion")
     });
 
-    assert!(has_type_error, "Expected type error for void* to int initialization, but none found. Diagnostics: {:?}", output.diagnostics);
+    assert!(
+        has_type_error,
+        "Expected type error for void* to int initialization, but none found. Diagnostics: {:?}",
+        output.diagnostics
+    );
 }
 
 #[test]
@@ -174,11 +195,15 @@ int x = 5; // This should be OK
 
     // Check that we don't have type errors
     let has_type_error = output.diagnostics.iter().any(|diag| {
-        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
-        diag.message.contains("incompatible pointer to integer conversion")
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error)
+            && diag.message.contains("incompatible pointer to integer conversion")
     });
 
-    assert!(!has_type_error, "Unexpected type error for int initialization. Diagnostics: {:?}", output.diagnostics);
+    assert!(
+        !has_type_error,
+        "Unexpected type error for int initialization. Diagnostics: {:?}",
+        output.diagnostics
+    );
 }
 
 #[test]
@@ -196,11 +221,15 @@ int main() {
 
     // Check that we have an error for dereferencing non-pointer
     let has_deref_error = output.diagnostics.iter().any(|diag| {
-        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
-        diag.message.contains("Invalid operand: dereferencing non-pointer type")
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error)
+            && diag.message.contains("Invalid operand: dereferencing non-pointer type")
     });
 
-    assert!(has_deref_error, "Expected error for dereferencing non-pointer int, but none found. Diagnostics: {:?}", output.diagnostics);
+    assert!(
+        has_deref_error,
+        "Expected error for dereferencing non-pointer int, but none found. Diagnostics: {:?}",
+        output.diagnostics
+    );
 }
 
 #[test]
@@ -219,11 +248,15 @@ int main() {
 
     // Check that we don't have any errors for valid pointer dereference
     let has_deref_error = output.diagnostics.iter().any(|diag| {
-        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
-        diag.message.contains("Invalid operand: dereferencing")
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error)
+            && diag.message.contains("Invalid operand: dereferencing")
     });
 
-    assert!(!has_deref_error, "Unexpected error for valid pointer dereference. Diagnostics: {:?}", output.diagnostics);
+    assert!(
+        !has_deref_error,
+        "Unexpected error for valid pointer dereference. Diagnostics: {:?}",
+        output.diagnostics
+    );
 }
 
 #[test]
@@ -241,11 +274,15 @@ int main() {
 
     // Check that we have an error for dereferencing non-pointer float
     let has_deref_error = output.diagnostics.iter().any(|diag| {
-        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
-        diag.message.contains("Invalid operand: dereferencing non-pointer type")
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error)
+            && diag.message.contains("Invalid operand: dereferencing non-pointer type")
     });
 
-    assert!(has_deref_error, "Expected error for dereferencing non-pointer float, but none found. Diagnostics: {:?}", output.diagnostics);
+    assert!(
+        has_deref_error,
+        "Expected error for dereferencing non-pointer float, but none found. Diagnostics: {:?}",
+        output.diagnostics
+    );
 }
 
 #[test]
@@ -263,11 +300,15 @@ int main() {
 
     // Check that we have an error for dereferencing non-pointer char
     let has_deref_error = output.diagnostics.iter().any(|diag| {
-        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
-        diag.message.contains("Invalid operand: dereferencing non-pointer type")
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error)
+            && diag.message.contains("Invalid operand: dereferencing non-pointer type")
     });
 
-    assert!(has_deref_error, "Expected error for dereferencing non-pointer char, but none found. Diagnostics: {:?}", output.diagnostics);
+    assert!(
+        has_deref_error,
+        "Expected error for dereferencing non-pointer char, but none found. Diagnostics: {:?}",
+        output.diagnostics
+    );
 }
 
 #[test]
@@ -290,11 +331,15 @@ int main() {
 
     // Check that we have an error for dereferencing non-pointer struct
     let has_deref_error = output.diagnostics.iter().any(|diag| {
-        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
-        diag.message.contains("Invalid operand: dereferencing non-pointer type")
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error)
+            && diag.message.contains("Invalid operand: dereferencing non-pointer type")
     });
 
-    assert!(has_deref_error, "Expected error for dereferencing non-pointer struct, but none found. Diagnostics: {:?}", output.diagnostics);
+    assert!(
+        has_deref_error,
+        "Expected error for dereferencing non-pointer struct, but none found. Diagnostics: {:?}",
+        output.diagnostics
+    );
 }
 
 #[test]
@@ -330,11 +375,15 @@ int main() {
 
     // Check that we have an error for taking address of rvalue
     let has_addr_error = output.diagnostics.iter().any(|diag| {
-        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
-        diag.message.contains("cannot take address of rvalue")
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error)
+            && diag.message.contains("cannot take address of rvalue")
     });
 
-    assert!(has_addr_error, "Expected error for taking address of literal, but none found. Diagnostics: {:?}", output.diagnostics);
+    assert!(
+        has_addr_error,
+        "Expected error for taking address of literal, but none found. Diagnostics: {:?}",
+        output.diagnostics
+    );
 }
 
 #[test]
@@ -353,11 +402,15 @@ int main() {
 
     // Check that we have an error for taking address of rvalue
     let has_addr_error = output.diagnostics.iter().any(|diag| {
-        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
-        diag.message.contains("cannot take address of rvalue")
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error)
+            && diag.message.contains("cannot take address of rvalue")
     });
 
-    assert!(has_addr_error, "Expected error for taking address of arithmetic expression, but none found. Diagnostics: {:?}", output.diagnostics);
+    assert!(
+        has_addr_error,
+        "Expected error for taking address of arithmetic expression, but none found. Diagnostics: {:?}",
+        output.diagnostics
+    );
 }
 
 #[test]
@@ -378,11 +431,15 @@ int main() {
 
     // Check that we have an error for taking address of rvalue
     let has_addr_error = output.diagnostics.iter().any(|diag| {
-        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
-        diag.message.contains("cannot take address of rvalue")
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error)
+            && diag.message.contains("cannot take address of rvalue")
     });
 
-    assert!(has_addr_error, "Expected error for taking address of function call, but none found. Diagnostics: {:?}", output.diagnostics);
+    assert!(
+        has_addr_error,
+        "Expected error for taking address of function call, but none found. Diagnostics: {:?}",
+        output.diagnostics
+    );
 }
 
 #[test]
@@ -400,11 +457,15 @@ int main() {
 
     // Check that we have an error for taking address of rvalue
     let has_addr_error = output.diagnostics.iter().any(|diag| {
-        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
-        diag.message.contains("cannot take address of rvalue")
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error)
+            && diag.message.contains("cannot take address of rvalue")
     });
 
-    assert!(has_addr_error, "Expected error for taking address of cast expression, but none found. Diagnostics: {:?}", output.diagnostics);
+    assert!(
+        has_addr_error,
+        "Expected error for taking address of cast expression, but none found. Diagnostics: {:?}",
+        output.diagnostics
+    );
 }
 
 #[test]
@@ -422,12 +483,15 @@ int main() {
 
     // Check that we don't have errors for valid address-of operation
     let has_addr_error = output.diagnostics.iter().any(|diag| {
-        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
-        (diag.message.contains("cannot take address of rvalue") ||
-         diag.message.contains("Invalid operand"))
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error)
+            && (diag.message.contains("cannot take address of rvalue") || diag.message.contains("Invalid operand"))
     });
 
-    assert!(!has_addr_error, "Unexpected error for valid address-of variable. Diagnostics: {:?}", output.diagnostics);
+    assert!(
+        !has_addr_error,
+        "Unexpected error for valid address-of variable. Diagnostics: {:?}",
+        output.diagnostics
+    );
 }
 
 #[test]
@@ -446,12 +510,15 @@ int main() {
 
     // Check that we don't have errors for valid address-of dereference
     let has_addr_error = output.diagnostics.iter().any(|diag| {
-        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
-        (diag.message.contains("cannot take address of rvalue") ||
-         diag.message.contains("Invalid operand"))
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error)
+            && (diag.message.contains("cannot take address of rvalue") || diag.message.contains("Invalid operand"))
     });
 
-    assert!(!has_addr_error, "Unexpected error for valid address-of dereference. Diagnostics: {:?}", output.diagnostics);
+    assert!(
+        !has_addr_error,
+        "Unexpected error for valid address-of dereference. Diagnostics: {:?}",
+        output.diagnostics
+    );
 }
 
 #[test]
@@ -469,12 +536,15 @@ int main() {
 
     // Check that we don't have errors for valid address-of array element
     let has_addr_error = output.diagnostics.iter().any(|diag| {
-        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
-        (diag.message.contains("cannot take address of rvalue") ||
-         diag.message.contains("Invalid operand"))
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error)
+            && (diag.message.contains("cannot take address of rvalue") || diag.message.contains("Invalid operand"))
     });
 
-    assert!(!has_addr_error, "Unexpected error for valid address-of array element. Diagnostics: {:?}", output.diagnostics);
+    assert!(
+        !has_addr_error,
+        "Unexpected error for valid address-of array element. Diagnostics: {:?}",
+        output.diagnostics
+    );
 }
 
 #[test]
@@ -497,12 +567,15 @@ int main() {
 
     // Check that we don't have errors for valid address-of struct member
     let has_addr_error = output.diagnostics.iter().any(|diag| {
-        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
-        (diag.message.contains("cannot take address of rvalue") ||
-         diag.message.contains("Invalid operand"))
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error)
+            && (diag.message.contains("cannot take address of rvalue") || diag.message.contains("Invalid operand"))
     });
 
-    assert!(!has_addr_error, "Unexpected error for valid address-of struct member. Diagnostics: {:?}", output.diagnostics);
+    assert!(
+        !has_addr_error,
+        "Unexpected error for valid address-of struct member. Diagnostics: {:?}",
+        output.diagnostics
+    );
 }
 
 #[test]
@@ -526,10 +599,13 @@ int main() {
 
     // Check that we don't have errors for valid address-of pointer to struct
     let has_addr_error = output.diagnostics.iter().any(|diag| {
-        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error) &&
-        (diag.message.contains("cannot take address of rvalue") ||
-         diag.message.contains("Invalid operand"))
+        matches!(diag.level, crate::diagnostic::DiagnosticLevel::Error)
+            && (diag.message.contains("cannot take address of rvalue") || diag.message.contains("Invalid operand"))
     });
 
-    assert!(!has_addr_error, "Unexpected error for valid address-of pointer to struct. Diagnostics: {:?}", output.diagnostics);
+    assert!(
+        !has_addr_error,
+        "Unexpected error for valid address-of pointer to struct. Diagnostics: {:?}",
+        output.diagnostics
+    );
 }

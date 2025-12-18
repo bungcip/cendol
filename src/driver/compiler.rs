@@ -7,6 +7,7 @@
 use std::path::Path;
 
 use crate::ast::Ast;
+use crate::codegen::CodeGenerator;
 use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::LangOptions;
 use crate::lexer::Lexer;
@@ -14,7 +15,6 @@ use crate::parser::Parser;
 use crate::pp::Preprocessor;
 use crate::semantic::{SemanticAnalyzer, SymbolTable};
 use crate::source_manager::SourceManager;
-use crate::codegen::CodeGenerator;
 use target_lexicon::Triple;
 
 use super::cli::CompileConfig;
@@ -49,12 +49,12 @@ impl CompilerDriver {
         // Process each input file
         for input_file in self.config.input_files.clone() {
             let (ast, _symbol_table) = self.compile_file(&input_file)?;
-            if let Some(output_path) = &self.config.output_path {
-                if !self.config.dump_ast {
-                    let codegen = CodeGenerator::new(&ast);
-                    let object_file = codegen.compile().unwrap();
-                    std::fs::write(output_path, object_file).unwrap();
-                }
+            if let Some(output_path) = &self.config.output_path
+                && !self.config.dump_ast
+            {
+                let codegen = CodeGenerator::new(&ast);
+                let object_file = codegen.compile().unwrap();
+                std::fs::write(output_path, object_file).unwrap();
             }
         }
 

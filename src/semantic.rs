@@ -523,7 +523,10 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
                         return self.ast.push_type(ty);
                     }
                     TypeSpecifier::Long => {
-                        let ty = Type::new(TypeKind::Long { is_signed: true, is_long_long: false });
+                        let ty = Type::new(TypeKind::Long {
+                            is_signed: true,
+                            is_long_long: false,
+                        });
                         return self.ast.push_type(ty);
                     }
                     TypeSpecifier::Float => {
@@ -570,7 +573,6 @@ impl<'arena, 'src> SemanticAnalyzer<'arena, 'src> {
             _ => base_type_ref,
         }
     }
-
 
     fn collect_enum_constants_from_declaration(&mut self, decl: &DeclarationData, span: SourceSpan) {
         for specifier in &decl.specifiers {

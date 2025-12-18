@@ -57,6 +57,7 @@ mod tests {
     #[test]
     fn test_c11_keywords() {
         // Test all C11 keywords including C11-specific ones
+        #[rustfmt::skip]
         let keywords = vec![
             "auto", "break", "case", "char", "const", "continue", "default", "do",
             "double", "else", "enum", "extern", "float", "for", "goto", "if",
@@ -227,7 +228,12 @@ mod tests {
             let symbol = Symbol::new(ident);
             let token_kinds = lex_string_to_token_kind(ident);
             assert_eq!(token_kinds.len(), 1, "Expected 1 token for identifier: {}", ident);
-            assert_eq!(token_kinds[0], TokenKind::Identifier(symbol), "Failed for identifier: {}", ident);
+            assert_eq!(
+                token_kinds[0],
+                TokenKind::Identifier(symbol),
+                "Failed for identifier: {}",
+                ident
+            );
         }
     }
 
@@ -249,13 +255,21 @@ mod tests {
 
         for (input, expected_content) in test_cases {
             let token_kinds = lex_string_to_token_kind(input);
-            assert_eq!(token_kinds.len(), 1, "Expected 1 token for concatenated string: {}", input);
+            assert_eq!(
+                token_kinds.len(),
+                1,
+                "Expected 1 token for concatenated string: {}",
+                input
+            );
 
             match &token_kinds[0] {
                 TokenKind::StringLiteral(symbol) => {
                     let actual_content = symbol.as_str();
-                    assert_eq!(actual_content, expected_content,
-                        "String concatenation failed for input: {}", input);
+                    assert_eq!(
+                        actual_content, expected_content,
+                        "String concatenation failed for input: {}",
+                        input
+                    );
                 }
                 _ => panic!("Expected StringLiteral token for input: {}", input),
             }
@@ -264,9 +278,15 @@ mod tests {
         // Test that non-adjacent strings are not concatenated
         let token_kinds = lex_string_to_token_kind("\"hello\" ; \"world\"");
         assert_eq!(token_kinds.len(), 3, "Expected 3 tokens for non-adjacent strings");
-        assert!(matches!(token_kinds[0], TokenKind::StringLiteral(_)), "First token should be string literal");
+        assert!(
+            matches!(token_kinds[0], TokenKind::StringLiteral(_)),
+            "First token should be string literal"
+        );
         assert_eq!(token_kinds[1], TokenKind::Semicolon, "Second token should be semicolon");
-        assert!(matches!(token_kinds[2], TokenKind::StringLiteral(_)), "Third token should be string literal");
+        assert!(
+            matches!(token_kinds[2], TokenKind::StringLiteral(_)),
+            "Third token should be string literal"
+        );
     }
 
     #[test]
@@ -274,11 +294,19 @@ mod tests {
         // EndOfFile - empty string should produce EndOfFile when included
         let token_kinds = lex_string_to_token_kind_with_eof("", true);
         assert_eq!(token_kinds.len(), 1, "Expected 1 token for empty string");
-        assert_eq!(token_kinds[0], TokenKind::EndOfFile, "Empty string should produce EndOfFile");
+        assert_eq!(
+            token_kinds[0],
+            TokenKind::EndOfFile,
+            "Empty string should produce EndOfFile"
+        );
 
         // Unknown - unrecognized character should produce Unknown
         let token_kinds = lex_string_to_token_kind("@");
         assert_eq!(token_kinds.len(), 1, "Expected 1 token for unknown character");
-        assert_eq!(token_kinds[0], TokenKind::Unknown, "Unrecognized character should produce Unknown");
+        assert_eq!(
+            token_kinds[0],
+            TokenKind::Unknown,
+            "Unrecognized character should produce Unknown"
+        );
     }
 }

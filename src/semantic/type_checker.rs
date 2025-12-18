@@ -8,10 +8,10 @@ use std::cell::Cell;
 
 use crate::ast::*;
 use crate::diagnostic::DiagnosticEngine;
+use crate::diagnostic::SemanticError;
 use crate::semantic::symbol_table::{ScopeId, SymbolTable};
 use crate::semantic::utils::extract_function_info;
 use crate::semantic::visitor::{SemanticVisitor, visit_node};
-use crate::diagnostic::SemanticError;
 
 /// Context for type checking
 pub struct TypeCheckContext<'a> {
@@ -287,12 +287,15 @@ impl<'ast> SemanticVisitor<'ast> for TypeChecker {
                 // Check dereferencing operations - must be pointer type
                 if let Some(expr_type) = self.get_node_type(expr, context) {
                     let expr_type_info = context.ast.get_type(expr_type);
-                    
+
                     // Check if the expression is a pointer type
                     if !expr_type_info.is_pointer() {
                         // This is an error - trying to dereference a non-pointer type
                         context.diag.report_error(SemanticError::InvalidOperand {
-                            operation: format!("dereferencing non-pointer type '{}'", Self::format_type_name(expr_type_info)),
+                            operation: format!(
+                                "dereferencing non-pointer type '{}'",
+                                Self::format_type_name(expr_type_info)
+                            ),
                             location: span,
                         });
                     }
@@ -308,7 +311,7 @@ impl<'ast> SemanticVisitor<'ast> for TypeChecker {
                     });
                 } else if let Some(expr_type) = self.get_node_type(expr, context) {
                     let expr_type_info = context.ast.get_type(expr_type);
-                    
+
                     // Additional check: cannot take address of arrays (they decay to pointers automatically)
                     if expr_type_info.is_array() {
                         context.diag.report_error(SemanticError::InvalidOperand {
@@ -323,7 +326,7 @@ impl<'ast> SemanticVisitor<'ast> for TypeChecker {
             _ => {
                 if let Some(expr_type) = self.get_node_type(expr, context) {
                     let expr_type_info = context.ast.get_type(expr_type);
-                    
+
                     // Check if the operand is a scalar type for arithmetic/logical operations
                     if !expr_type_info.is_scalar() {
                         context.diag.report_error(SemanticError::InvalidOperand {
@@ -368,7 +371,7 @@ impl TypeChecker {
             UnaryOp::AddrOf => "&",
         }
     }
-    
+
     /// Format type name for error messages
     fn format_type_name(ty: &Type) -> String {
         match &ty.kind {
@@ -377,7 +380,10 @@ impl TypeChecker {
             TypeKind::Char { is_signed } => if *is_signed { "signed char" } else { "unsigned char" }.to_string(),
             TypeKind::Short { is_signed } => if *is_signed { "short" } else { "unsigned short" }.to_string(),
             TypeKind::Int { is_signed } => if *is_signed { "int" } else { "unsigned int" }.to_string(),
-            TypeKind::Long { is_signed, is_long_long } => {
+            TypeKind::Long {
+                is_signed,
+                is_long_long,
+            } => {
                 if *is_long_long {
                     if *is_signed { "long long" } else { "unsigned long long" }.to_string()
                 } else {
@@ -414,7 +420,7 @@ impl TypeChecker {
     /// Check if an expression is an lvalue according to C11 6.3.2.1
     fn is_lvalue(&self, expr: NodeRef, context: &TypeCheckContext) -> bool {
         let node = context.ast.get_node(expr);
-        
+
         match &node.kind {
             // Identifiers are lvalues if they refer to objects
             NodeKind::Ident(_, resolved_symbol) => {
@@ -428,19 +434,19 @@ impl TypeChecker {
                     false
                 }
             }
-            
+
             // Array subscript expressions are lvalues
             NodeKind::IndexAccess(_, _) => true,
-            
+
             // Member access expressions are lvalues
             NodeKind::MemberAccess(_, _, _) => true,
-            
+
             // Unary * expressions are lvalues (dereferencing gives an lvalue)
             NodeKind::UnaryOp(UnaryOp::Deref, _) => true,
-            
+
             // Parenthesized expressions preserve lvalue-ness
             // Note: We don't have a specific Paren expression, so this doesn't apply directly
-            
+
             // All other expressions are not lvalues
             _ => false,
         }

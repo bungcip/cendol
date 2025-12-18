@@ -214,7 +214,10 @@ impl<'a> Interpreter<'a> {
         let mut left = self.parse_shift()?;
         while self.pos < self.tokens.len() {
             let op = &self.tokens[self.pos].kind;
-            if matches!(op, PPTokenKind::Less | PPTokenKind::LessEqual | PPTokenKind::Greater | PPTokenKind::GreaterEqual) {
+            if matches!(
+                op,
+                PPTokenKind::Less | PPTokenKind::LessEqual | PPTokenKind::Greater | PPTokenKind::GreaterEqual
+            ) {
                 self.pos += 1;
                 let right = self.parse_shift()?;
                 let bin_op = match op {
@@ -300,7 +303,8 @@ impl<'a> Interpreter<'a> {
         let token = &self.tokens[self.pos];
         if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == self.preprocessor.defined_symbol()) {
             self.pos += 1;
-            let ident = if self.pos < self.tokens.len() && matches!(self.tokens[self.pos].kind, PPTokenKind::LeftParen) {
+            let ident = if self.pos < self.tokens.len() && matches!(self.tokens[self.pos].kind, PPTokenKind::LeftParen)
+            {
                 self.pos += 1;
                 let ident = self.parse_primary()?;
                 if self.pos < self.tokens.len() && matches!(self.tokens[self.pos].kind, PPTokenKind::RightParen) {
@@ -313,7 +317,10 @@ impl<'a> Interpreter<'a> {
                 self.parse_primary()?
             };
             Ok(PPExpr::Defined(Box::new(ident)))
-        } else if matches!(token.kind, PPTokenKind::Plus | PPTokenKind::Minus | PPTokenKind::Tilde | PPTokenKind::Not) {
+        } else if matches!(
+            token.kind,
+            PPTokenKind::Plus | PPTokenKind::Minus | PPTokenKind::Tilde | PPTokenKind::Not
+        ) {
             self.pos += 1;
             let operand = self.parse_unary()?;
             let unary_op = match token.kind {

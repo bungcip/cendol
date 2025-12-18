@@ -1055,15 +1055,12 @@ impl<'src> Preprocessor<'src> {
 
         // Try to canonicalize, fall back to the given path if it fails.
         // This handles both non-existent files and in-memory buffers.
-        let comparable_path_for_new_include =
-            path_to_check.canonicalize().unwrap_or_else(|_| path_to_check.clone());
+        let comparable_path_for_new_include = path_to_check.canonicalize().unwrap_or_else(|_| path_to_check.clone());
 
         if self.include_stack.iter().any(|info| {
             if let Some(file_info) = self.source_manager.get_file_info(info.file_id) {
                 let existing_path = &file_info.path;
-                let comparable_existing_path = existing_path
-                    .canonicalize()
-                    .unwrap_or_else(|_| existing_path.clone());
+                let comparable_existing_path = existing_path.canonicalize().unwrap_or_else(|_| existing_path.clone());
 
                 comparable_existing_path == comparable_path_for_new_include
             } else {
@@ -1950,7 +1947,7 @@ impl<'src> Preprocessor<'src> {
     fn expand_tokens(&mut self, tokens: &mut Vec<PPToken>) -> Result<(), PPError> {
         let mut i = 0;
         let max_expansions = 10000; // Safety limit to prevent infinite recursion
-        
+
         while i < tokens.len() {
             let token = &tokens[i];
             if let PPTokenKind::Identifier(symbol) = &token.kind
@@ -2040,13 +2037,13 @@ impl<'src> Preprocessor<'src> {
                     }
                     // Substitute
                     let substituted = self.substitute_macro(&macro_info, &args)?;
-                    
+
                     // Safety check for excessive expansions
                     let expansion_count = substituted.len();
                     if expansion_count > max_expansions {
                         return Err(PPError::MacroRecursion);
                     }
-                    
+
                     // Replace i..end_j+1 with substituted
                     tokens.splice(i..end_j + 1, substituted);
                     // Mark as used
@@ -2073,7 +2070,7 @@ impl<'src> Preprocessor<'src> {
             }
             i += 1;
         }
-        
+
         Ok(())
     }
 }

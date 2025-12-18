@@ -89,8 +89,10 @@ impl DiagnosticEngine {
                 location,
             ),
             SemanticError::IncompleteType { name, location } => (format!("Incomplete type '{}'", name), location),
-            SemanticError::InvalidOperand { operation, location } => (format!("Invalid operand: {}", operation), location),
-            SemanticError::NotLValue { operation, location } => (format!("{}", operation), location),
+            SemanticError::InvalidOperand { operation, location } => {
+                (format!("Invalid operand: {}", operation), location)
+            }
+            SemanticError::NotLValue { operation, location } => (operation.to_string(), location),
         };
         let diag = Diagnostic {
             level: DiagnosticLevel::Error,
@@ -147,9 +149,7 @@ impl DiagnosticEngine {
                 ),
                 location,
             ),
-            ParseError::UnexpectedEof { location } => {
-                ("Unexpected End of File".to_string(), location)
-            }
+            ParseError::UnexpectedEof { location } => ("Unexpected End of File".to_string(), location),
             ParseError::SyntaxError { message, location } => (message, location),
             ParseError::InvalidIntegerConstant { text, location } => {
                 (format!("Invalid integer constant: {}", text), location)

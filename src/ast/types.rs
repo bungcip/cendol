@@ -47,35 +47,36 @@ impl Type {
 
     /// Check if this is an arithmetic type
     pub fn is_arithmetic(&self) -> bool {
-        matches!(self.kind,
-            TypeKind::Bool |
-            TypeKind::Char { .. } |
-            TypeKind::Short { .. } |
-            TypeKind::Int { .. } |
-            TypeKind::Long { .. } |
-            TypeKind::Float |
-            TypeKind::Double { .. } |
-            TypeKind::Complex { .. }
+        matches!(
+            self.kind,
+            TypeKind::Bool
+                | TypeKind::Char { .. }
+                | TypeKind::Short { .. }
+                | TypeKind::Int { .. }
+                | TypeKind::Long { .. }
+                | TypeKind::Float
+                | TypeKind::Double { .. }
+                | TypeKind::Complex { .. }
         )
     }
 
     /// Check if this is an integer type
     pub fn is_integer(&self) -> bool {
-        matches!(self.kind,
-            TypeKind::Bool |
-            TypeKind::Char { .. } |
-            TypeKind::Short { .. } |
-            TypeKind::Int { .. } |
-            TypeKind::Long { .. }
+        matches!(
+            self.kind,
+            TypeKind::Bool
+                | TypeKind::Char { .. }
+                | TypeKind::Short { .. }
+                | TypeKind::Int { .. }
+                | TypeKind::Long { .. }
         )
     }
 
     /// Check if this is a floating point type
     pub fn is_floating(&self) -> bool {
-        matches!(self.kind,
-            TypeKind::Float |
-            TypeKind::Double { .. } |
-            TypeKind::Complex { .. }
+        matches!(
+            self.kind,
+            TypeKind::Float | TypeKind::Double { .. } | TypeKind::Complex { .. }
         )
     }
 
@@ -112,16 +113,36 @@ impl Type {
 pub enum TypeKind {
     Void,
     Bool,
-    Char { is_signed: bool },
-    Short { is_signed: bool },
-    Int { is_signed: bool },
-    Long { is_signed: bool, is_long_long: bool },
+    Char {
+        is_signed: bool,
+    },
+    Short {
+        is_signed: bool,
+    },
+    Int {
+        is_signed: bool,
+    },
+    Long {
+        is_signed: bool,
+        is_long_long: bool,
+    },
     Float,
-    Double { is_long_double: bool },
-    Complex { base_type: TypeRef }, // C11 _Complex
-    Atomic { base_type: TypeRef }, // C11 _Atomic
-    Pointer { pointee: TypeRef },
-    Array { element_type: TypeRef, size: ArraySizeType },
+    Double {
+        is_long_double: bool,
+    },
+    Complex {
+        base_type: TypeRef,
+    }, // C11 _Complex
+    Atomic {
+        base_type: TypeRef,
+    }, // C11 _Atomic
+    Pointer {
+        pointee: TypeRef,
+    },
+    Array {
+        element_type: TypeRef,
+        size: ArraySizeType,
+    },
     Function {
         return_type: TypeRef,
         parameters: Vec<FunctionParameter>,
@@ -194,7 +215,6 @@ pub mod utils {
     pub fn type_alignment(ty: &Type) -> Option<u16> {
         ty.alignment
     }
-
 
     /// Create a pointer type to the given type
     pub fn make_pointer_type(pointee: TypeRef, qualifiers: TypeQualifiers) -> Type {

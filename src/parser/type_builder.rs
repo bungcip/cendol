@@ -75,8 +75,7 @@ fn apply_declarator_to_type(
             let param_types = params
                 .iter()
                 .map(|p| {
-                    let type_ref =
-                        build_type_from_specifiers(parser, &p.specifiers, p.declarator.as_ref())?;
+                    let type_ref = build_type_from_specifiers(parser, &p.specifiers, p.declarator.as_ref())?;
                     Ok(FunctionParameter {
                         param_type: type_ref,
                         name: p.declarator.as_ref().and_then(|d| parser.get_declarator_name(d)),
@@ -122,7 +121,6 @@ fn resolve_array_size(parser: &mut Parser, size: &ArraySize) -> ArraySizeType {
     }
 }
 
-
 /// Convert a list of declaration specifiers into a base type kind and qualifiers.
 fn specifiers_to_type_kind(specifiers: &ThinVec<DeclSpecifier>) -> (TypeKind, TypeQualifiers) {
     let mut qualifiers = TypeQualifiers::empty();
@@ -137,11 +135,7 @@ fn specifiers_to_type_kind(specifiers: &ThinVec<DeclSpecifier>) -> (TypeKind, Ty
                 TypeSpecifier::Char => base_type = Some(TypeKind::Char { is_signed: true }),
                 TypeSpecifier::Int => base_type = Some(TypeKind::Int { is_signed: true }),
                 TypeSpecifier::Float => base_type = Some(TypeKind::Float),
-                TypeSpecifier::Double => {
-                    base_type = Some(TypeKind::Double {
-                        is_long_double: false,
-                    })
-                }
+                TypeSpecifier::Double => base_type = Some(TypeKind::Double { is_long_double: false }),
                 TypeSpecifier::Bool => base_type = Some(TypeKind::Bool),
                 TypeSpecifier::Long => long_count += 1,
                 TypeSpecifier::Short => base_type = Some(TypeKind::Short { is_signed: true }),
@@ -182,9 +176,7 @@ fn specifiers_to_type_kind(specifiers: &ThinVec<DeclSpecifier>) -> (TypeKind, Ty
         }
         TypeKind::Double { .. } => {
             if long_count > 0 {
-                TypeKind::Double {
-                    is_long_double: true,
-                }
+                TypeKind::Double { is_long_double: true }
             } else {
                 base_type
             }

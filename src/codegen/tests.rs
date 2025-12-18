@@ -5,8 +5,7 @@ use crate::driver::cli::CompileConfig;
 #[test]
 fn test_compile_to_object_file() {
     let source = "int main() { return 2; }";
-    let mut compiler =
-        CompilerDriver::from_config(CompileConfig::from_source_code(source.to_string()));
+    let mut compiler = CompilerDriver::from_config(CompileConfig::from_source_code(source.to_string()));
     let ast = compiler.compile_to_ast().unwrap();
     let codegen = CodeGenerator::new(&ast);
     let object_file = codegen.compile().unwrap();

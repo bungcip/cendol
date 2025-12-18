@@ -27,7 +27,10 @@ pub enum NodeKind {
     UnaryOp(UnaryOp, NodeRef),
     BinaryOp(BinaryOp, NodeRef, NodeRef),
     TernaryOp(NodeRef, NodeRef, NodeRef),
-    GnuStatementExpression(NodeRef /* compound statement */, NodeRef /* result expression */),
+    GnuStatementExpression(
+        NodeRef, /* compound statement */
+        NodeRef, /* result expression */
+    ),
 
     PostIncrement(NodeRef),
     PostDecrement(NodeRef),
@@ -320,7 +323,7 @@ pub struct DesignatedInitializer {
 #[derive(Debug, Clone, Serialize)]
 pub enum Designator {
     FieldName(Symbol),
-    ArrayIndex(NodeRef), // Index expression
+    ArrayIndex(NodeRef),             // Index expression
     GnuArrayRange(NodeRef, NodeRef), // GCC extension: Range expression [start ... end]
 }
 

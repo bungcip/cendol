@@ -211,7 +211,12 @@ impl NameResolver {
     }
 
     /// Walk initializer recursively
-    fn walk_initializer<'a>(&mut self, ast: &'a Ast, initializer: &Initializer, context: &mut NameResolutionContext<'a>) {
+    fn walk_initializer<'a>(
+        &mut self,
+        ast: &'a Ast,
+        initializer: &Initializer,
+        context: &mut NameResolutionContext<'a>,
+    ) {
         match initializer {
             Initializer::Expression(expr_node) => {
                 self.walk_ast(ast, *expr_node, context);

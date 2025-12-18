@@ -9,7 +9,11 @@ fn setup() {
     let _ = env_logger::builder().is_test(true).try_init();
 }
 
-fn run_compiler_and_dump_ast(input_path: &str, output_path: &str, dump_ast: bool) -> Result<(String, CompilerDriver), String> {
+fn run_compiler_and_dump_ast(
+    input_path: &str,
+    output_path: &str,
+    dump_ast: bool,
+) -> Result<(String, CompilerDriver), String> {
     setup();
 
     let cli_args = if dump_ast {

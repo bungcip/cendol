@@ -2,10 +2,10 @@
 //!
 //! This module is responsible for translating the AST into machine code.
 
-use crate::ast::{Ast, Declarator, Node, NodeKind, BinaryOp};
+use crate::ast::{Ast, BinaryOp, Declarator, Node, NodeKind};
 use cranelift::prelude::*;
-use cranelift_object::{ObjectBuilder, ObjectModule};
 use cranelift_module::Module;
+use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::collections::HashMap;
 use target_lexicon::Triple;
 
@@ -20,7 +20,12 @@ impl<'a> CodeGenerator<'a> {
     pub fn new(ast: &'a Ast) -> Self {
         let triple = Triple::host();
         let builder = ObjectBuilder::new(
-            cranelift::prelude::isa::lookup(triple).unwrap().finish(cranelift::prelude::settings::Flags::new(cranelift::prelude::settings::builder())).unwrap(),
+            cranelift::prelude::isa::lookup(triple)
+                .unwrap()
+                .finish(cranelift::prelude::settings::Flags::new(
+                    cranelift::prelude::settings::builder(),
+                ))
+                .unwrap(),
             "main",
             cranelift_module::default_libcall_names(),
         )
@@ -62,27 +67,26 @@ impl<'a> CodeGenerator<'a> {
     fn gen_function(&mut self, node: &Node) {
         if let NodeKind::FunctionDef(data) = &node.kind {
             let declarator = &data.declarator;
-            if let Declarator::Function(direct_declarator, ..) = declarator {
-                if let Declarator::Identifier(_name, ..) = &**direct_declarator {
-                    let int = self.module.target_config().pointer_type();
-                    self.ctx.func.signature.params.clear();
-                    self.ctx.func.signature.returns.push(AbiParam::new(int));
-                    let mut builder =
-                        FunctionBuilder::new(&mut self.ctx.func, &mut self.builder_context);
-                    let entry_block = builder.create_block();
-                    builder.switch_to_block(entry_block);
-                    builder.seal_block(entry_block);
-                    let mut vars = HashMap::new();
-                    let mut func_translator = FunctionTranslator {
-                        builder,
-                        module: &mut self.module,
-                        vars: &mut vars,
-                        ast: self.ast,
-                    };
-                    let body = self.ast.get_node(data.body);
-                    func_translator.gen_statement(body);
-                    func_translator.builder.finalize();
-                }
+            if let Declarator::Function(direct_declarator, ..) = declarator
+                && let Declarator::Identifier(_name, ..) = &**direct_declarator
+            {
+                let int = self.module.target_config().pointer_type();
+                self.ctx.func.signature.params.clear();
+                self.ctx.func.signature.returns.push(AbiParam::new(int));
+                let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.builder_context);
+                let entry_block = builder.create_block();
+                builder.switch_to_block(entry_block);
+                builder.seal_block(entry_block);
+                let mut vars = HashMap::new();
+                let mut func_translator = FunctionTranslator {
+                    builder,
+                    module: &mut self.module,
+                    vars: &mut vars,
+                    ast: self.ast,
+                };
+                let body = self.ast.get_node(data.body);
+                func_translator.gen_statement(body);
+                func_translator.builder.finalize();
             }
         }
     }
@@ -128,7 +132,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         match &node.kind {
             NodeKind::LiteralInt(val) => {
                 let int = self.module.target_config().pointer_type();
-                self.builder.ins().iconst(int, *val as i64)
+                self.builder.ins().iconst(int, *val)
             }
             NodeKind::BinaryOp(op, left, right) => {
                 let left = self.gen_expr(self.ast.get_node(*left));

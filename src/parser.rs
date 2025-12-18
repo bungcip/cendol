@@ -7,6 +7,7 @@
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, ParseError};
 use crate::lexer::{Token, TokenKind};
+use crate::semantic::symbol_table::SymbolTable;
 use crate::source_manager::{SourceLoc, SourceSpan};
 use log::debug;
 use std::collections::HashSet;
@@ -99,8 +100,8 @@ pub struct Parser<'arena, 'src> {
     // Type context for typedef tracking
     type_context: TypeContext,
 
-    // Scope stack for variable names to resolve typedef/variable ambiguity
-    variable_scope_stack: Vec<HashSet<Symbol>>,
+    // Symbol table for tracking variable scopes
+    symbol_table: SymbolTable,
 }
 
 impl<'arena, 'src> Parser<'arena, 'src> {
@@ -112,7 +113,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             ast,
             diag,
             type_context: TypeContext::new(),
-            variable_scope_stack: vec![HashSet::new()], // Global scope
+            symbol_table: SymbolTable::new(),
         }
     }
 
@@ -409,24 +410,23 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Enter a new scope
     pub fn enter_scope(&mut self) {
-        self.variable_scope_stack.push(HashSet::new());
+        self.symbol_table
+            .push_scope(crate::semantic::symbol_table::ScopeKind::Block);
     }
 
     /// Exit the current scope
     pub fn exit_scope(&mut self) {
-        self.variable_scope_stack.pop();
+        self.symbol_table.pop_scope();
     }
 
     /// Add a variable to the current scope
-    pub fn add_variable_to_current_scope(&mut self, symbol: Symbol) {
-        if let Some(scope) = self.variable_scope_stack.last_mut() {
-            scope.insert(symbol);
-        }
+    pub fn add_variable_to_current_scope(&mut self, symbol: Symbol, entry: SymbolEntry) {
+        self.symbol_table.add_symbol(symbol, entry);
     }
 
     /// Check if a symbol is a variable in the current or any parent scope
     pub fn is_variable_in_scope(&self, symbol: Symbol) -> bool {
-        self.variable_scope_stack.iter().any(|scope| scope.contains(&symbol))
+        self.symbol_table.lookup_symbol(symbol).is_some()
     }
 }
 

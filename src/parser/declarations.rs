@@ -23,16 +23,14 @@ fn get_function_params(declarator: &Declarator) -> Option<&ThinVec<ParamData>> {
     loop {
         match current {
             Declarator::Function(_, params) => return Some(params),
-            Declarator::Pointer(_, Some(inner)) |
-            Declarator::Array(inner, _) |
-            Declarator::BitField(inner, _) => {
+            Declarator::Pointer(_, Some(inner)) | Declarator::Array(inner, _) | Declarator::BitField(inner, _) => {
                 current = inner;
             }
             // These are terminal declarators that don't have parameters.
-            Declarator::Identifier(_, _, _) |
-            Declarator::AnonymousRecord(_, _) |
-            Declarator::Abstract |
-            Declarator::Pointer(_, None) => return None,
+            Declarator::Identifier(_, _, _)
+            | Declarator::AnonymousRecord(_, _)
+            | Declarator::Abstract
+            | Declarator::Pointer(_, None) => return None,
         }
     }
 }
@@ -243,7 +241,9 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let span = SourceSpan::new(start_loc, end_loc);
 
     // Track typedef and variable names for disambiguation
-    let is_typedef = specifiers.iter().any(|s| matches!(s, DeclSpecifier::StorageClass(StorageClass::Typedef)));
+    let is_typedef = specifiers
+        .iter()
+        .any(|s| matches!(s, DeclSpecifier::StorageClass(StorageClass::Typedef)));
     for init_declarator in &init_declarators {
         if let Some(name) = trx.parser.get_declarator_name(&init_declarator.declarator) {
             if is_typedef {
@@ -251,7 +251,24 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
                 trx.parser.add_typedef(name);
             } else {
                 debug!("Adding variable to current scope: {:?}", name);
-                trx.parser.add_variable_to_current_scope(name);
+                // Create a dummy SymbolEntry for now. The semantic analysis phase will create a real one.
+                let dummy_entry = SymbolEntry {
+                    name,
+                    kind: SymbolKind::Variable {
+                        is_global: false,
+                        is_static: false,
+                        is_extern: false,
+                        initializer: None,
+                    },
+                    type_info: TypeRef::new(1).unwrap(), // Dummy type
+                    storage_class: None,
+                    scope_id: 0, // Dummy scope
+                    definition_span: SourceSpan::empty(),
+                    is_defined: true,
+                    is_referenced: false,
+                    is_completed: true,
+                };
+                trx.parser.add_variable_to_current_scope(name, dummy_entry);
             }
         }
     }
@@ -288,7 +305,23 @@ pub fn parse_function_definition(parser: &mut Parser) -> Result<NodeRef, ParseEr
         for param in params {
             if let Some(declarator) = &param.declarator {
                 if let Some(name) = parser.get_declarator_name(declarator) {
-                    parser.add_variable_to_current_scope(name);
+                    let dummy_entry = SymbolEntry {
+                        name,
+                        kind: SymbolKind::Variable {
+                            is_global: false,
+                            is_static: false,
+                            is_extern: false,
+                            initializer: None,
+                        },
+                        type_info: TypeRef::new(1).unwrap(), // Dummy type
+                        storage_class: None,
+                        scope_id: 0, // Dummy scope
+                        definition_span: SourceSpan::empty(),
+                        is_defined: true,
+                        is_referenced: false,
+                        is_completed: true,
+                    };
+                    parser.add_variable_to_current_scope(name, dummy_entry);
                 }
             }
         }

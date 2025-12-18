@@ -517,16 +517,54 @@ impl<'src> Lexer<'src> {
     /// Get all tokens from the stream
     pub fn tokenize_all(&mut self) -> Vec<Token> {
         let mut tokens = Vec::new();
-        
-        while let Some(token) = self.next_token() {
+        let mut current_token_iter = self.tokens.iter().peekable();
+
+        while let Some(pptoken) = current_token_iter.next() {
+            // next_token logic inlined and adapted
+            let mut token = Token {
+                kind: self.classify_token(pptoken),
+                location: SourceSpan {
+                    start: pptoken.location,
+                    end: SourceLoc::new(
+                        pptoken.location.source_id(),
+                        pptoken.location.offset() + pptoken.length as u32,
+                    ),
+                },
+            };
+
+            if let TokenKind::StringLiteral(symbol) = token.kind {
+                let mut content = Self::extract_string_content(&symbol).unwrap_or_default();
+                let mut end_location = token.location.end;
+
+                while let Some(next_pptoken) = current_token_iter.peek() {
+                    if let PPTokenKind::StringLiteral(next_symbol_pp) = next_pptoken.kind {
+                        // Consume the string literal token from the iterator
+                        let consumed_pptoken = current_token_iter.next().unwrap();
+
+                        end_location = SourceLoc::new(
+                            consumed_pptoken.location.source_id(),
+                            consumed_pptoken.location.offset() + consumed_pptoken.length as u32,
+                        );
+
+                        content.push_str(
+                            &Self::extract_string_content(&next_symbol_pp).unwrap_or_default(),
+                        );
+                    } else {
+                        // Not a string literal, stop concatenation
+                        break;
+                    }
+                }
+
+                token.kind = TokenKind::StringLiteral(Symbol::new(&format!("\"{}\"", content)));
+                token.location.end = end_location;
+            }
+
+            let is_eof = matches!(token.kind, TokenKind::EndOfFile);
             tokens.push(token);
-            if matches!(token.kind, TokenKind::EndOfFile) {
+            if is_eof {
                 break;
             }
         }
-
-        // Perform string literal concatenation (C11 6.4.5)
-        tokens = self.concatenate_string_literals(tokens);
 
         tokens
     }
@@ -663,79 +701,6 @@ impl<'src> Lexer<'src> {
         Ok(result)
     }
 
-    /// Concatenate adjacent string literals (C11 6.4.5)
-    fn concatenate_string_literals(&self, tokens: Vec<Token>) -> Vec<Token> {
-        let mut result = Vec::new();
-        let mut i = 0;
-        let mut concatenation_count = 0;
-        let max_concatenations = 1000; // Safety limit to prevent infinite loops
-
-        while i < tokens.len() && concatenation_count < max_concatenations {
-            if let TokenKind::StringLiteral(_) = tokens[i].kind {
-                concatenation_count += 1;
-                
-                // Try to concatenate string literals starting from position i
-                let (concatenated_token, next_pos) = self.concatenate_from_position(&tokens, i);
-                
-                // Safety check: if position didn't advance, we've hit an infinite loop
-                if next_pos == i {
-                    result.push(tokens[i].clone());
-                    i += 1;
-                } else {
-                    result.push(concatenated_token);
-                    i = next_pos;
-                }
-            } else {
-                result.push(tokens[i]);
-                i += 1;
-            }
-        }
-        
-        // Copy remaining tokens if we hit the limit
-        if i < tokens.len() {
-            result.extend_from_slice(&tokens[i..]);
-        }
-
-        result
-    }
-
-    /// Concatenate string literals starting from a given position
-    fn concatenate_from_position(&self, tokens: &[Token], start_pos: usize) -> (Token, usize) {
-        let mut content = String::new();
-        let start_location = tokens[start_pos].location.start;
-        let mut end_location = tokens[start_pos].location.end;
-        let mut pos = start_pos;
-
-        // Collect all adjacent string literals
-        while pos < tokens.len() {
-            if let TokenKind::StringLiteral(symbol) = &tokens[pos].kind {
-                if let Some(extracted) = Self::extract_string_content(symbol) {
-                    content.push_str(&extracted);
-                    end_location = tokens[pos].location.end;
-                    pos += 1;
-                } else {
-                    // Invalid format, stop concatenation
-                    break;
-                }
-            } else {
-                // Not a string literal, stop concatenation
-                break;
-            }
-        }
-
-        // Create the concatenated token
-        let final_string = format!("\"{}\"", content);
-        let concatenated_symbol = Symbol::new(&final_string);
-        let token = Token {
-            kind: TokenKind::StringLiteral(concatenated_symbol),
-            location: SourceSpan {
-                start: start_location,
-                end: end_location,
-            },
-        };
-
-        (token, pos)
-    }
 
     /// Extract content from a string literal symbol, removing quotes
     fn extract_string_content(symbol: &Symbol) -> Option<String> {

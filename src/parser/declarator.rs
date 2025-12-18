@@ -88,13 +88,32 @@ pub fn parse_declarator(parser: &mut Parser, initial_declarator: Option<Symbol>)
     // Parse trailing array and function declarators
     let mut current_base = base_declarator;
     loop {
+        let current_token_span = parser.try_current_token().map_or(SourceSpan::empty(), |t| t.location);
         if parser.accept(TokenKind::LeftBracket).is_some() {
             // Array declarator
+            if let Declarator::Function(..) = &current_base {
+                return Err(ParseError::SyntaxError {
+                    message: "function returning an array is not allowed".to_string(),
+                    location: current_token_span,
+                });
+            }
             let array_size = parse_array_size(parser)?;
             parser.expect(TokenKind::RightBracket)?; // Consume ']'
             current_base = Declarator::Array(Box::new(current_base), array_size);
         } else if parser.accept(TokenKind::LeftParen).is_some() {
             // Function declarator
+            if let Declarator::Function(..) = &current_base {
+                return Err(ParseError::SyntaxError {
+                    message: "function returning a function is not allowed".to_string(),
+                    location: current_token_span,
+                });
+            }
+            if let Declarator::Array(..) = &current_base {
+                return Err(ParseError::SyntaxError {
+                    message: "array of functions is not allowed".to_string(),
+                    location: current_token_span,
+                });
+            }
             let parameters = parse_function_parameters(parser)?;
             debug!(
                 "parse_abstract_declarator: parsed function parameters, count: {}",
@@ -486,12 +505,31 @@ pub fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarator, Pars
     // Parse trailing array and function declarators
     let mut current_base = base_declarator;
     loop {
+        let current_token_span = parser.try_current_token().map_or(SourceSpan::empty(), |t| t.location);
         if parser.accept(TokenKind::LeftBracket).is_some() {
             // Array declarator
+            if let Declarator::Function(..) = &current_base {
+                return Err(ParseError::SyntaxError {
+                    message: "function returning an array is not allowed".to_string(),
+                    location: current_token_span,
+                });
+            }
             let array_size = parse_array_size(parser)?;
             parser.expect(TokenKind::RightBracket)?; // Consume ']'
             current_base = Declarator::Array(Box::new(current_base), array_size);
         } else if parser.accept(TokenKind::LeftParen).is_some() {
+            if let Declarator::Function(..) = &current_base {
+                return Err(ParseError::SyntaxError {
+                    message: "function returning a function is not allowed".to_string(),
+                    location: current_token_span,
+                });
+            }
+            if let Declarator::Array(..) = &current_base {
+                return Err(ParseError::SyntaxError {
+                    message: "array of functions is not allowed".to_string(),
+                    location: current_token_span,
+                });
+            }
             let parameters = parse_function_parameters(parser)?;
             debug!(
                 "parse_abstract_declarator: parsed function parameters, count: {}",

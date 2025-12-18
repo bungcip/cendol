@@ -452,31 +452,12 @@ fn parse_function_call(parser: &mut Parser, function: NodeRef) -> Result<NodeRef
 
 /// Parse array index access
 fn parse_index_access(parser: &mut Parser, array: NodeRef) -> Result<NodeRef, ParseError> {
-    debug!(
-        "parse_index_access: parsing array index, current token {:?}",
-        parser.current_token_kind()
-    );
+    debug!("parse_index_access: parsing array index");
 
-    // The LeftBracket was already consumed by parse_infix.
-    // Since the expression parsing loop stopped at the RightBracket,
-    // we need to handle the case where RightBracket is the current token.
-    // This means we have an empty index [].
+    // The `[` token has already been consumed by the caller (`parse_infix`).
+    // We are now at the start of the index expression.
+    let index_node = parser.parse_expr_min()?;
 
-    let index_node = if parser.is_token(TokenKind::RightBracket) {
-        debug!("parse_index_access: empty array index []");
-        // Create a placeholder for empty index
-        parser.push_node(NodeKind::Dummy, parser.current_token_span()?) // Use 0 as placeholder
-    } else {
-        // This should not happen in normal array access, but handle it just in case
-        debug!("parse_index_access: unexpected token in array access, trying to parse expression");
-        parser.parse_expr_min()?
-    };
-
-    // The RightBracket should now be the current token, consume it
-    debug!(
-        "parse_index_access: expecting RightBracket, current token is {:?}",
-        parser.current_token_kind()
-    );
     let right_bracket_token = parser.expect(TokenKind::RightBracket)?;
     debug!(
         "parse_index_access: parsed closing bracket, current token now {:?}",

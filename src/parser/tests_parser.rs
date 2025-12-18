@@ -1286,3 +1286,16 @@ fn test_chained_subtraction() {
       - Ident: c
     ");
 }
+
+#[test]
+fn test_array_indexing_with_expression() {
+    let resolved = setup_expr("a[b + c]");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    IndexAccess:
+      - Ident: a
+      - BinaryOp:
+          - Add
+          - Ident: b
+          - Ident: c
+    ");
+}

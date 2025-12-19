@@ -8,7 +8,6 @@ use crate::ast::*;
 use crate::diagnostic::ParseError;
 use crate::lexer::{Token, TokenKind};
 use crate::parser::declaration_core::parse_declaration_specifiers;
-use crate::parser::utils::ParserExt;
 use crate::source_manager::{SourceLoc, SourceSpan};
 use log::debug;
 use thin_vec::ThinVec;

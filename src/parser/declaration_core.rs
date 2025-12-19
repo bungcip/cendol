@@ -11,7 +11,6 @@ use log::debug;
 use thin_vec::ThinVec;
 
 use super::Parser;
-use super::utils::ParserExt;
 
 /// Parse declaration specifiers
 pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVec<DeclSpecifier>, ParseError> {

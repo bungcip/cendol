@@ -7,7 +7,6 @@ use crate::diagnostic::ParseError;
 use crate::lexer::TokenKind;
 
 use super::Parser;
-use super::utils::ParserExt;
 
 /// Parse enum specifier
 pub fn parse_enum_specifier(parser: &mut Parser) -> Result<TypeSpecifier, ParseError> {

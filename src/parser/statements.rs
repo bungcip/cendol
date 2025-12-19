@@ -4,7 +4,6 @@
 //! statements, compound statements, and expression statements.
 
 use super::Parser;
-use super::utils::ParserExt;
 use crate::ast::*;
 use crate::diagnostic::ParseError;
 use crate::lexer::TokenKind;

@@ -158,11 +158,13 @@ pub fn parse_expression(
             // The third operand is a `conditional-expression`, which has higher precedence.
             let false_expr = parser.parse_expr_conditional()?;
 
-            let span = SourceSpan::new(parser.ast.get_node(left).span.start, parser.ast.get_node(false_expr).span.end);
+            let span = SourceSpan::new(
+                parser.ast.get_node(left).span.start,
+                parser.ast.get_node(false_expr).span.end,
+            );
             left = parser.push_node(NodeKind::TernaryOp(left, true_expr, false_expr), span);
             continue;
         }
-
 
         // Handle associativity by adjusting the binding power for the next recursive call
         let next_min_bp = if associativity == Associativity::Left {

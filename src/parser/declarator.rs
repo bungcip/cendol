@@ -13,7 +13,6 @@ use symbol_table::GlobalSymbol as Symbol;
 use thin_vec::{ThinVec, thin_vec};
 
 use super::Parser;
-use super::utils::ParserExt;
 
 /// Helper enum for reconstructing complex declarators
 #[derive(Debug)]
@@ -22,11 +21,7 @@ enum DeclaratorComponent {
 }
 
 /// Validate declarator combinations
-fn validate_declarator_combination(
-    base: &Declarator,
-    new_kind: &str,
-    location: SourceSpan,
-) -> Result<(), ParseError> {
+fn validate_declarator_combination(base: &Declarator, new_kind: &str, location: SourceSpan) -> Result<(), ParseError> {
     match base {
         Declarator::Function(..) => {
             if new_kind == "array" {

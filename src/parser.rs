@@ -256,6 +256,42 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         parse_expression(self, min_binding_power)
     }
 
+    /// Private helper to parse an expression with a given binding power, ensuring it's not a declaration.
+    fn parse_expr_bp(&mut self, min_binding_power: BindingPower) -> Result<NodeRef, ParseError> {
+        match self.parse_expression(min_binding_power)? {
+            ParseExprOutput::Expression(node) => Ok(node),
+            ParseExprOutput::Declaration(_) => Err(ParseError::SyntaxError {
+                message: "Declaration not allowed in this context".to_string(),
+                location: self.current_token_span()?,
+            }),
+        }
+    }
+
+    /// Parse expression with minimum binding power
+    pub(crate) fn parse_expr_min(&mut self) -> Result<NodeRef, ParseError> {
+        self.parse_expr_bp(BindingPower::MIN)
+    }
+
+    /// Parse expression up to assignment
+    pub(crate) fn parse_expr_assignment(&mut self) -> Result<NodeRef, ParseError> {
+        self.parse_expr_bp(BindingPower::ASSIGNMENT)
+    }
+
+    /// Parse expression up to conditional
+    pub(crate) fn parse_expr_conditional(&mut self) -> Result<NodeRef, ParseError> {
+        self.parse_expr_bp(BindingPower::CONDITIONAL)
+    }
+
+    /// Parse expression up to unary
+    pub(crate) fn parse_expr_unary(&mut self) -> Result<NodeRef, ParseError> {
+        self.parse_expr_bp(BindingPower::UNARY)
+    }
+
+    /// Parse expression up to cast
+    pub(crate) fn parse_expr_cast(&mut self) -> Result<NodeRef, ParseError> {
+        self.parse_expr_bp(BindingPower::CAST)
+    }
+
     /// Parse a declaration
     pub fn parse_declaration(&mut self) -> Result<NodeRef, ParseError> {
         declarations::parse_declaration(self)

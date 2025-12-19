@@ -375,7 +375,7 @@ fn parse_infix(
 /// Parse ternary operator
 fn parse_ternary(parser: &mut Parser, condition: NodeRef, true_expr: NodeRef) -> Result<NodeRef, ParseError> {
     parser.expect(TokenKind::Colon)?;
-    let false_expr = parser.parse_expr_conditional()?;
+    let false_expr = parser.parse_expr_assignment()?;
 
     let span = SourceSpan::new(
         parser.ast.get_node(condition).span.start,

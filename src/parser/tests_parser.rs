@@ -1277,13 +1277,27 @@ fn test_chained_assignment() {
 fn test_ternary_with_assignment() {
     let resolved = setup_expr("a ? b : c = 1");
     insta::assert_yaml_snapshot!(&resolved, @r"
+    BinaryOp:
+      - Assign
+      - TernaryOp:
+          - Ident: a
+          - Ident: b
+          - Ident: c
+      - LiteralInt: 1
+    ");
+}
+
+#[test]
+fn test_ternary_with_assignment_in_middle_operand() {
+    let resolved = setup_expr("a ? b = 1 : c");
+    insta::assert_yaml_snapshot!(&resolved, @r"
     TernaryOp:
       - Ident: a
-      - Ident: b
       - BinaryOp:
           - Assign
-          - Ident: c
+          - Ident: b
           - LiteralInt: 1
+      - Ident: c
     ");
 }
 

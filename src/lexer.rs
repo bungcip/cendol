@@ -683,25 +683,28 @@ impl<'src> Lexer<'src> {
                 }
             }
 
-            // Parse exponent digits
-            let mut exp_str = String::new();
+            // Parse exponent digits safely without string allocation
+            let mut exp_val = 0i32;
+            let mut exp_digits = 0;
             while let Some(&c) = chars.peek() {
-                if c.is_ascii_digit() {
-                    exp_str.push(c);
+                if let Some(digit) = c.to_digit(10) {
+                    // Use checked arithmetic to prevent overflow, replicating .parse() behavior.
+                    exp_val = match exp_val.checked_mul(10).and_then(|v| v.checked_add(digit as i32)) {
+                        Some(val) => val,
+                        None => return Err(()), // Overflow
+                    };
+                    exp_digits += 1;
                     chars.next();
                 } else {
                     break;
                 }
             }
 
-            if exp_str.is_empty() {
+            if exp_digits == 0 {
                 return Err(());
             }
 
-            exponent = exp_str.parse().map_err(|_| ())?;
-            if exp_negative {
-                exponent = -exponent;
-            }
+            exponent = if exp_negative { -exp_val } else { exp_val };
         }
 
         // Apply fractional adjustment

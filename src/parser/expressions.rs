@@ -142,6 +142,28 @@ pub fn parse_expression(
             break;
         }
 
+        // The ternary operator is special and doesn't fit the binary operator model cleanly
+        // because its middle and third operands have different precedences. We handle it
+        // separately here instead of in `parse_infix`.
+        if current_token.kind == TokenKind::Question {
+            parser.advance(); // consume '?'
+
+            // The middle operand is an `expression`, which allows assignment.
+            // C11: logical-OR-expression ? expression : conditional-expression
+            // `expression` is `assignment-expression` or sequence with comma.
+            // Here we parse as assignment expression, which is a common interpretation.
+            let true_expr = parser.parse_expr_assignment()?;
+            parser.expect(TokenKind::Colon)?;
+
+            // The third operand is a `conditional-expression`, which has higher precedence.
+            let false_expr = parser.parse_expr_conditional()?;
+
+            let span = SourceSpan::new(parser.ast.get_node(left).span.start, parser.ast.get_node(false_expr).span.end);
+            left = parser.push_node(NodeKind::TernaryOp(left, true_expr, false_expr), span);
+            continue;
+        }
+
+
         // Handle associativity by adjusting the binding power for the next recursive call
         let next_min_bp = if associativity == Associativity::Left {
             // For left-associative operators, we want to stop parsing when we see another
@@ -350,7 +372,6 @@ fn parse_infix(
         TokenKind::LeftShiftAssign => BinaryOp::AssignLShift,
         TokenKind::RightShiftAssign => BinaryOp::AssignRShift,
         TokenKind::Comma => BinaryOp::Comma,
-        TokenKind::Question => return parse_ternary(parser, left, right_node),
         TokenKind::LeftParen => return parse_function_call(parser, left),
         TokenKind::LeftBracket => return parse_index_access(parser, left),
         TokenKind::Dot => return parse_member_access(parser, left, false),
@@ -369,20 +390,6 @@ fn parse_infix(
     );
 
     let node = parser.push_node(NodeKind::BinaryOp(op, left, right_node), span);
-    Ok(node)
-}
-
-/// Parse ternary operator
-fn parse_ternary(parser: &mut Parser, condition: NodeRef, true_expr: NodeRef) -> Result<NodeRef, ParseError> {
-    parser.expect(TokenKind::Colon)?;
-    let false_expr = parser.parse_expr_assignment()?;
-
-    let span = SourceSpan::new(
-        parser.ast.get_node(condition).span.start,
-        parser.ast.get_node(false_expr).span.end,
-    );
-
-    let node = parser.push_node(NodeKind::TernaryOp(condition, true_expr, false_expr), span);
     Ok(node)
 }
 

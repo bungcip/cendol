@@ -46,12 +46,10 @@ pub use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
 // Submodules
 pub mod nodes;
 pub mod types;
-pub mod visitor;
 
 // Re-export commonly used items for convenience
 pub use nodes::*;
 pub use types::*;
-pub use visitor::*;
 
 // Re-export operators that are used throughout the codebase
 pub use nodes::{BinaryOp, UnaryOp};

@@ -156,6 +156,7 @@ dependencies = [
  "chrono",
  "clap",
  "cranelift",
+ "cranelift-frontend",
  "cranelift-module",
  "cranelift-object",
  "env_logger",

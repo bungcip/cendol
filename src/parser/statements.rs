@@ -23,11 +23,20 @@ pub fn parse_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     })?;
 
     // Check for label: identifier :
+    debug!("parse_statement: token is {:?}, looking for label pattern", token.kind);
+
+    // Try to check if current token is identifier followed by colon
     if let TokenKind::Identifier(label_symbol) = token.kind
         && let Some(next_token) = parser.peek_token(0)
-        && next_token.kind == TokenKind::Colon
     {
-        return parse_label_statement(parser, label_symbol);
+        debug!(
+            "parse_statement: identifier '{}' followed by {:?}",
+            label_symbol, next_token.kind
+        );
+        if next_token.kind == TokenKind::Colon {
+            debug!("parse_statement: found label pattern, calling parse_label_statement");
+            return parse_label_statement(parser, label_symbol);
+        }
     }
 
     match token.kind {

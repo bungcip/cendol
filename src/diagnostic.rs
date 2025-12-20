@@ -21,11 +21,6 @@ pub struct Diagnostic {
     pub related: Vec<SourceSpan>, // Related locations
 }
 
-/// Semantic analysis result
-pub struct SemanticOutput {
-    pub diagnostics: Vec<Diagnostic>,
-}
-
 /// Parse errors
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
@@ -117,6 +112,65 @@ impl DiagnosticEngine {
             }
             SemanticError::MissingBaseType => ("Missing base type in declaration".to_string(), SourceSpan::empty()),
             SemanticError::InvalidTypeCombination => ("Invalid type combination".to_string(), SourceSpan::empty()),
+            SemanticError::InvalidFunctionDeclarator { location } => {
+                ("Invalid function declarator".to_string(), location)
+            }
+            SemanticError::InvalidDeclarator { location } => ("Invalid declarator".to_string(), location),
+            SemanticError::UnsupportedFeature { feature, location } => {
+                (format!("Unsupported feature: {}", feature), location)
+            }
+
+            // Binary operation errors
+            SemanticError::InvalidBinaryOperation { operation, location } => {
+                (format!("Invalid binary operation: {}", operation), location)
+            }
+            SemanticError::DivisionByZero { location } => ("Division by zero".to_string(), location),
+            SemanticError::ModuloByZero { location } => ("Modulo by zero".to_string(), location),
+            SemanticError::InvalidShiftAmount { location } => {
+                ("Left shift amount is negative or too large".to_string(), location)
+            }
+            SemanticError::InvalidLogicalOperands { location } => {
+                ("Invalid operands for logical operation".to_string(), location)
+            }
+            SemanticError::IncompleteTypeForBinaryOp { location } => (
+                "Cannot perform binary operation on incomplete types".to_string(),
+                location,
+            ),
+            SemanticError::InvalidTypeConversion {
+                from_type,
+                to_type,
+                location,
+            } => (
+                format!("Invalid type conversion: cannot convert {} to {}", from_type, to_type),
+                location,
+            ),
+            SemanticError::UnsupportedConversion {
+                left_type,
+                right_type,
+                location,
+            } => (
+                format!("Unsupported conversion between types {} and {}", left_type, right_type),
+                location,
+            ),
+            SemanticError::ConversionOverflow {
+                from_type,
+                to_type,
+                location,
+            } => (
+                format!("Integer overflow during conversion from {} to {}", from_type, to_type),
+                location,
+            ),
+            SemanticError::InvalidBinaryOperandTypes {
+                left_type,
+                right_type,
+                location,
+            } => (
+                format!(
+                    "Invalid operands for binary operation: {} and {}",
+                    left_type, right_type
+                ),
+                location,
+            ),
         };
         let diag = Diagnostic {
             level: DiagnosticLevel::Error,
@@ -261,6 +315,50 @@ pub enum SemanticError {
     MissingBaseType,
     #[error("Invalid type combination")]
     InvalidTypeCombination,
+    #[error("Invalid function declarator")]
+    InvalidFunctionDeclarator { location: SourceSpan },
+    #[error("Invalid declarator")]
+    InvalidDeclarator { location: SourceSpan },
+    #[error("Unsupported feature: {feature}")]
+    UnsupportedFeature { feature: String, location: SourceSpan },
+
+    // Binary operation errors
+    #[error("Invalid binary operation: {operation}")]
+    InvalidBinaryOperation { operation: String, location: SourceSpan },
+    #[error("Division by zero")]
+    DivisionByZero { location: SourceSpan },
+    #[error("Modulo by zero")]
+    ModuloByZero { location: SourceSpan },
+    #[error("Left shift amount is negative or too large")]
+    InvalidShiftAmount { location: SourceSpan },
+    #[error("Invalid operands for logical operation")]
+    InvalidLogicalOperands { location: SourceSpan },
+    #[error("Cannot perform binary operation on incomplete types")]
+    IncompleteTypeForBinaryOp { location: SourceSpan },
+    #[error("Invalid type conversion: cannot convert {from_type} to {to_type}")]
+    InvalidTypeConversion {
+        from_type: String,
+        to_type: String,
+        location: SourceSpan,
+    },
+    #[error("Unsupported conversion between types {left_type} and {right_type}")]
+    UnsupportedConversion {
+        left_type: String,
+        right_type: String,
+        location: SourceSpan,
+    },
+    #[error("Integer overflow during conversion from {from_type} to {to_type}")]
+    ConversionOverflow {
+        from_type: String,
+        to_type: String,
+        location: SourceSpan,
+    },
+    #[error("Invalid operands for binary operation: {left_type} and {right_type}")]
+    InvalidBinaryOperandTypes {
+        left_type: String,
+        right_type: String,
+        location: SourceSpan,
+    },
 }
 
 /// Semantic warnings

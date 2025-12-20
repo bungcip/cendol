@@ -1617,12 +1617,6 @@ impl<'src> AstDumper<'src> {
             _ => "-".to_string(),
         }
     }
-    /// Format source text for display, escaping HTML and handling newlines
-    #[allow(dead_code)]
-    fn format_source_text(&self, text: &str) -> String {
-        let escaped = self.escape_html(text);
-        escaped.replace("\n", "<br>").replace("\t", "&nbsp;&nbsp;&nbsp;&nbsp;")
-    }
 
     /// Apply syntax highlighting to source code using the lexer
     fn highlight_source_code(&mut self, text: &str, _span: SourceSpan) -> String {
@@ -1804,13 +1798,6 @@ impl<'src> AstDumper<'src> {
             TokenKind::Unknown => "c-unknown",
             TokenKind::EndOfFile => "",
         }
-    }
-
-    /// Get source text for a span, formatted for HTML display
-    #[allow(dead_code)]
-    fn get_formatted_source_text(&self, span: SourceSpan) -> String {
-        let source_text = self.source_manager.get_source_text(span);
-        self.format_source_text(source_text)
     }
 
     fn escape_html(&self, text: &str) -> String {

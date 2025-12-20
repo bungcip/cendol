@@ -19,6 +19,7 @@ symbol_table = { version = "0.5", features = ["global", "serde"] }
 cranelift = "0.126.1"
 cranelift-module = "0.126.1"
 cranelift-object = "0.126.1"
+cranelift-frontend = "0.126.1"
 annotate-snippets = "0.12"
 bitvec = "1.0"
 serde = { version = "1.0", features = ["derive"] }

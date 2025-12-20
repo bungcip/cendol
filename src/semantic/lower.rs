@@ -65,14 +65,28 @@ pub struct DeclSpecInfo {
 /// Returns a vector of semantic nodes (one for each declarator)
 pub fn lower_declaration(ctx: &mut LowerCtx, decl_node: NodeRef) -> Vec<NodeRef> {
     // Get the declaration data from the AST node
-    let decl_node_data = ctx.ast.get_node(decl_node);
-    let decl = match &decl_node_data.kind {
-        NodeKind::Declaration(d) => d.clone(),
-        _ => unreachable!("Expected Declaration node"),
+    let (declaration_span, decl) = {
+        let decl_node_data = ctx.ast.get_node(decl_node);
+        let span = decl_node_data.span;
+        let declaration_data = match &decl_node_data.kind {
+            NodeKind::Declaration(d) => d.clone(),
+            _ => unreachable!("Expected Declaration node"),
+        };
+        (span, declaration_data)
     };
 
+    // Handle declarations with 0 init_declarators (type definitions)
+    if decl.init_declarators.is_empty() {
+        let type_def_node = lower_type_definition(&decl.specifiers, ctx, declaration_span);
+        if let Some(type_def_node_ref) = type_def_node {
+            return vec![type_def_node_ref];
+        } else {
+            return Vec::new();
+        }
+    }
+
     // 1. Parse and validate declaration specifiers
-    let spec = lower_decl_specifiers(&decl.specifiers, ctx);
+    let spec = lower_decl_specifiers(&decl.specifiers, ctx, declaration_span);
 
     // If we have errors in specifiers, return empty vector
     if ctx.has_errors() {
@@ -80,14 +94,17 @@ pub fn lower_declaration(ctx: &mut LowerCtx, decl_node: NodeRef) -> Vec<NodeRef>
     }
 
     // 2. Process init-declarators into semantic nodes
-    decl.init_declarators
+    let semantic_nodes: Vec<NodeRef> = decl
+        .init_declarators
         .into_iter()
-        .map(|init| lower_init_declarator(ctx, &spec, init))
-        .collect()
+        .map(|init| lower_init_declarator(ctx, &spec, init, declaration_span))
+        .collect();
+
+    semantic_nodes
 }
 
 /// Process declaration specifiers into consolidated information
-fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx) -> DeclSpecInfo {
+fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: SourceSpan) -> DeclSpecInfo {
     let mut info = DeclSpecInfo::default();
 
     for spec in specs {
@@ -95,10 +112,7 @@ fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx) -> DeclSpe
             DeclSpecifier::StorageClass(sc) => {
                 // Check for duplicate storage class
                 if info.storage.replace(*sc).is_some() {
-                    ctx.report_error(
-                        SemanticError::DuplicateStorageClass,
-                        SourceSpan::empty(), // TODO: Get actual span
-                    );
+                    ctx.report_error(SemanticError::DuplicateStorageClass, span);
                 }
 
                 // Handle typedef storage class
@@ -112,8 +126,8 @@ fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx) -> DeclSpe
             }
 
             DeclSpecifier::TypeSpecifier(ts) => {
-                let ty = resolve_type_specifier(ts, ctx).unwrap_or_else(|e| {
-                    ctx.report_error(e, SourceSpan::empty()); // TODO: Get actual span
+                let ty = resolve_type_specifier(ts, ctx, span).unwrap_or_else(|e| {
+                    ctx.report_error(e, span);
                     // Create an error type
                     let error_type = Type {
                         kind: TypeKind::Error,
@@ -146,13 +160,13 @@ fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx) -> DeclSpe
     }
 
     // Validate specifier combinations
-    validate_specifier_combinations(&info, ctx);
+    validate_specifier_combinations(&info, ctx, span);
 
     info
 }
 
 /// Resolve a type specifier to a TypeRef
-fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx) -> Result<TypeRef, SemanticError> {
+fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSpan) -> Result<TypeRef, SemanticError> {
     match ts {
         TypeSpecifier::Void => Ok(ctx.ast.push_type(Type::new(TypeKind::Void))),
         TypeSpecifier::Char => Ok(ctx.ast.push_type(Type::new(TypeKind::Char { is_signed: true }))),
@@ -188,29 +202,50 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx) -> Result<Type
             .ast
             .push_type(Type::new(TypeKind::Atomic { base_type: *inner_type }))),
         TypeSpecifier::Record(is_union, tag, definition) => {
-            // TODO: Handle struct/union types properly
-            // For now, create a basic record type
+            // Properly handle struct/union types with their member declarations
+            debug!("Processing record definition: {:?}", definition);
             let members = definition
                 .as_ref()
-                .map(|def| {
-                    def.members
-                        .as_ref()
-                        .map(|decls| {
-                            decls
-                                .iter()
-                                .map(|_decl| {
-                                    // Convert declaration to struct member
-                                    // This is simplified - in a real implementation we'd need proper type resolution
-                                    StructMember {
-                                        name: Symbol::new("field"), // Placeholder
-                                        member_type: ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true })),
-                                        bit_field_size: None,
-                                        location: SourceSpan::empty(),
-                                    }
-                                })
-                                .collect()
-                        })
-                        .unwrap_or_default()
+                .and_then(|def| def.members.as_ref())
+                .map(|decls| {
+                    debug!("Found {} member declarations", decls.len());
+                    // Convert each struct member declaration to StructMember
+                    let mut struct_members = Vec::new();
+                    for (i, decl) in decls.iter().enumerate() {
+                        debug!("Processing member declaration {}: {:?}", i, decl);
+                        // Process each declarator in the member declaration
+                        for (j, init_declarator) in decl.init_declarators.iter().enumerate() {
+                            debug!("Processing declarator {}: {:?}", j, init_declarator);
+                            // Extract the member name and type
+                            if let Some(member_name) = extract_identifier(&init_declarator.declarator) {
+                                debug!("Found member name: {}", member_name);
+                                // Get the member type from declaration specifiers
+                                let member_type = if let Some(base_type_ref) =
+                                    lower_decl_specifiers_for_member(&decl.specifiers, ctx, span)
+                                {
+                                    // Apply the declarator to get the final member type
+                                    let member_type_with_declarator =
+                                        apply_declarator_for_member(base_type_ref, &init_declarator.declarator, ctx);
+                                    ctx.ast.push_type(member_type_with_declarator)
+                                } else {
+                                    debug!("Failed to get base type, defaulting to int");
+                                    // Default to int if type resolution fails
+                                    ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true }))
+                                };
+
+                                struct_members.push(StructMember {
+                                    name: member_name,
+                                    member_type,
+                                    bit_field_size: None,
+                                    location: span,
+                                });
+                            } else {
+                                debug!("Failed to extract member name from declarator");
+                            }
+                        }
+                    }
+                    debug!("Created {} struct members", struct_members.len());
+                    struct_members
                 })
                 .unwrap_or_default();
 
@@ -245,13 +280,13 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx) -> Result<Type
                                             }
                                         })
                                         .unwrap_or(0),
-                                    location: SourceSpan::empty(),
+                                    location: enum_node.span,
                                 }
                             } else {
                                 EnumConstant {
                                     name: Symbol::new(""),
                                     value: 0,
-                                    location: SourceSpan::empty(),
+                                    location: enum_node.span,
                                 }
                             }
                         })
@@ -276,14 +311,20 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx) -> Result<Type
                 } else {
                     Err(SemanticError::IncompleteType {
                         name: *name,
-                        location: SourceSpan::empty(), // TODO: Get actual span
+                        location: span,
                     })
                 }
             } else {
-                Err(SemanticError::UndeclaredIdentifier {
-                    name: *name,
-                    location: SourceSpan::empty(), // TODO: Get actual span
-                })
+                // Typedef not found during semantic lowering - this is expected
+                // when typedefs are defined later in the same scope.
+                // Create a placeholder type that will be resolved during semantic analysis.
+                let placeholder_type = Type {
+                    kind: TypeKind::Error, // Use Error type as placeholder
+                    qualifiers: TypeQualifiers::empty(),
+                    size: None,
+                    alignment: None,
+                };
+                Ok(ctx.ast.push_type(placeholder_type))
             }
         }
     }
@@ -330,13 +371,10 @@ fn merge_base_type(existing: Option<TypeRef>, new_type: TypeRef, ctx: &mut Lower
 }
 
 /// Validate specifier combinations for semantic correctness
-fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx) {
+fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span: SourceSpan) {
     // Check typedef with other storage classes
     if info.is_typedef && info.storage.is_some_and(|s| s != StorageClass::Typedef) {
-        ctx.report_error(
-            SemanticError::IllegalTypedefStorage,
-            SourceSpan::empty(), // TODO: Get actual span
-        );
+        ctx.report_error(SemanticError::IllegalTypedefStorage, span);
     }
 
     // TODO: Add more validation rules
@@ -345,13 +383,73 @@ fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx) {
     // - Check for missing required specifiers
 }
 
+/// Create a type definition semantic node for declarations with 0 init_declarators
+fn lower_type_definition(specifiers: &[DeclSpecifier], ctx: &mut LowerCtx, span: SourceSpan) -> Option<NodeRef> {
+    // Find the type specifier
+    let mut type_specifier = None;
+    for spec in specifiers {
+        if let DeclSpecifier::TypeSpecifier(ts) = spec {
+            type_specifier = Some(ts);
+            break;
+        }
+    }
+
+    let type_spec = type_specifier?;
+
+    match type_spec {
+        TypeSpecifier::Record(is_union, tag, _definition) => {
+            // Create the record type
+            let record_type = match resolve_type_specifier(type_spec, ctx, span) {
+                Ok(ty) => ty,
+                Err(e) => {
+                    ctx.report_error(e, span);
+                    return None;
+                }
+            };
+
+            // Create RecordDecl semantic node
+            let record_decl = RecordDeclData {
+                name: *tag,
+                ty: record_type,
+                members: Vec::new(), // TODO: Extract members from definition
+                is_union: *is_union,
+            };
+
+            let record_node = Node::new(NodeKind::RecordDecl(record_decl), span);
+            Some(ctx.ast.push_node(record_node))
+        }
+        TypeSpecifier::Enum(tag, _enumerators) => {
+            // Create the enum type
+            let enum_type = match resolve_type_specifier(type_spec, ctx, span) {
+                Ok(ty) => ty,
+                Err(e) => {
+                    ctx.report_error(e, span);
+                    return None;
+                }
+            };
+
+            // Create RecordDecl semantic node (reuse for enums)
+            let record_decl = RecordDeclData {
+                name: *tag,
+                ty: enum_type,
+                members: Vec::new(), // TODO: Extract enumerators
+                is_union: false,     // enums are not unions
+            };
+
+            let record_node = Node::new(NodeKind::RecordDecl(record_decl), span);
+            Some(ctx.ast.push_node(record_node))
+        }
+        _ => None,
+    }
+}
+
 /// Process an init-declarator into a semantic node
-fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDeclarator) -> NodeRef {
+fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDeclarator, span: SourceSpan) -> NodeRef {
     // 1. Resolve final type (base + declarator)
     let base_ty = spec.base_type.unwrap_or_else(|| {
         ctx.report_error(
             SemanticError::MissingBaseType,
-            SourceSpan::empty(), // TODO: Get actual span
+            span, // TODO: Get actual span
         );
         // Create an error type
         let error_type = Type {
@@ -370,9 +468,7 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
     // 2. Handle typedefs
     if spec.is_typedef {
         let typedef_decl = TypedefDeclData { name, ty: final_ty };
-        return ctx
-            .ast
-            .push_node(Node::new(NodeKind::TypedefDecl(typedef_decl), SourceSpan::empty()));
+        return ctx.ast.push_node(Node::new(NodeKind::TypedefDecl(typedef_decl), span));
     }
 
     // 3. Distinguish between functions and variables
@@ -384,8 +480,7 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
             storage: spec.storage,
             body: None,
         };
-        ctx.ast
-            .push_node(Node::new(NodeKind::FunctionDecl(func_decl), SourceSpan::empty()))
+        ctx.ast.push_node(Node::new(NodeKind::FunctionDecl(func_decl), span))
     } else {
         let var_decl = VarDeclData {
             name,
@@ -393,8 +488,7 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
             storage: spec.storage,
             init: init.initializer,
         };
-        ctx.ast
-            .push_node(Node::new(NodeKind::VarDecl(var_decl), SourceSpan::empty()))
+        ctx.ast.push_node(Node::new(NodeKind::VarDecl(var_decl), span))
     }
 }
 
@@ -522,37 +616,24 @@ pub fn run_semantic_lowering(ast: &mut Ast, diag: &mut DiagnosticEngine, symbol_
 
     // Process all declaration nodes in the AST
     for node_ref in nodes_to_process {
-        debug!("Lowering declaration at node {}", node_ref.get());
-
         let semantic_nodes = lower_declaration(&mut lower_ctx, node_ref);
 
         if !semantic_nodes.is_empty() {
-            // For now, we'll handle single declarator case by replacing the original node
-            // Multi-declarator cases would require more complex parent updates
             if semantic_nodes.len() == 1 {
-                // Replace the original declaration node with the semantic node
+                // Single declarator case: replace the original declaration node with the semantic node
                 let semantic_node_data = lower_ctx.ast.get_node(semantic_nodes[0]);
                 let semantic_node_clone = semantic_node_data.clone();
                 lower_ctx.ast.replace_node(node_ref, semantic_node_clone);
-
-                debug!("Replaced declaration node {} with semantic node", node_ref.get());
             } else {
-                debug!(
-                    "Declaration has {} declarators - multi-declarator support not yet implemented, using first declarator",
-                    semantic_nodes.len()
+                // Multi-declarator case: create a CompoundStatement containing all semantic nodes
+                let original_node = lower_ctx.ast.get_node(node_ref);
+                let compound_node = Node::new(
+                    NodeKind::CompoundStatement(semantic_nodes.clone()),
+                    original_node.span, // Use actual span from original declaration
                 );
-                // For multi-declarator cases, replace with the first semantic node
-                let semantic_node_data = lower_ctx.ast.get_node(semantic_nodes[0]);
-                let semantic_node_clone = semantic_node_data.clone();
-                lower_ctx.ast.replace_node(node_ref, semantic_node_clone);
 
-                debug!(
-                    "Replaced declaration node {} with first semantic node (multi-declarator case)",
-                    node_ref.get()
-                );
+                lower_ctx.ast.replace_node(node_ref, compound_node);
             }
-        } else {
-            debug!("No semantic nodes created for declaration at node {}", node_ref.get());
         }
     }
 
@@ -677,4 +758,67 @@ fn collect_declaration_nodes(ast: &Ast, root_node_ref: NodeRef) -> Vec<NodeRef> 
     }
 
     declarations
+}
+
+/// Lower declaration specifiers for struct members (simplified version)
+fn lower_decl_specifiers_for_member(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: SourceSpan) -> Option<TypeRef> {
+    for spec in specs {
+        if let DeclSpecifier::TypeSpecifier(ts) = spec {
+            match resolve_type_specifier(ts, ctx, span) {
+                Ok(ty) => return Some(ty),
+                Err(_) => continue,
+            }
+        }
+    }
+    None
+}
+
+/// Apply declarator for struct members (simplified version)
+fn apply_declarator_for_member(base_type: TypeRef, declarator: &Declarator, ctx: &mut LowerCtx) -> Type {
+    match declarator {
+        Declarator::Identifier(_, qualifiers, _) => {
+            let mut ty = ctx.ast.get_type(base_type).clone();
+            ty.qualifiers |= *qualifiers;
+            ty
+        }
+        Declarator::Pointer(qualifiers, next) => {
+            let pointee_type = if let Some(next_decl) = next {
+                apply_declarator_for_member(base_type, next_decl, ctx)
+            } else {
+                ctx.ast.get_type(base_type).clone()
+            };
+
+            let mut pointer_type = Type::new(TypeKind::Pointer {
+                pointee: ctx.ast.push_type(pointee_type),
+            });
+            pointer_type.qualifiers = *qualifiers;
+            pointer_type
+        }
+        Declarator::Array(base, size) => {
+            let element_type = apply_declarator_for_member(base_type, base, ctx);
+            let array_size = match size {
+                ArraySize::Expression { expr: _, qualifiers: _ } => {
+                    // TODO: Evaluate expression for constant size
+                    ArraySizeType::Incomplete
+                }
+                ArraySize::Star { qualifiers: _ } => ArraySizeType::Star,
+                ArraySize::Incomplete => ArraySizeType::Incomplete,
+                ArraySize::VlaSpecifier {
+                    is_static: _,
+                    qualifiers: _,
+                    size: _,
+                } => {
+                    // TODO: Handle VLA specifiers
+                    ArraySizeType::Incomplete
+                }
+            };
+
+            Type::new(TypeKind::Array {
+                element_type: ctx.ast.push_type(element_type),
+                size: array_size,
+            })
+        }
+        // For other declarator types, just return the base type
+        _ => ctx.ast.get_type(base_type).clone(),
+    }
 }

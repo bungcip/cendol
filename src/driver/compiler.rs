@@ -4,20 +4,25 @@
 //! the compilation pipeline including preprocessing, lexing, parsing,
 //! semantic analysis, and output generation.
 
+use hashbrown::HashMap;
 use std::path::Path;
 
 use crate::ast::Ast;
-use crate::codegen::CodeGenerator;
 use crate::diagnostic::DiagnosticEngine;
 use crate::lexer::Lexer;
+use crate::mir::codegen::MirToCraneliftLowerer;
+use crate::mir::validation::MirValidator;
+use crate::mir::{
+    Global, GlobalId, Local, LocalId, MirBlock, MirBlockId, MirFunction, MirFunctionId, MirModule, MirType, TypeId,
+};
 use crate::parser::Parser;
 use crate::pp::Preprocessor;
-use crate::semantic::{SemanticAnalyzer, SymbolTable};
+use crate::semantic::SymbolTable;
 use crate::source_manager::SourceManager;
 use target_lexicon::Triple;
 
 use super::cli::CompileConfig;
-use super::output::{AstDumpArgs, OutputHandler};
+use super::output::OutputHandler;
 
 /// Main compiler driver
 pub struct CompilerDriver {
@@ -26,6 +31,17 @@ pub struct CompilerDriver {
     source_manager: SourceManager,
     output_handler: OutputHandler,
 }
+
+type CompileOutput = (
+    Ast,
+    SymbolTable,
+    MirModule,
+    HashMap<MirFunctionId, MirFunction>,
+    HashMap<MirBlockId, MirBlock>,
+    HashMap<LocalId, Local>,
+    HashMap<GlobalId, Global>,
+    HashMap<TypeId, MirType>,
+);
 
 impl CompilerDriver {
     /// Create a new compiler driver from CLI arguments
@@ -48,12 +64,21 @@ impl CompilerDriver {
     pub fn run(&mut self) -> Result<(), CompilerError> {
         // Process each input file
         for input_file in self.config.input_files.clone() {
-            let (ast, _symbol_table) = self.compile_file(&input_file)?;
-            if let Some(output_path) = &self.config.output_path
-                && !self.config.dump_ast
-            {
-                let codegen = CodeGenerator::new(&ast);
-                let object_file = codegen.compile().unwrap();
+            let (_ast, _symbol_table, mir_module, functions, blocks, locals, globals, types) =
+                self.compile_file(&input_file)?;
+
+            // Determine the output path
+            let output_path = if let Some(output_path) = &self.config.output_path {
+                output_path.clone()
+            } else {
+                // Default to a.out if no output path is specified
+                Path::new("a.out").to_path_buf()
+            };
+
+            if !self.config.dump_ast {
+                // Use MIR codegen instead of AST codegen
+                let mir_codegen = MirToCraneliftLowerer::new(mir_module, functions, blocks, locals, globals, types);
+                let object_file = mir_codegen.compile().unwrap();
 
                 // Write the object file to a temporary file
                 let temp_object_path = format!("{}.o", output_path.display());
@@ -63,7 +88,7 @@ impl CompilerDriver {
                 let status = std::process::Command::new("clang")
                     .arg(&temp_object_path)
                     .arg("-o")
-                    .arg(output_path)
+                    .arg(&output_path)
                     .status()
                     .expect("Failed to execute clang for linking");
 
@@ -78,10 +103,10 @@ impl CompilerDriver {
 
                 // Set executable permissions on the output file
                 use std::os::unix::fs::PermissionsExt;
-                if let Ok(metadata) = std::fs::metadata(output_path) {
+                if let Ok(metadata) = std::fs::metadata(&output_path) {
                     let mut permissions = metadata.permissions();
                     permissions.set_mode(0o755); // rwxr-xr-x
-                    if let Err(e) = std::fs::set_permissions(output_path, permissions) {
+                    if let Err(e) = std::fs::set_permissions(&output_path, permissions) {
                         eprintln!("Warning: Failed to set executable permissions: {}", e);
                     }
                 }
@@ -96,13 +121,13 @@ impl CompilerDriver {
 
     pub fn compile_to_ast(&mut self) -> Result<Ast, CompilerError> {
         let input_file = self.config.input_files[0].clone();
-        let (ast, _) = self.compile_file(&input_file)?;
+        let (ast, _, _, _, _, _, _, _) = self.compile_file(&input_file)?;
         self.report_errors()?;
         Ok(ast)
     }
 
     /// Compile a single file through the full pipeline
-    fn compile_file(&mut self, source_path: &Path) -> Result<(Ast, SymbolTable), CompilerError> {
+    fn compile_file(&mut self, source_path: &Path) -> Result<CompileOutput, CompilerError> {
         log::debug!("Starting compilation of file: {}", source_path.display());
         let lang_options = self.config.lang_options.clone();
         let target_triple = Triple::host();
@@ -128,6 +153,7 @@ impl CompilerDriver {
                 Ok(t) => t,
                 Err(e) => {
                     if self.diagnostics.has_errors() {
+                        self.print_diagnostics();
                         return Err(CompilerError::CompilationFailed);
                     } else {
                         return Err(CompilerError::PreprocessorError(format!(
@@ -141,6 +167,7 @@ impl CompilerDriver {
 
         // Check for preprocessing errors and stop if any
         if self.diagnostics.has_errors() {
+            self.print_diagnostics();
             return Err(CompilerError::CompilationFailed);
         }
 
@@ -151,7 +178,16 @@ impl CompilerDriver {
                 self.config.suppress_line_markers,
                 &self.source_manager,
             )?;
-            return Ok((Ast::new(), SymbolTable::new()));
+            return Ok((
+                Ast::new(),
+                SymbolTable::new(),
+                MirModule::new(crate::mir::MirModuleId::new(1).unwrap()),
+                HashMap::new(),
+                HashMap::new(),
+                HashMap::new(),
+                HashMap::new(),
+                HashMap::new(),
+            ));
         }
 
         // 3. Lexing phase
@@ -164,6 +200,7 @@ impl CompilerDriver {
 
         // Check for lexing errors and stop if any
         if self.diagnostics.has_errors() {
+            self.print_diagnostics();
             return Err(CompilerError::CompilationFailed);
         }
 
@@ -184,6 +221,7 @@ impl CompilerDriver {
 
         // Check for parsing errors and stop if any
         if self.diagnostics.has_errors() {
+            self.print_diagnostics();
             return Err(CompilerError::CompilationFailed);
         }
 
@@ -191,28 +229,21 @@ impl CompilerDriver {
         if self.config.dump_parser {
             self.output_handler.dump_parser(&ast);
             // This is a special case. We want to stop after dumping the parser output.
-            // We'll return an empty symbol table.
-            return Ok((ast, SymbolTable::new()));
+            // We'll return an empty symbol table and MIR module.
+            return Ok((
+                ast,
+                SymbolTable::new(),
+                MirModule::new(crate::mir::MirModuleId::new(1).unwrap()),
+                HashMap::new(),
+                HashMap::new(),
+                HashMap::new(),
+                HashMap::new(),
+                HashMap::new(),
+            ));
         }
 
-        // 5. Semantic analysis phase
-        let mut symbol_table = {
-            let mut analyzer = SemanticAnalyzer::new(&mut ast, &mut self.diagnostics);
-            let _semantic_output = analyzer.analyze();
-            // Analyzer is dropped here, releasing the borrow on diagnostics
-            // We need to restructure to get the symbol table out
-            // For now, we'll create a new empty one and move the data
-            let mut new_table = SymbolTable::new();
-            std::mem::swap(&mut new_table, &mut analyzer.symbol_table);
-            new_table
-        };
-
-        // Check for semantic analysis errors and stop if any
-        if self.diagnostics.has_errors() {
-            return Err(CompilerError::CompilationFailed);
-        }
-
-        // 5.5. Semantic lowering phase - transform declarations to concrete types
+        // 5. Semantic lowering phase - transform declarations to concrete types
+        let mut symbol_table = SymbolTable::new();
         {
             use crate::semantic::lower::run_semantic_lowering;
             run_semantic_lowering(&mut ast, &mut self.diagnostics, &mut symbol_table);
@@ -220,30 +251,64 @@ impl CompilerDriver {
 
         // Check for semantic lowering errors and stop if any
         if self.diagnostics.has_errors() {
+            self.print_diagnostics();
             return Err(CompilerError::CompilationFailed);
         }
 
-        // 6. AST dumping (if requested)
-        if self.config.dump_ast {
-            let mut args = AstDumpArgs {
-                ast: &ast,
-                symbol_table: &symbol_table,
-                diagnostics: &mut self.diagnostics,
-                source_manager: &mut self.source_manager,
-                lang_options: &lang_options,
-                target_triple: &target_triple,
-            };
-            self.output_handler.dump_ast(&mut args, &self.config)?;
+        // 5. Generate MIR from the AST using the new semantic analyzer
+        let (mir_module, functions, blocks, locals, globals, types) = {
+            let mut semantic_analyzer =
+                crate::semantic::SemanticAnalyzer::new(&mut ast, &mut self.diagnostics, &mut symbol_table);
+            let mir_module = semantic_analyzer.lower_module();
+            let functions = semantic_analyzer.get_functions().clone();
+            let blocks = semantic_analyzer.get_blocks().clone();
+            let locals = semantic_analyzer.get_locals().clone();
+            let globals = semantic_analyzer.get_globals().clone();
+            let types = semantic_analyzer.get_types().clone();
+            (mir_module, functions, blocks, locals, globals, types)
+        };
+
+        // Check for semantic analysis errors and stop if any
+        if self.diagnostics.has_errors() {
+            self.print_diagnostics();
+            return Err(CompilerError::CompilationFailed);
         }
 
-        Ok((ast, symbol_table))
+        // 6. Validate MIR before code generation
+        {
+            let mut validator = MirValidator::new();
+            match validator.validate(&mir_module, &functions, &blocks, &locals, &globals, &types) {
+                Ok(()) => {
+                    log::debug!("MIR validation passed");
+                }
+                Err(errors) => {
+                    for error in errors {
+                        self.diagnostics
+                            .report_error(crate::diagnostic::SemanticError::UnsupportedFeature {
+                                feature: format!("MIR validation failed: {}", error),
+                                location: crate::source_manager::SourceSpan::empty(),
+                            });
+                    }
+                    return Err(CompilerError::SemanticError("MIR validation failed".to_string()));
+                }
+            }
+        }
+
+        Ok((ast, symbol_table, mir_module, functions, blocks, locals, globals, types))
+    }
+
+    /// Print accumulated diagnostics without returning an error
+    fn print_diagnostics(&self) {
+        if self.diagnostics.has_errors() {
+            let formatter = crate::diagnostic::ErrorFormatter::default();
+            formatter.print_diagnostics(self.diagnostics.diagnostics(), &self.source_manager);
+        }
     }
 
     /// Report any accumulated errors
     fn report_errors(&self) -> Result<(), CompilerError> {
         if self.diagnostics.has_errors() {
-            let formatter = crate::diagnostic::ErrorFormatter::default();
-            formatter.print_diagnostics(self.diagnostics.diagnostics(), &self.source_manager);
+            self.print_diagnostics();
             return Err(CompilerError::CompilationFailed);
         }
 

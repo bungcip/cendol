@@ -140,8 +140,6 @@ pub struct MacroInfo {
 /// Represents conditional compilation state
 #[derive(Debug, Clone)]
 pub struct PPConditionalInfo {
-    #[allow(unused)]
-    if_loc: SourceLoc,
     was_skipping: bool,
     found_else: bool,
     found_non_skipping: bool,
@@ -1158,7 +1156,6 @@ impl<'src> Preprocessor<'src> {
     fn handle_if_directive(&mut self, condition: bool) -> Result<(), PPError> {
         // Push new conditional state
         let info = PPConditionalInfo {
-            if_loc: self.get_current_location(),
             was_skipping: self.is_currently_skipping(),
             found_else: false,
             found_non_skipping: condition, // Set to true if condition is true
@@ -1182,7 +1179,6 @@ impl<'src> Preprocessor<'src> {
 
         let defined = self.macros.contains_key(&name);
         let info = PPConditionalInfo {
-            if_loc: self.get_current_location(),
             was_skipping: self.is_currently_skipping(),
             found_else: false,
             found_non_skipping: defined,
@@ -1207,7 +1203,6 @@ impl<'src> Preprocessor<'src> {
 
         let defined = self.macros.contains_key(&name);
         let info = PPConditionalInfo {
-            if_loc: self.get_current_location(),
             was_skipping: self.is_currently_skipping(),
             found_else: false,
             found_non_skipping: !defined,

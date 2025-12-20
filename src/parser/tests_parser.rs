@@ -4,6 +4,7 @@ use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::LangOptions;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
+use crate::parser::statements::parse_compound_statement;
 use crate::pp::Preprocessor;
 use crate::source_manager::SourceManager;
 use serde::Serialize;
@@ -40,6 +41,28 @@ enum ResolvedNodeKind {
     CompoundStatement(Vec<ResolvedNodeKind>), // Compound statement { ... }
     GnuStatementExpression(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // GNU statement expression ({ ... })
     GenericSelection(Box<ResolvedNodeKind>, Vec<ResolvedGenericAssociation>), // _Generic selection
+    Label(String, Box<ResolvedNodeKind>),   // Label statement (label: statement)
+    Goto(String),                           // Goto statement
+    Return(Option<Box<ResolvedNodeKind>>),  // Return statement
+    Break,                                  // Break statement
+    Continue,                               // Continue statement
+    Switch(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // Switch statement
+    Case(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // Case statement
+    Default(Box<ResolvedNodeKind>),         // Default statement
+    If(
+        Box<ResolvedNodeKind>,
+        Box<ResolvedNodeKind>,
+        Option<Box<ResolvedNodeKind>>,
+    ), // If statement
+    While(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // While statement
+    DoWhile(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // Do-while statement
+    For(
+        Option<Box<ResolvedNodeKind>>,
+        Option<Box<ResolvedNodeKind>>,
+        Option<Box<ResolvedNodeKind>>,
+        Box<ResolvedNodeKind>,
+    ), // For statement
+    Empty,                                  // Empty statement
                                             // Add more as needed for tests
 }
 
@@ -222,6 +245,42 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
                 .collect();
             ResolvedNodeKind::GenericSelection(resolved_controlling, resolved_associations)
         }
+        NodeKind::Label(label, statement) => {
+            ResolvedNodeKind::Label(label.to_string(), Box::new(resolve_node(ast, *statement)))
+        }
+        NodeKind::Goto(label) => ResolvedNodeKind::Goto(label.to_string()),
+        NodeKind::Return(expr) => ResolvedNodeKind::Return(expr.map(|e| Box::new(resolve_node(ast, e)))),
+        NodeKind::Break => ResolvedNodeKind::Break,
+        NodeKind::Continue => ResolvedNodeKind::Continue,
+        NodeKind::Switch(condition, body) => ResolvedNodeKind::Switch(
+            Box::new(resolve_node(ast, *condition)),
+            Box::new(resolve_node(ast, *body)),
+        ),
+        NodeKind::Case(expr, statement) => ResolvedNodeKind::Case(
+            Box::new(resolve_node(ast, *expr)),
+            Box::new(resolve_node(ast, *statement)),
+        ),
+        NodeKind::Default(statement) => ResolvedNodeKind::Default(Box::new(resolve_node(ast, *statement))),
+        NodeKind::If(if_stmt) => ResolvedNodeKind::If(
+            Box::new(resolve_node(ast, if_stmt.condition)),
+            Box::new(resolve_node(ast, if_stmt.then_branch)),
+            if_stmt.else_branch.map(|br| Box::new(resolve_node(ast, br))),
+        ),
+        NodeKind::While(while_stmt) => ResolvedNodeKind::While(
+            Box::new(resolve_node(ast, while_stmt.condition)),
+            Box::new(resolve_node(ast, while_stmt.body)),
+        ),
+        NodeKind::DoWhile(body, condition) => ResolvedNodeKind::DoWhile(
+            Box::new(resolve_node(ast, *body)),
+            Box::new(resolve_node(ast, *condition)),
+        ),
+        NodeKind::For(for_stmt) => ResolvedNodeKind::For(
+            for_stmt.init.map(|i| Box::new(resolve_node(ast, i))),
+            for_stmt.condition.map(|c| Box::new(resolve_node(ast, c))),
+            for_stmt.increment.map(|inc| Box::new(resolve_node(ast, inc))),
+            Box::new(resolve_node(ast, for_stmt.body)),
+        ),
+        NodeKind::EmptyStatement => ResolvedNodeKind::Empty,
         // Add more cases as needed for other NodeKind variants used in tests
         _ => panic!("Unsupported NodeKind for resolution: {:?}", node.kind),
     }
@@ -437,6 +496,26 @@ fn parse_declaration_with_errors(source: &str) -> Result<ResolvedNodeKind, Vec<S
             }
         }
         Err(e) => Err(vec![format!("Parse error: {:?}", e)]),
+    }
+}
+
+fn setup_statement(source: &str) -> ResolvedNodeKind {
+    let (ast, stmt_result) = setup_source(source, |parser| parser.parse_statement());
+
+    match stmt_result {
+        Ok(node_ref) => resolve_node(&ast, node_ref),
+        _ => panic!("Expected statement"),
+    }
+}
+
+/// Setup a compound statement, useful for testing multi-statement blocks
+fn setup_compound(source: &str) -> ResolvedNodeKind {
+    let source = format!("{{ {} }}", source);
+    let (ast, stmt_result) = setup_source(&source, |parser| parse_compound_statement(parser));
+
+    match stmt_result {
+        Ok((node_ref, _)) => resolve_node(&ast, node_ref),
+        _ => panic!("Expected multi statement block"),
     }
 }
 
@@ -1018,29 +1097,29 @@ fn test_gnu_statement_expression() {
           - Add
           - Ident: x
           - LiteralInt: 2
-  ");
+    ");
 }
 
 #[test]
 fn test_struct_member_multiple_declarators() {
     let resolved = setup_declaration("struct flowi6 { struct in6_addr saddr, daddr; };");
     insta::assert_yaml_snapshot!(&resolved, @r#"
-  Declaration:
-    specifiers:
-      - "struct flowi6 { ... }"
-    init_declarators: []
-  "#);
+    Declaration:
+      specifiers:
+        - "struct flowi6 { ... }"
+      init_declarators: []
+    "#);
 }
 
 #[test]
 fn test_bitfield_declaration() {
     let resolved = setup_declaration("struct Test { int x: 8; unsigned y: 1; };");
     insta::assert_yaml_snapshot!(&resolved, @r#"
-  Declaration:
-    specifiers:
-      - "struct Test { ... }"
-    init_declarators: []
-  "#);
+    Declaration:
+      specifiers:
+        - "struct Test { ... }"
+      init_declarators: []
+    "#);
 }
 
 #[test]
@@ -1048,123 +1127,123 @@ fn test_bitfield_with_mixed_members() {
     let resolved =
         setup_declaration("struct Mixed { int regular; int bitfield: 4; int another_regular; unsigned flag: 1; };");
     insta::assert_yaml_snapshot!(&resolved, @r#"
-  Declaration:
-    specifiers:
-      - "struct Mixed { ... }"
-    init_declarators: []
-  "#);
+    Declaration:
+      specifiers:
+        - "struct Mixed { ... }"
+      init_declarators: []
+    "#);
 }
 
 #[test]
 fn test_bitfield_with_large_width() {
     let resolved = setup_declaration("struct LargeBitfield { unsigned long value: 32; };");
     insta::assert_yaml_snapshot!(&resolved, @r#"
-  Declaration:
-    specifiers:
-      - "struct LargeBitfield { ... }"
-    init_declarators: []
-  "#);
+    Declaration:
+      specifiers:
+        - "struct LargeBitfield { ... }"
+      init_declarators: []
+    "#);
 }
 
 #[test]
 fn test_designated_initializer_simple_array() {
     let resolved = setup_declaration("int arr[10] = { [5] = 42 };");
     insta::assert_yaml_snapshot!(&resolved, @r"
-  Declaration:
-    specifiers:
-      - int
-    init_declarators:
-      - name: arr
-        kind: array
-        initializer:
-          InitializerList:
-            - LiteralInt: 42
-  ");
+    Declaration:
+      specifiers:
+        - int
+      init_declarators:
+        - name: arr
+          kind: array
+          initializer:
+            InitializerList:
+              - LiteralInt: 42
+    ");
 }
 
 #[test]
 fn test_designated_initializer_range_syntax() {
     let resolved = setup_declaration("int arr[10] = { [1 ... 5] = 9 };");
     insta::assert_yaml_snapshot!(&resolved, @r"
-  Declaration:
-    specifiers:
-      - int
-    init_declarators:
-      - name: arr
-        kind: array
-        initializer:
-          InitializerList:
-            - LiteralInt: 9
-  ");
+    Declaration:
+      specifiers:
+        - int
+      init_declarators:
+        - name: arr
+          kind: array
+          initializer:
+            InitializerList:
+              - LiteralInt: 9
+    ");
 }
 
 #[test]
 fn test_designated_initializer_multiple_ranges() {
     let resolved = setup_declaration("int arr[20] = { [1 ... 5] = 9, [10 ... 15] = 42 };");
     insta::assert_yaml_snapshot!(&resolved, @r"
-  Declaration:
-    specifiers:
-      - int
-    init_declarators:
-      - name: arr
-        kind: array
-        initializer:
-          InitializerList:
-            - LiteralInt: 9
-            - LiteralInt: 42
-  ");
+    Declaration:
+      specifiers:
+        - int
+      init_declarators:
+        - name: arr
+          kind: array
+          initializer:
+            InitializerList:
+              - LiteralInt: 9
+              - LiteralInt: 42
+    ");
 }
 
 #[test]
 fn test_designated_initializer_mixed_single_and_range() {
     let resolved = setup_declaration("int arr[10] = { [0] = 1, [2 ... 5] = 9, [8] = 42 };");
     insta::assert_yaml_snapshot!(&resolved, @r"
-  Declaration:
-    specifiers:
-      - int
-    init_declarators:
-      - name: arr
-        kind: array
-        initializer:
-          InitializerList:
-            - LiteralInt: 1
-            - LiteralInt: 9
-            - LiteralInt: 42
-  ");
+    Declaration:
+      specifiers:
+        - int
+      init_declarators:
+        - name: arr
+          kind: array
+          initializer:
+            InitializerList:
+              - LiteralInt: 1
+              - LiteralInt: 9
+              - LiteralInt: 42
+    ");
 }
 
 #[test]
 fn test_designated_initializer_range_with_expressions() {
     let resolved = setup_declaration("int arr[10] = { [1 ... 2+3] = 9 };");
     insta::assert_yaml_snapshot!(&resolved, @r"
-  Declaration:
-    specifiers:
-      - int
-    init_declarators:
-      - name: arr
-        kind: array
-        initializer:
-          InitializerList:
-            - LiteralInt: 9
-  ");
+    Declaration:
+      specifiers:
+        - int
+      init_declarators:
+        - name: arr
+          kind: array
+          initializer:
+            InitializerList:
+              - LiteralInt: 9
+    ");
 }
 
 #[test]
 fn test_designated_initializer_struct_with_range() {
     let resolved = setup_declaration("struct T { int s[16]; int a; } lt2 = { { [1 ... 5] = 9, [6 ... 10] = 42 }, 1 };");
     insta::assert_yaml_snapshot!(&resolved, @r#"
-  Declaration:
-    specifiers:
-      - "struct T { ... }"
-    init_declarators:
-      - name: lt2
-        initializer:
-          InitializerList:
-            - InitializerList:
-                - LiteralInt: 9
-                - LiteralInt: 42
-            - LiteralInt: 1
-  "#);
+    Declaration:
+      specifiers:
+        - "struct T { ... }"
+      init_declarators:
+        - name: lt2
+          initializer:
+            InitializerList:
+              - InitializerList:
+                  - LiteralInt: 9
+                  - LiteralInt: 42
+              - LiteralInt: 1
+    "#);
 }
 
 #[test]
@@ -1325,5 +1404,208 @@ fn test_array_indexing_with_expression() {
           - Add
           - Ident: b
           - Ident: c
+    ");
+}
+
+// === LABEL DETECTION TESTS ===
+
+#[test]
+fn test_label_with_expression_statement() {
+    let resolved = setup_statement("start: x = 1;");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    Label:
+      - start
+      - ExpressionStatement:
+          BinaryOp:
+            - Assign
+            - Ident: x
+            - LiteralInt: 1
+    ");
+}
+
+#[test]
+fn test_label_with_compound_statement() {
+    let resolved = setup_statement("block: { int x = 1; }");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    Label:
+      - block
+      - CompoundStatement:
+          - Declaration:
+              specifiers:
+                - int
+              init_declarators:
+                - name: x
+                  initializer:
+                    LiteralInt: 1
+    ");
+}
+
+#[test]
+fn test_label_with_if_statement() {
+    let resolved = setup_statement("if_label: if (x) y = 1;");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    Label:
+      - if_label
+      - If:
+          - Ident: x
+          - ExpressionStatement:
+              BinaryOp:
+                - Assign
+                - Ident: y
+                - LiteralInt: 1
+          - ~
+    ");
+}
+
+#[test]
+fn test_label_with_while_loop() {
+    let resolved = setup_statement("loop_start: while (x < 10) x++;");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    Label:
+      - loop_start
+      - While:
+          - BinaryOp:
+              - Less
+              - Ident: x
+              - LiteralInt: 10
+          - ExpressionStatement:
+              PostIncrement:
+                Ident: x
+    ");
+}
+
+#[test]
+fn test_multiple_labels_sequence() {
+    // Test consecutive labels (like "next:" and "foo:" in the goto test)
+    let resolved = setup_statement("label1: label2: return 0;");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    Label:
+      - label1
+      - Label:
+          - label2
+          - Return:
+              LiteralInt: 0
+    ");
+}
+
+#[test]
+fn test_goto_with_complex_label_name() {
+    let resolved = setup_statement("goto error_handler_1;");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    Goto: error_handler_1
+    ");
+}
+
+#[test]
+fn test_label_followed_by_goto() {
+    let resolved = setup_statement("target: goto target;");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    Label:
+      - target
+      - Goto: target
+    ");
+}
+
+#[test]
+fn test_label_with_numeric_suffix() {
+    let resolved = setup_statement("_label123: return 1;");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    Label:
+      - _label123
+      - Return:
+          LiteralInt: 1
+    ");
+}
+
+#[test]
+fn test_label_followed_by_compound_statement_with_declaration() {
+    let resolved = setup_statement("declare: { int x = 5; }");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    Label:
+      - declare
+      - CompoundStatement:
+          - Declaration:
+              specifiers:
+                - int
+              init_declarators:
+                - name: x
+                  initializer:
+                    LiteralInt: 5
+    ");
+}
+
+#[test]
+fn test_label_followed_by_function_call() {
+    let resolved = setup_statement("call_func: foo();");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    Label:
+      - call_func
+      - ExpressionStatement:
+          FunctionCall:
+            - Ident: foo
+            - []
+    ");
+}
+
+#[test]
+fn test_label_with_break_statement() {
+    let resolved = setup_statement("break_point: break;");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    Label:
+      - break_point
+      - Break
+    ");
+}
+
+#[test]
+fn test_label_with_continue_statement() {
+    let resolved = setup_statement("continue_loop: continue;");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    Label:
+      - continue_loop
+      - Continue
+    ");
+}
+
+#[test]
+fn test_label_followed_by_empty_statement() {
+    let resolved = setup_statement("empty: ;");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    Label:
+      - empty
+      - Empty
+    ");
+}
+
+#[test]
+fn test_multiple_statements_with_labels() {
+    // This tests a more complex scenario with multiple labels and statements
+    // We test that the parser can handle multiple labeled statements
+    let source = r"
+    success:
+      0;
+      return 0;
+    next:
+    foo:  
+      goto success;
+      return 1;";
+    let resolved = setup_compound(source);
+
+    // Just verify it parses as a label
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    CompoundStatement:
+      - Label:
+          - success
+          - ExpressionStatement:
+              LiteralInt: 0
+      - Return:
+          LiteralInt: 0
+      - Label:
+          - next
+          - Label:
+              - foo
+              - Goto: success
+      - Return:
+          LiteralInt: 1
     ");
 }

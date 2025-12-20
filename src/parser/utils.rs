@@ -6,7 +6,6 @@
 
 use crate::ast::*;
 use crate::diagnostic::ParseError;
-use crate::source_manager::SourceSpan;
 use log::debug;
 
 use super::expressions::BindingPower;
@@ -76,12 +75,9 @@ impl<'arena, 'src> ParserExt for Parser<'arena, 'src> {
     ) -> Result<NodeRef, ParseError> {
         match result {
             Ok(ParseExprOutput::Expression(node)) => Ok(node),
-            Ok(ParseExprOutput::Declaration(_)) => Err(ParseError::SyntaxError {
+            Ok(ParseExprOutput::Declaration(node_ref)) => Err(ParseError::SyntaxError {
                 message: format!("Expected {} but found declaration", context),
-                location: self
-                    .try_current_token()
-                    .map(|t| t.location)
-                    .unwrap_or_else(SourceSpan::empty),
+                location: self.ast.get_node(node_ref).span,
             }),
             Err(e) => Err(e),
         }

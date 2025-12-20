@@ -17,10 +17,7 @@ use thin_vec::thin_vec;
 
 /// Parse a statement
 pub fn parse_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
-    let token = parser.try_current_token().ok_or_else(|| ParseError::SyntaxError {
-        message: "Expected statement".to_string(),
-        location: SourceSpan::empty(),
-    })?;
+    let token = parser.current_token()?;
 
     // Check for label: identifier :
     debug!("parse_statement: token is {:?}, looking for label pattern", token.kind);

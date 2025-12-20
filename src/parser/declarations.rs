@@ -346,11 +346,7 @@ pub fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<No
 
     parser.expect(TokenKind::Comma)?;
 
-    let token = parser.try_current_token().ok_or_else(|| ParseError::SyntaxError {
-        message: "Expected string literal in _Static_assert".to_string(),
-        location: SourceSpan::empty(),
-    })?;
-
+    let token = parser.current_token()?;
     let message = match token.kind {
         TokenKind::StringLiteral(symbol) => symbol,
         _ => {

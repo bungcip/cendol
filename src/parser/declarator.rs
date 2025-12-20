@@ -66,13 +66,8 @@ pub fn parse_declarator(parser: &mut Parser, initial_declarator: Option<Symbol>)
         debug!("parse_declarator: failed to parse __attribute__: {:?}", _e);
     }
 
-    let mut declarator_chain: Vec<DeclaratorComponent> = Vec::new();
-
     // Parse leading pointers and their qualifiers
-    while parser.accept(TokenKind::Star).is_some() {
-        let current_qualifiers = parse_type_qualifiers(parser)?;
-        declarator_chain.push(DeclaratorComponent::Pointer(current_qualifiers));
-    }
+    let declarator_chain = parse_leading_pointers(parser)?;
 
     // Parse direct declarator (identifier or parenthesized declarator)
     let base_declarator = if parser.accept(TokenKind::LeftParen).is_some() {
@@ -115,43 +110,10 @@ pub fn parse_declarator(parser: &mut Parser, initial_declarator: Option<Symbol>)
     };
 
     // Parse trailing array and function declarators
-    let mut current_base = base_declarator;
-    loop {
-        let current_token_span = parser.try_current_token().map_or(SourceSpan::empty(), |t| t.location);
-        if parser.accept(TokenKind::LeftBracket).is_some() {
-            // Array declarator
-            validate_declarator_combination(&current_base, "array", current_token_span)?;
-            let array_size = parse_array_size(parser)?;
-            parser.expect(TokenKind::RightBracket)?; // Consume ']'
-            current_base = Declarator::Array(Box::new(current_base), array_size);
-        } else if parser.accept(TokenKind::LeftParen).is_some() {
-            // Function declarator
-            validate_declarator_combination(&current_base, "function", current_token_span)?;
-            let parameters = parse_function_parameters(parser)?;
-            debug!(
-                "parse_abstract_declarator: parsed function parameters, count: {}",
-                parameters.len()
-            );
-            parser.expect(TokenKind::RightParen)?; // Consume ')'
-            current_base = Declarator::Function(Box::new(current_base), parameters);
-        } else if parser.accept(TokenKind::Colon).is_some() {
-            // Bit-field declarator: name : width
-            let bit_width_expr = parser.parse_expr_min()?;
-            current_base = Declarator::BitField(Box::new(current_base), bit_width_expr);
-        } else {
-            break;
-        }
-    }
+    let current_base = parse_trailing_declarators(parser, base_declarator)?;
 
     // Reconstruct the declarator chain in reverse order
-    let mut final_declarator = current_base;
-    for component in declarator_chain.into_iter().rev() {
-        final_declarator = match component {
-            DeclaratorComponent::Pointer(qualifiers) => {
-                Declarator::Pointer(qualifiers, Some(Box::new(final_declarator)))
-            }
-        };
-    }
+    let final_declarator = reconstruct_declarator_chain(declarator_chain, current_base);
 
     Ok(final_declarator)
 }
@@ -209,6 +171,87 @@ fn parse_array_size(parser: &mut Parser) -> Result<ArraySize, ParseError> {
             })
         }
     }
+}
+
+/// Parse leading pointers and their qualifiers, building a declarator component chain
+fn parse_leading_pointers(parser: &mut Parser) -> Result<Vec<DeclaratorComponent>, ParseError> {
+    let mut declarator_chain: Vec<DeclaratorComponent> = Vec::new();
+
+    while parser.accept(TokenKind::Star).is_some() {
+        let current_qualifiers = parse_type_qualifiers(parser)?;
+        declarator_chain.push(DeclaratorComponent::Pointer(current_qualifiers));
+    }
+
+    Ok(declarator_chain)
+}
+
+/// Parse trailing declarators (arrays, functions) that follow the base declarator
+/// This is used for abstract declarators in type names where bit-fields are not allowed
+fn parse_trailing_declarators_for_type_names(
+    parser: &mut Parser,
+    mut current_base: Declarator,
+) -> Result<Declarator, ParseError> {
+    loop {
+        let current_token_span = parser.try_current_token().map_or(SourceSpan::empty(), |t| t.location);
+        if parser.accept(TokenKind::LeftBracket).is_some() {
+            // Array declarator
+            validate_declarator_combination(&current_base, "array", current_token_span)?;
+            let array_size = parse_array_size(parser)?;
+            parser.expect(TokenKind::RightBracket)?; // Consume ']'
+            current_base = Declarator::Array(Box::new(current_base), array_size);
+        } else if parser.accept(TokenKind::LeftParen).is_some() {
+            // Function declarator
+            validate_declarator_combination(&current_base, "function", current_token_span)?;
+            let parameters = parse_function_parameters(parser)?;
+            parser.expect(TokenKind::RightParen)?; // Consume ')'
+            current_base = Declarator::Function(Box::new(current_base), parameters);
+        } else {
+            break;
+        }
+    }
+
+    Ok(current_base)
+}
+
+/// Parse trailing declarators (arrays, functions, bit-fields) that follow the base declarator
+fn parse_trailing_declarators(parser: &mut Parser, mut current_base: Declarator) -> Result<Declarator, ParseError> {
+    loop {
+        let current_token_span = parser.try_current_token().map_or(SourceSpan::empty(), |t| t.location);
+        if parser.accept(TokenKind::LeftBracket).is_some() {
+            // Array declarator
+            validate_declarator_combination(&current_base, "array", current_token_span)?;
+            let array_size = parse_array_size(parser)?;
+            parser.expect(TokenKind::RightBracket)?; // Consume ']'
+            current_base = Declarator::Array(Box::new(current_base), array_size);
+        } else if parser.accept(TokenKind::LeftParen).is_some() {
+            // Function declarator
+            validate_declarator_combination(&current_base, "function", current_token_span)?;
+            let parameters = parse_function_parameters(parser)?;
+            parser.expect(TokenKind::RightParen)?; // Consume ')'
+            current_base = Declarator::Function(Box::new(current_base), parameters);
+        } else if parser.accept(TokenKind::Colon).is_some() {
+            // Bit-field declarator: name : width
+            let bit_width_expr = parser.parse_expr_min()?;
+            current_base = Declarator::BitField(Box::new(current_base), bit_width_expr);
+        } else {
+            break;
+        }
+    }
+
+    Ok(current_base)
+}
+
+/// Reconstruct the declarator chain by applying pointer qualifiers in reverse order
+fn reconstruct_declarator_chain(declarator_chain: Vec<DeclaratorComponent>, base_declarator: Declarator) -> Declarator {
+    let mut final_declarator = base_declarator;
+    for component in declarator_chain.into_iter().rev() {
+        final_declarator = match component {
+            DeclaratorComponent::Pointer(qualifiers) => {
+                Declarator::Pointer(qualifiers, Some(Box::new(final_declarator)))
+            }
+        };
+    }
+    final_declarator
 }
 
 /// Helper to parse function parameters
@@ -407,13 +450,8 @@ pub fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarator, Pars
         debug!("parse_abstract_declarator: failed to parse __attribute__: {:?}", _e);
     }
 
-    let mut declarator_chain: Vec<DeclaratorComponent> = Vec::new();
-
     // Parse leading pointers and their qualifiers
-    while parser.accept(TokenKind::Star).is_some() {
-        let current_qualifiers = parse_type_qualifiers(parser)?;
-        declarator_chain.push(DeclaratorComponent::Pointer(current_qualifiers));
-    }
+    let declarator_chain = parse_leading_pointers(parser)?;
 
     // Parse direct abstract declarator (parenthesized or array/function)
     let base_declarator = if let Some(token) = parser.try_current_token() {
@@ -516,38 +554,10 @@ pub fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarator, Pars
     );
 
     // Parse trailing array and function declarators
-    let mut current_base = base_declarator;
-    loop {
-        let current_token_span = parser.try_current_token().map_or(SourceSpan::empty(), |t| t.location);
-        if parser.accept(TokenKind::LeftBracket).is_some() {
-            // Array declarator
-            validate_declarator_combination(&current_base, "array", current_token_span)?;
-            let array_size = parse_array_size(parser)?;
-            parser.expect(TokenKind::RightBracket)?; // Consume ']'
-            current_base = Declarator::Array(Box::new(current_base), array_size);
-        } else if parser.accept(TokenKind::LeftParen).is_some() {
-            validate_declarator_combination(&current_base, "function", current_token_span)?;
-            let parameters = parse_function_parameters(parser)?;
-            debug!(
-                "parse_abstract_declarator: parsed function parameters, count: {}",
-                parameters.len()
-            );
-            parser.expect(TokenKind::RightParen)?; // Consume ')'
-            current_base = Declarator::Function(Box::new(current_base), parameters);
-        } else {
-            break;
-        }
-    }
+    let current_base = parse_trailing_declarators_for_type_names(parser, base_declarator)?;
 
     // Reconstruct the declarator chain in reverse order
-    let mut final_declarator = current_base;
-    for component in declarator_chain.into_iter().rev() {
-        final_declarator = match component {
-            DeclaratorComponent::Pointer(qualifiers) => {
-                Declarator::Pointer(qualifiers, Some(Box::new(final_declarator)))
-            }
-        };
-    }
+    let final_declarator = reconstruct_declarator_chain(declarator_chain, current_base);
 
     Ok(final_declarator)
 }

@@ -178,10 +178,9 @@ pub fn parse_expression(
         };
 
         // Parse the right-hand side
-        let op_token = parser.advance().ok_or_else(|| ParseError::SyntaxError {
-            message: "Expected operator".to_string(),
-            location: SourceSpan::empty(),
-        })?;
+        let op_token = current_token;
+        parser.advance();
+
         trace!("parse_expression: parsing infix operator {:?}", op_token.kind);
         let right = parse_infix(parser, left, op_token, next_min_bp)?;
         left = right;

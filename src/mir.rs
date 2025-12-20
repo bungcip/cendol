@@ -8,6 +8,7 @@
 //! - Non-SSA: Uses basic blocks with explicit control flow
 
 use hashbrown::HashMap;
+use serde::Serialize;
 use std::fmt;
 use std::num::NonZeroU32;
 
@@ -39,7 +40,7 @@ pub type TypeId = NonZeroU32;
 pub type ConstValueId = NonZeroU32;
 
 /// MIR Module - Top-level container for MIR
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MirModule {
     pub id: MirModuleId,
     pub functions: Vec<MirFunctionId>,
@@ -61,7 +62,7 @@ impl MirModule {
 }
 
 /// MIR Function - Represents a C function in MIR
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MirFunction {
     pub id: MirFunctionId,
     pub name: String,
@@ -87,7 +88,7 @@ impl MirFunction {
 }
 
 /// MIR Block - Basic block with statements and terminator
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MirBlock {
     pub id: MirBlockId,
     pub statements: Vec<MirStmtId>,
@@ -105,7 +106,7 @@ impl MirBlock {
 }
 
 /// MIR Statement - Individual operations within a block
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum MirStmt {
     Assign(Place, Operand),
     Load(Place, Operand),
@@ -136,7 +137,7 @@ pub enum MirStmt {
 }
 
 /// Terminator - Control flow terminators for basic blocks
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum Terminator {
     Goto(MirBlockId),
     If(Operand, MirBlockId, MirBlockId),
@@ -145,7 +146,7 @@ pub enum Terminator {
 }
 
 /// Place - Represents a storage location (local variable or memory)
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum Place {
     Local(LocalId),
     Deref(Box<Operand>),
@@ -156,7 +157,7 @@ pub enum Place {
 }
 
 /// Operand - Represents values used in MIR operations
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum Operand {
     Copy(Box<Place>),
     Move(Box<Place>),
@@ -171,7 +172,7 @@ pub enum Operand {
 }
 
 /// Rvalue - Right-hand side values in assignments
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum Rvalue {
     Use(Operand),
     BinaryOp(BinaryOp, Operand, Operand),
@@ -188,7 +189,7 @@ pub enum Rvalue {
 }
 
 /// Binary operations
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -212,7 +213,7 @@ pub enum BinaryOp {
 }
 
 /// Unary operations
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum UnaryOp {
     Neg,
     Not,
@@ -221,7 +222,7 @@ pub enum UnaryOp {
 }
 
 /// Type - MIR type system
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum MirType {
     Void,
     Bool,
@@ -258,7 +259,7 @@ pub enum MirType {
 }
 
 /// Constant Value - Literal values in MIR
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum ConstValue {
     Int(i64),
     Float(f64),
@@ -272,7 +273,7 @@ pub enum ConstValue {
 }
 
 /// Local - Represents a local variable or parameter
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Local {
     pub id: LocalId,
     pub name: String,
@@ -292,7 +293,7 @@ impl Local {
 }
 
 /// Global - Represents a global variable
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Global {
     pub id: GlobalId,
     pub name: String,

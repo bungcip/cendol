@@ -905,20 +905,32 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     fn lower_if_statement(&mut self, if_stmt: &IfStmt, _location: SourceSpan) {
         debug!("Lowering if statement");
 
-        // For now, simplify if statement handling
-        // TODO: Implement proper control flow with then/else blocks
-        // This involves creating new blocks for then and else branches
+        // Lower the condition expression
+        let cond_operand = self.lower_expression(if_stmt.condition);
 
-        // Evaluate condition (currently just processes it)
-        let _cond_operand = self.lower_expression(if_stmt.condition);
+        // Create blocks for then, else, and merge
+        let then_block = self.mir_builder.create_block();
+        let else_block = self.mir_builder.create_block();
+        let merge_block = self.mir_builder.create_block();
 
-        // Process then branch
+        // Set the terminator for the current block
+        self.mir_builder
+            .set_terminator(Terminator::If(cond_operand, then_block, else_block));
+
+        // Process the then branch
+        self.mir_builder.set_current_block(then_block);
         self.lower_node_ref(if_stmt.then_branch);
+        self.mir_builder.set_terminator(Terminator::Goto(merge_block));
 
-        // Process else branch if present
+        // Process the else branch
+        self.mir_builder.set_current_block(else_block);
         if let Some(else_branch) = &if_stmt.else_branch {
             self.lower_node_ref(*else_branch);
         }
+        self.mir_builder.set_terminator(Terminator::Goto(merge_block));
+
+        // Set the current block to the merge block
+        self.mir_builder.set_current_block(merge_block);
     }
 
     /// Emit an assignment statement
@@ -1642,6 +1654,61 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::diagnostic::DiagnosticEngine;
+    use crate::driver::{cli::CompileConfig, compiler::CompilerDriver};
+    use insta::assert_snapshot;
+
+    fn run_semantic_analyzer_test(source: &str) -> MirModule {
+        let mut config = CompileConfig::from_source_code(source.to_string());
+        // Setting dump_parser makes compile_to_ast return the AST just after parsing
+        config.dump_parser = true;
+
+        let mut driver = CompilerDriver::from_config(config);
+        let mut ast = driver.compile_to_ast().unwrap();
+
+        // Now, manually run the semantic passes on the fresh AST
+        let mut symbol_table = SymbolTable::new();
+        let mut diag = DiagnosticEngine::new();
+
+        // 1. Semantic Lowering
+        crate::semantic::lower::run_semantic_lowering(&mut ast, &mut diag, &mut symbol_table);
+        if diag.has_errors() {
+            // In a real scenario, you might want to print diagnostics
+            panic!("Semantic lowering failed during test");
+        }
+
+        // 2. Semantic Analysis (MIR generation)
+        let mut analyzer = SemanticAnalyzer::new(&mut ast, &mut diag, &mut symbol_table);
+        let mir_module = analyzer.lower_module();
+        if diag.has_errors() {
+            panic!("Semantic analysis failed during test");
+        }
+
+        mir_module
+    }
+
+    #[test]
+    fn test_if_else_statement() {
+        let source = r#"
+            int main() {
+                int a = 1;
+                int b = 2;
+                if (a > b) {
+                    return 1;
+                } else {
+                    return 2;
+                }
+            }
+        "#;
+        let mir = run_semantic_analyzer_test(source);
+        assert_snapshot!(mir, @"
+        MirModule(id: 1)
+          Functions: [1]
+          Globals: []
+          Types: [Int { is_signed: true, width: 32 }, Int { is_signed: true, width: 32 }, Int { is_signed: true, width: 32 }, Int { is_signed: true, width: 32 }, Int { is_signed: true, width: 32 }, Int { is_signed: true, width: 32 }]
+          Constants: [Int(1), Int(2), Int(2), Int(0), Int(1)]
+        ");
+    }
 
     #[test]
     fn test_apply_binary_operand_conversion_exists() {

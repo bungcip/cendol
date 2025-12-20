@@ -1656,35 +1656,76 @@ mod tests {
     use super::*;
     use crate::diagnostic::DiagnosticEngine;
     use crate::driver::{cli::CompileConfig, compiler::CompilerDriver};
-    use insta::assert_snapshot;
+    use crate::mir::{ConstValue, MirBlock, MirFunction, MirType};
+    use serde::Serialize;
+    use std::collections::BTreeMap;
 
-    fn run_semantic_analyzer_test(source: &str) -> MirModule {
+    #[derive(Debug, Serialize)]
+    struct MirFunctionSnapshot {
+        func: MirFunction,
+        blocks: BTreeMap<MirBlockId, MirBlock>,
+        locals: BTreeMap<LocalId, Local>,
+        types: BTreeMap<TypeId, MirType>,
+        constants: BTreeMap<ConstValueId, ConstValue>,
+    }
+
+    fn run_semantic_analyzer_test(source: &str) -> MirFunctionSnapshot {
         let mut config = CompileConfig::from_source_code(source.to_string());
-        // Setting dump_parser makes compile_to_ast return the AST just after parsing
         config.dump_parser = true;
 
         let mut driver = CompilerDriver::from_config(config);
         let mut ast = driver.compile_to_ast().unwrap();
 
-        // Now, manually run the semantic passes on the fresh AST
         let mut symbol_table = SymbolTable::new();
         let mut diag = DiagnosticEngine::new();
 
-        // 1. Semantic Lowering
         crate::semantic::lower::run_semantic_lowering(&mut ast, &mut diag, &mut symbol_table);
         if diag.has_errors() {
-            // In a real scenario, you might want to print diagnostics
             panic!("Semantic lowering failed during test");
         }
 
-        // 2. Semantic Analysis (MIR generation)
-        let mut analyzer = SemanticAnalyzer::new(&mut ast, &mut diag, &mut symbol_table);
-        let mir_module = analyzer.lower_module();
+        let snapshot = {
+            let mut analyzer = SemanticAnalyzer::new(&mut ast, &mut diag, &mut symbol_table);
+            analyzer.lower_module();
+
+            let functions = analyzer.get_functions();
+            let main_func_id = functions
+                .values()
+                .find(|f| f.name == "main")
+                .map(|f| f.id)
+                .expect("Could not find main function in test");
+            let main_func = functions.get(&main_func_id).unwrap().clone();
+
+            let all_blocks = analyzer.get_blocks();
+            let func_blocks: BTreeMap<_, _> = main_func
+                .blocks
+                .iter()
+                .map(|b_id| (*b_id, all_blocks.get(b_id).unwrap().clone()))
+                .collect();
+
+            let all_locals = analyzer.get_locals();
+            let all_func_locals_ids = main_func.locals.iter().chain(main_func.params.iter());
+            let func_locals: BTreeMap<_, _> = all_func_locals_ids
+                .map(|l_id| (*l_id, all_locals.get(l_id).unwrap().clone()))
+                .collect();
+
+            let types: BTreeMap<_, _> = analyzer.get_types().clone().into_iter().collect();
+            let constants: BTreeMap<_, _> = analyzer.mir_builder.get_constants().clone().into_iter().collect();
+
+            MirFunctionSnapshot {
+                func: main_func,
+                blocks: func_blocks,
+                locals: func_locals,
+                types,
+                constants,
+            }
+        };
+
         if diag.has_errors() {
             panic!("Semantic analysis failed during test");
         }
 
-        mir_module
+        snapshot
     }
 
     #[test]
@@ -1701,20 +1742,12 @@ mod tests {
             }
         "#;
         let mir = run_semantic_analyzer_test(source);
-        assert_snapshot!(mir, @"
-        MirModule(id: 1)
-          Functions: [1]
-          Globals: []
-          Types: [Int { is_signed: true, width: 32 }, Int { is_signed: true, width: 32 }, Int { is_signed: true, width: 32 }, Int { is_signed: true, width: 32 }, Int { is_signed: true, width: 32 }, Int { is_signed: true, width: 32 }]
-          Constants: [Int(1), Int(2), Int(2), Int(0), Int(1)]
-        ");
+        insta::assert_yaml_snapshot!(mir);
     }
 
     #[test]
     fn test_apply_binary_operand_conversion_exists() {
         // This test ensures the function exists and compiles correctly
-        // Actual functionality testing would require a proper test setup with lifetimes
-
         // We can at least verify the function signature is correct by checking
         // that it would compile if called with the right parameters
         let _function_exists = true; // Placeholder to ensure this test compiles

@@ -1,0 +1,79 @@
+---
+source: src/semantic/analyzer.rs
+expression: mir
+---
+func:
+  id: 1
+  name: main
+  return_type: 1
+  params: []
+  locals:
+    - 1
+    - 2
+  blocks:
+    - 2
+    - 3
+    - 4
+  entry_block: 1
+blocks:
+  2:
+    id: 2
+    statements: []
+    terminator:
+      Goto: 4
+  3:
+    id: 3
+    statements: []
+    terminator:
+      Goto: 4
+  4:
+    id: 4
+    statements: []
+    terminator: ~
+locals:
+  1:
+    id: 1
+    name: a
+    type_id: 2
+    is_param: false
+  2:
+    id: 2
+    name: b
+    type_id: 3
+    is_param: false
+types:
+  1:
+    Int:
+      is_signed: true
+      width: 32
+  2:
+    Int:
+      is_signed: true
+      width: 32
+  3:
+    Int:
+      is_signed: true
+      width: 32
+  4:
+    Int:
+      is_signed: true
+      width: 32
+  5:
+    Int:
+      is_signed: true
+      width: 32
+  6:
+    Int:
+      is_signed: true
+      width: 32
+constants:
+  1:
+    Int: 1
+  2:
+    Int: 2
+  3:
+    Int: 0
+  4:
+    Int: 1
+  5:
+    Int: 2

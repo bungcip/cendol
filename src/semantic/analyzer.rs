@@ -905,20 +905,32 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     fn lower_if_statement(&mut self, if_stmt: &IfStmt, _location: SourceSpan) {
         debug!("Lowering if statement");
 
-        // For now, simplify if statement handling
-        // TODO: Implement proper control flow with then/else blocks
-        // This involves creating new blocks for then and else branches
+        // Lower the condition expression
+        let cond_operand = self.lower_expression(if_stmt.condition);
 
-        // Evaluate condition (currently just processes it)
-        let _cond_operand = self.lower_expression(if_stmt.condition);
+        // Create blocks for then, else, and merge
+        let then_block = self.mir_builder.create_block();
+        let else_block = self.mir_builder.create_block();
+        let merge_block = self.mir_builder.create_block();
 
-        // Process then branch
+        // Set the terminator for the current block
+        self.mir_builder
+            .set_terminator(Terminator::If(cond_operand, then_block, else_block));
+
+        // Process the then branch
+        self.mir_builder.set_current_block(then_block);
         self.lower_node_ref(if_stmt.then_branch);
+        self.mir_builder.set_terminator(Terminator::Goto(merge_block));
 
-        // Process else branch if present
+        // Process the else branch
+        self.mir_builder.set_current_block(else_block);
         if let Some(else_branch) = &if_stmt.else_branch {
             self.lower_node_ref(*else_branch);
         }
+        self.mir_builder.set_terminator(Terminator::Goto(merge_block));
+
+        // Set the current block to the merge block
+        self.mir_builder.set_current_block(merge_block);
     }
 
     /// Emit an assignment statement
@@ -1642,12 +1654,176 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::diagnostic::DiagnosticEngine;
+    use crate::driver::{cli::CompileConfig, compiler::CompilerDriver};
+    use crate::mir::{ConstValue, MirBlock, MirFunction, MirType};
+    use serde::Serialize;
+    use std::collections::BTreeMap;
+
+    #[derive(Debug, Serialize)]
+    struct MirFunctionSnapshot {
+        func: MirFunction,
+        blocks: BTreeMap<MirBlockId, MirBlock>,
+        locals: BTreeMap<LocalId, Local>,
+        types: BTreeMap<TypeId, MirType>,
+        constants: BTreeMap<ConstValueId, ConstValue>,
+    }
+
+    fn run_semantic_analyzer_test(source: &str) -> MirFunctionSnapshot {
+        let mut config = CompileConfig::from_source_code(source.to_string());
+        config.dump_parser = true;
+
+        let mut driver = CompilerDriver::from_config(config);
+        let mut ast = driver.compile_to_ast().unwrap();
+
+        let mut symbol_table = SymbolTable::new();
+        let mut diag = DiagnosticEngine::new();
+
+        crate::semantic::lower::run_semantic_lowering(&mut ast, &mut diag, &mut symbol_table);
+        if diag.has_errors() {
+            panic!("Semantic lowering failed during test");
+        }
+
+        let snapshot = {
+            let mut analyzer = SemanticAnalyzer::new(&mut ast, &mut diag, &mut symbol_table);
+            analyzer.lower_module();
+
+            let functions = analyzer.get_functions();
+            let main_func_id = functions
+                .values()
+                .find(|f| f.name == "main")
+                .map(|f| f.id)
+                .expect("Could not find main function in test");
+            let main_func = functions.get(&main_func_id).unwrap().clone();
+
+            let all_blocks = analyzer.get_blocks();
+            let func_blocks: BTreeMap<_, _> = main_func
+                .blocks
+                .iter()
+                .map(|b_id| (*b_id, all_blocks.get(b_id).unwrap().clone()))
+                .collect();
+
+            let all_locals = analyzer.get_locals();
+            let all_func_locals_ids = main_func.locals.iter().chain(main_func.params.iter());
+            let func_locals: BTreeMap<_, _> = all_func_locals_ids
+                .map(|l_id| (*l_id, all_locals.get(l_id).unwrap().clone()))
+                .collect();
+
+            let types: BTreeMap<_, _> = analyzer.get_types().clone().into_iter().collect();
+            let constants: BTreeMap<_, _> = analyzer.mir_builder.get_constants().clone().into_iter().collect();
+
+            MirFunctionSnapshot {
+                func: main_func,
+                blocks: func_blocks,
+                locals: func_locals,
+                types,
+                constants,
+            }
+        };
+
+        if diag.has_errors() {
+            panic!("Semantic analysis failed during test");
+        }
+
+        snapshot
+    }
+
+    #[test]
+    fn test_if_else_statement() {
+        let source = r#"
+            int main() {
+                int a = 1;
+                int b = 2;
+                if (a > b) {
+                    return 1;
+                } else {
+                    return 2;
+                }
+            }
+        "#;
+        let mir = run_semantic_analyzer_test(source);
+        insta::assert_yaml_snapshot!(mir, @"
+        func:
+          id: 1
+          name: main
+          return_type: 1
+          params: []
+          locals:
+            - 1
+            - 2
+          blocks:
+            - 2
+            - 3
+            - 4
+          entry_block: 1
+        blocks:
+          2:
+            id: 2
+            statements: []
+            terminator:
+              Goto: 4
+          3:
+            id: 3
+            statements: []
+            terminator:
+              Goto: 4
+          4:
+            id: 4
+            statements: []
+            terminator: ~
+        locals:
+          1:
+            id: 1
+            name: a
+            type_id: 2
+            is_param: false
+          2:
+            id: 2
+            name: b
+            type_id: 3
+            is_param: false
+        types:
+          1:
+            Int:
+              is_signed: true
+              width: 32
+          2:
+            Int:
+              is_signed: true
+              width: 32
+          3:
+            Int:
+              is_signed: true
+              width: 32
+          4:
+            Int:
+              is_signed: true
+              width: 32
+          5:
+            Int:
+              is_signed: true
+              width: 32
+          6:
+            Int:
+              is_signed: true
+              width: 32
+        constants:
+          1:
+            Int: 1
+          2:
+            Int: 2
+          3:
+            Int: 0
+          4:
+            Int: 1
+          5:
+            Int: 2
+        ");
+    }
 
     #[test]
     fn test_apply_binary_operand_conversion_exists() {
         // This test ensures the function exists and compiles correctly
-        // Actual functionality testing would require a proper test setup with lifetimes
-
         // We can at least verify the function signature is correct by checking
         // that it would compile if called with the right parameters
         let _function_exists = true; // Placeholder to ensure this test compiles

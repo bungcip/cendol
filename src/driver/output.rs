@@ -4,19 +4,11 @@
 //! parser AST dumps, and HTML AST dumps.
 
 use itertools::Itertools;
-use std::fs;
-use std::path::PathBuf;
 
 use crate::ast::{Ast, NodeKind};
-use crate::ast_dumper::{AstDumper, DumpConfig};
-use crate::diagnostic::DiagnosticEngine;
-use crate::lang_options::LangOptions;
 use crate::pp::PPToken;
-use crate::semantic::SymbolTable;
 use crate::source_manager::SourceManager;
-use target_lexicon::Triple;
 
-use super::cli::CompileConfig;
 use super::compiler::CompilerError;
 
 /// Handler for various output formats
@@ -300,45 +292,4 @@ impl OutputHandler {
             NodeKind::Dummy => println!("DUMMY"),
         }
     }
-
-    /// Dump AST to HTML file
-    pub fn dump_ast(&self, args: &mut AstDumpArgs, config: &CompileConfig) -> Result<(), CompilerError> {
-        let output_path = config
-            .output_path
-            .clone()
-            .unwrap_or_else(|| PathBuf::from("ast_dump.html"));
-        let dump_config = DumpConfig {
-            pretty_print: true,
-            include_source: true,
-            max_depth: None,
-            max_source_lines: None,
-            output_path: output_path.clone(),
-        };
-        let mut dumper = AstDumper::new(
-            args.ast,
-            args.symbol_table,
-            args.diagnostics,
-            args.source_manager,
-            args.lang_options,
-            args.target_triple,
-            dump_config,
-        );
-        let html = dumper
-            .generate_html()
-            .map_err(|e| CompilerError::AstDumpError(format!("HTML generation error: {:?}", e)))?;
-
-        println!("Dumping AST to {}...", output_path.display());
-        fs::write(&output_path, html)
-            .map_err(|e| CompilerError::IoError(format!("Failed to write AST dump: {}", e)))?;
-
-        Ok(())
-    }
-}
-pub struct AstDumpArgs<'a> {
-    pub ast: &'a Ast,
-    pub symbol_table: &'a SymbolTable,
-    pub diagnostics: &'a mut DiagnosticEngine,
-    pub source_manager: &'a mut SourceManager,
-    pub lang_options: &'a LangOptions,
-    pub target_triple: &'a Triple,
 }

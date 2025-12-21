@@ -102,4 +102,37 @@ mod tests {
         }
         ");
     }
+
+    #[test]
+    fn test_consecutive_labels() {
+        let source = r#"
+            int main() {
+                goto end;
+                label1:
+                label2:
+                label3:
+                    return 1;
+                end:
+                    return 0;
+            }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @"
+        fn main() -> i32
+        {
+          locals {
+          }
+
+          bb1:
+            br bb3
+
+          bb2:
+            return const 1
+
+          bb3:
+            return const 0
+        }
+        ");
+    }
 }

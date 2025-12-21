@@ -417,9 +417,10 @@ impl MirBuilder {
     /// (i.e., not just the default Unreachable terminator)
     pub fn current_block_has_terminator(&self) -> bool {
         if let Some(block_id) = self.current_block
-            && let Some(block) = self.blocks.get(&block_id) {
-                return !matches!(block.terminator, Terminator::Unreachable);
-            }
+            && let Some(block) = self.blocks.get(&block_id)
+        {
+            return !matches!(block.terminator, Terminator::Unreachable);
+        }
         false
     }
 

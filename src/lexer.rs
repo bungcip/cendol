@@ -557,28 +557,41 @@ impl<'src> Lexer<'src> {
                 if let Some(next_pptoken) = current_token_iter.peek()
                     && let PPTokenKind::StringLiteral(_) = next_pptoken.kind
                 {
-                    // Concatenation is necessary. Start with the content of the current token.
-                    let mut content = Self::extract_string_content(&symbol).unwrap_or_default().to_string();
+                    // ⚡ Bolt: Optimized string concatenation.
+                    // The previous implementation performed multiple string allocations and copies.
+                    // This version calculates the total required size first, performs a single
+                    // allocation, and then appends the string contents. This significantly
+                    // reduces memory allocations and improves performance for code with many
+                    // adjacent string literals.
+
+                    // Collect all adjacent string literal symbols first.
+                    let mut symbols_to_concat = vec![symbol];
                     let mut end_location = token.location.end;
 
-                    // Loop through all adjacent string literals.
                     while let Some(next_pptoken) = current_token_iter.peek() {
-                        if let PPTokenKind::StringLiteral(next_symbol_pp) = next_pptoken.kind {
-                            // Consume the token since we are processing it.
+                        if let PPTokenKind::StringLiteral(next_symbol) = next_pptoken.kind {
                             let consumed_pptoken = current_token_iter.next().unwrap();
-
                             end_location = SourceLoc::new(
                                 consumed_pptoken.location.source_id(),
                                 consumed_pptoken.location.offset() + consumed_pptoken.length as u32,
                             );
-
-                            // Append its content to our buffer.
-                            if let Some(next_content) = Self::extract_string_content(&next_symbol_pp) {
-                                content.push_str(next_content);
-                            }
+                            symbols_to_concat.push(next_symbol);
                         } else {
-                            // The next token is not a string literal, so stop.
                             break;
+                        }
+                    }
+
+                    // Calculate the total length of the final string for a single allocation.
+                    let total_len = symbols_to_concat
+                        .iter()
+                        .map(|s| Self::extract_string_content(s).unwrap_or("").len())
+                        .sum();
+
+                    // Allocate the string with the exact capacity and build it.
+                    let mut content = String::with_capacity(total_len);
+                    for s in symbols_to_concat {
+                        if let Some(s_content) = Self::extract_string_content(&s) {
+                            content.push_str(s_content);
                         }
                     }
 

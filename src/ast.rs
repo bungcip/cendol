@@ -257,7 +257,7 @@ impl Ast {
             }
             NodeKind::If(if_stmt) => {
                 let mut needs_update = false;
-                let mut new_if_stmt = if_stmt.clone();
+                let mut new_if_stmt = *if_stmt;
 
                 if new_if_stmt.condition == old_ref {
                     new_if_stmt.condition = new_ref;
@@ -286,7 +286,7 @@ impl Ast {
             }
             NodeKind::While(while_stmt) => {
                 let mut needs_update = false;
-                let mut new_while_stmt = while_stmt.clone();
+                let mut new_while_stmt = *while_stmt;
 
                 if new_while_stmt.condition == old_ref {
                     new_while_stmt.condition = new_ref;
@@ -334,7 +334,7 @@ impl Ast {
             }
             NodeKind::For(for_stmt) => {
                 let mut needs_update = false;
-                let mut new_for_stmt = for_stmt.clone();
+                let mut new_for_stmt = *for_stmt;
 
                 if let Some(init) = new_for_stmt.init
                     && init == old_ref

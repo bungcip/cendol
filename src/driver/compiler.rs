@@ -138,13 +138,6 @@ impl CompilerDriver {
         Ok(())
     }
 
-    pub fn compile_to_ast(&mut self) -> Result<Ast, CompilerError> {
-        let input_file = self.config.input_files[0].clone();
-        let (ast, ..) = self.compile_file(&input_file)?;
-        self.report_errors()?;
-        Ok(ast)
-    }
-
     /// Compile a single file through the full pipeline
     fn compile_file(&mut self, source_path: &Path) -> Result<CompileOutput, CompilerError> {
         log::debug!("Starting compilation of file: {}", source_path.display());
@@ -418,10 +411,7 @@ impl CompilerDriver {
         constants: &HashMap<ConstValueId, ConstValue>,
     ) -> Result<(), CompilerError> {
         // Create MIR dumper config for console output
-        let dump_config = MirDumpConfig {
-            output_path: std::path::PathBuf::from("console"), // Not used for console output
-            include_header: true,
-        };
+        let dump_config = MirDumpConfig { include_header: true };
 
         // Create MIR dumper
         let dumper = MirDumper::new(
@@ -443,8 +433,6 @@ impl CompilerDriver {
 
         // Output to console
         print!("{}", mir_dump);
-
-        log::info!("MIR dump written to console");
         Ok(())
     }
 
@@ -459,17 +447,6 @@ impl CompilerDriver {
         types: &HashMap<TypeId, MirType>,
         statements: &HashMap<MirStmtId, MirStmt>,
     ) -> Result<(), CompilerError> {
-        use crate::cranelift_dumper::{CraneliftDumpConfig, CraneliftDumper};
-
-        // Create Cranelift dumper configuration
-        let dump_config = CraneliftDumpConfig {
-            include_header: true,
-            show_analysis: true,
-        };
-
-        // Create Cranelift dumper (currently unused but may be used for future enhancements)
-        let _dumper = CraneliftDumper::new(&dump_config);
-
         // Create a temporary MIR to Cranelift lowerer just for dumping
         let mut mir_codegen = MirToCraneliftLowerer::new(
             mir_module.clone(),
@@ -504,7 +481,7 @@ impl CompilerDriver {
         let original_skip_validation = self.config.skip_validation;
         self.config.skip_validation = true;
 
-        let result = self._get_mir_dump_string_internal(include_header);
+        let result = self.get_mir_dump_string_internal(include_header);
 
         // Restore original value
         self.config.skip_validation = original_skip_validation;
@@ -518,7 +495,7 @@ impl CompilerDriver {
         let original_skip_validation = self.config.skip_validation;
         self.config.skip_validation = true;
 
-        let result = self._get_function_mir_dump_string_internal(include_header);
+        let result = self.get_function_mir_dump_string_internal(include_header);
 
         // Restore original value
         self.config.skip_validation = original_skip_validation;
@@ -527,16 +504,13 @@ impl CompilerDriver {
     }
 
     /// Internal implementation for getting MIR dump as string
-    fn _get_mir_dump_string_internal(&mut self, include_header: bool) -> Result<String, CompilerError> {
+    fn get_mir_dump_string_internal(&mut self, include_header: bool) -> Result<String, CompilerError> {
         let input_file = self.config.input_files[0].clone();
         let (_ast, _symbol_table, mir_module, functions, blocks, locals, globals, types, statements, constants) =
             self.compile_file(&input_file)?;
 
         // Create MIR dumper config for string output
-        let dump_config = MirDumpConfig {
-            output_path: std::path::PathBuf::from("dummy.mir"), // Not used for string output
-            include_header,
-        };
+        let dump_config = MirDumpConfig { include_header };
 
         // Create MIR dumper
         let dumper = MirDumper::new(
@@ -560,14 +534,14 @@ impl CompilerDriver {
     }
 
     /// Internal implementation for getting single function MIR dump as string
-    fn _get_function_mir_dump_string_internal(&mut self, include_header: bool) -> Result<String, CompilerError> {
+    fn get_function_mir_dump_string_internal(&mut self, include_header: bool) -> Result<String, CompilerError> {
         let input_file = self.config.input_files[0].clone();
         let (_ast, _symbol_table, mir_module, functions, blocks, locals, globals, types, statements, constants) =
             self.compile_file(&input_file)?;
 
         // Create MIR dumper config for string output
         let dump_config = MirDumpConfig {
-            output_path: std::path::PathBuf::from("dummy.mir"), // Not used for string output
+            // output_path: std::path::PathBuf::from("dummy.mir"), // Not used for string output
             include_header,
         };
         // Create MIR dumper (we don't need all parameters for function-only dump)

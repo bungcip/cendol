@@ -20,16 +20,12 @@ use crate::mir::{
 /// Configuration for MIR dump output
 #[derive(Debug, Clone)]
 pub struct MirDumpConfig {
-    pub output_path: std::path::PathBuf,
     pub include_header: bool,
 }
 
 impl Default for MirDumpConfig {
     fn default() -> Self {
-        MirDumpConfig {
-            output_path: std::path::PathBuf::from("output.mir"),
-            include_header: true,
-        }
+        MirDumpConfig { include_header: true }
     }
 }
 

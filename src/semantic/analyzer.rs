@@ -121,21 +121,20 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     /// Try to lower a node as a statement
     fn try_lower_as_statement(&mut self, node_ref: NodeRef) {
         // Get the node data first to avoid borrowing issues
-        let node_kind = self.ast.get_node(node_ref).kind.clone();
-        let node_span = self.ast.get_node(node_ref).span;
+        let node = self.ast.get_node(node_ref);
 
-        match node_kind {
+        match node.kind {
             NodeKind::Return(expr) => {
-                self.lower_return_statement(&expr, node_span);
+                self.lower_return_statement(&expr, node.span);
             }
             NodeKind::Goto(label) => {
-                self.lower_goto_statement(label, node_span);
+                self.lower_goto_statement(label, node.span);
             }
             NodeKind::Label(label, statement) => {
-                self.lower_label_statement(label, statement, node_span);
+                self.lower_label_statement(label, statement, node.span);
             }
             NodeKind::If(if_stmt) => {
-                self.lower_if_statement(&if_stmt, node_span);
+                self.lower_if_statement(&if_stmt, node.span);
             }
             NodeKind::ExpressionStatement(Some(expr_ref)) => {
                 self.lower_expression(expr_ref);

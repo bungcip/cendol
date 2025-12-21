@@ -101,20 +101,20 @@ pub enum NodeKind {
 // These are stored separately with index-based references.
 
 // Control flow statements
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct IfStmt {
     pub condition: NodeRef,
     pub then_branch: NodeRef,
     pub else_branch: Option<NodeRef>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct WhileStmt {
     pub condition: NodeRef,
     pub body: NodeRef,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct ForStmt {
     pub init: Option<NodeRef>, // Can be Declaration or Expression
     pub condition: Option<NodeRef>,
@@ -215,6 +215,7 @@ pub enum TypeSpecifier {
 
 // Storage classes
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[repr(u8)]
 pub enum StorageClass {
     Typedef,
     Extern,
@@ -229,6 +230,7 @@ pub use super::types::TypeQualifiers;
 
 // Unary Operators
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[repr(u8)]
 pub enum UnaryOp {
     Plus,
     Minus,
@@ -242,6 +244,7 @@ pub enum UnaryOp {
 
 // Binary Operators (includes assignment types)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[repr(u8)]
 pub enum BinaryOp {
     Add,
     Sub,

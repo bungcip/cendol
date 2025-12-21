@@ -169,59 +169,39 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         let node_kind = self.ast.get_node(stmt_ref).kind.clone();
 
         match node_kind {
-            NodeKind::Label(label, statement) => {
-                // Check if this is a consecutive label (the statement is another label)
-                let stmt_node_kind = self.ast.get_node(statement).kind.clone();
-                if let NodeKind::Label(next_label, _) = stmt_node_kind {
-                    // This is a consecutive label
+            NodeKind::Label(label, _) => {
+                // If the label is already mapped, it means we've processed it as part of a
+                // preceding chain of labels. We can skip it to avoid redundant work and errors.
+                if self.label_map.contains_key(&label) {
+                    return;
+                }
 
-                    // Create a block for the first label in the consecutive chain
-                    let block_id = if !self.label_map.contains_key(&label) {
-                        let target_block_id = self.mir_builder.create_block();
-                        self.label_map.insert(label, target_block_id);
-                        target_block_id
-                    } else {
-                        *self.label_map.get(&label).unwrap()
-                    };
+                // This is the first unprocessed label in a chain. Create a single block for the entire chain.
+                let target_block_id = self.mir_builder.create_block();
+                let mut current_stmt = stmt_ref;
 
-                    // Ensure the next label also maps to the same block
-                    self.label_map.insert(next_label, block_id);
-
-                    // For consecutive labels, we need to continue processing the chain
-                    // but skip the recursive call here since the next label will be processed
-                    // when we encounter it in the main traversal
-                    // Just process the final statement in the chain by unwrapping all consecutive labels
-                    let mut current_statement = statement;
-                    while let NodeKind::Label(_, next_stmt) = self.ast.get_node(current_statement).kind.clone() {
-                        current_statement = next_stmt;
-                    }
-                    // Now process the final statement after the consecutive labels
-                    self.collect_labels_recursive(current_statement);
-                } else {
-                    // This is a regular label with a non-label statement
-                    // Check for duplicate label definition
-                    if self.label_map.contains_key(&label) {
-                        let node_span = self.ast.get_node(stmt_ref).span;
+                // Traverse the chain of consecutive labels, mapping each to the same block.
+                while let NodeKind::Label(current_label, next_stmt) = self.ast.get_node(current_stmt).kind.clone() {
+                    if self.label_map.contains_key(&current_label) {
+                        let node_span = self.ast.get_node(current_stmt).span;
                         self.report_error(SemanticError::Redefinition {
-                            name: label,
-                            first_def: node_span,
+                            name: current_label,
+                            first_def: node_span, // Note: This is not the ideal span for first_def
                             second_def: node_span,
                         });
                     } else {
-                        // Create a new basic block for this label
-                        let target_block_id = self.mir_builder.create_block();
-
-                        // Register the label mapping
-                        self.label_map.insert(label, target_block_id);
+                        self.label_map.insert(current_label, target_block_id);
                     }
-
-                    // Recursively collect labels from the statement that follows this label
-                    self.collect_labels_recursive(statement);
+                    current_stmt = next_stmt;
                 }
+
+                // After the loop, current_stmt is the first non-label statement.
+                // Recursively process it for any nested labels.
+                self.collect_labels_recursive(current_stmt);
             }
             NodeKind::CompoundStatement(nodes) => {
                 // For compound statements, recursively collect labels from all items
-                for nested_stmt_ref in nodes {
+                for &nested_stmt_ref in nodes.iter() {
                     self.collect_labels_recursive(nested_stmt_ref);
                 }
             }
@@ -1185,23 +1165,10 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             // Process the statement that follows the label
             self.lower_node_ref(statement);
         } else {
-            // This label wasn't created in the first pass, which means it's a consecutive label.
-            // We need to find the previous label's block and map this label to it.
-            // However, since we don't have easy access to the previous label here,
-            // we'll create a new block for now and handle this case better.
-            //
-            // TODO: Fix this by tracking consecutive labels better
-
-            // Create a new basic block for this label (fallback)
-            let target_block_id = self.mir_builder.create_block();
-            self.label_map.insert(label, target_block_id);
-
-            // Switch to the new block for the label's statement
-            self.mir_builder.set_current_block(target_block_id);
-            self.current_block = Some(target_block_id);
-
-            // Process the statement that follows the label
-            self.lower_node_ref(statement);
+            // This path should be unreachable. After the refactoring of `collect_labels_recursive`,
+            // all labels, including consecutive ones, are mapped to a block in the first pass.
+            // If we hit this else, it indicates a bug in the label collection logic.
+            panic!("Unmapped label '{}' found during lowering", label);
         }
     }
 

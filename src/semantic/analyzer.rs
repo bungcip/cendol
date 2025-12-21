@@ -1029,15 +1029,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
     /// Lower a return statement
     fn lower_return_statement(&mut self, expr: &Option<NodeRef>, _location: SourceSpan) {
-        // Check if current block is already terminated (unreachable code)
-        if self.mir_builder.current_block_has_terminator() {
-            debug!("Skipping unreachable return statement");
-            return;
-        }
-
         if let Some(expr_ref) = expr {
             let operand = self.lower_expression(*expr_ref);
-
             self.mir_builder.set_terminator(Terminator::Return(Some(operand)));
         } else {
             self.mir_builder.set_terminator(Terminator::Return(None));

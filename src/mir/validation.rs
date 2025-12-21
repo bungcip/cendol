@@ -15,8 +15,6 @@ use hashbrown::HashMap;
 pub enum ValidationError {
     /// Local variable is missing a type
     LocalMissingType(LocalId),
-    /// Block is missing a terminator
-    BlockMissingTerminator(MirBlockId),
     /// Illegal operation found in MIR
     IllegalOperation(String),
     /// Type not found in type table
@@ -39,9 +37,6 @@ impl std::fmt::Display for ValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ValidationError::LocalMissingType(local_id) => write!(f, "Local {} is missing a type", local_id.get()),
-            ValidationError::BlockMissingTerminator(block_id) => {
-                write!(f, "Block {} is missing a terminator", block_id.get())
-            }
             ValidationError::IllegalOperation(op) => write!(f, "Illegal operation: {}", op),
             ValidationError::TypeNotFound(type_id) => write!(f, "Type {} not found", type_id.get()),
             ValidationError::LocalNotFound(local_id) => write!(f, "Local {} not found", local_id.get()),
@@ -195,15 +190,6 @@ impl MirValidator {
         for block_id in &func.blocks {
             if !self.blocks.contains_key(block_id) {
                 self.errors.push(ValidationError::BlockNotFound(*block_id));
-            }
-        }
-
-        // Validate block terminators separately to avoid borrow checker issues
-        for block_id in &func.blocks {
-            if let Some(block) = self.blocks.get(block_id)
-                && block.terminator.is_none()
-            {
-                self.errors.push(ValidationError::BlockMissingTerminator(*block_id));
             }
         }
 

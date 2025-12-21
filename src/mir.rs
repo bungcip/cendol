@@ -93,7 +93,7 @@ impl MirFunction {
 pub struct MirBlock {
     pub id: MirBlockId,
     pub statements: Vec<MirStmtId>,
-    pub terminator: Option<Terminator>,
+    pub terminator: Terminator,
 }
 
 impl MirBlock {
@@ -101,7 +101,7 @@ impl MirBlock {
         Self {
             id,
             statements: Vec::new(),
-            terminator: None,
+            terminator: Terminator::Unreachable,
         }
     }
 }
@@ -403,24 +403,24 @@ impl MirBuilder {
         if let Some(block_id) = self.current_block
             && let Some(block) = self.blocks.get_mut(&block_id)
         {
-            block.terminator = Some(terminator);
-        }
-    }
-
-    /// Check if the current block has a terminator
-    pub fn current_block_has_terminator(&self) -> bool {
-        if let Some(block_id) = self.current_block
-            && let Some(block) = self.blocks.get(&block_id)
-        {
-            block.terminator.is_some()
-        } else {
-            false
+            block.terminator = terminator;
         }
     }
 
     /// Set the current block
     pub fn set_current_block(&mut self, block_id: MirBlockId) {
         self.current_block = Some(block_id);
+    }
+
+    /// Check if the current block has a non-unreachable terminator
+    /// Since terminators always exist, this checks if the terminator is meaningful
+    /// (i.e., not just the default Unreachable terminator)
+    pub fn current_block_has_terminator(&self) -> bool {
+        if let Some(block_id) = self.current_block
+            && let Some(block) = self.blocks.get(&block_id) {
+                return !matches!(block.terminator, Terminator::Unreachable);
+            }
+        false
     }
 
     /// Create a new function

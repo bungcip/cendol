@@ -198,14 +198,9 @@ impl<'a> MirDumper<'a> {
         }
 
         // Dump terminator (MUST be explicit)
-        if let Some(terminator) = &block.terminator {
-            write!(output, "    ")?;
-            self.dump_terminator(output, terminator)?;
-            writeln!(output)?;
-        } else {
-            // This should never happen - it's a bug if a block has no terminator
-            writeln!(output, "    ; ERROR: Missing terminator!")?;
-        }
+        write!(output, "    ")?;
+        self.dump_terminator(output, &block.terminator)?;
+        writeln!(output)?;
 
         Ok(())
     }

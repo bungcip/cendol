@@ -435,7 +435,7 @@ impl MirToCraneliftLowerer {
             let return_const_id = ConstValueId::new((self.constants.len() + 1) as u32).unwrap();
             self.constants.insert(return_const_id, ConstValue::Int(0));
             let return_operand = Operand::Constant(return_const_id);
-            entry_block.terminator = Some(Terminator::Return(Some(return_operand)));
+            entry_block.terminator = Terminator::Return(Some(return_operand));
 
             func.entry_block = entry_block_id;
             func.blocks.push(entry_block_id);
@@ -701,9 +701,7 @@ impl MirToCraneliftLowerer {
             }
 
             // 2. Emit terminator
-            let terminator = mir_block.terminator.as_ref().expect("Block must have terminator");
-
-            match terminator {
+            match &mir_block.terminator {
                 Terminator::Goto(target) => {
                     let target_cl_block = cl_blocks.get(target).expect("Target block not found");
                     builder.ins().jump(*target_cl_block, &[]);
@@ -835,7 +833,7 @@ mod tests {
         module.constants.push(ConstValue::Int(42));
 
         let return_operand = Operand::Constant(return_const_id);
-        entry_block.terminator = Some(Terminator::Return(Some(return_operand)));
+        entry_block.terminator = Terminator::Return(Some(return_operand));
 
         func.entry_block = entry_block_id;
         func.blocks.push(entry_block_id);

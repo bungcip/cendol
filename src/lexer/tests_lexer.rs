@@ -71,7 +71,7 @@ mod tests {
 
         for keyword in keywords {
             let symbol = Symbol::new(keyword);
-            let expected_kind = super::is_keyword(symbol).expect(&format!("{} should be a keyword", keyword));
+            let expected_kind = super::is_keyword(symbol).unwrap_or_else(|| panic!("{} should be a keyword", keyword));
 
             let token_kinds = lex_string_to_token_kind(keyword);
             assert_eq!(token_kinds.len(), 1, "Expected 1 token for keyword: {}", keyword);
@@ -184,7 +184,7 @@ mod tests {
 
         // Float constants
         let float_literals = vec![
-            ("3.14", TokenKind::FloatConstant(3.14)),
+            ("1.5", TokenKind::FloatConstant(1.5)),
             ("1.23e-4", TokenKind::FloatConstant(1.23e-4)),
             ("0x1.2p3", TokenKind::FloatConstant(9.0)),
         ];

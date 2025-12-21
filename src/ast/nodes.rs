@@ -519,8 +519,8 @@ mod tests {
 
     #[test]
     fn test_literal_float_constructor() {
-        let node = NodeKind::literal_float(3.14);
-        assert!(matches!(node, NodeKind::LiteralFloat(3.14)));
+        let node = NodeKind::literal_float(1.5);
+        assert!(matches!(node, NodeKind::LiteralFloat(val) if val == 1.5));
     }
 
     #[test]

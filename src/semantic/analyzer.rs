@@ -2101,11 +2101,6 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    // Tests moved to tests_mir.rs
-}
-
 /// Extract identifier from a declarator (helper function)
 fn extract_identifier(declarator: &Declarator) -> Option<Symbol> {
     match declarator {
@@ -2116,4 +2111,9 @@ fn extract_identifier(declarator: &Declarator) -> Option<Symbol> {
         Declarator::BitField(base, _) => extract_identifier(base),
         _ => None,
     }
+}
+
+#[cfg(test)]
+mod tests {
+    // Tests moved to tests_mir.rs
 }

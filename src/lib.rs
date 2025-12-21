@@ -1,5 +1,4 @@
 pub mod ast;
-pub mod ast_dumper;
 pub mod diagnostic;
 pub mod driver;
 pub mod lang_options;

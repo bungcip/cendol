@@ -35,8 +35,6 @@ pub struct CompilerDriver {
 }
 
 type CompileOutput = (
-    Ast,
-    SymbolTable,
     MirModule,
     HashMap<MirFunctionId, MirFunction>,
     HashMap<MirBlockId, MirBlock>,
@@ -69,7 +67,7 @@ impl CompilerDriver {
     pub fn run(&mut self) -> Result<(), CompilerError> {
         // Process each input file
         for input_file in self.config.input_files.clone() {
-            let (_ast, _symbol_table, mir_module, functions, blocks, locals, globals, types, statements, _constants) =
+            let (mir_module, functions, blocks, locals, globals, types, statements, _constants) =
                 self.compile_file(&input_file)?;
 
             // Skip code generation if dumping MIR
@@ -86,48 +84,46 @@ impl CompilerDriver {
                 Path::new("a.out").to_path_buf()
             };
 
-            if !self.config.dump_ast {
-                // Use MIR codegen instead of AST codegen
-                let mir_codegen = MirToCraneliftLowerer::new(
-                    mir_module.clone(),
-                    functions.clone(),
-                    blocks.clone(),
-                    locals.clone(),
-                    globals.clone(),
-                    types.clone(),
-                    statements.clone(),
-                );
-                let object_file = mir_codegen.compile().unwrap();
+            // Use MIR codegen instead of AST codegen
+            let mir_codegen = MirToCraneliftLowerer::new(
+                mir_module.clone(),
+                functions.clone(),
+                blocks.clone(),
+                locals.clone(),
+                globals.clone(),
+                types.clone(),
+                statements.clone(),
+            );
+            let object_file = mir_codegen.compile().unwrap();
 
-                // Write the object file to a temporary file
-                let temp_object_path = format!("{}.o", output_path.display());
-                std::fs::write(&temp_object_path, object_file).unwrap();
+            // Write the object file to a temporary file
+            let temp_object_path = format!("{}.o", output_path.display());
+            std::fs::write(&temp_object_path, object_file).unwrap();
 
-                // Link the object file into an executable using clang
-                let status = std::process::Command::new("clang")
-                    .arg(&temp_object_path)
-                    .arg("-o")
-                    .arg(&output_path)
-                    .status()
-                    .expect("Failed to execute clang for linking");
+            // Link the object file into an executable using clang
+            let status = std::process::Command::new("clang")
+                .arg(&temp_object_path)
+                .arg("-o")
+                .arg(&output_path)
+                .status()
+                .expect("Failed to execute clang for linking");
 
-                if !status.success() {
-                    return Err(CompilerError::IoError(
-                        "Failed to link object file into executable".to_string(),
-                    ));
-                }
+            if !status.success() {
+                return Err(CompilerError::IoError(
+                    "Failed to link object file into executable".to_string(),
+                ));
+            }
 
-                // Remove the temporary object file
-                std::fs::remove_file(&temp_object_path).unwrap();
+            // Remove the temporary object file
+            std::fs::remove_file(&temp_object_path).unwrap();
 
-                // Set executable permissions on the output file
-                use std::os::unix::fs::PermissionsExt;
-                if let Ok(metadata) = std::fs::metadata(&output_path) {
-                    let mut permissions = metadata.permissions();
-                    permissions.set_mode(0o755); // rwxr-xr-x
-                    if let Err(e) = std::fs::set_permissions(&output_path, permissions) {
-                        eprintln!("Warning: Failed to set executable permissions: {}", e);
-                    }
+            // Set executable permissions on the output file
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(metadata) = std::fs::metadata(&output_path) {
+                let mut permissions = metadata.permissions();
+                permissions.set_mode(0o755); // rwxr-xr-x
+                if let Err(e) = std::fs::set_permissions(&output_path, permissions) {
+                    eprintln!("Warning: Failed to set executable permissions: {}", e);
                 }
             }
         }
@@ -191,8 +187,6 @@ impl CompilerDriver {
                 &self.source_manager,
             )?;
             return Ok((
-                Ast::new(),
-                SymbolTable::new(),
                 MirModule::new(crate::mir::MirModuleId::new(1).unwrap()),
                 HashMap::new(),
                 HashMap::new(),
@@ -245,8 +239,6 @@ impl CompilerDriver {
             // This is a special case. We want to stop after dumping the parser output.
             // We'll return an empty symbol table and MIR module.
             return Ok((
-                ast,
-                SymbolTable::new(),
                 MirModule::new(crate::mir::MirModuleId::new(1).unwrap()),
                 HashMap::new(),
                 HashMap::new(),
@@ -334,8 +326,6 @@ impl CompilerDriver {
             )?;
             // Don't continue with code generation if dumping MIR
             return Ok((
-                ast,
-                symbol_table,
                 mir_module,
                 functions,
                 blocks,
@@ -353,8 +343,6 @@ impl CompilerDriver {
             self.dump_cranelift(&mir_module, &functions, &blocks, &locals, &globals, &types, &statements)?;
             // Don't continue with code generation if dumping Cranelift IR
             return Ok((
-                ast,
-                symbol_table,
                 mir_module,
                 functions,
                 blocks,
@@ -367,8 +355,6 @@ impl CompilerDriver {
         }
 
         Ok((
-            ast,
-            symbol_table,
             mir_module,
             functions,
             blocks,
@@ -429,7 +415,7 @@ impl CompilerDriver {
         // Generate MIR dump
         let mir_dump = dumper
             .generate_mir_dump()
-            .map_err(|e| CompilerError::AstDumpError(format!("Failed to generate MIR dump: {}", e)))?;
+            .map_err(|e| CompilerError::MirDumpError(format!("Failed to generate MIR dump: {}", e)))?;
 
         // Output to console
         print!("{}", mir_dump);
@@ -506,7 +492,7 @@ impl CompilerDriver {
     /// Internal implementation for getting MIR dump as string
     fn get_mir_dump_string_internal(&mut self, include_header: bool) -> Result<String, CompilerError> {
         let input_file = self.config.input_files[0].clone();
-        let (_ast, _symbol_table, mir_module, functions, blocks, locals, globals, types, statements, constants) =
+        let (mir_module, functions, blocks, locals, globals, types, statements, constants) =
             self.compile_file(&input_file)?;
 
         // Create MIR dumper config for string output
@@ -528,7 +514,7 @@ impl CompilerDriver {
         // Generate MIR dump
         let mir_dump = dumper
             .generate_mir_dump_string()
-            .map_err(|e| CompilerError::AstDumpError(format!("Failed to generate MIR dump: {}", e)))?;
+            .map_err(|e| CompilerError::MirDumpError(format!("Failed to generate MIR dump: {}", e)))?;
 
         Ok(mir_dump)
     }
@@ -536,7 +522,7 @@ impl CompilerDriver {
     /// Internal implementation for getting single function MIR dump as string
     fn get_function_mir_dump_string_internal(&mut self, include_header: bool) -> Result<String, CompilerError> {
         let input_file = self.config.input_files[0].clone();
-        let (_ast, _symbol_table, mir_module, functions, blocks, locals, globals, types, statements, constants) =
+        let (mir_module, functions, blocks, locals, globals, types, statements, constants) =
             self.compile_file(&input_file)?;
 
         // Create MIR dumper config for string output
@@ -561,7 +547,7 @@ impl CompilerDriver {
         if let Some(&func_id) = functions.keys().next() {
             let mir_dump = dumper
                 .generate_function_mir_dump(func_id)
-                .map_err(|e| CompilerError::AstDumpError(format!("Failed to generate MIR dump: {}", e)))?;
+                .map_err(|e| CompilerError::MirDumpError(format!("Failed to generate MIR dump: {}", e)))?;
             Ok(mir_dump)
         } else {
             Ok(String::new())
@@ -582,8 +568,8 @@ pub enum CompilerError {
     ParserError(String),
     #[error("Semantic analysis failed: {0}")]
     SemanticError(String),
-    #[error("AST dump failed: {0}")]
-    AstDumpError(String),
+    #[error("MIR dump failed: {0}")]
+    MirDumpError(String),
     #[error("Compilation failed due to errors")]
     CompilationFailed,
 }

@@ -28,10 +28,6 @@ pub struct Cli {
     #[clap(long)]
     pub dump_parser: bool,
 
-    /// Generate HTML AST dump
-    #[clap(long)]
-    pub dump_ast: bool,
-
     /// Dump MIR (Mid-level Intermediate Representation) to console
     #[clap(long)]
     pub dump_mir: bool,
@@ -93,7 +89,6 @@ pub struct PreprocessorOptions {
 pub struct CompileConfig {
     pub input_files: Vec<PathBuf>,
     pub output_path: Option<PathBuf>,
-    pub dump_ast: bool,
     pub dump_mir: bool,
     pub dump_cranelift: bool,
     pub dump_parser: bool,
@@ -121,7 +116,6 @@ impl CompileConfig {
         Self {
             input_files: vec![path],
             output_path: None,
-            dump_ast: false,
             dump_mir: false,
             dump_cranelift: false,
             dump_parser: false,
@@ -195,7 +189,6 @@ impl Cli {
         Ok(CompileConfig {
             input_files: self.input_files,
             output_path: self.output,
-            dump_ast: self.dump_ast,
             dump_mir: self.dump_mir,
             dump_cranelift: self.dump_cranelift,
             dump_parser: self.dump_parser,

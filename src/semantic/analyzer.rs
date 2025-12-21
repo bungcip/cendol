@@ -7,8 +7,8 @@
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::mir::{
-    self, ConstValue, ConstValueId, Local, LocalId, MirBlock, MirBlockId, MirBuilder, MirFunction, MirFunctionId,
-    MirModule, MirStmt, Operand, Place, Terminator, TypeId,
+    self, BinaryOp as MirBinaryOp, CallTarget, ConstValue, ConstValueId, Local, LocalId, MirBlock, MirBlockId,
+    MirBuilder, MirFunction, MirFunctionId, MirModule, MirStmt, Operand, Place, Rvalue, Terminator, TypeId,
 };
 use crate::semantic::symbol_table::SymbolTable;
 use crate::source_manager::SourceSpan;
@@ -24,9 +24,9 @@ pub struct SemanticAnalyzer<'a, 'src> {
     current_function: Option<MirFunctionId>,
     current_block: Option<MirBlockId>,
     /// Maps variable names to their MIR Local IDs
-    local_map: HashMap<String, LocalId>,
+    local_map: HashMap<Symbol, LocalId>,
     /// Maps label names to their MIR Block IDs
-    label_map: HashMap<String, MirBlockId>,
+    label_map: HashMap<Symbol, MirBlockId>,
     /// Track errors during analysis for early termination
     has_errors: bool,
 }
@@ -171,24 +171,22 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
         match node_kind {
             NodeKind::Label(label, statement) => {
-                let label_str = label.to_string();
-
                 // Check if this is a consecutive label (the statement is another label)
                 let stmt_node_kind = self.ast.get_node(statement).kind.clone();
                 if let NodeKind::Label(next_label, _) = stmt_node_kind {
                     // This is a consecutive label
 
                     // Create a block for the first label in the consecutive chain
-                    let block_id = if !self.label_map.contains_key(&label_str) {
+                    let block_id = if !self.label_map.contains_key(&label) {
                         let target_block_id = self.mir_builder.create_block();
-                        self.label_map.insert(label_str.clone(), target_block_id);
+                        self.label_map.insert(label, target_block_id);
                         target_block_id
                     } else {
-                        *self.label_map.get(&label_str).unwrap()
+                        *self.label_map.get(&label).unwrap()
                     };
 
                     // Ensure the next label also maps to the same block
-                    self.label_map.insert(next_label.to_string(), block_id);
+                    self.label_map.insert(next_label, block_id);
 
                     // For consecutive labels, we need to continue processing the chain
                     // but skip the recursive call here since the next label will be processed
@@ -203,7 +201,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 } else {
                     // This is a regular label with a non-label statement
                     // Check for duplicate label definition
-                    if self.label_map.contains_key(&label_str) {
+                    if self.label_map.contains_key(&label) {
                         let node_span = self.ast.get_node(stmt_ref).span;
                         self.report_error(SemanticError::Redefinition {
                             name: label,
@@ -215,7 +213,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                         let target_block_id = self.mir_builder.create_block();
 
                         // Register the label mapping
-                        self.label_map.insert(label_str.clone(), target_block_id);
+                        self.label_map.insert(label, target_block_id);
                     }
 
                     // Recursively collect labels from the statement that follows this label
@@ -239,43 +237,36 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         debug!("Lowering function definition");
 
         // Extract function name from declarator
-        let func_name = match &func_def.declarator {
-            Declarator::Identifier(symbol, _, _) => {
+        let func_name = match extract_identifier(&func_def.declarator) {
+            Some(symbol) => {
                 debug!("Found function identifier directly: {}", symbol);
-                symbol.to_string()
+                symbol
             }
-            other => {
-                debug!("Function declarator type: {:?}", std::mem::discriminant(other));
-                if let Some(symbol) = extract_identifier(&func_def.declarator) {
-                    debug!("Extracted function name: {}", symbol);
-                    symbol.to_string()
-                } else {
-                    debug!(
-                        "Failed to extract function name from declarator: {:?}",
-                        func_def.declarator
-                    );
-                    self.report_error(SemanticError::InvalidFunctionDeclarator { location });
-                    "unknown_function".to_string()
-                }
+            None => {
+                self.report_error(SemanticError::InvalidFunctionDeclarator { location });
+                Symbol::new("unknown_function")
             }
         };
 
         // Create MIR function
         let return_type = self.get_int_type(); // Default to int for now
-        let func_id = self.mir_builder.create_function(func_name.clone(), return_type);
+        let func_id = self.mir_builder.create_function(func_name, return_type);
+        debug!(
+            "Created function '{}' with ID {:?} (ID as integer: {})",
+            func_name,
+            func_id,
+            func_id.get()
+        );
 
         // Set current function
         self.mir_builder.set_current_function(func_id);
         self.current_function = Some(func_id);
 
-        // Get function and set entry block using public getters
-        let functions = self.mir_builder.get_functions();
-        if let Some(current_func) = functions.get(&func_id) {
-            let entry_block = current_func.entry_block;
-            let _ = functions; // Release the immutable borrow
-            self.mir_builder.set_current_block(entry_block);
-            self.current_block = Some(entry_block);
-        }
+        // Create entry block explicitly
+        let entry_block_id = self.mir_builder.create_block();
+        self.mir_builder.set_function_entry_block(func_id, entry_block_id);
+        self.mir_builder.set_current_block(entry_block_id);
+        self.current_block = Some(entry_block_id);
 
         // Push function scope for parameters and locals
         let func_scope = self
@@ -285,7 +276,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
         // Process function parameters and create locals for them
         // Skip parameters for main function
-        if func_name != "main" {
+        if func_name.as_str() != "main" {
             self.lower_function_parameters(&func_def.declarator, location);
         } else {
             debug!("Skipping parameters for main function");
@@ -323,7 +314,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         // Extract parameter name from declarator if present
         let param_name = if let Some(declarator) = &param.declarator {
             if let Some(symbol) = extract_identifier(declarator) {
-                symbol.to_string()
+                symbol
             } else {
                 // Abstract parameter (no name) - skip for now
                 debug!("Skipping abstract parameter without name");
@@ -338,10 +329,10 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         debug!("Processing parameter: {}", param_name);
 
         // Check for redeclaration in current scope
-        if let Some((existing_entry, _)) = self.symbol_table.lookup_symbol(param_name.as_str().into()) {
+        if let Some((existing_entry, _)) = self.symbol_table.lookup_symbol(param_name) {
             let existing = self.symbol_table.get_symbol_entry(existing_entry);
             self.report_error(SemanticError::Redefinition {
-                name: param_name.as_str().into(),
+                name: param_name,
                 first_def: existing.definition_span,
                 second_def: location,
             });
@@ -350,10 +341,10 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
         // Create MIR local for the parameter
         let type_id = self.get_int_type(); // Default to int for now
-        let local_id = self.mir_builder.create_local(param_name.clone(), type_id, false);
+        let local_id = self.mir_builder.create_local(Some(param_name), type_id, true);
 
         // Store in local map for expression resolution
-        self.local_map.insert(param_name.clone(), local_id);
+        self.local_map.insert(param_name, local_id);
 
         // Add to symbol table
         let symbol_entry = SymbolEntry {
@@ -378,96 +369,10 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             is_completed: true,
         };
 
-        self.symbol_table.add_symbol(param_name.as_str().into(), symbol_entry);
+        self.symbol_table.add_symbol(param_name, symbol_entry);
 
         debug!("Created parameter local '{}' with id {:?}", param_name, local_id);
     }
-
-    // /// Lower a declaration (from parser AST)
-    // fn lower_declaration(&mut self, decl: &DeclarationData, location: SourceSpan) {
-    //     debug!("Lowering declaration with {} init-declarators", decl.init_declarators.len());
-
-    //     // First pass: Create locals for all declarators without processing initializers
-    //     let mut local_info = Vec::new();
-
-    //     for init_declarator in &decl.init_declarators {
-    //         let (var_name, local_id) = match self.create_local_for_declarator(init_declarator, location) {
-    //             Some((name, id)) => (name, id),
-    //             None => continue, // Skip if there was an error
-    //         };
-
-    //         local_info.push((var_name, local_id, init_declarator.initializer.clone()));
-    //     }
-
-    //     // Second pass: Process initializers and emit assignments
-    //     for (var_name, local_id, initializer) in local_info {
-    //         if let Some(init) = initializer {
-    //             self.process_initializer(&init, local_id, &var_name, location);
-    //         }
-    //     }
-    // }
-
-    // /// First pass: Create a local for a declarator
-    // fn create_local_for_declarator(
-    //     &mut self,
-    //     init_declarator: &InitDeclarator,
-    //     location: SourceSpan,
-    // ) -> Option<(String, LocalId)> {
-    //     // Extract variable name
-    //     let var_name = match extract_identifier(&init_declarator.declarator) {
-    //         Some(symbol) => symbol.to_string(),
-    //         None => {
-    //             self.report_error(SemanticError::InvalidDeclarator { location });
-    //             return None;
-    //         }
-    //     };
-
-    //     // Check for redeclaration in current scope
-    //     if let Some((existing_entry, _)) = self.symbol_table.lookup_symbol(var_name.as_str().into()) {
-    //         let existing = self.symbol_table.get_symbol_entry(existing_entry);
-    //         self.report_error(SemanticError::Redefinition {
-    //             name: var_name.as_str().into(),
-    //             first_def: existing.definition_span,
-    //             second_def: location,
-    //         });
-    //         return None;
-    //     }
-
-    //     // Create MIR local
-    //     let type_id = self.get_int_type(); // Default to int for now
-    //     let local_id = self.mir_builder.create_local(var_name.clone(), type_id, false);
-
-    //     // Store in local map for expression resolution
-    //     self.local_map.insert(var_name.clone(), local_id);
-
-    //     // Add to symbol table
-    //     let symbol_entry = SymbolEntry {
-    //         name: var_name.as_str().into(),
-    //         kind: SymbolKind::Variable {
-    //             is_global: false,
-    //             is_static: false,
-    //             is_extern: false,
-    //             initializer: init_declarator.initializer.clone().map(|i| self.convert_initializer(i)),
-    //         },
-    //         type_info: self.ast.push_type(crate::ast::Type {
-    //             kind: crate::ast::TypeKind::Int { is_signed: true },
-    //             qualifiers: crate::ast::TypeQualifiers::empty(),
-    //             size: None,
-    //             alignment: None,
-    //         }),
-    //         storage_class: None,
-    //         scope_id: self.symbol_table.current_scope().get(),
-    //         definition_span: location,
-    //         is_defined: true,
-    //         is_referenced: false,
-    //         is_completed: true,
-    //     };
-
-    //     self.symbol_table.add_symbol(var_name.as_str().into(), symbol_entry);
-
-    //     debug!("Created local '{}' with id {:?}", var_name, local_id);
-    //     Some((var_name, local_id))
-    // }
 
     /// Second pass: Process an initializer and emit assignment
     fn process_initializer(
@@ -644,9 +549,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 let temp_type_id = self.get_int_type(); // For now, assume int type
 
                 // Create a temporary local for the initializer
-                let temp_local_id =
-                    self.mir_builder
-                        .create_local(format!("{}_init_{}", var_name, index), temp_type_id, false);
+                let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
 
                 // Emit assignment to temporary: temp = initializer
                 self.emit_assignment(Place::Local(temp_local_id), init_operand, location);
@@ -687,21 +590,108 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         // Canonicalize the variable's type (like Clang does)
         let canonical_type_id = self.canonicalize_type(var_decl.ty);
 
-        // Create MIR local with canonicalized type
+        // Convert AST type to MIR type
         let mir_type_id = self.lower_type_to_mir(canonical_type_id);
-        let local_id = self
-            .mir_builder
-            .create_local(var_decl.name.to_string(), mir_type_id, false);
 
-        // Store in local map
-        self.local_map.insert(var_decl.name.to_string(), local_id);
+        // Check if this is a global variable (outside any function)
+        let is_global = self.current_function.is_none();
 
-        // Process initializer if present
-        if let Some(initializer) = &var_decl.init {
-            self.process_initializer(initializer, local_id, &var_decl.name.to_string(), location);
+        if is_global {
+            // Create MIR global variable
+            let is_constant =
+                var_decl.storage == Some(StorageClass::Static) || var_decl.storage == Some(StorageClass::Extern);
+
+            // Process initializer to get constant value
+            let mut initial_value_id = None;
+            if let Some(init) = &var_decl.init {
+                match init {
+                    Initializer::Expression(expr_ref) => {
+                        // Try to evaluate the initializer as a constant
+                        let init_operand = self.lower_expression(*expr_ref);
+                        if let Operand::Constant(const_id) = init_operand {
+                            initial_value_id = Some(const_id);
+                        }
+                    }
+                    _ => {
+                        todo!("For now, only handle simple expression initializers")
+                    }
+                }
+            }
+
+            let global_id =
+                self.mir_builder
+                    .create_global_with_init(var_decl.name, mir_type_id, is_constant, initial_value_id);
+
+            // Convert initializer from Option<Initializer> to Option<NodeRef>
+            let initializer_node_ref = var_decl.init.as_ref().and_then(|init| {
+                match init {
+                    Initializer::Expression(expr_ref) => Some(*expr_ref),
+                    _ => None, // For now, only handle simple expression initializers
+                }
+            });
+
+            // Add to symbol table as global
+            let symbol_entry = SymbolEntry {
+                name: var_decl.name,
+                kind: SymbolKind::Variable {
+                    is_global: true,
+                    is_static: var_decl.storage == Some(StorageClass::Static),
+                    is_extern: var_decl.storage == Some(StorageClass::Extern),
+                    initializer: initializer_node_ref,
+                },
+                type_info: var_decl.ty,
+                storage_class: var_decl.storage,
+                scope_id: self.symbol_table.current_scope().get(),
+                definition_span: location,
+                is_defined: true,
+                is_referenced: false,
+                is_completed: true,
+            };
+
+            self.symbol_table.add_symbol(var_decl.name, symbol_entry);
+            debug!("Created semantic global '{}' with id {:?}", var_decl.name, global_id);
+        } else {
+            // Create MIR local variable (inside function)
+            let local_id = self.mir_builder.create_local(Some(var_decl.name), mir_type_id, false);
+
+            // Store in local map
+            self.local_map.insert(var_decl.name, local_id);
+
+            // Convert initializer from Option<Initializer> to Option<NodeRef>
+            let initializer_node_ref = var_decl.init.as_ref().and_then(|init| {
+                match init {
+                    Initializer::Expression(expr_ref) => Some(*expr_ref),
+                    _ => None, // For now, only handle simple expression initializers
+                }
+            });
+
+            // Add to symbol table as local
+            let symbol_entry = SymbolEntry {
+                name: var_decl.name,
+                kind: SymbolKind::Variable {
+                    is_global: false,
+                    is_static: false,
+                    is_extern: false,
+                    initializer: initializer_node_ref,
+                },
+                type_info: var_decl.ty,
+                storage_class: var_decl.storage,
+                scope_id: self.symbol_table.current_scope().get(),
+                definition_span: location,
+                is_defined: true,
+                is_referenced: false,
+                is_completed: true,
+            };
+
+            self.symbol_table.add_symbol(var_decl.name, symbol_entry);
+
+            // Process initializer if present
+            if let Some(initializer) = &var_decl.init {
+                self.process_initializer(initializer, local_id, &var_decl.name.to_string(), location);
+            }
+
+            debug!("Created semantic local '{}' with id {:?}", var_decl.name, local_id);
         }
-
-        debug!("Created semantic var '{}' with id {:?}", var_decl.name, local_id);
     }
 
     /// Lower a typedef declaration
@@ -767,17 +757,32 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 // First try to resolve through semantic analysis
                 if let Some(resolved_ref) = symbol_ref.get() {
                     let entry = self.symbol_table.get_symbol_entry(resolved_ref);
-                    if let SymbolKind::Variable { .. } = &entry.kind {
-                        // Look up the local in our local map
-                        let var_name = entry.name.to_string();
-                        if let Some(local_id) = self.local_map.get(&var_name) {
-                            return Operand::Copy(Box::new(Place::Local(*local_id)));
+                    if let SymbolKind::Variable { is_global, .. } = &entry.kind {
+                        if *is_global {
+                            // This is a global variable - find its MIR global ID
+                            for (global_id, global) in self.mir_builder.get_globals() {
+                                if global.name == entry.name {
+                                    return Operand::Copy(Box::new(Place::Global(*global_id)));
+                                }
+                            }
+                        } else {
+                            // This is a local variable - look up the local in our local map
+                            if let Some(local_id) = self.local_map.get(&entry.name) {
+                                return Operand::Copy(Box::new(Place::Local(*local_id)));
+                            }
                         }
                     }
                 }
 
+                // Fallback: Check if it's a global variable by name
+                for (global_id, global) in self.mir_builder.get_globals() {
+                    if global.name == name {
+                        return Operand::Copy(Box::new(Place::Global(*global_id)));
+                    }
+                }
+
                 // Fallback to direct local map lookup
-                if let Some(local_id) = self.local_map.get(&name.to_string()) {
+                if let Some(local_id) = self.local_map.get(&name) {
                     Operand::Copy(Box::new(Place::Local(*local_id)))
                 } else {
                     self.report_error(SemanticError::UndeclaredIdentifier {
@@ -820,10 +825,27 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                             converted_left, left_type, converted_right, right_type, common_type
                         );
 
-                        // TODO: Generate proper binary operation MIR using converted operands
-                        // For now, return a dummy result of the common type
-                        let result_const = self.create_constant(ConstValue::Int(0));
-                        Operand::Constant(result_const)
+                        // Map AST BinaryOp to MIR BinaryOp
+                        match self.map_ast_binary_op_to_mir(&op, node_span) {
+                            Ok(mir_binary_op) => {
+                                // Create a temporary local to store the result
+                                let temp_local_id = self.mir_builder.create_local(None, common_type, false);
+
+                                // Generate proper binary operation using Rvalue
+                                let binary_rvalue = Rvalue::BinaryOp(mir_binary_op, converted_left, converted_right);
+                                let assign_stmt = MirStmt::Assign(Place::Local(temp_local_id), binary_rvalue);
+                                self.mir_builder.add_statement(assign_stmt);
+
+                                // Return the local that contains the result
+                                Operand::Copy(Box::new(Place::Local(temp_local_id)))
+                            }
+                            Err(error) => {
+                                debug!("Binary operation mapping failed: {:?}", error);
+                                self.report_error(error);
+                                let error_const = self.create_constant(ConstValue::Int(0));
+                                Operand::Constant(error_const)
+                            }
+                        }
                     }
                     Err(error) => {
                         debug!("Binary operand conversion failed: {:?}", error);
@@ -842,7 +864,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 // Extract function name from the function reference
                 let func_node = self.ast.get_node(func_ref);
                 let func_name = if let NodeKind::Ident(name, _) = &func_node.kind {
-                    name.to_string()
+                    name
                 } else {
                     debug!("Function call target is not an identifier: {:?}", func_node.kind);
                     let dummy_const = self.create_constant(ConstValue::Int(0));
@@ -851,27 +873,42 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
                 debug!("Function call target: {}", func_name);
 
-                // For now, generate a call statement and return a dummy operand
-                // TODO: Implement proper function call handling with argument evaluation
-                // and return value assignment
+                // Look up the function in the MIR functions
+                let target_func_id = self.find_mir_function_by_name(*func_name);
 
-                // Create a temporary local to store the return value
-                let temp_type_id = self.get_int_type();
-                let temp_local_id =
-                    self.mir_builder
-                        .create_local(format!("call_result_{}", func_name), temp_type_id, false);
+                if let Some(func_id) = target_func_id {
+                    debug!(
+                        "Found function '{}' with ID {:?} (ID as integer: {})",
+                        func_name,
+                        func_id,
+                        func_id.get()
+                    );
 
-                // Generate a call statement
-                let call_stmt = MirStmt::Call(
-                    Place::Local(temp_local_id),
-                    Operand::Copy(Box::new(Place::Local(temp_local_id))), // Function placeholder
-                    Vec::new(),                                           // No arguments for now
-                );
+                    // Evaluate function arguments
+                    let mut arg_operands = Vec::new();
+                    for arg_ref in args {
+                        let arg_operand = self.lower_expression(arg_ref);
+                        arg_operands.push(arg_operand);
+                    }
 
-                let _stmt_id = self.mir_builder.add_statement(call_stmt);
+                    // Create a temporary local to store the return value
+                    let temp_type_id = self.get_int_type();
+                    let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
 
-                // Return the local that will contain the call result
-                Operand::Copy(Box::new(Place::Local(temp_local_id)))
+                    // Generate a proper call using Rvalue
+                    let call_target = CallTarget::Direct(func_id);
+                    let call_rvalue = Rvalue::Call(call_target, arg_operands);
+                    let assign_stmt = MirStmt::Assign(Place::Local(temp_local_id), call_rvalue);
+                    self.mir_builder.add_statement(assign_stmt);
+
+                    // Return the local that will contain the call result
+                    Operand::Copy(Box::new(Place::Local(temp_local_id)))
+                } else {
+                    debug!("Function {} not found in MIR functions", func_name);
+                    // Return a dummy operand to allow compilation to continue
+                    let dummy_const = self.create_constant(ConstValue::Int(0));
+                    Operand::Constant(dummy_const)
+                }
             }
 
             _ => {
@@ -905,32 +942,80 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     fn lower_if_statement(&mut self, if_stmt: &IfStmt, _location: SourceSpan) {
         debug!("Lowering if statement");
 
-        // Lower the condition expression
+        // Create blocks for then and else branches
+        let then_block = self.mir_builder.create_block();
+        let else_block_id = if if_stmt.else_branch.is_some() {
+            Some(self.mir_builder.create_block())
+        } else {
+            None
+        };
+
+        // Lower the condition expression to an operand
         let cond_operand = self.lower_expression(if_stmt.condition);
 
-        // Create blocks for then, else, and merge
-        let then_block = self.mir_builder.create_block();
-        let else_block = self.mir_builder.create_block();
-        let merge_block = self.mir_builder.create_block();
-
         // Set the terminator for the current block
-        self.mir_builder
-            .set_terminator(Terminator::If(cond_operand, then_block, else_block));
+        if let Some(else_id) = else_block_id {
+            self.mir_builder
+                .set_terminator(Terminator::If(cond_operand, then_block, else_id));
+        } else {
+            // No else branch, use current block as merge point
+            self.mir_builder
+                .set_terminator(Terminator::If(cond_operand, then_block, then_block));
+        }
 
         // Process the then branch
         self.mir_builder.set_current_block(then_block);
         self.lower_node_ref(if_stmt.then_branch);
-        self.mir_builder.set_terminator(Terminator::Goto(merge_block));
 
-        // Process the else branch
-        self.mir_builder.set_current_block(else_block);
-        if let Some(else_branch) = &if_stmt.else_branch {
-            self.lower_node_ref(*else_branch);
+        // Process the else branch if it exists
+        let else_block_has_terminator = if let Some(else_id) = else_block_id {
+            self.mir_builder.set_current_block(else_id);
+            if let Some(else_branch) = &if_stmt.else_branch {
+                self.lower_node_ref(*else_branch);
+            }
+            self.mir_builder.current_block_has_terminator()
+        } else {
+            false
+        };
+
+        let then_block_has_terminator = self.mir_builder.current_block_has_terminator();
+
+        // Determine if we need a merge block
+        if let Some(else_block_id) = else_block_id {
+            // We have an else block, so check if we need a merge block
+            if then_block_has_terminator && else_block_has_terminator {
+                // Both branches terminate, so no merge block needed
+            } else {
+                // At least one branch falls through, create merge block
+                let merge_block = self.mir_builder.create_block();
+
+                // Ensure both branches have terminators going to merge
+                self.mir_builder.set_current_block(then_block);
+                if !self.mir_builder.current_block_has_terminator() {
+                    self.mir_builder.set_terminator(Terminator::Goto(merge_block));
+                }
+
+                self.mir_builder.set_current_block(else_block_id);
+                if !self.mir_builder.current_block_has_terminator() {
+                    self.mir_builder.set_terminator(Terminator::Goto(merge_block));
+                }
+
+                // Set current block to merge block for continuation
+                self.mir_builder.set_current_block(merge_block);
+                self.current_block = Some(merge_block);
+            }
+        } else {
+            // No else branch, check if then branch falls through
+            if !then_block_has_terminator {
+                // Then branch falls through, current block becomes continuation
+                if let Some(func_id) = self.current_function
+                    && let Some(func) = self.mir_builder.get_functions().get(&func_id)
+                {
+                    self.current_block = Some(func.entry_block);
+                }
+            }
+            // If then branch terminates, no continuation needed
         }
-        self.mir_builder.set_terminator(Terminator::Goto(merge_block));
-
-        // Set the current block to the merge block
-        self.mir_builder.set_current_block(merge_block);
     }
 
     /// Emit an assignment statement
@@ -941,7 +1026,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             return;
         }
 
-        let stmt = MirStmt::Assign(place, operand);
+        let rvalue = Rvalue::Use(operand);
+        let stmt = MirStmt::Assign(place, rvalue);
 
         // Use the public add_statement method
         let _stmt_id = self.mir_builder.add_statement(stmt);
@@ -972,12 +1058,11 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 let mut mir_fields = Vec::new();
                 for member in members {
                     let field_type_id = self.lower_type_to_mir(member.member_type);
-                    mir_fields.push((member.name.to_string(), field_type_id));
+                    mir_fields.push((member.name, field_type_id));
                 }
 
                 let type_name = tag
-                    .map(|t| t.to_string())
-                    .unwrap_or_else(|| format!("anonymous_{}", if is_union { "union" } else { "struct" }));
+                    .unwrap_or_else(|| Symbol::new(format!("anonymous_{}", if is_union { "union" } else { "struct" })));
                 debug!(
                     "Created MIR type for struct '{}' with {} fields",
                     type_name,
@@ -986,13 +1071,13 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
                 let mir_type = if is_union {
                     crate::mir::MirType::Union {
-                        name: type_name.clone(),
-                        fields: mir_fields.clone(),
+                        name: type_name,
+                        fields: mir_fields,
                     }
                 } else {
                     crate::mir::MirType::Struct {
-                        name: type_name.clone(),
-                        fields: mir_fields.clone(),
+                        name: type_name,
+                        fields: mir_fields,
                     }
                 };
 
@@ -1025,28 +1110,38 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     }
 
     /// Get functions for validation
-    pub fn get_functions(&self) -> &hashbrown::HashMap<MirFunctionId, MirFunction> {
+    pub fn get_functions(&self) -> &HashMap<MirFunctionId, MirFunction> {
         self.mir_builder.get_functions()
     }
 
     /// Get blocks for validation
-    pub fn get_blocks(&self) -> &hashbrown::HashMap<MirBlockId, MirBlock> {
+    pub fn get_blocks(&self) -> &HashMap<MirBlockId, MirBlock> {
         self.mir_builder.get_blocks()
     }
 
     /// Get locals for validation
-    pub fn get_locals(&self) -> &hashbrown::HashMap<LocalId, Local> {
+    pub fn get_locals(&self) -> &HashMap<LocalId, Local> {
         self.mir_builder.get_locals()
     }
 
     /// Get globals for validation
-    pub fn get_globals(&self) -> &hashbrown::HashMap<mir::GlobalId, mir::Global> {
+    pub fn get_globals(&self) -> &HashMap<mir::GlobalId, mir::Global> {
         self.mir_builder.get_globals()
     }
 
     /// Get types for validation
-    pub fn get_types(&self) -> &hashbrown::HashMap<TypeId, crate::mir::MirType> {
+    pub fn get_types(&self) -> &HashMap<TypeId, crate::mir::MirType> {
         self.mir_builder.get_types()
+    }
+
+    /// Get statements for validation
+    pub fn get_statements(&self) -> &HashMap<crate::mir::MirStmtId, crate::mir::MirStmt> {
+        self.mir_builder.get_statements()
+    }
+
+    /// Get constants for validation
+    pub fn get_constants(&self) -> &HashMap<crate::mir::ConstValueId, crate::mir::ConstValue> {
+        self.mir_builder.get_constants()
     }
 
     /// Lower a goto statement
@@ -1056,10 +1151,9 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         // For goto statements, we need to set up a jump to the target label
         // However, we might not know the target block ID yet if labels come after
         // For now, create a temporary placeholder and resolve later
-        let label_str = label.to_string();
 
         // Look up the label in our label map
-        if let Some(target_block_id) = self.label_map.get(&label_str) {
+        if let Some(target_block_id) = self.label_map.get(&label) {
             // Check if current block is already terminated
             if self.mir_builder.current_block_has_terminator() {
                 // Current block is already terminated, create a new block for this goto
@@ -1074,7 +1168,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             debug!("Goto resolved to block {:?}", target_block_id);
         } else {
             // Label not found - this is an error
-            debug!("Label '{}' not found in label map during goto resolution", label_str);
+            debug!("Label '{}' not found in label map during goto resolution", label);
             self.report_error(SemanticError::UndeclaredIdentifier { name: label, location });
             // Set a dummy terminator to allow compilation to continue
             self.mir_builder.set_terminator(Terminator::Unreachable);
@@ -1083,10 +1177,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
     /// Lower a label statement
     fn lower_label_statement(&mut self, label: Symbol, statement: NodeRef, _location: SourceSpan) {
-        let label_str = label.to_string();
-
         // Get the existing block for this label (created in first pass)
-        if let Some(&target_block_id) = self.label_map.get(&label_str) {
+        if let Some(&target_block_id) = self.label_map.get(&label) {
             // Switch to the existing block for the label's statement
             self.mir_builder.set_current_block(target_block_id);
             self.current_block = Some(target_block_id);
@@ -1103,7 +1195,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
             // Create a new basic block for this label (fallback)
             let target_block_id = self.mir_builder.create_block();
-            self.label_map.insert(label_str.clone(), target_block_id);
+            self.label_map.insert(label, target_block_id);
 
             // Switch to the new block for the label's statement
             self.mir_builder.set_current_block(target_block_id);
@@ -1122,7 +1214,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
         match mir_type {
             crate::mir::MirType::Struct { fields, .. } | crate::mir::MirType::Union { fields, .. } => {
-                let field_index = fields.iter().position(|(name, _)| *name == field_name.to_string());
+                let field_index = fields.iter().position(|(name, _)| *name == field_name);
                 debug!("Field '{}' found at index {:?}", field_name, field_index);
                 field_index
             }
@@ -1649,186 +1741,71 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         let mir_type = crate::mir::MirType::Pointer { pointee: void_type };
         self.add_type(mir_type)
     }
+
+    /// Map AST BinaryOp to MIR BinaryOp
+    fn map_ast_binary_op_to_mir(&self, ast_op: &BinaryOp, location: SourceSpan) -> Result<MirBinaryOp, SemanticError> {
+        use crate::ast::BinaryOp::*;
+        use crate::mir::BinaryOp as MirBinaryOp;
+
+        let mir_op = match ast_op {
+            // Arithmetic operations
+            Add => MirBinaryOp::Add,
+            Sub => MirBinaryOp::Sub,
+            Mul => MirBinaryOp::Mul,
+            Div => MirBinaryOp::Div,
+            Mod => MirBinaryOp::Mod,
+
+            // Bitwise operations
+            BitAnd => MirBinaryOp::BitAnd,
+            BitOr => MirBinaryOp::BitOr,
+            BitXor => MirBinaryOp::BitXor,
+            LShift => MirBinaryOp::LShift,
+            RShift => MirBinaryOp::RShift,
+
+            // Comparison operations
+            Equal => MirBinaryOp::Eq,
+            NotEqual => MirBinaryOp::Ne,
+            Less => MirBinaryOp::Lt,
+            LessEqual => MirBinaryOp::Le,
+            Greater => MirBinaryOp::Gt,
+            GreaterEqual => MirBinaryOp::Ge,
+
+            // Logical operations
+            LogicAnd => MirBinaryOp::LogicAnd,
+            LogicOr => MirBinaryOp::LogicOr,
+
+            // Comma operator
+            Comma => MirBinaryOp::Comma,
+
+            // Assignment operations are not supported in simple binary expressions
+            // These should be handled separately as assignment statements
+            Assign | AssignAdd | AssignSub | AssignMul | AssignDiv | AssignMod | AssignBitAnd | AssignBitOr
+            | AssignBitXor | AssignLShift | AssignRShift => {
+                return Err(SemanticError::InvalidBinaryOperandTypes {
+                    left_type: "assignment operation in expression context".to_string(),
+                    right_type: "assignment operations should be statements, not expressions".to_string(),
+                    location,
+                });
+            }
+        };
+
+        Ok(mir_op)
+    }
+
+    /// Find a MIR function by name
+    fn find_mir_function_by_name(&self, func_name: Symbol) -> Option<MirFunctionId> {
+        for (func_id, func) in self.mir_builder.get_functions() {
+            if func.name == func_name {
+                return Some(*func_id);
+            }
+        }
+        None
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::diagnostic::DiagnosticEngine;
-    use crate::driver::{cli::CompileConfig, compiler::CompilerDriver};
-    use crate::mir::{ConstValue, MirBlock, MirFunction, MirType};
-    use serde::Serialize;
-    use std::collections::BTreeMap;
-
-    #[derive(Debug, Serialize)]
-    struct MirFunctionSnapshot {
-        func: MirFunction,
-        blocks: BTreeMap<MirBlockId, MirBlock>,
-        locals: BTreeMap<LocalId, Local>,
-        types: BTreeMap<TypeId, MirType>,
-        constants: BTreeMap<ConstValueId, ConstValue>,
-    }
-
-    fn run_semantic_analyzer_test(source: &str) -> MirFunctionSnapshot {
-        let mut config = CompileConfig::from_source_code(source.to_string());
-        config.dump_parser = true;
-
-        let mut driver = CompilerDriver::from_config(config);
-        let mut ast = driver.compile_to_ast().unwrap();
-
-        let mut symbol_table = SymbolTable::new();
-        let mut diag = DiagnosticEngine::new();
-
-        crate::semantic::lower::run_semantic_lowering(&mut ast, &mut diag, &mut symbol_table);
-        if diag.has_errors() {
-            panic!("Semantic lowering failed during test");
-        }
-
-        let snapshot = {
-            let mut analyzer = SemanticAnalyzer::new(&mut ast, &mut diag, &mut symbol_table);
-            analyzer.lower_module();
-
-            let functions = analyzer.get_functions();
-            let main_func_id = functions
-                .values()
-                .find(|f| f.name == "main")
-                .map(|f| f.id)
-                .expect("Could not find main function in test");
-            let main_func = functions.get(&main_func_id).unwrap().clone();
-
-            let all_blocks = analyzer.get_blocks();
-            let func_blocks: BTreeMap<_, _> = main_func
-                .blocks
-                .iter()
-                .map(|b_id| (*b_id, all_blocks.get(b_id).unwrap().clone()))
-                .collect();
-
-            let all_locals = analyzer.get_locals();
-            let all_func_locals_ids = main_func.locals.iter().chain(main_func.params.iter());
-            let func_locals: BTreeMap<_, _> = all_func_locals_ids
-                .map(|l_id| (*l_id, all_locals.get(l_id).unwrap().clone()))
-                .collect();
-
-            let types: BTreeMap<_, _> = analyzer.get_types().clone().into_iter().collect();
-            let constants: BTreeMap<_, _> = analyzer.mir_builder.get_constants().clone().into_iter().collect();
-
-            MirFunctionSnapshot {
-                func: main_func,
-                blocks: func_blocks,
-                locals: func_locals,
-                types,
-                constants,
-            }
-        };
-
-        if diag.has_errors() {
-            panic!("Semantic analysis failed during test");
-        }
-
-        snapshot
-    }
-
-    #[test]
-    fn test_if_else_statement() {
-        let source = r#"
-            int main() {
-                int a = 1;
-                int b = 2;
-                if (a > b) {
-                    return 1;
-                } else {
-                    return 2;
-                }
-            }
-        "#;
-        let mir = run_semantic_analyzer_test(source);
-        insta::assert_yaml_snapshot!(mir, @"
-        func:
-          id: 1
-          name: main
-          return_type: 1
-          params: []
-          locals:
-            - 1
-            - 2
-          blocks:
-            - 2
-            - 3
-            - 4
-          entry_block: 1
-        blocks:
-          2:
-            id: 2
-            statements: []
-            terminator:
-              Goto: 4
-          3:
-            id: 3
-            statements: []
-            terminator:
-              Goto: 4
-          4:
-            id: 4
-            statements: []
-            terminator: ~
-        locals:
-          1:
-            id: 1
-            name: a
-            type_id: 2
-            is_param: false
-          2:
-            id: 2
-            name: b
-            type_id: 3
-            is_param: false
-        types:
-          1:
-            Int:
-              is_signed: true
-              width: 32
-          2:
-            Int:
-              is_signed: true
-              width: 32
-          3:
-            Int:
-              is_signed: true
-              width: 32
-          4:
-            Int:
-              is_signed: true
-              width: 32
-          5:
-            Int:
-              is_signed: true
-              width: 32
-          6:
-            Int:
-              is_signed: true
-              width: 32
-        constants:
-          1:
-            Int: 1
-          2:
-            Int: 2
-          3:
-            Int: 0
-          4:
-            Int: 1
-          5:
-            Int: 2
-        ");
-    }
-
-    #[test]
-    fn test_apply_binary_operand_conversion_exists() {
-        // This test ensures the function exists and compiles correctly
-        // We can at least verify the function signature is correct by checking
-        // that it would compile if called with the right parameters
-        let _function_exists = true; // Placeholder to ensure this test compiles
-        assert!(_function_exists);
-    }
+    // Tests moved to tests_mir.rs
 }
 
 /// Extract identifier from a declarator (helper function)

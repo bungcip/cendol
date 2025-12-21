@@ -32,6 +32,14 @@ pub struct Cli {
     #[clap(long)]
     pub dump_ast: bool,
 
+    /// Dump MIR (Mid-level Intermediate Representation) to console
+    #[clap(long)]
+    pub dump_mir: bool,
+
+    /// Dump Cranelift IR (Intermediate Representation) to console
+    #[clap(long)]
+    pub dump_cranelift: bool,
+
     /// Preprocess only, output preprocessed source to stdout
     #[clap(short = 'E')]
     pub preprocess_only: bool,
@@ -86,9 +94,12 @@ pub struct CompileConfig {
     pub input_files: Vec<PathBuf>,
     pub output_path: Option<PathBuf>,
     pub dump_ast: bool,
+    pub dump_mir: bool,
+    pub dump_cranelift: bool,
     pub dump_parser: bool,
     pub preprocess_only: bool,
     pub verbose: bool,
+    pub skip_validation: bool, // NEW: Skip MIR validation for testing
     pub preprocessor: crate::pp::PPConfig,
     pub suppress_line_markers: bool,
     pub include_paths: Vec<PathBuf>,
@@ -111,9 +122,12 @@ impl CompileConfig {
             input_files: vec![path],
             output_path: None,
             dump_ast: false,
+            dump_mir: false,
+            dump_cranelift: false,
             dump_parser: false,
             preprocess_only: false,
             verbose: false,
+            skip_validation: false, // Default to false
             preprocessor: crate::pp::PPConfig::default(),
             suppress_line_markers: false,
             include_paths: vec![],
@@ -126,8 +140,28 @@ impl CompileConfig {
 }
 
 impl Cli {
+    /// Validate input files and check for option-like filenames
+    fn validate_input_files(&self) -> Result<(), String> {
+        for input_file in &self.input_files {
+            let file_name = input_file.to_string_lossy();
+            if file_name.starts_with('-') {
+                return Err(format!("File '{}' not found: No such file or directory", file_name)
+                    + "\n"
+                    + "If this is meant to be a command-line option, place it before the filename.\n"
+                    + &format!(
+                        "Example: {} -o output_file",
+                        std::env::args().next().unwrap_or("cendol".to_string())
+                    ));
+            }
+        }
+        Ok(())
+    }
+
     /// Convert CLI arguments into compilation configuration
-    pub fn into_config(self) -> CompileConfig {
+    pub fn into_config(self) -> Result<CompileConfig, String> {
+        // Validate input files first
+        self.validate_input_files()?;
+
         // Parse defines
         let defines = self
             .defines
@@ -158,13 +192,16 @@ impl Cli {
             c_standard: self.c_standard,
         };
 
-        CompileConfig {
+        Ok(CompileConfig {
             input_files: self.input_files,
             output_path: self.output,
             dump_ast: self.dump_ast,
+            dump_mir: self.dump_mir,
+            dump_cranelift: self.dump_cranelift,
             dump_parser: self.dump_parser,
             preprocess_only: self.preprocess_only,
             verbose: self.verbose,
+            skip_validation: false, // Default to false for CLI usage
             preprocessor: crate::pp::PPConfig {
                 max_include_depth: self.preprocessor.max_include_depth,
                 ..Default::default()
@@ -175,6 +212,6 @@ impl Cli {
             warnings,
             lang_options,
             _temp_file: None,
-        }
+        })
     }
 }

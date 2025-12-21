@@ -1,10 +1,12 @@
 pub mod ast;
 pub mod ast_dumper;
+pub mod cranelift_dumper;
 pub mod diagnostic;
 pub mod driver;
 pub mod lang_options;
 pub mod lexer;
 pub mod mir;
+pub mod mir_dumper;
 pub mod parser;
 pub mod pp;
 pub mod semantic;

@@ -1491,9 +1491,7 @@ fn test_multiple_labels_sequence() {
 #[test]
 fn test_goto_with_complex_label_name() {
     let resolved = setup_statement("goto error_handler_1;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
-    Goto: error_handler_1
-    ");
+    insta::assert_yaml_snapshot!(&resolved, @"Goto: error_handler_1");
 }
 
 #[test]

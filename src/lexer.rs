@@ -554,42 +554,37 @@ impl<'src> Lexer<'src> {
                 // Optimization: Avoid allocation for single string literals.
                 // Peek ahead to see if the next token is also a string literal.
                 // If so, we need to concatenate them, which requires allocation.
-                if let Some(next_pptoken) = current_token_iter.peek() {
-                    if let PPTokenKind::StringLiteral(_) = next_pptoken.kind {
-                        // Concatenation is necessary. Start with the content of the current token.
-                        let mut content =
-                            Self::extract_string_content(&symbol).unwrap_or_default().to_string();
-                        let mut end_location = token.location.end;
+                if let Some(next_pptoken) = current_token_iter.peek()
+                    && let PPTokenKind::StringLiteral(_) = next_pptoken.kind
+                {
+                    // Concatenation is necessary. Start with the content of the current token.
+                    let mut content = Self::extract_string_content(&symbol).unwrap_or_default().to_string();
+                    let mut end_location = token.location.end;
 
-                        // Loop through all adjacent string literals.
-                        while let Some(next_pptoken) = current_token_iter.peek() {
-                            if let PPTokenKind::StringLiteral(next_symbol_pp) = next_pptoken.kind {
-                                // Consume the token since we are processing it.
-                                let consumed_pptoken = current_token_iter.next().unwrap();
+                    // Loop through all adjacent string literals.
+                    while let Some(next_pptoken) = current_token_iter.peek() {
+                        if let PPTokenKind::StringLiteral(next_symbol_pp) = next_pptoken.kind {
+                            // Consume the token since we are processing it.
+                            let consumed_pptoken = current_token_iter.next().unwrap();
 
-                                end_location = SourceLoc::new(
-                                    consumed_pptoken.location.source_id(),
-                                    consumed_pptoken.location.offset()
-                                        + consumed_pptoken.length as u32,
-                                );
+                            end_location = SourceLoc::new(
+                                consumed_pptoken.location.source_id(),
+                                consumed_pptoken.location.offset() + consumed_pptoken.length as u32,
+                            );
 
-                                // Append its content to our buffer.
-                                if let Some(next_content) =
-                                    Self::extract_string_content(&next_symbol_pp)
-                                {
-                                    content.push_str(next_content);
-                                }
-                            } else {
-                                // The next token is not a string literal, so stop.
-                                break;
+                            // Append its content to our buffer.
+                            if let Some(next_content) = Self::extract_string_content(&next_symbol_pp) {
+                                content.push_str(next_content);
                             }
+                        } else {
+                            // The next token is not a string literal, so stop.
+                            break;
                         }
-
-                        // Create a new symbol with the concatenated content and update the token.
-                        token.kind =
-                            TokenKind::StringLiteral(Symbol::new(format!("\"{}\"", content)));
-                        token.location.end = end_location;
                     }
+
+                    // Create a new symbol with the concatenated content and update the token.
+                    token.kind = TokenKind::StringLiteral(Symbol::new(format!("\"{}\"", content)));
+                    token.location.end = end_location;
                 }
                 // If the next token is not a string literal, we do nothing. The original,
                 // un-concatenated StringLiteral token is used, avoiding any string allocation.

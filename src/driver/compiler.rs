@@ -13,8 +13,10 @@ use crate::lexer::Lexer;
 use crate::mir::codegen::MirToCraneliftLowerer;
 use crate::mir::validation::MirValidator;
 use crate::mir::{
-    Global, GlobalId, Local, LocalId, MirBlock, MirBlockId, MirFunction, MirFunctionId, MirModule, MirType, TypeId,
+    ConstValue, ConstValueId, Global, GlobalId, Local, LocalId, MirBlock, MirBlockId, MirFunction, MirFunctionId,
+    MirModule, MirStmt, MirStmtId, MirType, TypeId,
 };
+use crate::mir_dumper::{MirDumpConfig, MirDumper};
 use crate::parser::Parser;
 use crate::pp::Preprocessor;
 use crate::semantic::SymbolTable;
@@ -41,12 +43,15 @@ type CompileOutput = (
     HashMap<LocalId, Local>,
     HashMap<GlobalId, Global>,
     HashMap<TypeId, MirType>,
+    HashMap<MirStmtId, MirStmt>,
+    HashMap<ConstValueId, ConstValue>,
 );
 
 impl CompilerDriver {
     /// Create a new compiler driver from CLI arguments
     pub fn new(cli: super::cli::Cli) -> Result<Self, String> {
-        Ok(Self::from_config(cli.into_config()))
+        let config = cli.into_config()?;
+        Ok(Self::from_config(config))
     }
 
     /// Create a new compiler driver from configuration
@@ -64,8 +69,14 @@ impl CompilerDriver {
     pub fn run(&mut self) -> Result<(), CompilerError> {
         // Process each input file
         for input_file in self.config.input_files.clone() {
-            let (_ast, _symbol_table, mir_module, functions, blocks, locals, globals, types) =
+            let (_ast, _symbol_table, mir_module, functions, blocks, locals, globals, types, statements, _constants) =
                 self.compile_file(&input_file)?;
+
+            // Skip code generation if dumping MIR
+            if self.config.dump_mir {
+                // MIR has already been dumped during compilation
+                continue;
+            }
 
             // Determine the output path
             let output_path = if let Some(output_path) = &self.config.output_path {
@@ -77,7 +88,15 @@ impl CompilerDriver {
 
             if !self.config.dump_ast {
                 // Use MIR codegen instead of AST codegen
-                let mir_codegen = MirToCraneliftLowerer::new(mir_module, functions, blocks, locals, globals, types);
+                let mir_codegen = MirToCraneliftLowerer::new(
+                    mir_module.clone(),
+                    functions.clone(),
+                    blocks.clone(),
+                    locals.clone(),
+                    globals.clone(),
+                    types.clone(),
+                    statements.clone(),
+                );
                 let object_file = mir_codegen.compile().unwrap();
 
                 // Write the object file to a temporary file
@@ -121,7 +140,7 @@ impl CompilerDriver {
 
     pub fn compile_to_ast(&mut self) -> Result<Ast, CompilerError> {
         let input_file = self.config.input_files[0].clone();
-        let (ast, _, _, _, _, _, _, _) = self.compile_file(&input_file)?;
+        let (ast, ..) = self.compile_file(&input_file)?;
         self.report_errors()?;
         Ok(ast)
     }
@@ -187,6 +206,8 @@ impl CompilerDriver {
                 HashMap::new(),
                 HashMap::new(),
                 HashMap::new(),
+                HashMap::new(),
+                HashMap::new(),
             ));
         }
 
@@ -239,6 +260,8 @@ impl CompilerDriver {
                 HashMap::new(),
                 HashMap::new(),
                 HashMap::new(),
+                HashMap::new(),
+                HashMap::new(),
             ));
         }
 
@@ -256,7 +279,7 @@ impl CompilerDriver {
         }
 
         // 5. Generate MIR from the AST using the new semantic analyzer
-        let (mir_module, functions, blocks, locals, globals, types) = {
+        let (mir_module, functions, blocks, locals, globals, types, statements, constants) = {
             let mut semantic_analyzer =
                 crate::semantic::SemanticAnalyzer::new(&mut ast, &mut self.diagnostics, &mut symbol_table);
             let mir_module = semantic_analyzer.lower_module();
@@ -265,7 +288,11 @@ impl CompilerDriver {
             let locals = semantic_analyzer.get_locals().clone();
             let globals = semantic_analyzer.get_globals().clone();
             let types = semantic_analyzer.get_types().clone();
-            (mir_module, functions, blocks, locals, globals, types)
+            let statements = semantic_analyzer.get_statements().clone();
+            let constants = semantic_analyzer.get_constants().clone();
+            (
+                mir_module, functions, blocks, locals, globals, types, statements, constants,
+            )
         };
 
         // Check for semantic analysis errors and stop if any
@@ -274,8 +301,11 @@ impl CompilerDriver {
             return Err(CompilerError::CompilationFailed);
         }
 
-        // 6. Validate MIR before code generation
-        {
+        // 6. Validate MIR before code generation (skip if dumping MIR or testing)
+        log::debug!("dump_mir config: {}", self.config.dump_mir);
+        log::debug!("skip_validation config: {}", self.config.skip_validation);
+        if !self.config.dump_mir && !self.config.skip_validation {
+            log::debug!("Running MIR validation");
             let mut validator = MirValidator::new();
             match validator.validate(&mir_module, &functions, &blocks, &locals, &globals, &types) {
                 Ok(()) => {
@@ -292,9 +322,69 @@ impl CompilerDriver {
                     return Err(CompilerError::SemanticError("MIR validation failed".to_string()));
                 }
             }
+        } else {
+            log::debug!("Skipping MIR validation due to dump_mir or skip_validation flag");
         }
 
-        Ok((ast, symbol_table, mir_module, functions, blocks, locals, globals, types))
+        // 7. Dump MIR if requested
+        if self.config.dump_mir {
+            log::debug!("Dumping MIR to file");
+            self.dump_mir(
+                &mir_module,
+                &functions,
+                &blocks,
+                &locals,
+                &globals,
+                &types,
+                &statements,
+                &constants,
+            )?;
+            // Don't continue with code generation if dumping MIR
+            return Ok((
+                ast,
+                symbol_table,
+                mir_module,
+                functions,
+                blocks,
+                locals,
+                globals,
+                types,
+                statements,
+                constants,
+            ));
+        }
+
+        // 8. Dump Cranelift IR if requested
+        if self.config.dump_cranelift {
+            log::debug!("Dumping Cranelift IR to console");
+            self.dump_cranelift(&mir_module, &functions, &blocks, &locals, &globals, &types, &statements)?;
+            // Don't continue with code generation if dumping Cranelift IR
+            return Ok((
+                ast,
+                symbol_table,
+                mir_module,
+                functions,
+                blocks,
+                locals,
+                globals,
+                types,
+                statements,
+                constants,
+            ));
+        }
+
+        Ok((
+            ast,
+            symbol_table,
+            mir_module,
+            functions,
+            blocks,
+            locals,
+            globals,
+            types,
+            statements,
+            constants,
+        ))
     }
 
     /// Print accumulated diagnostics without returning an error
@@ -313,6 +403,195 @@ impl CompilerDriver {
         }
 
         Ok(())
+    }
+
+    /// Dump MIR to console
+    fn dump_mir(
+        &mut self,
+        mir_module: &MirModule,
+        functions: &HashMap<MirFunctionId, MirFunction>,
+        blocks: &HashMap<MirBlockId, MirBlock>,
+        locals: &HashMap<LocalId, Local>,
+        globals: &HashMap<GlobalId, Global>,
+        types: &HashMap<TypeId, MirType>,
+        statements: &HashMap<MirStmtId, MirStmt>,
+        constants: &HashMap<ConstValueId, ConstValue>,
+    ) -> Result<(), CompilerError> {
+        // Create MIR dumper config for console output
+        let dump_config = MirDumpConfig {
+            output_path: std::path::PathBuf::from("console"), // Not used for console output
+            include_header: true,
+        };
+
+        // Create MIR dumper
+        let dumper = MirDumper::new(
+            mir_module,
+            functions,
+            blocks,
+            locals,
+            globals,
+            types,
+            constants,
+            statements,
+            &dump_config,
+        );
+
+        // Generate MIR dump
+        let mir_dump = dumper
+            .generate_mir_dump()
+            .map_err(|e| CompilerError::AstDumpError(format!("Failed to generate MIR dump: {}", e)))?;
+
+        // Output to console
+        print!("{}", mir_dump);
+
+        log::info!("MIR dump written to console");
+        Ok(())
+    }
+
+    /// Dump Cranelift IR to console
+    fn dump_cranelift(
+        &mut self,
+        mir_module: &MirModule,
+        functions: &HashMap<MirFunctionId, MirFunction>,
+        blocks: &HashMap<MirBlockId, MirBlock>,
+        locals: &HashMap<LocalId, Local>,
+        globals: &HashMap<GlobalId, Global>,
+        types: &HashMap<TypeId, MirType>,
+        statements: &HashMap<MirStmtId, MirStmt>,
+    ) -> Result<(), CompilerError> {
+        use crate::cranelift_dumper::{CraneliftDumpConfig, CraneliftDumper};
+
+        // Create Cranelift dumper configuration
+        let dump_config = CraneliftDumpConfig {
+            include_header: true,
+            show_analysis: true,
+        };
+
+        // Create Cranelift dumper (currently unused but may be used for future enhancements)
+        let _dumper = CraneliftDumper::new(&dump_config);
+
+        // Create a temporary MIR to Cranelift lowerer just for dumping
+        let mut mir_codegen = MirToCraneliftLowerer::new(
+            mir_module.clone(),
+            functions.clone(),
+            blocks.clone(),
+            locals.clone(),
+            globals.clone(),
+            types.clone(),
+            statements.clone(),
+        );
+
+        // Get the compiled functions (this triggers the compilation process)
+        let compiled_functions = mir_codegen.get_compiled_functions_for_dump();
+
+        // Dump each function
+        for (func_name, func_ir) in compiled_functions {
+            println!("; Function: {}", func_name);
+            println!("{}", func_ir);
+            println!();
+        }
+
+        if compiled_functions.is_empty() {
+            println!("; No compiled functions found");
+        }
+
+        Ok(())
+    }
+
+    /// Get MIR dump as string for testing (with optional header)
+    pub fn get_mir_dump_string(&mut self, include_header: bool) -> Result<String, CompilerError> {
+        // Temporarily enable skip_validation for testing
+        let original_skip_validation = self.config.skip_validation;
+        self.config.skip_validation = true;
+
+        let result = self._get_mir_dump_string_internal(include_header);
+
+        // Restore original value
+        self.config.skip_validation = original_skip_validation;
+
+        result
+    }
+
+    /// Get MIR dump for single function as string for testing (no header)
+    pub fn get_function_mir_dump_string(&mut self, include_header: bool) -> Result<String, CompilerError> {
+        // Temporarily enable skip_validation for testing
+        let original_skip_validation = self.config.skip_validation;
+        self.config.skip_validation = true;
+
+        let result = self._get_function_mir_dump_string_internal(include_header);
+
+        // Restore original value
+        self.config.skip_validation = original_skip_validation;
+
+        result
+    }
+
+    /// Internal implementation for getting MIR dump as string
+    fn _get_mir_dump_string_internal(&mut self, include_header: bool) -> Result<String, CompilerError> {
+        let input_file = self.config.input_files[0].clone();
+        let (_ast, _symbol_table, mir_module, functions, blocks, locals, globals, types, statements, constants) =
+            self.compile_file(&input_file)?;
+
+        // Create MIR dumper config for string output
+        let dump_config = MirDumpConfig {
+            output_path: std::path::PathBuf::from("dummy.mir"), // Not used for string output
+            include_header,
+        };
+
+        // Create MIR dumper
+        let dumper = MirDumper::new(
+            &mir_module,
+            &functions,
+            &blocks,
+            &locals,
+            &globals,
+            &types,
+            &constants,
+            &statements,
+            &dump_config,
+        );
+
+        // Generate MIR dump
+        let mir_dump = dumper
+            .generate_mir_dump_string()
+            .map_err(|e| CompilerError::AstDumpError(format!("Failed to generate MIR dump: {}", e)))?;
+
+        Ok(mir_dump)
+    }
+
+    /// Internal implementation for getting single function MIR dump as string
+    fn _get_function_mir_dump_string_internal(&mut self, include_header: bool) -> Result<String, CompilerError> {
+        let input_file = self.config.input_files[0].clone();
+        let (_ast, _symbol_table, mir_module, functions, blocks, locals, globals, types, statements, constants) =
+            self.compile_file(&input_file)?;
+
+        // Create MIR dumper config for string output
+        let dump_config = MirDumpConfig {
+            output_path: std::path::PathBuf::from("dummy.mir"), // Not used for string output
+            include_header,
+        };
+        // Create MIR dumper (we don't need all parameters for function-only dump)
+        let dumper = MirDumper::new(
+            &mir_module,
+            &functions,
+            &blocks,
+            &locals,
+            &globals,
+            &types,
+            &constants,
+            &statements,
+            &dump_config,
+        );
+
+        // Get the first function ID
+        if let Some(&func_id) = functions.keys().next() {
+            let mir_dump = dumper
+                .generate_function_mir_dump(func_id)
+                .map_err(|e| CompilerError::AstDumpError(format!("Failed to generate MIR dump: {}", e)))?;
+            Ok(mir_dump)
+        } else {
+            Ok(String::new())
+        }
     }
 }
 

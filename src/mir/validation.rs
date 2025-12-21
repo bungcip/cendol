@@ -162,7 +162,7 @@ impl MirValidator {
         }
 
         // Function must have a name
-        if func.name.is_empty() {
+        if func.name.as_str().is_empty() {
             self.errors.push(ValidationError::IllegalOperation(
                 "Function name cannot be empty".to_string(),
             ));

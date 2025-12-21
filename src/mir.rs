@@ -11,6 +11,7 @@ use hashbrown::HashMap;
 use serde::Serialize;
 use std::fmt;
 use std::num::NonZeroU32;
+use symbol_table::GlobalSymbol as Symbol;
 
 pub mod codegen;
 pub mod validation;
@@ -65,7 +66,7 @@ impl MirModule {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MirFunction {
     pub id: MirFunctionId,
-    pub name: String,
+    pub name: Symbol,
     pub return_type: TypeId,
     pub params: Vec<LocalId>,
     pub locals: Vec<LocalId>,
@@ -74,7 +75,7 @@ pub struct MirFunction {
 }
 
 impl MirFunction {
-    pub fn new(id: MirFunctionId, name: String, return_type: TypeId) -> Self {
+    pub fn new(id: MirFunctionId, name: Symbol, return_type: TypeId) -> Self {
         Self {
             id,
             name,
@@ -82,7 +83,7 @@ impl MirFunction {
             params: Vec::new(),
             locals: Vec::new(),
             blocks: Vec::new(),
-            entry_block: MirBlockId::new(1).unwrap(), // Default entry block
+            entry_block: MirBlockId::new(1).unwrap(), // Will be set explicitly
         }
     }
 }
@@ -106,34 +107,14 @@ impl MirBlock {
 }
 
 /// MIR Statement - Individual operations within a block
+/// Only contains side-effect operations, no control flow
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum MirStmt {
-    Assign(Place, Operand),
-    Load(Place, Operand),
+    Assign(Place, Rvalue),
     Store(Operand, Place),
-    Call(Place, Operand, Vec<Operand>),
-    // Control flow statements
-    If {
-        cond: Operand,
-        then_block: MirBlockId,
-        else_block: MirBlockId,
-    },
-    Switch {
-        value: Operand,
-        cases: Vec<(Operand, MirBlockId)>,
-    },
-    Loop {
-        body_block: MirBlockId,
-        cond_block: MirBlockId,
-    },
-    Break(MirBlockId),
-    Continue(MirBlockId),
     // Memory operations
     Alloc(Place, TypeId),
     Dealloc(Operand),
-    // Aggregate operations
-    StructField(Place, Operand, usize),
-    ArrayIndex(Place, Operand, Operand),
 }
 
 /// Terminator - Control flow terminators for basic blocks
@@ -162,9 +143,6 @@ pub enum Operand {
     Copy(Box<Place>),
     Move(Box<Place>),
     Constant(ConstValueId),
-    // Aggregate operations
-    StructField(Box<Operand>, usize),
-    ArrayIndex(Box<Operand>, Box<Operand>),
     // Address operations
     AddressOf(Box<Place>),
     // Type conversion
@@ -185,7 +163,14 @@ pub enum Rvalue {
     // Memory operations
     Load(Operand),
     // Function calls
-    Call(Operand, Vec<Operand>),
+    Call(CallTarget, Vec<Operand>),
+}
+
+/// Call target - represents how a function is called
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub enum CallTarget {
+    Direct(MirFunctionId), // Direct call to a known function
+    Indirect(Operand),     // Indirect call via function pointer
 }
 
 /// Binary operations
@@ -245,16 +230,16 @@ pub enum MirType {
         params: Vec<TypeId>,
     },
     Struct {
-        name: String,
-        fields: Vec<(String, TypeId)>,
+        name: Symbol,
+        fields: Vec<(Symbol, TypeId)>,
     },
     Union {
-        name: String,
-        fields: Vec<(String, TypeId)>,
+        name: Symbol,
+        fields: Vec<(Symbol, TypeId)>,
     },
     Enum {
-        name: String,
-        variants: Vec<(String, i64)>,
+        name: Symbol,
+        variants: Vec<(Symbol, i64)>,
     },
 }
 
@@ -276,13 +261,13 @@ pub enum ConstValue {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Local {
     pub id: LocalId,
-    pub name: String,
+    pub name: Option<Symbol>,
     pub type_id: TypeId,
     pub is_param: bool,
 }
 
 impl Local {
-    pub fn new(id: LocalId, name: String, type_id: TypeId, is_param: bool) -> Self {
+    pub fn new(id: LocalId, name: Option<Symbol>, type_id: TypeId, is_param: bool) -> Self {
         Self {
             id,
             name,
@@ -296,14 +281,14 @@ impl Local {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Global {
     pub id: GlobalId,
-    pub name: String,
+    pub name: Symbol,
     pub type_id: TypeId,
     pub is_constant: bool,
     pub initial_value: Option<ConstValueId>,
 }
 
 impl Global {
-    pub fn new(id: GlobalId, name: String, type_id: TypeId, is_constant: bool) -> Self {
+    pub fn new(id: GlobalId, name: Symbol, type_id: TypeId, is_constant: bool) -> Self {
         Self {
             id,
             name,
@@ -332,6 +317,8 @@ pub struct MirBuilder {
     globals: HashMap<GlobalId, Global>,
     types: HashMap<TypeId, MirType>,
     constants: HashMap<ConstValueId, ConstValue>,
+    // Statement storage with ID mapping
+    statements: HashMap<MirStmtId, MirStmt>,
 }
 
 impl MirBuilder {
@@ -352,11 +339,12 @@ impl MirBuilder {
             globals: HashMap::new(),
             types: HashMap::new(),
             constants: HashMap::new(),
+            statements: HashMap::new(),
         }
     }
 
     /// Create a new local variable
-    pub fn create_local(&mut self, name: String, type_id: TypeId, is_param: bool) -> LocalId {
+    pub fn create_local(&mut self, name: Option<Symbol>, type_id: TypeId, is_param: bool) -> LocalId {
         let local_id = LocalId::new(self.next_local_id).unwrap();
         self.next_local_id += 1;
 
@@ -394,9 +382,12 @@ impl MirBuilder {
     }
 
     /// Add a statement to the current block
-    pub fn add_statement(&mut self, _stmt: MirStmt) -> MirStmtId {
+    pub fn add_statement(&mut self, stmt: MirStmt) -> MirStmtId {
         let stmt_id = MirStmtId::new(self.next_stmt_id).unwrap();
         self.next_stmt_id += 1;
+
+        // Store statement in the HashMap
+        self.statements.insert(stmt_id, stmt.clone());
 
         if let Some(block_id) = self.current_block
             && let Some(block) = self.blocks.get_mut(&block_id)
@@ -433,13 +424,9 @@ impl MirBuilder {
     }
 
     /// Create a new function
-    pub fn create_function(&mut self, name: String, return_type: TypeId) -> MirFunctionId {
+    pub fn create_function(&mut self, name: Symbol, return_type: TypeId) -> MirFunctionId {
         let func_id = MirFunctionId::new(self.module.functions.len() as u32 + 1).unwrap();
-        let mut func = MirFunction::new(func_id, name, return_type);
-
-        // Create entry block
-        let entry_block_id = self.create_block();
-        func.entry_block = entry_block_id;
+        let func = MirFunction::new(func_id, name, return_type);
 
         self.functions.insert(func_id, func);
         self.module.functions.push(func_id);
@@ -458,7 +445,7 @@ impl MirBuilder {
     }
 
     /// Create a new global variable
-    pub fn create_global(&mut self, name: String, type_id: TypeId, is_constant: bool) -> GlobalId {
+    pub fn create_global(&mut self, name: Symbol, type_id: TypeId, is_constant: bool) -> GlobalId {
         let global_id = GlobalId::new(self.next_global_id).unwrap();
         self.next_global_id += 1;
 
@@ -469,8 +456,35 @@ impl MirBuilder {
         global_id
     }
 
-    /// Add a type to the module
+    /// Create a new global variable with initial value
+    pub fn create_global_with_init(
+        &mut self,
+        name: Symbol,
+        type_id: TypeId,
+        is_constant: bool,
+        initial_value: Option<ConstValueId>,
+    ) -> GlobalId {
+        let global_id = GlobalId::new(self.next_global_id).unwrap();
+        self.next_global_id += 1;
+
+        let mut global = Global::new(global_id, name, type_id, is_constant);
+        global.initial_value = initial_value;
+        self.globals.insert(global_id, global);
+        self.module.globals.push(global_id);
+
+        global_id
+    }
+
+    /// Add a type to the module with interning
     pub fn add_type(&mut self, mir_type: MirType) -> TypeId {
+        // Check if type already exists (type interning)
+        for (existing_id, existing_type) in &self.types {
+            if existing_type == &mir_type {
+                return *existing_id;
+            }
+        }
+
+        // Type doesn't exist, create new one
         let type_id = TypeId::new(self.next_type_id).unwrap();
         self.next_type_id += 1;
 
@@ -553,6 +567,18 @@ impl MirBuilder {
     pub fn get_constants(&self) -> &HashMap<ConstValueId, ConstValue> {
         &self.constants
     }
+
+    /// Get all statements for validation
+    pub fn get_statements(&self) -> &HashMap<MirStmtId, MirStmt> {
+        &self.statements
+    }
+
+    /// Set the entry block for a function
+    pub fn set_function_entry_block(&mut self, func_id: MirFunctionId, block_id: MirBlockId) {
+        if let Some(func) = self.functions.get_mut(&func_id) {
+            func.entry_block = block_id;
+        }
+    }
 }
 
 /// Display implementations for debugging
@@ -592,34 +618,9 @@ impl fmt::Display for MirStmt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             MirStmt::Assign(place, operand) => write!(f, "Assign({:?}, {:?})", place, operand),
-            MirStmt::Load(place, operand) => write!(f, "Load({:?}, {:?})", place, operand),
             MirStmt::Store(operand, place) => write!(f, "Store({:?}, {:?})", operand, place),
-            MirStmt::Call(place, operand, operands) => write!(f, "Call({:?}, {:?}, {:?})", place, operand, operands),
-            MirStmt::If {
-                cond,
-                then_block,
-                else_block,
-            } => write!(
-                f,
-                "If(cond: {:?}, then: {}, else: {})",
-                cond,
-                then_block.get(),
-                else_block.get()
-            ),
-            MirStmt::Switch { value, cases } => write!(f, "Switch(value: {:?}, cases: {:?})", value, cases),
-            MirStmt::Loop { body_block, cond_block } => {
-                write!(f, "Loop(body: {}, cond: {})", body_block.get(), cond_block.get())
-            }
-            MirStmt::Break(block) => write!(f, "Break({})", block.get()),
-            MirStmt::Continue(block) => write!(f, "Continue({})", block.get()),
             MirStmt::Alloc(place, type_id) => write!(f, "Alloc({:?}, {})", place, type_id.get()),
             MirStmt::Dealloc(operand) => write!(f, "Dealloc({:?})", operand),
-            MirStmt::StructField(place, operand, field_idx) => {
-                write!(f, "StructField({:?}, {:?}, {})", place, operand, field_idx)
-            }
-            MirStmt::ArrayIndex(place, operand, index) => {
-                write!(f, "ArrayIndex({:?}, {:?}, {:?})", place, operand, index)
-            }
         }
     }
 }
@@ -655,8 +656,6 @@ impl fmt::Display for Operand {
             Operand::Copy(place) => write!(f, "Copy({:?})", place),
             Operand::Move(place) => write!(f, "Move({:?})", place),
             Operand::Constant(const_id) => write!(f, "Constant({})", const_id.get()),
-            Operand::StructField(operand, field_idx) => write!(f, "StructField({:?}, {})", operand, field_idx),
-            Operand::ArrayIndex(operand, index) => write!(f, "ArrayIndex({:?}, {:?})", operand, index),
             Operand::AddressOf(place) => write!(f, "AddressOf({:?})", place),
             Operand::Cast(type_id, operand) => write!(f, "Cast({}, {:?})", type_id.get(), operand),
         }
@@ -674,7 +673,7 @@ impl fmt::Display for Rvalue {
             Rvalue::StructLiteral(fields) => write!(f, "StructLiteral({:?})", fields),
             Rvalue::ArrayLiteral(elements) => write!(f, "ArrayLiteral({:?})", elements),
             Rvalue::Load(operand) => write!(f, "Load({:?})", operand),
-            Rvalue::Call(operand, operands) => write!(f, "Call({:?}, {:?})", operand, operands),
+            Rvalue::Call(call_target, operands) => write!(f, "Call({:?}, {:?})", call_target, operands),
         }
     }
 }
@@ -710,11 +709,20 @@ impl fmt::Display for ConstValue {
     }
 }
 
+impl fmt::Display for CallTarget {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CallTarget::Direct(func_id) => write!(f, "Direct({})", func_id.get()),
+            CallTarget::Indirect(operand) => write!(f, "Indirect({:?})", operand),
+        }
+    }
+}
+
 impl fmt::Display for Local {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Local(id: {}, name: {}, type: {}, is_param: {})",
+            "Local(id: {}, name: {:?}, type: {}, is_param: {})",
             self.id.get(),
             self.name,
             self.type_id.get(),

@@ -4,6 +4,7 @@
 //! between parser AST and MIR, with comprehensive validation and proper multi-declarator
 //! handling through a two-pass approach.
 
+use crate::ast::BinaryOp;
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::mir::{
@@ -104,6 +105,14 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
             NodeKind::VarDecl(var_decl) => {
                 self.lower_var_declaration(&var_decl, node_span);
+            }
+
+            NodeKind::While(while_stmt) => {
+                self.lower_while_statement(&while_stmt, node_span);
+            }
+
+            NodeKind::DoWhile(body_ref, condition_ref) => {
+                self.lower_do_while_statement(body_ref, condition_ref, node_span);
             }
 
             // Handle compound statements by processing their statements
@@ -778,6 +787,25 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             NodeKind::BinaryOp(op, left_ref, right_ref) => {
                 debug!("Lowering binary operation: {:?}", op);
 
+                // Special handling for assignment operations
+                if matches!(
+                    op,
+                    BinaryOp::Assign
+                        | BinaryOp::AssignAdd
+                        | BinaryOp::AssignSub
+                        | BinaryOp::AssignMul
+                        | BinaryOp::AssignDiv
+                        | BinaryOp::AssignMod
+                        | BinaryOp::AssignBitAnd
+                        | BinaryOp::AssignBitOr
+                        | BinaryOp::AssignBitXor
+                        | BinaryOp::AssignLShift
+                        | BinaryOp::AssignRShift
+                ) {
+                    // This is an assignment operation, handle it specially
+                    return self.lower_assignment_operation(op, left_ref, right_ref, expr_ref);
+                }
+
                 // Lower left and right operands
                 let left_operand = self.lower_expression(left_ref);
                 let right_operand = self.lower_expression(right_ref);
@@ -831,6 +859,105 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
                         // Report error but continue with dummy operand
                         self.report_error(error);
+                        let error_const = self.create_constant(ConstValue::Int(0));
+                        Operand::Constant(error_const)
+                    }
+                }
+            }
+
+            NodeKind::UnaryOp(op, operand_ref) => {
+                debug!("Lowering unary operation: {:?}", op);
+
+                // Lower the operand first
+                let operand = self.lower_expression(operand_ref);
+                let node_span = self.ast.get_node(expr_ref).span;
+
+                match op {
+                    crate::ast::UnaryOp::Deref => {
+                        // Pointer dereferencing: *operand
+                        // The operand should be a pointer type, and we want to return
+                        // a place that represents the dereferenced location
+
+                        // Create a temporary local to store the result
+                        let temp_type_id = self.get_int_type(); // For now, assume int type
+                        let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
+                        let temp_place = Place::Local(temp_local_id);
+
+                        // Create a dereference operation: temp = *operand
+                        let deref_rvalue = Rvalue::UnaryOp(crate::mir::UnaryOp::Deref, operand);
+                        let assign_stmt = MirStmt::Assign(temp_place.clone(), deref_rvalue);
+                        self.mir_builder.add_statement(assign_stmt);
+
+                        // Return the local that contains the dereferenced value
+                        Operand::Copy(Box::new(temp_place))
+                    }
+                    crate::ast::UnaryOp::AddrOf => {
+                        // Address-of operation: &operand
+                        // This should return a pointer to the operand
+
+                        // For now, we'll handle the simple case where operand is a local variable
+                        if let Operand::Copy(place_box) = operand {
+                            let place = *place_box;
+                            // Return the address of the place
+                            Operand::AddressOf(Box::new(place))
+                        } else {
+                            // For other cases, return a dummy operand
+                            self.report_error(SemanticError::UnsupportedFeature {
+                                feature: "Address-of operation for non-local operands not yet implemented".to_string(),
+                                location: node_span,
+                            });
+                            let error_const = self.create_constant(ConstValue::Int(0));
+                            Operand::Constant(error_const)
+                        }
+                    }
+                    crate::ast::UnaryOp::Plus | crate::ast::UnaryOp::Minus => {
+                        // Unary plus/minus operations
+                        let unary_op = match op {
+                            crate::ast::UnaryOp::Plus => crate::mir::UnaryOp::Neg, // Unary plus is like no-op
+                            crate::ast::UnaryOp::Minus => crate::mir::UnaryOp::Neg,
+                            _ => unreachable!(),
+                        };
+
+                        // Create a temporary local to store the result
+                        let temp_type_id = self.get_int_type();
+                        let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
+                        let temp_place = Place::Local(temp_local_id);
+
+                        // Create the unary operation: temp = op operand
+                        let unary_rvalue = Rvalue::UnaryOp(unary_op, operand);
+                        let assign_stmt = MirStmt::Assign(temp_place.clone(), unary_rvalue);
+                        self.mir_builder.add_statement(assign_stmt);
+
+                        // Return the local that contains the result
+                        Operand::Copy(Box::new(temp_place))
+                    }
+                    crate::ast::UnaryOp::BitNot | crate::ast::UnaryOp::LogicNot => {
+                        // Bitwise and logical NOT operations
+                        let unary_op = match op {
+                            crate::ast::UnaryOp::BitNot => crate::mir::UnaryOp::Not,
+                            crate::ast::UnaryOp::LogicNot => crate::mir::UnaryOp::Not,
+                            _ => unreachable!(),
+                        };
+
+                        // Create a temporary local to store the result
+                        let temp_type_id = self.get_int_type();
+                        let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
+                        let temp_place = Place::Local(temp_local_id);
+
+                        // Create the unary operation: temp = op operand
+                        let unary_rvalue = Rvalue::UnaryOp(unary_op, operand);
+                        let assign_stmt = MirStmt::Assign(temp_place.clone(), unary_rvalue);
+                        self.mir_builder.add_statement(assign_stmt);
+
+                        // Return the local that contains the result
+                        Operand::Copy(Box::new(temp_place))
+                    }
+                    crate::ast::UnaryOp::PreIncrement | crate::ast::UnaryOp::PreDecrement => {
+                        // Pre-increment and pre-decrement operations
+                        self.report_error(SemanticError::UnsupportedFeature {
+                            feature: "Pre-increment and pre-decrement operations not yet implemented".to_string(),
+                            location: node_span,
+                        });
                         let error_const = self.create_constant(ConstValue::Int(0));
                         Operand::Constant(error_const)
                     }
@@ -995,6 +1122,218 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             }
             // If then branch terminates, no continuation needed
         }
+    }
+
+    /// Lower a while statement
+    fn lower_while_statement(&mut self, while_stmt: &WhileStmt, _location: SourceSpan) {
+        debug!("Lowering while statement");
+
+        // Create blocks for condition check, body, and continuation
+        let condition_block = self.mir_builder.create_block();
+        let body_block = self.mir_builder.create_block();
+        let continue_block = self.mir_builder.create_block();
+
+        // Jump from current block to condition check
+        self.mir_builder.set_terminator(Terminator::Goto(condition_block));
+
+        // Set up condition block
+        self.mir_builder.set_current_block(condition_block);
+        self.current_block = Some(condition_block);
+
+        // Lower the condition expression to an operand
+        let cond_operand = self.lower_expression(while_stmt.condition);
+
+        // Set terminator for condition block: if condition is true, go to body; else go to continue
+        self.mir_builder
+            .set_terminator(Terminator::If(cond_operand, body_block, continue_block));
+
+        // Set up body block
+        self.mir_builder.set_current_block(body_block);
+        self.current_block = Some(body_block);
+
+        // Process the body of the while loop
+        self.lower_node_ref(while_stmt.body);
+
+        // After body execution, jump back to condition check
+        if !self.mir_builder.current_block_has_terminator() {
+            self.mir_builder.set_terminator(Terminator::Goto(condition_block));
+        }
+
+        // Set current block to continue block for code after the loop
+        self.mir_builder.set_current_block(continue_block);
+        self.current_block = Some(continue_block);
+    }
+
+    /// Lower a do-while statement
+    fn lower_do_while_statement(&mut self, body_ref: NodeRef, condition_ref: NodeRef, _location: SourceSpan) {
+        debug!("Lowering do-while statement");
+
+        // Create blocks for body, condition check, and continuation
+        let body_block = self.mir_builder.create_block();
+        let condition_block = self.mir_builder.create_block();
+        let continue_block = self.mir_builder.create_block();
+
+        // Jump from current block to body (do-while executes body first)
+        self.mir_builder.set_terminator(Terminator::Goto(body_block));
+
+        // Set up body block
+        self.mir_builder.set_current_block(body_block);
+        self.current_block = Some(body_block);
+
+        // Process the body of the do-while loop
+        self.lower_node_ref(body_ref);
+
+        // After body execution, jump to condition check
+        if !self.mir_builder.current_block_has_terminator() {
+            self.mir_builder.set_terminator(Terminator::Goto(condition_block));
+        }
+
+        // Set up condition block
+        self.mir_builder.set_current_block(condition_block);
+        self.current_block = Some(condition_block);
+
+        // Lower the condition expression to an operand
+        let cond_operand = self.lower_expression(condition_ref);
+
+        // Set terminator for condition block: if condition is true, go back to body; else go to continue
+        self.mir_builder
+            .set_terminator(Terminator::If(cond_operand, body_block, continue_block));
+
+        // Set current block to continue block for code after the loop
+        self.mir_builder.set_current_block(continue_block);
+        self.current_block = Some(continue_block);
+    }
+
+    /// Lower an assignment operation
+    fn lower_assignment_operation(
+        &mut self,
+        op: BinaryOp,
+        left_ref: NodeRef,
+        right_ref: NodeRef,
+        expr_ref: NodeRef,
+    ) -> Operand {
+        debug!("Lowering assignment operation: {:?}", op);
+
+        // Lower the left-hand side to get the place to assign to
+        let left_operand = self.lower_expression(left_ref);
+
+        // For assignment operations, the left operand should be a place (variable, field access, etc.)
+        // that we can assign to. We need to extract the Place from the Operand.
+        let place = match left_operand {
+            Operand::Copy(place_box) => *place_box,
+            _ => {
+                // Left operand is not a valid lvalue - report error
+                let node_span = self.ast.get_node(expr_ref).span;
+                self.report_error(SemanticError::NotLValue {
+                    operation: "assignment operation requires lvalue".to_string(),
+                    location: node_span,
+                });
+                // Return a dummy operand to allow compilation to continue
+                let error_const = self.create_constant(ConstValue::Int(0));
+                return Operand::Constant(error_const);
+            }
+        };
+
+        // Lower the right-hand side
+        let right_operand = self.lower_expression(right_ref);
+
+        // Get the source location for error reporting
+        let node_span = self.ast.get_node(expr_ref).span;
+
+        // For assignment operations, we need to handle the different types:
+        // - Simple assignment (=)
+        // - Compound assignments (+=, -=, etc.)
+        match op {
+            BinaryOp::Assign => {
+                // Simple assignment: left = right
+                self.emit_assignment(place, right_operand.clone(), node_span);
+                // Return the assigned value (for chained assignments like a = b = c)
+                right_operand
+            }
+            BinaryOp::AssignAdd => {
+                // Compound assignment: left += right
+
+                self.lower_compound_assignment(place, right_operand, MirBinaryOp::Add, node_span)
+            }
+            BinaryOp::AssignSub => {
+                // Compound assignment: left -= right
+
+                self.lower_compound_assignment(place, right_operand, MirBinaryOp::Sub, node_span)
+            }
+            BinaryOp::AssignMul => {
+                // Compound assignment: left *= right
+
+                self.lower_compound_assignment(place, right_operand, MirBinaryOp::Mul, node_span)
+            }
+            BinaryOp::AssignDiv => {
+                // Compound assignment: left /= right
+
+                self.lower_compound_assignment(place, right_operand, MirBinaryOp::Div, node_span)
+            }
+            BinaryOp::AssignMod => {
+                // Compound assignment: left %= right
+
+                self.lower_compound_assignment(place, right_operand, MirBinaryOp::Mod, node_span)
+            }
+            BinaryOp::AssignBitAnd => {
+                // Compound assignment: left &= right
+
+                self.lower_compound_assignment(place, right_operand, MirBinaryOp::BitAnd, node_span)
+            }
+            BinaryOp::AssignBitOr => {
+                // Compound assignment: left |= right
+
+                self.lower_compound_assignment(place, right_operand, MirBinaryOp::BitOr, node_span)
+            }
+            BinaryOp::AssignBitXor => {
+                // Compound assignment: left ^= right
+
+                self.lower_compound_assignment(place, right_operand, MirBinaryOp::BitXor, node_span)
+            }
+            BinaryOp::AssignLShift => {
+                // Compound assignment: left <<= right
+
+                self.lower_compound_assignment(place, right_operand, MirBinaryOp::LShift, node_span)
+            }
+            BinaryOp::AssignRShift => {
+                // Compound assignment: left >>= right
+
+                self.lower_compound_assignment(place, right_operand, MirBinaryOp::RShift, node_span)
+            }
+            _ => {
+                unreachable!("This should not happen as we already matched assignment operations");
+            }
+        }
+    }
+
+    /// Lower a compound assignment operation (like +=, -=, etc.)
+    fn lower_compound_assignment(
+        &mut self,
+        place: Place,
+        right_operand: Operand,
+        binary_op: MirBinaryOp,
+        location: SourceSpan,
+    ) -> Operand {
+        debug!("Lowering compound assignment with operation: {:?}", binary_op);
+
+        // First, load the current value from the place
+        let current_value = Operand::Copy(Box::new(place.clone()));
+
+        // Create a temporary local to store the result
+        let temp_type_id = self.get_int_type(); // For now, assume int type
+        let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
+        let temp_place = Place::Local(temp_local_id);
+
+        // Perform the binary operation: temp = current_value OP right_operand
+        let binary_rvalue = Rvalue::BinaryOp(binary_op, current_value, right_operand);
+        let assign_stmt = MirStmt::Assign(temp_place.clone(), binary_rvalue);
+        self.mir_builder.add_statement(assign_stmt);
+
+        // Assign the result back to the original place: left = temp
+        self.emit_assignment(place, Operand::Copy(Box::new(temp_place.clone())), location);
+
+        // Return the assigned value (for chained assignments)
+        Operand::Copy(Box::new(temp_place))
     }
 
     /// Emit an assignment statement

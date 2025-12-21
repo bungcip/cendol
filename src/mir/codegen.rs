@@ -16,6 +16,7 @@ use cranelift_frontend::FunctionBuilder;
 use cranelift_module::Module;
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use hashbrown::HashMap;
+use hashbrown::HashSet;
 use symbol_table::GlobalSymbol as Symbol;
 use target_lexicon::Triple;
 
@@ -224,37 +225,6 @@ fn resolve_operand_to_value(
     }
 }
 
-/// Standalone function to process statements and declare variables
-fn process_statements_in_function(
-    statements: &[MirStmt],
-    builder: &mut FunctionBuilder,
-    cranelift_vars: &mut HashMap<LocalId, Variable>,
-) {
-    for stmt in statements {
-        match stmt {
-            MirStmt::Assign(Place::Local(local_id), _rvalue) => {
-                // Ensure the variable is declared in Cranelift
-                if !cranelift_vars.contains_key(local_id) {
-                    let var = builder.declare_var(types::I32);
-                    cranelift_vars.insert(*local_id, var);
-                }
-            }
-            // Handle other statement types that might reference variables
-            MirStmt::Store(_operand, place) => {
-                if let Place::Local(local_id) = place
-                    && !cranelift_vars.contains_key(local_id)
-                {
-                    let var = builder.declare_var(types::I32);
-                    cranelift_vars.insert(*local_id, var);
-                }
-            }
-            _ => {
-                // For other statement types, just ignore for now
-            }
-        }
-    }
-}
-
 /// Helper function to resolve a MIR place to a Cranelift value
 fn resolve_place_to_value(
     place: &Place,
@@ -333,16 +303,16 @@ pub struct MirToCraneliftLowerer {
     functions: HashMap<MirFunctionId, MirFunction>,
     blocks: HashMap<MirBlockId, MirBlock>,
     locals: HashMap<LocalId, Local>,
-    _globals: HashMap<GlobalId, Global>,
+    globals: HashMap<GlobalId, Global>,
     types: HashMap<TypeId, MirType>,
     constants: HashMap<ConstValueId, ConstValue>,
     statements: HashMap<MirStmtId, MirStmt>,
     // Cranelift state
-    _cranelift_blocks: HashMap<MirBlockId, Block>,
+    // _cranelift_blocks: HashMap<MirBlockId, Block>,
     cranelift_vars: HashMap<LocalId, Variable>,
-    _cranelift_global_vars: HashMap<GlobalId, Variable>,
+    // _cranelift_global_vars: HashMap<GlobalId, Variable>,
     // Function signatures cache
-    _signatures: HashMap<MirFunctionId, Signature>,
+    // _signatures: HashMap<MirFunctionId, Signature>,
     // Store compiled functions for dumping
     compiled_functions: HashMap<String, String>,
 }
@@ -379,14 +349,14 @@ impl MirToCraneliftLowerer {
             functions,
             blocks,
             locals,
-            _globals: globals,
+            globals,
             types,
             constants: HashMap::new(),
             statements,
-            _cranelift_blocks: HashMap::new(),
+            // _cranelift_blocks: HashMap::new(),
             cranelift_vars: HashMap::new(),
-            _cranelift_global_vars: HashMap::new(),
-            _signatures: HashMap::new(),
+            // _cranelift_global_vars: HashMap::new(),
+            // _signatures: HashMap::new(),
             compiled_functions: HashMap::new(),
         }
     }
@@ -475,457 +445,361 @@ impl MirToCraneliftLowerer {
         }
     }
 
-    /// Lower a MIR function to Cranelift IR
+    /// Lower a MIR function to Cranelift IR using 3-phase algorithm
     fn lower_function(&mut self, func_id: MirFunctionId) -> Result<(), Box<dyn std::error::Error>> {
-        if let Some(func) = self.functions.get(&func_id) {
-            // Create a fresh context for this function
-            let mut func_ctx = self.module.make_context();
+        let func = self.functions.get(&func_id).expect("Function not found in MIR");
+        // Create a fresh context for this function
+        let mut func_ctx = self.module.make_context();
 
-            // Set up function signature using the actual return type from MIR
-            func_ctx.func.signature.params.clear();
+        // Set up function signature using the actual return type from MIR
+        func_ctx.func.signature.params.clear();
 
-            // Get the return type from MIR and convert to Cranelift type
-            let return_type = self
-                .types
-                .get(&func.return_type)
-                .map(mir_type_to_cranelift_type)
-                .unwrap_or(types::I32);
+        // Get the return type from MIR and convert to Cranelift type
+        let return_type = self
+            .types
+            .get(&func.return_type)
+            .map(mir_type_to_cranelift_type)
+            .unwrap_or(types::I32);
 
-            // Add parameters from MIR function signature
-            let mut param_types = Vec::new();
-            for &param_id in &func.params {
-                if let Some(param_local) = self.locals.get(&param_id) {
-                    let param_type = self
-                        .types
-                        .get(&param_local.type_id)
-                        .map(mir_type_to_cranelift_type)
-                        .unwrap_or(types::I32);
-                    func_ctx.func.signature.params.push(AbiParam::new(param_type));
-                    param_types.push(param_type);
-                }
+        // Add parameters from MIR function signature
+        let mut param_types = Vec::new();
+        for &param_id in &func.params {
+            if let Some(param_local) = self.locals.get(&param_id) {
+                let param_type = self
+                    .types
+                    .get(&param_local.type_id)
+                    .map(mir_type_to_cranelift_type)
+                    .unwrap_or(types::I32);
+                func_ctx.func.signature.params.push(AbiParam::new(param_type));
+                param_types.push(param_type);
             }
+        }
 
-            func_ctx.func.signature.returns.push(AbiParam::new(return_type));
+        func_ctx.func.signature.returns.push(AbiParam::new(return_type));
 
-            // Create a function builder with the fresh context
-            let mut builder = FunctionBuilder::new(&mut func_ctx.func, &mut self.builder_context);
+        // Create a function builder with the fresh context
+        let mut builder = FunctionBuilder::new(&mut func_ctx.func, &mut self.builder_context);
 
-            // In Cranelift, create entry block and explicitly add function parameters as block parameters
-            let entry_block = builder.create_block();
+        // Create variables for function parameters (will be defined when we switch to entry block)
+        // We'll handle this after creating all blocks
 
-            // Add function parameters as block parameters
-            for &param_type in &param_types {
-                builder.append_block_param(entry_block, param_type);
+        // PHASE 1️⃣ — Create all Cranelift blocks first (no instructions)
+        let mut cl_blocks = HashMap::new();
+
+        for &block_id in &func.blocks {
+            let cl_block = builder.create_block();
+            cl_blocks.insert(block_id, cl_block);
+        }
+
+        // Switch to entry block and set up function parameters
+        let entry_cl_block = cl_blocks.get(&func.entry_block).expect("Entry block not found");
+        builder.switch_to_block(*entry_cl_block);
+
+        // Add function parameters as block parameters
+        for &param_type in &param_types {
+            builder.append_block_param(*entry_cl_block, param_type);
+        }
+
+        // Create variables for function parameters and map them to entry block parameters
+        let param_values: Vec<Value> = builder.block_params(*entry_cl_block).to_vec();
+
+        for (i, (&param_id, param_value)) in func.params.iter().zip(param_values.into_iter()).enumerate() {
+            let param_type = param_types[i];
+            let var = builder.declare_var(param_type);
+            builder.def_var(var, param_value);
+            self.cranelift_vars.insert(param_id, var);
+        }
+
+        // PHASE 2️⃣ — Lower block content (without sealing)
+
+        // Use worklist algorithm for proper traversal
+        let mut worklist = vec![func.entry_block];
+        let mut visited = HashSet::new();
+
+        while let Some(current_block_id) = worklist.pop() {
+            if visited.contains(&current_block_id) {
+                continue;
             }
+            visited.insert(current_block_id);
 
-            builder.switch_to_block(entry_block);
+            let cl_block = cl_blocks.get(&current_block_id).expect("Block not found in mapping");
+            builder.switch_to_block(*cl_block);
 
-            // Create variables for function parameters and map them to entry block parameters
-            let param_values: Vec<Value> = builder.block_params(entry_block).to_vec();
+            // Get the MIR block
+            let mir_block = self.blocks.get(&current_block_id).expect("Block not found in MIR");
 
-            for (i, (&param_id, param_value)) in func.params.iter().zip(param_values.into_iter()).enumerate() {
-                let param_type = param_types[i];
-                let var = builder.declare_var(param_type);
-                builder.def_var(var, param_value);
-                self.cranelift_vars.insert(param_id, var);
-            }
+            // 1. Emit statements
+            let statements_to_process: Vec<MirStmt> = mir_block
+                .statements
+                .iter()
+                .filter_map(|&stmt_id| self.statements.get(&stmt_id).cloned())
+                .collect();
 
-            // Process the entry block from MIR if it exists
-            let entry_block_id = func.entry_block;
-            let mir_entry_block = self.blocks.get(&entry_block_id).cloned();
-
-            if let Some(block) = mir_entry_block {
-                // Extract statements first to avoid borrow conflicts
-                let statements_to_process: Vec<MirStmt> = block
-                    .statements
-                    .iter()
-                    .filter_map(|&stmt_id| self.statements.get(&stmt_id).cloned())
-                    .collect();
-
-                // Process statements using a standalone function
-                process_statements_in_function(&statements_to_process, &mut builder, &mut self.cranelift_vars);
-
-                // Process assignments - this is the key missing piece!
-                for stmt in &statements_to_process {
-                    if let MirStmt::Assign(place, rvalue) = stmt {
-                        // Ensure target variable is declared
-                        if let Place::Local(local_id) = place
-                            && !self.cranelift_vars.contains_key(local_id)
-                        {
-                            let var = builder.declare_var(types::I32);
-                            self.cranelift_vars.insert(*local_id, var);
-                        }
-
-                        // Process the rvalue
-                        match rvalue {
-                            Rvalue::Use(operand) => {
-                                // Ensure operand variables are declared
-                                ensure_operands_declared(operand, &mut builder, &mut self.cranelift_vars);
-
-                                match resolve_operand_to_value(
-                                    operand,
-                                    &mut builder,
-                                    types::I32,
-                                    &self.constants,
-                                    &self.cranelift_vars,
-                                    &self._globals,
-                                ) {
-                                    Ok(value) => {
-                                        if let Place::Local(local_id) = place
-                                            && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
-                                        {
-                                            builder.def_var(*cranelift_var, value);
-                                        }
-                                    }
-                                    Err(e) => {
-                                        eprintln!("Warning: Failed to resolve operand: {}", e);
-                                    }
-                                }
-                            }
-                            Rvalue::Call(call_target, args) => {
-                                // Handle function calls properly - no hardcoded values!
-                                // This creates the infrastructure for real function calls
-
-                                // Collect the necessary data before making the call
-                                let functions_clone = self.functions.clone();
-                                let types_clone = self.types.clone();
-                                let locals_clone = self.locals.clone();
-                                let cranelift_vars_clone = self.cranelift_vars.clone();
-                                let constants_clone = self.constants.clone();
-                                let globals_clone = self._globals.clone();
-
-                                let call_result = emit_function_call_impl(
-                                    call_target,
-                                    args,
-                                    &mut builder,
-                                    &functions_clone,
-                                    &types_clone,
-                                    &locals_clone,
-                                    &cranelift_vars_clone,
-                                    &constants_clone,
-                                    &globals_clone,
-                                    &mut self.module,
-                                );
-
-                                match call_result {
-                                    Ok(call_result_val) => {
-                                        if let Place::Local(local_id) = place
-                                            && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
-                                        {
-                                            builder.def_var(*cranelift_var, call_result_val);
-                                        }
-                                    }
-                                    Err(e) => {
-                                        // If function call fails, return 0 as error value
-                                        eprintln!("Warning: Function call failed: {}", e);
-                                        let error_value = builder.ins().iconst(types::I32, 0);
-                                        if let Place::Local(local_id) = place
-                                            && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
-                                        {
-                                            builder.def_var(*cranelift_var, error_value);
-                                        }
-                                    }
-                                }
-                            }
-                            Rvalue::Load(_operand) => {
-                                // Handle loads - for now, return 0
-                                let dummy_value = builder.ins().iconst(types::I32, 0);
-
-                                if let Place::Local(local_id) = place
-                                    && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
-                                {
-                                    builder.def_var(*cranelift_var, dummy_value);
-                                }
-                            }
-                            Rvalue::BinaryOp(op, left_operand, right_operand) => {
-                                // Ensure operand variables are declared
-                                ensure_operands_declared(left_operand, &mut builder, &mut self.cranelift_vars);
-                                ensure_operands_declared(right_operand, &mut builder, &mut self.cranelift_vars);
-
-                                // Resolve operands to values
-                                let left_val = match resolve_operand_to_value(
-                                    left_operand,
-                                    &mut builder,
-                                    types::I32,
-                                    &self.constants,
-                                    &self.cranelift_vars,
-                                    &self._globals,
-                                ) {
-                                    Ok(val) => val,
-                                    Err(_) => {
-                                        eprintln!("Warning: Failed to resolve left operand");
-                                        builder.ins().iconst(types::I32, 0)
-                                    }
-                                };
-
-                                let right_val = match resolve_operand_to_value(
-                                    right_operand,
-                                    &mut builder,
-                                    types::I32,
-                                    &self.constants,
-                                    &self.cranelift_vars,
-                                    &self._globals,
-                                ) {
-                                    Ok(val) => val,
-                                    Err(_) => {
-                                        eprintln!("Warning: Failed to resolve right operand");
-                                        builder.ins().iconst(types::I32, 0)
-                                    }
-                                };
-
-                                let result_val = match op {
-                                    BinaryOp::Add => builder.ins().iadd(left_val, right_val),
-                                    BinaryOp::Sub => builder.ins().isub(left_val, right_val),
-                                    BinaryOp::Mul => builder.ins().imul(left_val, right_val),
-                                    BinaryOp::Div => builder.ins().sdiv(left_val, right_val),
-                                    BinaryOp::Mod => builder.ins().srem(left_val, right_val),
-                                    BinaryOp::BitAnd => builder.ins().band(left_val, right_val),
-                                    BinaryOp::BitOr => builder.ins().bor(left_val, right_val),
-                                    BinaryOp::BitXor => builder.ins().bxor(left_val, right_val),
-                                    BinaryOp::LShift => builder.ins().ishl(left_val, right_val),
-                                    BinaryOp::RShift => builder.ins().sshr(left_val, right_val),
-                                    BinaryOp::Eq => {
-                                        let cmp_val = builder.ins().icmp(IntCC::Equal, left_val, right_val);
-                                        // Convert boolean (i1) to integer (i32) using zero-extend
-                                        builder.ins().uextend(types::I32, cmp_val)
-                                    }
-                                    BinaryOp::Ne => {
-                                        let cmp_val = builder.ins().icmp(IntCC::NotEqual, left_val, right_val);
-                                        builder.ins().uextend(types::I32, cmp_val)
-                                    }
-                                    BinaryOp::Lt => {
-                                        let cmp_val = builder.ins().icmp(IntCC::SignedLessThan, left_val, right_val);
-                                        builder.ins().uextend(types::I32, cmp_val)
-                                    }
-                                    BinaryOp::Le => {
-                                        let cmp_val =
-                                            builder.ins().icmp(IntCC::SignedLessThanOrEqual, left_val, right_val);
-                                        builder.ins().uextend(types::I32, cmp_val)
-                                    }
-                                    BinaryOp::Gt => {
-                                        let cmp_val = builder.ins().icmp(IntCC::SignedGreaterThan, left_val, right_val);
-                                        builder.ins().uextend(types::I32, cmp_val)
-                                    }
-                                    BinaryOp::Ge => {
-                                        let cmp_val =
-                                            builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, left_val, right_val);
-                                        builder.ins().uextend(types::I32, cmp_val)
-                                    }
-                                    BinaryOp::LogicAnd | BinaryOp::LogicOr => {
-                                        // For logical operations, treat as bitwise for now
-                                        builder.ins().band(left_val, right_val)
-                                    }
-                                    BinaryOp::Comma => {
-                                        // Comma operator evaluates to right operand
-                                        right_val
-                                    }
-                                };
-
-                                if let Place::Local(local_id) = place
-                                    && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
-                                {
-                                    builder.def_var(*cranelift_var, result_val);
-                                }
-                            }
-                            Rvalue::UnaryOp(op, operand) => {
-                                // Ensure operand variables are declared
-                                ensure_operands_declared(operand, &mut builder, &mut self.cranelift_vars);
-
-                                match resolve_operand_to_value(
-                                    operand,
-                                    &mut builder,
-                                    types::I32,
-                                    &self.constants,
-                                    &self.cranelift_vars,
-                                    &self._globals,
-                                ) {
-                                    Ok(operand_val) => {
-                                        let result_val = match op {
-                                            crate::mir::UnaryOp::Neg => builder.ins().ineg(operand_val),
-                                            crate::mir::UnaryOp::Not => builder.ins().bnot(operand_val),
-                                            crate::mir::UnaryOp::AddrOf => {
-                                                // Address-of - for now, return 0
-                                                builder.ins().iconst(types::I32, 0)
-                                            }
-                                            crate::mir::UnaryOp::Deref => {
-                                                // Dereference - for now, return 0
-                                                builder.ins().iconst(types::I32, 0)
-                                            }
-                                        };
-
-                                        if let Place::Local(local_id) = place
-                                            && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
-                                        {
-                                            builder.def_var(*cranelift_var, result_val);
-                                        }
-                                    }
-                                    _ => {
-                                        eprintln!("Warning: Failed to resolve unary operation operand");
-                                        let dummy_value = builder.ins().iconst(types::I32, 0);
-                                        if let Place::Local(local_id) = place
-                                            && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
-                                        {
-                                            builder.def_var(*cranelift_var, dummy_value);
-                                        }
-                                    }
-                                }
-                            }
-                            Rvalue::Cast(_type_id, operand) => {
-                                // Type cast - for now, just resolve the operand
-                                // TODO: Implement proper type conversions
-                                ensure_operands_declared(operand, &mut builder, &mut self.cranelift_vars);
-
-                                match resolve_operand_to_value(
-                                    operand,
-                                    &mut builder,
-                                    types::I32,
-                                    &self.constants,
-                                    &self.cranelift_vars,
-                                    &self._globals,
-                                ) {
-                                    Ok(value) => {
-                                        if let Place::Local(local_id) = place
-                                            && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
-                                        {
-                                            builder.def_var(*cranelift_var, value);
-                                        }
-                                    }
-                                    _ => {
-                                        eprintln!("Warning: Failed to resolve cast operand");
-                                        let dummy_value = builder.ins().iconst(types::I32, 0);
-                                        if let Place::Local(local_id) = place
-                                            && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
-                                        {
-                                            builder.def_var(*cranelift_var, dummy_value);
-                                        }
-                                    }
-                                }
-                            }
-                            Rvalue::PtrAdd(_base, _offset) => {
-                                // Pointer arithmetic - for now, return 0
-                                let dummy_value = builder.ins().iconst(types::I32, 0);
-
-                                if let Place::Local(local_id) = place
-                                    && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
-                                {
-                                    builder.def_var(*cranelift_var, dummy_value);
-                                }
-                            }
-                            Rvalue::StructLiteral(_fields) => {
-                                // Struct literal - for now, return 0
-                                let dummy_value = builder.ins().iconst(types::I32, 0);
-
-                                if let Place::Local(local_id) = place
-                                    && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
-                                {
-                                    builder.def_var(*cranelift_var, dummy_value);
-                                }
-                            }
-                            Rvalue::ArrayLiteral(_elements) => {
-                                // Array literal - for now, return 0
-                                let dummy_value = builder.ins().iconst(types::I32, 0);
-
-                                if let Place::Local(local_id) = place
-                                    && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
-                                {
-                                    builder.def_var(*cranelift_var, dummy_value);
-                                }
-                            }
-                        }
+            // Process assignments
+            for stmt in &statements_to_process {
+                if let MirStmt::Assign(place, rvalue) = stmt {
+                    // Ensure target variable is declared
+                    if let Place::Local(local_id) = place
+                        && !self.cranelift_vars.contains_key(local_id)
+                    {
+                        let var = builder.declare_var(types::I32);
+                        self.cranelift_vars.insert(*local_id, var);
                     }
-                }
 
-                // Process the terminator
-                if let Some(terminator) = &block.terminator {
-                    // Inline terminator handling to avoid borrow issues
-                    match terminator {
-                        Terminator::Return(Some(operand)) => {
-                            // Handle constant operands directly
-                            if let Operand::Constant(const_id) = operand {
-                                if let Some(const_value) = self.constants.get(const_id) {
-                                    match const_value {
-                                        ConstValue::Int(val) => {
-                                            let return_value = builder.ins().iconst(return_type, *val);
-                                            builder.ins().return_(&[return_value]);
-                                        }
-                                        _ => {
-                                            // Default to 0 for other constant types
-                                            let return_value = builder.ins().iconst(return_type, 0);
-                                            builder.ins().return_(&[return_value]);
-                                        }
+                    // Process the rvalue
+                    match rvalue {
+                        Rvalue::Use(operand) => {
+                            // Ensure operand variables are declared
+                            ensure_operands_declared(operand, &mut builder, &mut self.cranelift_vars);
+
+                            match resolve_operand_to_value(
+                                operand,
+                                &mut builder,
+                                types::I32,
+                                &self.constants,
+                                &self.cranelift_vars,
+                                &self.globals,
+                            ) {
+                                Ok(value) => {
+                                    if let Place::Local(local_id) = place
+                                        && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
+                                    {
+                                        builder.def_var(*cranelift_var, value);
                                     }
-                                } else {
-                                    // Default to 0 if constant not found
-                                    let return_value = builder.ins().iconst(return_type, 0);
-                                    builder.ins().return_(&[return_value]);
                                 }
-                            } else {
-                                // Handle other operand types (variables, expressions, etc.)
-                                // Ensure all variables in the operand are declared before resolving
-                                ensure_operands_declared(operand, &mut builder, &mut self.cranelift_vars);
+                                Err(e) => {
+                                    eprintln!("Warning: Failed to resolve operand: {}", e);
+                                }
+                            }
+                        }
+                        Rvalue::Call(call_target, args) => {
+                            let call_result = emit_function_call_impl(
+                                call_target,
+                                args,
+                                &mut builder,
+                                &self.functions,
+                                &self.types,
+                                &self.locals,
+                                &self.cranelift_vars.clone(),
+                                &self.constants,
+                                &self.globals,
+                                &mut self.module,
+                            );
 
-                                match resolve_operand_to_value(
-                                    operand,
-                                    &mut builder,
-                                    return_type,
-                                    &self.constants,
-                                    &self.cranelift_vars,
-                                    &self._globals,
-                                ) {
-                                    Ok(return_value) => {
-                                        builder.ins().return_(&[return_value]);
+                            match call_result {
+                                Ok(call_result_val) => {
+                                    if let Place::Local(local_id) = place
+                                        && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
+                                    {
+                                        builder.def_var(*cranelift_var, call_result_val);
                                     }
-                                    Err(_) => {
-                                        // Default to 0 if operand resolution fails
-                                        let return_value = builder.ins().iconst(return_type, 0);
-                                        builder.ins().return_(&[return_value]);
+                                }
+                                Err(e) => {
+                                    eprintln!("Warning: Function call failed: {}", e);
+                                    let error_value = builder.ins().iconst(types::I32, 0);
+                                    if let Place::Local(local_id) = place
+                                        && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
+                                    {
+                                        builder.def_var(*cranelift_var, error_value);
                                     }
                                 }
                             }
                         }
-                        Terminator::Return(None) => {
-                            // Return void
-                            builder.ins().return_(&[]);
+                        Rvalue::BinaryOp(op, left_operand, right_operand) => {
+                            // Ensure operand variables are declared
+                            ensure_operands_declared(left_operand, &mut builder, &mut self.cranelift_vars);
+                            ensure_operands_declared(right_operand, &mut builder, &mut self.cranelift_vars);
+
+                            // Resolve operands to values
+                            let left_val = match resolve_operand_to_value(
+                                left_operand,
+                                &mut builder,
+                                types::I32,
+                                &self.constants,
+                                &self.cranelift_vars,
+                                &self.globals,
+                            ) {
+                                Ok(val) => val,
+                                Err(_) => {
+                                    eprintln!("Warning: Failed to resolve left operand");
+                                    builder.ins().iconst(types::I32, 0)
+                                }
+                            };
+
+                            let right_val = match resolve_operand_to_value(
+                                right_operand,
+                                &mut builder,
+                                types::I32,
+                                &self.constants,
+                                &self.cranelift_vars,
+                                &self.globals,
+                            ) {
+                                Ok(val) => val,
+                                Err(_) => {
+                                    eprintln!("Warning: Failed to resolve right operand");
+                                    builder.ins().iconst(types::I32, 0)
+                                }
+                            };
+
+                            let result_val = match op {
+                                BinaryOp::Add => builder.ins().iadd(left_val, right_val),
+                                BinaryOp::Sub => builder.ins().isub(left_val, right_val),
+                                BinaryOp::Mul => builder.ins().imul(left_val, right_val),
+                                BinaryOp::Div => builder.ins().sdiv(left_val, right_val),
+                                BinaryOp::Mod => builder.ins().srem(left_val, right_val),
+                                BinaryOp::BitAnd => builder.ins().band(left_val, right_val),
+                                BinaryOp::BitOr => builder.ins().bor(left_val, right_val),
+                                BinaryOp::BitXor => builder.ins().bxor(left_val, right_val),
+                                BinaryOp::LShift => builder.ins().ishl(left_val, right_val),
+                                BinaryOp::RShift => builder.ins().sshr(left_val, right_val),
+                                BinaryOp::Eq => {
+                                    let cmp_val = builder.ins().icmp(IntCC::Equal, left_val, right_val);
+                                    builder.ins().uextend(types::I32, cmp_val)
+                                }
+                                BinaryOp::Ne => {
+                                    let cmp_val = builder.ins().icmp(IntCC::NotEqual, left_val, right_val);
+                                    builder.ins().uextend(types::I32, cmp_val)
+                                }
+                                BinaryOp::Lt => {
+                                    let cmp_val = builder.ins().icmp(IntCC::SignedLessThan, left_val, right_val);
+                                    builder.ins().uextend(types::I32, cmp_val)
+                                }
+                                BinaryOp::Le => {
+                                    let cmp_val = builder.ins().icmp(IntCC::SignedLessThanOrEqual, left_val, right_val);
+                                    builder.ins().uextend(types::I32, cmp_val)
+                                }
+                                BinaryOp::Gt => {
+                                    let cmp_val = builder.ins().icmp(IntCC::SignedGreaterThan, left_val, right_val);
+                                    builder.ins().uextend(types::I32, cmp_val)
+                                }
+                                BinaryOp::Ge => {
+                                    let cmp_val =
+                                        builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, left_val, right_val);
+                                    builder.ins().uextend(types::I32, cmp_val)
+                                }
+                                BinaryOp::LogicAnd | BinaryOp::LogicOr => builder.ins().band(left_val, right_val),
+                                BinaryOp::Comma => right_val,
+                            };
+
+                            if let Place::Local(local_id) = place
+                                && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
+                            {
+                                builder.def_var(*cranelift_var, result_val);
+                            }
                         }
                         _ => {
-                            // For other terminators, default to returning 0
-                            let return_value = builder.ins().iconst(return_type, 0);
-                            builder.ins().return_(&[return_value]);
+                            // For other rvalue types, emit a dummy value
+                            let dummy_value = builder.ins().iconst(types::I32, 0);
+                            if let Place::Local(local_id) = place
+                                && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
+                            {
+                                builder.def_var(*cranelift_var, dummy_value);
+                            }
                         }
                     }
-                } else {
-                    // No terminator - default to returning 0
+                }
+            }
+
+            // 2. Emit terminator
+            let terminator = mir_block.terminator.as_ref().expect("Block must have terminator");
+
+            match terminator {
+                Terminator::Goto(target) => {
+                    let target_cl_block = cl_blocks.get(target).expect("Target block not found");
+                    builder.ins().jump(*target_cl_block, &[]);
+                    worklist.push(*target);
+                }
+
+                Terminator::If(cond, then_bb, else_bb) => {
+                    // Ensure condition variables are declared
+                    ensure_operands_declared(cond, &mut builder, &mut self.cranelift_vars);
+
+                    let cond_val = match resolve_operand_to_value(
+                        cond,
+                        &mut builder,
+                        types::I32,
+                        &self.constants,
+                        &self.cranelift_vars,
+                        &self.globals,
+                    ) {
+                        Ok(val) => val,
+                        Err(_) => {
+                            eprintln!("Warning: Failed to resolve condition");
+                            builder.ins().iconst(types::I32, 0)
+                        }
+                    };
+
+                    let then_cl_block = cl_blocks.get(then_bb).expect("Then block not found");
+                    let else_cl_block = cl_blocks.get(else_bb).expect("Else block not found");
+
+                    builder.ins().brif(cond_val, *then_cl_block, &[], *else_cl_block, &[]);
+
+                    worklist.push(*then_bb);
+                    worklist.push(*else_bb);
+                }
+
+                Terminator::Return(opt) => {
+                    if let Some(operand) = opt {
+                        // Ensure operand variables are declared
+                        ensure_operands_declared(operand, &mut builder, &mut self.cranelift_vars);
+
+                        match resolve_operand_to_value(
+                            operand,
+                            &mut builder,
+                            return_type,
+                            &self.constants,
+                            &self.cranelift_vars,
+                            &self.globals,
+                        ) {
+                            Ok(return_value) => {
+                                builder.ins().return_(&[return_value]);
+                            }
+                            Err(_) => {
+                                // Default to 0 if operand resolution fails
+                                let return_value = builder.ins().iconst(return_type, 0);
+                                builder.ins().return_(&[return_value]);
+                            }
+                        }
+                    } else {
+                        builder.ins().return_(&[]);
+                    }
+                }
+
+                Terminator::Unreachable => {
+                    // For unreachable, default to returning 0
                     let return_value = builder.ins().iconst(return_type, 0);
                     builder.ins().return_(&[return_value]);
                 }
-            } else {
-                // No MIR entry block found - default to returning 0
-                let return_value = builder.ins().iconst(return_type, 0);
-                builder.ins().return_(&[return_value]);
             }
-
-            // Seal and finalize
-            builder.seal_block(entry_block);
-            builder.finalize();
-
-            // Now declare and define the function
-            let id = self
-                .module
-                .declare_function(
-                    func.name.as_str(),
-                    cranelift_module::Linkage::Export,
-                    &func_ctx.func.signature,
-                )
-                .map_err(|e| format!("Failed to declare function {}: {:?}", func.name, e))?;
-
-            self.module
-                .define_function(id, &mut func_ctx)
-                .map_err(|e| format!("Failed to define function {}: {:?}", func.name, e))?;
-
-            // Store the function IR string for dumping
-            let func_ir = func_ctx.func.to_string();
-            self.compiled_functions.insert(func.name.to_string(), func_ir);
         }
+
+        // PHASE 3️⃣ — Seal blocks with correct order
+        for &mir_block_id in &func.blocks {
+            let cl_block = cl_blocks.get(&mir_block_id).expect("Block not found in mapping");
+            builder.seal_block(*cl_block);
+        }
+
+        // Finalize the function
+        builder.finalize();
+
+        // Now declare and define the function
+        let id = self
+            .module
+            .declare_function(
+                func.name.as_str(),
+                cranelift_module::Linkage::Export,
+                &func_ctx.func.signature,
+            )
+            .map_err(|e| format!("Failed to declare function {}: {:?}", func.name, e))?;
+
+        self.module
+            .define_function(id, &mut func_ctx)
+            .map_err(|e| format!("Failed to define function {}: {:?}", func.name, e))?;
+
+        // Store the function IR string for dumping
+        let func_ir = func_ctx.func.to_string();
+        self.compiled_functions.insert(func.name.to_string(), func_ir);
+
         Ok(())
     }
 }

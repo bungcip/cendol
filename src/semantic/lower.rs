@@ -39,7 +39,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     /// Report a semantic error and mark context as having errors
-    pub fn report_error(&mut self, error: SemanticError, _location: SourceSpan) {
+    pub fn report_error(&mut self, error: SemanticError) {
         self.has_errors = true;
         self.diag.report_error(error);
     }
@@ -112,7 +112,10 @@ fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: Sour
             DeclSpecifier::StorageClass(sc) => {
                 // Check for duplicate storage class
                 if info.storage.replace(*sc).is_some() {
-                    ctx.report_error(SemanticError::DuplicateStorageClass, span);
+                    ctx.report_error(SemanticError::DeclarationError {
+                        message: "Duplicate storage class specifier".to_string(),
+                        location: span,
+                    });
                 }
 
                 // Handle typedef storage class
@@ -127,7 +130,7 @@ fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: Sour
 
             DeclSpecifier::TypeSpecifier(ts) => {
                 let ty = resolve_type_specifier(ts, ctx, span).unwrap_or_else(|e| {
-                    ctx.report_error(e, span);
+                    ctx.report_error(e);
                     // Create an error type
                     let error_type = Type {
                         kind: TypeKind::Error,
@@ -374,7 +377,10 @@ fn merge_base_type(existing: Option<TypeRef>, new_type: TypeRef, ctx: &mut Lower
 fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span: SourceSpan) {
     // Check typedef with other storage classes
     if info.is_typedef && info.storage.is_some_and(|s| s != StorageClass::Typedef) {
-        ctx.report_error(SemanticError::IllegalTypedefStorage, span);
+        ctx.report_error(SemanticError::DeclarationError {
+            message: "Illegal storage class with typedef".to_string(),
+            location: span,
+        });
     }
 
     // TODO: Add more validation rules
@@ -402,7 +408,7 @@ fn lower_type_definition(specifiers: &[DeclSpecifier], ctx: &mut LowerCtx, span:
             let record_type = match resolve_type_specifier(type_spec, ctx, span) {
                 Ok(ty) => ty,
                 Err(e) => {
-                    ctx.report_error(e, span);
+                    ctx.report_error(e);
                     return None;
                 }
             };
@@ -423,7 +429,7 @@ fn lower_type_definition(specifiers: &[DeclSpecifier], ctx: &mut LowerCtx, span:
             let enum_type = match resolve_type_specifier(type_spec, ctx, span) {
                 Ok(ty) => ty,
                 Err(e) => {
-                    ctx.report_error(e, span);
+                    ctx.report_error(e);
                     return None;
                 }
             };
@@ -447,10 +453,10 @@ fn lower_type_definition(specifiers: &[DeclSpecifier], ctx: &mut LowerCtx, span:
 fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDeclarator, span: SourceSpan) -> NodeRef {
     // 1. Resolve final type (base + declarator)
     let base_ty = spec.base_type.unwrap_or_else(|| {
-        ctx.report_error(
-            SemanticError::MissingBaseType,
-            span, // TODO: Get actual span
-        );
+        ctx.report_error(SemanticError::DeclarationError {
+            message: "Missing base type in declaration".to_string(),
+            location: span,
+        });
         // Create an error type
         let error_type = Type {
             kind: TypeKind::Error,

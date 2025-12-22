@@ -231,7 +231,10 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 symbol
             }
             None => {
-                self.report_error(SemanticError::InvalidFunctionDeclarator { location });
+                self.report_error(SemanticError::InvalidDeclarator {
+                    message: "unnamed function definition".to_string(),
+                    location,
+                });
                 Symbol::new("unknown_function")
             }
         };
@@ -1647,9 +1650,11 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         if let Some(left_mir_type) = self.get_types().get(&left_type)
             && matches!(left_mir_type, crate::mir::MirType::Void)
         {
-            return Err(SemanticError::InvalidBinaryOperandTypes {
-                left_type: format!("{:?}", left_mir_type),
-                right_type: "unknown".to_string(), // Will be updated below
+            return Err(SemanticError::InvalidBinaryOp {
+                message: format!(
+                    "Invalid left-hand side type '{:?}' for binary operation",
+                    left_mir_type
+                ),
                 location,
             });
         }
@@ -1657,9 +1662,11 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         if let Some(right_mir_type) = self.get_types().get(&right_type)
             && matches!(right_mir_type, crate::mir::MirType::Void)
         {
-            return Err(SemanticError::InvalidBinaryOperandTypes {
-                left_type: "unknown".to_string(), // Will be updated below
-                right_type: format!("{:?}", right_mir_type),
+            return Err(SemanticError::InvalidBinaryOp {
+                message: format!(
+                    "Invalid right-hand side type '{:?}' for binary operation",
+                    right_mir_type
+                ),
                 location,
             });
         }
@@ -1669,9 +1676,12 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             match (self.get_types().get(&left_type), self.get_types().get(&right_type)) {
                 (Some(left_type), Some(right_type)) => (left_type.clone(), right_type.clone()),
                 _ => {
-                    return Err(SemanticError::InvalidBinaryOperandTypes {
-                        left_type: format!("unknown ({})", left_type.get()),
-                        right_type: format!("unknown ({})", right_type.get()),
+                    return Err(SemanticError::InvalidBinaryOp {
+                        message: format!(
+                            "Could not resolve types for binary operation: left type id '{}', right type id '{}'",
+                            left_type.get(),
+                            right_type.get()
+                        ),
                         location,
                     });
                 }
@@ -1731,9 +1741,11 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             Ok((converted_left, converted_right, common_type))
         } else {
             // Invalid combination
-            Err(SemanticError::InvalidBinaryOperandTypes {
-                left_type: format!("{:?}", left_mir_type),
-                right_type: format!("{:?}", right_mir_type),
+            Err(SemanticError::InvalidBinaryOp {
+                message: format!(
+                    "Invalid operands for binary operation: '{:?}' and '{:?}'",
+                    left_mir_type, right_mir_type
+                ),
                 location,
             })
         }
@@ -1845,9 +1857,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 }
             }
         } else {
-            Err(SemanticError::InvalidTypeConversion {
-                from_type: "unknown".to_string(),
-                to_type: "unknown".to_string(),
+            Err(SemanticError::InvalidBinaryOp {
+                message: "could not resolve type for integer promotion".to_string(),
                 location,
             })
         }
@@ -1936,9 +1947,11 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 }
             } else {
                 // Shouldn't happen due to earlier checks
-                Err(SemanticError::UnsupportedConversion {
-                    left_type: format!("{:?}", left_type),
-                    right_type: format!("{:?}", right_type),
+                Err(SemanticError::InvalidBinaryOp {
+                    message: format!(
+                        "Unsupported conversion between types '{:?}' and '{:?}'",
+                        left_type, right_type
+                    ),
                     location,
                 })
             }
@@ -2079,9 +2092,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             // These should be handled separately as assignment statements
             Assign | AssignAdd | AssignSub | AssignMul | AssignDiv | AssignMod | AssignBitAnd | AssignBitOr
             | AssignBitXor | AssignLShift | AssignRShift => {
-                return Err(SemanticError::InvalidBinaryOperandTypes {
-                    left_type: "assignment operation in expression context".to_string(),
-                    right_type: "assignment operations should be statements, not expressions".to_string(),
+                return Err(SemanticError::InvalidBinaryOp {
+                    message: "assignment operations should be statements, not expressions".to_string(),
                     location,
                 });
             }

@@ -326,14 +326,7 @@ impl CompilerDriver {
             )?;
             // Don't continue with code generation if dumping MIR
             return Ok((
-                mir_module,
-                functions,
-                blocks,
-                locals,
-                globals,
-                types,
-                statements,
-                constants,
+                mir_module, functions, blocks, locals, globals, types, statements, constants,
             ));
         }
 
@@ -343,26 +336,12 @@ impl CompilerDriver {
             self.dump_cranelift(&mir_module, &functions, &blocks, &locals, &globals, &types, &statements)?;
             // Don't continue with code generation if dumping Cranelift IR
             return Ok((
-                mir_module,
-                functions,
-                blocks,
-                locals,
-                globals,
-                types,
-                statements,
-                constants,
+                mir_module, functions, blocks, locals, globals, types, statements, constants,
             ));
         }
 
         Ok((
-            mir_module,
-            functions,
-            blocks,
-            locals,
-            globals,
-            types,
-            statements,
-            constants,
+            mir_module, functions, blocks, locals, globals, types, statements, constants,
         ))
     }
 

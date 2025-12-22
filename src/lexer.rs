@@ -446,10 +446,7 @@ impl<'src> Lexer<'src> {
 
         // Check for 2-character suffixes ("ul", "lu", "ll").
         if len >= 2 {
-            let last2 = (
-                bytes[len - 2].to_ascii_lowercase(),
-                bytes[len - 1].to_ascii_lowercase(),
-            );
+            let last2 = (bytes[len - 2].to_ascii_lowercase(), bytes[len - 1].to_ascii_lowercase());
             if matches!(last2, (b'u', b'l') | (b'l', b'u') | (b'l', b'l')) {
                 return &text[..len - 2];
             }

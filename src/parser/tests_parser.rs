@@ -170,7 +170,7 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
                         TypeSpecifier::Record(is_union, tag, def) => {
                             let record_kind = if *is_union { "union" } else { "struct" };
                             let tag_str = tag.as_ref().map(|s| s.as_str()).unwrap_or("");
-                            let has_body = def.as_ref().map_or(false, |d| d.members.is_some());
+                            let has_body = def.as_ref().is_some_and(|d| d.members.is_some());
 
                             let mut s = record_kind.to_string();
                             if !tag_str.is_empty() {
@@ -367,9 +367,7 @@ fn extract_declarator_kind(declarator: &Declarator) -> String {
                     .join(", ")
             };
 
-            let return_type_str = if return_type == "abstract" {
-                "int".to_string()
-            } else if return_type == "identifier" {
+            let return_type_str = if return_type == "abstract" || return_type == "identifier" {
                 "int".to_string()
             } else {
                 return_type
@@ -511,7 +509,7 @@ fn setup_statement(source: &str) -> ResolvedNodeKind {
 /// Setup a compound statement, useful for testing multi-statement blocks
 fn setup_compound(source: &str) -> ResolvedNodeKind {
     let source = format!("{{ {} }}", source);
-    let (ast, stmt_result) = setup_source(&source, |parser| parse_compound_statement(parser));
+    let (ast, stmt_result) = setup_source(&source, parse_compound_statement);
 
     match stmt_result {
         Ok((node_ref, _)) => resolve_node(&ast, node_ref),
@@ -1513,6 +1511,58 @@ fn test_label_with_numeric_suffix() {
       - Return:
           LiteralInt: 1
     ");
+}
+
+#[test]
+fn test_postfix_operator_precedence() {
+    // Test that postfix operators bind tighter than binary operators
+    let resolved = setup_expr("a.b + c");
+    insta::assert_yaml_snapshot!(&resolved, @r#"
+    BinaryOp:
+      - Add
+      - MemberAccess:
+          - Ident: a
+          - b
+          - false
+      - Ident: c
+    "#);
+
+    // Test chaining of postfix operators
+    let resolved = setup_expr("foo()->bar[0]++");
+    insta::assert_yaml_snapshot!(&resolved, @r#"
+    PostIncrement:
+      IndexAccess:
+        - MemberAccess:
+            - FunctionCall:
+                - Ident: foo
+                - []
+            - bar
+            - true
+        - LiteralInt: 0
+    "#);
+
+    // Test a complex expression with mixed operators
+    let resolved = setup_expr("++a * b.c[d--] + foo(1, 2)");
+    insta::assert_yaml_snapshot!(&resolved, @r#"
+    BinaryOp:
+      - Add
+      - BinaryOp:
+          - Mul
+          - UnaryOp:
+              - PreIncrement
+              - Ident: a
+          - IndexAccess:
+              - MemberAccess:
+                  - Ident: b
+                  - c
+                  - false
+              - PostDecrement:
+                  Ident: d
+      - FunctionCall:
+          - Ident: foo
+          - - LiteralInt: 1
+            - LiteralInt: 2
+    "#);
 }
 
 #[test]

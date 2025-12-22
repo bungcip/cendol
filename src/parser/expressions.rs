@@ -142,48 +142,45 @@ pub fn parse_expression(
             break;
         }
 
-        // The ternary operator is special and doesn't fit the binary operator model cleanly
-        // because its middle and third operands have different precedences. We handle it
-        // separately here instead of in `parse_infix`.
-        if current_token.kind == TokenKind::Question {
-            parser.advance(); // consume '?'
-
-            // The middle operand is an `expression`, which allows assignment.
-            // C11: logical-OR-expression ? expression : conditional-expression
-            // `expression` is `assignment-expression` or sequence with comma.
-            // Here we parse as assignment expression, which is a common interpretation.
-            let true_expr = parser.parse_expr_assignment()?;
-            parser.expect(TokenKind::Colon)?;
-
-            // The third operand is a `conditional-expression`, which has higher precedence.
-            let false_expr = parser.parse_expr_conditional()?;
-
-            let span = SourceSpan::new(
-                parser.ast.get_node(left).span.start,
-                parser.ast.get_node(false_expr).span.end,
-            );
-            left = parser.push_node(NodeKind::TernaryOp(left, true_expr, false_expr), span);
-            continue;
-        }
-
-        // Handle associativity by adjusting the binding power for the next recursive call
-        let next_min_bp = if associativity == Associativity::Left {
-            // For left-associative operators, we want to stop parsing when we see another
-            // operator of the same precedence. Bumping the minimum binding power ensures this.
-            BindingPower(binding_power.0 + 1)
-        } else {
-            // For right-associative operators, we want to continue parsing operators of the
-            // same precedence. Keeping the binding power the same allows this.
-            binding_power
-        };
-
-        // Parse the right-hand side
         let op_token = current_token;
-        parser.advance();
+        parser.advance(); // Consume the operator token
 
-        trace!("parse_expression: parsing infix operator {:?}", op_token.kind);
-        let right = parse_infix(parser, left, op_token, next_min_bp)?;
-        left = right;
+        // Dispatch to the correct parsing function based on the operator kind
+        left = match op_token.kind {
+            // Postfix operators are handled here directly
+            TokenKind::Increment => parse_postfix_increment(parser, left, op_token)?,
+            TokenKind::Decrement => parse_postfix_decrement(parser, left, op_token)?,
+            TokenKind::LeftParen => parse_function_call(parser, left)?,
+            TokenKind::LeftBracket => parse_index_access(parser, left)?,
+            TokenKind::Dot => parse_member_access(parser, left, false)?,
+            TokenKind::Arrow => parse_member_access(parser, left, true)?,
+
+            // Ternary operator is a special case
+            TokenKind::Question => {
+                // The middle operand is an `expression`, which allows assignment.
+                // C11: logical-OR-expression ? expression : conditional-expression
+                let true_expr = parser.parse_expr_assignment()?;
+                parser.expect(TokenKind::Colon)?;
+                // The third operand is a `conditional-expression`, which has higher precedence.
+                let false_expr = parser.parse_expr_conditional()?;
+
+                let span = SourceSpan::new(
+                    parser.ast.get_node(left).span.start,
+                    parser.ast.get_node(false_expr).span.end,
+                );
+                parser.push_node(NodeKind::TernaryOp(left, true_expr, false_expr), span)
+            }
+
+            // All other operators are binary/infix
+            _ => {
+                let next_min_bp = if associativity == Associativity::Left {
+                    BindingPower(binding_power.0 + 1)
+                } else {
+                    binding_power
+                };
+                parse_infix(parser, left, op_token, next_min_bp)?
+            }
+        };
     }
 
     Ok(super::ParseExprOutput::Expression(left))
@@ -312,27 +309,15 @@ fn parse_infix(
     parser: &mut Parser,
     left: NodeRef,
     operator_token: Token,
-    _min_bp: BindingPower,
+    min_bp: BindingPower,
 ) -> Result<NodeRef, ParseError> {
     debug!(
         "parse_infix: processing operator {:?} at {}",
         operator_token.kind, operator_token.location
     );
 
-    // Handle postfix operators (no right operand) - these should NOT recursively parse expressions
-    match operator_token.kind {
-        TokenKind::Increment => return parse_postfix_increment(parser, left, operator_token),
-        TokenKind::Decrement => return parse_postfix_decrement(parser, left, operator_token),
-        // These operators call special parsing functions that handle their own parsing
-        TokenKind::LeftParen => return parse_function_call(parser, left),
-        TokenKind::LeftBracket => return parse_index_access(parser, left),
-        TokenKind::Dot => return parse_member_access(parser, left, false),
-        TokenKind::Arrow => return parse_member_access(parser, left, true),
-        _ => {}
-    }
-
-    // For all other operators, parse the right operand
-    let right_node = match parser.parse_expression(_min_bp)? {
+    // For all binary operators, parse the right operand
+    let right_node = match parser.parse_expression(min_bp)? {
         super::ParseExprOutput::Expression(node) => node,
         super::ParseExprOutput::Declaration(_) => {
             return Err(ParseError::SyntaxError {
@@ -373,10 +358,7 @@ fn parse_infix(
         TokenKind::LeftShiftAssign => BinaryOp::AssignLShift,
         TokenKind::RightShiftAssign => BinaryOp::AssignRShift,
         TokenKind::Comma => BinaryOp::Comma,
-        TokenKind::LeftParen => return parse_function_call(parser, left),
-        TokenKind::LeftBracket => return parse_index_access(parser, left),
-        TokenKind::Dot => return parse_member_access(parser, left, false),
-        TokenKind::Arrow => return parse_member_access(parser, left, true),
+        // Postfix operators are handled in `parse_expression` and should not reach here.
         _ => {
             return Err(ParseError::SyntaxError {
                 message: "Invalid binary operator".to_string(),

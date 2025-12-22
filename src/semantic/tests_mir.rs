@@ -11,9 +11,7 @@ mod tests {
         config.dump_mir = false; // Don't dump to file
 
         let mut driver = CompilerDriver::from_config(config);
-        let mir_dump = driver.get_mir_dump_string(false).expect("Failed to get MIR dump");
-
-        mir_dump
+        driver.get_mir_dump_string(false).expect("Failed to get MIR dump")
     }
 
     #[test]

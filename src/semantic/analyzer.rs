@@ -231,7 +231,10 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 symbol
             }
             None => {
-                self.report_error(SemanticError::InvalidFunctionDeclarator { location });
+                self.report_error(SemanticError::DeclarationError {
+                    message: "Invalid function declarator".to_string(),
+                    location,
+                });
                 Symbol::new("unknown_function")
             }
         };
@@ -485,8 +488,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 }
                 Designator::GnuArrayRange(_start_expr, _end_expr) => {
                     // GNU extension: range designator [start ... end]
-                    self.report_error(SemanticError::UnsupportedFeature {
-                        feature: "GNU array range designator '[start ... end]' not yet implemented".to_string(),
+                    self.report_error(SemanticError::DeclarationError {
+                        message: "GNU array range designator '[start ... end]' not yet implemented".to_string(),
                         location,
                     });
                     return;
@@ -505,8 +508,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             }
             Initializer::List(_nested_inits) => {
                 // Nested compound initializer - for now, just report as unsupported
-                self.report_error(SemanticError::UnsupportedFeature {
-                    feature: "Nested compound initializers in designated initializers not yet implemented".to_string(),
+                self.report_error(SemanticError::DeclarationError {
+                    message: "Nested compound initializers in designated initializers not yet implemented".to_string(),
                     location,
                 });
             }
@@ -552,8 +555,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             }
             Initializer::List(_) => {
                 // Nested compound initializer - for now, just report as unsupported
-                self.report_error(SemanticError::UnsupportedFeature {
-                    feature: "Nested compound initializers not yet implemented".to_string(),
+                self.report_error(SemanticError::DeclarationError {
+                    message: "Nested compound initializers not yet implemented".to_string(),
                     location,
                 });
             }
@@ -902,8 +905,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                             Operand::AddressOf(Box::new(place))
                         } else {
                             // For other cases, return a dummy operand
-                            self.report_error(SemanticError::UnsupportedFeature {
-                                feature: "Address-of operation for non-local operands not yet implemented".to_string(),
+                            self.report_error(SemanticError::InvalidOperands {
+                                message: "Address-of operation for non-local operands not yet implemented".to_string(),
                                 location: node_span,
                             });
                             let error_const = self.create_constant(ConstValue::Int(0));
@@ -954,8 +957,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                     }
                     crate::ast::UnaryOp::PreIncrement | crate::ast::UnaryOp::PreDecrement => {
                         // Pre-increment and pre-decrement operations
-                        self.report_error(SemanticError::UnsupportedFeature {
-                            feature: "Pre-increment and pre-decrement operations not yet implemented".to_string(),
+                        self.report_error(SemanticError::InvalidOperands {
+                            message: "Pre-increment and pre-decrement operations not yet implemented".to_string(),
                             location: node_span,
                         });
                         let error_const = self.create_constant(ConstValue::Int(0));
@@ -1647,9 +1650,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         if let Some(left_mir_type) = self.get_types().get(&left_type)
             && matches!(left_mir_type, crate::mir::MirType::Void)
         {
-            return Err(SemanticError::InvalidBinaryOperandTypes {
-                left_type: format!("{:?}", left_mir_type),
-                right_type: "unknown".to_string(), // Will be updated below
+            return Err(SemanticError::InvalidOperands {
+                message: format!("Invalid use of void type in binary operation"),
                 location,
             });
         }
@@ -1657,9 +1659,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         if let Some(right_mir_type) = self.get_types().get(&right_type)
             && matches!(right_mir_type, crate::mir::MirType::Void)
         {
-            return Err(SemanticError::InvalidBinaryOperandTypes {
-                left_type: "unknown".to_string(), // Will be updated below
-                right_type: format!("{:?}", right_mir_type),
+            return Err(SemanticError::InvalidOperands {
+                message: format!("Invalid use of void type in binary operation"),
                 location,
             });
         }
@@ -1669,9 +1670,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             match (self.get_types().get(&left_type), self.get_types().get(&right_type)) {
                 (Some(left_type), Some(right_type)) => (left_type.clone(), right_type.clone()),
                 _ => {
-                    return Err(SemanticError::InvalidBinaryOperandTypes {
-                        left_type: format!("unknown ({})", left_type.get()),
-                        right_type: format!("unknown ({})", right_type.get()),
+                    return Err(SemanticError::InvalidOperands {
+                        message: format!("Unknown types in binary operation"),
                         location,
                     });
                 }
@@ -1731,9 +1731,11 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             Ok((converted_left, converted_right, common_type))
         } else {
             // Invalid combination
-            Err(SemanticError::InvalidBinaryOperandTypes {
-                left_type: format!("{:?}", left_mir_type),
-                right_type: format!("{:?}", right_mir_type),
+            Err(SemanticError::InvalidOperands {
+                message: format!(
+                    "Invalid operands for binary operation: {:?} and {:?}",
+                    left_mir_type, right_mir_type
+                ),
                 location,
             })
         }
@@ -1845,9 +1847,9 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 }
             }
         } else {
-            Err(SemanticError::InvalidTypeConversion {
-                from_type: "unknown".to_string(),
-                to_type: "unknown".to_string(),
+            Err(SemanticError::TypeMismatch {
+                expected: "integer type".to_string(),
+                found: "unknown".to_string(),
                 location,
             })
         }
@@ -1936,9 +1938,11 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 }
             } else {
                 // Shouldn't happen due to earlier checks
-                Err(SemanticError::UnsupportedConversion {
-                    left_type: format!("{:?}", left_type),
-                    right_type: format!("{:?}", right_type),
+                Err(SemanticError::InvalidOperands {
+                    message: format!(
+                        "Unsupported integer conversion between {:?} and {:?}",
+                        left_type, right_type
+                    ),
                     location,
                 })
             }
@@ -2079,9 +2083,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             // These should be handled separately as assignment statements
             Assign | AssignAdd | AssignSub | AssignMul | AssignDiv | AssignMod | AssignBitAnd | AssignBitOr
             | AssignBitXor | AssignLShift | AssignRShift => {
-                return Err(SemanticError::InvalidBinaryOperandTypes {
-                    left_type: "assignment operation in expression context".to_string(),
-                    right_type: "assignment operations should be statements, not expressions".to_string(),
+                return Err(SemanticError::InvalidOperands {
+                    message: "Assignment operation in expression context. Assignment operations should be statements, not expressions".to_string(),
                     location,
                 });
             }

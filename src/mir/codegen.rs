@@ -285,10 +285,31 @@ fn resolve_place_to_value(
             // TODO: Handle proper struct field access
             resolve_place_to_value(place, builder, expected_type, cranelift_vars, globals, constants)
         }
-        Place::ArrayIndex(place, _) => {
-            // For now, just resolve the base place
-            // TODO: Handle proper array indexing
-            resolve_place_to_value(place, builder, expected_type, cranelift_vars, globals, constants)
+        Place::ArrayIndex(place, index_operand) => {
+            // Handle array indexing: base[index]
+            // This is equivalent to *(base + index)
+
+            // For now, we'll implement this as a simplified version
+            // that calculates the address but returns a dummy value
+            // In a full implementation, this would require proper memory management
+
+            // Get the base pointer
+            let base_ptr = resolve_place_to_value(place, builder, types::I32, cranelift_vars, globals, constants)?;
+
+            // Get the index value
+            let index_val =
+                resolve_operand_to_value(index_operand, builder, types::I32, constants, cranelift_vars, globals)?;
+
+            // Calculate offset: index * element_size (assuming 4 bytes for int)
+            let element_size = builder.ins().iconst(types::I32, 4);
+            let offset = builder.ins().imul(index_val, element_size);
+
+            // Calculate element address: base + offset
+            let element_addr = builder.ins().iadd(base_ptr, offset);
+
+            // For now, return the address value itself
+            // This is a simplification - in real code we'd need proper memory access
+            Ok(element_addr)
         }
     }
 }
@@ -528,179 +549,316 @@ impl MirToCraneliftLowerer {
             // Get the MIR block
             let mir_block = self.blocks.get(&current_block_id).expect("Block not found in MIR");
 
-            // 1. Emit statements
+            // ========================================================================
+            // SECTION 1: Process statements within this block
+            // ========================================================================
             let statements_to_process: Vec<MirStmt> = mir_block
                 .statements
                 .iter()
                 .filter_map(|&stmt_id| self.statements.get(&stmt_id).cloned())
                 .collect();
 
-            // Process assignments
+            // Process statements
             for stmt in &statements_to_process {
-                if let MirStmt::Assign(place, rvalue) = stmt {
-                    // Ensure target variable is declared
-                    if let Place::Local(local_id) = place
-                        && !self.cranelift_vars.contains_key(local_id)
-                    {
-                        let var = builder.declare_var(types::I32);
-                        self.cranelift_vars.insert(*local_id, var);
+                match stmt {
+                    MirStmt::Assign(place, rvalue) => {
+                        // Ensure target variable is declared (for local variables)
+                        if let Place::Local(local_id) = place
+                            && !self.cranelift_vars.contains_key(local_id)
+                        {
+                            let var = builder.declare_var(types::I32);
+                            self.cranelift_vars.insert(*local_id, var);
+                        }
+
+                        // Process the rvalue
+                        match rvalue {
+                            Rvalue::Use(operand) => {
+                                // Ensure operand variables are declared
+                                ensure_operands_declared(operand, &mut builder, &mut self.cranelift_vars);
+
+                                match resolve_operand_to_value(
+                                    operand,
+                                    &mut builder,
+                                    types::I32,
+                                    &self.constants,
+                                    &self.cranelift_vars,
+                                    &self.globals,
+                                ) {
+                                    Ok(value) => {
+                                        match place {
+                                            Place::Local(local_id) => {
+                                                // Handle local variable assignment
+                                                if let Some(cranelift_var) = self.cranelift_vars.get(local_id) {
+                                                    builder.def_var(*cranelift_var, value);
+                                                }
+                                            }
+                                            Place::StructField(_base_place, _field_index) => {
+                                                // Handle struct field assignment
+                                                // For now, we'll just assign to a local variable as a placeholder
+                                                // In a full implementation, this would generate proper memory store
+                                                let temp_var = builder.declare_var(types::I32);
+                                                builder.def_var(temp_var, value);
+                                                eprintln!(
+                                                    "Info: Struct field assignment placeholder - would store to memory"
+                                                );
+                                            }
+                                            Place::ArrayIndex(_base_place, _index_operand) => {
+                                                // Handle array index assignment
+                                                // For now, we'll just assign to a local variable as a placeholder
+                                                // In a full implementation, this would generate proper memory store
+                                                let temp_var = builder.declare_var(types::I32);
+                                                builder.def_var(temp_var, value);
+                                                eprintln!(
+                                                    "Info: Array index assignment placeholder - would store to memory"
+                                                );
+                                            }
+                                            _ => {
+                                                eprintln!("Warning: Unsupported place type in assignment");
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Warning: Failed to resolve operand: {}", e);
+                                    }
+                                }
+                            }
+                            Rvalue::Call(call_target, args) => {
+                                let call_result = emit_function_call_impl(
+                                    call_target,
+                                    args,
+                                    &mut builder,
+                                    &self.functions,
+                                    &self.types,
+                                    &self.locals,
+                                    &self.cranelift_vars.clone(),
+                                    &self.constants,
+                                    &self.globals,
+                                    &mut self.module,
+                                );
+
+                                match call_result {
+                                    Ok(call_result_val) => {
+                                        match place {
+                                            Place::Local(local_id) => {
+                                                // Handle local variable assignment
+                                                if let Some(cranelift_var) = self.cranelift_vars.get(local_id) {
+                                                    builder.def_var(*cranelift_var, call_result_val);
+                                                }
+                                            }
+                                            Place::StructField(_base_place, _field_index) => {
+                                                // Handle struct field assignment
+                                                // For now, we'll just assign to a local variable as a placeholder
+                                                // In a full implementation, this would generate proper memory store
+                                                let temp_var = builder.declare_var(types::I32);
+                                                builder.def_var(temp_var, call_result_val);
+                                                eprintln!(
+                                                    "Info: Struct field assignment placeholder - would store to memory"
+                                                );
+                                            }
+                                            Place::ArrayIndex(_base_place, _index_operand) => {
+                                                // Handle array index assignment
+                                                // For now, we'll just assign to a local variable as a placeholder
+                                                // In a full implementation, this would generate proper memory store
+                                                let temp_var = builder.declare_var(types::I32);
+                                                builder.def_var(temp_var, call_result_val);
+                                                eprintln!(
+                                                    "Info: Array index assignment placeholder - would store to memory"
+                                                );
+                                            }
+                                            _ => {
+                                                eprintln!(
+                                                    "Warning: Unsupported place type in function call assignment"
+                                                );
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Warning: Function call failed: {}", e);
+                                        let error_value = builder.ins().iconst(types::I32, 0);
+                                        match place {
+                                            Place::Local(local_id) => {
+                                                if let Some(cranelift_var) = self.cranelift_vars.get(local_id) {
+                                                    builder.def_var(*cranelift_var, error_value);
+                                                }
+                                            }
+                                            Place::StructField(_base_place, _field_index) => {
+                                                // Handle struct field assignment
+                                                // For now, we'll just assign to a local variable as a placeholder
+                                                // In a full implementation, this would generate proper memory store
+                                                let temp_var = builder.declare_var(types::I32);
+                                                builder.def_var(temp_var, error_value);
+                                                eprintln!(
+                                                    "Info: Struct field assignment placeholder - would store to memory"
+                                                );
+                                            }
+                                            Place::ArrayIndex(_base_place, _index_operand) => {
+                                                // Handle array index assignment
+                                                // For now, we'll just assign to a local variable as a placeholder
+                                                // In a full implementation, this would generate proper memory store
+                                                let temp_var = builder.declare_var(types::I32);
+                                                builder.def_var(temp_var, error_value);
+                                                eprintln!(
+                                                    "Info: Array index assignment placeholder - would store to memory"
+                                                );
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                }
+                            }
+                            Rvalue::BinaryOp(op, left_operand, right_operand) => {
+                                // Ensure operand variables are declared
+                                ensure_operands_declared(left_operand, &mut builder, &mut self.cranelift_vars);
+                                ensure_operands_declared(right_operand, &mut builder, &mut self.cranelift_vars);
+
+                                // Resolve operands to values
+                                let left_val = match resolve_operand_to_value(
+                                    left_operand,
+                                    &mut builder,
+                                    types::I32,
+                                    &self.constants,
+                                    &self.cranelift_vars,
+                                    &self.globals,
+                                ) {
+                                    Ok(val) => val,
+                                    Err(_) => {
+                                        eprintln!("Warning: Failed to resolve left operand");
+                                        builder.ins().iconst(types::I32, 0)
+                                    }
+                                };
+
+                                let right_val = match resolve_operand_to_value(
+                                    right_operand,
+                                    &mut builder,
+                                    types::I32,
+                                    &self.constants,
+                                    &self.cranelift_vars,
+                                    &self.globals,
+                                ) {
+                                    Ok(val) => val,
+                                    Err(_) => {
+                                        eprintln!("Warning: Failed to resolve right operand");
+                                        builder.ins().iconst(types::I32, 0)
+                                    }
+                                };
+
+                                let result_val = match op {
+                                    BinaryOp::Add => builder.ins().iadd(left_val, right_val),
+                                    BinaryOp::Sub => builder.ins().isub(left_val, right_val),
+                                    BinaryOp::Mul => builder.ins().imul(left_val, right_val),
+                                    BinaryOp::Div => builder.ins().sdiv(left_val, right_val),
+                                    BinaryOp::Mod => builder.ins().srem(left_val, right_val),
+                                    BinaryOp::BitAnd => builder.ins().band(left_val, right_val),
+                                    BinaryOp::BitOr => builder.ins().bor(left_val, right_val),
+                                    BinaryOp::BitXor => builder.ins().bxor(left_val, right_val),
+                                    BinaryOp::LShift => builder.ins().ishl(left_val, right_val),
+                                    BinaryOp::RShift => builder.ins().sshr(left_val, right_val),
+                                    BinaryOp::Equal => {
+                                        let cmp_val = builder.ins().icmp(IntCC::Equal, left_val, right_val);
+                                        builder.ins().uextend(types::I32, cmp_val)
+                                    }
+                                    BinaryOp::NotEqual => {
+                                        let cmp_val = builder.ins().icmp(IntCC::NotEqual, left_val, right_val);
+                                        builder.ins().uextend(types::I32, cmp_val)
+                                    }
+                                    BinaryOp::Less => {
+                                        let cmp_val = builder.ins().icmp(IntCC::SignedLessThan, left_val, right_val);
+                                        builder.ins().uextend(types::I32, cmp_val)
+                                    }
+                                    BinaryOp::LessEqual => {
+                                        let cmp_val =
+                                            builder.ins().icmp(IntCC::SignedLessThanOrEqual, left_val, right_val);
+                                        builder.ins().uextend(types::I32, cmp_val)
+                                    }
+                                    BinaryOp::Greater => {
+                                        let cmp_val = builder.ins().icmp(IntCC::SignedGreaterThan, left_val, right_val);
+                                        builder.ins().uextend(types::I32, cmp_val)
+                                    }
+                                    BinaryOp::GreaterEqual => {
+                                        let cmp_val =
+                                            builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, left_val, right_val);
+                                        builder.ins().uextend(types::I32, cmp_val)
+                                    }
+                                    BinaryOp::LogicAnd | BinaryOp::LogicOr => builder.ins().band(left_val, right_val),
+                                    BinaryOp::Comma => right_val,
+                                };
+
+                                if let Place::Local(local_id) = place
+                                    && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
+                                {
+                                    builder.def_var(*cranelift_var, result_val);
+                                } else if let Place::StructField(_base_place, _field_index) = place {
+                                    // Handle struct field assignment
+                                    // For now, we'll just assign to a local variable as a placeholder
+                                    // In a full implementation, this would generate proper memory store
+                                    let temp_var = builder.declare_var(types::I32);
+                                    builder.def_var(temp_var, result_val);
+                                    eprintln!("Info: Struct field assignment placeholder - would store to memory");
+                                } else if let Place::ArrayIndex(_base_place, _index_operand) = place {
+                                    // Handle array index assignment
+                                    // For now, we'll just assign to a local variable as a placeholder
+                                    // In a full implementation, this would generate proper memory store
+                                    let temp_var = builder.declare_var(types::I32);
+                                    builder.def_var(temp_var, result_val);
+                                    eprintln!("Info: Array index assignment placeholder - would store to memory");
+                                }
+                            }
+                            _ => {
+                                // For other rvalue types, emit a dummy value
+                                let dummy_value = builder.ins().iconst(types::I32, 0);
+                                match place {
+                                    Place::Local(local_id) => {
+                                        if let Some(cranelift_var) = self.cranelift_vars.get(local_id) {
+                                            builder.def_var(*cranelift_var, dummy_value);
+                                        }
+                                    }
+                                    Place::StructField(_base_place, _field_index) => {
+                                        // Handle struct field assignment
+                                        // For now, we'll just assign to a local variable as a placeholder
+                                        // In a full implementation, this would generate proper memory store
+                                        let temp_var = builder.declare_var(types::I32);
+                                        builder.def_var(temp_var, dummy_value);
+                                        eprintln!("Info: Struct field assignment placeholder - would store to memory");
+                                    }
+                                    Place::ArrayIndex(_base_place, _index_operand) => {
+                                        // Handle array index assignment
+                                        // For now, we'll just assign to a local variable as a placeholder
+                                        // In a full implementation, this would generate proper memory store
+                                        let temp_var = builder.declare_var(types::I32);
+                                        builder.def_var(temp_var, dummy_value);
+                                        eprintln!("Info: Array index assignment placeholder - would store to memory");
+                                    }
+                                    _ => {
+                                        eprintln!("Warning: Unsupported place type in assignment");
+                                    }
+                                }
+                            }
+                        }
                     }
 
-                    // Process the rvalue
-                    match rvalue {
-                        Rvalue::Use(operand) => {
-                            // Ensure operand variables are declared
-                            ensure_operands_declared(operand, &mut builder, &mut self.cranelift_vars);
+                    MirStmt::Store(_operand, _place) => {
+                        // TODO: Implement store operations
+                        // Store operations move data from an operand to a place (memory location)
+                        todo!("Store operation not implemented yet");
+                    }
 
-                            match resolve_operand_to_value(
-                                operand,
-                                &mut builder,
-                                types::I32,
-                                &self.constants,
-                                &self.cranelift_vars,
-                                &self.globals,
-                            ) {
-                                Ok(value) => {
-                                    if let Place::Local(local_id) = place
-                                        && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
-                                    {
-                                        builder.def_var(*cranelift_var, value);
-                                    }
-                                }
-                                Err(e) => {
-                                    eprintln!("Warning: Failed to resolve operand: {}", e);
-                                }
-                            }
-                        }
-                        Rvalue::Call(call_target, args) => {
-                            let call_result = emit_function_call_impl(
-                                call_target,
-                                args,
-                                &mut builder,
-                                &self.functions,
-                                &self.types,
-                                &self.locals,
-                                &self.cranelift_vars.clone(),
-                                &self.constants,
-                                &self.globals,
-                                &mut self.module,
-                            );
+                    MirStmt::Alloc(_place, _type_id) => {
+                        // TODO: Implement allocation operations
+                        // Alloc operations allocate memory for a place with a specific type
+                        todo!("Alloc operation not implemented yet");
+                    }
 
-                            match call_result {
-                                Ok(call_result_val) => {
-                                    if let Place::Local(local_id) = place
-                                        && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
-                                    {
-                                        builder.def_var(*cranelift_var, call_result_val);
-                                    }
-                                }
-                                Err(e) => {
-                                    eprintln!("Warning: Function call failed: {}", e);
-                                    let error_value = builder.ins().iconst(types::I32, 0);
-                                    if let Place::Local(local_id) = place
-                                        && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
-                                    {
-                                        builder.def_var(*cranelift_var, error_value);
-                                    }
-                                }
-                            }
-                        }
-                        Rvalue::BinaryOp(op, left_operand, right_operand) => {
-                            // Ensure operand variables are declared
-                            ensure_operands_declared(left_operand, &mut builder, &mut self.cranelift_vars);
-                            ensure_operands_declared(right_operand, &mut builder, &mut self.cranelift_vars);
-
-                            // Resolve operands to values
-                            let left_val = match resolve_operand_to_value(
-                                left_operand,
-                                &mut builder,
-                                types::I32,
-                                &self.constants,
-                                &self.cranelift_vars,
-                                &self.globals,
-                            ) {
-                                Ok(val) => val,
-                                Err(_) => {
-                                    eprintln!("Warning: Failed to resolve left operand");
-                                    builder.ins().iconst(types::I32, 0)
-                                }
-                            };
-
-                            let right_val = match resolve_operand_to_value(
-                                right_operand,
-                                &mut builder,
-                                types::I32,
-                                &self.constants,
-                                &self.cranelift_vars,
-                                &self.globals,
-                            ) {
-                                Ok(val) => val,
-                                Err(_) => {
-                                    eprintln!("Warning: Failed to resolve right operand");
-                                    builder.ins().iconst(types::I32, 0)
-                                }
-                            };
-
-                            let result_val = match op {
-                                BinaryOp::Add => builder.ins().iadd(left_val, right_val),
-                                BinaryOp::Sub => builder.ins().isub(left_val, right_val),
-                                BinaryOp::Mul => builder.ins().imul(left_val, right_val),
-                                BinaryOp::Div => builder.ins().sdiv(left_val, right_val),
-                                BinaryOp::Mod => builder.ins().srem(left_val, right_val),
-                                BinaryOp::BitAnd => builder.ins().band(left_val, right_val),
-                                BinaryOp::BitOr => builder.ins().bor(left_val, right_val),
-                                BinaryOp::BitXor => builder.ins().bxor(left_val, right_val),
-                                BinaryOp::LShift => builder.ins().ishl(left_val, right_val),
-                                BinaryOp::RShift => builder.ins().sshr(left_val, right_val),
-                                BinaryOp::Equal => {
-                                    let cmp_val = builder.ins().icmp(IntCC::Equal, left_val, right_val);
-                                    builder.ins().uextend(types::I32, cmp_val)
-                                }
-                                BinaryOp::NotEqual => {
-                                    let cmp_val = builder.ins().icmp(IntCC::NotEqual, left_val, right_val);
-                                    builder.ins().uextend(types::I32, cmp_val)
-                                }
-                                BinaryOp::Less => {
-                                    let cmp_val = builder.ins().icmp(IntCC::SignedLessThan, left_val, right_val);
-                                    builder.ins().uextend(types::I32, cmp_val)
-                                }
-                                BinaryOp::LessEqual => {
-                                    let cmp_val = builder.ins().icmp(IntCC::SignedLessThanOrEqual, left_val, right_val);
-                                    builder.ins().uextend(types::I32, cmp_val)
-                                }
-                                BinaryOp::Greater => {
-                                    let cmp_val = builder.ins().icmp(IntCC::SignedGreaterThan, left_val, right_val);
-                                    builder.ins().uextend(types::I32, cmp_val)
-                                }
-                                BinaryOp::GreaterEqual => {
-                                    let cmp_val =
-                                        builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, left_val, right_val);
-                                    builder.ins().uextend(types::I32, cmp_val)
-                                }
-                                BinaryOp::LogicAnd | BinaryOp::LogicOr => builder.ins().band(left_val, right_val),
-                                BinaryOp::Comma => right_val,
-                            };
-
-                            if let Place::Local(local_id) = place
-                                && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
-                            {
-                                builder.def_var(*cranelift_var, result_val);
-                            }
-                        }
-                        _ => {
-                            // For other rvalue types, emit a dummy value
-                            let dummy_value = builder.ins().iconst(types::I32, 0);
-                            if let Place::Local(local_id) = place
-                                && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
-                            {
-                                builder.def_var(*cranelift_var, dummy_value);
-                            }
-                        }
+                    MirStmt::Dealloc(_operand) => {
+                        // TODO: Implement deallocation operations
+                        // Dealloc operations free previously allocated memory
+                        todo!("Dealloc operation not implemented yet");
                     }
                 }
             }
 
-            // 2. Emit terminator
+            // ========================================================================
+            // SECTION 2: Process terminator (control flow)
+            // ========================================================================
             match &mir_block.terminator {
                 Terminator::Goto(target) => {
                     let target_cl_block = cl_blocks.get(target).expect("Target block not found");

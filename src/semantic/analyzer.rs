@@ -1020,6 +1020,129 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 }
             }
 
+            NodeKind::IndexAccess(array_ref, index_ref) => {
+                debug!("Lowering array index access expression");
+
+                // Lower the array expression
+                let array_operand = self.lower_expression(array_ref);
+
+                // Lower the index expression
+                let index_operand = self.lower_expression(index_ref);
+
+                // For array subscripting (a[b]), this is semantically equivalent to *(a + b)
+                // We need to create a proper Place that represents the array element access
+                // The result should be a Place that can be used as an lvalue
+
+                // Create a Place::ArrayIndex to represent the array element access
+                // This will be handled properly by the MIR code generation
+                let array_place = match array_operand {
+                    Operand::Copy(place_box) => *place_box,
+                    _ => {
+                        // If array is not a place, create a temporary to hold the computed address
+                        let temp_type_id = self.get_int_type();
+                        let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
+                        let temp_place = Place::Local(temp_local_id);
+
+                        // Store the array value in the temporary
+                        let assign_stmt = MirStmt::Assign(temp_place.clone(), Rvalue::Use(array_operand));
+                        self.mir_builder.add_statement(assign_stmt);
+
+                        temp_place
+                    }
+                };
+
+                // Create the array index place
+                let index_place = Place::ArrayIndex(Box::new(array_place), Box::new(index_operand));
+
+                // Return this as an operand that can be used as an lvalue
+                Operand::Copy(Box::new(index_place))
+            }
+
+            NodeKind::MemberAccess(object_ref, field_name, is_arrow) => {
+                debug!(
+                    "Lowering member access expression for field: {} (is_arrow: {})",
+                    field_name, is_arrow
+                );
+
+                // Lower the object expression to get the base place
+                let object_operand = self.lower_expression(object_ref);
+
+                // For member access (object.field or object->field), we need to create a proper Place
+                // that represents the struct field access. The result should be a Place that can be used as an lvalue.
+
+                let mut object_place = match object_operand {
+                    Operand::Copy(place_box) => *place_box,
+                    _ => {
+                        // If object is not a place, create a temporary to hold the computed address
+                        let temp_type_id = self.get_int_type();
+                        let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
+                        let temp_place = Place::Local(temp_local_id);
+
+                        // Store the object value in the temporary
+                        let assign_stmt = MirStmt::Assign(temp_place.clone(), Rvalue::Use(object_operand));
+                        self.mir_builder.add_statement(assign_stmt);
+
+                        temp_place
+                    }
+                };
+
+                // Handle arrow access (object->field) by dereferencing the pointer first
+                if is_arrow {
+                    debug!("Handling arrow access, dereferencing pointer first");
+
+                    // For arrow access, we need to dereference the pointer to get the struct
+                    // Create a temporary to hold the dereferenced struct
+                    let temp_type_id = self.get_int_type(); // For now, assume int type
+                    let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
+                    let temp_place = Place::Local(temp_local_id);
+
+                    // Dereference the pointer: temp = *object_place
+                    let deref_operand = Operand::Copy(Box::new(object_place));
+                    let deref_rvalue = Rvalue::UnaryOp(crate::mir::UnaryOp::Deref, deref_operand);
+                    let assign_stmt = MirStmt::Assign(temp_place.clone(), deref_rvalue);
+                    self.mir_builder.add_statement(assign_stmt);
+
+                    // Update object_place to be the dereferenced struct
+                    object_place = temp_place;
+                }
+
+                // Look for the field in known struct types
+                let mut field_index = None;
+                for (_type_id, mir_type) in self.get_types() {
+                    if let crate::mir::MirType::Struct { fields, .. } | crate::mir::MirType::Union { fields, .. } =
+                        mir_type
+                    {
+                        for (idx, (name, _)) in fields.iter().enumerate() {
+                            if *name == field_name {
+                                field_index = Some(idx);
+                                break;
+                            }
+                        }
+                        if field_index.is_some() {
+                            break;
+                        }
+                    }
+                }
+
+                if let Some(field_idx) = field_index {
+                    // Create the struct field place
+                    let field_place = Place::StructField(Box::new(object_place), field_idx);
+
+                    // Return this as an operand that can be used as an lvalue
+                    Operand::Copy(Box::new(field_place))
+                } else {
+                    // Field not found - report error but continue with dummy operand
+                    let node_span = self.ast.get_node(expr_ref).span;
+                    self.report_error(SemanticError::UndeclaredIdentifier {
+                        name: field_name,
+                        location: node_span,
+                    });
+
+                    let error_const = self.create_constant(ConstValue::Int(0));
+                    Operand::Constant(error_const)
+                }
+            }
+
             _ => {
                 // For unsupported expressions, return a dummy operand
                 let node = self.ast.get_node(expr_ref);
@@ -1362,6 +1485,14 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             }
             crate::ast::TypeKind::Void => {
                 let mir_type = crate::mir::MirType::Void;
+                self.add_type(mir_type)
+            }
+            crate::ast::TypeKind::Pointer { pointee } => {
+                // Convert the pointee type first
+                let pointee_type_id = self.lower_type_to_mir(pointee);
+                let mir_type = crate::mir::MirType::Pointer {
+                    pointee: pointee_type_id,
+                };
                 self.add_type(mir_type)
             }
             crate::ast::TypeKind::Record {

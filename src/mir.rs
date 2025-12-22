@@ -174,7 +174,10 @@ pub enum CallTarget {
 }
 
 /// Binary operations
-#[derive(Debug, Clone, PartialEq, Serialize)]
+/// This is different from AST binary ops as some C semantics are made explicit here
+/// So thereis no assignment ops
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[repr(u8)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -186,19 +189,22 @@ pub enum BinaryOp {
     BitXor,
     LShift,
     RShift,
-    Eq,
-    Ne,
-    Lt,
-    Le,
-    Gt,
-    Ge,
+    Equal,
+    NotEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
     LogicAnd,
     LogicOr,
     Comma,
 }
 
 /// Unary operations
-#[derive(Debug, Clone, PartialEq, Serialize)]
+/// This is different from AST unary ops as some C semantics are made explicit here
+/// So no increment/decrement ops because they are desugared into assignments
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[repr(u8)]
 pub enum UnaryOp {
     Neg,
     Not,

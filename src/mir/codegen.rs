@@ -652,27 +652,27 @@ impl MirToCraneliftLowerer {
                                 BinaryOp::BitXor => builder.ins().bxor(left_val, right_val),
                                 BinaryOp::LShift => builder.ins().ishl(left_val, right_val),
                                 BinaryOp::RShift => builder.ins().sshr(left_val, right_val),
-                                BinaryOp::Eq => {
+                                BinaryOp::Equal => {
                                     let cmp_val = builder.ins().icmp(IntCC::Equal, left_val, right_val);
                                     builder.ins().uextend(types::I32, cmp_val)
                                 }
-                                BinaryOp::Ne => {
+                                BinaryOp::NotEqual => {
                                     let cmp_val = builder.ins().icmp(IntCC::NotEqual, left_val, right_val);
                                     builder.ins().uextend(types::I32, cmp_val)
                                 }
-                                BinaryOp::Lt => {
+                                BinaryOp::Less => {
                                     let cmp_val = builder.ins().icmp(IntCC::SignedLessThan, left_val, right_val);
                                     builder.ins().uextend(types::I32, cmp_val)
                                 }
-                                BinaryOp::Le => {
+                                BinaryOp::LessEqual => {
                                     let cmp_val = builder.ins().icmp(IntCC::SignedLessThanOrEqual, left_val, right_val);
                                     builder.ins().uextend(types::I32, cmp_val)
                                 }
-                                BinaryOp::Gt => {
+                                BinaryOp::Greater => {
                                     let cmp_val = builder.ins().icmp(IntCC::SignedGreaterThan, left_val, right_val);
                                     builder.ins().uextend(types::I32, cmp_val)
                                 }
-                                BinaryOp::Ge => {
+                                BinaryOp::GreaterEqual => {
                                     let cmp_val =
                                         builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, left_val, right_val);
                                     builder.ins().uextend(types::I32, cmp_val)

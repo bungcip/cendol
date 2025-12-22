@@ -585,18 +585,6 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
     }
 }
 
-/// Extract identifier from a declarator (helper function)
-fn extract_identifier(declarator: &Declarator) -> Option<Symbol> {
-    match declarator {
-        Declarator::Identifier(name, _, _) => Some(*name),
-        Declarator::Pointer(_, next) => next.as_ref().and_then(|d| extract_identifier(d)),
-        Declarator::Array(base, _) => extract_identifier(base),
-        Declarator::Function(base, _) => extract_identifier(base),
-        Declarator::BitField(base, _) => extract_identifier(base),
-        _ => None,
-    }
-}
-
 /// Main entry point for running semantic lowering on an entire AST
 pub fn run_semantic_lowering(ast: &mut Ast, diag: &mut DiagnosticEngine, symbol_table: &mut SymbolTable) {
     debug!("Starting semantic lowering phase");

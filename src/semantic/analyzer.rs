@@ -1651,7 +1651,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             && matches!(left_mir_type, crate::mir::MirType::Void)
         {
             return Err(SemanticError::InvalidOperands {
-                message: format!("Invalid use of void type in binary operation"),
+                message: "Invalid use of void type in binary operation".to_string(),
                 location,
             });
         }
@@ -1660,7 +1660,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             && matches!(right_mir_type, crate::mir::MirType::Void)
         {
             return Err(SemanticError::InvalidOperands {
-                message: format!("Invalid use of void type in binary operation"),
+                message: "Invalid use of void type in binary operation".to_string(),
                 location,
             });
         }
@@ -1671,7 +1671,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 (Some(left_type), Some(right_type)) => (left_type.clone(), right_type.clone()),
                 _ => {
                     return Err(SemanticError::InvalidOperands {
-                        message: format!("Unknown types in binary operation"),
+                        message: "Unknown types in binary operation".to_string(),
                         location,
                     });
                 }
@@ -2065,12 +2065,12 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             RShift => MirBinaryOp::RShift,
 
             // Comparison operations
-            Equal => MirBinaryOp::Eq,
-            NotEqual => MirBinaryOp::Ne,
-            Less => MirBinaryOp::Lt,
-            LessEqual => MirBinaryOp::Le,
-            Greater => MirBinaryOp::Gt,
-            GreaterEqual => MirBinaryOp::Ge,
+            Equal => MirBinaryOp::Equal,
+            NotEqual => MirBinaryOp::NotEqual,
+            Less => MirBinaryOp::Less,
+            LessEqual => MirBinaryOp::LessEqual,
+            Greater => MirBinaryOp::Greater,
+            GreaterEqual => MirBinaryOp::GreaterEqual,
 
             // Logical operations
             LogicAnd => MirBinaryOp::LogicAnd,
@@ -2102,21 +2102,4 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         }
         None
     }
-}
-
-/// Extract identifier from a declarator (helper function)
-fn extract_identifier(declarator: &Declarator) -> Option<Symbol> {
-    match declarator {
-        Declarator::Identifier(name, _, _) => Some(*name),
-        Declarator::Pointer(_, next) => next.as_ref().and_then(|d| extract_identifier(d)),
-        Declarator::Array(base, _) => extract_identifier(base),
-        Declarator::Function(base, _) => extract_identifier(base),
-        Declarator::BitField(base, _) => extract_identifier(base),
-        _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    // Tests moved to tests_mir.rs
 }

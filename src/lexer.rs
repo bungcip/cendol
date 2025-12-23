@@ -230,70 +230,8 @@ pub struct Token {
     pub location: SourceSpan,
 }
 
-/// Static keyword lookup table for O(1) keyword recognition
-static KEYWORDS: OnceLock<HashMap<&'static str, TokenKind>> = OnceLock::new();
-
 /// Static punctuation mapping for systematic token classification
 static PUNCTUATION_MAP: OnceLock<HashMap<PPTokenKind, TokenKind>> = OnceLock::new();
-
-/// Initialize the keyword map
-fn init_keywords() -> HashMap<&'static str, TokenKind> {
-    let mut map = HashMap::new();
-
-    // C11 keywords
-    map.insert("auto", TokenKind::Auto);
-    map.insert("break", TokenKind::Break);
-    map.insert("case", TokenKind::Case);
-    map.insert("char", TokenKind::Char);
-    map.insert("const", TokenKind::Const);
-    map.insert("continue", TokenKind::Continue);
-    map.insert("default", TokenKind::Default);
-    map.insert("do", TokenKind::Do);
-    map.insert("double", TokenKind::Double);
-    map.insert("else", TokenKind::Else);
-    map.insert("enum", TokenKind::Enum);
-    map.insert("extern", TokenKind::Extern);
-    map.insert("float", TokenKind::Float);
-    map.insert("for", TokenKind::For);
-    map.insert("goto", TokenKind::Goto);
-    map.insert("if", TokenKind::If);
-    map.insert("inline", TokenKind::Inline);
-    map.insert("int", TokenKind::Int);
-    map.insert("long", TokenKind::Long);
-    map.insert("register", TokenKind::Register);
-    map.insert("restrict", TokenKind::Restrict);
-    map.insert("return", TokenKind::Return);
-    map.insert("short", TokenKind::Short);
-    map.insert("signed", TokenKind::Signed);
-    map.insert("sizeof", TokenKind::Sizeof);
-    map.insert("static", TokenKind::Static);
-    map.insert("struct", TokenKind::Struct);
-    map.insert("switch", TokenKind::Switch);
-    map.insert("typedef", TokenKind::Typedef);
-    map.insert("union", TokenKind::Union);
-    map.insert("unsigned", TokenKind::Unsigned);
-    map.insert("void", TokenKind::Void);
-    map.insert("volatile", TokenKind::Volatile);
-    map.insert("while", TokenKind::While);
-
-    // C11 specific keywords
-    map.insert("_Alignas", TokenKind::Alignas);
-    map.insert("_Alignof", TokenKind::Alignof);
-    map.insert("_Atomic", TokenKind::Atomic);
-    map.insert("_Bool", TokenKind::Bool);
-    map.insert("_Complex", TokenKind::Complex);
-    map.insert("_Generic", TokenKind::Generic);
-    map.insert("_Noreturn", TokenKind::Noreturn);
-    map.insert("_Pragma", TokenKind::Pragma);
-    map.insert("_Static_assert", TokenKind::StaticAssert);
-    map.insert("_Thread_local", TokenKind::ThreadLocal);
-
-    // GCC extensions
-    map.insert("__attribute__", TokenKind::Attribute);
-    map.insert("__attribute", TokenKind::Attribute);
-
-    map
-}
 
 /// Initialize the punctuation mapping
 fn init_punctuation_map() -> HashMap<PPTokenKind, TokenKind> {
@@ -370,9 +308,68 @@ fn init_punctuation_map() -> HashMap<PPTokenKind, TokenKind> {
     map
 }
 
-/// Check if a symbol represents a C11 keyword
+/// Check if a symbol represents a C11 keyword.
+///
+/// ⚡ Bolt: Optimized with a `match` statement.
+/// This is significantly faster than the previous `HashMap` implementation because
+/// the Rust compiler can optimize it into a perfect hash table or a more direct
+/// jump table, avoiding the overhead of runtime hashing and lookups.
 pub fn is_keyword(symbol: Symbol) -> Option<TokenKind> {
-    KEYWORDS.get_or_init(init_keywords).get(symbol.as_str()).copied()
+    match symbol.as_str() {
+        // C11 keywords
+        "auto" => Some(TokenKind::Auto),
+        "break" => Some(TokenKind::Break),
+        "case" => Some(TokenKind::Case),
+        "char" => Some(TokenKind::Char),
+        "const" => Some(TokenKind::Const),
+        "continue" => Some(TokenKind::Continue),
+        "default" => Some(TokenKind::Default),
+        "do" => Some(TokenKind::Do),
+        "double" => Some(TokenKind::Double),
+        "else" => Some(TokenKind::Else),
+        "enum" => Some(TokenKind::Enum),
+        "extern" => Some(TokenKind::Extern),
+        "float" => Some(TokenKind::Float),
+        "for" => Some(TokenKind::For),
+        "goto" => Some(TokenKind::Goto),
+        "if" => Some(TokenKind::If),
+        "inline" => Some(TokenKind::Inline),
+        "int" => Some(TokenKind::Int),
+        "long" => Some(TokenKind::Long),
+        "register" => Some(TokenKind::Register),
+        "restrict" => Some(TokenKind::Restrict),
+        "return" => Some(TokenKind::Return),
+        "short" => Some(TokenKind::Short),
+        "signed" => Some(TokenKind::Signed),
+        "sizeof" => Some(TokenKind::Sizeof),
+        "static" => Some(TokenKind::Static),
+        "struct" => Some(TokenKind::Struct),
+        "switch" => Some(TokenKind::Switch),
+        "typedef" => Some(TokenKind::Typedef),
+        "union" => Some(TokenKind::Union),
+        "unsigned" => Some(TokenKind::Unsigned),
+        "void" => Some(TokenKind::Void),
+        "volatile" => Some(TokenKind::Volatile),
+        "while" => Some(TokenKind::While),
+
+        // C11 specific keywords
+        "_Alignas" => Some(TokenKind::Alignas),
+        "_Alignof" => Some(TokenKind::Alignof),
+        "_Atomic" => Some(TokenKind::Atomic),
+        "_Bool" => Some(TokenKind::Bool),
+        "_Complex" => Some(TokenKind::Complex),
+        "_Generic" => Some(TokenKind::Generic),
+        "_Noreturn" => Some(TokenKind::Noreturn),
+        "_Pragma" => Some(TokenKind::Pragma),
+        "_Static_assert" => Some(TokenKind::StaticAssert),
+        "_Thread_local" => Some(TokenKind::ThreadLocal),
+
+        // GCC extensions
+        "__attribute__" => Some(TokenKind::Attribute),
+        "__attribute" => Some(TokenKind::Attribute),
+
+        _ => None,
+    }
 }
 
 /// Lexer state machine

@@ -37,11 +37,21 @@ pub enum ScopeKind {
     FunctionPrototype,
 }
 
+/// Symbol namespaces in C
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Namespace {
+    Ordinary, // Variables, functions, typedefs, enum constants
+    Tag,      // Struct, union, and enum tags
+    Label,    // Goto labels
+}
+
 /// Scope information
 #[derive(Debug)]
 pub struct Scope {
     pub parent: Option<ScopeId>,
-    pub symbols: HashMap<Symbol, SymbolEntryRef>,
+    pub symbols: HashMap<Symbol, SymbolEntryRef>, // Ordinary identifiers
+    pub tags: HashMap<Symbol, SymbolEntryRef>,    // Struct/union/enum tags
+    pub labels: HashMap<Symbol, SymbolEntryRef>,  // Goto labels
     pub kind: ScopeKind,
     pub level: u32,
 }
@@ -74,6 +84,8 @@ impl SymbolTable {
         table.scopes.push(Scope {
             parent: None,
             symbols: HashMap::new(),
+            tags: HashMap::new(),
+            labels: HashMap::new(),
             kind: ScopeKind::Global,
             level: 0,
         });
@@ -88,6 +100,8 @@ impl SymbolTable {
         let new_scope = Scope {
             parent: Some(self.current_scope_id),
             symbols: HashMap::new(),
+            tags: HashMap::new(),
+            labels: HashMap::new(),
             kind,
             level: self.scopes[self.current_scope_id.get() as usize - 1].level + 1,
         };
@@ -110,6 +124,8 @@ impl SymbolTable {
         let new_scope = Scope {
             parent: Some(self.current_scope_id),
             symbols: HashMap::new(),
+            tags: HashMap::new(),
+            labels: HashMap::new(),
             kind,
             level: self.scopes[self.current_scope_id.get() as usize - 1].level + 1,
         };
@@ -119,6 +135,8 @@ impl SymbolTable {
             self.scopes.push(Scope {
                 parent: None,
                 symbols: HashMap::new(),
+                tags: HashMap::new(),
+                labels: HashMap::new(),
                 kind: ScopeKind::Global,
                 level: 0,
             });
@@ -180,15 +198,44 @@ impl SymbolTable {
         entry_ref
     }
 
+    pub fn add_symbol_in_namespace(&mut self, name: Symbol, entry: SymbolEntry, ns: Namespace) -> SymbolEntryRef {
+        let entry_ref = self.push_symbol_entry(entry);
+        let current_scope = self.get_scope_mut(self.current_scope_id);
+        match ns {
+            Namespace::Ordinary => current_scope.symbols.insert(name, entry_ref),
+            Namespace::Tag => current_scope.tags.insert(name, entry_ref),
+            Namespace::Label => current_scope.labels.insert(name, entry_ref),
+        };
+        entry_ref
+    }
+
     pub fn lookup_symbol(&self, name: Symbol) -> Option<(SymbolEntryRef, ScopeId)> {
-        self.lookup_symbol_from(name, self.current_scope_id)
+        self.lookup_symbol_from_ns(name, self.current_scope_id, Namespace::Ordinary)
+    }
+
+    pub fn lookup_tag(&self, name: Symbol) -> Option<(SymbolEntryRef, ScopeId)> {
+        self.lookup_symbol_from_ns(name, self.current_scope_id, Namespace::Tag)
     }
 
     pub fn lookup_symbol_from(&self, name: Symbol, start_scope: ScopeId) -> Option<(SymbolEntryRef, ScopeId)> {
+        self.lookup_symbol_from_ns(name, start_scope, Namespace::Ordinary)
+    }
+
+    pub fn lookup_symbol_from_ns(
+        &self,
+        name: Symbol,
+        start_scope: ScopeId,
+        ns: Namespace,
+    ) -> Option<(SymbolEntryRef, ScopeId)> {
         let mut scope_id = start_scope;
         loop {
             let scope = self.get_scope(scope_id);
-            if let Some(&entry_ref) = scope.symbols.get(&name) {
+            let maybe_entry = match ns {
+                Namespace::Ordinary => scope.symbols.get(&name),
+                Namespace::Tag => scope.tags.get(&name),
+                Namespace::Label => scope.labels.get(&name),
+            };
+            if let Some(&entry_ref) = maybe_entry {
                 return Some((entry_ref, scope_id));
             }
             if let Some(parent) = scope.parent {
@@ -201,7 +248,16 @@ impl SymbolTable {
     }
 
     pub fn lookup_symbol_in_scope(&self, name: Symbol, scope_id: ScopeId) -> Option<SymbolEntryRef> {
-        self.get_scope(scope_id).symbols.get(&name).copied()
+        self.lookup_symbol_in_scope_ns(name, scope_id, Namespace::Ordinary)
+    }
+
+    pub fn lookup_symbol_in_scope_ns(&self, name: Symbol, scope_id: ScopeId, ns: Namespace) -> Option<SymbolEntryRef> {
+        let scope = self.get_scope(scope_id);
+        match ns {
+            Namespace::Ordinary => scope.symbols.get(&name).copied(),
+            Namespace::Tag => scope.tags.get(&name).copied(),
+            Namespace::Label => scope.labels.get(&name).copied(),
+        }
     }
 
     fn push_symbol_entry(&mut self, entry: SymbolEntry) -> SymbolEntryRef {

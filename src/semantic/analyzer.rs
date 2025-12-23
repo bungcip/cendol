@@ -2040,29 +2040,19 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                     return type_ref;
                 }
 
-                // If incomplete, try to find the complete definition
-                if let Some(tag_name) = tag {
-                    // Search through all AST types for a complete definition with the same tag
-                    for (i, ast_type_candidate) in self.ast.types.iter().enumerate() {
-                        if let crate::ast::TypeKind::Record {
-                            tag: candidate_tag,
-                            members: candidate_members,
-                            is_complete: candidate_is_complete,
-                            ..
-                        } = &ast_type_candidate.kind
-                            && Some(tag_name) == *candidate_tag
-                            && *candidate_is_complete
-                            && !candidate_members.is_empty()
-                        {
-                            let complete_type_ref = TypeRef::new((i + 1) as u32).unwrap();
-                            debug!(
-                                "Found complete definition for {:?}, canonicalizing {} to {}",
-                                tag_name,
-                                type_ref.get(),
-                                complete_type_ref.get()
-                            );
-                            return complete_type_ref;
-                        }
+                // If incomplete, try to find the complete definition in the current scope hierarchy
+                if let Some(tag_name) = tag
+                    && let Some((entry_ref, _)) = self.symbol_table.lookup_tag(tag_name)
+                {
+                    let entry = self.symbol_table.get_symbol_entry(entry_ref);
+                    if entry.is_completed {
+                        debug!(
+                            "Found complete definition for {:?} via symbol table, canonicalizing {} to {}",
+                            tag_name,
+                            type_ref.get(),
+                            entry.type_info.get()
+                        );
+                        return entry.type_info;
                     }
                 }
 

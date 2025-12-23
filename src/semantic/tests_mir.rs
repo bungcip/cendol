@@ -275,4 +275,39 @@ mod tests {
         }
         ");
     }
+    #[test]
+    fn test_struct_tag_shadowing() {
+        let source = r#"
+            struct T { int x; } s1;
+            int main() {
+                s1.x = 1;
+                {
+                    struct T { int y; } s2;
+                    s2.y = 2;
+                }
+                return s1.x;
+            }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = i32
+        type %t1 = struct T { x: %t0 }
+        type %t2 = struct T { y: %t0 }
+
+        global @s1: %t1
+
+        fn main() -> i32
+        {
+          locals {
+            %s2: %t2
+          }
+
+          bb1:
+            @s1.field_0 = const 1
+            %s2.field_0 = const 2
+            return @s1.field_0
+        }
+        ");
+    }
 }

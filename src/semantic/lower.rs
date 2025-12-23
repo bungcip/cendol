@@ -7,7 +7,7 @@
 
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
-use crate::semantic::symbol_table::{ScopeId, SymbolTable};
+use crate::semantic::symbol_table::{Namespace, ScopeKind, SymbolTable};
 use crate::source_manager::SourceSpan;
 use log::debug;
 
@@ -16,24 +16,17 @@ pub struct LowerCtx<'a, 'src> {
     pub ast: &'a mut Ast,
     pub diag: &'src mut DiagnosticEngine,
     pub symbol_table: &'a mut SymbolTable,
-    pub current_scope: ScopeId,
     // Track errors during lowering for early termination
     pub has_errors: bool,
 }
 
 impl<'a, 'src> LowerCtx<'a, 'src> {
     /// Create a new lowering context
-    pub fn new(
-        ast: &'a mut Ast,
-        diag: &'src mut DiagnosticEngine,
-        symbol_table: &'a mut SymbolTable,
-        current_scope: ScopeId,
-    ) -> Self {
+    pub fn new(ast: &'a mut Ast, diag: &'src mut DiagnosticEngine, symbol_table: &'a mut SymbolTable) -> Self {
         Self {
             ast,
             diag,
             symbol_table,
-            current_scope,
             has_errors: false,
         }
     }
@@ -208,246 +201,193 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
             // Properly handle struct/union types with their member declarations
             debug!("Processing record definition: {:?}", definition);
 
-            // Check if we already have a struct type with this tag
-            let existing_type_ref = tag.and_then(|tag_name| {
-                // Search for existing struct/union type with the same tag
-                for (i, existing_type) in ctx.ast.types.iter().enumerate() {
-                    if let TypeKind::Record { tag: existing_tag, .. } = &existing_type.kind
-                        && existing_tag == &Some(tag_name)
-                    {
-                        return Some(TypeRef::new((i + 1) as u32).unwrap());
+            let existing_entry = tag.and_then(|tag_name| ctx.symbol_table.lookup_tag(tag_name));
+
+            let type_ref_to_use = if let Some(tag_name) = tag {
+                // Named struct/union
+                if let Some(_def) = definition {
+                    // This is a DEFINITION: struct T { ... }
+                    let in_current_scope =
+                        existing_entry.is_some_and(|(_, scope_id)| scope_id == ctx.symbol_table.current_scope());
+
+                    if in_current_scope {
+                        let (entry_ref, _) = existing_entry.unwrap();
+                        let entry = ctx.symbol_table.get_symbol_entry(entry_ref);
+
+                        if entry.is_completed {
+                            // Redeclaration error - for now just return it
+                            debug!("Redefinition of struct tag {:?}", tag_name);
+                            entry.type_info
+                        } else {
+                            // Completing a forward declaration in current scope
+                            debug!("Completing forward declaration for struct tag {:?}", tag_name);
+                            entry.type_info
+                        }
+                    } else {
+                        // Not in current scope (either not found or shadowing outer)
+                        // Create a new record type
+                        let new_type = Type::new(TypeKind::Record {
+                            tag: Some(*tag_name),
+                            members: Vec::new(),
+                            is_complete: false,
+                            is_union: *is_union,
+                        });
+                        let new_type_ref = ctx.ast.push_type(new_type);
+
+                        // Add it to the symbol table in the current scope
+                        let symbol_entry = SymbolEntry {
+                            name: *tag_name,
+                            kind: SymbolKind::Record {
+                                is_complete: false,
+                                members: Vec::new(),
+                                size: None,
+                                alignment: None,
+                            },
+                            type_info: new_type_ref,
+                            storage_class: None,
+                            scope_id: ctx.symbol_table.current_scope().get(),
+                            definition_span: span,
+                            is_defined: true,
+                            is_referenced: false,
+                            is_completed: false,
+                        };
+                        ctx.symbol_table
+                            .add_symbol_in_namespace(*tag_name, symbol_entry, Namespace::Tag);
+                        new_type_ref
+                    }
+                } else {
+                    // This is a USAGE or FORWARD DECL: struct T; or struct T s;
+                    if let Some((entry_ref, _)) = existing_entry {
+                        // Found existing (either in current or outer scope)
+                        let entry = ctx.symbol_table.get_symbol_entry(entry_ref);
+                        entry.type_info
+                    } else {
+                        // Not found anywhere, create an implicit forward declaration in current scope
+                        debug!("Implicit forward declaration for struct tag {:?}", tag_name);
+                        let forward_type = Type::new(TypeKind::Record {
+                            tag: Some(*tag_name),
+                            members: Vec::new(),
+                            is_complete: false,
+                            is_union: *is_union,
+                        });
+                        let forward_ref = ctx.ast.push_type(forward_type);
+
+                        let symbol_entry = SymbolEntry {
+                            name: *tag_name,
+                            kind: SymbolKind::Record {
+                                is_complete: false,
+                                members: Vec::new(),
+                                size: None,
+                                alignment: None,
+                            },
+                            type_info: forward_ref,
+                            storage_class: None,
+                            scope_id: ctx.symbol_table.current_scope().get(),
+                            definition_span: span,
+                            is_defined: true,
+                            is_referenced: false,
+                            is_completed: false,
+                        };
+                        ctx.symbol_table
+                            .add_symbol_in_namespace(*tag_name, symbol_entry, Namespace::Tag);
+                        forward_ref
                     }
                 }
-                None
-            });
-
-            // For self-referential structs, if we don't find an existing one but have a definition,
-            // create a forward reference first
-            let forward_ref = if existing_type_ref.is_none() && tag.is_some() && definition.is_some() {
-                let forward_type = Type::new(TypeKind::Record {
-                    tag: *tag,
+            } else {
+                // Anonymous struct/union definition
+                let new_type = Type::new(TypeKind::Record {
+                    tag: None,
                     members: Vec::new(),
                     is_complete: false,
                     is_union: *is_union,
                 });
-                Some(ctx.ast.push_type(forward_type))
-            } else {
-                None
+                ctx.ast.push_type(new_type)
             };
 
-            // Use the forward reference if we created one, otherwise use the existing reference
-            let type_ref_to_update = existing_type_ref.or(forward_ref);
-
-            if let Some(existing_ref) = type_ref_to_update {
-                // For self-referential structs, check if we need to update with members
-                let existing_type = ctx.ast.get_type(existing_ref);
-                if let TypeKind::Record {
-                    is_complete: existing_complete,
-                    ..
-                } = &existing_type.kind
-                    && !existing_complete
-                    && definition.is_some()
-                {
-                    debug!("Updating incomplete struct type with tag {:?} with members", tag);
-                    // Create new type with members
-                    let members = definition
-                            .as_ref()
-                            .and_then(|def| def.members.as_ref())
-                            .map(|decls| {
-                                debug!("Found {} member declarations", decls.len());
-                                // Convert each struct member declaration to StructMember
-                                let mut struct_members = Vec::new();
-                                for (i, decl) in decls.iter().enumerate() {
-                                    debug!("Processing member declaration {}: {:?}", i, decl);
-
-                                    // Check if this is an anonymous struct/union declaration (no init_declarators)
-                                    if decl.init_declarators.is_empty() {
-                                        debug!("Found declaration with no init_declarators, checking for anonymous struct/union");
-                                        if let Some((is_union, _, definition)) = decl.specifiers.iter().find_map(|spec| {
-                                                if let DeclSpecifier::TypeSpecifier(TypeSpecifier::Record(is_union, tag, definition)) = spec {
-                                                    Some((is_union, tag, definition))
-                                                } else {
-                                                    None
-                                                }
-                                            }) {
-                                            debug!("Processing anonymous {} with definition", if *is_union { "union" } else { "struct" });
-                                            // Recursively process the anonymous struct/union members
-                                            if let Some(def) = definition
-                                                && let Some(member_decls) = &def.members {
-                                                    let anonymous_members = process_anonymous_struct_members(
-                                                        member_decls, *is_union, ctx, span
-                                                    );
-                                                    struct_members.extend(anonymous_members);
-                                                }
-                                            continue; // Skip the normal processing for anonymous structs
-                                        }
+            // Now handle members if it's a definition
+            if let Some(def) = definition {
+                let members = def
+                    .members
+                    .as_ref()
+                    .map(|decls| {
+                        let mut struct_members = Vec::new();
+                        for decl in decls {
+                            // Process anonymous struct/union members
+                            if decl.init_declarators.is_empty()
+                                && let Some((child_is_union, _, child_def)) = decl.specifiers.iter().find_map(|spec| {
+                                    if let DeclSpecifier::TypeSpecifier(TypeSpecifier::Record(u, t, d)) = spec {
+                                        Some((*u, *t, d))
+                                    } else {
+                                        None
                                     }
-
-                                    // Process each declarator in the member declaration
-                                    for (j, init_declarator) in decl.init_declarators.iter().enumerate() {
-                                        debug!("Processing declarator {}: {:?}", j, init_declarator);
-                                        // Extract the member name and type
-                                        if let Some(member_name) = extract_identifier(&init_declarator.declarator) {
-                                            debug!("Found member name: {}", member_name);
-                                            // Get the member type from declaration specifiers
-                                            let member_type = if let Some(base_type_ref) =
-                                                lower_decl_specifiers_for_member(&decl.specifiers, ctx, span)
-                                            {
-                                                // Apply the declarator to get the final member type
-                                                let member_type_with_declarator =
-                                                    apply_declarator_for_member(base_type_ref, &init_declarator.declarator, ctx);
-                                                ctx.ast.push_type(member_type_with_declarator)
-                                            } else {
-                                                debug!("Failed to get base type, defaulting to int");
-                                                // Default to int if type resolution fails
-                                                ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true }))
-                                            };
-
-                                            struct_members.push(StructMember {
-                                                name: member_name,
-                                                member_type,
-                                                bit_field_size: None,
-                                                location: span,
-                                            });
-                                        } else {
-                                            debug!("Failed to extract member name from declarator");
-                                        }
-                                    }
-                                }
-                                debug!("Created {} struct members", struct_members.len());
-                                struct_members
-                            })
-                            .unwrap_or_default();
-
-                    // Replace the existing type with the complete version
-                    let complete_type = Type::new(TypeKind::Record {
-                        tag: *tag,
-                        members,
-                        is_complete: true,
-                        is_union: *is_union,
-                    });
-
-                    // Update the type in the AST
-                    let type_index = (existing_ref.get() - 1) as usize;
-                    debug!(
-                        "Replacing incomplete struct type {} with complete version",
-                        existing_ref.get()
-                    );
-                    ctx.ast.types[type_index] = complete_type;
-
-                    // Update all pointer types that reference this struct to point to the complete version
-                    debug!(
-                        "Updating all pointer types that reference struct {}",
-                        existing_ref.get()
-                    );
-                    for (i, ast_type) in ctx.ast.types.iter_mut().enumerate() {
-                        if let TypeKind::Pointer { pointee } = &mut ast_type.kind
-                            && pointee.get() == existing_ref.get()
-                        {
-                            debug!("Updating pointer type at index {} to point to complete struct", i + 1);
-                            *pointee = existing_ref;
-                        }
-                    }
-                }
-
-                // Always return the existing struct reference
-                debug!(
-                    "Returning existing struct reference {} for tag {:?}",
-                    existing_ref.get(),
-                    tag
-                );
-                return Ok(existing_ref);
-            } else {
-                debug!("No existing type reference to update");
-            }
-
-            let members = definition
-                .as_ref()
-                .and_then(|def| def.members.as_ref())
-                .map(|decls| {
-                    debug!("Found {} member declarations", decls.len());
-                    // Convert each struct member declaration to StructMember
-                    let mut struct_members = Vec::new();
-                    for (i, decl) in decls.iter().enumerate() {
-                        debug!("Processing member declaration {}: {:?}", i, decl);
-
-                        // Check if this is an anonymous struct/union declaration (no init_declarators)
-                        if decl.init_declarators.is_empty() {
-                            debug!("Found declaration with no init_declarators, checking for anonymous struct/union");
-                            if let Some((is_union, _, definition)) = decl.specifiers.iter().find_map(|spec| {
-                                if let DeclSpecifier::TypeSpecifier(TypeSpecifier::Record(is_union, tag, definition)) =
-                                    spec
-                                {
-                                    Some((is_union, tag, definition))
-                                } else {
-                                    None
-                                }
-                            }) {
-                                debug!(
-                                    "Processing anonymous {} with definition",
-                                    if *is_union { "union" } else { "struct" }
-                                );
-                                // Recursively process the anonymous struct/union members
-                                if let Some(def) = definition
-                                    && let Some(member_decls) = &def.members
+                                })
+                            {
+                                if let Some(d) = child_def
+                                    && let Some(member_decls) = &d.members
                                 {
                                     let anonymous_members =
-                                        process_anonymous_struct_members(member_decls, *is_union, ctx, span);
+                                        process_anonymous_struct_members(member_decls, child_is_union, ctx, span);
                                     struct_members.extend(anonymous_members);
                                 }
-                                continue; // Skip the normal processing for anonymous structs
+                                continue;
+                            }
+
+                            for init_declarator in &decl.init_declarators {
+                                if let Some(member_name) = extract_identifier(&init_declarator.declarator) {
+                                    let member_type = if let Some(base_type_ref) =
+                                        lower_decl_specifiers_for_member(&decl.specifiers, ctx, span)
+                                    {
+                                        let ty = apply_declarator_for_member(
+                                            base_type_ref,
+                                            &init_declarator.declarator,
+                                            ctx,
+                                        );
+                                        ctx.ast.push_type(ty)
+                                    } else {
+                                        ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true }))
+                                    };
+
+                                    struct_members.push(StructMember {
+                                        name: member_name,
+                                        member_type,
+                                        bit_field_size: None,
+                                        location: span,
+                                    });
+                                }
                             }
                         }
+                        struct_members
+                    })
+                    .unwrap_or_default();
 
-                        // Process each declarator in the member declaration
-                        for (j, init_declarator) in decl.init_declarators.iter().enumerate() {
-                            debug!("Processing declarator {}: {:?}", j, init_declarator);
-                            // Extract the member name and type
-                            if let Some(member_name) = extract_identifier(&init_declarator.declarator) {
-                                debug!("Found member name: {}", member_name);
-                                // Get the member type from declaration specifiers
-                                let member_type = if let Some(base_type_ref) =
-                                    lower_decl_specifiers_for_member(&decl.specifiers, ctx, span)
-                                {
-                                    // Apply the declarator to get the final member type
-                                    let member_type_with_declarator =
-                                        apply_declarator_for_member(base_type_ref, &init_declarator.declarator, ctx);
-                                    ctx.ast.push_type(member_type_with_declarator)
-                                } else {
-                                    debug!("Failed to get base type, defaulting to int");
-                                    // Default to int if type resolution fails
-                                    ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true }))
-                                };
+                // Update the type in AST and SymbolTable
+                let type_idx = (type_ref_to_use.get() - 1) as usize;
+                let completed_type = Type::new(TypeKind::Record {
+                    tag: *tag,
+                    members: members.clone(),
+                    is_complete: true,
+                    is_union: *is_union,
+                });
+                ctx.ast.types[type_idx] = completed_type;
 
-                                struct_members.push(StructMember {
-                                    name: member_name,
-                                    member_type,
-                                    bit_field_size: None,
-                                    location: span,
-                                });
-                            } else {
-                                debug!("Failed to extract member name from declarator");
-                            }
-                        }
+                if let Some(tag_name) = tag
+                    && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(*tag_name)
+                {
+                    let entry = ctx.symbol_table.get_symbol_entry_mut(entry_ref);
+                    entry.is_completed = true;
+                    if let SymbolKind::Record {
+                        is_complete,
+                        members: entry_members,
+                        ..
+                    } = &mut entry.kind
+                    {
+                        *is_complete = true;
+                        *entry_members = members;
                     }
-                    debug!("Created {} struct members", struct_members.len());
-                    struct_members
-                })
-                .unwrap_or_default();
+                }
+            }
 
-            let final_type_ref = ctx.ast.push_type(Type::new(TypeKind::Record {
-                tag: *tag,
-                members,
-                is_complete: definition.is_some(),
-                is_union: *is_union,
-            }));
-            debug!(
-                "Created new struct type with tag {:?}, is_complete: {}, type_ref: {}",
-                tag,
-                definition.is_some(),
-                final_type_ref.get()
-            );
-            Ok(final_type_ref)
+            Ok(type_ref_to_use)
         }
         TypeSpecifier::Enum(tag, enumerators) => {
             // TODO: Handle enum types properly
@@ -521,7 +461,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     name
                 );
                 // List all symbols in current scope for debugging
-                let current_scope = ctx.symbol_table.get_scope(ctx.current_scope);
+                let current_scope = ctx.symbol_table.get_scope(ctx.symbol_table.current_scope());
                 debug!(
                     "Current scope symbols: {:?}",
                     current_scope.symbols.keys().collect::<Vec<_>>()
@@ -723,7 +663,7 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
             kind: crate::ast::SymbolKind::Typedef { aliased_type: final_ty },
             type_info: final_ty,
             storage_class: Some(StorageClass::Typedef),
-            scope_id: ctx.current_scope.get(),
+            scope_id: ctx.symbol_table.current_scope().get(),
             definition_span: span,
             is_defined: true,
             is_referenced: false,
@@ -857,168 +797,105 @@ pub fn run_semantic_lowering(ast: &mut Ast, diag: &mut DiagnosticEngine, symbol_
     debug!("Starting semantic lowering phase");
 
     // Check if we have a root node to start traversal from
-    let Some(_root_node) = ast.get_root_node() else {
+    let root_node_ref = if let Some(root) = ast.root {
+        root
+    } else {
         debug!("No root node found, skipping semantic lowering");
         return;
     };
 
-    let root_node_ref = ast.root.unwrap();
     debug!("Starting semantic lowering from root node: {}", root_node_ref.get());
 
-    // First, collect all declaration nodes without borrowing ast mutably
-    let nodes_to_process = {
-        let ast_ref = ast as *const Ast;
-        let ast_immutable = unsafe { &*ast_ref };
-        collect_declaration_nodes(ast_immutable, root_node_ref)
-    };
-
     // Create lowering context
-    let mut lower_ctx = LowerCtx::new(ast, diag, symbol_table, ScopeId::GLOBAL);
+    let mut lower_ctx = LowerCtx::new(ast, diag, symbol_table);
 
-    // Process all declaration nodes in the AST
-    for node_ref in nodes_to_process {
-        let semantic_nodes = lower_declaration(&mut lower_ctx, node_ref);
-
-        if !semantic_nodes.is_empty() {
-            if semantic_nodes.len() == 1 {
-                // Single declarator case: replace the original declaration node with the semantic node
-                let semantic_node_data = lower_ctx.ast.get_node(semantic_nodes[0]);
-                let semantic_node_clone = semantic_node_data.clone();
-                lower_ctx.ast.replace_node(node_ref, semantic_node_clone);
-            } else {
-                // Multi-declarator case: create a CompoundStatement containing all semantic nodes
-                let original_node = lower_ctx.ast.get_node(node_ref);
-                let compound_node = Node::new(
-                    NodeKind::CompoundStatement(semantic_nodes.clone()),
-                    original_node.span, // Use actual span from original declaration
-                );
-
-                lower_ctx.ast.replace_node(node_ref, compound_node);
-            }
-        }
-    }
+    // Perform recursive scope-aware lowering
+    lower_node_recursive(&mut lower_ctx, root_node_ref);
 
     debug!("Semantic lowering complete");
 }
 
-/// Collect all declaration nodes from the AST
-fn collect_declaration_nodes(ast: &Ast, root_node_ref: NodeRef) -> Vec<NodeRef> {
-    let mut declarations = Vec::new();
-    let mut stack = vec![root_node_ref];
+fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
+    let node_kind = {
+        let node = ctx.ast.get_node(node_ref);
+        node.kind.clone()
+    };
 
-    while let Some(node_ref) = stack.pop() {
-        let node = ast.get_node(node_ref);
-
-        match &node.kind {
-            NodeKind::Declaration(_) => {
-                declarations.push(node_ref);
-            }
-            NodeKind::FunctionDef(func_def) => {
-                stack.push(func_def.body);
-            }
-            NodeKind::CompoundStatement(nodes) => {
-                stack.extend(nodes.iter().rev());
-            }
-            NodeKind::For(for_stmt) => {
-                if let Some(init_node_ref) = for_stmt.init {
-                    let init_node = ast.get_node(init_node_ref);
-                    if let NodeKind::Declaration(_) = &init_node.kind {
-                        declarations.push(init_node_ref);
-                    }
-                }
-                if let Some(condition) = for_stmt.condition {
-                    stack.push(condition);
-                }
-                if let Some(increment) = for_stmt.increment {
-                    stack.push(increment);
-                }
-                stack.push(for_stmt.body);
-            }
-            NodeKind::If(if_stmt) => {
-                stack.push(if_stmt.condition);
-                stack.push(if_stmt.then_branch);
-                if let Some(else_branch) = if_stmt.else_branch {
-                    stack.push(else_branch);
-                }
-            }
-            NodeKind::While(while_stmt) => {
-                stack.push(while_stmt.condition);
-                stack.push(while_stmt.body);
-            }
-            NodeKind::DoWhile(body, condition) => {
-                stack.push(*body);
-                stack.push(*condition);
-            }
-            NodeKind::Switch(condition, body) => {
-                stack.push(*condition);
-                stack.push(*body);
-            }
-            NodeKind::Case(expr, stmt) => {
-                stack.push(*expr);
-                stack.push(*stmt);
-            }
-            NodeKind::CaseRange(start_expr, end_expr, stmt) => {
-                stack.push(*start_expr);
-                stack.push(*end_expr);
-                stack.push(*stmt);
-            }
-            NodeKind::Default(stmt) => {
-                stack.push(*stmt);
-            }
-            NodeKind::Label(_, stmt) => {
-                stack.push(*stmt);
-            }
-            NodeKind::BinaryOp(_, left, right) => {
-                stack.push(*left);
-                stack.push(*right);
-            }
-            NodeKind::Assignment(_, lhs, rhs) => {
-                stack.push(*lhs);
-                stack.push(*rhs);
-            }
-            NodeKind::FunctionCall(func, args) => {
-                stack.push(*func);
-                for arg in args {
-                    stack.push(*arg);
-                }
-            }
-            NodeKind::Return(Some(expr_ref)) => {
-                stack.push(*expr_ref);
-            }
-            NodeKind::UnaryOp(_, expr) => {
-                stack.push(*expr);
-            }
-            NodeKind::Cast(_, expr) => {
-                stack.push(*expr);
-            }
-            NodeKind::SizeOfExpr(expr) => {
-                stack.push(*expr);
-            }
-            NodeKind::TernaryOp(cond, then_expr, else_expr) => {
-                stack.push(*cond);
-                stack.push(*then_expr);
-                stack.push(*else_expr);
-            }
-            NodeKind::MemberAccess(obj, _, _) => {
-                stack.push(*obj);
-            }
-            NodeKind::IndexAccess(array, index) => {
-                stack.push(*array);
-                stack.push(*index);
-            }
-            NodeKind::TranslationUnit(nodes) => {
-                stack.extend(nodes.iter().rev());
-            }
-            NodeKind::ExpressionStatement(Some(expr_ref)) => {
-                stack.push(*expr_ref);
-            }
-            _ => {
-                // For other node types, we don't traverse further
+    match node_kind {
+        NodeKind::TranslationUnit(nodes) => {
+            for node in nodes {
+                lower_node_recursive(ctx, node);
             }
         }
-    }
+        NodeKind::FunctionDef(func_def) => {
+            // Function scope
+            ctx.symbol_table.push_scope(ScopeKind::Function);
+            // We search for the function declaration in the global scope to register it
+            // if it wasn't already. But usually lower_declaration handles it when
+            // called on the FunctionDef itself if it has a body.
 
-    declarations
+            // For now, just visit the body which is a CompoundStatement
+            lower_node_recursive(ctx, func_def.body);
+            ctx.symbol_table.pop_scope();
+        }
+        NodeKind::CompoundStatement(nodes) => {
+            ctx.symbol_table.push_scope(ScopeKind::Block);
+            for node in nodes {
+                lower_node_recursive(ctx, node);
+            }
+            ctx.symbol_table.pop_scope();
+        }
+        NodeKind::Declaration(_) => {
+            let semantic_nodes = lower_declaration(ctx, node_ref);
+
+            if !semantic_nodes.is_empty() {
+                if semantic_nodes.len() == 1 {
+                    // Single declarator case: replace the original declaration node with the semantic node
+                    let semantic_node_data = ctx.ast.get_node(semantic_nodes[0]).clone();
+                    ctx.ast.replace_node(node_ref, semantic_node_data);
+                } else {
+                    // Multi-declarator case: create a CompoundStatement containing all semantic nodes
+                    let original_node = ctx.ast.get_node(node_ref);
+                    let compound_node = Node::new(NodeKind::CompoundStatement(semantic_nodes), original_node.span);
+                    ctx.ast.replace_node(node_ref, compound_node);
+                }
+            }
+        }
+        NodeKind::For(for_stmt) => {
+            ctx.symbol_table.push_scope(ScopeKind::Block);
+            if let Some(init) = for_stmt.init {
+                lower_node_recursive(ctx, init);
+            }
+            if let Some(cond) = for_stmt.condition {
+                lower_node_recursive(ctx, cond);
+            }
+            if let Some(inc) = for_stmt.increment {
+                lower_node_recursive(ctx, inc);
+            }
+            lower_node_recursive(ctx, for_stmt.body);
+            ctx.symbol_table.pop_scope();
+        }
+        // Other nodes that might contain statements/declarations
+        NodeKind::If(if_stmt) => {
+            lower_node_recursive(ctx, if_stmt.then_branch);
+            if let Some(else_branch) = if_stmt.else_branch {
+                lower_node_recursive(ctx, else_branch);
+            }
+        }
+        NodeKind::While(while_stmt) => {
+            lower_node_recursive(ctx, while_stmt.body);
+        }
+        NodeKind::DoWhile(body, _) => {
+            lower_node_recursive(ctx, body);
+        }
+        NodeKind::Switch(_, body) => {
+            lower_node_recursive(ctx, body);
+        }
+        NodeKind::Label(_, stmt) => {
+            lower_node_recursive(ctx, stmt);
+        }
+        _ => {}
+    }
 }
 
 /// Lower declaration specifiers for struct members (simplified version)

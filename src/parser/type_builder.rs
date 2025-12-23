@@ -17,7 +17,7 @@ pub(crate) fn build_type_from_specifiers(
     specifiers: &ThinVec<DeclSpecifier>,
     declarator: Option<&Declarator>,
 ) -> Result<TypeRef, ParseError> {
-    let (base_kind, mut qualifiers) = specifiers_to_type_kind(specifiers);
+    let (base_kind, mut qualifiers) = specifiers_to_type_kind(parser, specifiers)?;
 
     let final_kind = if let Some(d) = declarator {
         apply_declarator_to_type(parser, base_kind, d)?
@@ -122,7 +122,10 @@ fn resolve_array_size(parser: &mut Parser, size: &ArraySize) -> ArraySizeType {
 }
 
 /// Convert a list of declaration specifiers into a base type kind and qualifiers.
-fn specifiers_to_type_kind(specifiers: &ThinVec<DeclSpecifier>) -> (TypeKind, TypeQualifiers) {
+fn specifiers_to_type_kind(
+    parser: &mut Parser,
+    specifiers: &ThinVec<DeclSpecifier>,
+) -> Result<(TypeKind, TypeQualifiers), ParseError> {
     let mut qualifiers = TypeQualifiers::empty();
     let mut long_count = 0;
     let mut signed_spec: Option<bool> = None;
@@ -141,6 +144,103 @@ fn specifiers_to_type_kind(specifiers: &ThinVec<DeclSpecifier>) -> (TypeKind, Ty
                 TypeSpecifier::Short => base_type = Some(TypeKind::Short { is_signed: true }),
                 TypeSpecifier::Signed => signed_spec = Some(true),
                 TypeSpecifier::Unsigned => signed_spec = Some(false),
+                TypeSpecifier::Record(is_union, tag, def) => {
+                    let is_union = *is_union;
+                    let tag = *tag;
+
+                    let (members, is_complete) = if let Some(def_data) = def {
+                        // We have a definition, convert members
+                        if let Some(decl_data_list) = &def_data.members {
+                            let mut struct_members = Vec::new();
+                            for decl in decl_data_list {
+                                // For each declaration, we might have multiple declarators
+                                // struct S { int a, *b; };
+
+                                // Base type for the declaration
+                                // We need to handle this carefully.
+                                // If init_declarators is empty, it might be an anonymous struct member or just a type specifier?
+
+                                if decl.init_declarators.is_empty() {
+                                    // Anonymous member or just a tag?
+                                    // Checks for anonymous struct/union members
+                                    // For now, we only support standard members with declarators
+                                    continue;
+                                }
+
+                                for init_decl in &decl.init_declarators {
+                                    let member_type = build_type_from_specifiers(
+                                        parser,
+                                        &decl.specifiers,
+                                        Some(&init_decl.declarator),
+                                    )?;
+
+                                    let name = parser
+                                        .get_declarator_name(&init_decl.declarator)
+                                        .unwrap_or_else(|| Symbol::from("<anon>")); // Should have name or handle bitfields/anon
+
+                                    // TODO: Handle bitfields
+
+                                    struct_members.push(StructMember {
+                                        name,
+                                        member_type,
+                                        bit_field_size: None,
+                                        location: crate::source_manager::SourceSpan::empty(), // TODO: Pass location
+                                    });
+                                }
+                            }
+                            (struct_members, true)
+                        } else {
+                            (Vec::new(), true) // Empty struct
+                        }
+                    } else {
+                        (Vec::new(), false) // Forward declaration
+                    };
+
+                    base_type = Some(TypeKind::Record {
+                        tag,
+                        members,
+                        is_complete,
+                        is_union,
+                    });
+                }
+                TypeSpecifier::Enum(_tag, _enumerators) => {
+                    // For now, treat Enum as Int
+                    // In a full implementation, we would create TypeKind::Enum
+                    base_type = Some(TypeKind::Int { is_signed: true });
+                }
+                TypeSpecifier::TypedefName(_name) => {
+                    // We need to resolve the typedef
+                    // But lookup logic might be in Semantics, not Parser
+                    // The parser has access to symbol table via Scope?
+                    // No, Parser struct doesn't have symbol table.
+                    // It constructs AST. Resolution happens in Semantics.
+                    // So we create TypeKind::Typedef
+                    // But TypeKind::Typedef needs aliased_type Ref.
+                    // We don't have it here.
+                    // So we just create a placeholder TypeKind::Typedef?
+                    // Or we return a "TypedefRef" type?
+
+                    // Semantic analysis should resolve Typedefs.
+                    // Here we just create a Type representing this typedef usage.
+                    // But TypeKind::Typedef definition is:
+                    // Typedef { name: Symbol, aliased_type: TypeRef }
+                    // We can't fill aliased_type yet.
+
+                    // Wait, TypeKind::Typedef seems to be the DEFINTION of a typedef.
+                    // Usage of a typedef should point to the underlying type?
+                    // Or we need a TypeKind::TypedefReference?
+
+                    // For now, let's treat it as Int (WRONG) or create a special handling?
+                    // The current TypeKind doesn't seem to have TypedefUsage.
+                    // Maybe 'Ident'?
+
+                    // Actually, the parser resolves typedefs by looking up if an identifier is a type name.
+                    // But here we are building the AST Type.
+
+                    // Let's assume for now we only fix structs.
+                    // TypedefName handling is complex if we don't have symbol table access.
+                    // But we are in `type_builder.rs`.
+                }
                 _ => { /* Unhandled for now */ }
             },
             DeclSpecifier::TypeQualifiers(q) => qualifiers.insert(*q),
@@ -183,7 +283,7 @@ fn specifiers_to_type_kind(specifiers: &ThinVec<DeclSpecifier>) -> (TypeKind, Ty
         }
         _ => base_type,
     };
-    (kind, qualifiers)
+    Ok((kind, qualifiers))
 }
 
 /// Recursively traverses a declarator to extract its qualifiers.

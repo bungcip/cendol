@@ -299,7 +299,7 @@ impl CompilerDriver {
                 Err(errors) => {
                     for error in errors {
                         self.diagnostics
-                            .report_error(crate::diagnostic::SemanticError::DeclarationError {
+                            .report_error(crate::diagnostic::SemanticError::InvalidOperands {
                                 message: format!("MIR validation failed: {}", error),
                                 location: crate::source_manager::SourceSpan::empty(),
                             });

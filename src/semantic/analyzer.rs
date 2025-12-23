@@ -231,7 +231,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 symbol
             }
             None => {
-                self.report_error(SemanticError::DeclarationError {
+                self.report_error(SemanticError::InvalidOperands {
                     message: "Invalid function declarator".to_string(),
                     location,
                 });
@@ -488,8 +488,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 }
                 Designator::GnuArrayRange(_start_expr, _end_expr) => {
                     // GNU extension: range designator [start ... end]
-                    self.report_error(SemanticError::DeclarationError {
-                        message: "GNU array range designator '[start ... end]' not yet implemented".to_string(),
+                    self.report_error(SemanticError::UnsupportedFeature {
+                        feature: "GNU array range designator '[start ... end]'".to_string(),
                         location,
                     });
                     return;
@@ -508,8 +508,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             }
             Initializer::List(_nested_inits) => {
                 // Nested compound initializer - for now, just report as unsupported
-                self.report_error(SemanticError::DeclarationError {
-                    message: "Nested compound initializers in designated initializers not yet implemented".to_string(),
+                self.report_error(SemanticError::UnsupportedFeature {
+                    feature: "Nested compound initializers in designated initializers".to_string(),
                     location,
                 });
             }
@@ -555,8 +555,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             }
             Initializer::List(_) => {
                 // Nested compound initializer - for now, just report as unsupported
-                self.report_error(SemanticError::DeclarationError {
-                    message: "Nested compound initializers not yet implemented".to_string(),
+                self.report_error(SemanticError::UnsupportedFeature {
+                    feature: "Nested compound initializers".to_string(),
                     location,
                 });
             }
@@ -1343,8 +1343,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             _ => {
                 // Left operand is not a valid lvalue - report error
                 let node_span = self.ast.get_node(expr_ref).span;
-                self.report_error(SemanticError::NotLValue {
-                    operation: "assignment operation requires lvalue".to_string(),
+                self.report_error(SemanticError::InvalidOperands {
+                    message: "assignment operation requires lvalue".to_string(),
                     location: node_span,
                 });
                 // Return a dummy operand to allow compilation to continue

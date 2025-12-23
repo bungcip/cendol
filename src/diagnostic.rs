@@ -37,14 +37,8 @@ pub enum ParseError {
     #[error("Syntax error: {message}")]
     SyntaxError { message: String, location: SourceSpan },
 
-    #[error("Invalid integer constant: {text}")]
-    InvalidIntegerConstant { text: String, location: SourceSpan },
-
-    #[error("Invalid float constant: {text}")]
-    InvalidFloatConstant { text: String, location: SourceSpan },
-
-    #[error("Invalid declarator")]
-    InvalidDeclarator { location: SourceSpan },
+    #[error("Invalid numeric constant: {text}")]
+    InvalidNumericConstant { text: String, location: SourceSpan },
 }
 
 /// Diagnostic engine for collecting and reporting semantic errors and warnings
@@ -79,6 +73,27 @@ impl DiagnosticEngine {
         }
     }
 
+    fn _report(&mut self, level: DiagnosticLevel, message: String, location: SourceSpan) {
+        if level == DiagnosticLevel::Warning && self.disable_all_warnings {
+            return;
+        }
+
+        let final_level = if level == DiagnosticLevel::Warning && self.warnings_as_errors {
+            DiagnosticLevel::Error
+        } else {
+            level
+        };
+
+        self.diagnostics.push(Diagnostic {
+            level: final_level,
+            message,
+            location,
+            code: None,
+            hints: Vec::new(),
+            related: Vec::new(),
+        });
+    }
+
     pub fn report_error(&mut self, error: SemanticError) {
         let (message, location) = match error {
             SemanticError::UndeclaredIdentifier { name, location } => {
@@ -98,29 +113,15 @@ impl DiagnosticEngine {
                 location,
             ),
             SemanticError::IncompleteType { name, location } => (format!("Incomplete type '{}'", name), location),
-            SemanticError::InvalidOperand { operation, location } => {
-                (format!("Invalid operand: {}", operation), location)
+            SemanticError::InvalidOperands { message, location } => (message, location),
+            SemanticError::UnsupportedFeature { feature, location } => {
+                (format!("Unsupported feature: {}", feature), location)
             }
-            SemanticError::NotLValue { operation, location } => (operation.to_string(), location),
-            SemanticError::DeclarationError { message, location } => (message.clone(), location),
-            SemanticError::InvalidOperands { message, location } => (message.clone(), location),
         };
-        let diag = Diagnostic {
-            level: DiagnosticLevel::Error,
-            message,
-            location,
-            code: None,
-            hints: Vec::new(),
-            related: Vec::new(),
-        };
-        self.diagnostics.push(diag);
+        self._report(DiagnosticLevel::Error, message, location);
     }
 
     pub fn report_warning(&mut self, warning: SemanticWarning) {
-        if self.disable_all_warnings {
-            return;
-        }
-
         let (message, location) = match warning {
             SemanticWarning::UnusedDeclaration { name, location } => {
                 (format!("Unused declaration '{}'", name), location)
@@ -140,20 +141,7 @@ impl DiagnosticEngine {
                 second_def,
             } => (format!("Redefinition of '{}'", name), second_def),
         };
-        let level = if self.warnings_as_errors {
-            DiagnosticLevel::Error
-        } else {
-            DiagnosticLevel::Warning
-        };
-        let diag = Diagnostic {
-            level,
-            message,
-            location,
-            code: None,
-            hints: Vec::new(),
-            related: Vec::new(),
-        };
-        self.diagnostics.push(diag);
+        self._report(DiagnosticLevel::Warning, message, location);
     }
 
     pub fn report_parse_error(&mut self, error: ParseError) {
@@ -171,35 +159,15 @@ impl DiagnosticEngine {
             ),
             ParseError::UnexpectedEof { location } => ("Unexpected End of File".to_string(), location),
             ParseError::SyntaxError { message, location } => (message, location),
-            ParseError::InvalidIntegerConstant { text, location } => {
-                (format!("Invalid integer constant: {}", text), location)
+            ParseError::InvalidNumericConstant { text, location } => {
+                (format!("Invalid numeric constant: {}", text), location)
             }
-            ParseError::InvalidFloatConstant { text, location } => {
-                (format!("Invalid float constant: {}", text), location)
-            }
-            ParseError::InvalidDeclarator { location } => ("Invalid declarator".to_string(), location),
         };
-        let diag = Diagnostic {
-            level: DiagnosticLevel::Error,
-            message,
-            location,
-            code: None,
-            hints: Vec::new(),
-            related: Vec::new(),
-        };
-        self.diagnostics.push(diag);
+        self._report(DiagnosticLevel::Error, message, location);
     }
 
     pub fn report_note(&mut self, message: String, location: SourceSpan) {
-        let diag = Diagnostic {
-            level: DiagnosticLevel::Note,
-            message,
-            location,
-            code: None,
-            hints: Vec::new(),
-            related: Vec::new(),
-        };
-        self.diagnostics.push(diag);
+        self._report(DiagnosticLevel::Note, message, location);
     }
 
     pub fn report_diagnostic(&mut self, diagnostic: Diagnostic) {
@@ -234,18 +202,10 @@ pub enum SemanticError {
     },
     #[error("Incomplete type '{name}'")]
     IncompleteType { name: Symbol, location: SourceSpan },
-    #[error("Invalid operand: {operation}")]
-    InvalidOperand { operation: String, location: SourceSpan },
-    #[error("Not lvalue: {operation}")]
-    NotLValue { operation: String, location: SourceSpan },
-
-    // Declaration and lowering errors
-    #[error("Declaration error: {message}")]
-    DeclarationError { message: String, location: SourceSpan },
-
-    // Operation errors
     #[error("Invalid operands: {message}")]
     InvalidOperands { message: String, location: SourceSpan },
+    #[error("Unsupported feature: {feature}")]
+    UnsupportedFeature { feature: String, location: SourceSpan },
 }
 
 /// Semantic warnings

@@ -79,6 +79,10 @@ impl<'a> MirDumper<'a> {
             writeln!(output)?;
         }
 
+        // Dump type definitions
+        self.dump_types(&mut output)?;
+        writeln!(output)?;
+
         // Dump global variables first
         if !self.module.globals.is_empty() {
             for &global_id in &self.module.globals {
@@ -169,6 +173,92 @@ impl<'a> MirDumper<'a> {
 
         writeln!(output, "}}")?;
         Ok(())
+    }
+
+    /// Dump all type definitions
+    fn dump_types(&self, output: &mut String) -> Result<(), std::fmt::Error> {
+        for (i, mir_type) in self.module.types.iter().enumerate() {
+            let type_id = TypeId::new((i + 1) as u32).unwrap();
+            let type_str = self.type_to_string_with_id(type_id, mir_type);
+            writeln!(output, "{}", type_str)?;
+        }
+        Ok(())
+    }
+
+    /// Convert MIR type to string representation with type ID
+    fn type_to_string_with_id(&self, type_id: TypeId, mir_type: &MirType) -> String {
+        let type_index = self.get_type_index_from_type_id(type_id);
+        let type_name = format!("%t{}", type_index);
+
+        match mir_type {
+            MirType::Void => format!("type {} = void", type_name),
+            MirType::Bool => format!("type {} = bool", type_name),
+            MirType::Int { is_signed, width } => {
+                let base_type = if *is_signed { "i" } else { "u" };
+                format!("type {} = {}{}", type_name, base_type, width)
+            }
+            MirType::Float { width } => format!("type {} = f{}", type_name, width),
+            MirType::Pointer { pointee } => {
+                let pointee_index = self.get_type_index_from_type_id(*pointee);
+                format!("type {} = ptr<%t{}>", type_name, pointee_index)
+            }
+            MirType::Array { element, size } => {
+                let elem_index = self.get_type_index_from_type_id(*element);
+                format!("type {} = [{}]%t{}", type_name, size, elem_index)
+            }
+            MirType::Function { return_type, params } => {
+                let ret_index = self.get_type_index_from_type_id(*return_type);
+                let param_types: Vec<String> = params
+                    .iter()
+                    .map(|&p| {
+                        let param_index = self.get_type_index_from_type_id(p);
+                        format!("%t{}", param_index)
+                    })
+                    .collect();
+                format!("type {} = fn({}) -> %t{}", type_name, param_types.join(", "), ret_index)
+            }
+            MirType::Struct { name, fields } => {
+                let field_strs: Vec<String> = fields
+                    .iter()
+                    .map(|(fname, fid)| {
+                        let field_index = self.get_type_index_from_type_id(*fid);
+                        format!("{}: %t{}", fname, field_index)
+                    })
+                    .collect();
+                format!("type {} = struct {} {{ {} }}", type_name, name, field_strs.join(", "))
+            }
+            MirType::Union { name, fields } => {
+                let field_strs: Vec<String> = fields
+                    .iter()
+                    .map(|(fname, fid)| {
+                        let field_index = self.get_type_index_from_type_id(*fid);
+                        format!("{}: %t{}", fname, field_index)
+                    })
+                    .collect();
+                format!("type {} = union {} {{ {} }}", type_name, name, field_strs.join(", "))
+            }
+            MirType::Enum { name, variants } => {
+                let variant_strs: Vec<String> = variants
+                    .iter()
+                    .map(|(vname, val)| format!("{} = {}", vname, val))
+                    .collect();
+                format!("type {} = enum {} {{ {} }}", type_name, name, variant_strs.join(", "))
+            }
+        }
+    }
+
+    /// Helper function to get type index from TypeId
+    fn get_type_index_from_type_id(&self, type_id: TypeId) -> usize {
+        // Find the index of this type in the module.types vector
+        for (index, _mir_type) in self.module.types.iter().enumerate() {
+            // Create a temporary TypeId for comparison
+            let temp_type_id = TypeId::new((index + 1) as u32).unwrap();
+            if temp_type_id == type_id {
+                return index;
+            }
+        }
+        // Fallback: assume sequential mapping
+        type_id.get() as usize - 1
     }
 
     /// Dump a global variable
@@ -267,6 +357,8 @@ impl<'a> MirDumper<'a> {
     /// Convert MIR type to string representation
     fn type_to_string(&self, type_id: TypeId) -> String {
         if let Some(mir_type) = self.types.get(&type_id) {
+            let type_index = self.get_type_index_from_type_id(type_id);
+
             match mir_type {
                 MirType::Void => "void".to_string(),
                 MirType::Bool => "bool".to_string(),
@@ -287,19 +379,13 @@ impl<'a> MirDumper<'a> {
                     let param_types: Vec<String> = params.iter().map(|&p| self.type_to_string(p)).collect();
                     format!("fn({}) -> {}", param_types.join(", "), ret_type)
                 }
-                MirType::Struct { name, fields } => {
-                    let field_strs: Vec<String> = fields
-                        .iter()
-                        .map(|(fname, fid)| format!("{}: {}", fname, self.type_to_string(*fid)))
-                        .collect();
-                    format!("struct {} {{ {} }}", name, field_strs.join(", "))
+                MirType::Struct { .. } => {
+                    // For aggregate types, use the type ID to keep output concise
+                    format!("%t{}", type_index)
                 }
-                MirType::Union { name, fields } => {
-                    let field_strs: Vec<String> = fields
-                        .iter()
-                        .map(|(fname, fid)| format!("{}: {}", fname, self.type_to_string(*fid)))
-                        .collect();
-                    format!("union {} {{ {} }}", name, field_strs.join(", "))
+                MirType::Union { .. } => {
+                    // For aggregate types, use the type ID to keep output concise
+                    format!("%t{}", type_index)
                 }
                 MirType::Enum { name, variants } => {
                     let variant_strs: Vec<String> = variants
@@ -371,8 +457,25 @@ impl<'a> MirDumper<'a> {
                 ConstValue::Bool(val) => format!("const {}", val),
                 ConstValue::Null => "const null".to_string(),
                 ConstValue::String(s) => format!("const \"{}\"", s),
-                ConstValue::StructLiteral(_) => format!("const struct_literal_{}", const_id.get()),
-                ConstValue::ArrayLiteral(_) => format!("const array_literal_{}", const_id.get()),
+                ConstValue::StructLiteral(fields) => {
+                    // Expand struct literal to show field contents
+                    let field_strs: Vec<String> = fields
+                        .iter()
+                        .map(|(field_idx, field_const_id)| {
+                            let field_const_str = self.const_to_string(*field_const_id);
+                            format!("{}: {}", field_idx, field_const_str)
+                        })
+                        .collect();
+                    format!("const struct_literal {{ {} }}", field_strs.join(", "))
+                }
+                ConstValue::ArrayLiteral(elements) => {
+                    // Expand array literal to show element contents
+                    let element_strs: Vec<String> = elements
+                        .iter()
+                        .map(|element_const_id| self.const_to_string(*element_const_id))
+                        .collect();
+                    format!("const array_literal [{}]", element_strs.join(", "))
+                }
             }
         } else {
             format!("const unknown_{}", const_id.get())

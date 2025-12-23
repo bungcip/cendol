@@ -563,6 +563,70 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         }
     }
 
+    /// Process compound initializers for global variables
+    fn process_global_compound_initializer(
+        &mut self,
+        initializer: &Initializer,
+        var_name: Symbol,
+        _var_type_id: TypeId,
+        location: SourceSpan,
+    ) -> Option<ConstValueId> {
+        debug!("Processing global compound initializer for variable '{}'", var_name);
+
+        match initializer {
+            Initializer::List(designated_initializers) => {
+                // Collect constant values for each field
+                let mut field_values = Vec::new();
+
+                // Process each positional initializer in the compound initializer
+                for (index, designated_init) in designated_initializers.iter().enumerate() {
+                    if designated_init.designation.is_empty() {
+                        // This is a positional initializer
+                        if let Initializer::Expression(expr_ref) = &designated_init.initializer {
+                            // Lower the initializer expression to get the constant value
+                            let init_operand = self.lower_expression(*expr_ref);
+
+                            if let Operand::Constant(const_id) = init_operand {
+                                debug!("Global compound initializer: field {} = constant {:?}", index, const_id);
+                                field_values.push((index, const_id));
+                            } else {
+                                // Non-constant expression in global initializer - report error
+                                self.report_error(SemanticError::UnsupportedFeature {
+                                    feature: "Non-constant expression in global initializer".to_string(),
+                                    location,
+                                });
+                                return None;
+                            }
+                        }
+                    } else {
+                        // Designated initializers are not yet supported for global variables
+                        self.report_error(SemanticError::UnsupportedFeature {
+                            feature: "Designated initializers for global variables not yet implemented".to_string(),
+                            location,
+                        });
+                        return None;
+                    }
+                }
+
+                // Create a struct literal constant value
+                let struct_literal = ConstValue::StructLiteral(field_values);
+                let struct_const_id = self.create_constant(struct_literal);
+
+                debug!(
+                    "Created struct literal constant {:?} for global variable '{}'",
+                    struct_const_id, var_name
+                );
+
+                Some(struct_const_id)
+            }
+            _ => {
+                // This should not happen as we only call this for compound initializers
+                debug!("Unexpected initializer type in process_global_compound_initializer");
+                None
+            }
+        }
+    }
+
     /// Lower a variable declaration (from semantic AST)
     fn lower_var_declaration(&mut self, var_decl: &VarDeclData, location: SourceSpan) {
         debug!("Lowering semantic var declaration for '{}'", var_decl.name);
@@ -580,6 +644,12 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
         // Canonicalize the variable's type (like Clang does)
         let canonical_type_id = self.canonicalize_type(var_decl.ty);
+        debug!(
+            "Canonicalized type for variable '{}': {} -> {}",
+            var_decl.name,
+            var_decl.ty.get(),
+            canonical_type_id.get()
+        );
 
         // Convert AST type to MIR type
         let mir_type_id = self.lower_type_to_mir(canonical_type_id);
@@ -604,7 +674,13 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                         }
                     }
                     _ => {
-                        todo!("For now, only handle simple expression initializers")
+                        // For compound initializers in global variables, we need to process them properly
+                        // This handles cases like: struct { int a; int b; int c; } s = {1, 2, 3};
+                        if let Some(struct_const_id) =
+                            self.process_global_compound_initializer(init, var_decl.name, mir_type_id, location)
+                        {
+                            initial_value_id = Some(struct_const_id);
+                        }
                     }
                 }
             }
@@ -687,18 +763,28 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
     /// Lower a typedef declaration
     fn lower_typedef_declaration(&mut self, typedef_decl: &TypedefDeclData, location: SourceSpan) {
-        // Check for redeclaration in current scope
+        // Check if typedef is already in symbol table (added during semantic lowering)
         if let Some((existing_entry, _)) = self.symbol_table.lookup_symbol(typedef_decl.name) {
             let existing = self.symbol_table.get_symbol_entry(existing_entry);
-            self.report_error(SemanticError::Redefinition {
-                name: typedef_decl.name,
-                first_def: existing.definition_span,
-                second_def: location,
-            });
-            return;
+            // If it's already a typedef with the same type, skip the redefinition error
+            if matches!(existing.kind, SymbolKind::Typedef { .. }) {
+                debug!(
+                    "Typedef '{}' already exists in symbol table, skipping duplicate",
+                    typedef_decl.name
+                );
+                return;
+            } else {
+                // Different symbol with same name - this is a real redefinition error
+                self.report_error(SemanticError::Redefinition {
+                    name: typedef_decl.name,
+                    first_def: existing.definition_span,
+                    second_def: location,
+                });
+                return;
+            }
         }
 
-        // Add typedef to symbol table
+        // Add typedef to symbol table (only if not already present)
         let symbol_entry = SymbolEntry {
             name: typedef_decl.name,
             kind: SymbolKind::Typedef {
@@ -753,12 +839,18 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                             // This is a global variable - find its MIR global ID
                             for (global_id, global) in self.mir_builder.get_globals() {
                                 if global.name == entry.name {
+                                    // Set the resolved type for this identifier
+                                    let current_node = self.ast.get_node(expr_ref);
+                                    current_node.resolved_type.set(Some(entry.type_info));
                                     return Operand::Copy(Box::new(Place::Global(*global_id)));
                                 }
                             }
                         } else {
                             // This is a local variable - look up the local in our local map
                             if let Some(local_id) = self.local_map.get(&entry.name) {
+                                // Set the resolved type for this identifier
+                                let current_node = self.ast.get_node(expr_ref);
+                                current_node.resolved_type.set(Some(entry.type_info));
                                 return Operand::Copy(Box::new(Place::Local(*local_id)));
                             }
                         }
@@ -768,12 +860,24 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 // Fallback: Check if it's a global variable by name
                 for (global_id, global) in self.mir_builder.get_globals() {
                     if global.name == name {
+                        // Try to find the type info from symbol table
+                        if let Some((entry_ref, _)) = self.symbol_table.lookup_symbol(name) {
+                            let entry = self.symbol_table.get_symbol_entry(entry_ref);
+                            let current_node = self.ast.get_node(expr_ref);
+                            current_node.resolved_type.set(Some(entry.type_info));
+                        }
                         return Operand::Copy(Box::new(Place::Global(*global_id)));
                     }
                 }
 
                 // Fallback to direct local map lookup
                 if let Some(local_id) = self.local_map.get(&name) {
+                    // Try to find the type info from symbol table
+                    if let Some((entry_ref, _)) = self.symbol_table.lookup_symbol(name) {
+                        let entry = self.symbol_table.get_symbol_entry(entry_ref);
+                        let current_node = self.ast.get_node(expr_ref);
+                        current_node.resolved_type.set(Some(entry.type_info));
+                    }
                     Operand::Copy(Box::new(Place::Local(*local_id)))
                 } else {
                     self.report_error(SemanticError::UndeclaredIdentifier {
@@ -957,12 +1061,58 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                     }
                     crate::ast::UnaryOp::PreIncrement | crate::ast::UnaryOp::PreDecrement => {
                         // Pre-increment and pre-decrement operations
-                        self.report_error(SemanticError::InvalidOperands {
-                            message: "Pre-increment and pre-decrement operations not yet implemented".to_string(),
-                            location: node_span,
-                        });
-                        let error_const = self.create_constant(ConstValue::Int(0));
-                        Operand::Constant(error_const)
+                        // These operations:
+                        // 1. Load the current value
+                        // 2. Perform increment/decrement
+                        // 3. Store result back to operand
+                        // 4. Return the new value
+
+                        // For pre-increment/decrement, the operand must be a place (lvalue)
+                        let operand_place = match &operand {
+                            Operand::Copy(place_box) => *place_box.clone(),
+                            _ => {
+                                // Operand is not a valid lvalue - report error
+                                self.report_error(SemanticError::UnsupportedFeature {
+                                    feature: "pre-increment/decrement operation requires lvalue".to_string(),
+                                    location: node_span,
+                                });
+                                let error_const = self.create_constant(ConstValue::Int(0));
+                                return Operand::Constant(error_const);
+                            }
+                        };
+
+                        // Create a temporary local to store the result
+                        let temp_type_id = self.get_int_type(); // For now, assume int type
+                        let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
+                        let temp_place = Place::Local(temp_local_id);
+
+                        // Step 1: Load current value into temp: temp = operand
+                        let load_rvalue = Rvalue::Use(operand.clone());
+                        let load_stmt = MirStmt::Assign(temp_place.clone(), load_rvalue);
+                        self.mir_builder.add_statement(load_stmt);
+
+                        // Step 2: Perform increment/decrement on temp
+                        let binary_op = match op {
+                            crate::ast::UnaryOp::PreIncrement => MirBinaryOp::Add,
+                            crate::ast::UnaryOp::PreDecrement => MirBinaryOp::Sub,
+                            _ => unreachable!(),
+                        };
+
+                        // Create constant 1 for the operation
+                        let one_const = self.create_constant(ConstValue::Int(1));
+                        let one_operand = Operand::Constant(one_const);
+
+                        // temp = temp +/- 1
+                        let increment_rvalue =
+                            Rvalue::BinaryOp(binary_op, Operand::Copy(Box::new(temp_place.clone())), one_operand);
+                        let increment_stmt = MirStmt::Assign(temp_place.clone(), increment_rvalue);
+                        self.mir_builder.add_statement(increment_stmt);
+
+                        // Step 3: Store result back to operand: operand = temp
+                        self.emit_assignment(operand_place, Operand::Copy(Box::new(temp_place.clone())), node_span);
+
+                        // Step 4: Return the temp (which contains the new value)
+                        Operand::Copy(Box::new(temp_place))
                     }
                 }
             }
@@ -1106,27 +1256,118 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                     object_place = temp_place;
                 }
 
-                // Look for the field in known struct types
-                let mut field_index = None;
-                for (_type_id, mir_type) in self.get_types() {
-                    if let crate::mir::MirType::Struct { fields, .. } | crate::mir::MirType::Union { fields, .. } =
-                        mir_type
-                    {
-                        for (idx, (name, _)) in fields.iter().enumerate() {
-                            if *name == field_name {
-                                field_index = Some(idx);
-                                break;
-                            }
+                // Get the type of the object being accessed
+                let object_node = self.ast.get_node(object_ref);
+                let mut object_type_ref = object_node.resolved_type.get().or_else(|| {
+                    // If type is not resolved, try to resolve it from the symbol table
+                    debug!("Type not pre-resolved for object, attempting to resolve from symbol table");
+
+                    // For identifiers, look up the symbol in the symbol table
+                    if let NodeKind::Ident(name, _) = &object_node.kind {
+                        debug!("Looking up symbol '{}' in symbol table", name);
+                        if let Some((entry_ref, scope_id)) = self.symbol_table.lookup_symbol(*name) {
+                            let entry = self.symbol_table.get_symbol_entry(entry_ref);
+                            debug!(
+                                "Found symbol '{}' in scope {} with type {:?}",
+                                name,
+                                scope_id.get(),
+                                entry.type_info
+                            );
+                            debug!("Symbol kind: {:?}", entry.kind);
+                            Some(entry.type_info)
+                        } else {
+                            debug!("Symbol '{}' not found in symbol table", name);
+                            debug!("Current scope: {}", self.symbol_table.current_scope().get());
+                            // List all symbols in current scope for debugging
+                            let current_scope = self.symbol_table.get_scope(self.symbol_table.current_scope());
+                            debug!(
+                                "Symbols in current scope: {:?}",
+                                current_scope.symbols.keys().collect::<Vec<_>>()
+                            );
+                            None
                         }
-                        if field_index.is_some() {
-                            break;
-                        }
+                    } else {
+                        // For complex expressions like nested MemberAccess, we need to resolve the type
+                        // by examining the structure of the expression
+                        debug!("Object is a complex expression, attempting to resolve type from expression structure");
+                        self.resolve_type_from_expression(object_ref)
+                    }
+                });
+
+                // For arrow access, if the object type is a pointer, we need to dereference it
+                // to get the actual struct type for field lookup
+                if is_arrow && let Some(type_ref) = object_type_ref {
+                    let object_ast_type = self.ast.get_type(type_ref);
+                    if let crate::ast::TypeKind::Pointer { pointee } = &object_ast_type.kind {
+                        // Canonicalize the pointee type to ensure it points to the complete struct definition
+                        let canonical_pointee = self.canonicalize_type(*pointee);
+                        object_type_ref = Some(canonical_pointee);
                     }
                 }
+
+                let Some(object_type_ref) = object_type_ref else {
+                    // Cannot resolve object type - report error
+                    let node_span = self.ast.get_node(expr_ref).span;
+                    self.report_error(SemanticError::UndeclaredIdentifier {
+                        name: field_name,
+                        location: node_span,
+                    });
+
+                    let error_const = self.create_constant(ConstValue::Int(0));
+                    return Operand::Constant(error_const);
+                };
+
+                debug!(
+                    "Looking for field '{}' in object type {:?}",
+                    field_name, object_type_ref
+                );
+
+                // Look for the field in the specific object type
+                let field_index = {
+                    let object_ast_type = self.ast.get_type(object_type_ref);
+
+                    // Handle both struct and union types
+                    match &object_ast_type.kind {
+                        crate::ast::TypeKind::Record { members, is_union, .. } => {
+                            debug!(
+                                "Searching for field '{}' in {} with {} members",
+                                field_name,
+                                if *is_union { "union" } else { "struct" },
+                                members.len()
+                            );
+
+                            // Debug: Print all member names for inspection
+                            for (i, member) in members.iter().enumerate() {
+                                debug!("Member {}: '{}'", i, member.name);
+                            }
+
+                            // Search for the field in the struct/union members
+                            members.iter().position(|member| member.name == field_name)
+                        }
+                        _ => {
+                            debug!("Object type is not a struct/union: {:?}", object_ast_type.kind);
+                            None
+                        }
+                    }
+                };
 
                 if let Some(field_idx) = field_index {
                     // Create the struct field place
                     let field_place = Place::StructField(Box::new(object_place), field_idx);
+
+                    // Set the resolved type for this MemberAccess node
+                    let field_type = {
+                        let object_ast_type = self.ast.get_type(object_type_ref);
+                        if let crate::ast::TypeKind::Record { members, .. } = &object_ast_type.kind {
+                            members[field_idx].member_type
+                        } else {
+                            self.get_int_type() // fallback
+                        }
+                    };
+
+                    // Update the resolved_type field of the current node
+                    let current_node = self.ast.get_node(expr_ref);
+                    current_node.resolved_type.set(Some(field_type));
 
                     // Return this as an operand that can be used as an lvalue
                     Operand::Copy(Box::new(field_place))
@@ -1506,8 +1747,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                     mir_fields.push((member.name, field_type_id));
                 }
 
-                let type_name = tag
-                    .unwrap_or_else(|| Symbol::new(format!("anonymous_{}", if is_union { "union" } else { "struct" })));
+                let type_name =
+                    tag.unwrap_or_else(|| Symbol::new(format!("anon_{}", if is_union { "union" } else { "struct" })));
                 debug!(
                     "Created MIR type for struct '{}' with {} fields",
                     type_name,
@@ -1681,10 +1922,11 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
     /// Canonicalize a type reference - resolve incomplete types to their complete definitions
     /// This is similar to how Clang handles type canonicalization
-    fn canonicalize_type(&self, type_ref: TypeRef) -> TypeRef {
-        let ast_type = self.ast.get_type(type_ref);
+    fn canonicalize_type(&mut self, type_ref: TypeRef) -> TypeRef {
+        // Clone the type to avoid borrow issues
+        let ast_type = self.ast.get_type(type_ref).clone();
 
-        match &ast_type.kind {
+        match ast_type.kind {
             crate::ast::TypeKind::Record {
                 tag,
                 members: _,
@@ -1692,7 +1934,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 ..
             } => {
                 // If the record is already complete, return the original type
-                if *is_complete {
+                if is_complete {
                     return type_ref;
                 }
 
@@ -1706,11 +1948,18 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                             is_complete: candidate_is_complete,
                             ..
                         } = &ast_type_candidate.kind
-                            && Some(tag_name) == candidate_tag.as_ref()
+                            && Some(tag_name) == *candidate_tag
                             && *candidate_is_complete
                             && !candidate_members.is_empty()
                         {
-                            return TypeRef::new((i + 1) as u32).unwrap();
+                            let complete_type_ref = TypeRef::new((i + 1) as u32).unwrap();
+                            debug!(
+                                "Found complete definition for {:?}, canonicalizing {} to {}",
+                                tag_name,
+                                type_ref.get(),
+                                complete_type_ref.get()
+                            );
+                            return complete_type_ref;
                         }
                     }
                 }
@@ -1718,6 +1967,46 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 // If no complete definition found, return the original type
                 debug!("No complete definition found for type, returning original");
                 type_ref
+            }
+            crate::ast::TypeKind::Pointer { pointee } => {
+                // For pointer types, canonicalize the pointee type
+                let canonical_pointee = self.canonicalize_type(pointee);
+                if canonical_pointee != pointee {
+                    // Create a new pointer type with the canonical pointee
+                    let canonical_pointer_type = crate::ast::Type::new(crate::ast::TypeKind::Pointer {
+                        pointee: canonical_pointee,
+                    });
+                    self.ast.push_type(canonical_pointer_type)
+                } else {
+                    // Even if pointee didn't change, we need to check if this pointer type
+                    // should be updated to point to a complete struct definition
+                    let pointee_ast_type = self.ast.get_type(pointee);
+                    if let crate::ast::TypeKind::Record { tag, .. } = &pointee_ast_type.kind
+                        && let Some(tag_name) = tag
+                    {
+                        // Look for a complete struct with the same tag
+                        for (i, complete_type_candidate) in self.ast.types.iter().enumerate() {
+                            if let crate::ast::TypeKind::Record {
+                                tag: candidate_tag,
+                                members: candidate_members,
+                                is_complete: candidate_is_complete,
+                                ..
+                            } = &complete_type_candidate.kind
+                                && Some(*tag_name) == *candidate_tag
+                                && *candidate_is_complete
+                                && !candidate_members.is_empty()
+                                && pointee.get() != (i + 1) as u32
+                            {
+                                let complete_struct_ref = crate::ast::TypeRef::new((i + 1) as u32).unwrap();
+                                let updated_pointer_type = crate::ast::Type::new(crate::ast::TypeKind::Pointer {
+                                    pointee: complete_struct_ref,
+                                });
+                                return self.ast.push_type(updated_pointer_type);
+                            }
+                        }
+                    }
+                    type_ref
+                }
             }
             _ => {
                 // For non-record types, return as-is
@@ -2173,6 +2462,70 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         // Create pointer to void
         let mir_type = crate::mir::MirType::Pointer { pointee: void_type };
         self.add_type(mir_type)
+    }
+
+    /// Resolve the type of a complex expression by examining its structure
+    fn resolve_type_from_expression(&self, expr_ref: NodeRef) -> Option<TypeRef> {
+        let node = self.ast.get_node(expr_ref);
+
+        match &node.kind {
+            NodeKind::MemberAccess(object_ref, field_name, is_arrow) => {
+                debug!(
+                    "Resolving type for MemberAccess expression: {} (is_arrow: {})",
+                    field_name, is_arrow
+                );
+
+                // First, resolve the type of the object
+                let object_type_ref = self.resolve_type_from_expression(*object_ref)?;
+
+                // For arrow access, we need to dereference the pointer to get the struct type
+                let dereferenced_type_ref = if *is_arrow {
+                    let object_ast_type = self.ast.get_type(object_type_ref);
+                    if let crate::ast::TypeKind::Pointer { pointee } = &object_ast_type.kind {
+                        debug!("Dereferencing pointer type to get struct type");
+                        *pointee
+                    } else {
+                        debug!("Arrow access on non-pointer type: {:?}", object_ast_type.kind);
+                        return None;
+                    }
+                } else {
+                    object_type_ref
+                };
+
+                // Look for the field in the struct/union type
+                let struct_ast_type = self.ast.get_type(dereferenced_type_ref);
+                if let crate::ast::TypeKind::Record { members, .. } = &struct_ast_type.kind {
+                    if let Some(field_index) = members.iter().position(|member| member.name == *field_name) {
+                        debug!("Found field '{}' at index {}", field_name, field_index);
+                        let field_type = members[field_index].member_type;
+
+                        // If this is arrow access, the result should be the field type directly
+                        // If this is dot access, the result should also be the field type directly
+                        Some(field_type)
+                    } else {
+                        debug!("Field '{}' not found in struct", field_name);
+                        None
+                    }
+                } else {
+                    debug!("Type is not a struct/union: {:?}", struct_ast_type.kind);
+                    None
+                }
+            }
+            NodeKind::Ident(name, symbol_ref) => {
+                // For simple identifiers, use the existing symbol table lookup
+                if let Some(resolved_ref) = symbol_ref.get() {
+                    let entry = self.symbol_table.get_symbol_entry(resolved_ref);
+                    debug!("Resolved identifier '{}' to type {:?}", name, entry.type_info);
+                    Some(entry.type_info)
+                } else {
+                    None
+                }
+            }
+            _ => {
+                debug!("Cannot resolve type for expression: {:?}", node.kind);
+                None
+            }
+        }
     }
 
     /// Map AST BinaryOp to MIR BinaryOp

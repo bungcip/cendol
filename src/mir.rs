@@ -485,8 +485,35 @@ impl MirBuilder {
     /// Add a type to the module with interning
     pub fn add_type(&mut self, mir_type: MirType) -> TypeId {
         // Check if type already exists (type interning)
+        // For struct types, we need to be careful about self-referential types
         for (existing_id, existing_type) in &self.types {
-            if existing_type == &mir_type {
+            // Special handling for struct types to avoid self-referential issues
+            if let (
+                MirType::Struct {
+                    name: struct_name,
+                    fields: struct_fields,
+                },
+                MirType::Struct {
+                    name: existing_struct_name,
+                    fields: existing_struct_fields,
+                },
+            ) = (&mir_type, existing_type)
+            {
+                // Only intern struct types if they have the same name and field structure
+                // but avoid interning if it would create self-referential types
+                if struct_name == existing_struct_name && struct_fields.len() == existing_struct_fields.len() {
+                    let fields_match = struct_fields.iter().zip(existing_struct_fields.iter()).all(
+                        |((field_name, field_type), (existing_field_name, existing_field_type))| {
+                            field_name == existing_field_name && field_type == existing_field_type
+                        },
+                    );
+                    if fields_match {
+                        return *existing_id;
+                    }
+                }
+            }
+            // For non-struct types, use normal equality comparison
+            else if existing_type == &mir_type {
                 return *existing_id;
             }
         }
@@ -519,30 +546,10 @@ impl MirBuilder {
 
     /// Finalize the module by updating all references
     pub fn finalize_module(&mut self) -> MirModule {
-        // Update module with all collected data
-        let mut final_module = MirModule::new(self.module.id);
-
-        // Copy functions
-        for func_id in self.functions.keys() {
-            final_module.functions.push(*func_id);
-        }
-
-        // Copy globals
-        for global_id in self.globals.keys() {
-            final_module.globals.push(*global_id);
-        }
-
-        // Copy types
-        for mir_type in self.types.values() {
-            final_module.types.push(mir_type.clone());
-        }
-
-        // Copy constants
-        for const_value in self.constants.values() {
-            final_module.constants.push(const_value.clone());
-        }
-
-        final_module
+        // Return the accumulated module directly
+        // This preserves the insertion order of types and constants,
+        // which is crucial for maintaining correct ID-to-index mapping
+        self.module.clone()
     }
 
     /// Get all functions for validation

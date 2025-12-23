@@ -650,6 +650,11 @@ impl Ast {
         &self.nodes[(index.get() - 1) as usize]
     }
 
+    /// Get a mutable node by its reference
+    pub fn get_node_mut(&mut self, index: NodeRef) -> &mut Node {
+        &mut self.nodes[(index.get() - 1) as usize]
+    }
+
     /// Add a type to the AST and return its reference
     pub fn push_type(&mut self, ty: Type) -> TypeRef {
         let index = self.types.len() as u32 + 1;

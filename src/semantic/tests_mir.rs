@@ -30,6 +30,8 @@ mod tests {
 
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = i32
+
         fn main() -> i32
         {
           locals {
@@ -64,6 +66,8 @@ mod tests {
 
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = i32
+
         fn main() -> i32
         {
           locals {
@@ -88,6 +92,8 @@ mod tests {
 
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = i32
+
         global @result: i32 = const 99
 
         fn main() -> i32
@@ -116,7 +122,9 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @"
+        insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = i32
+
         fn main() -> i32
         {
           locals {
@@ -129,6 +137,41 @@ mod tests {
             return const 1
 
           bb3:
+            return const 0
+        }
+        ");
+    }
+
+    #[test]
+    fn test_struct_type_regression() {
+        let source = r#"
+            struct { int a; int b; int c; } s = {1, 2, 3};
+            int main() {
+                if (s.a != 1) return 1;
+                return 0;
+            }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        // We want to ensure %t0 is i32 and %t1 is struct using %t0
+        // and NOT that %t0 is struct using %t0
+        insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = i32
+        type %t1 = struct anon_struct { a: %t0, b: %t0, c: %t0 }
+
+        global @s: %t1 = const struct_literal { 0: const 1, 1: const 2, 2: const 3 }
+
+        fn main() -> i32
+        {
+          locals {
+            %1: i32
+          }
+
+          bb1:
+            %1 = @s.field_0 != const 1
+            cond_br %1, bb2, bb2
+
+          bb2:
             return const 0
         }
         ");

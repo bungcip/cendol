@@ -207,6 +207,160 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
         TypeSpecifier::Record(is_union, tag, definition) => {
             // Properly handle struct/union types with their member declarations
             debug!("Processing record definition: {:?}", definition);
+
+            // Check if we already have a struct type with this tag
+            let existing_type_ref = tag.and_then(|tag_name| {
+                // Search for existing struct/union type with the same tag
+                for (i, existing_type) in ctx.ast.types.iter().enumerate() {
+                    if let TypeKind::Record { tag: existing_tag, .. } = &existing_type.kind
+                        && existing_tag == &Some(tag_name)
+                    {
+                        return Some(TypeRef::new((i + 1) as u32).unwrap());
+                    }
+                }
+                None
+            });
+
+            // For self-referential structs, if we don't find an existing one but have a definition,
+            // create a forward reference first
+            let forward_ref = if existing_type_ref.is_none() && tag.is_some() && definition.is_some() {
+                let forward_type = Type::new(TypeKind::Record {
+                    tag: *tag,
+                    members: Vec::new(),
+                    is_complete: false,
+                    is_union: *is_union,
+                });
+                Some(ctx.ast.push_type(forward_type))
+            } else {
+                None
+            };
+
+            // Use the forward reference if we created one, otherwise use the existing reference
+            let type_ref_to_update = existing_type_ref.or(forward_ref);
+
+            if let Some(existing_ref) = type_ref_to_update {
+                // For self-referential structs, check if we need to update with members
+                let existing_type = ctx.ast.get_type(existing_ref);
+                if let TypeKind::Record {
+                    is_complete: existing_complete,
+                    ..
+                } = &existing_type.kind
+                    && !existing_complete
+                    && definition.is_some()
+                {
+                    debug!("Updating incomplete struct type with tag {:?} with members", tag);
+                    // Create new type with members
+                    let members = definition
+                            .as_ref()
+                            .and_then(|def| def.members.as_ref())
+                            .map(|decls| {
+                                debug!("Found {} member declarations", decls.len());
+                                // Convert each struct member declaration to StructMember
+                                let mut struct_members = Vec::new();
+                                for (i, decl) in decls.iter().enumerate() {
+                                    debug!("Processing member declaration {}: {:?}", i, decl);
+
+                                    // Check if this is an anonymous struct/union declaration (no init_declarators)
+                                    if decl.init_declarators.is_empty() {
+                                        debug!("Found declaration with no init_declarators, checking for anonymous struct/union");
+                                        if let Some((is_union, _, definition)) = decl.specifiers.iter().find_map(|spec| {
+                                                if let DeclSpecifier::TypeSpecifier(TypeSpecifier::Record(is_union, tag, definition)) = spec {
+                                                    Some((is_union, tag, definition))
+                                                } else {
+                                                    None
+                                                }
+                                            }) {
+                                            debug!("Processing anonymous {} with definition", if *is_union { "union" } else { "struct" });
+                                            // Recursively process the anonymous struct/union members
+                                            if let Some(def) = definition
+                                                && let Some(member_decls) = &def.members {
+                                                    let anonymous_members = process_anonymous_struct_members(
+                                                        member_decls, *is_union, ctx, span
+                                                    );
+                                                    struct_members.extend(anonymous_members);
+                                                }
+                                            continue; // Skip the normal processing for anonymous structs
+                                        }
+                                    }
+
+                                    // Process each declarator in the member declaration
+                                    for (j, init_declarator) in decl.init_declarators.iter().enumerate() {
+                                        debug!("Processing declarator {}: {:?}", j, init_declarator);
+                                        // Extract the member name and type
+                                        if let Some(member_name) = extract_identifier(&init_declarator.declarator) {
+                                            debug!("Found member name: {}", member_name);
+                                            // Get the member type from declaration specifiers
+                                            let member_type = if let Some(base_type_ref) =
+                                                lower_decl_specifiers_for_member(&decl.specifiers, ctx, span)
+                                            {
+                                                // Apply the declarator to get the final member type
+                                                let member_type_with_declarator =
+                                                    apply_declarator_for_member(base_type_ref, &init_declarator.declarator, ctx);
+                                                ctx.ast.push_type(member_type_with_declarator)
+                                            } else {
+                                                debug!("Failed to get base type, defaulting to int");
+                                                // Default to int if type resolution fails
+                                                ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true }))
+                                            };
+
+                                            struct_members.push(StructMember {
+                                                name: member_name,
+                                                member_type,
+                                                bit_field_size: None,
+                                                location: span,
+                                            });
+                                        } else {
+                                            debug!("Failed to extract member name from declarator");
+                                        }
+                                    }
+                                }
+                                debug!("Created {} struct members", struct_members.len());
+                                struct_members
+                            })
+                            .unwrap_or_default();
+
+                    // Replace the existing type with the complete version
+                    let complete_type = Type::new(TypeKind::Record {
+                        tag: *tag,
+                        members,
+                        is_complete: true,
+                        is_union: *is_union,
+                    });
+
+                    // Update the type in the AST
+                    let type_index = (existing_ref.get() - 1) as usize;
+                    debug!(
+                        "Replacing incomplete struct type {} with complete version",
+                        existing_ref.get()
+                    );
+                    ctx.ast.types[type_index] = complete_type;
+
+                    // Update all pointer types that reference this struct to point to the complete version
+                    debug!(
+                        "Updating all pointer types that reference struct {}",
+                        existing_ref.get()
+                    );
+                    for (i, ast_type) in ctx.ast.types.iter_mut().enumerate() {
+                        if let TypeKind::Pointer { pointee } = &mut ast_type.kind
+                            && pointee.get() == existing_ref.get()
+                        {
+                            debug!("Updating pointer type at index {} to point to complete struct", i + 1);
+                            *pointee = existing_ref;
+                        }
+                    }
+                }
+
+                // Always return the existing struct reference
+                debug!(
+                    "Returning existing struct reference {} for tag {:?}",
+                    existing_ref.get(),
+                    tag
+                );
+                return Ok(existing_ref);
+            } else {
+                debug!("No existing type reference to update");
+            }
+
             let members = definition
                 .as_ref()
                 .and_then(|def| def.members.as_ref())
@@ -216,6 +370,35 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     let mut struct_members = Vec::new();
                     for (i, decl) in decls.iter().enumerate() {
                         debug!("Processing member declaration {}: {:?}", i, decl);
+
+                        // Check if this is an anonymous struct/union declaration (no init_declarators)
+                        if decl.init_declarators.is_empty() {
+                            debug!("Found declaration with no init_declarators, checking for anonymous struct/union");
+                            if let Some((is_union, _, definition)) = decl.specifiers.iter().find_map(|spec| {
+                                if let DeclSpecifier::TypeSpecifier(TypeSpecifier::Record(is_union, tag, definition)) =
+                                    spec
+                                {
+                                    Some((is_union, tag, definition))
+                                } else {
+                                    None
+                                }
+                            }) {
+                                debug!(
+                                    "Processing anonymous {} with definition",
+                                    if *is_union { "union" } else { "struct" }
+                                );
+                                // Recursively process the anonymous struct/union members
+                                if let Some(def) = definition
+                                    && let Some(member_decls) = &def.members
+                                {
+                                    let anonymous_members =
+                                        process_anonymous_struct_members(member_decls, *is_union, ctx, span);
+                                    struct_members.extend(anonymous_members);
+                                }
+                                continue; // Skip the normal processing for anonymous structs
+                            }
+                        }
+
                         // Process each declarator in the member declaration
                         for (j, init_declarator) in decl.init_declarators.iter().enumerate() {
                             debug!("Processing declarator {}: {:?}", j, init_declarator);
@@ -252,12 +435,19 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                 })
                 .unwrap_or_default();
 
-            Ok(ctx.ast.push_type(Type::new(TypeKind::Record {
+            let final_type_ref = ctx.ast.push_type(Type::new(TypeKind::Record {
                 tag: *tag,
                 members,
                 is_complete: definition.is_some(),
                 is_union: *is_union,
-            })))
+            }));
+            debug!(
+                "Created new struct type with tag {:?}, is_complete: {}, type_ref: {}",
+                tag,
+                definition.is_some(),
+                final_type_ref.get()
+            );
+            Ok(final_type_ref)
         }
         TypeSpecifier::Enum(tag, enumerators) => {
             // TODO: Handle enum types properly
@@ -307,27 +497,53 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
         }
         TypeSpecifier::TypedefName(name) => {
             // Lookup typedef in symbol table
-            if let Some((entry_ref, _)) = ctx.symbol_table.lookup_symbol(*name) {
+            debug!("Resolving typedef name: {}", name);
+            if let Some((entry_ref, scope_id)) = ctx.symbol_table.lookup_symbol(*name) {
                 let entry = ctx.symbol_table.get_symbol_entry(entry_ref);
+                debug!(
+                    "Found typedef '{}' in scope {} with aliased type {:?}",
+                    name,
+                    scope_id.get(),
+                    entry.type_info
+                );
                 if let SymbolKind::Typedef { aliased_type } = entry.kind {
                     Ok(aliased_type)
                 } else {
+                    debug!("Symbol '{}' is not a typedef", name);
                     Err(SemanticError::IncompleteType {
                         name: *name,
                         location: span,
                     })
                 }
             } else {
+                debug!(
+                    "Typedef '{}' not found during semantic lowering - creating forward reference",
+                    name
+                );
+                // List all symbols in current scope for debugging
+                let current_scope = ctx.symbol_table.get_scope(ctx.current_scope);
+                debug!(
+                    "Current scope symbols: {:?}",
+                    current_scope.symbols.keys().collect::<Vec<_>>()
+                );
                 // Typedef not found during semantic lowering - this is expected
                 // when typedefs are defined later in the same scope.
-                // Create a placeholder type that will be resolved during semantic analysis.
-                let placeholder_type = Type {
-                    kind: TypeKind::Error, // Use Error type as placeholder
+                // Create a forward reference that will be resolved during semantic analysis.
+                // For now, create a placeholder record type with the expected structure.
+                // This is a temporary solution - in a full implementation, we'd have a proper
+                // forward reference mechanism.
+                let forward_ref_type = Type {
+                    kind: TypeKind::Record {
+                        tag: Some(*name),    // Use typedef name as tag for lookup
+                        members: Vec::new(), // Unknown at this point
+                        is_complete: false,  // Mark as incomplete
+                        is_union: false,
+                    },
                     qualifiers: TypeQualifiers::empty(),
                     size: None,
                     alignment: None,
                 };
-                Ok(ctx.ast.push_type(placeholder_type))
+                Ok(ctx.ast.push_type(forward_ref_type))
             }
         }
     }
@@ -451,6 +667,13 @@ fn lower_type_definition(specifiers: &[DeclSpecifier], ctx: &mut LowerCtx, span:
 
 /// Process an init-declarator into a semantic node
 fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDeclarator, span: SourceSpan) -> NodeRef {
+    debug!(
+        "Processing init-declarator for name {:?}",
+        extract_identifier(&init.declarator)
+    );
+    debug!("Base type from spec: {:?}", spec.base_type);
+    debug!("Is typedef: {}", spec.is_typedef);
+
     // 1. Resolve final type (base + declarator)
     let base_ty = spec.base_type.unwrap_or_else(|| {
         ctx.report_error(SemanticError::InvalidOperands {
@@ -467,14 +690,53 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
         ctx.ast.push_type(error_type)
     });
 
-    let ty = apply_declarator(base_ty, &init.declarator, ctx);
-    let final_ty = ctx.ast.push_type(ty);
     let name = extract_identifier(&init.declarator).expect("Anonymous declarations unsupported");
+
+    // For simple identifiers without qualifiers, don't create a new type entry
+    let final_ty = if let Declarator::Identifier(_, qualifiers, None) = &init.declarator {
+        if qualifiers.is_empty() {
+            // Simple case: just use the base type directly
+            debug!("Using base type directly for simple identifier '{}'", name);
+            base_ty
+        } else {
+            // Has qualifiers, need to apply declarator
+            let ty = apply_declarator(base_ty, &init.declarator, ctx);
+            ctx.ast.push_type(ty)
+        }
+    } else {
+        // Complex case: apply declarator transformations and create new type
+        let ty = apply_declarator(base_ty, &init.declarator, ctx);
+        ctx.ast.push_type(ty)
+    };
+
+    debug!("Final type for '{}': {:?}", name, final_ty);
 
     // 2. Handle typedefs
     if spec.is_typedef {
+        debug!("Creating typedef for name '{}' with type {:?}", name, final_ty);
         let typedef_decl = TypedefDeclData { name, ty: final_ty };
-        return ctx.ast.push_node(Node::new(NodeKind::TypedefDecl(typedef_decl), span));
+        let typedef_node = ctx.ast.push_node(Node::new(NodeKind::TypedefDecl(typedef_decl), span));
+
+        // Add typedef to symbol table to resolve forward references
+        let symbol_entry = crate::ast::SymbolEntry {
+            name: name.as_str().into(),
+            kind: crate::ast::SymbolKind::Typedef { aliased_type: final_ty },
+            type_info: final_ty,
+            storage_class: Some(StorageClass::Typedef),
+            scope_id: ctx.current_scope.get(),
+            definition_span: span,
+            is_defined: true,
+            is_referenced: false,
+            is_completed: true,
+        };
+
+        let entry_ref = ctx.symbol_table.add_symbol(name, symbol_entry);
+        debug!(
+            "Added typedef '{}' to symbol table with entry ref {:?}",
+            name, entry_ref
+        );
+
+        return typedef_node;
     }
 
     // 3. Distinguish between functions and variables
@@ -508,13 +770,18 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
                 ctx.ast.get_type(base_type).clone()
             };
 
+            let pointee_type_ref = ctx.ast.push_type(pointee_type);
             let mut pointer_type = Type::new(TypeKind::Pointer {
-                pointee: ctx.ast.push_type(pointee_type),
+                pointee: pointee_type_ref,
             });
             pointer_type.qualifiers = *qualifiers;
             pointer_type
         }
         Declarator::Identifier(_, qualifiers, _) => {
+            debug!(
+                "apply_declarator: Identifier with base_type {:?}, qualifiers {:?}",
+                base_type, qualifiers
+            );
             let mut ty = ctx.ast.get_type(base_type).clone();
             ty.qualifiers |= *qualifiers;
             ty
@@ -815,4 +1082,81 @@ fn apply_declarator_for_member(base_type: TypeRef, declarator: &Declarator, ctx:
         // For other declarator types, just return the base type
         _ => ctx.ast.get_type(base_type).clone(),
     }
+}
+
+/// Process anonymous struct/union members by flattening them into the containing struct
+fn process_anonymous_struct_members(
+    member_decls: &[DeclarationData],
+    is_union: bool,
+    ctx: &mut LowerCtx,
+    span: SourceSpan,
+) -> Vec<StructMember> {
+    let mut flattened_members = Vec::new();
+
+    debug!(
+        "Processing anonymous {} with {} member declarations",
+        if is_union { "union" } else { "struct" },
+        member_decls.len()
+    );
+
+    for (i, decl) in member_decls.iter().enumerate() {
+        debug!("Processing anonymous member declaration {}: {:?}", i, decl);
+
+        // Check if this is a nested anonymous struct/union
+        let is_nested_anonymous = decl.specifiers.len() == 1
+            && decl.specifiers.iter().any(|spec| {
+                matches!(
+                    spec,
+                    DeclSpecifier::TypeSpecifier(TypeSpecifier::Record(_, None, Some(_)))
+                )
+            });
+
+        if is_nested_anonymous {
+            // This is a nested anonymous struct/union - recursively flatten its members
+            if let Some((nested_is_union, _, Some(definition))) = decl.specifiers.iter().find_map(|spec| {
+                if let DeclSpecifier::TypeSpecifier(TypeSpecifier::Record(is_union, tag, definition)) = spec {
+                    Some((is_union, tag, definition))
+                } else {
+                    None
+                }
+            }) {
+                debug!("Found nested anonymous struct/union, recursing");
+                if let Some(nested_decls) = &definition.members {
+                    let nested_members = process_anonymous_struct_members(nested_decls, *nested_is_union, ctx, span);
+                    flattened_members.extend(nested_members);
+                }
+            }
+        } else {
+            // This is a regular member - process it normally
+            for init_declarator in &decl.init_declarators {
+                if let Some(member_name) = extract_identifier(&init_declarator.declarator) {
+                    debug!("Found anonymous member name: {}", member_name);
+
+                    // Get the member type from declaration specifiers
+                    let member_type =
+                        if let Some(base_type_ref) = lower_decl_specifiers_for_member(&decl.specifiers, ctx, span) {
+                            // Apply the declarator to get the final member type
+                            let member_type_with_declarator =
+                                apply_declarator_for_member(base_type_ref, &init_declarator.declarator, ctx);
+                            ctx.ast.push_type(member_type_with_declarator)
+                        } else {
+                            debug!("Failed to get base type for anonymous member, defaulting to int");
+                            ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true }))
+                        };
+
+                    flattened_members.push(StructMember {
+                        name: member_name,
+                        member_type,
+                        bit_field_size: None,
+                        location: span,
+                    });
+                } else {
+                    debug!("Failed to extract member name from anonymous struct member");
+                }
+            }
+        }
+    }
+
+    debug!("Flattened {} anonymous members", flattened_members.len());
+    flattened_members
 }

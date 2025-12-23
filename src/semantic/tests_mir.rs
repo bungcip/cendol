@@ -176,4 +176,32 @@ mod tests {
         }
         ");
     }
+
+    #[test]
+    fn test_designated_initializer_global() {
+        let source = r#"
+            struct S { int a; int b; };
+            struct S s = { .b = 2, .a = 1 };
+            int main() {
+                return 0;
+            }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = i32
+        type %t1 = struct S { a: %t0, b: %t0 }
+
+        global @s: %t1 = const struct_literal { 0: const 1, 1: const 2 }
+
+        fn main() -> i32
+        {
+          locals {
+          }
+
+          bb1:
+            return const 0
+        }
+        ");
+    }
 }

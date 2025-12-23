@@ -575,38 +575,96 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
         match initializer {
             Initializer::List(designated_initializers) => {
-                // Collect constant values for each field
-                let mut field_values = Vec::new();
+                // Collect constant values for fields
+                // We use a map to handle out-of-order and designated initializers
+                // Key is the field index
+                let mut field_values_map: HashMap<usize, ConstValueId> = HashMap::new();
 
-                // Process each positional initializer in the compound initializer
-                for (index, designated_init) in designated_initializers.iter().enumerate() {
-                    if designated_init.designation.is_empty() {
-                        // This is a positional initializer
-                        if let Initializer::Expression(expr_ref) = &designated_init.initializer {
-                            // Lower the initializer expression to get the constant value
-                            let init_operand = self.lower_expression(*expr_ref);
+                // Track current index for positional initializers
+                let mut current_index = 0;
 
-                            if let Operand::Constant(const_id) = init_operand {
-                                debug!("Global compound initializer: field {} = constant {:?}", index, const_id);
-                                field_values.push((index, const_id));
-                            } else {
-                                // Non-constant expression in global initializer - report error
+                // Process each initializer in the compound initializer
+                for designated_init in designated_initializers {
+                    // Determine the target field index
+                    let target_index = if designated_init.designation.is_empty() {
+                        // Positional initializer
+                        let index = current_index;
+                        current_index += 1;
+                        index
+                    } else {
+                        // Designated initializer
+                        // We only support single-level designation for now (e.g., .a = 1)
+                        // Nested designation (e.g., .a.b = 1) is not supported for globals yet
+
+                        if designated_init.designation.len() > 1 {
+                            self.report_error(SemanticError::UnsupportedFeature {
+                                feature: "Nested designators in global initializers".to_string(),
+                                location,
+                            });
+                            return None;
+                        }
+
+                        match &designated_init.designation[0] {
+                            Designator::FieldName(name) => {
+                                if let Some(index) = self.find_struct_field(_var_type_id, *name) {
+                                    // Update current index to the next field after this one
+                                    current_index = index + 1;
+                                    index
+                                } else {
+                                    self.report_error(SemanticError::UndeclaredIdentifier { name: *name, location });
+                                    return None;
+                                }
+                            }
+                            Designator::ArrayIndex(_) => {
                                 self.report_error(SemanticError::UnsupportedFeature {
-                                    feature: "Non-constant expression in global initializer".to_string(),
+                                    feature: "Array index designators in global initializers".to_string(),
+                                    location,
+                                });
+                                return None;
+                            }
+                            Designator::GnuArrayRange(_, _) => {
+                                self.report_error(SemanticError::UnsupportedFeature {
+                                    feature: "GNU array range designators in global initializers".to_string(),
                                     location,
                                 });
                                 return None;
                             }
                         }
+                    };
+
+                    // Process the initializer value
+                    if let Initializer::Expression(expr_ref) = &designated_init.initializer {
+                        // Lower the initializer expression to get the constant value
+                        let init_operand = self.lower_expression(*expr_ref);
+
+                        if let Operand::Constant(const_id) = init_operand {
+                            debug!(
+                                "Global compound initializer: field {} = constant {:?}",
+                                target_index, const_id
+                            );
+                            field_values_map.insert(target_index, const_id);
+                        } else {
+                            // Non-constant expression in global initializer - report error
+                            self.report_error(SemanticError::UnsupportedFeature {
+                                feature: "Non-constant expression in global initializer".to_string(),
+                                location,
+                            });
+                            return None;
+                        }
                     } else {
-                        // Designated initializers are not yet supported for global variables
+                        // Nested compound literal
+                        // TODO: Support nested Struct/Array literals
                         self.report_error(SemanticError::UnsupportedFeature {
-                            feature: "Designated initializers for global variables not yet implemented".to_string(),
+                            feature: "Nested compound initializers for globals".to_string(),
                             location,
                         });
                         return None;
                     }
                 }
+
+                // Convert map to vector of (index, value) pairs, sorted by index
+                let mut field_values: Vec<(usize, ConstValueId)> = field_values_map.into_iter().collect();
+                field_values.sort_by_key(|(idx, _)| *idx);
 
                 // Create a struct literal constant value
                 let struct_literal = ConstValue::StructLiteral(field_values);

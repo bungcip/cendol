@@ -261,6 +261,8 @@ pub enum ConstValue {
     // Aggregate constants
     StructLiteral(Vec<(usize, ConstValueId)>),
     ArrayLiteral(Vec<ConstValueId>),
+    // Address constants
+    GlobalAddress(GlobalId),
 }
 
 /// Local - Represents a local variable or parameter
@@ -719,6 +721,7 @@ impl fmt::Display for ConstValue {
             ConstValue::String(val) => write!(f, "\"{}\"", val),
             ConstValue::StructLiteral(fields) => write!(f, "StructLiteral({:?})", fields),
             ConstValue::ArrayLiteral(elements) => write!(f, "ArrayLiteral({:?})", elements),
+            ConstValue::GlobalAddress(global_id) => write!(f, "GlobalAddress({})", global_id.get()),
         }
     }
 }

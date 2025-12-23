@@ -637,19 +637,39 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                         // Lower the initializer expression to get the constant value
                         let init_operand = self.lower_expression(*expr_ref);
 
-                        if let Operand::Constant(const_id) = init_operand {
-                            debug!(
-                                "Global compound initializer: field {} = constant {:?}",
-                                target_index, const_id
-                            );
-                            field_values_map.insert(target_index, const_id);
-                        } else {
-                            // Non-constant expression in global initializer - report error
-                            self.report_error(SemanticError::UnsupportedFeature {
-                                feature: "Non-constant expression in global initializer".to_string(),
-                                location,
-                            });
-                            return None;
+                        match init_operand {
+                            Operand::Constant(const_id) => {
+                                debug!(
+                                    "Global compound initializer: field {} = constant {:?}",
+                                    target_index, const_id
+                                );
+                                field_values_map.insert(target_index, const_id);
+                            }
+                            Operand::AddressOf(place_box) => {
+                                if let Place::Global(global_id) = *place_box {
+                                    debug!(
+                                        "Global compound initializer: field {} = address of global {:?}",
+                                        target_index, global_id
+                                    );
+                                    let const_val = ConstValue::GlobalAddress(global_id);
+                                    let const_id = self.create_constant(const_val);
+                                    field_values_map.insert(target_index, const_id);
+                                } else {
+                                    self.report_error(SemanticError::UnsupportedFeature {
+                                        feature: "Non-global address in global initializer".to_string(),
+                                        location,
+                                    });
+                                    return None;
+                                }
+                            }
+                            _ => {
+                                // Non-constant expression in global initializer - report error
+                                self.report_error(SemanticError::UnsupportedFeature {
+                                    feature: "Non-constant expression in global initializer".to_string(),
+                                    location,
+                                });
+                                return None;
+                            }
                         }
                     } else {
                         // Nested compound literal

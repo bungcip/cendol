@@ -476,6 +476,9 @@ impl<'a> MirDumper<'a> {
                         .collect();
                     format!("const array_literal [{}]", element_strs.join(", "))
                 }
+                ConstValue::GlobalAddress(global_id) => {
+                    format!("const {}", self.global_to_string(*global_id))
+                }
             }
         } else {
             format!("const unknown_{}", const_id.get())

@@ -204,4 +204,35 @@ mod tests {
         }
         ");
     }
+
+    #[test]
+    fn test_global_initializer_with_address() {
+        let source = r#"
+            int x = 10;
+            struct S { int a; int *p; };
+            struct S s = { .p = &x, .a = 1 };
+            int main() {
+                return 0;
+            }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = i32
+        type %t1 = ptr<%t0>
+        type %t2 = struct S { a: %t0, p: %t1 }
+
+        global @x: i32 = const 10
+        global @s: %t2 = const struct_literal { 0: const 1, 1: const @x }
+
+        fn main() -> i32
+        {
+          locals {
+          }
+
+          bb1:
+            return const 0
+        }
+        ");
+    }
 }

@@ -235,4 +235,44 @@ mod tests {
         }
         ");
     }
+
+    #[test]
+    fn test_nested_compound_initializer_global() {
+        let source = r#"
+            struct S1 {
+                int a;
+                int b;
+            };
+
+            struct S2 {
+                int a;
+                int b;
+                struct S1 s;
+            };
+
+            struct S2 v = {1, 2, {3, 4}};
+
+            int main() {
+                return 0;
+            }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = i32
+        type %t1 = struct S1 { a: %t0, b: %t0 }
+        type %t2 = struct S2 { a: %t0, b: %t0, s: %t1 }
+
+        global @v: %t2 = const struct_literal { 0: const 1, 1: const 2, 2: const struct_literal { 0: const 3, 1: const 4 } }
+
+        fn main() -> i32
+        {
+          locals {
+          }
+
+          bb1:
+            return const 0
+        }
+        ");
+    }
 }

@@ -673,12 +673,36 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                         }
                     } else {
                         // Nested compound literal
-                        // TODO: Support nested Struct/Array literals
-                        self.report_error(SemanticError::UnsupportedFeature {
-                            feature: "Nested compound initializers for globals".to_string(),
+                        // Get the type of the field we are initializing
+                        // Try to get struct field type first
+                        let field_type_id =
+                            if let Some(type_id) = self.get_struct_field_type(_var_type_id, target_index) {
+                                type_id
+                            } else if let Some(element_type_id) = self.get_array_element_type(_var_type_id) {
+                                // If it's an array, use the element type
+                                element_type_id
+                            } else {
+                                self.report_error(SemanticError::UnsupportedFeature {
+                                    feature: "Nested compound initializers for unknowns types".to_string(),
+                                    location,
+                                });
+                                return None;
+                            };
+
+                        if let Some(nested_const_id) = self.process_global_compound_initializer(
+                            &designated_init.initializer,
+                            var_name,
+                            field_type_id,
                             location,
-                        });
-                        return None;
+                        ) {
+                            debug!(
+                                "Global compound initializer: field {} = nested constant {:?}",
+                                target_index, nested_const_id
+                            );
+                            field_values_map.insert(target_index, nested_const_id);
+                        } else {
+                            return None;
+                        }
                     }
                 }
 

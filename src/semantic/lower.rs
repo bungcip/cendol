@@ -112,7 +112,7 @@ fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: Sour
             DeclSpecifier::StorageClass(sc) => {
                 // Check for duplicate storage class
                 if info.storage.replace(*sc).is_some() {
-                    ctx.report_error(SemanticError::DeclarationError {
+                    ctx.report_error(SemanticError::InvalidOperands {
                         message: "Duplicate storage class specifier".to_string(),
                         location: span,
                     });
@@ -377,7 +377,7 @@ fn merge_base_type(existing: Option<TypeRef>, new_type: TypeRef, ctx: &mut Lower
 fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span: SourceSpan) {
     // Check typedef with other storage classes
     if info.is_typedef && info.storage.is_some_and(|s| s != StorageClass::Typedef) {
-        ctx.report_error(SemanticError::DeclarationError {
+        ctx.report_error(SemanticError::InvalidOperands {
             message: "Illegal storage class with typedef".to_string(),
             location: span,
         });
@@ -453,7 +453,7 @@ fn lower_type_definition(specifiers: &[DeclSpecifier], ctx: &mut LowerCtx, span:
 fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDeclarator, span: SourceSpan) -> NodeRef {
     // 1. Resolve final type (base + declarator)
     let base_ty = spec.base_type.unwrap_or_else(|| {
-        ctx.report_error(SemanticError::DeclarationError {
+        ctx.report_error(SemanticError::InvalidOperands {
             message: "Missing base type in declaration".to_string(),
             location: span,
         });

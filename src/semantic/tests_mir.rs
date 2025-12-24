@@ -441,4 +441,226 @@ mod tests {
         }
         ");
     }
+
+    #[test]
+    fn test_function_with_many_return_types() {
+        let source = r#"
+          void fn_void() { return; }
+
+          char fn_char() { return 'a'; }
+          unsigned char fn_uchar() { return 'b'; }
+
+          short fn_short() { return -7; }
+          unsigned short fn_ushort() { return 14; }
+
+          int fn_int() { return -1; }
+          unsigned int fn_uint() { return 42; }
+
+          long fn_long() { return 100000L; }
+          unsigned long fn_ulong() { return 200000UL; }
+          long long fn_llong() { return -3000000000LL; }
+          unsigned long long fn_ullong() { return 4000000000ULL; }
+
+          float fn_float() { return 3.14f; }
+          double fn_double() { return 2.71828; }
+
+          int main()
+          {
+              fn_void();
+
+              fn_char();
+              fn_uchar();
+
+              fn_short();
+              fn_ushort();
+
+              fn_int();
+              fn_uint();
+
+              fn_long();
+              fn_ulong();
+
+              fn_llong();
+              fn_ullong();
+
+              fn_float();
+              fn_double();
+
+              return 0;
+          }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = void
+        type %t1 = i8
+        type %t2 = u8
+        type %t3 = i16
+        type %t4 = i32
+        type %t5 = u16
+        type %t6 = u32
+        type %t7 = i64
+        type %t8 = u64
+        type %t9 = f32
+        type %t10 = f64
+
+        fn fn_void() -> void
+        {
+          locals {
+          }
+
+          bb1:
+            return
+        }
+
+        fn fn_char() -> i8
+        {
+          locals {
+          }
+
+          bb2:
+            return const 97
+        }
+
+        fn fn_uchar() -> u8
+        {
+          locals {
+          }
+
+          bb3:
+            return const 98
+        }
+
+        fn fn_short() -> i16
+        {
+          locals {
+            %1: i32
+          }
+
+          bb4:
+            %1 = - const 7
+            return %1
+        }
+
+        fn fn_ushort() -> u16
+        {
+          locals {
+          }
+
+          bb5:
+            return const 14
+        }
+
+        fn fn_int() -> i32
+        {
+          locals {
+            %2: i32
+          }
+
+          bb6:
+            %2 = - const 1
+            return %2
+        }
+
+        fn fn_uint() -> u32
+        {
+          locals {
+          }
+
+          bb7:
+            return const 42
+        }
+
+        fn fn_long() -> i32
+        {
+          locals {
+          }
+
+          bb8:
+            return const 100000
+        }
+
+        fn fn_ulong() -> u32
+        {
+          locals {
+          }
+
+          bb9:
+            return const 200000
+        }
+
+        fn fn_llong() -> i64
+        {
+          locals {
+            %3: i32
+          }
+
+          bb10:
+            %3 = - const 3000000000
+            return %3
+        }
+
+        fn fn_ullong() -> u64
+        {
+          locals {
+          }
+
+          bb11:
+            return const 4000000000
+        }
+
+        fn fn_float() -> f32
+        {
+          locals {
+          }
+
+          bb12:
+            return const 3.14
+        }
+
+        fn fn_double() -> f64
+        {
+          locals {
+          }
+
+          bb13:
+            return const 2.71828
+        }
+
+        fn main() -> i32
+        {
+          locals {
+            %4: i32
+            %5: i8
+            %6: u8
+            %7: i16
+            %8: u16
+            %9: i32
+            %10: u32
+            %11: i32
+            %12: u32
+            %13: i64
+            %14: u64
+            %15: f32
+            %16: f64
+          }
+
+          bb14:
+            %4 = call fn_void()
+            %5 = call fn_char()
+            %6 = call fn_uchar()
+            %7 = call fn_short()
+            %8 = call fn_ushort()
+            %9 = call fn_int()
+            %10 = call fn_uint()
+            %11 = call fn_long()
+            %12 = call fn_ulong()
+            %13 = call fn_llong()
+            %14 = call fn_ullong()
+            %15 = call fn_float()
+            %16 = call fn_double()
+            return const 0
+        }
+        ");
+    }
 }

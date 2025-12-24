@@ -184,7 +184,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
             Ok(ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true })))
         }
         TypeSpecifier::Unsigned => {
-            // Unsigned modifier - for now, default to unsigned int
+            // Unsigned modifier - return a special marker type that will be handled in merge_base_type
             Ok(ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: false })))
         }
         TypeSpecifier::Bool => Ok(ctx.ast.push_type(Type::new(TypeKind::Bool))),
@@ -616,6 +616,55 @@ fn merge_base_type(existing: Option<TypeRef>, new_type: TypeRef, ctx: &mut Lower
                     Some(existing_ref) // Keep unsigned
                 }
 
+                // Handle char type merging
+                (TypeKind::Char { is_signed: true }, TypeKind::Int { is_signed: false }) => {
+                    // unsigned char = char + unsigned
+                    Some(ctx.ast.push_type(Type::new(TypeKind::Char { is_signed: false })))
+                }
+                (TypeKind::Char { is_signed: false }, TypeKind::Int { is_signed: true }) => {
+                    Some(existing_ref) // Keep unsigned char
+                }
+
+                // Handle short type merging
+                (TypeKind::Short { is_signed: true }, TypeKind::Int { is_signed: false }) => {
+                    // unsigned short = short + unsigned
+                    Some(ctx.ast.push_type(Type::new(TypeKind::Short { is_signed: false })))
+                }
+                (TypeKind::Short { is_signed: false }, TypeKind::Int { is_signed: true }) => {
+                    Some(existing_ref) // Keep unsigned short
+                }
+
+                // Handle unsigned + char/short order
+                (TypeKind::Int { is_signed: false }, TypeKind::Char { is_signed: true }) => {
+                    // unsigned char = unsigned + char
+                    Some(ctx.ast.push_type(Type::new(TypeKind::Char { is_signed: false })))
+                }
+                (TypeKind::Int { is_signed: false }, TypeKind::Short { is_signed: true }) => {
+                    // unsigned short = unsigned + short
+                    Some(ctx.ast.push_type(Type::new(TypeKind::Short { is_signed: false })))
+                }
+
+                // Handle unsigned + long/long long order
+                (
+                    TypeKind::Int { is_signed: false },
+                    TypeKind::Long {
+                        is_long_long: false, ..
+                    },
+                ) => {
+                    // unsigned long = unsigned + long
+                    Some(ctx.ast.push_type(Type::new(TypeKind::Long {
+                        is_signed: false,
+                        is_long_long: false,
+                    })))
+                }
+                (TypeKind::Int { is_signed: false }, TypeKind::Long { is_long_long: true, .. }) => {
+                    // unsigned long long = unsigned + long long
+                    Some(ctx.ast.push_type(Type::new(TypeKind::Long {
+                        is_signed: false,
+                        is_long_long: true,
+                    })))
+                }
+
                 // Long long overrides long
                 (
                     TypeKind::Long {
@@ -940,40 +989,45 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
         }
         NodeKind::FunctionDef(func_def) => {
             // Create the function type and add it to the symbol table
-            let func_name = extract_identifier(&func_def.declarator)
-                .unwrap_or_else(|| Symbol::new("anonymous_function"));
-            
+            let func_name =
+                extract_identifier(&func_def.declarator).unwrap_or_else(|| Symbol::new("anonymous_function"));
+
             debug!("Processing function definition '{}'", func_name);
-            
+
             // Extract the return type from the function definition's specifiers
-            let return_type_ref = lower_decl_specifiers_for_function_return(&func_def.specifiers, ctx, ctx.ast.get_node(node_ref).span)
-                .unwrap_or_else(|| {
-                    debug!("Failed to get return type from specifiers, defaulting to int");
-                    ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true }))
-                });
-            
-            debug!("Function '{}' return type: {:?}", func_name, ctx.ast.get_type(return_type_ref).kind);
-            
+            let return_type_ref =
+                lower_decl_specifiers_for_function_return(&func_def.specifiers, ctx, ctx.ast.get_node(node_ref).span)
+                    .unwrap_or_else(|| {
+                        debug!("Failed to get return type from specifiers, defaulting to int");
+                        ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true }))
+                    });
+
+            debug!(
+                "Function '{}' return type: {:?}",
+                func_name,
+                ctx.ast.get_type(return_type_ref).kind
+            );
+
             // Create the function type with the correct return type
             let declarator_type = apply_declarator(return_type_ref, &func_def.declarator, ctx);
             let function_type_ref = ctx.ast.push_type(declarator_type);
-            
+
             debug!("Final function type: {:?}", ctx.ast.get_type(function_type_ref).kind);
-            
+
             // Extract parameters from the function type for the symbol entry
             let parameters = if let TypeKind::Function { parameters, .. } = &ctx.ast.get_type(function_type_ref).kind {
                 parameters.clone()
             } else {
                 Vec::new()
             };
-            
+
             // Add function to GLOBAL scope (not function scope)
             let global_scope_id = crate::semantic::symbol_table::ScopeId::new(1).unwrap(); // Global scope is typically 1
-            
+
             // Switch to global scope to add the function
             let original_scope = ctx.symbol_table.current_scope();
             ctx.symbol_table.set_current_scope(global_scope_id);
-            
+
             let symbol_entry = crate::ast::SymbolEntry {
                 name: func_name,
                 kind: crate::ast::SymbolKind::Function {
@@ -990,10 +1044,13 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                 is_referenced: false,
                 is_completed: true,
             };
-            
+
             ctx.symbol_table.add_symbol(func_name, symbol_entry);
-            debug!("Added function '{}' to GLOBAL symbol table with type {:?}", func_name, function_type_ref);
-            
+            debug!(
+                "Added function '{}' to GLOBAL symbol table with type {:?}",
+                func_name, function_type_ref
+            );
+
             // Restore original scope
             ctx.symbol_table.set_current_scope(original_scope);
 
@@ -1065,20 +1122,32 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
 }
 
 /// Lower declaration specifiers for function return type
-fn lower_decl_specifiers_for_function_return(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: SourceSpan) -> Option<TypeRef> {
+fn lower_decl_specifiers_for_function_return(
+    specs: &[DeclSpecifier],
+    ctx: &mut LowerCtx,
+    span: SourceSpan,
+) -> Option<TypeRef> {
+    let mut merged_type = None;
+
     for spec in specs {
         if let DeclSpecifier::TypeSpecifier(ts) = spec {
             match resolve_type_specifier(ts, ctx, span) {
                 Ok(ty) => {
-                    debug!("Extracted return type: {:?}", ctx.ast.get_type(ty).kind);
-                    return Some(ty);
-                },
+                    debug!("Processing type specifier: {:?}", ctx.ast.get_type(ty).kind);
+                    merged_type = merge_base_type(merged_type, ty, ctx);
+                }
                 Err(_) => continue,
             }
         }
     }
-    debug!("No return type found in specifiers");
-    None
+
+    if let Some(final_type) = merged_type {
+        debug!("Final merged return type: {:?}", ctx.ast.get_type(final_type).kind);
+        Some(final_type)
+    } else {
+        debug!("No return type found in specifiers");
+        None
+    }
 }
 
 /// Lower declaration specifiers for struct members (simplified version)

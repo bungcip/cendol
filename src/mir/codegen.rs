@@ -28,7 +28,7 @@ use target_lexicon::Triple;
 fn mir_type_to_cranelift_type(mir_type: &MirType) -> Option<Type> {
     match mir_type {
         MirType::Void => None,
-        MirType::Int { width, .. } => {
+        MirType::Int { width, is_signed: _ } => {
             match width {
                 8 => Some(types::I8),
                 16 => Some(types::I16),
@@ -91,9 +91,7 @@ fn emit_function_call_impl(
             // Look up the function in our MIR functions
             if let Some(func) = functions.get(func_id) {
                 // Get the return type for this function
-                let return_type = types
-                    .get(&func.return_type)
-                    .and_then(mir_type_to_cranelift_type);
+                let return_type = types.get(&func.return_type).and_then(mir_type_to_cranelift_type);
 
                 // Resolve function arguments to Cranelift values
                 let mut arg_values = Vec::new();
@@ -116,7 +114,7 @@ fn emit_function_call_impl(
 
                 // Create a function signature by building it directly
                 let mut sig = Signature::new(builder.func.signature.call_conv);
-                
+
                 // Only add return parameter if the function has a non-void return type
                 if let Some(ret_type) = return_type {
                     sig.returns.push(AbiParam::new(ret_type));
@@ -182,7 +180,14 @@ fn resolve_operand_to_value(
             if let Some(const_value) = constants.get(const_id) {
                 match const_value {
                     ConstValue::Int(val) => Ok(builder.ins().iconst(expected_type, *val)),
-                    ConstValue::Float(val) => Ok(builder.ins().f32const(*val as f32)),
+                    ConstValue::Float(val) => {
+                        // Use the appropriate float constant based on expected type
+                        if expected_type == types::F64 {
+                            Ok(builder.ins().f64const(*val))
+                        } else {
+                            Ok(builder.ins().f32const(*val as f32))
+                        }
+                    }
                     ConstValue::Bool(val) => {
                         let int_val = if *val { 1 } else { 0 };
                         Ok(builder.ins().iconst(expected_type, int_val))
@@ -263,7 +268,14 @@ fn resolve_place_to_value(
                     if let Some(const_value) = constants.get(&const_value_id) {
                         match const_value {
                             ConstValue::Int(val) => Ok(builder.ins().iconst(expected_type, *val)),
-                            ConstValue::Float(val) => Ok(builder.ins().f32const(*val as f32)),
+                            ConstValue::Float(val) => {
+                                // Use the appropriate float constant based on expected type
+                                if expected_type == types::F64 {
+                                    Ok(builder.ins().f64const(*val))
+                                } else {
+                                    Ok(builder.ins().f32const(*val as f32))
+                                }
+                            }
                             ConstValue::Bool(val) => {
                                 let int_val = if *val { 1 } else { 0 };
                                 Ok(builder.ins().iconst(expected_type, int_val))
@@ -675,10 +687,7 @@ impl MirToCraneliftLowerer {
         func_ctx.func.signature.params.clear();
 
         // Get the return type from MIR and convert to Cranelift type
-        let return_type_opt = self
-            .types
-            .get(&func.return_type)
-            .and_then(mir_type_to_cranelift_type);
+        let return_type_opt = self.types.get(&func.return_type).and_then(mir_type_to_cranelift_type);
 
         // Add parameters from MIR function signature
         let mut param_types = Vec::new();
@@ -878,10 +887,18 @@ impl MirToCraneliftLowerer {
                         if let Ok(value) = rvalue_result {
                             match place {
                                 Place::Local(local_id) => {
+                                    // Check if this local has a stack slot (non-void types)
                                     if let Some(stack_slot) = self.cranelift_stack_slots.get(local_id) {
                                         builder.ins().stack_store(value, *stack_slot, 0);
                                     } else {
-                                        eprintln!("Warning: Stack slot not found for local {}", local_id.get());
+                                        // This local doesn't have a stack slot (likely a void type)
+                                        // Check if it's actually a void type to provide a better warning
+                                        if let Some(local) = self.locals.get(local_id)
+                                            && let Some(local_type) = self.types.get(&local.type_id)
+                                            && !matches!(local_type, MirType::Void)
+                                        {
+                                            eprintln!("Warning: Stack slot not found for local {}", local_id.get());
+                                        }
                                     }
                                 }
                                 _ => {

@@ -1,7 +1,7 @@
 use crate::lexer::TokenKind;
 use crate::source_manager::{SourceManager, SourceSpan};
-use symbol_table::GlobalSymbol as Symbol;
 use annotate_snippets::{AnnotationKind, Level, Renderer, Snippet};
+use symbol_table::GlobalSymbol as Symbol;
 
 /// Diagnostic severity levels
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -293,9 +293,7 @@ impl ErrorFormatter {
         let annotation_kind = AnnotationKind::Primary;
 
         snippet = snippet.annotation(
-            annotation_kind.span(
-                diag.location.start.offset() as usize..diag.location.end.offset() as usize,
-            ),
+            annotation_kind.span(diag.location.start.offset() as usize..diag.location.end.offset() as usize),
         );
 
         snippet

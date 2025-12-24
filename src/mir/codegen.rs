@@ -760,126 +760,132 @@ impl MirToCraneliftLowerer {
             // ========================================================================
             // SECTION 1: Process statements within this block
             // ========================================================================
-            let statements_to_process: Vec<MirStmt> = mir_block
-                .statements
-                .iter()
-                .filter_map(|&stmt_id| self.statements.get(&stmt_id).cloned())
-                .collect();
+            let res: Result<(), Box<dyn std::error::Error>> = (|| {
+                let statements_to_process: Vec<MirStmt> = mir_block
+                    .statements
+                    .iter()
+                    .filter_map(|&stmt_id| self.statements.get(&stmt_id).cloned())
+                    .collect();
 
-            // Process statements
-            for stmt in &statements_to_process {
-                match stmt {
-                    MirStmt::Assign(place, rvalue) => {
-                        // Process the rvalue to get a Cranelift value first
-                        let rvalue_result = match rvalue {
-                            Rvalue::Use(operand) => resolve_operand_to_value(
-                                operand,
-                                &mut builder,
-                                types::I32, // Assuming i32 for now
-                                &self.constants,
-                                &self.cranelift_stack_slots,
-                                &self.globals,
-                                &self.types,
-                                &self.locals,
-                                &mut self.module,
-                            ),
-                            Rvalue::Call(call_target, args) => emit_function_call_impl(
-                                call_target,
-                                args,
-                                &mut builder,
-                                &self.functions,
-                                &self.types,
-                                &self.locals,
-                                &self.cranelift_stack_slots,
-                                &self.constants,
-                                &self.globals,
-                                &mut self.module,
-                            ),
-                            Rvalue::BinaryOp(op, left_operand, right_operand) => {
-                                let left_val = resolve_operand_to_value(
-                                    left_operand,
+                // Process statements
+                for stmt in &statements_to_process {
+                    match stmt {
+                        MirStmt::Assign(place, rvalue) => {
+                            // Process the rvalue to get a Cranelift value first
+                            let rvalue_result = match rvalue {
+                                Rvalue::Use(operand) => resolve_operand_to_value(
+                                    operand,
                                     &mut builder,
-                                    types::I32,
+                                    types::I32, // Assuming i32 for now
                                     &self.constants,
                                     &self.cranelift_stack_slots,
                                     &self.globals,
                                     &self.types,
                                     &self.locals,
                                     &mut self.module,
-                                )
-                                .unwrap_or_else(|_| builder.ins().iconst(types::I32, 0));
-
-                                let right_val = resolve_operand_to_value(
-                                    right_operand,
+                                ),
+                                Rvalue::Call(call_target, args) => emit_function_call_impl(
+                                    call_target,
+                                    args,
                                     &mut builder,
-                                    types::I32,
-                                    &self.constants,
-                                    &self.cranelift_stack_slots,
-                                    &self.globals,
+                                    &self.functions,
                                     &self.types,
                                     &self.locals,
+                                    &self.cranelift_stack_slots,
+                                    &self.constants,
+                                    &self.globals,
                                     &mut self.module,
-                                )
-                                .unwrap_or_else(|_| builder.ins().iconst(types::I32, 0));
+                                ),
+                                Rvalue::BinaryOp(op, left_operand, right_operand) => {
+                                    let left_val = resolve_operand_to_value(
+                                        left_operand,
+                                        &mut builder,
+                                        types::I32,
+                                        &self.constants,
+                                        &self.cranelift_stack_slots,
+                                        &self.globals,
+                                        &self.types,
+                                        &self.locals,
+                                        &mut self.module,
+                                    )
+                                    .unwrap_or_else(|_| builder.ins().iconst(types::I32, 0));
 
-                                let result_val = match op {
-                                    BinaryOp::Add => builder.ins().iadd(left_val, right_val),
-                                    BinaryOp::Sub => builder.ins().isub(left_val, right_val),
-                                    BinaryOp::Mul => builder.ins().imul(left_val, right_val),
-                                    BinaryOp::Div => builder.ins().sdiv(left_val, right_val),
-                                    BinaryOp::Mod => builder.ins().srem(left_val, right_val),
-                                    BinaryOp::BitAnd => builder.ins().band(left_val, right_val),
-                                    BinaryOp::BitOr => builder.ins().bor(left_val, right_val),
-                                    BinaryOp::BitXor => builder.ins().bxor(left_val, right_val),
-                                    BinaryOp::LShift => builder.ins().ishl(left_val, right_val),
-                                    BinaryOp::RShift => builder.ins().sshr(left_val, right_val),
-                                    BinaryOp::Equal => {
-                                        let cmp_val = builder.ins().icmp(IntCC::Equal, left_val, right_val);
-                                        builder.ins().uextend(types::I32, cmp_val)
-                                    }
-                                    BinaryOp::NotEqual => {
-                                        let cmp_val = builder.ins().icmp(IntCC::NotEqual, left_val, right_val);
-                                        builder.ins().uextend(types::I32, cmp_val)
-                                    }
-                                    BinaryOp::Less => {
-                                        let cmp_val = builder.ins().icmp(IntCC::SignedLessThan, left_val, right_val);
-                                        builder.ins().uextend(types::I32, cmp_val)
-                                    }
-                                    BinaryOp::LessEqual => {
-                                        let cmp_val =
-                                            builder.ins().icmp(IntCC::SignedLessThanOrEqual, left_val, right_val);
-                                        builder.ins().uextend(types::I32, cmp_val)
-                                    }
-                                    BinaryOp::Greater => {
-                                        let cmp_val = builder.ins().icmp(IntCC::SignedGreaterThan, left_val, right_val);
-                                        builder.ins().uextend(types::I32, cmp_val)
-                                    }
-                                    BinaryOp::GreaterEqual => {
-                                        let cmp_val =
-                                            builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, left_val, right_val);
-                                        builder.ins().uextend(types::I32, cmp_val)
-                                    }
-                                    BinaryOp::LogicAnd | BinaryOp::LogicOr => builder.ins().band(left_val, right_val),
-                                    BinaryOp::Comma => right_val,
-                                };
-                                Ok(result_val)
-                            }
-                            _ => Ok(builder.ins().iconst(types::I32, 0)),
-                        };
+                                    let right_val = resolve_operand_to_value(
+                                        right_operand,
+                                        &mut builder,
+                                        types::I32,
+                                        &self.constants,
+                                        &self.cranelift_stack_slots,
+                                        &self.globals,
+                                        &self.types,
+                                        &self.locals,
+                                        &mut self.module,
+                                    )
+                                    .unwrap_or_else(|_| builder.ins().iconst(types::I32, 0));
 
-                        // Now, assign the resolved value to the place
-                        if let Ok(value) = rvalue_result {
+                                    let result_val = match op {
+                                        BinaryOp::Add => builder.ins().iadd(left_val, right_val),
+                                        BinaryOp::Sub => builder.ins().isub(left_val, right_val),
+                                        BinaryOp::Mul => builder.ins().imul(left_val, right_val),
+                                        BinaryOp::Div => builder.ins().sdiv(left_val, right_val),
+                                        BinaryOp::Mod => builder.ins().srem(left_val, right_val),
+                                        BinaryOp::BitAnd => builder.ins().band(left_val, right_val),
+                                        BinaryOp::BitOr => builder.ins().bor(left_val, right_val),
+                                        BinaryOp::BitXor => builder.ins().bxor(left_val, right_val),
+                                        BinaryOp::LShift => builder.ins().ishl(left_val, right_val),
+                                        BinaryOp::RShift => builder.ins().sshr(left_val, right_val),
+                                        BinaryOp::Equal => {
+                                            let cmp_val = builder.ins().icmp(IntCC::Equal, left_val, right_val);
+                                            builder.ins().uextend(types::I32, cmp_val)
+                                        }
+                                        BinaryOp::NotEqual => {
+                                            let cmp_val = builder.ins().icmp(IntCC::NotEqual, left_val, right_val);
+                                            builder.ins().uextend(types::I32, cmp_val)
+                                        }
+                                        BinaryOp::Less => {
+                                            let cmp_val =
+                                                builder.ins().icmp(IntCC::SignedLessThan, left_val, right_val);
+                                            builder.ins().uextend(types::I32, cmp_val)
+                                        }
+                                        BinaryOp::LessEqual => {
+                                            let cmp_val =
+                                                builder.ins().icmp(IntCC::SignedLessThanOrEqual, left_val, right_val);
+                                            builder.ins().uextend(types::I32, cmp_val)
+                                        }
+                                        BinaryOp::Greater => {
+                                            let cmp_val =
+                                                builder.ins().icmp(IntCC::SignedGreaterThan, left_val, right_val);
+                                            builder.ins().uextend(types::I32, cmp_val)
+                                        }
+                                        BinaryOp::GreaterEqual => {
+                                            let cmp_val = builder.ins().icmp(
+                                                IntCC::SignedGreaterThanOrEqual,
+                                                left_val,
+                                                right_val,
+                                            );
+                                            builder.ins().uextend(types::I32, cmp_val)
+                                        }
+                                        BinaryOp::LogicAnd | BinaryOp::LogicOr => {
+                                            builder.ins().band(left_val, right_val)
+                                        }
+                                        BinaryOp::Comma => right_val,
+                                    };
+                                    Ok(result_val)
+                                }
+                                _ => Ok(builder.ins().iconst(types::I32, 0)),
+                            };
+
+                            let value = rvalue_result?;
                             match place {
                                 Place::Local(local_id) => {
                                     if let Some(stack_slot) = self.cranelift_stack_slots.get(local_id) {
                                         builder.ins().stack_store(value, *stack_slot, 0);
                                     } else {
-                                        eprintln!("Warning: Stack slot not found for local {}", local_id.get());
+                                        return Err(format!("Stack slot not found for local {}", local_id.get()).into());
                                     }
                                 }
                                 _ => {
-                                    // This covers StructField, ArrayIndex, Deref, and Global assignments
-                                    match resolve_place_to_addr(
+                                    let addr = resolve_place_to_addr(
                                         place,
                                         &mut builder,
                                         &self.cranelift_stack_slots,
@@ -888,40 +894,72 @@ impl MirToCraneliftLowerer {
                                         &self.types,
                                         &self.locals,
                                         &mut self.module,
-                                    ) {
-                                        Ok(addr) => {
-                                            builder.ins().store(MemFlags::new(), value, addr, 0);
-                                        }
-                                        Err(e) => {
-                                            eprintln!("Warning: Failed to resolve place address for assignment: {}", e);
-                                        }
-                                    }
+                                    )?;
+                                    builder.ins().store(MemFlags::new(), value, addr, 0);
                                 }
                             }
-                        } else if let Err(e) = rvalue_result {
-                            eprintln!("Warning: Failed to resolve rvalue: {}", e);
+                        }
+
+                        MirStmt::Store(operand, place) => {
+                            let res: Result<(), String> = (|| {
+                                let place_type_id = get_place_type_id(place, &self.locals, &self.globals, &self.types)?;
+                                let mir_type = self.types.get(&place_type_id).unwrap();
+                                let cranelift_type = mir_type_to_cranelift_type(mir_type);
+
+                                let value = resolve_operand_to_value(
+                                    operand,
+                                    &mut builder,
+                                    cranelift_type,
+                                    &self.constants,
+                                    &self.cranelift_stack_slots,
+                                    &self.globals,
+                                    &self.types,
+                                    &self.locals,
+                                    &mut self.module,
+                                )?;
+
+                                match place {
+                                    Place::Local(local_id) => {
+                                        if let Some(stack_slot) = self.cranelift_stack_slots.get(local_id) {
+                                            builder.ins().stack_store(value, *stack_slot, 0);
+                                        } else {
+                                            return Err(format!("Stack slot not found for local {}", local_id.get()));
+                                        }
+                                    }
+                                    _ => {
+                                        let addr = resolve_place_to_addr(
+                                            place,
+                                            &mut builder,
+                                            &self.cranelift_stack_slots,
+                                            &self.globals,
+                                            &self.constants,
+                                            &self.types,
+                                            &self.locals,
+                                            &mut self.module,
+                                        )?;
+                                        builder.ins().store(MemFlags::new(), value, addr, 0);
+                                    }
+                                }
+                                Ok(())
+                            })();
+                            if let Err(e) = res {
+                                return Err(e.into());
+                            }
+                        }
+
+                        MirStmt::Alloc(_place, _type_id) => {
+                            todo!("Alloc operation not implemented yet");
+                        }
+
+                        MirStmt::Dealloc(_operand) => {
+                            todo!("Dealloc operation not implemented yet");
                         }
                     }
-
-                    MirStmt::Store(_operand, _place) => {
-                        // TODO: Implement store operations
-                        // Store operations move data from an operand to a place (memory location)
-                        todo!("Store operation not implemented yet");
-                    }
-
-                    MirStmt::Alloc(_place, _type_id) => {
-                        // TODO: Implement allocation operations
-                        // Alloc operations allocate memory for a place with a specific type
-                        todo!("Alloc operation not implemented yet");
-                    }
-
-                    MirStmt::Dealloc(_operand) => {
-                        // TODO: Implement deallocation operations
-                        // Dealloc operations free previously allocated memory
-                        todo!("Dealloc operation not implemented yet");
-                    }
                 }
-            }
+                Ok(())
+            })();
+
+            res?;
 
             // ========================================================================
             // SECTION 2: Process terminator (control flow)
@@ -1083,5 +1121,66 @@ mod tests {
         // For now, we'll just check that it doesn't panic
         // In a real implementation, we'd verify the generated code
         assert!(result.is_ok() || result.is_err()); // Just check it returns a result
+    }
+
+    #[test]
+    fn test_mir_store_statement_implemented() {
+        let mut module = MirModule::new(crate::mir::MirModuleId::new(1).unwrap());
+        let mut functions = HashMap::new();
+        let mut blocks = HashMap::new();
+        let mut locals = HashMap::new();
+        let mut statements = HashMap::new();
+
+        let int_type_id = TypeId::new(1).unwrap();
+        module.types.push(MirType::Int {
+            is_signed: true,
+            width: 32,
+        });
+
+        let func_id = MirFunctionId::new(1).unwrap();
+        let mut func = MirFunction::new(func_id, Symbol::new("main"), int_type_id);
+
+        let local_x_id = LocalId::new(1).unwrap();
+        let local_x = Local::new(local_x_id, Some(Symbol::new("x")), int_type_id, false);
+        func.locals.push(local_x_id);
+        locals.insert(local_x_id, local_x);
+
+        let const_val_id = ConstValueId::new(1).unwrap();
+        module.constants.push(ConstValue::Int(123));
+
+        let entry_block_id = MirBlockId::new(1).unwrap();
+        let mut entry_block = MirBlock::new(entry_block_id);
+
+        let store_stmt_id = MirStmtId::new(1).unwrap();
+        let store_stmt = MirStmt::Store(Operand::Constant(const_val_id), Place::Local(local_x_id));
+        statements.insert(store_stmt_id, store_stmt);
+        entry_block.statements.push(store_stmt_id);
+
+        let return_const_id = ConstValueId::new(2).unwrap();
+        module.constants.push(ConstValue::Int(0));
+        entry_block.terminator = Terminator::Return(Some(Operand::Constant(return_const_id)));
+
+        func.entry_block = entry_block_id;
+        func.blocks.push(entry_block_id);
+        blocks.insert(entry_block_id, entry_block);
+
+        module.functions.push(func_id);
+        functions.insert(func_id, func);
+
+        let mut lowerer = MirToCraneliftLowerer::new(
+            module,
+            functions,
+            blocks,
+            locals,
+            HashMap::new(),
+            HashMap::new(),
+            statements,
+        );
+
+        let compiled_funcs = lowerer.get_compiled_functions_for_dump();
+        let main_ir = compiled_funcs.get("main").unwrap();
+
+        assert!(main_ir.contains("store notrap v0, v2"));
+        assert!(main_ir.contains("v0 = iconst.i32 123"));
     }
 }

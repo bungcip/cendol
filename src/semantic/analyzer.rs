@@ -271,6 +271,57 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         }
     }
 
+    /// Extract the return type from a function declarator
+    fn extract_function_return_type(&mut self, declarator: &Declarator, _specifiers: &[DeclSpecifier], _location: SourceSpan) -> TypeId {
+        // Start with a default return type (int)
+        let base_type_ref = self.ast.push_type(Type::new(TypeKind::Int { is_signed: true }));
+        
+        // The function declarator should be a Function type
+        if let Declarator::Function(base_declarator, _) = declarator {
+            // The base declarator contains the return type information
+            // We need to resolve what the base type is
+            
+            // For now, we'll look at the function definition's specifiers
+            // In a more complete implementation, we would track the function's
+            // return type through the semantic lowering phase
+            
+            // Check if we can find the function in the symbol table to get its type
+            if let Some(func_name) = extract_identifier(declarator) {
+                debug!("Looking for function '{}' in symbol table", func_name);
+                if let Some((entry_ref, _)) = self.symbol_table.lookup_symbol(func_name) {
+                    let entry = self.symbol_table.get_symbol_entry(entry_ref);
+                    debug!("Found function '{}' in symbol table, type_info: {:?}", func_name, entry.type_info);
+                    // The function's return type is stored in the type_info field
+                    // which points to a function type that contains the return type
+                    if matches!(&entry.kind, SymbolKind::Function { .. }) {
+                        // Get the function type from type_info
+                        let func_type = self.ast.get_type(entry.type_info);
+                        debug!("Function type: {:?}", func_type.kind);
+                        if let TypeKind::Function { return_type, .. } = &func_type.kind {
+                            debug!("Found return type: {:?}", return_type);
+                            // Use the function's return type from the symbol table
+                            return self.lower_type_to_mir(*return_type);
+                        }
+                    }
+                } else {
+                    debug!("Function '{}' not found in symbol table", func_name);
+                }
+            }
+            
+            // If we couldn't find the function in the symbol table, try to extract
+            // the return type from the base declarator
+            // For simple cases like "void" or "int", the base declarator is just an identifier
+            // We need to look at the function's specifiers to determine the return type
+            // This is a simplified approach - in a full implementation, we would
+            // have the return type properly tracked through semantic analysis
+            let _base = base_declarator; // Keep for potential future use
+        }
+        
+        // Default to int if we couldn't determine the return type
+        debug!("Using default return type (int)");
+        self.lower_type_to_mir(base_type_ref)
+    }
+
     /// Lower a function definition
     fn lower_function_def(&mut self, func_def: &FunctionDefData, location: SourceSpan) {
         debug!("Lowering function definition");
@@ -290,8 +341,10 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             }
         };
 
+        // Extract the return type from the function declarator
+        let return_type = self.extract_function_return_type(&func_def.declarator, &func_def.specifiers, location);
+        
         // Create MIR function
-        let return_type = self.get_int_type(); // Default to int for now
         let func_id = self.mir_builder.create_function(func_name, return_type);
         debug!(
             "Created function '{}' with ID {:?} (ID as integer: {})",
@@ -1594,6 +1647,20 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
     /// Lower a return statement
     fn lower_return_statement(&mut self, expr: &Option<NodeRef>, _location: SourceSpan) {
+        // Check if we're in a void function
+        if let Some(current_func_id) = self.current_function {
+            if let Some(func) = self.mir_builder.get_functions().get(&current_func_id) {
+                if let Some(return_type_id) = self.get_types().get(&func.return_type) {
+                    if matches!(return_type_id, crate::mir::MirType::Void) {
+                        // We're in a void function - return statement should not have any operand
+                        self.mir_builder.set_terminator(Terminator::Return(None));
+                        return;
+                    }
+                }
+            }
+        }
+        
+        // For non-void functions, handle the return expression normally
         if let Some(expr_ref) = expr {
             let operand = self.lower_expression(*expr_ref);
             self.mir_builder.set_terminator(Terminator::Return(Some(operand)));

@@ -939,11 +939,66 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             }
         }
         NodeKind::FunctionDef(func_def) => {
-            // Function scope
+            // Create the function type and add it to the symbol table
+            let func_name = extract_identifier(&func_def.declarator)
+                .unwrap_or_else(|| Symbol::new("anonymous_function"));
+            
+            debug!("Processing function definition '{}'", func_name);
+            
+            // Extract the return type from the function definition's specifiers
+            let return_type_ref = lower_decl_specifiers_for_function_return(&func_def.specifiers, ctx, ctx.ast.get_node(node_ref).span)
+                .unwrap_or_else(|| {
+                    debug!("Failed to get return type from specifiers, defaulting to int");
+                    ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true }))
+                });
+            
+            debug!("Function '{}' return type: {:?}", func_name, ctx.ast.get_type(return_type_ref).kind);
+            
+            // Create the function type with the correct return type
+            let declarator_type = apply_declarator(return_type_ref, &func_def.declarator, ctx);
+            let function_type_ref = ctx.ast.push_type(declarator_type);
+            
+            debug!("Final function type: {:?}", ctx.ast.get_type(function_type_ref).kind);
+            
+            // Extract parameters from the function type for the symbol entry
+            let parameters = if let TypeKind::Function { parameters, .. } = &ctx.ast.get_type(function_type_ref).kind {
+                parameters.clone()
+            } else {
+                Vec::new()
+            };
+            
+            // Add function to GLOBAL scope (not function scope)
+            let global_scope_id = crate::semantic::symbol_table::ScopeId::new(1).unwrap(); // Global scope is typically 1
+            
+            // Switch to global scope to add the function
+            let original_scope = ctx.symbol_table.current_scope();
+            ctx.symbol_table.set_current_scope(global_scope_id);
+            
+            let symbol_entry = crate::ast::SymbolEntry {
+                name: func_name,
+                kind: crate::ast::SymbolKind::Function {
+                    is_definition: true,
+                    is_inline: false,
+                    is_variadic: false,
+                    parameters,
+                },
+                type_info: function_type_ref,
+                storage_class: None,
+                scope_id: global_scope_id.get(),
+                definition_span: ctx.ast.get_node(node_ref).span,
+                is_defined: true,
+                is_referenced: false,
+                is_completed: true,
+            };
+            
+            ctx.symbol_table.add_symbol(func_name, symbol_entry);
+            debug!("Added function '{}' to GLOBAL symbol table with type {:?}", func_name, function_type_ref);
+            
+            // Restore original scope
+            ctx.symbol_table.set_current_scope(original_scope);
+
+            // Function scope for body
             ctx.symbol_table.push_scope(ScopeKind::Function);
-            // We search for the function declaration in the global scope to register it
-            // if it wasn't already. But usually lower_declaration handles it when
-            // called on the FunctionDef itself if it has a body.
 
             // For now, just visit the body which is a CompoundStatement
             lower_node_recursive(ctx, func_def.body);
@@ -1007,6 +1062,23 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
         }
         _ => {}
     }
+}
+
+/// Lower declaration specifiers for function return type
+fn lower_decl_specifiers_for_function_return(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: SourceSpan) -> Option<TypeRef> {
+    for spec in specs {
+        if let DeclSpecifier::TypeSpecifier(ts) = spec {
+            match resolve_type_specifier(ts, ctx, span) {
+                Ok(ty) => {
+                    debug!("Extracted return type: {:?}", ctx.ast.get_type(ty).kind);
+                    return Some(ty);
+                },
+                Err(_) => continue,
+            }
+        }
+    }
+    debug!("No return type found in specifiers");
+    None
 }
 
 /// Lower declaration specifiers for struct members (simplified version)

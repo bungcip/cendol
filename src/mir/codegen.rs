@@ -11,7 +11,10 @@ use crate::mir::{
     BinaryOp, CallTarget, ConstValue, ConstValueId, Global, GlobalId, Local, LocalId, MirBlock, MirBlockId,
     MirFunction, MirFunctionId, MirModule, MirStmt, MirStmtId, MirType, Operand, Place, Rvalue, Terminator, TypeId,
 };
-use cranelift::prelude::*;
+use cranelift::codegen::ir::{StackSlot, StackSlotData, StackSlotKind};
+use cranelift::prelude::{
+    AbiParam, FunctionBuilderContext, InstBuilder, IntCC, MemFlags, Signature, Type, Value, types,
+};
 use cranelift_frontend::FunctionBuilder;
 use cranelift_module::Module;
 use cranelift_object::{ObjectBuilder, ObjectModule};
@@ -43,7 +46,32 @@ fn mir_type_to_cranelift_type(mir_type: &MirType) -> Type {
     }
 }
 
+/// Helper function to get the size of a MIR type in bytes
+fn mir_type_size(mir_type: &MirType, types: &HashMap<TypeId, MirType>) -> u32 {
+    match mir_type {
+        MirType::Int { width, .. } => (*width / 8) as u32,
+        MirType::Float { width } => (*width / 8) as u32,
+        MirType::Pointer { .. } => 8, // Assuming 64-bit pointers for now
+        MirType::Array { element, size } => {
+            let element_type = types.get(element).unwrap();
+            mir_type_size(element_type, types) * (*size as u32)
+        }
+        MirType::Struct { fields, .. } => fields
+            .iter()
+            .map(|(_, field_type_id)| {
+                let field_type = types.get(field_type_id).unwrap();
+                mir_type_size(field_type, types)
+            })
+            .sum(),
+        MirType::Bool => 1,
+        MirType::Void => 0,
+        // For other complex types, let's have a default, though this should be comprehensive.
+        _ => 4, // Default size for other types
+    }
+}
+
 /// Standalone function to emit a proper function call that actually invokes the function
+#[allow(clippy::too_many_arguments)]
 fn emit_function_call_impl(
     call_target: &CallTarget,
     args: &[Operand],
@@ -51,7 +79,7 @@ fn emit_function_call_impl(
     functions: &HashMap<MirFunctionId, MirFunction>,
     types: &HashMap<TypeId, MirType>,
     locals: &HashMap<LocalId, Local>,
-    cranelift_vars: &HashMap<LocalId, Variable>,
+    cranelift_stack_slots: &HashMap<LocalId, StackSlot>,
     constants: &HashMap<ConstValueId, ConstValue>,
     globals: &HashMap<GlobalId, Global>,
     module: &mut ObjectModule,
@@ -69,17 +97,16 @@ fn emit_function_call_impl(
                 // Resolve function arguments to Cranelift values
                 let mut arg_values = Vec::new();
                 for arg in args {
-                    // Create a mutable copy for ensure_operands_declared
-                    let mut temp_cranelift_vars = cranelift_vars.clone();
-                    ensure_operands_declared(arg, builder, &mut temp_cranelift_vars);
-
                     match resolve_operand_to_value(
                         arg,
                         builder,
                         types::I32, // Default to int for now
                         constants,
-                        cranelift_vars,
+                        cranelift_stack_slots,
                         globals,
+                        types,
+                        locals,
+                        module,
                     ) {
                         Ok(value) => arg_values.push(value),
                         Err(e) => return Err(format!("Failed to resolve function argument: {}", e)),
@@ -132,61 +159,18 @@ fn emit_function_call_impl(
     }
 }
 
-/// Helper function to ensure all variables in an operand are declared in Cranelift
-fn ensure_operands_declared(
-    operand: &Operand,
-    builder: &mut FunctionBuilder,
-    cranelift_vars: &mut HashMap<LocalId, Variable>,
-) {
-    match operand {
-        Operand::Copy(place) | Operand::Move(place) => {
-            ensure_places_declared(place, builder, cranelift_vars);
-        }
-        Operand::Cast(_, inner_operand) => {
-            ensure_operands_declared(inner_operand, builder, cranelift_vars);
-        }
-        Operand::AddressOf(place) => {
-            ensure_places_declared(place, builder, cranelift_vars);
-        }
-        Operand::Constant(_) => {
-            // Constants don't need variable declarations
-        }
-    }
-}
-
-/// Helper function to ensure all variables in a place are declared in Cranelift
-fn ensure_places_declared(
-    place: &Place,
-    builder: &mut FunctionBuilder,
-    cranelift_vars: &mut HashMap<LocalId, Variable>,
-) {
-    match place {
-        Place::Local(local_id) => {
-            if !cranelift_vars.contains_key(local_id) {
-                let var = builder.declare_var(types::I32);
-                cranelift_vars.insert(*local_id, var);
-            }
-        }
-        Place::StructField(inner_place, _) => {
-            ensure_places_declared(inner_place, builder, cranelift_vars);
-        }
-        Place::ArrayIndex(inner_place, _) => {
-            ensure_places_declared(inner_place, builder, cranelift_vars);
-        }
-        Place::Deref(_) | Place::Global(_) => {
-            // These don't need local variable declarations
-        }
-    }
-}
-
 /// Helper function to resolve a MIR operand to a Cranelift value
+#[allow(clippy::too_many_arguments)]
 fn resolve_operand_to_value(
     operand: &Operand,
     builder: &mut FunctionBuilder,
     expected_type: Type,
     constants: &HashMap<ConstValueId, ConstValue>,
-    cranelift_vars: &HashMap<LocalId, Variable>,
+    cranelift_stack_slots: &HashMap<LocalId, StackSlot>,
     globals: &HashMap<GlobalId, Global>,
+    types: &HashMap<TypeId, MirType>,
+    locals: &HashMap<LocalId, Local>,
+    module: &mut ObjectModule,
 ) -> Result<Value, String> {
     match operand {
         Operand::Constant(const_id) => {
@@ -209,13 +193,31 @@ fn resolve_operand_to_value(
                 Err(format!("Constant {} not found", const_id.get()))
             }
         }
-        Operand::Copy(place) | Operand::Move(place) => {
-            resolve_place_to_value(place, builder, expected_type, cranelift_vars, globals, constants)
-        }
+        Operand::Copy(place) | Operand::Move(place) => resolve_place_to_value(
+            place,
+            builder,
+            expected_type,
+            cranelift_stack_slots,
+            globals,
+            constants,
+            types,
+            locals,
+            module,
+        ),
         Operand::Cast(_, operand) => {
             // For now, just resolve the inner operand
             // TODO: Handle actual type conversions
-            resolve_operand_to_value(operand, builder, expected_type, constants, cranelift_vars, globals)
+            resolve_operand_to_value(
+                operand,
+                builder,
+                expected_type,
+                constants,
+                cranelift_stack_slots,
+                globals,
+                types,
+                locals,
+                module,
+            )
         }
         Operand::AddressOf(_place) => {
             // For now, treat address-of as returning a pointer value
@@ -226,21 +228,25 @@ fn resolve_operand_to_value(
 }
 
 /// Helper function to resolve a MIR place to a Cranelift value
+#[allow(clippy::too_many_arguments)]
 fn resolve_place_to_value(
     place: &Place,
     builder: &mut FunctionBuilder,
     expected_type: Type,
-    cranelift_vars: &HashMap<LocalId, Variable>,
+    cranelift_stack_slots: &HashMap<LocalId, StackSlot>,
     globals: &HashMap<GlobalId, Global>,
     constants: &HashMap<ConstValueId, ConstValue>,
+    types: &HashMap<TypeId, MirType>,
+    locals: &HashMap<LocalId, Local>,
+    module: &mut ObjectModule,
 ) -> Result<Value, String> {
     match place {
         Place::Local(local_id) => {
-            // Look up the local variable and return its Cranelift variable
-            if let Some(cranelift_var) = cranelift_vars.get(local_id) {
-                Ok(builder.use_var(*cranelift_var))
+            // A local place is resolved by loading from its stack slot
+            if let Some(stack_slot) = cranelift_stack_slots.get(local_id) {
+                Ok(builder.ins().stack_load(expected_type, *stack_slot, 0))
             } else {
-                Err(format!("Local variable {} not found", local_id.get()))
+                Err(format!("Stack slot not found for local {}", local_id.get()))
             }
         }
         Place::Global(global_id) => {
@@ -275,45 +281,233 @@ fn resolve_place_to_value(
                 Err(format!("Global variable {} not found", global_id.get()))
             }
         }
-        Place::Deref(_) => {
-            // For now, treat dereference as returning 0
-            // TODO: Implement proper pointer dereference
-            Ok(builder.ins().iconst(expected_type, 0))
+        Place::Deref(operand) => {
+            // The address is the value of the operand, so we load from that value
+            let addr = resolve_operand_to_value(
+                operand,
+                builder,
+                types::I64, // Assume pointer size
+                constants,
+                cranelift_stack_slots,
+                globals,
+                types,
+                locals,
+                module,
+            )?;
+            Ok(builder.ins().load(expected_type, MemFlags::new(), addr, 0))
         }
-        Place::StructField(place, _) => {
-            // For now, just resolve the base place
-            // TODO: Handle proper struct field access
-            resolve_place_to_value(place, builder, expected_type, cranelift_vars, globals, constants)
+        Place::StructField(base_place, field_index) => {
+            // Get the address of the struct field
+            let addr = resolve_place_to_addr(
+                &Place::StructField(base_place.clone(), *field_index),
+                builder,
+                cranelift_stack_slots,
+                globals,
+                constants,
+                types,
+                locals,
+                module,
+            )?;
+            Ok(builder.ins().load(expected_type, MemFlags::new(), addr, 0))
         }
-        Place::ArrayIndex(place, index_operand) => {
-            // Handle array indexing: base[index]
-            // This is equivalent to *(base + index)
-
-            // For now, we'll implement this as a simplified version
-            // that calculates the address but returns a dummy value
-            // In a full implementation, this would require proper memory management
-
-            // Get the base pointer
-            let base_ptr = resolve_place_to_value(place, builder, types::I32, cranelift_vars, globals, constants)?;
-
-            // Get the index value
-            let index_val =
-                resolve_operand_to_value(index_operand, builder, types::I32, constants, cranelift_vars, globals)?;
-
-            // Calculate offset: index * element_size (assuming 4 bytes for int)
-            let element_size = builder.ins().iconst(types::I32, 4);
-            let offset = builder.ins().imul(index_val, element_size);
-
-            // Calculate element address: base + offset
-            let element_addr = builder.ins().iadd(base_ptr, offset);
-
-            // For now, return the address value itself
-            // This is a simplification - in real code we'd need proper memory access
-            Ok(element_addr)
+        Place::ArrayIndex(base_place, index_operand) => {
+            // Get the address of the array element
+            let addr = resolve_place_to_addr(
+                &Place::ArrayIndex(base_place.clone(), index_operand.clone()),
+                builder,
+                cranelift_stack_slots,
+                globals,
+                constants,
+                types,
+                locals,
+                module,
+            )?;
+            Ok(builder.ins().load(expected_type, MemFlags::new(), addr, 0))
         }
     }
 }
 
+/// Helper function to get the TypeId of a place
+fn get_place_type_id(
+    place: &Place,
+    locals: &HashMap<LocalId, Local>,
+    globals: &HashMap<GlobalId, Global>,
+    types: &HashMap<TypeId, MirType>,
+) -> Result<TypeId, String> {
+    match place {
+        Place::Local(local_id) => locals
+            .get(local_id)
+            .map(|l| l.type_id)
+            .ok_or_else(|| format!("Local {} not found", local_id.get())),
+        Place::Global(global_id) => globals
+            .get(global_id)
+            .map(|g| g.type_id)
+            .ok_or_else(|| format!("Global {} not found", global_id.get())),
+        Place::Deref(_operand) => {
+            // To get the type of a dereference, we need the type of the operand,
+            // which should be a pointer. The resulting type is the pointee.
+            // This requires a way to get an operand's type, which is complex.
+            todo!("get_place_type_id for Deref is not implemented");
+        }
+        Place::StructField(base_place, field_index) => {
+            let base_type_id = get_place_type_id(base_place, locals, globals, types)?;
+            let base_type = types.get(&base_type_id).ok_or("Base type not found for struct field")?;
+            if let MirType::Struct { fields, .. } = base_type {
+                fields
+                    .get(*field_index)
+                    .map(|(_, type_id)| *type_id)
+                    .ok_or_else(|| "Field index out of bounds".to_string())
+            } else {
+                Err("Base of StructField is not a struct type".to_string())
+            }
+        }
+        Place::ArrayIndex(base_place, _) => {
+            let base_type_id = get_place_type_id(base_place, locals, globals, types)?;
+            let base_type = types.get(&base_type_id).ok_or("Base type not found for array index")?;
+            match base_type {
+                MirType::Array { element, .. } => Ok(*element),
+                MirType::Pointer { pointee } => Ok(*pointee),
+                _ => Err("Base of ArrayIndex is not an array or pointer".to_string()),
+            }
+        }
+    }
+}
+
+/// Helper function to resolve a MIR place to a memory address
+#[allow(clippy::too_many_arguments)]
+fn resolve_place_to_addr(
+    place: &Place,
+    builder: &mut FunctionBuilder,
+    cranelift_stack_slots: &HashMap<LocalId, StackSlot>,
+    globals: &HashMap<GlobalId, Global>,
+    constants: &HashMap<ConstValueId, ConstValue>,
+    types: &HashMap<TypeId, MirType>,
+    locals: &HashMap<LocalId, Local>,
+    module: &mut ObjectModule,
+) -> Result<Value, String> {
+    match place {
+        Place::Local(local_id) => {
+            if let Some(stack_slot) = cranelift_stack_slots.get(local_id) {
+                Ok(builder.ins().stack_addr(types::I64, *stack_slot, 0))
+            } else {
+                Err(format!("Stack slot not found for local {}", local_id.get()))
+            }
+        }
+        Place::Global(global_id) => {
+            if let Some(global) = globals.get(global_id) {
+                let global_val = module
+                    .declare_data(global.name.as_str(), cranelift_module::Linkage::Export, true, false)
+                    .map_err(|e| format!("Failed to declare global data: {:?}", e))?;
+                let local_id = module.declare_data_in_func(global_val, builder.func);
+                // Use I64 for addresses
+                Ok(builder.ins().global_value(types::I64, local_id))
+            } else {
+                Err(format!("Global variable {} not found", global_id.get()))
+            }
+        }
+        Place::Deref(operand) => {
+            // The address is the value of the operand itself (which should be a pointer).
+            resolve_operand_to_value(
+                operand,
+                builder,
+                types::I64, // Assume pointers are 64-bit
+                constants,
+                cranelift_stack_slots,
+                globals,
+                // These last two args are new
+                types,
+                locals,
+                module,
+            )
+        }
+        Place::StructField(base_place, field_index) => {
+            // Get the base address of the struct
+            let base_addr = resolve_place_to_addr(
+                base_place,
+                builder,
+                cranelift_stack_slots,
+                globals,
+                constants,
+                types,
+                locals,
+                module,
+            )?;
+
+            // We need to find the type of the base_place to calculate the offset
+            let base_place_type_id =
+                get_place_type_id(base_place, locals, globals, types).map_err(|e| e.to_string())?;
+
+            let base_type = types
+                .get(&base_place_type_id)
+                .ok_or("Base type not found for struct field access")?;
+
+            if let MirType::Struct { fields, .. } = base_type {
+                let mut offset = 0;
+                for i in 0..*field_index {
+                    let (_, field_type_id) = fields.get(i).ok_or("Field index out of bounds")?;
+                    let field_type = types.get(field_type_id).ok_or("Field type not found")?;
+                    offset += mir_type_size(field_type, types);
+                }
+
+                let offset_val = builder.ins().iconst(types::I64, offset as i64);
+                Ok(builder.ins().iadd(base_addr, offset_val))
+            } else {
+                Err("Base of StructField is not a struct type".to_string())
+            }
+        }
+        Place::ArrayIndex(base_place, index_operand) => {
+            // Get the base address of the array/pointer
+            let base_addr = resolve_place_to_addr(
+                base_place,
+                builder,
+                cranelift_stack_slots,
+                globals,
+                constants,
+                types,
+                locals,
+                module,
+            )?;
+
+            // Resolve the index operand to a value
+            let index_val = resolve_operand_to_value(
+                index_operand,
+                builder,
+                types::I64, // Use I64 for index calculations
+                constants,
+                cranelift_stack_slots,
+                globals,
+                types,
+                locals,
+                module,
+            )?;
+
+            // Determine the size of the element
+            let base_place_type_id =
+                get_place_type_id(base_place, locals, globals, types).map_err(|e| e.to_string())?;
+
+            let base_type = types
+                .get(&base_place_type_id)
+                .ok_or("Base type not found for array index")?;
+
+            let element_size = match base_type {
+                MirType::Array { element, .. } => {
+                    let element_type = types.get(element).ok_or("Array element type not found")?;
+                    mir_type_size(element_type, types)
+                }
+                MirType::Pointer { pointee } => {
+                    let pointee_type = types.get(pointee).ok_or("Pointer pointee type not found")?;
+                    mir_type_size(pointee_type, types)
+                }
+                _ => return Err("Base of ArrayIndex is not an array or pointer".to_string()),
+            };
+
+            let element_size_val = builder.ins().iconst(types::I64, element_size as i64);
+            let offset = builder.ins().imul(index_val, element_size_val);
+
+            Ok(builder.ins().iadd(base_addr, offset))
+        }
+    }
+}
 /// MIR to Cranelift IR Lowerer
 pub struct MirToCraneliftLowerer {
     builder_context: FunctionBuilderContext,
@@ -330,7 +524,7 @@ pub struct MirToCraneliftLowerer {
     statements: HashMap<MirStmtId, MirStmt>,
     // Cranelift state
     // _cranelift_blocks: HashMap<MirBlockId, Block>,
-    cranelift_vars: HashMap<LocalId, Variable>,
+    cranelift_stack_slots: HashMap<LocalId, StackSlot>,
     // _cranelift_global_vars: HashMap<GlobalId, Variable>,
     // Function signatures cache
     // _signatures: HashMap<MirFunctionId, Signature>,
@@ -375,9 +569,9 @@ impl MirToCraneliftLowerer {
             constants: HashMap::new(),
             statements,
             // _cranelift_blocks: HashMap::new(),
-            cranelift_vars: HashMap::new(),
-            // _cranelift_global_vars: HashMap::new(),
-            // _signatures: HashMap::new(),
+            cranelift_stack_slots: HashMap::new(),
+            // _cranelift_global_vars: HashMap<new(),
+            // _signatures: HashMap<new(),
             compiled_functions: HashMap::new(),
         }
     }
@@ -504,6 +698,22 @@ impl MirToCraneliftLowerer {
         // Create variables for function parameters (will be defined when we switch to entry block)
         // We'll handle this after creating all blocks
 
+        self.cranelift_stack_slots.clear(); // Clear for each function
+
+        // Combine locals and params for slot allocation
+        let all_locals: Vec<LocalId> = func.locals.iter().chain(func.params.iter()).cloned().collect();
+
+        for &local_id in &all_locals {
+            let local = self.locals.get(&local_id).unwrap();
+            let local_type = self.types.get(&local.type_id).unwrap();
+            let size = mir_type_size(local_type, &self.types);
+
+            // Don't allocate space for zero-sized types
+            if size > 0 {
+                let slot = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, size, 0));
+                self.cranelift_stack_slots.insert(local_id, slot);
+            }
+        }
         // PHASE 1️⃣ — Create all Cranelift blocks first (no instructions)
         let mut cl_blocks = HashMap::new();
 
@@ -521,14 +731,12 @@ impl MirToCraneliftLowerer {
             builder.append_block_param(*entry_cl_block, param_type);
         }
 
-        // Create variables for function parameters and map them to entry block parameters
+        // Store incoming parameter values into their stack slots
         let param_values: Vec<Value> = builder.block_params(*entry_cl_block).to_vec();
-
-        for (i, (&param_id, param_value)) in func.params.iter().zip(param_values.into_iter()).enumerate() {
-            let param_type = param_types[i];
-            let var = builder.declare_var(param_type);
-            builder.def_var(var, param_value);
-            self.cranelift_vars.insert(param_id, var);
+        for (&param_id, param_value) in func.params.iter().zip(param_values.into_iter()) {
+            if let Some(stack_slot) = self.cranelift_stack_slots.get(&param_id) {
+                builder.ins().stack_store(param_value, *stack_slot, 0);
+            }
         }
 
         // PHASE 2️⃣ — Lower block content (without sealing)
@@ -562,185 +770,57 @@ impl MirToCraneliftLowerer {
             for stmt in &statements_to_process {
                 match stmt {
                     MirStmt::Assign(place, rvalue) => {
-                        // Ensure target variable is declared (for local variables)
-                        if let Place::Local(local_id) = place
-                            && !self.cranelift_vars.contains_key(local_id)
-                        {
-                            let var = builder.declare_var(types::I32);
-                            self.cranelift_vars.insert(*local_id, var);
-                        }
-
-                        // Process the rvalue
-                        match rvalue {
-                            Rvalue::Use(operand) => {
-                                // Ensure operand variables are declared
-                                ensure_operands_declared(operand, &mut builder, &mut self.cranelift_vars);
-
-                                match resolve_operand_to_value(
-                                    operand,
-                                    &mut builder,
-                                    types::I32,
-                                    &self.constants,
-                                    &self.cranelift_vars,
-                                    &self.globals,
-                                ) {
-                                    Ok(value) => {
-                                        match place {
-                                            Place::Local(local_id) => {
-                                                // Handle local variable assignment
-                                                if let Some(cranelift_var) = self.cranelift_vars.get(local_id) {
-                                                    builder.def_var(*cranelift_var, value);
-                                                }
-                                            }
-                                            Place::StructField(_base_place, _field_index) => {
-                                                // Handle struct field assignment
-                                                // For now, we'll just assign to a local variable as a placeholder
-                                                // In a full implementation, this would generate proper memory store
-                                                let temp_var = builder.declare_var(types::I32);
-                                                builder.def_var(temp_var, value);
-                                                eprintln!(
-                                                    "Info: Struct field assignment placeholder - would store to memory"
-                                                );
-                                            }
-                                            Place::ArrayIndex(_base_place, _index_operand) => {
-                                                // Handle array index assignment
-                                                // For now, we'll just assign to a local variable as a placeholder
-                                                // In a full implementation, this would generate proper memory store
-                                                let temp_var = builder.declare_var(types::I32);
-                                                builder.def_var(temp_var, value);
-                                                eprintln!(
-                                                    "Info: Array index assignment placeholder - would store to memory"
-                                                );
-                                            }
-                                            _ => {
-                                                eprintln!("Warning: Unsupported place type in assignment");
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
-                                        eprintln!("Warning: Failed to resolve operand: {}", e);
-                                    }
-                                }
-                            }
-                            Rvalue::Call(call_target, args) => {
-                                let call_result = emit_function_call_impl(
-                                    call_target,
-                                    args,
-                                    &mut builder,
-                                    &self.functions,
-                                    &self.types,
-                                    &self.locals,
-                                    &self.cranelift_vars.clone(),
-                                    &self.constants,
-                                    &self.globals,
-                                    &mut self.module,
-                                );
-
-                                match call_result {
-                                    Ok(call_result_val) => {
-                                        match place {
-                                            Place::Local(local_id) => {
-                                                // Handle local variable assignment
-                                                if let Some(cranelift_var) = self.cranelift_vars.get(local_id) {
-                                                    builder.def_var(*cranelift_var, call_result_val);
-                                                }
-                                            }
-                                            Place::StructField(_base_place, _field_index) => {
-                                                // Handle struct field assignment
-                                                // For now, we'll just assign to a local variable as a placeholder
-                                                // In a full implementation, this would generate proper memory store
-                                                let temp_var = builder.declare_var(types::I32);
-                                                builder.def_var(temp_var, call_result_val);
-                                                eprintln!(
-                                                    "Info: Struct field assignment placeholder - would store to memory"
-                                                );
-                                            }
-                                            Place::ArrayIndex(_base_place, _index_operand) => {
-                                                // Handle array index assignment
-                                                // For now, we'll just assign to a local variable as a placeholder
-                                                // In a full implementation, this would generate proper memory store
-                                                let temp_var = builder.declare_var(types::I32);
-                                                builder.def_var(temp_var, call_result_val);
-                                                eprintln!(
-                                                    "Info: Array index assignment placeholder - would store to memory"
-                                                );
-                                            }
-                                            _ => {
-                                                eprintln!(
-                                                    "Warning: Unsupported place type in function call assignment"
-                                                );
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
-                                        eprintln!("Warning: Function call failed: {}", e);
-                                        let error_value = builder.ins().iconst(types::I32, 0);
-                                        match place {
-                                            Place::Local(local_id) => {
-                                                if let Some(cranelift_var) = self.cranelift_vars.get(local_id) {
-                                                    builder.def_var(*cranelift_var, error_value);
-                                                }
-                                            }
-                                            Place::StructField(_base_place, _field_index) => {
-                                                // Handle struct field assignment
-                                                // For now, we'll just assign to a local variable as a placeholder
-                                                // In a full implementation, this would generate proper memory store
-                                                let temp_var = builder.declare_var(types::I32);
-                                                builder.def_var(temp_var, error_value);
-                                                eprintln!(
-                                                    "Info: Struct field assignment placeholder - would store to memory"
-                                                );
-                                            }
-                                            Place::ArrayIndex(_base_place, _index_operand) => {
-                                                // Handle array index assignment
-                                                // For now, we'll just assign to a local variable as a placeholder
-                                                // In a full implementation, this would generate proper memory store
-                                                let temp_var = builder.declare_var(types::I32);
-                                                builder.def_var(temp_var, error_value);
-                                                eprintln!(
-                                                    "Info: Array index assignment placeholder - would store to memory"
-                                                );
-                                            }
-                                            _ => {}
-                                        }
-                                    }
-                                }
-                            }
+                        // Process the rvalue to get a Cranelift value first
+                        let rvalue_result = match rvalue {
+                            Rvalue::Use(operand) => resolve_operand_to_value(
+                                operand,
+                                &mut builder,
+                                types::I32, // Assuming i32 for now
+                                &self.constants,
+                                &self.cranelift_stack_slots,
+                                &self.globals,
+                                &self.types,
+                                &self.locals,
+                                &mut self.module,
+                            ),
+                            Rvalue::Call(call_target, args) => emit_function_call_impl(
+                                call_target,
+                                args,
+                                &mut builder,
+                                &self.functions,
+                                &self.types,
+                                &self.locals,
+                                &self.cranelift_stack_slots,
+                                &self.constants,
+                                &self.globals,
+                                &mut self.module,
+                            ),
                             Rvalue::BinaryOp(op, left_operand, right_operand) => {
-                                // Ensure operand variables are declared
-                                ensure_operands_declared(left_operand, &mut builder, &mut self.cranelift_vars);
-                                ensure_operands_declared(right_operand, &mut builder, &mut self.cranelift_vars);
-
-                                // Resolve operands to values
-                                let left_val = match resolve_operand_to_value(
+                                let left_val = resolve_operand_to_value(
                                     left_operand,
                                     &mut builder,
                                     types::I32,
                                     &self.constants,
-                                    &self.cranelift_vars,
+                                    &self.cranelift_stack_slots,
                                     &self.globals,
-                                ) {
-                                    Ok(val) => val,
-                                    Err(_) => {
-                                        eprintln!("Warning: Failed to resolve left operand");
-                                        builder.ins().iconst(types::I32, 0)
-                                    }
-                                };
+                                    &self.types,
+                                    &self.locals,
+                                    &mut self.module,
+                                )
+                                .unwrap_or_else(|_| builder.ins().iconst(types::I32, 0));
 
-                                let right_val = match resolve_operand_to_value(
+                                let right_val = resolve_operand_to_value(
                                     right_operand,
                                     &mut builder,
                                     types::I32,
                                     &self.constants,
-                                    &self.cranelift_vars,
+                                    &self.cranelift_stack_slots,
                                     &self.globals,
-                                ) {
-                                    Ok(val) => val,
-                                    Err(_) => {
-                                        eprintln!("Warning: Failed to resolve right operand");
-                                        builder.ins().iconst(types::I32, 0)
-                                    }
-                                };
+                                    &self.types,
+                                    &self.locals,
+                                    &mut self.module,
+                                )
+                                .unwrap_or_else(|_| builder.ins().iconst(types::I32, 0));
 
                                 let result_val = match op {
                                     BinaryOp::Add => builder.ins().iadd(left_val, right_val),
@@ -782,57 +862,44 @@ impl MirToCraneliftLowerer {
                                     BinaryOp::LogicAnd | BinaryOp::LogicOr => builder.ins().band(left_val, right_val),
                                     BinaryOp::Comma => right_val,
                                 };
-
-                                if let Place::Local(local_id) = place
-                                    && let Some(cranelift_var) = self.cranelift_vars.get(local_id)
-                                {
-                                    builder.def_var(*cranelift_var, result_val);
-                                } else if let Place::StructField(_base_place, _field_index) = place {
-                                    // Handle struct field assignment
-                                    // For now, we'll just assign to a local variable as a placeholder
-                                    // In a full implementation, this would generate proper memory store
-                                    let temp_var = builder.declare_var(types::I32);
-                                    builder.def_var(temp_var, result_val);
-                                    eprintln!("Info: Struct field assignment placeholder - would store to memory");
-                                } else if let Place::ArrayIndex(_base_place, _index_operand) = place {
-                                    // Handle array index assignment
-                                    // For now, we'll just assign to a local variable as a placeholder
-                                    // In a full implementation, this would generate proper memory store
-                                    let temp_var = builder.declare_var(types::I32);
-                                    builder.def_var(temp_var, result_val);
-                                    eprintln!("Info: Array index assignment placeholder - would store to memory");
-                                }
+                                Ok(result_val)
                             }
-                            _ => {
-                                // For other rvalue types, emit a dummy value
-                                let dummy_value = builder.ins().iconst(types::I32, 0);
-                                match place {
-                                    Place::Local(local_id) => {
-                                        if let Some(cranelift_var) = self.cranelift_vars.get(local_id) {
-                                            builder.def_var(*cranelift_var, dummy_value);
+                            _ => Ok(builder.ins().iconst(types::I32, 0)),
+                        };
+
+                        // Now, assign the resolved value to the place
+                        if let Ok(value) = rvalue_result {
+                            match place {
+                                Place::Local(local_id) => {
+                                    if let Some(stack_slot) = self.cranelift_stack_slots.get(local_id) {
+                                        builder.ins().stack_store(value, *stack_slot, 0);
+                                    } else {
+                                        eprintln!("Warning: Stack slot not found for local {}", local_id.get());
+                                    }
+                                }
+                                _ => {
+                                    // This covers StructField, ArrayIndex, Deref, and Global assignments
+                                    match resolve_place_to_addr(
+                                        place,
+                                        &mut builder,
+                                        &self.cranelift_stack_slots,
+                                        &self.globals,
+                                        &self.constants,
+                                        &self.types,
+                                        &self.locals,
+                                        &mut self.module,
+                                    ) {
+                                        Ok(addr) => {
+                                            builder.ins().store(MemFlags::new(), value, addr, 0);
+                                        }
+                                        Err(e) => {
+                                            eprintln!("Warning: Failed to resolve place address for assignment: {}", e);
                                         }
                                     }
-                                    Place::StructField(_base_place, _field_index) => {
-                                        // Handle struct field assignment
-                                        // For now, we'll just assign to a local variable as a placeholder
-                                        // In a full implementation, this would generate proper memory store
-                                        let temp_var = builder.declare_var(types::I32);
-                                        builder.def_var(temp_var, dummy_value);
-                                        eprintln!("Info: Struct field assignment placeholder - would store to memory");
-                                    }
-                                    Place::ArrayIndex(_base_place, _index_operand) => {
-                                        // Handle array index assignment
-                                        // For now, we'll just assign to a local variable as a placeholder
-                                        // In a full implementation, this would generate proper memory store
-                                        let temp_var = builder.declare_var(types::I32);
-                                        builder.def_var(temp_var, dummy_value);
-                                        eprintln!("Info: Array index assignment placeholder - would store to memory");
-                                    }
-                                    _ => {
-                                        eprintln!("Warning: Unsupported place type in assignment");
-                                    }
                                 }
                             }
+                        } else if let Err(e) = rvalue_result {
+                            eprintln!("Warning: Failed to resolve rvalue: {}", e);
                         }
                     }
 
@@ -867,16 +934,16 @@ impl MirToCraneliftLowerer {
                 }
 
                 Terminator::If(cond, then_bb, else_bb) => {
-                    // Ensure condition variables are declared
-                    ensure_operands_declared(cond, &mut builder, &mut self.cranelift_vars);
-
                     let cond_val = match resolve_operand_to_value(
                         cond,
                         &mut builder,
                         types::I32,
                         &self.constants,
-                        &self.cranelift_vars,
+                        &self.cranelift_stack_slots,
                         &self.globals,
+                        &self.types,
+                        &self.locals,
+                        &mut self.module,
                     ) {
                         Ok(val) => val,
                         Err(_) => {
@@ -896,16 +963,16 @@ impl MirToCraneliftLowerer {
 
                 Terminator::Return(opt) => {
                     if let Some(operand) = opt {
-                        // Ensure operand variables are declared
-                        ensure_operands_declared(operand, &mut builder, &mut self.cranelift_vars);
-
                         match resolve_operand_to_value(
                             operand,
                             &mut builder,
                             return_type,
                             &self.constants,
-                            &self.cranelift_vars,
+                            &self.cranelift_stack_slots,
                             &self.globals,
+                            &self.types,
+                            &self.locals,
+                            &mut self.module,
                         ) {
                             Ok(return_value) => {
                                 builder.ins().return_(&[return_value]);

@@ -1,5 +1,6 @@
 use crate::lexer::TokenKind;
 use crate::source_manager::{SourceManager, SourceSpan};
+use annotate_snippets::{AnnotationKind, Level, Renderer, Snippet};
 use symbol_table::GlobalSymbol as Symbol;
 
 /// Diagnostic severity levels
@@ -251,44 +252,51 @@ impl Default for ErrorFormatter {
 impl ErrorFormatter {
     /// Format a single diagnostic with rich source code context
     pub fn format_diagnostic(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
-        let level_str = match diag.level {
-            DiagnosticLevel::Error => "error",
-            DiagnosticLevel::Warning => "warning",
-            DiagnosticLevel::Note => "note",
+        let snippet = self.create_snippet(diag, source_manager);
+        let renderer = if self.use_colors {
+            Renderer::styled()
+        } else {
+            Renderer::plain()
         };
+        let mut group = self.level(diag).primary_title(&diag.message).element(snippet);
 
-        let mut result = format!("{}: {}", level_str, diag.message);
-
-        // Add source location if available
-        if let Some(file_info) = source_manager.get_file_info(diag.location.source_id()) {
-            let (line, col, filename) = if let Some((presumed_line, presumed_col, presumed_file)) =
-                source_manager.get_presumed_location(diag.location.start)
-            {
-                (
-                    presumed_line,
-                    presumed_col,
-                    presumed_file.unwrap_or_else(|| file_info.path.to_str().unwrap_or("<invalid>")),
-                )
-            } else {
-                (1, 1, file_info.path.to_str().unwrap_or("<invalid>"))
-            };
-            result.push_str(&format!(" at {}:{}:{}", filename, line, col));
+        for hint in &diag.hints {
+            group = group.element(Level::HELP.message(hint));
         }
 
-        // Add hints if enabled
-        if self.show_hints && !diag.hints.is_empty() {
-            for hint in &diag.hints {
-                result.push_str(&format!("\n  hint: {}", hint));
-            }
-        }
+        let report = &[group];
+        renderer.render(report).to_string()
+    }
 
-        // Add source code snippet if enabled
-        if self.show_source {
-            let source_text = source_manager.get_source_text(diag.location);
-            result.push_str(&format!("\n  |\n  | {}\n  |", source_text.replace('\n', "\n  | ")));
+    fn level<'a>(&self, diag: &Diagnostic) -> Level<'a> {
+        match diag.level {
+            DiagnosticLevel::Error => Level::ERROR,
+            DiagnosticLevel::Warning => Level::WARNING,
+            DiagnosticLevel::Note => Level::NOTE,
         }
+    }
 
-        result
+    fn create_snippet<'a>(
+        &self,
+        diag: &'a Diagnostic,
+        source_manager: &'a SourceManager,
+    ) -> Snippet<'a, annotate_snippets::Annotation<'a>> {
+        let source_buffer = source_manager.get_buffer(diag.location.source_id());
+        let source = std::str::from_utf8(source_buffer).unwrap_or("");
+        let path = source_manager
+            .get_file_info(diag.location.source_id())
+            .map(|fi| fi.path.to_str().unwrap_or("<unknown>"))
+            .unwrap_or("<unknown>");
+
+        let mut snippet = Snippet::source(source).line_start(1).path(path);
+
+        let annotation_kind = AnnotationKind::Primary;
+
+        snippet = snippet.annotation(
+            annotation_kind.span(diag.location.start.offset() as usize..diag.location.end.offset() as usize),
+        );
+
+        snippet
     }
 
     /// Format multiple diagnostics
@@ -300,15 +308,11 @@ impl ErrorFormatter {
             .join("\n\n")
     }
 
-    /// Print a diagnostic directly to stderr
-    pub fn print_diagnostic(&self, diag: &Diagnostic, source_manager: &SourceManager) {
-        eprintln!("{}", self.format_diagnostic(diag, source_manager));
-    }
-
     /// Print all diagnostics to stderr
     pub fn print_diagnostics(&self, diagnostics: &[Diagnostic], source_manager: &SourceManager) {
         for diag in diagnostics {
-            self.print_diagnostic(diag, source_manager);
+            let formatted = self.format_diagnostic(diag, source_manager);
+            eprintln!("{}", formatted);
         }
     }
 }

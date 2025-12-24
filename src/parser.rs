@@ -139,6 +139,17 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         Ok(self.current_token()?.location)
     }
 
+    /// Get the location of the previous token, or an empty span if not available.
+    pub(crate) fn previous_token_span(&self) -> SourceSpan {
+        if self.current_idx > 0 {
+            self.tokens
+                .get(self.current_idx - 1)
+                .map_or(SourceSpan::empty(), |token| token.location)
+        } else {
+            SourceSpan::empty()
+        }
+    }
+
     /// Peek at the next token without consuming it
     fn peek_token(&self, next_index: u32) -> Option<&Token> {
         self.tokens.get(self.current_idx + 1 + next_index as usize)

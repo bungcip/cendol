@@ -292,20 +292,8 @@ impl CompilerDriver {
         if !self.config.dump_mir && !self.config.skip_validation {
             log::debug!("Running MIR validation");
             let mut validator = MirValidator::new();
-            match validator.validate(&mir_module, &functions, &blocks, &locals, &globals, &types) {
-                Ok(()) => {
-                    log::debug!("MIR validation passed");
-                }
-                Err(errors) => {
-                    for error in errors {
-                        self.diagnostics
-                            .report_error(crate::diagnostic::SemanticError::InvalidOperands {
-                                message: format!("MIR validation failed: {}", error),
-                                location: crate::source_manager::SourceSpan::empty(),
-                            });
-                    }
-                    return Err(CompilerError::SemanticError("MIR validation failed".to_string()));
-                }
+            if let Err(errors) = validator.validate(&mir_module, &functions, &blocks, &locals, &globals, &types) {
+                panic!("MIR validation failed: {:?}", errors);
             }
         } else {
             log::debug!("Skipping MIR validation due to dump_mir or skip_validation flag");

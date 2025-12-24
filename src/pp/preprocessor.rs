@@ -759,9 +759,10 @@ impl<'src> Preprocessor<'src> {
             Ok(e) => e,
             Err(_) => {
                 let location = if !tokens.is_empty() {
-                    SourceSpan::new(tokens[0].location, tokens[0].location)
+                    SourceSpan::new(tokens[0].location, tokens.last().unwrap().location)
                 } else {
-                    SourceSpan::empty()
+                    let loc = self.get_current_location();
+                    SourceSpan::new(loc, loc)
                 };
                 let diag = crate::diagnostic::Diagnostic {
                     level: crate::diagnostic::DiagnosticLevel::Error,

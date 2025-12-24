@@ -6,7 +6,6 @@
 use crate::ast::*;
 use crate::diagnostic::ParseError;
 use crate::lexer::TokenKind;
-use crate::source_manager::SourceSpan;
 
 use super::Parser;
 
@@ -22,7 +21,7 @@ pub(crate) fn parse_type_specifier_with_context(
 ) -> Result<TypeSpecifier, ParseError> {
     let token = parser.try_current_token().ok_or_else(|| ParseError::SyntaxError {
         message: "Expected type specifier".to_string(),
-        location: SourceSpan::empty(),
+        location: parser.previous_token_span(),
     })?;
 
     match token.kind {

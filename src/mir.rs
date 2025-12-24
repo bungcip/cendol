@@ -16,6 +16,9 @@ use symbol_table::GlobalSymbol as Symbol;
 pub mod codegen;
 pub mod validation;
 
+#[cfg(test)]
+pub mod tests_codegen;
+
 /// Unique identifier for MIR global variables
 pub type GlobalId = NonZeroU32;
 

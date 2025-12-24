@@ -16,10 +16,10 @@ chrono = "0.4"
 bitflags = { version = "2.6", features = ["serde"] }
 target-lexicon = "0.13"
 symbol_table = { version = "0.5", features = ["global", "serde"] }
-cranelift = "0.126.1"
-cranelift-module = "0.126.1"
-cranelift-object = "0.126.1"
-cranelift-frontend = "0.126.1"
+cranelift = "0.127"
+cranelift-module = "0.127"
+cranelift-object = "0.127"
+cranelift-frontend = "0.127"
 annotate-snippets = "0.12"
 bitvec = "1.0"
 serde = { version = "1.0", features = ["derive"] }

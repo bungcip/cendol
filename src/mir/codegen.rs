@@ -16,7 +16,7 @@ use cranelift::prelude::{
     AbiParam, FunctionBuilderContext, InstBuilder, IntCC, MemFlags, Signature, Type, Value, types,
 };
 use cranelift_frontend::FunctionBuilder;
-use cranelift_module::Module;
+use cranelift_module::{DataDescription, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use hashbrown::HashMap;
 use hashbrown::HashSet;
@@ -259,44 +259,21 @@ fn resolve_place_to_value(
                 Err(format!("Stack slot not found for local {}", local_id.get()))
             }
         }
-        Place::Global(global_id) => {
-            // Declare the global variable in the module and create a pointer to it
-            if let Some(global) = globals.get(global_id) {
-                // For now, just return the constant value directly
-                // This avoids the issue of trying to load from a non-existent global variable
-                if let Some(const_value_id) = global.initial_value {
-                    if let Some(const_value) = constants.get(&const_value_id) {
-                        match const_value {
-                            ConstValue::Int(val) => Ok(builder.ins().iconst(expected_type, *val)),
-                            ConstValue::Float(val) => {
-                                // Use the appropriate float constant based on expected type
-                                if expected_type == types::F64 {
-                                    Ok(builder.ins().f64const(*val))
-                                } else {
-                                    Ok(builder.ins().f32const(*val as f32))
-                                }
-                            }
-                            ConstValue::Bool(val) => {
-                                let int_val = if *val { 1 } else { 0 };
-                                Ok(builder.ins().iconst(expected_type, int_val))
-                            }
-                            ConstValue::Null => Ok(builder.ins().iconst(expected_type, 0)),
-                            ConstValue::String(_) => {
-                                // For now, treat string constants as pointers to null
-                                Ok(builder.ins().iconst(expected_type, 0))
-                            }
-                            _ => Ok(builder.ins().iconst(expected_type, 0)),
-                        }
-                    } else {
-                        Err(format!("Constant {} not found", const_value_id.get()))
-                    }
-                } else {
-                    // Global without initial value, return 0
-                    Ok(builder.ins().iconst(expected_type, 0))
-                }
-            } else {
-                Err(format!("Global variable {} not found", global_id.get()))
-            }
+        Place::Global(_global_id) => {
+            // First, get the memory address of the global.
+            let addr = resolve_place_to_addr(
+                place, // Pass the current place
+                builder,
+                cranelift_stack_slots,
+                globals,
+                constants,
+                types,
+                locals,
+                module,
+            )?;
+
+            // Then, load the value from that address.
+            Ok(builder.ins().load(expected_type, MemFlags::new(), addr, 0))
         }
         Place::Deref(operand) => {
             // The address is the value of the operand, so we load from that value
@@ -613,6 +590,70 @@ impl MirToCraneliftLowerer {
     pub(crate) fn compile(mut self) -> Result<Vec<u8>, String> {
         // First, populate all the state from the MIR module
         self.populate_state();
+
+        // Define all global variables in the module
+        for (_global_id, global) in &self.globals {
+            let data_id = self
+                .module
+                .declare_data(global.name.as_str(), Linkage::Export, true, false)
+                .map_err(|e| format!("Failed to declare global data: {:?}", e))?;
+
+            let mut data_description = DataDescription::new();
+
+            // Handle initializers if they exist
+            if let Some(const_id) = global.initial_value {
+                if let Some(const_val) = self.constants.get(&const_id) {
+                    let initial_value_bytes = match const_val {
+                        ConstValue::Int(val) => val.to_le_bytes().to_vec(),
+                        ConstValue::Float(val) => {
+                            let global_type = self.types.get(&global.type_id).unwrap();
+                            if let MirType::Float { width } = global_type {
+                                if *width == 64 {
+                                    val.to_le_bytes().to_vec()
+                                } else {
+                                    (*val as f32).to_le_bytes().to_vec()
+                                }
+                            } else {
+                                (*val as f32).to_le_bytes().to_vec()
+                            }
+                        }
+                        ConstValue::Bool(val) => vec![*val as u8],
+                        // For null pointers, we can use a zero-initialized buffer
+                        ConstValue::Null => {
+                            let pointer_size = self.module.target_config().pointer_bytes() as usize;
+                            vec![0; pointer_size]
+                        }
+                        // For strings, we need to handle them properly
+                        ConstValue::String(s) => {
+                            let mut bytes = s.as_bytes().to_vec();
+                            bytes.push(0);
+                            bytes
+                        }
+                        // Add other cases as needed, e.g., for aggregates
+                        _ => {
+                            let global_type = self.types.get(&global.type_id).unwrap();
+                            let size = mir_type_size(global_type, &self.types) as usize;
+                            vec![0; size]
+                        }
+                    };
+                    data_description.define(initial_value_bytes.into_boxed_slice());
+                } else {
+                    // If no constant found, zero-initialize
+                    let global_type = self.types.get(&global.type_id).unwrap();
+                    let size = mir_type_size(global_type, &self.types) as usize;
+                    data_description.define_zeroinit(size);
+                }
+            } else {
+                // If no initializer, zero-initialize
+                let global_type = self.types.get(&global.type_id).unwrap();
+                let size = mir_type_size(global_type, &self.types) as usize;
+                data_description.define_zeroinit(size);
+            }
+
+            self.module
+                .define_data(data_id, &data_description)
+                .map_err(|e| format!("Failed to define global data: {:?}", e))?;
+        }
 
         // If we have functions to lower, lower them
         for func_id in self.mir_module.functions.clone() {

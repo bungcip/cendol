@@ -415,9 +415,9 @@ impl<'src> Lexer<'src> {
         if number_part.starts_with("0x") || number_part.starts_with("0X") {
             base = 16;
             digits_to_parse = &number_part[2..];
-        } else if number_part.starts_with('0') {
+        } else if let Some(stripped) = number_part.strip_prefix('0') {
             base = 8;
-            digits_to_parse = &number_part[1..];
+            digits_to_parse = stripped;
         }
         // else base is 10 and we parse the whole `number_part`.
 

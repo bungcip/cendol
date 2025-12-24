@@ -738,7 +738,6 @@ impl MirToCraneliftLowerer {
             cl_blocks.insert(block_id, cl_block);
         }
 
-
         // PHASE 2️⃣ — Lower block content (without sealing)
 
         // Use worklist algorithm for proper traversal
@@ -1173,20 +1172,11 @@ mod tests {
 
         // `foo` locals for intermediate values
         let temp_add_id = LocalId::new(3).unwrap();
-        locals.insert(
-            temp_add_id,
-            Local::new(temp_add_id, None, int_type_id, false),
-        );
+        locals.insert(temp_add_id, Local::new(temp_add_id, None, int_type_id, false));
         let temp_sub_id = LocalId::new(4).unwrap();
-        locals.insert(
-            temp_sub_id,
-            Local::new(temp_sub_id, None, int_type_id, false),
-        );
+        locals.insert(temp_sub_id, Local::new(temp_sub_id, None, int_type_id, false));
         let return_val_id = LocalId::new(5).unwrap();
-        locals.insert(
-            return_val_id,
-            Local::new(return_val_id, None, int_type_id, false),
-        );
+        locals.insert(return_val_id, Local::new(return_val_id, None, int_type_id, false));
 
         let mut foo_func = MirFunction::new(foo_func_id, GlobalSymbol::new("foo"), int_type_id);
         foo_func.params = vec![param_a_id, param_b_id];
@@ -1231,8 +1221,7 @@ mod tests {
         statements.insert(stmt3_id, stmt3);
         foo_entry_block.statements.push(stmt3_id);
 
-        foo_entry_block.terminator =
-            Terminator::Return(Some(Operand::Copy(Box::new(Place::Local(return_val_id)))));
+        foo_entry_block.terminator = Terminator::Return(Some(Operand::Copy(Box::new(Place::Local(return_val_id)))));
         blocks.insert(foo_entry_block_id, foo_entry_block);
         functions.insert(foo_func_id, foo_func);
         module.functions.push(foo_func_id);

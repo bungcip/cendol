@@ -97,6 +97,17 @@ impl SymbolTable {
         let new_scope_id = ScopeId::new(self.next_scope_id).unwrap();
         self.next_scope_id += 1;
 
+        if (new_scope_id.get() as usize) <= self.scopes.len() {
+            // Re-use existing scope during second pass (e.g. analysis after lowering)
+            self.current_scope_id = new_scope_id;
+            debug!(
+                "SymbolTable: Re-entering existing scope {}. Current scope is now {}",
+                new_scope_id.get(),
+                self.current_scope_id.get()
+            );
+            return new_scope_id;
+        }
+
         let new_scope = Scope {
             parent: Some(self.current_scope_id),
             symbols: HashMap::new(),
@@ -109,10 +120,19 @@ impl SymbolTable {
         self.scopes.push(new_scope);
         self.current_scope_id = new_scope_id;
         debug!(
-            "SymbolTable: Pushed scope. New current_scope_id: {}",
+            "SymbolTable: Pushed new scope. New current_scope_id: {}",
             self.current_scope_id.get()
         );
         new_scope_id
+    }
+
+    /// Reset the traversal state to the global scope.
+    /// Used between different passes (e.g. between lowering and analysis) to re-enter
+    /// the same hierarchy of scopes in the same order.
+    pub fn reset_traversal(&mut self) {
+        self.current_scope_id = ScopeId::GLOBAL;
+        self.next_scope_id = 2;
+        debug!("SymbolTable: Traversal reset to GLOBAL");
     }
 
     pub fn push_scope_with_id(&mut self, scope_id: ScopeId, kind: ScopeKind) -> ScopeId {

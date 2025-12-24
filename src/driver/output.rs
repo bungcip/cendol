@@ -289,6 +289,10 @@ impl OutputHandler {
                     record_decl.is_union
                 )
             }
+            NodeKind::DeclarationList(stmts) => println!(
+                "DeclarationList([{}])",
+                stmts.iter().map(|&r| r.get().to_string()).join(", ")
+            ),
             NodeKind::Dummy => println!("DUMMY"),
         }
     }

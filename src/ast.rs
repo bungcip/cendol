@@ -161,6 +161,7 @@ impl Ast {
             NodeKind::TranslationUnit(nodes) => nodes.clone(),
             NodeKind::FunctionDef(func_def) => vec![func_def.body],
             NodeKind::CompoundStatement(nodes) => nodes.clone(),
+            NodeKind::DeclarationList(nodes) => nodes.clone(),
             NodeKind::If(if_stmt) => {
                 let mut children = vec![if_stmt.condition, if_stmt.then_branch];
                 if let Some(else_branch) = if_stmt.else_branch {
@@ -250,6 +251,22 @@ impl Ast {
                 if updated_nodes != *nodes {
                     let mut new_node = node.clone();
                     if let NodeKind::CompoundStatement(ref_mut_nodes) = &mut new_node.kind {
+                        *ref_mut_nodes = updated_nodes;
+                    }
+                    Some(new_node)
+                } else {
+                    None
+                }
+            }
+            NodeKind::DeclarationList(nodes) => {
+                let updated_nodes: Vec<NodeRef> = nodes
+                    .iter()
+                    .map(|&node_ref| if node_ref == old_ref { new_ref } else { node_ref })
+                    .collect();
+
+                if updated_nodes != *nodes {
+                    let mut new_node = node.clone();
+                    if let NodeKind::DeclarationList(ref_mut_nodes) = &mut new_node.kind {
                         *ref_mut_nodes = updated_nodes;
                     }
                     Some(new_node)
@@ -774,6 +791,9 @@ pub enum SymbolKind {
         members: Vec<StructMember>,
         size: Option<usize>,
         alignment: Option<usize>,
+    },
+    EnumTag {
+        is_complete: bool,
     },
     // Add other symbol kinds as needed (e.g., Macro, BlockScope)
 }

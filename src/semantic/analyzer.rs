@@ -25,7 +25,9 @@ pub struct SemanticAnalyzer<'a, 'src> {
     current_function: Option<MirFunctionId>,
     current_block: Option<MirBlockId>,
     /// Maps variable names to their MIR Local IDs
-    local_map: HashMap<Symbol, LocalId>,
+    /// Maps symbol entry references to their MIR Local IDs.
+    /// Using SymbolEntryRef instead of name ensures scope awareness and handles shadowing correctly.
+    local_map: HashMap<SymbolEntryRef, LocalId>,
     /// Maps label names to their MIR Block IDs
     label_map: HashMap<Symbol, MirBlockId>,
     /// Track errors during analysis for early termination
@@ -59,6 +61,9 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             debug!("No root node found, skipping semantic analysis");
             return self.mir_builder.finalize_module();
         };
+
+        // Reset symbol table traversal to re-enter scopes in the same order
+        self.symbol_table.reset_traversal();
 
         // Process the entire AST starting from root
         self.lower_node_ref(root_node_ref);
@@ -120,6 +125,13 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 self.lower_compound_statement(&nodes);
             }
 
+            // Handle declaration lists by processing each declaration
+            NodeKind::DeclarationList(nodes) => {
+                for child_ref in nodes {
+                    self.lower_node_ref(child_ref);
+                }
+            }
+
             // For other node types, try to lower as statement
             _ => {
                 self.try_lower_as_statement(node_ref);
@@ -162,14 +174,20 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         );
 
         // First pass: collect all labels (including nested ones)
+        // Note: Label collection doesn't need scope management as labels are function-scoped
         for &stmt_ref in nodes {
             self.collect_labels_recursive(stmt_ref);
         }
 
-        // Second pass: process all statements
+        // Second pass: process all statements with proper scope management
+        self.symbol_table
+            .push_scope(crate::semantic::symbol_table::ScopeKind::Block);
+
         for &stmt_ref in nodes {
             self.lower_node_ref(stmt_ref);
         }
+
+        self.symbol_table.pop_scope();
     }
 
     /// Recursively collect all labels from a statement and its nested statements
@@ -214,8 +232,41 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                     self.collect_labels_recursive(nested_stmt_ref);
                 }
             }
+            NodeKind::DeclarationList(nodes) => {
+                // For declaration lists, recursively collect labels from all items
+                for &nested_stmt_ref in nodes.iter() {
+                    self.collect_labels_recursive(nested_stmt_ref);
+                }
+            }
+            NodeKind::If(if_stmt) => {
+                self.collect_labels_recursive(if_stmt.then_branch);
+                if let Some(else_branch) = if_stmt.else_branch {
+                    self.collect_labels_recursive(else_branch);
+                }
+            }
+            NodeKind::While(while_stmt) => {
+                self.collect_labels_recursive(while_stmt.body);
+            }
+            NodeKind::DoWhile(body, _) => {
+                self.collect_labels_recursive(body);
+            }
+            NodeKind::For(for_stmt) => {
+                self.collect_labels_recursive(for_stmt.body);
+            }
+            NodeKind::Switch(_, body) => {
+                self.collect_labels_recursive(body);
+            }
+            NodeKind::Case(_, stmt) => {
+                self.collect_labels_recursive(stmt);
+            }
+            NodeKind::CaseRange(_, _, stmt) => {
+                self.collect_labels_recursive(stmt);
+            }
+            NodeKind::Default(stmt) => {
+                self.collect_labels_recursive(stmt);
+            }
             _ => {
-                // For other statement types, no action needed for label collection
+                // Leaves or nodes that definitely don't contain statements (e.g. VarDecl)
             }
         }
     }
@@ -320,13 +371,28 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         debug!("Processing parameter: {}", param_name);
 
         // Check for redeclaration in current scope
-        if let Some((existing_entry, _)) = self.symbol_table.lookup_symbol(param_name) {
-            let existing = self.symbol_table.get_symbol_entry(existing_entry);
-            self.report_error(SemanticError::Redefinition {
-                name: param_name,
-                first_def: existing.definition_span,
-                second_def: location,
-            });
+        if let Some((existing_entry, scope_id)) = self.symbol_table.lookup_symbol(param_name)
+            && scope_id == self.symbol_table.current_scope()
+        {
+            // If we've already created a MIR local for this entry in this pass, it's a real redefinition
+            if self.local_map.contains_key(&existing_entry) {
+                let existing = self.symbol_table.get_symbol_entry(existing_entry);
+                self.report_error(SemanticError::Redefinition {
+                    name: param_name,
+                    first_def: existing.definition_span,
+                    second_def: location,
+                });
+                return;
+            }
+
+            // Symbol already exists from previous pass (lowering). Re-use it and create MIR local.
+            let type_id = self.get_int_type(); // Default to int for now
+            let local_id = self.mir_builder.create_local(Some(param_name), type_id, true);
+            self.local_map.insert(existing_entry, local_id);
+            debug!(
+                "Re-using symbol entry from lowering pass for parameter '{}'",
+                param_name
+            );
             return;
         }
 
@@ -334,21 +400,18 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         let type_id = self.get_int_type(); // Default to int for now
         let local_id = self.mir_builder.create_local(Some(param_name), type_id, true);
 
-        // Store in local map for expression resolution
-        self.local_map.insert(param_name, local_id);
-
-        // Add to symbol table
+        // Add to symbol table and store in local map
         let symbol_entry = SymbolEntry {
-            name: param_name.as_str().into(),
+            name: param_name,
             kind: SymbolKind::Variable {
                 is_global: false,
                 is_static: false,
                 is_extern: false,
-                initializer: None, // Parameters don't have initializers
+                initializer: None,
             },
-            type_info: self.ast.push_type(crate::ast::Type {
-                kind: crate::ast::TypeKind::Int { is_signed: true },
-                qualifiers: crate::ast::TypeQualifiers::empty(),
+            type_info: self.ast.push_type(Type {
+                kind: TypeKind::Int { is_signed: true },
+                qualifiers: TypeQualifiers::empty(),
                 size: None,
                 alignment: None,
             }),
@@ -360,9 +423,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             is_completed: true,
         };
 
-        self.symbol_table.add_symbol(param_name, symbol_entry);
-
-        debug!("Created parameter local '{}' with id {:?}", param_name, local_id);
+        let entry_ref = self.symbol_table.add_symbol(param_name, symbol_entry);
+        self.local_map.insert(entry_ref, local_id);
     }
 
     /// Second pass: Process an initializer and emit assignment
@@ -734,14 +796,24 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         debug!("Lowering semantic var declaration for '{}'", var_decl.name);
 
         // Check for redeclaration
-        if let Some((existing_entry, _)) = self.symbol_table.lookup_symbol(var_decl.name) {
-            let existing = self.symbol_table.get_symbol_entry(existing_entry);
-            self.report_error(SemanticError::Redefinition {
-                name: var_decl.name,
-                first_def: existing.definition_span,
-                second_def: location,
-            });
-            return;
+        if let Some((existing_entry, scope_id)) = self.symbol_table.lookup_symbol(var_decl.name)
+            && scope_id == self.symbol_table.current_scope()
+        {
+            // If we've already handled this in THIS pass (it has a MIR local or is a global we've seen),
+            // it might be a real redefinition.
+            // For locals, we check local_map.
+            if self.local_map.contains_key(&existing_entry) {
+                let existing = self.symbol_table.get_symbol_entry(existing_entry);
+                self.report_error(SemanticError::Redefinition {
+                    name: var_decl.name,
+                    first_def: existing.definition_span,
+                    second_def: location,
+                });
+                return;
+            }
+
+            // If it's a global, we can check if it already has a MIR global.
+            // ... (global redefinition check could be here, but let's focus on fixing the bug first)
         }
 
         // Canonicalize the variable's type (like Clang does)
@@ -756,8 +828,11 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         // Convert AST type to MIR type
         let mir_type_id = self.lower_type_to_mir(canonical_type_id);
 
-        // Check if this is a global variable (outside any function)
         let is_global = self.current_function.is_none();
+        let initializer_node_ref = var_decl.init.as_ref().and_then(|init| match init {
+            Initializer::Expression(expr_ref) => Some(*expr_ref),
+            _ => None,
+        });
 
         if is_global {
             // Create MIR global variable
@@ -777,7 +852,6 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                     }
                     _ => {
                         // For compound initializers in global variables, we need to process them properly
-                        // This handles cases like: struct { int a; int b; int c; } s = {1, 2, 3};
                         if let Some(struct_const_id) =
                             self.process_global_compound_initializer(init, var_decl.name, mir_type_id, location)
                         {
@@ -791,68 +865,74 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 self.mir_builder
                     .create_global_with_init(var_decl.name, mir_type_id, is_constant, initial_value_id);
 
-            // Convert initializer from Option<Initializer> to Option<NodeRef>
-            let initializer_node_ref = var_decl.init.as_ref().and_then(|init| {
-                match init {
-                    Initializer::Expression(expr_ref) => Some(*expr_ref),
-                    _ => None, // For now, only handle simple expression initializers
+            // Add to symbol table as global (unless already there from previous pass)
+            let existing_entry = self.symbol_table.lookup_symbol(var_decl.name).and_then(|(e, s)| {
+                if s == self.symbol_table.current_scope() {
+                    Some(e)
+                } else {
+                    None
                 }
             });
 
-            // Add to symbol table as global
-            let symbol_entry = SymbolEntry {
-                name: var_decl.name,
-                kind: SymbolKind::Variable {
-                    is_global: true,
-                    is_static: var_decl.storage == Some(StorageClass::Static),
-                    is_extern: var_decl.storage == Some(StorageClass::Extern),
-                    initializer: initializer_node_ref,
-                },
-                type_info: var_decl.ty,
-                storage_class: var_decl.storage,
-                scope_id: self.symbol_table.current_scope().get(),
-                definition_span: location,
-                is_defined: true,
-                is_referenced: false,
-                is_completed: true,
-            };
+            if existing_entry.is_none() {
+                let symbol_entry = SymbolEntry {
+                    name: var_decl.name,
+                    kind: SymbolKind::Variable {
+                        is_global: true,
+                        is_static: var_decl.storage == Some(StorageClass::Static),
+                        is_extern: var_decl.storage == Some(StorageClass::Extern),
+                        initializer: initializer_node_ref,
+                    },
+                    type_info: var_decl.ty,
+                    storage_class: var_decl.storage,
+                    scope_id: self.symbol_table.current_scope().get(),
+                    definition_span: location,
+                    is_defined: true,
+                    is_referenced: false,
+                    is_completed: true,
+                };
 
-            self.symbol_table.add_symbol(var_decl.name, symbol_entry);
+                self.symbol_table.add_symbol(var_decl.name, symbol_entry);
+            }
             debug!("Created semantic global '{}' with id {:?}", var_decl.name, global_id);
         } else {
+            // Check if symbol entry already exists from previous pass
+            let existing_entry = self.symbol_table.lookup_symbol(var_decl.name).and_then(|(e, s)| {
+                if s == self.symbol_table.current_scope() {
+                    Some(e)
+                } else {
+                    None
+                }
+            });
+
             // Create MIR local variable (inside function)
             let local_id = self.mir_builder.create_local(Some(var_decl.name), mir_type_id, false);
 
-            // Store in local map
-            self.local_map.insert(var_decl.name, local_id);
-
-            // Convert initializer from Option<Initializer> to Option<NodeRef>
-            let initializer_node_ref = var_decl.init.as_ref().and_then(|init| {
-                match init {
-                    Initializer::Expression(expr_ref) => Some(*expr_ref),
-                    _ => None, // For now, only handle simple expression initializers
-                }
-            });
-
-            // Add to symbol table as local
-            let symbol_entry = SymbolEntry {
-                name: var_decl.name,
-                kind: SymbolKind::Variable {
-                    is_global: false,
-                    is_static: false,
-                    is_extern: false,
-                    initializer: initializer_node_ref,
-                },
-                type_info: var_decl.ty,
-                storage_class: var_decl.storage,
-                scope_id: self.symbol_table.current_scope().get(),
-                definition_span: location,
-                is_defined: true,
-                is_referenced: false,
-                is_completed: true,
+            let entry_ref = if let Some(e) = existing_entry {
+                e
+            } else {
+                // Add to symbol table as local
+                let symbol_entry = SymbolEntry {
+                    name: var_decl.name,
+                    kind: SymbolKind::Variable {
+                        is_global: false,
+                        is_static: var_decl.storage == Some(StorageClass::Static),
+                        is_extern: var_decl.storage == Some(StorageClass::Extern),
+                        initializer: initializer_node_ref,
+                    },
+                    type_info: var_decl.ty,
+                    storage_class: var_decl.storage,
+                    scope_id: self.symbol_table.current_scope().get(),
+                    definition_span: location,
+                    is_defined: true,
+                    is_referenced: false,
+                    is_completed: true,
+                };
+                self.symbol_table.add_symbol(var_decl.name, symbol_entry)
             };
 
-            self.symbol_table.add_symbol(var_decl.name, symbol_entry);
+            // Store in local map
+            self.local_map.insert(entry_ref, local_id);
 
             // Process initializer if present
             if let Some(initializer) = &var_decl.init {
@@ -936,26 +1016,36 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 // First try to resolve through semantic analysis
                 if let Some(resolved_ref) = symbol_ref.get() {
                     let entry = self.symbol_table.get_symbol_entry(resolved_ref);
-                    if let SymbolKind::Variable { is_global, .. } = &entry.kind {
-                        if *is_global {
-                            // This is a global variable - find its MIR global ID
-                            for (global_id, global) in self.mir_builder.get_globals() {
-                                if global.name == entry.name {
-                                    // Set the resolved type for this identifier
+
+                    match &entry.kind {
+                        SymbolKind::Variable { is_global, .. } => {
+                            if *is_global {
+                                // This is a global variable - find its MIR global ID
+                                for (global_id, global) in self.mir_builder.get_globals() {
+                                    if global.name == entry.name {
+                                        let current_node = self.ast.get_node(expr_ref);
+                                        current_node.resolved_type.set(Some(entry.type_info));
+                                        return Operand::Copy(Box::new(Place::Global(*global_id)));
+                                    }
+                                }
+                            } else {
+                                // This is a local variable - look up the local in our local map
+                                if let Some(local_id) = self.local_map.get(&resolved_ref) {
                                     let current_node = self.ast.get_node(expr_ref);
                                     current_node.resolved_type.set(Some(entry.type_info));
-                                    return Operand::Copy(Box::new(Place::Global(*global_id)));
+                                    return Operand::Copy(Box::new(Place::Local(*local_id)));
                                 }
                             }
-                        } else {
-                            // This is a local variable - look up the local in our local map
-                            if let Some(local_id) = self.local_map.get(&entry.name) {
-                                // Set the resolved type for this identifier
-                                let current_node = self.ast.get_node(expr_ref);
-                                current_node.resolved_type.set(Some(entry.type_info));
-                                return Operand::Copy(Box::new(Place::Local(*local_id)));
-                            }
                         }
+                        SymbolKind::EnumConstant { value } => {
+                            let val = *value;
+                            let type_info = entry.type_info;
+                            let const_id = self.create_constant(ConstValue::Int(val));
+                            let current_node = self.ast.get_node(expr_ref);
+                            current_node.resolved_type.set(Some(type_info));
+                            return Operand::Constant(const_id);
+                        }
+                        _ => {}
                     }
                 }
 
@@ -972,25 +1062,31 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                     }
                 }
 
-                // Fallback to direct local map lookup
-                if let Some(local_id) = self.local_map.get(&name) {
-                    // Try to find the type info from symbol table
-                    if let Some((entry_ref, _)) = self.symbol_table.lookup_symbol(name) {
-                        let entry = self.symbol_table.get_symbol_entry(entry_ref);
+                // Fallback to searching all symbol entries and local map if needed
+                if let Some((entry_ref, _)) = self.symbol_table.lookup_symbol(name) {
+                    let entry = self.symbol_table.get_symbol_entry(entry_ref);
+                    if let Some(local_id) = self.local_map.get(&entry_ref) {
                         let current_node = self.ast.get_node(expr_ref);
                         current_node.resolved_type.set(Some(entry.type_info));
+                        return Operand::Copy(Box::new(Place::Local(*local_id)));
+                    } else if let SymbolKind::EnumConstant { value } = &entry.kind {
+                        let val = *value;
+                        let type_info = entry.type_info;
+                        let const_id = self.create_constant(ConstValue::Int(val));
+                        let current_node = self.ast.get_node(expr_ref);
+                        current_node.resolved_type.set(Some(type_info));
+                        return Operand::Constant(const_id);
                     }
-                    Operand::Copy(Box::new(Place::Local(*local_id)))
-                } else {
-                    self.report_error(SemanticError::UndeclaredIdentifier {
-                        name,
-                        location: self.ast.get_node(expr_ref).span,
-                    });
-
-                    // Return a dummy operand to allow compilation to continue
-                    let error_const = self.create_constant(ConstValue::Int(0));
-                    Operand::Constant(error_const)
                 }
+
+                self.report_error(SemanticError::UndeclaredIdentifier {
+                    name,
+                    location: self.ast.get_node(expr_ref).span,
+                });
+
+                // Return a dummy operand to allow compilation to continue
+                let error_const = self.create_constant(ConstValue::Int(0));
+                Operand::Constant(error_const)
             }
 
             NodeKind::BinaryOp(op, left_ref, right_ref) => {
@@ -1521,19 +1617,21 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         // Lower the condition expression to an operand
         let cond_operand = self.lower_expression(if_stmt.condition);
 
-        // Set the terminator for the current block
-        if let Some(else_id) = else_block_id {
-            self.mir_builder
-                .set_terminator(Terminator::If(cond_operand, then_block, else_id));
+        // Determine the block for the false case
+        let false_block = if let Some(else_id) = else_block_id {
+            else_id
         } else {
-            // No else branch, use current block as merge point
-            self.mir_builder
-                .set_terminator(Terminator::If(cond_operand, then_block, then_block));
-        }
+            self.mir_builder.create_block()
+        };
+
+        // Set the terminator for the current block
+        self.mir_builder
+            .set_terminator(Terminator::If(cond_operand, then_block, false_block));
 
         // Process the then branch
         self.mir_builder.set_current_block(then_block);
         self.lower_node_ref(if_stmt.then_branch);
+        let then_block_has_terminator = self.mir_builder.current_block_has_terminator();
 
         // Process the else branch if it exists
         let else_block_has_terminator = if let Some(else_id) = else_block_id {
@@ -1546,25 +1644,24 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             false
         };
 
-        let then_block_has_terminator = self.mir_builder.current_block_has_terminator();
-
-        // Determine if we need a merge block
-        if let Some(else_block_id) = else_block_id {
-            // We have an else block, so check if we need a merge block
+        // Determine if we need a merge block and setup continuation
+        if let Some(else_id) = else_block_id {
             if then_block_has_terminator && else_block_has_terminator {
-                // Both branches terminate, so no merge block needed
+                // Both branches terminate, no merge block needed for continuation
+                // But we should probably invalidate the current block to avoid accidental spill
+                self.current_block = None;
             } else {
                 // At least one branch falls through, create merge block
                 let merge_block = self.mir_builder.create_block();
 
                 // Ensure both branches have terminators going to merge
-                self.mir_builder.set_current_block(then_block);
-                if !self.mir_builder.current_block_has_terminator() {
+                if !then_block_has_terminator {
+                    self.mir_builder.set_current_block(then_block);
                     self.mir_builder.set_terminator(Terminator::Goto(merge_block));
                 }
 
-                self.mir_builder.set_current_block(else_block_id);
-                if !self.mir_builder.current_block_has_terminator() {
+                if !else_block_has_terminator {
+                    self.mir_builder.set_current_block(else_id);
                     self.mir_builder.set_terminator(Terminator::Goto(merge_block));
                 }
 
@@ -1573,16 +1670,16 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 self.current_block = Some(merge_block);
             }
         } else {
-            // No else branch, check if then branch falls through
+            // No else branch. false_block serves as the skip/merge block.
             if !then_block_has_terminator {
-                // Then branch falls through, current block becomes continuation
-                if let Some(func_id) = self.current_function
-                    && let Some(func) = self.mir_builder.get_functions().get(&func_id)
-                {
-                    self.current_block = Some(func.entry_block);
-                }
+                // Then branch falls through, link it to the false/merge block
+                self.mir_builder.set_current_block(then_block);
+                self.mir_builder.set_terminator(Terminator::Goto(false_block));
             }
-            // If then branch terminates, no continuation needed
+
+            // Always continue from the false_block (which is the skip/merge point)
+            self.mir_builder.set_current_block(false_block);
+            self.current_block = Some(false_block);
         }
     }
 

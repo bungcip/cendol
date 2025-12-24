@@ -390,50 +390,161 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
             Ok(type_ref_to_use)
         }
         TypeSpecifier::Enum(tag, enumerators) => {
-            // TODO: Handle enum types properly
-            // For now, create a basic enum type
-            let enumerators_list = enumerators
-                .as_ref()
-                .map(|enums| {
-                    enums
-                        .iter()
-                        .map(|&enum_ref| {
-                            let enum_node = ctx.ast.get_node(enum_ref);
-                            if let NodeKind::EnumConstant(name, value) = &enum_node.kind {
-                                EnumConstant {
-                                    name: *name,
-                                    value: value
-                                        .as_ref()
-                                        .map(|v| {
-                                            let val_node = ctx.ast.get_node(*v);
-                                            if let NodeKind::LiteralInt(val) = val_node.kind {
-                                                val
-                                            } else {
-                                                0
-                                            }
-                                        })
-                                        .unwrap_or(0),
-                                    location: enum_node.span,
-                                }
-                            } else {
-                                EnumConstant {
-                                    name: Symbol::new(""),
-                                    value: 0,
-                                    location: enum_node.span,
-                                }
-                            }
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
+            // 1. Resolve or create the enum type (and its tag)
+            let type_ref_to_use = if let Some(tag_name) = tag {
+                let existing_entry = ctx.symbol_table.lookup_tag(*tag_name);
+                if enumerators.is_some() {
+                    // This is a DEFINITION: enum T { ... };
+                    if let Some((entry_ref, scope_id)) = existing_entry
+                        && scope_id == ctx.symbol_table.current_scope()
+                    {
+                        // Found in current scope, check if completed
+                        let (is_completed, first_def, type_info) = {
+                            let entry = ctx.symbol_table.get_symbol_entry(entry_ref);
+                            (entry.is_completed, entry.definition_span, entry.type_info)
+                        };
+                        if is_completed {
+                            ctx.report_error(SemanticError::Redefinition {
+                                name: *tag_name,
+                                first_def,
+                                second_def: span,
+                            });
+                        }
+                        type_info
+                    } else {
+                        // Not found in current scope, create new entry
+                        let new_type = Type::new(TypeKind::Enum {
+                            tag: Some(*tag_name),
+                            base_type: ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true })),
+                            enumerators: Vec::new(),
+                            is_complete: false,
+                        });
+                        let new_type_ref = ctx.ast.push_type(new_type);
+                        let symbol_entry = SymbolEntry {
+                            name: *tag_name,
+                            kind: SymbolKind::EnumTag { is_complete: false },
+                            type_info: new_type_ref,
+                            storage_class: None,
+                            scope_id: ctx.symbol_table.current_scope().get(),
+                            definition_span: span,
+                            is_defined: true,
+                            is_referenced: false,
+                            is_completed: false,
+                        };
+                        ctx.symbol_table
+                            .add_symbol_in_namespace(*tag_name, symbol_entry, Namespace::Tag);
+                        new_type_ref
+                    }
+                } else {
+                    // This is a USAGE or FORWARD DECL: enum T; or enum T e;
+                    if let Some((entry_ref, _)) = existing_entry {
+                        let entry = ctx.symbol_table.get_symbol_entry(entry_ref);
+                        entry.type_info
+                    } else {
+                        // Implicit forward declaration
+                        let forward_type = Type::new(TypeKind::Enum {
+                            tag: Some(*tag_name),
+                            base_type: ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true })),
+                            enumerators: Vec::new(),
+                            is_complete: false,
+                        });
+                        let forward_ref = ctx.ast.push_type(forward_type);
+                        let symbol_entry = SymbolEntry {
+                            name: *tag_name,
+                            kind: SymbolKind::EnumTag { is_complete: false },
+                            type_info: forward_ref,
+                            storage_class: None,
+                            scope_id: ctx.symbol_table.current_scope().get(),
+                            definition_span: span,
+                            is_defined: true,
+                            is_referenced: false,
+                            is_completed: false,
+                        };
+                        ctx.symbol_table
+                            .add_symbol_in_namespace(*tag_name, symbol_entry, Namespace::Tag);
+                        forward_ref
+                    }
+                }
+            } else {
+                // Anonymous enum definition
+                let new_type = Type::new(TypeKind::Enum {
+                    tag: None,
+                    base_type: ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true })),
+                    enumerators: Vec::new(),
+                    is_complete: false,
+                });
+                ctx.ast.push_type(new_type)
+            };
 
-            let base_type = ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true }));
-            Ok(ctx.ast.push_type(Type::new(TypeKind::Enum {
-                tag: *tag,
-                base_type,
-                enumerators: enumerators_list,
-                is_complete: enumerators.is_some(),
-            })))
+            // 2. Process enumerators if it's a definition
+            if let Some(enums) = enumerators {
+                let mut next_value = 0i64;
+                let mut enumerators_list = Vec::new();
+
+                for &enum_ref in enums {
+                    let enum_node = ctx.ast.get_node(enum_ref);
+                    if let NodeKind::EnumConstant(name, value_expr_ref) = &enum_node.kind {
+                        let value = if let Some(v_ref) = value_expr_ref {
+                            let val_node = ctx.ast.get_node(*v_ref);
+                            if let NodeKind::LiteralInt(val) = val_node.kind {
+                                val
+                            } else {
+                                0 // Should ideally evaluate expression
+                            }
+                        } else {
+                            next_value
+                        };
+                        next_value = value + 1;
+
+                        let enum_constant = EnumConstant {
+                            name: *name,
+                            value,
+                            location: enum_node.span,
+                        };
+                        enumerators_list.push(enum_constant);
+
+                        // Register constant in symbol table
+                        let entry = SymbolEntry {
+                            name: *name,
+                            kind: SymbolKind::EnumConstant { value },
+                            type_info: type_ref_to_use,
+                            storage_class: None,
+                            scope_id: ctx.symbol_table.current_scope().get(),
+                            definition_span: enum_node.span,
+                            is_defined: true,
+                            is_referenced: false,
+                            is_completed: true,
+                        };
+                        ctx.symbol_table.add_symbol(*name, entry);
+                    }
+                }
+
+                // Update the type in AST and SymbolTable
+                let type_idx = (type_ref_to_use.get() - 1) as usize;
+                let mut updated_type_kind = ctx.ast.types[type_idx].kind.clone();
+                if let TypeKind::Enum {
+                    enumerators,
+                    is_complete,
+                    ..
+                } = &mut updated_type_kind
+                {
+                    *enumerators = enumerators_list;
+                    *is_complete = true;
+                }
+                ctx.ast.types[type_idx].kind = updated_type_kind;
+
+                if let Some(tag_name) = tag
+                    && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(*tag_name)
+                {
+                    let entry = ctx.symbol_table.get_symbol_entry_mut(entry_ref);
+                    entry.is_completed = true;
+                    if let SymbolKind::EnumTag { is_complete } = &mut entry.kind {
+                        *is_complete = true;
+                    }
+                }
+            }
+
+            Ok(type_ref_to_use)
         }
         TypeSpecifier::TypedefName(name) => {
             // Lookup typedef in symbol table
@@ -854,9 +965,9 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                     let semantic_node_data = ctx.ast.get_node(semantic_nodes[0]).clone();
                     ctx.ast.replace_node(node_ref, semantic_node_data);
                 } else {
-                    // Multi-declarator case: create a CompoundStatement containing all semantic nodes
+                    // Multi-declarator case: create a DeclarationList containing all semantic nodes
                     let original_node = ctx.ast.get_node(node_ref);
-                    let compound_node = Node::new(NodeKind::CompoundStatement(semantic_nodes), original_node.span);
+                    let compound_node = Node::new(NodeKind::DeclarationList(semantic_nodes), original_node.span);
                     ctx.ast.replace_node(node_ref, compound_node);
                 }
             }

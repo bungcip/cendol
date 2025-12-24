@@ -169,9 +169,12 @@ mod tests {
 
           bb1:
             %1 = @s.field_0 != const 1
-            cond_br %1, bb2, bb2
+            cond_br %1, bb2, bb3
 
           bb2:
+            return const 1
+
+          bb3:
             return const 0
         }
         ");
@@ -307,6 +310,134 @@ mod tests {
             @s1.field_0 = const 1
             %s2.field_0 = const 2
             return @s1.field_0
+        }
+        ");
+    }
+    #[test]
+    fn test_variable_shadowing() {
+        let source = r#"
+            int main() {
+                int x = 1;
+                {
+                    int x = 2;
+                    if (x != 2) return 1;
+                }
+                if (x != 1) return 1;
+                return 0;
+            }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        // We expect two different %x locals. MIR printer might show them with same name or different IDs.
+        // Currently it shows names if available.
+        insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = i32
+
+        fn main() -> i32
+        {
+          locals {
+            %x: i32
+            %x: i32
+            %3: i32
+            %4: i32
+          }
+
+          bb1:
+            %x = const 1
+            %x = const 2
+            %3 = %x != const 2
+            cond_br %3, bb2, bb3
+
+          bb2:
+            return const 1
+
+          bb3:
+            %4 = %x != const 1
+            cond_br %4, bb4, bb5
+
+          bb4:
+            return const 1
+
+          bb5:
+            return const 0
+        }
+        ");
+    }
+
+    #[test]
+    fn test_recursive_struct_access() {
+        let source = r#"
+            struct S {
+                struct S *p;
+                int x;
+            };
+            int main() {
+                struct S s;
+                return s.p->p->x;
+            }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = struct S {  }
+        type %t1 = ptr<%t0>
+        type %t2 = i32
+        type %t3 = struct S { p: %t1, x: %t2 }
+
+        fn main() -> i32
+        {
+          locals {
+            %s: %t3
+            %2: i32
+            %3: i32
+          }
+
+          bb1:
+            %2 = * %s.field_0
+            %3 = * %2.field_0
+            return %3.field_1
+        }
+        ");
+    }
+
+    #[test]
+    fn test_parameter_shadowing() {
+        let source = r#"
+            int foo(int x) {
+                {
+                    int x = 10;
+                    return x;
+                }
+            }
+            int main() {
+                return foo(5);
+            }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = i32
+
+        fn foo(%x: i32) -> i32
+        {
+          locals {
+            %x: i32
+          }
+
+          bb1:
+            %x = const 10
+            return %x
+        }
+
+        fn main() -> i32
+        {
+          locals {
+            %3: i32
+          }
+
+          bb2:
+            %3 = call foo(const 5)
+            return %3
         }
         ");
     }

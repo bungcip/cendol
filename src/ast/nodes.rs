@@ -55,6 +55,7 @@ pub enum NodeKind {
 
     // --- Statements (Complex statements are separate structs) ---
     CompoundStatement(Vec<NodeRef> /* block items */),
+    DeclarationList(Vec<NodeRef> /* declarations */),
     If(IfStmt),
     While(WhileStmt),
     DoWhile(NodeRef /* body */, NodeRef /* condition */),

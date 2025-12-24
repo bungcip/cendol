@@ -274,6 +274,7 @@ pub mod ast_iterators {
                     | NodeKind::FunctionDecl(_)
                     | NodeKind::TypedefDecl(_)
                     | NodeKind::RecordDecl(_)
+                    | NodeKind::DeclarationList(_)
                     | NodeKind::Dummy => {}
                 }
 

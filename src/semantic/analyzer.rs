@@ -271,6 +271,65 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         }
     }
 
+    /// Extract the return type from a function declarator
+    fn extract_function_return_type(
+        &mut self,
+        declarator: &Declarator,
+        _specifiers: &[DeclSpecifier],
+        _location: SourceSpan,
+    ) -> TypeId {
+        // Start with a default return type (int)
+        let base_type_ref = self.ast.push_type(Type::new(TypeKind::Int { is_signed: true }));
+
+        // The function declarator should be a Function type
+        if let Declarator::Function(base_declarator, _) = declarator {
+            // The base declarator contains the return type information
+            // We need to resolve what the base type is
+
+            // For now, we'll look at the function definition's specifiers
+            // In a more complete implementation, we would track the function's
+            // return type through the semantic lowering phase
+
+            // Check if we can find the function in the symbol table to get its type
+            if let Some(func_name) = extract_identifier(declarator) {
+                debug!("Looking for function '{}' in symbol table", func_name);
+                if let Some((entry_ref, _)) = self.symbol_table.lookup_symbol(func_name) {
+                    let entry = self.symbol_table.get_symbol_entry(entry_ref);
+                    debug!(
+                        "Found function '{}' in symbol table, type_info: {:?}",
+                        func_name, entry.type_info
+                    );
+                    // The function's return type is stored in the type_info field
+                    // which points to a function type that contains the return type
+                    if matches!(&entry.kind, SymbolKind::Function { .. }) {
+                        // Get the function type from type_info
+                        let func_type = self.ast.get_type(entry.type_info);
+                        debug!("Function type: {:?}", func_type.kind);
+                        if let TypeKind::Function { return_type, .. } = &func_type.kind {
+                            debug!("Found return type: {:?}", return_type);
+                            // Use the function's return type from the symbol table
+                            return self.lower_type_to_mir(*return_type);
+                        }
+                    }
+                } else {
+                    debug!("Function '{}' not found in symbol table", func_name);
+                }
+            }
+
+            // If we couldn't find the function in the symbol table, try to extract
+            // the return type from the base declarator
+            // For simple cases like "void" or "int", the base declarator is just an identifier
+            // We need to look at the function's specifiers to determine the return type
+            // This is a simplified approach - in a full implementation, we would
+            // have the return type properly tracked through semantic analysis
+            let _base = base_declarator; // Keep for potential future use
+        }
+
+        // Default to int if we couldn't determine the return type
+        debug!("Using default return type (int)");
+        self.lower_type_to_mir(base_type_ref)
+    }
+
     /// Lower a function definition
     fn lower_function_def(&mut self, func_def: &FunctionDefData, location: SourceSpan) {
         debug!("Lowering function definition");
@@ -290,8 +349,10 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             }
         };
 
+        // Extract the return type from the function declarator
+        let return_type = self.extract_function_return_type(&func_def.declarator, &func_def.specifiers, location);
+
         // Create MIR function
-        let return_type = self.get_int_type(); // Default to int for now
         let func_id = self.mir_builder.create_function(func_name, return_type);
         debug!(
             "Created function '{}' with ID {:?} (ID as integer: {})",
@@ -1012,6 +1073,23 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 Operand::Constant(const_id)
             }
 
+            NodeKind::LiteralFloat(val) => {
+                let const_id = self.create_constant(ConstValue::Float(val));
+                Operand::Constant(const_id)
+            }
+
+            NodeKind::LiteralChar(val) => {
+                // Character literals in C are essentially integer constants representing the character code
+                let const_id = self.create_constant(ConstValue::Int(val as i64));
+                Operand::Constant(const_id)
+            }
+
+            NodeKind::LiteralString(val) => {
+                // String literals are represented as string constants
+                let const_id = self.create_constant(ConstValue::String(val.to_string()));
+                Operand::Constant(const_id)
+            }
+
             NodeKind::Ident(name, symbol_ref) => {
                 // First try to resolve through semantic analysis
                 if let Some(resolved_ref) = symbol_ref.get() {
@@ -1348,18 +1426,45 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                         arg_operands.push(arg_operand);
                     }
 
-                    // Create a temporary local to store the return value
-                    let temp_type_id = self.get_int_type();
-                    let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
+                    // Get the function information
+                    let func = self
+                        .mir_builder
+                        .get_functions()
+                        .get(&func_id)
+                        .expect("Function should exist");
 
-                    // Generate a proper call using Rvalue
-                    let call_target = CallTarget::Direct(func_id);
-                    let call_rvalue = Rvalue::Call(call_target, arg_operands);
-                    let assign_stmt = MirStmt::Assign(Place::Local(temp_local_id), call_rvalue);
-                    self.mir_builder.add_statement(assign_stmt);
+                    // Check if function returns void
+                    let return_type = self.get_types().get(&func.return_type);
+                    let is_void_function = return_type.is_some_and(|t| matches!(t, crate::mir::MirType::Void));
 
-                    // Return the local that will contain the call result
-                    Operand::Copy(Box::new(Place::Local(temp_local_id)))
+                    if is_void_function {
+                        // For void functions, just emit the call without creating a local
+                        let call_target = CallTarget::Direct(func_id);
+                        let call_rvalue = Rvalue::Call(call_target, arg_operands);
+                        // Create a dummy assignment target that won't be used
+                        let dummy_type_id = self.get_int_type();
+                        let dummy_local_id = self.mir_builder.create_local(None, dummy_type_id, false);
+                        let assign_stmt = MirStmt::Assign(Place::Local(dummy_local_id), call_rvalue);
+                        self.mir_builder.add_statement(assign_stmt);
+
+                        // Return a dummy constant since void functions don't return values
+                        let dummy_const = self.create_constant(ConstValue::Int(0));
+                        Operand::Constant(dummy_const)
+                    } else {
+                        // For non-void functions, create a temporary local to store the return value
+                        // Use the function's actual return type instead of defaulting to int
+                        let temp_type_id = func.return_type;
+                        let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
+
+                        // Generate a proper call using Rvalue
+                        let call_target = CallTarget::Direct(func_id);
+                        let call_rvalue = Rvalue::Call(call_target, arg_operands);
+                        let assign_stmt = MirStmt::Assign(Place::Local(temp_local_id), call_rvalue);
+                        self.mir_builder.add_statement(assign_stmt);
+
+                        // Return the local that will contain the call result
+                        Operand::Copy(Box::new(Place::Local(temp_local_id)))
+                    }
                 } else {
                     debug!("Function {} not found in MIR functions", func_name);
                     // Return a dummy operand to allow compilation to continue
@@ -1594,6 +1699,18 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
     /// Lower a return statement
     fn lower_return_statement(&mut self, expr: &Option<NodeRef>, _location: SourceSpan) {
+        // Check if we're in a void function
+        if let Some(current_func_id) = self.current_function
+            && let Some(func) = self.mir_builder.get_functions().get(&current_func_id)
+            && let Some(return_type_id) = self.get_types().get(&func.return_type)
+            && matches!(return_type_id, crate::mir::MirType::Void)
+        {
+            // We're in a void function - return statement should not have any operand
+            self.mir_builder.set_terminator(Terminator::Return(None));
+            return;
+        }
+
+        // For non-void functions, handle the return expression normally
         if let Some(expr_ref) = expr {
             let operand = self.lower_expression(*expr_ref);
             self.mir_builder.set_terminator(Terminator::Return(Some(operand)));
@@ -1925,6 +2042,33 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             }
             crate::ast::TypeKind::Void => {
                 let mir_type = crate::mir::MirType::Void;
+                self.add_type(mir_type)
+            }
+            crate::ast::TypeKind::Char { is_signed } => {
+                let mir_type = crate::mir::MirType::Int { is_signed, width: 8 };
+                self.add_type(mir_type)
+            }
+            crate::ast::TypeKind::Short { is_signed } => {
+                let mir_type = crate::mir::MirType::Int { is_signed, width: 16 };
+                self.add_type(mir_type)
+            }
+            crate::ast::TypeKind::Long {
+                is_signed,
+                is_long_long,
+            } => {
+                // Handle both long and long long
+                let width = if is_long_long { 64 } else { 32 };
+                let mir_type = crate::mir::MirType::Int { is_signed, width };
+                self.add_type(mir_type)
+            }
+            crate::ast::TypeKind::Float => {
+                let mir_type = crate::mir::MirType::Float { width: 32 };
+                self.add_type(mir_type)
+            }
+            crate::ast::TypeKind::Double { is_long_double } => {
+                // Handle both double and long double
+                let width = if is_long_double { 80 } else { 64 };
+                let mir_type = crate::mir::MirType::Float { width };
                 self.add_type(mir_type)
             }
             crate::ast::TypeKind::Pointer { pointee } => {

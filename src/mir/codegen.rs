@@ -24,25 +24,27 @@ use symbol_table::GlobalSymbol as Symbol;
 use target_lexicon::Triple;
 
 /// Helper function to convert MIR type to Cranelift type
-fn mir_type_to_cranelift_type(mir_type: &MirType) -> Type {
+/// Returns None for void types, as they don't have a representation in Cranelift
+fn mir_type_to_cranelift_type(mir_type: &MirType) -> Option<Type> {
     match mir_type {
-        MirType::Int { width, .. } => {
+        MirType::Void => None,
+        MirType::Int { width, is_signed: _ } => {
             match width {
-                8 => types::I8,
-                16 => types::I16,
-                32 => types::I32,
-                64 => types::I64,
-                _ => types::I32, // Default to 32-bit
+                8 => Some(types::I8),
+                16 => Some(types::I16),
+                32 => Some(types::I32),
+                64 => Some(types::I64),
+                _ => Some(types::I32), // Default to 32-bit
             }
         }
         MirType::Float { width } => {
             match width {
-                32 => types::F32,
-                64 => types::F64,
-                _ => types::F32, // Default to 32-bit float
+                32 => Some(types::F32),
+                64 => Some(types::F64),
+                _ => Some(types::F32), // Default to 32-bit float
             }
         }
-        _ => types::I32, // Default to i32 for other types (void, bool, pointer, etc.)
+        _ => Some(types::I32), // Default to i32 for other types (bool, pointer, etc.)
     }
 }
 
@@ -89,10 +91,7 @@ fn emit_function_call_impl(
             // Look up the function in our MIR functions
             if let Some(func) = functions.get(func_id) {
                 // Get the return type for this function
-                let return_type = types
-                    .get(&func.return_type)
-                    .map(mir_type_to_cranelift_type)
-                    .unwrap_or(types::I32);
+                let return_type = types.get(&func.return_type).and_then(mir_type_to_cranelift_type);
 
                 // Resolve function arguments to Cranelift values
                 let mut arg_values = Vec::new();
@@ -115,14 +114,18 @@ fn emit_function_call_impl(
 
                 // Create a function signature by building it directly
                 let mut sig = Signature::new(builder.func.signature.call_conv);
-                sig.returns.push(AbiParam::new(return_type));
+
+                // Only add return parameter if the function has a non-void return type
+                if let Some(ret_type) = return_type {
+                    sig.returns.push(AbiParam::new(ret_type));
+                }
 
                 // Add parameter types to signature
                 for &param_id in &func.params {
                     if let Some(param_local) = locals.get(&param_id) {
                         let param_type = types
                             .get(&param_local.type_id)
-                            .map(mir_type_to_cranelift_type)
+                            .and_then(mir_type_to_cranelift_type)
                             .unwrap_or(types::I32);
                         sig.params.push(AbiParam::new(param_type));
                     }
@@ -144,7 +147,7 @@ fn emit_function_call_impl(
                 if !call_results.is_empty() {
                     Ok(call_results[0])
                 } else {
-                    // For void functions, return a dummy value
+                    // For void functions, return a dummy value (this won't be used)
                     Ok(builder.ins().iconst(types::I32, 0))
                 }
             } else {
@@ -177,7 +180,14 @@ fn resolve_operand_to_value(
             if let Some(const_value) = constants.get(const_id) {
                 match const_value {
                     ConstValue::Int(val) => Ok(builder.ins().iconst(expected_type, *val)),
-                    ConstValue::Float(val) => Ok(builder.ins().f32const(*val as f32)),
+                    ConstValue::Float(val) => {
+                        // Use the appropriate float constant based on expected type
+                        if expected_type == types::F64 {
+                            Ok(builder.ins().f64const(*val))
+                        } else {
+                            Ok(builder.ins().f32const(*val as f32))
+                        }
+                    }
                     ConstValue::Bool(val) => {
                         let int_val = if *val { 1 } else { 0 };
                         Ok(builder.ins().iconst(expected_type, int_val))
@@ -258,7 +268,14 @@ fn resolve_place_to_value(
                     if let Some(const_value) = constants.get(&const_value_id) {
                         match const_value {
                             ConstValue::Int(val) => Ok(builder.ins().iconst(expected_type, *val)),
-                            ConstValue::Float(val) => Ok(builder.ins().f32const(*val as f32)),
+                            ConstValue::Float(val) => {
+                                // Use the appropriate float constant based on expected type
+                                if expected_type == types::F64 {
+                                    Ok(builder.ins().f64const(*val))
+                                } else {
+                                    Ok(builder.ins().f32const(*val as f32))
+                                }
+                            }
                             ConstValue::Bool(val) => {
                                 let int_val = if *val { 1 } else { 0 };
                                 Ok(builder.ins().iconst(expected_type, int_val))
@@ -670,11 +687,7 @@ impl MirToCraneliftLowerer {
         func_ctx.func.signature.params.clear();
 
         // Get the return type from MIR and convert to Cranelift type
-        let return_type = self
-            .types
-            .get(&func.return_type)
-            .map(mir_type_to_cranelift_type)
-            .unwrap_or(types::I32);
+        let return_type_opt = self.types.get(&func.return_type).and_then(mir_type_to_cranelift_type);
 
         // Add parameters from MIR function signature
         let mut param_types = Vec::new();
@@ -683,14 +696,17 @@ impl MirToCraneliftLowerer {
                 let param_type = self
                     .types
                     .get(&param_local.type_id)
-                    .map(mir_type_to_cranelift_type)
+                    .and_then(mir_type_to_cranelift_type)
                     .unwrap_or(types::I32);
                 func_ctx.func.signature.params.push(AbiParam::new(param_type));
                 param_types.push(param_type);
             }
         }
 
-        func_ctx.func.signature.returns.push(AbiParam::new(return_type));
+        // Only add return parameter if the function has a non-void return type
+        if let Some(return_type) = return_type_opt {
+            func_ctx.func.signature.returns.push(AbiParam::new(return_type));
+        }
 
         // Create a function builder with the fresh context
         let mut builder = FunctionBuilder::new(&mut func_ctx.func, &mut self.builder_context);
@@ -878,10 +894,18 @@ impl MirToCraneliftLowerer {
                             let value = rvalue_result?;
                             match place {
                                 Place::Local(local_id) => {
+                                    // Check if this local has a stack slot (non-void types)
                                     if let Some(stack_slot) = self.cranelift_stack_slots.get(local_id) {
                                         builder.ins().stack_store(value, *stack_slot, 0);
                                     } else {
-                                        return Err(format!("Stack slot not found for local {}", local_id.get()).into());
+                                        // This local doesn't have a stack slot (likely a void type)
+                                        // Check if it's actually a void type to provide a better warning
+                                        if let Some(local) = self.locals.get(local_id)
+                                            && let Some(local_type) = self.types.get(&local.type_id)
+                                            && !matches!(local_type, MirType::Void)
+                                        {
+                                            eprintln!("Warning: Stack slot not found for local {}", local_id.get());
+                                        }
                                     }
                                 }
                                 _ => {
@@ -1001,25 +1025,32 @@ impl MirToCraneliftLowerer {
 
                 Terminator::Return(opt) => {
                     if let Some(operand) = opt {
-                        match resolve_operand_to_value(
-                            operand,
-                            &mut builder,
-                            return_type,
-                            &self.constants,
-                            &self.cranelift_stack_slots,
-                            &self.globals,
-                            &self.types,
-                            &self.locals,
-                            &mut self.module,
-                        ) {
-                            Ok(return_value) => {
-                                builder.ins().return_(&[return_value]);
+                        // Only process return value if the function has a non-void return type
+                        if let Some(ret_type) = return_type_opt {
+                            match resolve_operand_to_value(
+                                operand,
+                                &mut builder,
+                                ret_type,
+                                &self.constants,
+                                &self.cranelift_stack_slots,
+                                &self.globals,
+                                &self.types,
+                                &self.locals,
+                                &mut self.module,
+                            ) {
+                                Ok(return_value) => {
+                                    builder.ins().return_(&[return_value]);
+                                }
+                                Err(_) => {
+                                    // Default to 0 if operand resolution fails
+                                    let return_value = builder.ins().iconst(ret_type, 0);
+                                    builder.ins().return_(&[return_value]);
+                                }
                             }
-                            Err(_) => {
-                                // Default to 0 if operand resolution fails
-                                let return_value = builder.ins().iconst(return_type, 0);
-                                builder.ins().return_(&[return_value]);
-                            }
+                        } else {
+                            // This shouldn't happen - returning a value from a void function
+                            eprintln!("Warning: Returning value from void function");
+                            builder.ins().return_(&[]);
                         }
                     } else {
                         builder.ins().return_(&[]);
@@ -1027,9 +1058,14 @@ impl MirToCraneliftLowerer {
                 }
 
                 Terminator::Unreachable => {
-                    // For unreachable, default to returning 0
-                    let return_value = builder.ins().iconst(return_type, 0);
-                    builder.ins().return_(&[return_value]);
+                    // For unreachable, default to appropriate return based on function type
+                    if let Some(ret_type) = return_type_opt {
+                        let return_value = builder.ins().iconst(ret_type, 0);
+                        builder.ins().return_(&[return_value]);
+                    } else {
+                        // Void function
+                        builder.ins().return_(&[]);
+                    }
                 }
             }
         }

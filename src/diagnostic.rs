@@ -118,16 +118,27 @@ impl DiagnosticEngine {
                 expected,
                 found,
                 location,
-            } => {
-                let message = format!("Type mismatch: expected {}, found {}", expected, found);
-                self._report(DiagnosticLevel::Error, message, location);
+            } => (
+                format!("Type mismatch: expected {}, found {}", expected, found),
+                location,
+            ),
+            SemanticError::NotAnLvalue { location } => ("Expression is not assignable".to_string(), location),
+            SemanticError::InvalidBinaryOperands {
+                left_ty,
+                right_ty,
+                location,
+            } => (
+                format!(
+                    "Invalid operands for binary operation: have '{}' and '{}'",
+                    left_ty, right_ty
+                ),
+                location,
+            ),
+            SemanticError::NonConstantInitializer { location } => {
+                ("Initializer element is not a compile-time constant".to_string(), location)
             }
-            SemanticError::IncompleteType { name, location } => {
-                let message = format!("Incomplete type '{}'", name);
-                self._report(DiagnosticLevel::Error, message, location);
-            }
-            SemanticError::InvalidOperands { message, location } => {
-                self._report(DiagnosticLevel::Error, message, location);
+            SemanticError::InvalidUseOfVoid { location } => {
+                ("Invalid use of void type in expression".to_string(), location)
             }
             SemanticError::UnsupportedFeature { feature, location } => {
                 let message = format!("Unsupported feature: {}", feature);
@@ -215,10 +226,18 @@ pub enum SemanticError {
         found: String,
         location: SourceSpan,
     },
-    #[error("Incomplete type '{name}'")]
-    IncompleteType { name: Symbol, location: SourceSpan },
-    #[error("Invalid operands: {message}")]
-    InvalidOperands { message: String, location: SourceSpan },
+    #[error("Expression is not assignable (not an lvalue)")]
+    NotAnLvalue { location: SourceSpan },
+    #[error("Invalid operands for binary operation: have '{left_ty}' and '{right_ty}'")]
+    InvalidBinaryOperands {
+        left_ty: String,
+        right_ty: String,
+        location: SourceSpan,
+    },
+    #[error("Initializer element is not a compile-time constant")]
+    NonConstantInitializer { location: SourceSpan },
+    #[error("Invalid use of void type in expression")]
+    InvalidUseOfVoid { location: SourceSpan },
     #[error("Unsupported feature: {feature}")]
     UnsupportedFeature { feature: String, location: SourceSpan },
 }

@@ -105,8 +105,9 @@ fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: Sour
             DeclSpecifier::StorageClass(sc) => {
                 // Check for duplicate storage class
                 if info.storage.replace(*sc).is_some() {
-                    ctx.report_error(SemanticError::InvalidOperands {
-                        message: "Duplicate storage class specifier".to_string(),
+                    ctx.report_error(SemanticError::TypeMismatch {
+                        expected: "at most one storage class".to_string(),
+                        found: "multiple storage classes".to_string(),
                         location: span,
                     });
                 }
@@ -561,8 +562,15 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     Ok(aliased_type)
                 } else {
                     debug!("Symbol '{}' is not a typedef", name);
-                    Err(SemanticError::IncompleteType {
-                        name: *name,
+                    // Get the kind of the symbol as a string for the error message
+                    let kind_string = format!("{:?}", entry.kind);
+                    let found_kind_str = kind_string
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("symbol");
+                    Err(SemanticError::TypeMismatch {
+                        expected: "a typedef name".to_string(),
+                        found: format!("a {}", found_kind_str.to_lowercase()),
                         location: span,
                     })
                 }
@@ -693,8 +701,9 @@ fn merge_base_type(existing: Option<TypeRef>, new_type: TypeRef, ctx: &mut Lower
 fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span: SourceSpan) {
     // Check typedef with other storage classes
     if info.is_typedef && info.storage.is_some_and(|s| s != StorageClass::Typedef) {
-        ctx.report_error(SemanticError::InvalidOperands {
-            message: "Illegal storage class with typedef".to_string(),
+        ctx.report_error(SemanticError::TypeMismatch {
+            expected: "at most one storage class".to_string(),
+            found: "a mix of typedef and other storage classes".to_string(),
             location: span,
         });
     }
@@ -776,8 +785,9 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
 
     // 1. Resolve final type (base + declarator)
     let base_ty = spec.base_type.unwrap_or_else(|| {
-        ctx.report_error(SemanticError::InvalidOperands {
-            message: "Missing base type in declaration".to_string(),
+        ctx.report_error(SemanticError::TypeMismatch {
+            expected: "a type specifier".to_string(),
+            found: "no type specifier".to_string(),
             location: span,
         });
         // Create an error type

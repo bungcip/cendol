@@ -457,7 +457,7 @@ fn setup_declaration(source: &str) -> ResolvedNodeKind {
     }
 }
 
-fn parse_declaration_with_errors(source: &str) -> Result<ResolvedNodeKind, Vec<String>> {
+fn parse_declaration_with_errors(source: &str) -> Result<ResolvedNodeKind, crate::diagnostic::ParseError> {
     let mut sm = SourceManager::new();
     let mut diag = DiagnosticEngine::new();
     let lang_opts = LangOptions::c11();
@@ -483,17 +483,9 @@ fn parse_declaration_with_errors(source: &str) -> Result<ResolvedNodeKind, Vec<S
     let mut parser = Parser::new(&tokens, &mut ast, &mut diag);
     let result = parser.parse_declaration();
 
-    let errors: Vec<String> = diag.diagnostics.iter().map(|d| d.message.clone()).collect();
-
     match result {
-        Ok(node_ref) => {
-            if errors.is_empty() {
-                Ok(resolve_node(&ast, node_ref))
-            } else {
-                Err(errors)
-            }
-        }
-        Err(e) => Err(vec![format!("Parse error: {:?}", e)]),
+        Ok(node_ref) => Ok(resolve_node(&ast, node_ref)),
+        Err(e) => Err(e),
     }
 }
 
@@ -521,9 +513,11 @@ fn setup_compound(source: &str) -> ResolvedNodeKind {
 fn test_function_returning_array_rejected() {
     let result = parse_declaration_with_errors("int f(int)[3];");
     assert!(result.is_err(), "Parser should reject function returning array");
-    let errors = result.unwrap_err();
-    assert_eq!(errors.len(), 1);
-    assert!(errors[0].contains("function returning an array is not allowed"));
+    let err = result.unwrap_err();
+    assert!(matches!(
+        err,
+        crate::diagnostic::ParseError::DeclarationNotAllowed { .. }
+    ));
 }
 
 #[test]

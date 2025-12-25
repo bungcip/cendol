@@ -36,8 +36,16 @@ pub enum ParseError {
     #[error("Unexpected End of File")]
     UnexpectedEof { location: SourceSpan },
 
-    #[error("Syntax error: {message}")]
-    SyntaxError { message: String, location: SourceSpan },
+    #[error("Expected {expected} ")]
+    Expected { expected: String, location: SourceSpan },
+    #[error("Invalid unary operator")]
+    InvalidUnaryOperator { location: SourceSpan },
+
+    #[error("Declaration not allowed in this context")]
+    DeclarationNotAllowed { location: SourceSpan },
+
+    #[error("Parser exceeded maximum iteration limit - possible infinite loop")]
+    InfiniteLoop { location: SourceSpan },
 
     #[error("Invalid numeric constant: {text}")]
     InvalidNumericConstant { text: String, location: SourceSpan },
@@ -48,12 +56,14 @@ impl ParseError {
         match self {
             ParseError::UnexpectedToken { location, .. } => *location,
             ParseError::UnexpectedEof { location } => *location,
-            ParseError::SyntaxError { location, .. } => *location,
             ParseError::InvalidNumericConstant { location, .. } => *location,
+            ParseError::Expected { location, .. } => *location,
+            ParseError::InvalidUnaryOperator { location } => *location,
+            ParseError::DeclarationNotAllowed { location } => *location,
+            ParseError::InfiniteLoop { location } => *location,
         }
     }
 }
-
 /// Diagnostic engine for collecting and reporting semantic errors and warnings
 pub struct DiagnosticEngine {
     pub diagnostics: Vec<Diagnostic>,
@@ -107,52 +117,6 @@ impl DiagnosticEngine {
         });
     }
 
-    pub fn report_error(&mut self, error: SemanticError) {
-        let message = error.to_string();
-        let location = error.location();
-        self._report(DiagnosticLevel::Error, message, location);
-
-        // For redefinition errors, also generate a Note pointing to the previous definition
-        if let SemanticError::Redefinition {
-            name: _,
-            first_def,
-            second_def: _,
-        } = &error
-        {
-            self._report(
-                DiagnosticLevel::Note,
-                "previous definition is here".to_string(),
-                *first_def,
-            );
-        }
-    }
-
-    pub fn report_warning(&mut self, warning: SemanticWarning) {
-        let message = warning.to_string();
-        let location = warning.location();
-        self._report(DiagnosticLevel::Warning, message, location);
-
-        // For redefinition warnings, also generate a Note pointing to the previous definition
-        if let SemanticWarning::Redefinition {
-            name: _,
-            first_def,
-            second_def: _,
-        } = &warning
-        {
-            self._report(
-                DiagnosticLevel::Note,
-                "previous definition is here".to_string(),
-                *first_def,
-            );
-        }
-    }
-
-    pub fn report_parse_error(&mut self, error: ParseError) {
-        let message = error.to_string();
-        let location = error.location();
-        self._report(DiagnosticLevel::Error, message, location);
-    }
-
     pub fn report_note(&mut self, message: String, location: SourceSpan) {
         self._report(DiagnosticLevel::Note, message, location);
     }
@@ -167,6 +131,84 @@ impl DiagnosticEngine {
 
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
+    }
+
+    pub fn report<T: IntoDiagnostic>(&mut self, error: T) {
+        for diagnostic in error.into_diagnostic() {
+            self.report_diagnostic(diagnostic);
+        }
+    }
+}
+
+pub trait IntoDiagnostic {
+    fn into_diagnostic(self) -> Vec<Diagnostic>;
+}
+
+impl IntoDiagnostic for ParseError {
+    fn into_diagnostic(self) -> Vec<Diagnostic> {
+        vec![Diagnostic {
+            level: DiagnosticLevel::Error,
+            message: self.to_string(),
+            location: self.location(),
+            code: None,
+            hints: Vec::new(),
+            related: Vec::new(),
+        }]
+    }
+}
+
+impl IntoDiagnostic for SemanticError {
+    fn into_diagnostic(self) -> Vec<Diagnostic> {
+        let main_diagnostic = Diagnostic {
+            level: DiagnosticLevel::Error,
+            message: self.to_string(),
+            location: self.location(),
+            code: None,
+            hints: Vec::new(),
+            related: Vec::new(),
+        };
+
+        if let SemanticError::Redefinition { first_def, .. } = &self {
+            vec![
+                main_diagnostic,
+                Diagnostic {
+                    level: DiagnosticLevel::Note,
+                    message: "previous definition is here".to_string(),
+                    location: *first_def,
+                    code: None,
+                    hints: Vec::new(),
+                    related: Vec::new(),
+                },
+            ]
+        } else {
+            vec![main_diagnostic]
+        }
+    }
+}
+
+impl IntoDiagnostic for SemanticWarning {
+    fn into_diagnostic(self) -> Vec<Diagnostic> {
+        let mut diagnostics = vec![Diagnostic {
+            level: DiagnosticLevel::Warning,
+            message: self.to_string(),
+            location: self.location(),
+            code: None,
+            hints: Vec::new(),
+            related: Vec::new(),
+        }];
+
+        if let SemanticWarning::Redefinition { first_def, .. } = &self {
+            diagnostics.push(Diagnostic {
+                level: DiagnosticLevel::Note,
+                message: "previous definition is here".to_string(),
+                location: *first_def,
+                code: None,
+                hints: Vec::new(),
+                related: Vec::new(),
+            });
+        }
+
+        diagnostics
     }
 }
 

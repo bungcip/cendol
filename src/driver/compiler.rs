@@ -219,7 +219,7 @@ impl CompilerDriver {
                 let mut parser = Parser::new(&tokens, &mut temp_ast, &mut self.diagnostics);
                 if let Err(e) = parser.parse_translation_unit() {
                     // Report the error but continue with empty AST
-                    self.diagnostics.report_parse_error(e);
+                    self.diagnostics.report(e);
                 }
                 // Parser is dropped here, releasing the borrow on diagnostics
             }

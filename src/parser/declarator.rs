@@ -25,13 +25,13 @@ fn validate_declarator_combination(base: &Declarator, new_kind: &str, location: 
     match base {
         Declarator::Function(..) => {
             if new_kind == "array" {
-                return Err(ParseError::SyntaxError {
+                return Err(ParseError::Generic {
                     message: "function returning an array is not allowed".to_string(),
                     location,
                 });
             }
             if new_kind == "function" {
-                return Err(ParseError::SyntaxError {
+                return Err(ParseError::Generic {
                     message: "function returning a function is not allowed".to_string(),
                     location,
                 });
@@ -39,7 +39,7 @@ fn validate_declarator_combination(base: &Declarator, new_kind: &str, location: 
         }
         Declarator::Array(..) => {
             if new_kind == "function" {
-                return Err(ParseError::SyntaxError {
+                return Err(ParseError::Generic {
                     message: "array of functions is not allowed".to_string(),
                     location,
                 });

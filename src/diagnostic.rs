@@ -35,8 +35,17 @@ pub enum ParseError {
     #[error("Unexpected End of File")]
     UnexpectedEof { location: SourceSpan },
 
-    #[error("Syntax error: {message}")]
-    SyntaxError { message: String, location: SourceSpan },
+    #[error("Invalid declaration")]
+    InvalidDeclaration { location: SourceSpan },
+
+    #[error("Invalid declarator")]
+    InvalidDeclarator { location: SourceSpan },
+
+    #[error("Declaration in expression context")]
+    DeclarationInExpression { location: SourceSpan },
+
+    #[error("Generic syntax error: {message}")]
+    Generic { message: String, location: SourceSpan },
 
     #[error("Invalid numeric constant: {text}")]
     InvalidNumericConstant { text: String, location: SourceSpan },
@@ -95,11 +104,65 @@ impl DiagnosticEngine {
         });
     }
 
-    pub fn report_error(&mut self, error: SemanticError) {
-        match error {
+    pub fn report<T: IntoDiagnostic>(&mut self, diagnostic: T) {
+        diagnostic.report(self);
+    }
+
+    pub fn report_note(&mut self, message: String, location: SourceSpan) {
+        self._report(DiagnosticLevel::Note, message, location);
+    }
+
+    pub fn report_diagnostic(&mut self, diagnostic: Diagnostic) {
+        self.diagnostics.push(diagnostic);
+    }
+
+    pub fn has_errors(&self) -> bool {
+        self.diagnostics.iter().any(|d| d.level == DiagnosticLevel::Error)
+    }
+
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
+    }
+}
+
+pub trait IntoDiagnostic {
+    fn report(self, engine: &mut DiagnosticEngine);
+}
+
+impl IntoDiagnostic for ParseError {
+    fn report(self, engine: &mut DiagnosticEngine) {
+        let (message, location) = match self {
+            ParseError::UnexpectedToken {
+                expected_tokens,
+                found,
+                location,
+            } => (
+                format!(
+                    "Unexpected token: expected one of {}, found {:?}",
+                    expected_tokens, found
+                ),
+                location,
+            ),
+            ParseError::UnexpectedEof { location } => ("Unexpected End of File".to_string(), location),
+            ParseError::InvalidDeclaration { location } => ("Invalid declaration".to_string(), location),
+            ParseError::InvalidDeclarator { location } => ("Invalid declarator".to_string(), location),
+            ParseError::DeclarationInExpression { location } => {
+                ("Declaration in expression context".to_string(), location)
+            }
+            ParseError::Generic { message, location } => (message, location),
+            ParseError::InvalidNumericConstant { text, location } => {
+                (format!("Invalid numeric constant: {}", text), location)
+            }
+        };
+        engine._report(DiagnosticLevel::Error, message, location);
+    }
+}
+
+impl IntoDiagnostic for SemanticError {
+    fn report(self, engine: &mut DiagnosticEngine) {
+        let (message, location) = match self {
             SemanticError::UndeclaredIdentifier { name, location } => {
-                let message = format!("Undeclared identifier '{}'", name);
-                self._report(DiagnosticLevel::Error, message, location);
+                (format!("Undeclared identifier '{}'", name), location)
             }
             SemanticError::Redefinition {
                 name,
@@ -108,36 +171,39 @@ impl DiagnosticEngine {
             } => {
                 // Report the redefinition error with Clang-style location format
                 let error_message = format!("redefinition of '{}'", name);
-                self._report(DiagnosticLevel::Error, error_message, second_def);
+                engine._report(DiagnosticLevel::Error, error_message, second_def);
 
                 // Report a note showing the previous definition
                 let note_message = "previous definition is here".to_string();
-                self._report(DiagnosticLevel::Note, note_message, first_def);
+                engine._report(DiagnosticLevel::Note, note_message, first_def);
+                return;
             }
             SemanticError::TypeMismatch {
                 expected,
                 found,
                 location,
-            } => {
-                let message = format!("Type mismatch: expected {}, found {}", expected, found);
-                self._report(DiagnosticLevel::Error, message, location);
-            }
+            } => (format!("Type mismatch: expected {}, found {}", expected, found), location),
             SemanticError::IncompleteType { name, location } => {
-                let message = format!("Incomplete type '{}'", name);
-                self._report(DiagnosticLevel::Error, message, location);
+                (format!("Incomplete type '{}'", name), location)
             }
-            SemanticError::InvalidOperands { message, location } => {
-                self._report(DiagnosticLevel::Error, message, location);
+            SemanticError::NotAnLvalue { location } => {
+                ("lvalue required as left operand of assignment".to_string(), location)
             }
-            SemanticError::UnsupportedFeature { feature, location } => {
-                let message = format!("Unsupported feature: {}", feature);
-                self._report(DiagnosticLevel::Error, message, location);
+            SemanticError::InvalidBinaryOperands { location, .. } => {
+                ("invalid operands to binary expression".to_string(), location)
             }
-        }
+            SemanticError::InvalidUnaryOperand { location, .. } => {
+                ("invalid operand to unary expression".to_string(), location)
+            }
+            SemanticError::Generic { message, location } => (message, location),
+        };
+        engine._report(DiagnosticLevel::Error, message, location);
     }
+}
 
-    pub fn report_warning(&mut self, warning: SemanticWarning) {
-        let (message, location) = match warning {
+impl IntoDiagnostic for SemanticWarning {
+    fn report(self, engine: &mut DiagnosticEngine) {
+        let (message, location) = match self {
             SemanticWarning::UnusedDeclaration { name, location } => {
                 (format!("Unused declaration '{}'", name), location)
             }
@@ -156,45 +222,7 @@ impl DiagnosticEngine {
                 second_def,
             } => (format!("Redefinition of '{}'", name), second_def),
         };
-        self._report(DiagnosticLevel::Warning, message, location);
-    }
-
-    pub fn report_parse_error(&mut self, error: ParseError) {
-        let (message, location) = match error {
-            ParseError::UnexpectedToken {
-                expected_tokens,
-                found,
-                location,
-            } => (
-                format!(
-                    "Unexpected token: expected one of {}, found {:?}",
-                    expected_tokens, found
-                ),
-                location,
-            ),
-            ParseError::UnexpectedEof { location } => ("Unexpected End of File".to_string(), location),
-            ParseError::SyntaxError { message, location } => (message, location),
-            ParseError::InvalidNumericConstant { text, location } => {
-                (format!("Invalid numeric constant: {}", text), location)
-            }
-        };
-        self._report(DiagnosticLevel::Error, message, location);
-    }
-
-    pub fn report_note(&mut self, message: String, location: SourceSpan) {
-        self._report(DiagnosticLevel::Note, message, location);
-    }
-
-    pub fn report_diagnostic(&mut self, diagnostic: Diagnostic) {
-        self.diagnostics.push(diagnostic);
-    }
-
-    pub fn has_errors(&self) -> bool {
-        self.diagnostics.iter().any(|d| d.level == DiagnosticLevel::Error)
-    }
-
-    pub fn diagnostics(&self) -> &[Diagnostic] {
-        &self.diagnostics
+        engine._report(DiagnosticLevel::Warning, message, location);
     }
 }
 
@@ -217,10 +245,30 @@ pub enum SemanticError {
     },
     #[error("Incomplete type '{name}'")]
     IncompleteType { name: Symbol, location: SourceSpan },
-    #[error("Invalid operands: {message}")]
-    InvalidOperands { message: String, location: SourceSpan },
-    #[error("Unsupported feature: {feature}")]
-    UnsupportedFeature { feature: String, location: SourceSpan },
+
+    // C11 6.5.16 Assignment operators
+    #[error("lvalue required as left operand of assignment")]
+    NotAnLvalue { location: SourceSpan },
+
+    // C11 6.5.5 Multiplicative operators, 6.5.6 Additive operators, etc.
+    #[error("invalid operands to binary expression")]
+    InvalidBinaryOperands {
+        // Potentially add operand types later
+        // left: CType,
+        // right: CType,
+        location: SourceSpan,
+    },
+
+    // C11 6.5.3 Unary operators
+    #[error("invalid operand to unary expression")]
+    InvalidUnaryOperand {
+        // Potentially add operand type later
+        // CType
+        location: SourceSpan,
+    },
+
+    #[error("{message}")]
+    Generic { message: String, location: SourceSpan },
 }
 
 /// Semantic warnings

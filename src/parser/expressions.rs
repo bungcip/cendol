@@ -290,7 +290,7 @@ fn parse_unary_operator(parser: &mut Parser, token: Token) -> Result<NodeRef, Pa
         TokenKind::Star => UnaryOp::Deref,
         TokenKind::And => UnaryOp::AddrOf,
         _ => {
-            return Err(ParseError::SyntaxError {
+            return Err(ParseError::Generic {
                 message: "Invalid unary operator".to_string(),
                 location: token.location,
             });
@@ -320,8 +320,7 @@ fn parse_infix(
     let right_node = match parser.parse_expression(min_bp)? {
         super::ParseExprOutput::Expression(node) => node,
         super::ParseExprOutput::Declaration(_) => {
-            return Err(ParseError::SyntaxError {
-                message: "Declaration not allowed in expression context".to_string(),
+            return Err(ParseError::DeclarationInExpression {
                 location: parser.current_token_span()?,
             });
         }
@@ -360,7 +359,7 @@ fn parse_infix(
         TokenKind::Comma => BinaryOp::Comma,
         // Postfix operators are handled in `parse_expression` and should not reach here.
         _ => {
-            return Err(ParseError::SyntaxError {
+            return Err(ParseError::Generic {
                 message: "Invalid binary operator".to_string(),
                 location: operator_token.location,
             });
@@ -515,8 +514,7 @@ pub(crate) fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, Pa
         let result_expr = match parser.parse_expression(BindingPower(2))? {
             super::ParseExprOutput::Expression(node) => node,
             super::ParseExprOutput::Declaration(_) => {
-                return Err(ParseError::SyntaxError {
-                    message: "Declaration not allowed in _Generic association".to_string(),
+                return Err(ParseError::DeclarationInExpression {
                     location: parser.current_token_span()?,
                 });
             }

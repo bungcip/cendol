@@ -120,9 +120,9 @@ pub fn parse_compound_statement(parser: &mut Parser) -> Result<(NodeRef, SourceL
                     // Both declaration and statement parsing failed
                     // Report the declaration error and try to synchronize
                     if let Some(Err(decl_error)) = declaration_attempt {
-                        parser.diag.report_parse_error(decl_error);
+                        parser.diag.report(decl_error);
                     } else {
-                        parser.diag.report_parse_error(stmt_error);
+                        parser.diag.report(stmt_error);
                     }
                     parser.synchronize();
                 }

@@ -71,12 +71,11 @@ impl<'arena, 'src> ParserExt for Parser<'arena, 'src> {
     fn unwrap_expr_result(
         &self,
         result: Result<ParseExprOutput, ParseError>,
-        context: &str,
+        _context: &str,
     ) -> Result<NodeRef, ParseError> {
         match result {
             Ok(ParseExprOutput::Expression(node)) => Ok(node),
-            Ok(ParseExprOutput::Declaration(node_ref)) => Err(ParseError::SyntaxError {
-                message: format!("Expected {} but found declaration", context),
+            Ok(ParseExprOutput::Declaration(node_ref)) => Err(ParseError::DeclarationInExpression {
                 location: self.ast.get_node(node_ref).span,
             }),
             Err(e) => Err(e),

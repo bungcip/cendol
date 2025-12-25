@@ -154,7 +154,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                         AlignmentSpecifier::Expr(expr)
                     }
                 } else {
-                    return Err(ParseError::SyntaxError {
+                return Err(ParseError::Generic {
                         message: "Expected '(' after _Alignas".to_string(),
                         location: token.location,
                     });
@@ -184,8 +184,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
     );
 
     if specifiers.is_empty() {
-        return Err(ParseError::SyntaxError {
-            message: "Expected declaration specifiers".to_string(),
+    return Err(ParseError::InvalidDeclaration {
             location: parser.current_token_span()?,
         });
     }

@@ -117,21 +117,7 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     // If no declarators and this is not a record/enum definition, it's an error
     if !has_declarators {
-        // Check if this looks like a record/enum definition
-        // by looking at the last parsed specifier
-        let message = if let Some(DeclSpecifier::TypeSpecifier(ts)) = specifiers.last() {
-            match ts {
-                TypeSpecifier::Record(_, _, _) => "Expected ';' after struct/union definition",
-                TypeSpecifier::Enum(_, _) => "Expected ';' after enum definition",
-                _ => "Expected declarator or identifier after type specifier",
-            }
-        } else {
-            // No specifiers at all - this shouldn't happen
-            "Expected type specifiers"
-        };
-
-        return Err(ParseError::SyntaxError {
-            message: message.to_string(),
+        return Err(ParseError::InvalidDeclaration {
             location: trx.parser.current_token()?.location,
         });
     }
@@ -209,7 +195,7 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let semicolon_token = if let Some(token) = trx.parser.accept(TokenKind::Semicolon) {
         token
     } else {
-        return Err(ParseError::SyntaxError {
+        return Err(ParseError::Generic {
             message: "Expected ';' after declaration".to_string(),
             location: trx.parser.current_token()?.location,
         });
@@ -295,7 +281,7 @@ pub fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError
                 "Parser exceeded maximum iteration limit at token {:?}, position {}",
                 token.kind, parser.current_idx
             );
-            return Err(ParseError::SyntaxError {
+            return Err(ParseError::Generic {
                 message: format!(
                     "Parser exceeded maximum iteration limit - possible infinite loop at token {:?}",
                     token.kind
@@ -320,7 +306,7 @@ pub fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError
                         top_level_declarations.push(func_def);
                     }
                     Err(e) => {
-                        parser.diag.report_parse_error(e);
+                        parser.diag.report(e);
                         parser.synchronize();
                     }
                 }

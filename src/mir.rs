@@ -577,6 +577,11 @@ impl MirBuilder {
         &self.globals
     }
 
+    /// Get all globals for validation (mutable)
+    pub fn get_globals_mut(&mut self) -> &mut HashMap<GlobalId, Global> {
+        &mut self.globals
+    }
+
     /// Get all types for validation
     pub fn get_types(&self) -> &HashMap<TypeId, MirType> {
         &self.types

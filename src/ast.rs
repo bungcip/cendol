@@ -743,6 +743,14 @@ impl Node {
     }
 }
 
+/// Represents the definition state of a symbol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DefinitionState {
+    Tentative,    // int x;
+    Defined,      // int x = ...;
+    DeclaredOnly, // extern int x;
+}
+
 /// Represents a resolved symbol entry from the symbol table.
 /// This structure is typically populated during the semantic analysis phase.
 /// Symbol entries are stored in a separate Vec<SymbolEntry> with SymbolEntryIndex references.
@@ -753,8 +761,8 @@ pub struct SymbolEntry {
     pub type_info: TypeRef,
     pub storage_class: Option<StorageClass>,
     pub scope_id: u32, // Reference to the scope where it's defined
-    pub definition_span: SourceSpan,
-    pub is_defined: bool,
+    pub def_span: SourceSpan,
+    pub def_state: DefinitionState,
     pub is_referenced: bool,
     pub is_completed: bool,
     // Add other relevant symbol information here (e.g., value for constants, linkage)
@@ -766,7 +774,6 @@ pub enum SymbolKind {
     Variable {
         is_global: bool,
         is_static: bool,
-        is_extern: bool,
         // Initializer might be an AST node or a constant value
         initializer: Option<NodeRef>,
     },

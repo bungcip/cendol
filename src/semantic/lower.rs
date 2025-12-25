@@ -246,8 +246,8 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                             type_info: new_type_ref,
                             storage_class: None,
                             scope_id: ctx.symbol_table.current_scope().get(),
-                            definition_span: span,
-                            is_defined: true,
+                            def_span: span,
+                            def_state: DefinitionState::Defined,
                             is_referenced: false,
                             is_completed: false,
                         };
@@ -283,8 +283,8 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                             type_info: forward_ref,
                             storage_class: None,
                             scope_id: ctx.symbol_table.current_scope().get(),
-                            definition_span: span,
-                            is_defined: true,
+                            def_span: span,
+                            def_state: DefinitionState::Defined,
                             is_referenced: false,
                             is_completed: false,
                         };
@@ -401,7 +401,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                         // Found in current scope, check if completed
                         let (is_completed, first_def, type_info) = {
                             let entry = ctx.symbol_table.get_symbol_entry(entry_ref);
-                            (entry.is_completed, entry.definition_span, entry.type_info)
+                            (entry.is_completed, entry.def_span, entry.type_info)
                         };
                         if is_completed {
                             ctx.report_error(SemanticError::Redefinition {
@@ -426,8 +426,8 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                             type_info: new_type_ref,
                             storage_class: None,
                             scope_id: ctx.symbol_table.current_scope().get(),
-                            definition_span: span,
-                            is_defined: true,
+                            def_span: span,
+                            def_state: DefinitionState::Defined,
                             is_referenced: false,
                             is_completed: false,
                         };
@@ -455,8 +455,8 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                             type_info: forward_ref,
                             storage_class: None,
                             scope_id: ctx.symbol_table.current_scope().get(),
-                            definition_span: span,
-                            is_defined: true,
+                            def_span: span,
+                            def_state: DefinitionState::Defined,
                             is_referenced: false,
                             is_completed: false,
                         };
@@ -510,8 +510,8 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                             type_info: type_ref_to_use,
                             storage_class: None,
                             scope_id: ctx.symbol_table.current_scope().get(),
-                            definition_span: enum_node.span,
-                            is_defined: true,
+                            def_span: enum_node.span,
+                            def_state: DefinitionState::Defined,
                             is_referenced: false,
                             is_completed: true,
                         };
@@ -824,8 +824,8 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
             type_info: final_ty,
             storage_class: Some(StorageClass::Typedef),
             scope_id: ctx.symbol_table.current_scope().get(),
-            definition_span: span,
-            is_defined: true,
+            def_span: span,
+            def_state: DefinitionState::Defined,
             is_referenced: false,
             is_completed: true,
         };
@@ -1039,8 +1039,8 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                 type_info: function_type_ref,
                 storage_class: None,
                 scope_id: global_scope_id.get(),
-                definition_span: ctx.ast.get_node(node_ref).span,
-                is_defined: true,
+                def_span: ctx.ast.get_node(node_ref).span,
+                def_state: DefinitionState::Defined,
                 is_referenced: false,
                 is_completed: true,
             };

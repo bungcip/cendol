@@ -14,6 +14,37 @@ mod tests {
         driver.get_mir_dump_string(false).expect("Failed to get MIR dump")
     }
 
+    /// helper function to setup compiler driver and return diagnostics output string
+    fn setup_diagnostics_output(source: &str) -> String {
+        let mut config = CompileConfig::from_source_code(source.to_string());
+        config.dump_mir = false; // Don't dump to file
+        config.skip_validation = true; // Skip validation for testing
+
+        let mut driver = CompilerDriver::from_config(config);
+
+        // must be called to generate diagnostics
+        let _mir_dump = driver.get_mir_dump_string(false);
+
+        // Get diagnostics from the driver
+        let diagnostics = driver.get_diagnostics();
+
+        // Format diagnostics for snapshot testing
+        let diagnostic_output = format!(
+            "Diagnostics count: {}\n\n{}",
+            diagnostics.len(),
+            diagnostics
+                .iter()
+                .map(|diag| format!(
+                    "Level: {:?}\nMessage: {}\nLocation: {}",
+                    diag.level, diag.message, diag.location
+                ))
+                .collect::<Vec<_>>()
+                .join("\n\n")
+        );
+
+        diagnostic_output
+    }
+
     #[test]
     fn test_if_else_statement() {
         let source = r#"
@@ -661,6 +692,59 @@ mod tests {
             %16 = call fn_double()
             return const 0
         }
+        ");
+    }
+
+    #[test]
+    fn test_duplicate_global_declaration() {
+        let source = r#"
+            int x;
+            int x;
+
+            int main() {
+                return x;
+            }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = i32
+
+        global @x: i32 = const 0
+
+        fn main() -> i32
+        {
+          locals {
+          }
+
+          bb1:
+            return @x
+        }
+        ");
+    }
+
+    #[test]
+    fn test_duplicate_global_declaration_with_initializers_diagnostic() {
+        let source = r#"
+            int x = 1;
+            int x = 2;
+
+            int main() {
+                return x;
+            }
+        "#;
+
+        let output = setup_diagnostics_output(source);
+        insta::assert_snapshot!(output, @r"
+        Diagnostics count: 2
+
+        Level: Error
+        Message: redefinition of 'x'
+        Location: SourceSpan(source_id=SourceId(2), start=36, end=46)
+
+        Level: Note
+        Message: previous definition is here
+        Location: SourceSpan(source_id=SourceId(2), start=13, end=23)
         ");
     }
 }

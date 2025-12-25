@@ -96,30 +96,44 @@ impl DiagnosticEngine {
     }
 
     pub fn report_error(&mut self, error: SemanticError) {
-        let (message, location) = match error {
+        match error {
             SemanticError::UndeclaredIdentifier { name, location } => {
-                (format!("Undeclared identifier '{}'", name), location)
+                let message = format!("Undeclared identifier '{}'", name);
+                self._report(DiagnosticLevel::Error, message, location);
             }
             SemanticError::Redefinition {
                 name,
-                first_def: _first_def,
+                first_def,
                 second_def,
-            } => (format!("Redefinition of '{}'", name), second_def),
+            } => {
+                // Report the redefinition error with Clang-style location format
+                let error_message = format!("redefinition of '{}'", name);
+                self._report(DiagnosticLevel::Error, error_message, second_def);
+
+                // Report a note showing the previous definition
+                let note_message = "previous definition is here".to_string();
+                self._report(DiagnosticLevel::Note, note_message, first_def);
+            }
             SemanticError::TypeMismatch {
                 expected,
                 found,
                 location,
-            } => (
-                format!("Type mismatch: expected {}, found {}", expected, found),
-                location,
-            ),
-            SemanticError::IncompleteType { name, location } => (format!("Incomplete type '{}'", name), location),
-            SemanticError::InvalidOperands { message, location } => (message, location),
-            SemanticError::UnsupportedFeature { feature, location } => {
-                (format!("Unsupported feature: {}", feature), location)
+            } => {
+                let message = format!("Type mismatch: expected {}, found {}", expected, found);
+                self._report(DiagnosticLevel::Error, message, location);
             }
-        };
-        self._report(DiagnosticLevel::Error, message, location);
+            SemanticError::IncompleteType { name, location } => {
+                let message = format!("Incomplete type '{}'", name);
+                self._report(DiagnosticLevel::Error, message, location);
+            }
+            SemanticError::InvalidOperands { message, location } => {
+                self._report(DiagnosticLevel::Error, message, location);
+            }
+            SemanticError::UnsupportedFeature { feature, location } => {
+                let message = format!("Unsupported feature: {}", feature);
+                self._report(DiagnosticLevel::Error, message, location);
+            }
+        }
     }
 
     pub fn report_warning(&mut self, warning: SemanticWarning) {
@@ -258,7 +272,26 @@ impl ErrorFormatter {
         } else {
             Renderer::plain()
         };
-        let mut group = self.level(diag).primary_title(&diag.message).element(snippet);
+
+        let (_level_str, message) = match diag.level {
+            DiagnosticLevel::Error => {
+                let location_str = self.format_location(diag, source_manager);
+                let full_message = format!("{}: error: {}", location_str, diag.message);
+                ("error", full_message)
+            }
+            DiagnosticLevel::Warning => {
+                let location_str = self.format_location(diag, source_manager);
+                let full_message = format!("{}: warning: {}", location_str, diag.message);
+                ("warning", full_message)
+            }
+            DiagnosticLevel::Note => {
+                let location_str = self.format_location(diag, source_manager);
+                let full_message = format!("{}: note: {}", location_str, diag.message);
+                ("note", full_message)
+            }
+        };
+
+        let mut group = self.level(diag).primary_title(&message).element(snippet);
 
         for hint in &diag.hints {
             group = group.element(Level::HELP.message(hint));
@@ -266,6 +299,30 @@ impl ErrorFormatter {
 
         let report = &[group];
         renderer.render(report).to_string()
+    }
+
+    fn format_location(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
+        let path = source_manager
+            .get_file_info(diag.location.source_id())
+            .map(|fi| fi.path.to_str().unwrap_or("<unknown>"))
+            .unwrap_or("<unknown>");
+
+        // Get line and column information
+        let source_buffer = source_manager.get_buffer(diag.location.source_id());
+        if let Ok(source_str) = std::str::from_utf8(source_buffer) {
+            // Calculate line and column from byte offset
+            let line = source_str[..diag.location.start.offset() as usize].lines().count() + 1;
+
+            let line_start = source_str[..diag.location.start.offset() as usize]
+                .rfind('\n')
+                .map(|pos| pos + 1)
+                .unwrap_or(0);
+            let col = (diag.location.start.offset() as usize - line_start) + 1;
+
+            format!("{}:{}:{}", path, line, col)
+        } else {
+            path.to_string()
+        }
     }
 
     fn level<'a>(&self, diag: &Diagnostic) -> Level<'a> {

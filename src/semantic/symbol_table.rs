@@ -8,8 +8,16 @@ use hashbrown::HashMap;
 use std::num::NonZeroU32;
 
 use log::debug;
+use thiserror::Error;
 
 use crate::ast::*;
+
+/// Symbol table error types
+#[derive(Debug, Error)]
+pub enum SymbolTableError {
+    #[error("Invalid redefinition: symbol '{name}' cannot be redefined")]
+    InvalidRedefinition { name: Symbol },
+}
 
 /// Scope ID for efficient scope references
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -292,5 +300,97 @@ impl SymbolTable {
 
     pub fn get_symbol_entry_mut(&mut self, index: SymbolEntryRef) -> &mut SymbolEntry {
         &mut self.entries[(index.get() - 1) as usize]
+    }
+
+    /// Merge a new symbol entry with an existing one in the global scope.
+    /// This implements C11 6.9.2 for handling tentative definitions, extern declarations, and actual definitions.
+    pub fn merge_global_symbol(
+        &mut self,
+        name: Symbol,
+        mut new_entry: SymbolEntry,
+    ) -> Result<SymbolEntryRef, SymbolTableError> {
+        let global_scope = ScopeId::GLOBAL;
+
+        // Check if symbol already exists in global scope
+        if let Some(existing_ref) = self.lookup_symbol_in_scope(name, global_scope) {
+            let existing = self.get_symbol_entry_mut(existing_ref);
+
+            // Both must be variables to merge
+            let (existing_var, new_var) = match (&mut existing.kind, &mut new_entry.kind) {
+                (SymbolKind::Variable { .. }, SymbolKind::Variable { .. }) => (existing, &mut new_entry),
+                _ => {
+                    // Not both variables, this is a real redefinition
+                    debug!("Symbol '{}' redefinition: different kinds", name);
+                    return Err(SymbolTableError::InvalidRedefinition { name });
+                }
+            };
+
+            // Apply C11 6.9.2 merging rules
+            match (existing_var.def_state, new_var.def_state) {
+                (DefinitionState::Tentative, DefinitionState::Tentative) => {
+                    // Multiple tentative definitions - OK
+                    debug!("Merging tentative definitions for '{}'", name);
+                }
+
+                (DefinitionState::Tentative, DefinitionState::Defined) => {
+                    // Tentative definition followed by actual definition
+                    debug!("Converting tentative definition to defined for '{}'", name);
+                    existing_var.def_state = DefinitionState::Defined;
+                    if let SymbolKind::Variable { initializer, .. } = &mut new_var.kind
+                        && let SymbolKind::Variable {
+                            initializer: existing_init,
+                            ..
+                        } = &mut existing_var.kind
+                    {
+                        *existing_init = *initializer;
+                    }
+                }
+
+                (DefinitionState::DeclaredOnly, DefinitionState::Defined) => {
+                    // Extern declaration followed by actual definition
+                    debug!("Converting extern declaration to defined for '{}'", name);
+                    existing_var.def_state = DefinitionState::Defined;
+                    if let SymbolKind::Variable { initializer, .. } = &mut new_var.kind
+                        && let SymbolKind::Variable {
+                            initializer: existing_init,
+                            ..
+                        } = &mut existing_var.kind
+                    {
+                        *existing_init = *initializer;
+                    }
+                }
+
+                (DefinitionState::Tentative, DefinitionState::DeclaredOnly) => {
+                    // Tentative definition followed by extern declaration - OK
+                    debug!("Merging tentative definition with extern declaration for '{}'", name);
+                    existing_var.def_state = DefinitionState::DeclaredOnly;
+                }
+
+                (DefinitionState::Defined, DefinitionState::Defined) => {
+                    // Multiple actual definitions - error
+                    debug!("Multiple definitions of '{}'", name);
+                    return Err(SymbolTableError::InvalidRedefinition { name });
+                }
+
+                (DefinitionState::Defined, _) => {
+                    // Already defined, ignore new declaration
+                    debug!("Ignoring redundant declaration for already-defined '{}'", name);
+                }
+
+                (DefinitionState::DeclaredOnly, _) => {
+                    // Already declared as extern, ignore new declaration
+                    debug!("Ignoring redundant extern declaration for '{}'", name);
+                }
+            }
+
+            Ok(existing_ref)
+        } else {
+            // Symbol doesn't exist, add it
+            debug!(
+                "Adding new global symbol '{}' with def_state {:?}",
+                name, new_entry.def_state
+            );
+            Ok(self.add_symbol(name, new_entry))
+        }
     }
 }

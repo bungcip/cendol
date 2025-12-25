@@ -8,7 +8,7 @@ use hashbrown::HashMap;
 use std::path::Path;
 
 use crate::ast::Ast;
-use crate::diagnostic::DiagnosticEngine;
+use crate::diagnostic::{Diagnostic, DiagnosticEngine};
 use crate::lexer::Lexer;
 use crate::mir::codegen::MirToCraneliftLowerer;
 use crate::mir::validation::MirValidator;
@@ -440,6 +440,11 @@ impl CompilerDriver {
         self.config.skip_validation = original_skip_validation;
 
         result
+    }
+
+    /// Get diagnostics for testing
+    pub fn get_diagnostics(&self) -> Vec<Diagnostic> {
+        self.diagnostics.diagnostics().to_vec()
     }
 
     /// Get MIR dump for single function as string for testing (no header)

@@ -5,6 +5,7 @@
 //! handling through a two-pass approach.
 
 use crate::ast::BinaryOp;
+use crate::ast::SymbolEntryRef;
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::mir::{
@@ -69,6 +70,10 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         self.lower_node_ref(root_node_ref);
 
         debug!("Semantic analysis complete");
+
+        // Finalize global variables - convert tentative definitions to defined with implicit zero-initialization
+        self.finalize_globals();
+
         self.mir_builder.finalize_module()
     }
 
@@ -76,6 +81,101 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     fn report_error(&mut self, error: SemanticError) {
         self.has_errors = true;
         self.diag.report_error(error);
+    }
+
+    /// Finalize global variables after the entire translation unit has been analyzed.
+    /// This function converts tentative definitions to defined ones with implicit zero-initialization.
+    fn finalize_globals(&mut self) {
+        debug!("Finalizing global variables - converting tentative definitions to defined");
+
+        let global_scope_id = crate::semantic::symbol_table::ScopeId::GLOBAL;
+        let global_scope = self.symbol_table.get_scope(global_scope_id);
+
+        // First pass: collect tentative global variable names and their entry refs
+        let tentative_entries: Vec<(Symbol, SymbolEntryRef)> = global_scope
+            .symbols
+            .values()
+            .filter_map(|entry_ref| {
+                let entry = self.symbol_table.get_symbol_entry(*entry_ref);
+                if matches!(entry.kind, SymbolKind::Variable { .. }) && entry.def_state == DefinitionState::Tentative {
+                    Some((entry.name, *entry_ref))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Second pass: update symbol table entries
+        for (_, entry_ref) in &tentative_entries {
+            let entry = self.symbol_table.get_symbol_entry_mut(*entry_ref);
+
+            if let SymbolKind::Variable { .. } = &mut entry.kind
+                && entry.def_state == DefinitionState::Tentative
+            {
+                debug!(
+                    "Converting tentative definition to defined for global variable '{}'",
+                    entry.name
+                );
+                entry.def_state = DefinitionState::Defined;
+            }
+        }
+
+        // Third pass: add zero initialization to MIR globals
+        for (var_name, _) in tentative_entries {
+            self.add_zero_initialization_to_global(var_name);
+        }
+
+        debug!("Global variable finalization complete");
+    }
+
+    /// Add zero initialization to a MIR global variable
+    fn add_zero_initialization_to_global(&mut self, var_name: Symbol) {
+        debug!("Adding zero initialization to global variable '{}'", var_name);
+
+        // Get immutable access to globals to find the target
+        let target_global_id = {
+            let globals = self.mir_builder.get_globals();
+            globals
+                .iter()
+                .find(|(_, global)| global.name == var_name && global.initial_value.is_none())
+                .map(|(global_id, _)| *global_id)
+        };
+
+        if let Some(global_id) = target_global_id {
+            debug!("Found global '{}' that needs zero initialization", var_name);
+
+            // Get the global's type to determine what zero value to create
+            let global_type = {
+                let global = self.mir_builder.get_globals().get(&global_id).unwrap();
+                self.get_types().get(&global.type_id).cloned()
+            };
+
+            if let Some(mir_type) = global_type {
+                // Create an appropriate zero constant based on the type
+                let zero_const = match mir_type {
+                    crate::mir::MirType::Int { is_signed: _, width: _ } => ConstValue::Int(0),
+                    crate::mir::MirType::Float { width: _ } => ConstValue::Float(0.0),
+                    crate::mir::MirType::Bool => ConstValue::Bool(false),
+                    crate::mir::MirType::Pointer { .. } => ConstValue::Null,
+                    _ => {
+                        // For complex types like structs, we can't easily create zero
+                        // For now, just skip complex types
+                        debug!("Skipping zero initialization for complex type: {:?}", mir_type);
+                        return;
+                    }
+                };
+
+                // Create the zero constant
+                let const_id = self.create_constant(zero_const);
+
+                // Update the global to have the zero initial value
+                let globals_mut = self.mir_builder.get_globals_mut();
+                if let Some(global_mut) = globals_mut.get_mut(&global_id) {
+                    global_mut.initial_value = Some(const_id);
+                    debug!("Added zero initialization to global '{}'", var_name);
+                }
+            }
+        }
     }
 
     /// Lower a single AST node reference
@@ -440,7 +540,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 let existing = self.symbol_table.get_symbol_entry(existing_entry);
                 self.report_error(SemanticError::Redefinition {
                     name: param_name,
-                    first_def: existing.definition_span,
+                    first_def: existing.def_span,
                     second_def: location,
                 });
                 return;
@@ -467,7 +567,6 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             kind: SymbolKind::Variable {
                 is_global: false,
                 is_static: false,
-                is_extern: false,
                 initializer: None,
             },
             type_info: self.ast.push_type(Type {
@@ -478,8 +577,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             }),
             storage_class: None,
             scope_id: self.symbol_table.current_scope().get(),
-            definition_span: location,
-            is_defined: true,
+            def_span: location,
+            def_state: DefinitionState::Defined,
             is_referenced: false,
             is_completed: true,
         };
@@ -867,7 +966,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 let existing = self.symbol_table.get_symbol_entry(existing_entry);
                 self.report_error(SemanticError::Redefinition {
                     name: var_decl.name,
-                    first_def: existing.definition_span,
+                    first_def: existing.def_span,
                     second_def: location,
                 });
                 return;
@@ -896,64 +995,113 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         });
 
         if is_global {
-            // Create MIR global variable
-            let is_constant =
-                var_decl.storage == Some(StorageClass::Static) || var_decl.storage == Some(StorageClass::Extern);
-
-            // Process initializer to get constant value
-            let mut initial_value_id = None;
-            if let Some(init) = &var_decl.init {
-                match init {
-                    Initializer::Expression(expr_ref) => {
-                        // Try to evaluate the initializer as a constant
-                        let init_operand = self.lower_expression(*expr_ref);
-                        if let Operand::Constant(const_id) = init_operand {
-                            initial_value_id = Some(const_id);
-                        }
-                    }
-                    _ => {
-                        // For compound initializers in global variables, we need to process them properly
-                        if let Some(struct_const_id) =
-                            self.process_global_compound_initializer(init, var_decl.name, mir_type_id, location)
-                        {
-                            initial_value_id = Some(struct_const_id);
-                        }
-                    }
+            // Check if a global with this name already exists
+            let mut existing_global_id = None;
+            for (global_id, global) in self.mir_builder.get_globals() {
+                if global.name == var_decl.name {
+                    existing_global_id = Some(*global_id);
+                    break;
                 }
             }
 
-            let global_id =
-                self.mir_builder
-                    .create_global_with_init(var_decl.name, mir_type_id, is_constant, initial_value_id);
+            let global_id = if let Some(existing_id) = existing_global_id {
+                debug!("Reusing existing global '{}' with id {:?}", var_decl.name, existing_id);
+                existing_id
+            } else {
+                // Create MIR global variable
+                let is_constant =
+                    var_decl.storage == Some(StorageClass::Static) || var_decl.storage == Some(StorageClass::Extern);
 
-            // Add to symbol table as global (unless already there from previous pass)
-            let existing_entry = self.symbol_table.lookup_symbol(var_decl.name).and_then(|(e, s)| {
-                if s == self.symbol_table.current_scope() {
-                    Some(e)
-                } else {
-                    None
+                // Process initializer to get constant value
+                let mut initial_value_id = None;
+                if let Some(init) = &var_decl.init {
+                    match init {
+                        Initializer::Expression(expr_ref) => {
+                            // Try to evaluate the initializer as a constant
+                            let init_operand = self.lower_expression(*expr_ref);
+                            if let Operand::Constant(const_id) = init_operand {
+                                initial_value_id = Some(const_id);
+                            }
+                        }
+                        _ => {
+                            // For compound initializers in global variables, we need to process them properly
+                            if let Some(struct_const_id) =
+                                self.process_global_compound_initializer(init, var_decl.name, mir_type_id, location)
+                            {
+                                initial_value_id = Some(struct_const_id);
+                            }
+                        }
+                    }
                 }
-            });
 
-            if existing_entry.is_none() {
-                let symbol_entry = SymbolEntry {
-                    name: var_decl.name,
-                    kind: SymbolKind::Variable {
-                        is_global: true,
-                        is_static: var_decl.storage == Some(StorageClass::Static),
-                        is_extern: var_decl.storage == Some(StorageClass::Extern),
-                        initializer: initializer_node_ref,
-                    },
-                    type_info: var_decl.ty,
-                    storage_class: var_decl.storage,
-                    scope_id: self.symbol_table.current_scope().get(),
-                    definition_span: location,
-                    is_defined: true,
-                    is_referenced: false,
-                    is_completed: true,
-                };
+                let new_global_id =
+                    self.mir_builder
+                        .create_global_with_init(var_decl.name, mir_type_id, is_constant, initial_value_id);
+                debug!("Created new global '{}' with id {:?}", var_decl.name, new_global_id);
+                new_global_id
+            };
 
-                self.symbol_table.add_symbol(var_decl.name, symbol_entry);
+            // Handle global variable symbol table entry with proper redefinition checking
+            let def_state = if initializer_node_ref.is_some() {
+                DefinitionState::Defined
+            } else if var_decl.storage == Some(StorageClass::Extern) {
+                DefinitionState::DeclaredOnly
+            } else {
+                DefinitionState::Tentative
+            };
+
+            let symbol_entry = SymbolEntry {
+                name: var_decl.name,
+                kind: SymbolKind::Variable {
+                    is_global: true,
+                    is_static: var_decl.storage == Some(StorageClass::Static),
+                    initializer: initializer_node_ref,
+                },
+                type_info: var_decl.ty,
+                storage_class: var_decl.storage,
+                scope_id: self.symbol_table.current_scope().get(),
+                def_span: location,
+                def_state,
+                is_referenced: false,
+                is_completed: true,
+            };
+
+            // Use merge_global_symbol to handle C11 6.9.2 merging rules and detect redefinitions
+            match self.symbol_table.merge_global_symbol(var_decl.name, symbol_entry) {
+                Ok(entry_ref) => {
+                    // Symbol was successfully added or merged
+                    debug!("Global variable '{}' processed successfully", var_decl.name);
+
+                    // If this is a new symbol (not merged), we may need to add it to MIR globals
+                    // Check if this symbol already exists in the symbol table
+                    if let Some((existing_entry, _)) = self.symbol_table.lookup_symbol(var_decl.name)
+                        && existing_entry != entry_ref
+                    {
+                        // This is a new symbol, ensure it's in MIR globals
+                        // (This case shouldn't happen with merge_global_symbol, but keeping for safety)
+                    }
+                }
+                Err(_error) => {
+                    // merge_global_symbol detected a redefinition error
+                    // The error already contains the symbol name, but we need source spans for proper error reporting
+                    // Find the existing symbol to get its definition span for error reporting
+                    if let Some((existing_entry, _)) = self.symbol_table.lookup_symbol(var_decl.name) {
+                        let existing = self.symbol_table.get_symbol_entry(existing_entry);
+                        self.report_error(SemanticError::Redefinition {
+                            name: var_decl.name,
+                            first_def: existing.def_span,
+                            second_def: location,
+                        });
+                    } else {
+                        // This shouldn't happen, but provide a fallback error
+                        self.report_error(SemanticError::Redefinition {
+                            name: var_decl.name,
+                            first_def: location,
+                            second_def: location,
+                        });
+                    }
+                    return;
+                }
             }
             debug!("Created semantic global '{}' with id {:?}", var_decl.name, global_id);
         } else {
@@ -973,19 +1121,26 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 e
             } else {
                 // Add to symbol table as local
+                let def_state = if initializer_node_ref.is_some() {
+                    DefinitionState::Defined
+                } else if var_decl.storage == Some(StorageClass::Extern) {
+                    DefinitionState::DeclaredOnly
+                } else {
+                    DefinitionState::Tentative
+                };
+
                 let symbol_entry = SymbolEntry {
                     name: var_decl.name,
                     kind: SymbolKind::Variable {
                         is_global: false,
                         is_static: var_decl.storage == Some(StorageClass::Static),
-                        is_extern: var_decl.storage == Some(StorageClass::Extern),
                         initializer: initializer_node_ref,
                     },
                     type_info: var_decl.ty,
                     storage_class: var_decl.storage,
                     scope_id: self.symbol_table.current_scope().get(),
-                    definition_span: location,
-                    is_defined: true,
+                    def_span: location,
+                    def_state,
                     is_referenced: false,
                     is_completed: true,
                 };
@@ -1020,7 +1175,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 // Different symbol with same name - this is a real redefinition error
                 self.report_error(SemanticError::Redefinition {
                     name: typedef_decl.name,
-                    first_def: existing.definition_span,
+                    first_def: existing.def_span,
                     second_def: location,
                 });
                 return;
@@ -1036,8 +1191,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             type_info: typedef_decl.ty, // Typedef points to the aliased type
             storage_class: Some(StorageClass::Typedef),
             scope_id: self.symbol_table.current_scope().get(),
-            definition_span: location,
-            is_defined: true,
+            def_span: location,
+            def_state: DefinitionState::Defined,
             is_referenced: false,
             is_completed: true,
         };

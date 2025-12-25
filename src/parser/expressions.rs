@@ -290,8 +290,7 @@ fn parse_unary_operator(parser: &mut Parser, token: Token) -> Result<NodeRef, Pa
         TokenKind::Star => UnaryOp::Deref,
         TokenKind::And => UnaryOp::AddrOf,
         _ => {
-            return Err(ParseError::SyntaxError {
-                message: "Invalid unary operator".to_string(),
+            return Err(ParseError::InvalidUnaryOperator {
                 location: token.location,
             });
         }
@@ -320,8 +319,7 @@ fn parse_infix(
     let right_node = match parser.parse_expression(min_bp)? {
         super::ParseExprOutput::Expression(node) => node,
         super::ParseExprOutput::Declaration(_) => {
-            return Err(ParseError::SyntaxError {
-                message: "Declaration not allowed in expression context".to_string(),
+            return Err(ParseError::DeclarationNotAllowed {
                 location: parser.current_token_span()?,
             });
         }
@@ -360,8 +358,8 @@ fn parse_infix(
         TokenKind::Comma => BinaryOp::Comma,
         // Postfix operators are handled in `parse_expression` and should not reach here.
         _ => {
-            return Err(ParseError::SyntaxError {
-                message: "Invalid binary operator".to_string(),
+            return Err(ParseError::Expected {
+                expected: "binary operator".to_string(),
                 location: operator_token.location,
             });
         }
@@ -515,8 +513,7 @@ pub(crate) fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, Pa
         let result_expr = match parser.parse_expression(BindingPower(2))? {
             super::ParseExprOutput::Expression(node) => node,
             super::ParseExprOutput::Declaration(_) => {
-                return Err(ParseError::SyntaxError {
-                    message: "Declaration not allowed in _Generic association".to_string(),
+                return Err(ParseError::DeclarationNotAllowed {
                     location: parser.current_token_span()?,
                 });
             }
@@ -639,88 +636,13 @@ pub fn parse_alignof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 /// Check if a cast expression starts at the current position
 /// This is called after consuming an opening parenthesis
 pub(crate) fn is_cast_expression_start(parser: &Parser) -> bool {
-    debug!(
-        "is_cast_expression_start: checking at position {}, token {:?}",
-        parser.current_idx,
-        parser.current_token_kind()
-    );
-
-    if let Some(token) = parser.try_current_token() {
-        match token.kind {
-            // Direct type specifiers
-            TokenKind::Void
-            | TokenKind::Char
-            | TokenKind::Short
-            | TokenKind::Int
-            | TokenKind::Long
-            | TokenKind::Float
-            | TokenKind::Double
-            | TokenKind::Signed
-            | TokenKind::Unsigned
-            | TokenKind::Bool
-            | TokenKind::Complex
-            | TokenKind::Atomic
-            | TokenKind::Struct
-            | TokenKind::Union
-            | TokenKind::Enum
-            | TokenKind::Const
-            | TokenKind::Volatile
-            | TokenKind::Restrict
-            | TokenKind::Attribute => {
-                debug!(
-                    "is_cast_expression_start: found direct type specifier: {:?}",
-                    token.kind
-                );
-                true
-            }
-            TokenKind::Star => {
-                // Could be a pointer to a type, look further
-                debug!("is_cast_expression_start: found Star, looking ahead");
-                is_cast_expression_start_advanced(parser)
-            }
-            TokenKind::Identifier(symbol) => {
-                // Could be a typedef name
-                let is_type = parser.is_type_name(symbol);
-                debug!(
-                    "is_cast_expression_start: found identifier {:?}, is_type={}",
-                    symbol, is_type
-                );
-                is_type
-            }
-            _ => {
-                debug!(
-                    "is_cast_expression_start: token {:?} not recognized as cast start",
-                    token.kind
-                );
-                false
-            }
-        }
-    } else {
-        debug!("is_cast_expression_start: no token available");
-        false
-    }
-}
-
-/// Helper for more complex cast expression detection
-pub(crate) fn is_cast_expression_start_advanced(parser: &Parser) -> bool {
     // Look ahead to see if we have a type pattern
     let mut idx = parser.current_idx;
-
-    // Skip stars (pointers)
-    while let Some(token) = parser.tokens.get(idx) {
-        if token.kind == TokenKind::Star {
-            idx += 1;
-            continue;
-        }
-        break;
-    }
-
-    // After pointers, look for type qualifiers
+    // Skip stars (pointers) and qualifiers
     while let Some(token) = parser.tokens.get(idx) {
         match token.kind {
-            TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Atomic => {
+            TokenKind::Star | TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Atomic => {
                 idx += 1;
-                continue;
             }
             _ => break,
         }
@@ -742,7 +664,8 @@ pub(crate) fn is_cast_expression_start_advanced(parser: &Parser) -> bool {
             | TokenKind::Complex
             | TokenKind::Struct
             | TokenKind::Union
-            | TokenKind::Enum => true,
+            | TokenKind::Enum
+            | TokenKind::Attribute => true,
             TokenKind::Identifier(symbol) => parser.is_type_name(symbol),
             _ => false,
         }

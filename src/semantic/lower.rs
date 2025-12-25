@@ -34,7 +34,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     /// Report a semantic error and mark context as having errors
     pub fn report_error(&mut self, error: SemanticError) {
         self.has_errors = true;
-        self.diag.report_error(error);
+        self.diag.report(error);
     }
 
     /// Check if the context has any errors

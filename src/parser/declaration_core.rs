@@ -55,17 +55,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
 
             // Type qualifiers
             TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict => {
-                let mut qualifiers = TypeQualifiers::empty();
-                while let Some(token) = parser.try_current_token() {
-                    match token.kind {
-                        TokenKind::Const => qualifiers.insert(TypeQualifiers::CONST),
-                        TokenKind::Volatile => qualifiers.insert(TypeQualifiers::VOLATILE),
-                        TokenKind::Restrict => qualifiers.insert(TypeQualifiers::RESTRICT),
-                        _ => break,
-                    }
-                    parser.advance();
-                }
-                specifiers.push(DeclSpecifier::TypeQualifiers(qualifiers));
+                specifiers.push(DeclSpecifier::TypeQualifiers(parse_type_qualifiers(parser)));
             }
 
             TokenKind::Atomic => {
@@ -171,8 +161,8 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                         AlignmentSpecifier::Expr(expr)
                     }
                 } else {
-                    return Err(ParseError::SyntaxError {
-                        message: "Expected '(' after _Alignas".to_string(),
+                    return Err(ParseError::Expected {
+                        expected: "'(' after _Alignas".to_string(),
                         location: token.location,
                     });
                 };
@@ -201,8 +191,8 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
     );
 
     if specifiers.is_empty() {
-        return Err(ParseError::SyntaxError {
-            message: "Expected declaration specifiers".to_string(),
+        return Err(ParseError::Expected {
+            expected: "declaration specifiers".to_string(),
             location: parser.current_token_span()?,
         });
     }
@@ -373,4 +363,18 @@ pub(crate) fn parse_type_name(parser: &mut Parser) -> Result<TypeRef, ParseError
 
     // Build the type from specifiers and declarator
     type_builder::build_type_from_specifiers(parser, &specifiers, declarator.as_ref())
+}
+
+fn parse_type_qualifiers(parser: &mut Parser) -> TypeQualifiers {
+    let mut qualifiers = TypeQualifiers::empty();
+    while let Some(token) = parser.try_current_token() {
+        match token.kind {
+            TokenKind::Const => qualifiers.insert(TypeQualifiers::CONST),
+            TokenKind::Volatile => qualifiers.insert(TypeQualifiers::VOLATILE),
+            TokenKind::Restrict => qualifiers.insert(TypeQualifiers::RESTRICT),
+            _ => break,
+        }
+        parser.advance();
+    }
+    qualifiers
 }

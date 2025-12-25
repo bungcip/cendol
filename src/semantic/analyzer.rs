@@ -80,7 +80,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     /// Report a semantic error and mark analyzer as having errors
     fn report_error(&mut self, error: SemanticError) {
         self.has_errors = true;
-        self.diag.report_error(error);
+        self.diag.report(error);
     }
 
     /// Finalize global variables after the entire translation unit has been analyzed.

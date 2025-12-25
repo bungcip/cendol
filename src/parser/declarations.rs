@@ -130,8 +130,8 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
             "Expected type specifiers"
         };
 
-        return Err(ParseError::SyntaxError {
-            message: message.to_string(),
+        return Err(ParseError::Expected {
+            expected: message.to_string(),
             location: trx.parser.current_token()?.location,
         });
     }
@@ -209,8 +209,8 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let semicolon_token = if let Some(token) = trx.parser.accept(TokenKind::Semicolon) {
         token
     } else {
-        return Err(ParseError::SyntaxError {
-            message: "Expected ';' after declaration".to_string(),
+        return Err(ParseError::Expected {
+            expected: "';' after declaration".to_string(),
             location: trx.parser.current_token()?.location,
         });
     };
@@ -295,11 +295,7 @@ pub fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError
                 "Parser exceeded maximum iteration limit at token {:?}, position {}",
                 token.kind, parser.current_idx
             );
-            return Err(ParseError::SyntaxError {
-                message: format!(
-                    "Parser exceeded maximum iteration limit - possible infinite loop at token {:?}",
-                    token.kind
-                ),
+            return Err(ParseError::InfiniteLoop {
                 location: token.location,
             });
         }
@@ -320,7 +316,7 @@ pub fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError
                         top_level_declarations.push(func_def);
                     }
                     Err(e) => {
-                        parser.diag.report_parse_error(e);
+                        parser.diag.report(e);
                         parser.synchronize();
                     }
                 }

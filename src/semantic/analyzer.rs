@@ -1223,6 +1223,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             }
 
             NodeKind::Ident(name, symbol_ref) => {
+                debug!("Resolving identifier '{}'", name);
                 // First try to resolve through semantic analysis
                 if let Some(resolved_ref) = symbol_ref.get() {
                     let entry = self.symbol_table.get_symbol_entry(resolved_ref);
@@ -1255,6 +1256,26 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                             current_node.resolved_type.set(Some(type_info));
                             return Operand::Constant(const_id);
                         }
+                        SymbolKind::Function { .. } => {
+                            // Function identifier - resolve to function address
+                            debug!("Resolving function identifier '{}' to function address", name);
+
+                            // Look up the function in MIR functions by name
+                            if let Some(func_id) = self.find_mir_function_by_name(name) {
+                                let current_node = self.ast.get_node(expr_ref);
+                                current_node.resolved_type.set(Some(entry.type_info));
+                                // Create a function address constant
+                                let func_addr_const = ConstValue::FunctionAddress(func_id);
+                                let const_id = self.create_constant(func_addr_const);
+                                return Operand::Constant(const_id);
+                            } else {
+                                // Function not found in MIR, might be a forward declaration
+                                debug!("Function '{}' found in symbol table but not in MIR functions", name);
+                                // For now, return a dummy operand to allow compilation to continue
+                                let error_const = self.create_constant(ConstValue::Int(0));
+                                return Operand::Constant(error_const);
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -1273,8 +1294,15 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 }
 
                 // Fallback to searching all symbol entries and local map if needed
-                if let Some((entry_ref, _)) = self.symbol_table.lookup_symbol(name) {
+                debug!("Fallback lookup for identifier '{}'", name);
+                if let Some((entry_ref, scope_id)) = self.symbol_table.lookup_symbol(name) {
                     let entry = self.symbol_table.get_symbol_entry(entry_ref);
+                    debug!(
+                        "Found identifier '{}' in scope {} with kind {:?}",
+                        name,
+                        scope_id.get(),
+                        entry.kind
+                    );
                     if let Some(local_id) = self.local_map.get(&entry_ref) {
                         let current_node = self.ast.get_node(expr_ref);
                         current_node.resolved_type.set(Some(entry.type_info));
@@ -1286,6 +1314,28 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                         let current_node = self.ast.get_node(expr_ref);
                         current_node.resolved_type.set(Some(type_info));
                         return Operand::Constant(const_id);
+                    } else if let SymbolKind::Function { .. } = &entry.kind {
+                        // Function identifier - resolve to function address
+                        debug!(
+                            "Resolving function identifier '{}' to function address (fallback case)",
+                            name
+                        );
+
+                        // Look up the function in MIR functions by name
+                        if let Some(func_id) = self.find_mir_function_by_name(name) {
+                            let current_node = self.ast.get_node(expr_ref);
+                            current_node.resolved_type.set(Some(entry.type_info));
+                            // Create a function address constant
+                            let func_addr_const = ConstValue::FunctionAddress(func_id);
+                            let const_id = self.create_constant(func_addr_const);
+                            return Operand::Constant(const_id);
+                        } else {
+                            // Function not found in MIR, might be a forward declaration
+                            debug!("Function '{}' found in symbol table but not in MIR functions", name);
+                            // For now, return a dummy operand to allow compilation to continue
+                            let error_const = self.create_constant(ConstValue::Int(0));
+                            return Operand::Constant(error_const);
+                        }
                     }
                 }
 
@@ -1522,80 +1572,35 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             NodeKind::FunctionCall(func_ref, args) => {
                 debug!("Lowering function call expression with {} arguments", args.len());
 
-                // Extract function name from the function reference
+                // Evaluate function arguments first
+                let mut arg_operands = Vec::new();
+                for arg_ref in args {
+                    let arg_operand = self.lower_expression(arg_ref);
+                    arg_operands.push(arg_operand);
+                }
+
+                // Handle different types of function call targets
                 let func_node = self.ast.get_node(func_ref);
-                let func_name = if let NodeKind::Ident(name, _) = &func_node.kind {
-                    name
-                } else {
-                    debug!("Function call target is not an identifier: {:?}", func_node.kind);
-                    let dummy_const = self.create_constant(ConstValue::Int(0));
-                    return Operand::Constant(dummy_const);
-                };
 
-                debug!("Function call target: {}", func_name);
-
-                // Look up the function in the MIR functions
-                let target_func_id = self.find_mir_function_by_name(*func_name);
-
-                if let Some(func_id) = target_func_id {
-                    debug!(
-                        "Found function '{}' with ID {:?} (ID as integer: {})",
-                        func_name,
-                        func_id,
-                        func_id.get()
-                    );
-
-                    // Evaluate function arguments
-                    let mut arg_operands = Vec::new();
-                    for arg_ref in args {
-                        let arg_operand = self.lower_expression(arg_ref);
-                        arg_operands.push(arg_operand);
+                match &func_node.kind {
+                    NodeKind::Ident(name, _) => {
+                        // Direct function call: foo()
+                        debug!("Direct function call target: {}", name);
+                        self.handle_direct_function_call(*name, arg_operands)
                     }
-
-                    // Get the function information
-                    let func = self
-                        .mir_builder
-                        .get_functions()
-                        .get(&func_id)
-                        .expect("Function should exist");
-
-                    // Check if function returns void
-                    let return_type = self.get_types().get(&func.return_type);
-                    let is_void_function = return_type.is_some_and(|t| matches!(t, crate::mir::MirType::Void));
-
-                    if is_void_function {
-                        // For void functions, just emit the call without creating a local
-                        let call_target = CallTarget::Direct(func_id);
-                        let call_rvalue = Rvalue::Call(call_target, arg_operands);
-                        // Create a dummy assignment target that won't be used
-                        let dummy_type_id = self.get_int_type();
-                        let dummy_local_id = self.mir_builder.create_local(None, dummy_type_id, false);
-                        let assign_stmt = MirStmt::Assign(Place::Local(dummy_local_id), call_rvalue);
-                        self.mir_builder.add_statement(assign_stmt);
-
-                        // Return a dummy constant since void functions don't return values
+                    NodeKind::MemberAccess(object_ref, field_name, is_arrow) => {
+                        // Function pointer call through member access: v.fptr() or v->fptr()
+                        debug!(
+                            "Function pointer call through member access: {}.{}() (is_arrow: {})",
+                            field_name, field_name, is_arrow
+                        );
+                        self.handle_function_pointer_call(*object_ref, *field_name, *is_arrow, arg_operands)
+                    }
+                    _ => {
+                        debug!("Unsupported function call target: {:?}", func_node.kind);
                         let dummy_const = self.create_constant(ConstValue::Int(0));
                         Operand::Constant(dummy_const)
-                    } else {
-                        // For non-void functions, create a temporary local to store the return value
-                        // Use the function's actual return type instead of defaulting to int
-                        let temp_type_id = func.return_type;
-                        let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
-
-                        // Generate a proper call using Rvalue
-                        let call_target = CallTarget::Direct(func_id);
-                        let call_rvalue = Rvalue::Call(call_target, arg_operands);
-                        let assign_stmt = MirStmt::Assign(Place::Local(temp_local_id), call_rvalue);
-                        self.mir_builder.add_statement(assign_stmt);
-
-                        // Return the local that will contain the call result
-                        Operand::Copy(Box::new(Place::Local(temp_local_id)))
                     }
-                } else {
-                    debug!("Function {} not found in MIR functions", func_name);
-                    // Return a dummy operand to allow compilation to continue
-                    let dummy_const = self.create_constant(ConstValue::Int(0));
-                    Operand::Constant(dummy_const)
                 }
             }
 
@@ -1635,6 +1640,29 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
                 // Return this as an operand that can be used as an lvalue
                 Operand::Copy(Box::new(index_place))
+            }
+
+            NodeKind::Cast(type_ref, expr_ref) => {
+                debug!("Lowering cast expression to type {:?}", type_ref);
+
+                // Lower the expression being cast
+                let expr_operand = self.lower_expression(expr_ref);
+
+                // Convert the target type to MIR type
+                let target_type_id = self.lower_type_to_mir(type_ref);
+
+                // Create a cast operation
+                // For now, we'll create a temporary local and assign the cast result to it
+                let temp_local_id = self.mir_builder.create_local(None, target_type_id, false);
+                let temp_place = Place::Local(temp_local_id);
+
+                // Create the cast rvalue
+                let cast_rvalue = Rvalue::Cast(target_type_id, expr_operand);
+                let assign_stmt = MirStmt::Assign(temp_place.clone(), cast_rvalue);
+                self.mir_builder.add_statement(assign_stmt);
+
+                // Return the local that contains the cast result
+                Operand::Copy(Box::new(temp_place))
             }
 
             NodeKind::MemberAccess(object_ref, field_name, is_arrow) => {
@@ -3026,6 +3054,241 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         };
 
         Ok(mir_op)
+    }
+
+    /// Handle direct function calls (e.g., foo())
+    fn handle_direct_function_call(&mut self, func_name: Symbol, arg_operands: Vec<Operand>) -> Operand {
+        debug!("Handling direct function call: {}", func_name);
+
+        // Look up the function in the MIR functions
+        let target_func_id = self.find_mir_function_by_name(func_name);
+
+        if let Some(func_id) = target_func_id {
+            debug!(
+                "Found function '{}' with ID {:?} (ID as integer: {})",
+                func_name,
+                func_id,
+                func_id.get()
+            );
+
+            // Get the function information
+            let func = self
+                .mir_builder
+                .get_functions()
+                .get(&func_id)
+                .expect("Function should exist");
+
+            // Check if function returns void
+            let return_type = self.get_types().get(&func.return_type);
+            let is_void_function = return_type.is_some_and(|t| matches!(t, crate::mir::MirType::Void));
+
+            if is_void_function {
+                // For void functions, just emit the call without creating a local
+                let call_target = CallTarget::Direct(func_id);
+                let call_rvalue = Rvalue::Call(call_target, arg_operands);
+                // Create a dummy assignment target that won't be used
+                let dummy_type_id = self.get_int_type();
+                let dummy_local_id = self.mir_builder.create_local(None, dummy_type_id, false);
+                let assign_stmt = MirStmt::Assign(Place::Local(dummy_local_id), call_rvalue);
+                self.mir_builder.add_statement(assign_stmt);
+
+                // Return a dummy constant since void functions don't return values
+                let dummy_const = self.create_constant(ConstValue::Int(0));
+                Operand::Constant(dummy_const)
+            } else {
+                // For non-void functions, create a temporary local to store the return value
+                // Use the function's actual return type instead of defaulting to int
+                let temp_type_id = func.return_type;
+                let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
+
+                // Generate a proper call using Rvalue
+                let call_target = CallTarget::Direct(func_id);
+                let call_rvalue = Rvalue::Call(call_target, arg_operands);
+                let assign_stmt = MirStmt::Assign(Place::Local(temp_local_id), call_rvalue);
+                self.mir_builder.add_statement(assign_stmt);
+
+                // Return the local that will contain the call result
+                Operand::Copy(Box::new(Place::Local(temp_local_id)))
+            }
+        } else {
+            debug!("Function {} not found in MIR functions", func_name);
+            // Return a dummy operand to allow compilation to continue
+            let dummy_const = self.create_constant(ConstValue::Int(0));
+            Operand::Constant(dummy_const)
+        }
+    }
+
+    /// Handle function pointer calls (e.g., v.fptr() or v->fptr())
+    fn handle_function_pointer_call(
+        &mut self,
+        object_ref: NodeRef,
+        field_name: Symbol,
+        is_arrow: bool,
+        arg_operands: Vec<Operand>,
+    ) -> Operand {
+        debug!(
+            "Handling function pointer call through field: {} (is_arrow: {})",
+            field_name, is_arrow
+        );
+
+        // Lower the object expression to get the base place
+        let object_operand = self.lower_expression(object_ref);
+
+        // Create a place representing the function pointer field access
+        let mut object_place = match object_operand {
+            Operand::Copy(place_box) => *place_box,
+            _ => {
+                // If object is not a place, create a temporary to hold the computed address
+                let temp_type_id = self.get_int_type();
+                let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
+                let temp_place = Place::Local(temp_local_id);
+
+                // Store the object value in the temporary
+                let assign_stmt = MirStmt::Assign(temp_place.clone(), Rvalue::Use(object_operand));
+                self.mir_builder.add_statement(assign_stmt);
+
+                temp_place
+            }
+        };
+
+        // Handle arrow access (object->field) by dereferencing the pointer first
+        if is_arrow {
+            debug!("Handling arrow access, dereferencing pointer first");
+
+            // For arrow access, we need to dereference the pointer to get the struct
+            // Create a temporary to hold the dereferenced struct
+            let temp_type_id = self.get_int_type(); // For now, assume int type
+            let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
+            let temp_place = Place::Local(temp_local_id);
+
+            // Dereference the pointer: temp = *object_place
+            let deref_operand = Operand::Copy(Box::new(object_place));
+            let deref_rvalue = Rvalue::UnaryOp(crate::mir::UnaryOp::Deref, deref_operand);
+            let assign_stmt = MirStmt::Assign(temp_place.clone(), deref_rvalue);
+            self.mir_builder.add_statement(assign_stmt);
+
+            // Update object_place to be the dereferenced struct
+            object_place = temp_place;
+        }
+
+        // Get the type of the object being accessed (similar to member access logic)
+        let object_node = self.ast.get_node(object_ref);
+        let mut object_type_ref = object_node.resolved_type.get().or_else(|| {
+            // If type is not resolved, try to resolve it from the symbol table
+            debug!("Type not pre-resolved for object, attempting to resolve from symbol table");
+
+            // For identifiers, look up the symbol in the symbol table
+            if let NodeKind::Ident(name, _) = &object_node.kind {
+                debug!("Looking up symbol '{}' in symbol table", name);
+                if let Some((entry_ref, scope_id)) = self.symbol_table.lookup_symbol(*name) {
+                    let entry = self.symbol_table.get_symbol_entry(entry_ref);
+                    debug!(
+                        "Found symbol '{}' in scope {} with type {:?}",
+                        name,
+                        scope_id.get(),
+                        entry.type_info
+                    );
+                    debug!("Symbol kind: {:?}", entry.kind);
+                    Some(entry.type_info)
+                } else {
+                    debug!("Symbol '{}' not found in symbol table", name);
+                    None
+                }
+            } else {
+                // For complex expressions like nested MemberAccess, we need to resolve the type
+                // by examining the structure of the expression
+                debug!("Object is a complex expression, attempting to resolve type from expression structure");
+                self.resolve_type_from_expression(object_ref)
+            }
+        });
+
+        // For arrow access, if the object type is a pointer, we need to dereference it
+        // to get the actual struct type for field lookup
+        if is_arrow && let Some(type_ref) = object_type_ref {
+            let object_ast_type = self.ast.get_type(type_ref);
+            if let crate::ast::TypeKind::Pointer { pointee } = &object_ast_type.kind {
+                // Canonicalize the pointee type to ensure it points to the complete struct definition
+                let canonical_pointee = self.canonicalize_type(*pointee);
+                object_type_ref = Some(canonical_pointee);
+            }
+        }
+
+        let Some(object_type_ref) = object_type_ref else {
+            // Cannot resolve object type - report error and return dummy operand
+            debug!("Cannot resolve object type for function pointer call");
+            let error_const = self.create_constant(ConstValue::Int(0));
+            return Operand::Constant(error_const);
+        };
+
+        debug!(
+            "Looking for field '{}' in object type {:?} for function pointer call",
+            field_name, object_type_ref
+        );
+
+        // Look for the field in the struct and get its index
+        let field_index = {
+            let object_ast_type = self.ast.get_type(object_type_ref);
+
+            // Handle both struct and union types
+            match &object_ast_type.kind {
+                crate::ast::TypeKind::Record { members, is_union, .. } => {
+                    debug!(
+                        "Searching for field '{}' in {} with {} members",
+                        field_name,
+                        if *is_union { "union" } else { "struct" },
+                        members.len()
+                    );
+
+                    // Debug: Print all member names for inspection
+                    for (i, member) in members.iter().enumerate() {
+                        debug!("Member {}: '{}'", i, member.name);
+                    }
+
+                    // Search for the field in the struct/union members
+                    members.iter().position(|member| member.name == field_name)
+                }
+                _ => {
+                    debug!("Object type is not a struct/union: {:?}", object_ast_type.kind);
+                    None
+                }
+            }
+        };
+
+        if let Some(field_idx) = field_index {
+            // Create the struct field place for the function pointer
+            let func_ptr_place = Place::StructField(Box::new(object_place), field_idx);
+
+            // Load the function pointer from the struct field
+            let temp_type_id = self.get_int_type(); // Function pointer type
+            let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
+            let temp_place = Place::Local(temp_local_id);
+
+            // Load the function pointer: temp = object.field
+            let load_rvalue = Rvalue::Use(Operand::Copy(Box::new(func_ptr_place)));
+            let assign_stmt = MirStmt::Assign(temp_place.clone(), load_rvalue);
+            self.mir_builder.add_statement(assign_stmt);
+
+            // Create the indirect call through the function pointer
+            debug!("Creating indirect function pointer call");
+            let call_target = CallTarget::Indirect(Operand::Copy(Box::new(temp_place)));
+            let call_rvalue = Rvalue::Call(call_target, arg_operands);
+
+            // Create a temporary local for the call result
+            let result_type_id = self.get_int_type(); // For now, assume int return type
+            let result_local_id = self.mir_builder.create_local(None, result_type_id, false);
+            let result_place = Place::Local(result_local_id);
+
+            let call_assign_stmt = MirStmt::Assign(result_place.clone(), call_rvalue);
+            self.mir_builder.add_statement(call_assign_stmt);
+
+            // Return the local that will contain the call result
+            Operand::Copy(Box::new(result_place))
+        } else {
+            // Field not found - report error and return dummy operand
+            debug!("Field '{}' not found for function pointer call", field_name);
+            let error_const = self.create_constant(ConstValue::Int(0));
+            Operand::Constant(error_const)
+        }
     }
 
     /// Find a MIR function by name

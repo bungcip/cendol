@@ -479,6 +479,9 @@ impl<'a> MirDumper<'a> {
                 ConstValue::GlobalAddress(global_id) => {
                     format!("const {}", self.global_to_string(*global_id))
                 }
+                &ConstValue::FunctionAddress(func_id) => {
+                    format!("const {}", self.function_to_string(func_id))
+                }
             }
         } else {
             format!("const unknown_{}", const_id.get())

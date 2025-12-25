@@ -1,5 +1,6 @@
 use crate::lexer::TokenKind;
 use crate::source_manager::{SourceManager, SourceSpan};
+use annotate_snippets::renderer::DecorStyle;
 use annotate_snippets::{AnnotationKind, Level, Renderer, Snippet};
 use symbol_table::GlobalSymbol as Symbol;
 
@@ -40,6 +41,17 @@ pub enum ParseError {
 
     #[error("Invalid numeric constant: {text}")]
     InvalidNumericConstant { text: String, location: SourceSpan },
+}
+
+impl ParseError {
+    pub fn location(&self) -> SourceSpan {
+        match self {
+            ParseError::UnexpectedToken { location, .. } => *location,
+            ParseError::UnexpectedEof { location } => *location,
+            ParseError::SyntaxError { location, .. } => *location,
+            ParseError::InvalidNumericConstant { location, .. } => *location,
+        }
+    }
 }
 
 /// Diagnostic engine for collecting and reporting semantic errors and warnings
@@ -96,88 +108,48 @@ impl DiagnosticEngine {
     }
 
     pub fn report_error(&mut self, error: SemanticError) {
-        match error {
-            SemanticError::UndeclaredIdentifier { name, location } => {
-                let message = format!("Undeclared identifier '{}'", name);
-                self._report(DiagnosticLevel::Error, message, location);
-            }
-            SemanticError::Redefinition {
-                name,
-                first_def,
-                second_def,
-            } => {
-                // Report the redefinition error with Clang-style location format
-                let error_message = format!("redefinition of '{}'", name);
-                self._report(DiagnosticLevel::Error, error_message, second_def);
+        let message = error.to_string();
+        let location = error.location();
+        self._report(DiagnosticLevel::Error, message, location);
 
-                // Report a note showing the previous definition
-                let note_message = "previous definition is here".to_string();
-                self._report(DiagnosticLevel::Note, note_message, first_def);
-            }
-            SemanticError::TypeMismatch {
-                expected,
-                found,
-                location,
-            } => {
-                let message = format!("Type mismatch: expected {}, found {}", expected, found);
-                self._report(DiagnosticLevel::Error, message, location);
-            }
-            SemanticError::IncompleteType { name, location } => {
-                let message = format!("Incomplete type '{}'", name);
-                self._report(DiagnosticLevel::Error, message, location);
-            }
-            SemanticError::InvalidOperands { message, location } => {
-                self._report(DiagnosticLevel::Error, message, location);
-            }
-            SemanticError::UnsupportedFeature { feature, location } => {
-                let message = format!("Unsupported feature: {}", feature);
-                self._report(DiagnosticLevel::Error, message, location);
-            }
+        // For redefinition errors, also generate a Note pointing to the previous definition
+        if let SemanticError::Redefinition {
+            name: _,
+            first_def,
+            second_def: _,
+        } = &error
+        {
+            self._report(
+                DiagnosticLevel::Note,
+                "previous definition is here".to_string(),
+                *first_def,
+            );
         }
     }
 
     pub fn report_warning(&mut self, warning: SemanticWarning) {
-        let (message, location) = match warning {
-            SemanticWarning::UnusedDeclaration { name, location } => {
-                (format!("Unused declaration '{}'", name), location)
-            }
-            SemanticWarning::ImplicitConversion {
-                from_type,
-                to_type,
-                location,
-            } => (
-                format!("Implicit conversion from {} to {}", from_type, to_type),
-                location,
-            ),
-            SemanticWarning::UnreachableCode { location } => ("Unreachable code".to_string(), location),
-            SemanticWarning::Redefinition {
-                name,
-                first_def: _first_def,
-                second_def,
-            } => (format!("Redefinition of '{}'", name), second_def),
-        };
+        let message = warning.to_string();
+        let location = warning.location();
         self._report(DiagnosticLevel::Warning, message, location);
+
+        // For redefinition warnings, also generate a Note pointing to the previous definition
+        if let SemanticWarning::Redefinition {
+            name: _,
+            first_def,
+            second_def: _,
+        } = &warning
+        {
+            self._report(
+                DiagnosticLevel::Note,
+                "previous definition is here".to_string(),
+                *first_def,
+            );
+        }
     }
 
     pub fn report_parse_error(&mut self, error: ParseError) {
-        let (message, location) = match error {
-            ParseError::UnexpectedToken {
-                expected_tokens,
-                found,
-                location,
-            } => (
-                format!(
-                    "Unexpected token: expected one of {}, found {:?}",
-                    expected_tokens, found
-                ),
-                location,
-            ),
-            ParseError::UnexpectedEof { location } => ("Unexpected End of File".to_string(), location),
-            ParseError::SyntaxError { message, location } => (message, location),
-            ParseError::InvalidNumericConstant { text, location } => {
-                (format!("Invalid numeric constant: {}", text), location)
-            }
-        };
+        let message = error.to_string();
+        let location = error.location();
         self._report(DiagnosticLevel::Error, message, location);
     }
 
@@ -203,7 +175,7 @@ impl DiagnosticEngine {
 pub enum SemanticError {
     #[error("Undeclared identifier '{name}'")]
     UndeclaredIdentifier { name: Symbol, location: SourceSpan },
-    #[error("Redefinition of '{name}'")]
+    #[error("redefinition of '{name}'")]
     Redefinition {
         name: Symbol,
         first_def: SourceSpan,
@@ -215,12 +187,35 @@ pub enum SemanticError {
         found: String,
         location: SourceSpan,
     },
-    #[error("Incomplete type '{name}'")]
-    IncompleteType { name: Symbol, location: SourceSpan },
-    #[error("Invalid operands: {message}")]
-    InvalidOperands { message: String, location: SourceSpan },
+    #[error("Expression is not assignable (not an lvalue)")]
+    NotAnLvalue { location: SourceSpan },
+    #[error("Invalid operands for binary operation: have '{left_ty}' and '{right_ty}'")]
+    InvalidBinaryOperands {
+        left_ty: String,
+        right_ty: String,
+        location: SourceSpan,
+    },
+    #[error("Initializer element is not a compile-time constant")]
+    NonConstantInitializer { location: SourceSpan },
+    #[error("Invalid use of void type in expression")]
+    InvalidUseOfVoid { location: SourceSpan },
     #[error("Unsupported feature: {feature}")]
     UnsupportedFeature { feature: String, location: SourceSpan },
+}
+
+impl SemanticError {
+    pub fn location(&self) -> SourceSpan {
+        match self {
+            SemanticError::UndeclaredIdentifier { location, .. } => *location,
+            SemanticError::Redefinition { second_def, .. } => *second_def,
+            SemanticError::TypeMismatch { location, .. } => *location,
+            SemanticError::NotAnLvalue { location } => *location,
+            SemanticError::InvalidBinaryOperands { location, .. } => *location,
+            SemanticError::NonConstantInitializer { location } => *location,
+            SemanticError::InvalidUseOfVoid { location } => *location,
+            SemanticError::UnsupportedFeature { location, .. } => *location,
+        }
+    }
 }
 
 /// Semantic warnings
@@ -236,12 +231,23 @@ pub enum SemanticWarning {
     },
     #[error("Unreachable code")]
     UnreachableCode { location: SourceSpan },
-    #[error("Redefinition of '{name}'")]
+    #[error("redefinition of '{name}'")]
     Redefinition {
         name: Symbol,
         first_def: SourceSpan,
         second_def: SourceSpan,
     },
+}
+
+impl SemanticWarning {
+    pub fn location(&self) -> SourceSpan {
+        match self {
+            SemanticWarning::UnusedDeclaration { location, .. } => *location,
+            SemanticWarning::ImplicitConversion { location, .. } => *location,
+            SemanticWarning::UnreachableCode { location } => *location,
+            SemanticWarning::Redefinition { second_def, .. } => *second_def,
+        }
+    }
 }
 
 /// Configurable error formatter using annotate_snippets
@@ -268,26 +274,23 @@ impl ErrorFormatter {
     pub fn format_diagnostic(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
         let snippet = self.create_snippet(diag, source_manager);
         let renderer = if self.use_colors {
-            Renderer::styled()
+            Renderer::styled().decor_style(DecorStyle::Unicode)
         } else {
             Renderer::plain()
         };
 
-        let (_level_str, message) = match diag.level {
+        let message = match diag.level {
             DiagnosticLevel::Error => {
                 let location_str = self.format_location(diag, source_manager);
-                let full_message = format!("{}: error: {}", location_str, diag.message);
-                ("error", full_message)
+                format!("{}: {}", location_str, diag.message)
             }
             DiagnosticLevel::Warning => {
                 let location_str = self.format_location(diag, source_manager);
-                let full_message = format!("{}: warning: {}", location_str, diag.message);
-                ("warning", full_message)
+                format!("{}: {}", location_str, diag.message)
             }
             DiagnosticLevel::Note => {
                 let location_str = self.format_location(diag, source_manager);
-                let full_message = format!("{}: note: {}", location_str, diag.message);
-                ("note", full_message)
+                format!("{}: {}", location_str, diag.message)
             }
         };
 

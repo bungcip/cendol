@@ -54,19 +54,36 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
             }
 
             // Type qualifiers
-            TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Atomic => {
+            TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict => {
                 let mut qualifiers = TypeQualifiers::empty();
                 while let Some(token) = parser.try_current_token() {
                     match token.kind {
                         TokenKind::Const => qualifiers.insert(TypeQualifiers::CONST),
                         TokenKind::Volatile => qualifiers.insert(TypeQualifiers::VOLATILE),
                         TokenKind::Restrict => qualifiers.insert(TypeQualifiers::RESTRICT),
-                        TokenKind::Atomic => qualifiers.insert(TypeQualifiers::ATOMIC),
                         _ => break,
                     }
                     parser.advance();
                 }
                 specifiers.push(DeclSpecifier::TypeQualifiers(qualifiers));
+            }
+
+            TokenKind::Atomic => {
+                // Disambiguate between `_Atomic` qualifier and `_Atomic(type-name)` specifier
+                if parser.peek_token(0).is_some_and(|t| t.kind == TokenKind::LeftParen) {
+                    // This is the `_Atomic(type-name)` form.
+                    parser.advance(); // consume `_Atomic`
+                    parser.expect(TokenKind::LeftParen)?;
+                    let type_ref = parse_type_name(parser)?;
+                    parser.expect(TokenKind::RightParen)?;
+                    let type_specifier = TypeSpecifier::Atomic(type_ref);
+                    specifiers.push(DeclSpecifier::TypeSpecifier(type_specifier));
+                    has_type_specifier = true;
+                } else {
+                    // This is the `_Atomic` qualifier form.
+                    parser.advance(); // consume `_Atomic`
+                    specifiers.push(DeclSpecifier::TypeQualifiers(TypeQualifiers::ATOMIC));
+                }
             }
 
             // Function specifiers

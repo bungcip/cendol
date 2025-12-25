@@ -95,13 +95,6 @@ pub(crate) fn parse_type_specifier_with_context(
             }
             Ok(TypeSpecifier::Complex)
         }
-        TokenKind::Atomic => {
-            parser.advance();
-            parser.expect(TokenKind::LeftParen)?;
-            let type_ref = super::declaration_core::parse_type_name(parser)?;
-            parser.expect(TokenKind::RightParen)?;
-            Ok(TypeSpecifier::Atomic(type_ref))
-        }
         TokenKind::Struct => {
             parser.advance();
             super::struct_parsing::parse_record_specifier_with_context(parser, false, in_struct_member)

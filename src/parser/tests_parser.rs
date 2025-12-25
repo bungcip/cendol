@@ -720,6 +720,18 @@ fn test_simple_declaration() {
 }
 
 #[test]
+fn test_atomic_type_specifier() {
+    let resolved = setup_declaration("_Atomic(int) x;");
+    insta::assert_yaml_snapshot!(&resolved, @"
+    Declaration:
+      specifiers:
+        - Atomic(1)
+      init_declarators:
+        - name: x
+    ");
+}
+
+#[test]
 fn test_declaration_with_initializer() {
     let resolved = setup_declaration("int x = 42;");
     insta::assert_yaml_snapshot!(&resolved, @r"
@@ -1510,6 +1522,19 @@ fn test_label_with_numeric_suffix() {
       - _label123
       - Return:
           LiteralInt: 1
+    ");
+}
+
+#[test]
+fn test_atomic_type_qualifier() {
+    let resolved = setup_declaration("_Atomic int x;");
+    insta::assert_yaml_snapshot!(&resolved, @"
+    Declaration:
+      specifiers:
+        - TypeQualifiers(ATOMIC)
+        - int
+      init_declarators:
+        - name: x
     ");
 }
 

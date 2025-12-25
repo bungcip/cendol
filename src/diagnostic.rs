@@ -1,5 +1,6 @@
 use crate::lexer::TokenKind;
 use crate::source_manager::{SourceManager, SourceSpan};
+use annotate_snippets::renderer::DecorStyle;
 use annotate_snippets::{AnnotationKind, Level, Renderer, Snippet};
 use symbol_table::GlobalSymbol as Symbol;
 
@@ -273,26 +274,23 @@ impl ErrorFormatter {
     pub fn format_diagnostic(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
         let snippet = self.create_snippet(diag, source_manager);
         let renderer = if self.use_colors {
-            Renderer::styled()
+            Renderer::styled().decor_style(DecorStyle::Unicode)
         } else {
             Renderer::plain()
         };
 
-        let (_level_str, message) = match diag.level {
+        let message = match diag.level {
             DiagnosticLevel::Error => {
                 let location_str = self.format_location(diag, source_manager);
-                let full_message = format!("{}: error: {}", location_str, diag.message);
-                ("error", full_message)
+                format!("{}: {}", location_str, diag.message)
             }
             DiagnosticLevel::Warning => {
                 let location_str = self.format_location(diag, source_manager);
-                let full_message = format!("{}: warning: {}", location_str, diag.message);
-                ("warning", full_message)
+                format!("{}: {}", location_str, diag.message)
             }
             DiagnosticLevel::Note => {
                 let location_str = self.format_location(diag, source_manager);
-                let full_message = format!("{}: note: {}", location_str, diag.message);
-                ("note", full_message)
+                format!("{}: {}", location_str, diag.message)
             }
         };
 

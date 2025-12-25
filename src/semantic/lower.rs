@@ -564,10 +564,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     debug!("Symbol '{}' is not a typedef", name);
                     // Get the kind of the symbol as a string for the error message
                     let kind_string = format!("{:?}", entry.kind);
-                    let found_kind_str = kind_string
-                        .split_whitespace()
-                        .next()
-                        .unwrap_or("symbol");
+                    let found_kind_str = kind_string.split_whitespace().next().unwrap_or("symbol");
                     Err(SemanticError::TypeMismatch {
                         expected: "a typedef name".to_string(),
                         found: format!("a {}", found_kind_str.to_lowercase()),

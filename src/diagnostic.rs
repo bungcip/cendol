@@ -42,6 +42,17 @@ pub enum ParseError {
     InvalidNumericConstant { text: String, location: SourceSpan },
 }
 
+impl ParseError {
+    pub fn location(&self) -> SourceSpan {
+        match self {
+            ParseError::UnexpectedToken { location, .. } => *location,
+            ParseError::UnexpectedEof { location } => *location,
+            ParseError::SyntaxError { location, .. } => *location,
+            ParseError::InvalidNumericConstant { location, .. } => *location,
+        }
+    }
+}
+
 /// Diagnostic engine for collecting and reporting semantic errors and warnings
 pub struct DiagnosticEngine {
     pub diagnostics: Vec<Diagnostic>,
@@ -96,99 +107,20 @@ impl DiagnosticEngine {
     }
 
     pub fn report_error(&mut self, error: SemanticError) {
-        match error {
-            SemanticError::UndeclaredIdentifier { name, location } => {
-                let message = format!("Undeclared identifier '{}'", name);
-                self._report(DiagnosticLevel::Error, message, location);
-            }
-            SemanticError::Redefinition {
-                name,
-                first_def,
-                second_def,
-            } => {
-                // Report the redefinition error with Clang-style location format
-                let error_message = format!("redefinition of '{}'", name);
-                self._report(DiagnosticLevel::Error, error_message, second_def);
-
-                // Report a note showing the previous definition
-                let note_message = "previous definition is here".to_string();
-                self._report(DiagnosticLevel::Note, note_message, first_def);
-            }
-            SemanticError::TypeMismatch {
-                expected,
-                found,
-                location,
-            } => (
-                format!("Type mismatch: expected {}, found {}", expected, found),
-                location,
-            ),
-            SemanticError::NotAnLvalue { location } => ("Expression is not assignable".to_string(), location),
-            SemanticError::InvalidBinaryOperands {
-                left_ty,
-                right_ty,
-                location,
-            } => (
-                format!(
-                    "Invalid operands for binary operation: have '{}' and '{}'",
-                    left_ty, right_ty
-                ),
-                location,
-            ),
-            SemanticError::NonConstantInitializer { location } => {
-                ("Initializer element is not a compile-time constant".to_string(), location)
-            }
-            SemanticError::InvalidUseOfVoid { location } => {
-                ("Invalid use of void type in expression".to_string(), location)
-            }
-            SemanticError::UnsupportedFeature { feature, location } => {
-                let message = format!("Unsupported feature: {}", feature);
-                self._report(DiagnosticLevel::Error, message, location);
-            }
-        }
+        let message = error.to_string();
+        let location = error.location();
+        self._report(DiagnosticLevel::Error, message, location);
     }
 
     pub fn report_warning(&mut self, warning: SemanticWarning) {
-        let (message, location) = match warning {
-            SemanticWarning::UnusedDeclaration { name, location } => {
-                (format!("Unused declaration '{}'", name), location)
-            }
-            SemanticWarning::ImplicitConversion {
-                from_type,
-                to_type,
-                location,
-            } => (
-                format!("Implicit conversion from {} to {}", from_type, to_type),
-                location,
-            ),
-            SemanticWarning::UnreachableCode { location } => ("Unreachable code".to_string(), location),
-            SemanticWarning::Redefinition {
-                name,
-                first_def: _first_def,
-                second_def,
-            } => (format!("Redefinition of '{}'", name), second_def),
-        };
+        let message = warning.to_string();
+        let location = warning.location();
         self._report(DiagnosticLevel::Warning, message, location);
     }
 
     pub fn report_parse_error(&mut self, error: ParseError) {
-        let (message, location) = match error {
-            ParseError::UnexpectedToken {
-                expected_tokens,
-                found,
-                location,
-            } => (
-                format!(
-                    "Unexpected token: expected one of {}, found {:?}",
-                    expected_tokens, found
-                ),
-                location,
-            ),
-            ParseError::UnexpectedEof { location } => ("Unexpected End of File".to_string(), location),
-            ParseError::SyntaxError { message, location } => (message, location),
-            ParseError::InvalidNumericConstant { text, location } => {
-                (format!("Invalid numeric constant: {}", text), location)
-            }
-        };
+        let message = error.to_string();
+        let location = error.location();
         self._report(DiagnosticLevel::Error, message, location);
     }
 
@@ -242,6 +174,21 @@ pub enum SemanticError {
     UnsupportedFeature { feature: String, location: SourceSpan },
 }
 
+impl SemanticError {
+    pub fn location(&self) -> SourceSpan {
+        match self {
+            SemanticError::UndeclaredIdentifier { location, .. } => *location,
+            SemanticError::Redefinition { second_def, .. } => *second_def,
+            SemanticError::TypeMismatch { location, .. } => *location,
+            SemanticError::NotAnLvalue { location } => *location,
+            SemanticError::InvalidBinaryOperands { location, .. } => *location,
+            SemanticError::NonConstantInitializer { location } => *location,
+            SemanticError::InvalidUseOfVoid { location } => *location,
+            SemanticError::UnsupportedFeature { location, .. } => *location,
+        }
+    }
+}
+
 /// Semantic warnings
 #[derive(Debug, thiserror::Error)]
 pub enum SemanticWarning {
@@ -261,6 +208,17 @@ pub enum SemanticWarning {
         first_def: SourceSpan,
         second_def: SourceSpan,
     },
+}
+
+impl SemanticWarning {
+    pub fn location(&self) -> SourceSpan {
+        match self {
+            SemanticWarning::UnusedDeclaration { location, .. } => *location,
+            SemanticWarning::ImplicitConversion { location, .. } => *location,
+            SemanticWarning::UnreachableCode { location } => *location,
+            SemanticWarning::Redefinition { second_def, .. } => *second_def,
+        }
+    }
 }
 
 /// Configurable error formatter using annotate_snippets

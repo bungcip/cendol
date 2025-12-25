@@ -186,6 +186,31 @@ impl Cli {
             c_standard: self.c_standard,
         };
 
+        // Build preprocessor configuration with include paths
+        let mut system_include_paths = Vec::new();
+
+        // Add user-specified include paths as system include paths
+        for path in &self.include_paths {
+            system_include_paths.push(path.clone());
+        }
+
+        // Add default system include paths
+        system_include_paths.push(PathBuf::from("/usr/include"));
+
+        // Add architecture-specific include paths
+        let arch_paths = [
+            "/usr/include/x86_64-linux-gnu",
+            "/usr/include/x86_64-linux-gnu/c++/13",
+            "/usr/include/c++/13",
+        ];
+
+        for arch_path in &arch_paths {
+            let path = PathBuf::from(arch_path);
+            if path.exists() {
+                system_include_paths.push(path);
+            }
+        }
+
         Ok(CompileConfig {
             input_files: self.input_files,
             output_path: self.output,
@@ -197,7 +222,10 @@ impl Cli {
             skip_validation: false, // Default to false for CLI usage
             preprocessor: crate::pp::PPConfig {
                 max_include_depth: self.preprocessor.max_include_depth,
-                ..Default::default()
+                system_include_paths,
+                quoted_include_paths: Vec::new(),
+                angled_include_paths: Vec::new(),
+                framework_paths: Vec::new(),
             },
             suppress_line_markers: self.suppress_line_markers,
             include_paths: self.include_paths,

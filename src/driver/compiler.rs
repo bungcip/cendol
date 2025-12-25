@@ -160,6 +160,19 @@ impl CompilerDriver {
             match preprocessor.process(source_id, &self.config.preprocessor) {
                 Ok(t) => t,
                 Err(e) => {
+                    // Handle PPError::InvalidMacroParameter with rich diagnostics
+                    if let crate::pp::PPError::InvalidMacroParameter { location } = e {
+                        let diag = crate::diagnostic::Diagnostic {
+                            level: crate::diagnostic::DiagnosticLevel::Error,
+                            message: "Invalid macro parameter".to_string(),
+                            location,
+                            code: Some("invalid_macro_parameter".to_string()),
+                            hints: vec!["Check macro definition syntax".to_string()],
+                            related: Vec::new(),
+                        };
+                        self.diagnostics.report_diagnostic(diag);
+                    }
+
                     if self.diagnostics.has_errors() {
                         self.print_diagnostics();
                         return Err(CompilerError::CompilationFailed);

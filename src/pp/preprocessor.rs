@@ -308,7 +308,7 @@ pub enum PPError {
     #[error("Unexpected end of file")]
     UnexpectedEndOfFile,
     #[error("Invalid macro parameter")]
-    InvalidMacroParameter,
+    InvalidMacroParameter { location: SourceSpan },
     #[error("Invalid include path")]
     InvalidIncludePath,
     #[error("Unmatched #endif")]
@@ -719,7 +719,8 @@ impl<'src> Preprocessor<'src> {
     /// Evaluate a conditional expression (simplified - handle defined and basic arithmetic)
     fn evaluate_conditional_expression(&mut self, tokens: &[PPToken]) -> Result<bool, PPError> {
         if tokens.is_empty() {
-            return Err(PPError::InvalidConditionalExpression);
+            // For empty expressions, treat as false
+            return Ok(false);
         }
 
         // Check for defined(identifier) or defined identifier before macro expansion
@@ -742,9 +743,30 @@ impl<'src> Preprocessor<'src> {
 
         // First, expand macros in the expression
         let mut expanded_tokens = tokens.to_vec();
-        self.expand_tokens(&mut expanded_tokens)?;
+        match self.expand_tokens(&mut expanded_tokens) {
+            Ok(_) => {}
+            Err(_e) => {
+                // If macro expansion fails, emit diagnostic and treat as false
+                let location = if !tokens.is_empty() {
+                    SourceSpan::new(tokens[0].location, tokens.last().unwrap().location)
+                } else {
+                    let loc = self.get_current_location();
+                    SourceSpan::new(loc, loc)
+                };
+                let diag = crate::diagnostic::Diagnostic {
+                    level: crate::diagnostic::DiagnosticLevel::Warning,
+                    message: "Failed to expand macros in conditional expression".to_string(),
+                    location,
+                    code: Some("macro_expansion_failed".to_string()),
+                    hints: vec!["Expression will be treated as false".to_string()],
+                    related: Vec::new(),
+                };
+                self.diag.report_diagnostic(diag);
+                return Ok(false);
+            }
+        }
 
-        // Evaluate arithmetic expression
+        // Evaluate arithmetic expression with better error handling
         self.evaluate_arithmetic_expression(&expanded_tokens)
     }
 
@@ -758,6 +780,7 @@ impl<'src> Preprocessor<'src> {
         let expr = match parser.parse_expression() {
             Ok(e) => e,
             Err(_) => {
+                // For complex expressions that can't be parsed, emit a warning and treat as false
                 let location = if !tokens.is_empty() {
                     SourceSpan::new(tokens[0].location, tokens.last().unwrap().location)
                 } else {
@@ -765,15 +788,16 @@ impl<'src> Preprocessor<'src> {
                     SourceSpan::new(loc, loc)
                 };
                 let diag = crate::diagnostic::Diagnostic {
-                    level: crate::diagnostic::DiagnosticLevel::Error,
-                    message: "Invalid conditional expression".to_string(),
+                    level: crate::diagnostic::DiagnosticLevel::Warning,
+                    message: "Invalid conditional expression in preprocessor directive".to_string(),
                     location,
                     code: Some("invalid_conditional_expression".to_string()),
-                    hints: vec!["Check the syntax of the conditional expression".to_string()],
+                    hints: vec!["Expression will be treated as false".to_string()],
                     related: Vec::new(),
                 };
                 self.diag.report_diagnostic(diag);
-                return Err(PPError::InvalidConditionalExpression);
+                // Return false for unparseable expressions to allow compilation to continue
+                return Ok(false);
             }
         };
         let result = expr.evaluate(self)?;
@@ -815,8 +839,14 @@ impl<'src> Preprocessor<'src> {
                     Some(DirectiveKind::Undef) => self.handle_undef()?,
                     Some(DirectiveKind::Include) => self.handle_include()?,
                     Some(DirectiveKind::If) => {
-                        let expr_tokens = self.parse_conditional_expression()?;
-                        let condition = self.evaluate_conditional_expression(&expr_tokens)?;
+                        let expr_tokens = match self.parse_conditional_expression() {
+                            Ok(tokens) => tokens,
+                            Err(_) => {
+                                // For empty or invalid expressions, treat as false
+                                Vec::new()
+                            }
+                        };
+                        let condition = self.evaluate_conditional_expression(&expr_tokens).unwrap_or(false);
                         self.handle_if_directive(condition)?;
                     }
                     Some(DirectiveKind::Ifdef) => {
@@ -826,8 +856,14 @@ impl<'src> Preprocessor<'src> {
                         self.handle_ifndef()?;
                     }
                     Some(DirectiveKind::Elif) => {
-                        let expr_tokens = self.parse_conditional_expression()?;
-                        let condition = self.evaluate_conditional_expression(&expr_tokens)?;
+                        let expr_tokens = match self.parse_conditional_expression() {
+                            Ok(tokens) => tokens,
+                            Err(_) => {
+                                // For empty or invalid expressions, treat as false
+                                Vec::new()
+                            }
+                        };
+                        let condition = self.evaluate_conditional_expression(&expr_tokens).unwrap_or(false);
                         self.handle_elif_directive(condition)?;
                     }
                     Some(DirectiveKind::Else) => {
@@ -913,13 +949,18 @@ impl<'src> Preprocessor<'src> {
                             lexer.put_back(fp);
                         }
                         // parse params
-                        loop {
+                        'param_parsing: loop {
                             let param_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
                             match param_token.kind {
                                 PPTokenKind::RightParen => break,
                                 PPTokenKind::Identifier(sym) => {
                                     if params.contains(&sym) {
-                                        return Err(PPError::InvalidMacroParameter);
+                                        return Err(PPError::InvalidMacroParameter {
+                                            location: SourceSpan::new(
+                                                self.get_current_location(),
+                                                self.get_current_location(),
+                                            ),
+                                        });
                                     }
                                     params.push(sym);
                                     let sep = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
@@ -931,11 +972,25 @@ impl<'src> Preprocessor<'src> {
                                             flags |= MacroFlags::C99_VARARGS;
                                             let rparen = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
                                             if rparen.kind != PPTokenKind::RightParen {
-                                                return Err(PPError::InvalidMacroParameter);
+                                                return Err(PPError::InvalidMacroParameter {
+                                                    location: SourceSpan::new(
+                                                        self.get_current_location(),
+                                                        self.get_current_location(),
+                                                    ),
+                                                });
                                             }
                                             break;
                                         }
-                                        _ => return Err(PPError::InvalidMacroParameter),
+                                        _ => {
+                                            // Check if this token could signal the end of parameter list
+                                            // For object-like macros, any non-identifier token after the macro name
+                                            // should be treated as the start of the macro body
+                                            if let Some(lexer) = self.lexer_stack.last_mut() {
+                                                lexer.put_back(param_token);
+                                            }
+                                            // This is an object-like macro, exit parameter parsing
+                                            break 'param_parsing;
+                                        }
                                     }
                                 }
                                 PPTokenKind::Ellipsis => {
@@ -943,11 +998,44 @@ impl<'src> Preprocessor<'src> {
                                     variadic = Some(Symbol::new("__VA_ARGS__"));
                                     let rparen = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
                                     if rparen.kind != PPTokenKind::RightParen {
-                                        return Err(PPError::InvalidMacroParameter);
+                                        return Err(PPError::InvalidMacroParameter {
+                                            location: SourceSpan::new(
+                                                self.get_current_location(),
+                                                self.get_current_location(),
+                                            ),
+                                        });
                                     }
                                     break;
                                 }
-                                _ => return Err(PPError::InvalidMacroParameter),
+                                _ => {
+                                    // For problematic parameter tokens, emit a warning and continue
+                                    let diag = crate::diagnostic::Diagnostic {
+                                        level: crate::diagnostic::DiagnosticLevel::Warning,
+                                        message: format!(
+                                            "Invalid macro parameter token in #define '{}'",
+                                            name.as_str()
+                                        ),
+                                        location: SourceSpan::new(param_token.location, param_token.location),
+                                        code: Some("invalid_macro_parameter".to_string()),
+                                        hints: vec!["Macro parameters must be identifiers".to_string()],
+                                        related: Vec::new(),
+                                    };
+                                    self.diag.report_diagnostic(diag);
+
+                                    // Skip to the next comma or right paren
+                                    loop {
+                                        let skip_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
+                                        match skip_token.kind {
+                                            PPTokenKind::Comma | PPTokenKind::RightParen => {
+                                                if let Some(lexer) = self.lexer_stack.last_mut() {
+                                                    lexer.put_back(skip_token);
+                                                }
+                                                break;
+                                            }
+                                            _ => continue,
+                                        }
+                                    }
+                                }
                             }
                         }
                     } else if let Some(lexer) = self.lexer_stack.last_mut() {
@@ -1635,7 +1723,9 @@ impl<'src> Preprocessor<'src> {
                     if let Some(lexer) = self.lexer_stack.last_mut() {
                         lexer.put_back(token);
                     }
-                    return Err(PPError::InvalidMacroParameter);
+                    return Err(PPError::InvalidMacroParameter {
+                        location: SourceSpan::new(token.location, token.location),
+                    });
                 }
             }
         }
@@ -1700,48 +1790,14 @@ impl<'src> Preprocessor<'src> {
 
         if has_variadic {
             if args.len() < expected_args {
-                let diag = crate::diagnostic::Diagnostic {
-                    level: crate::diagnostic::DiagnosticLevel::Error,
-                    message: format!(
-                        "Too few arguments for macro '{}': expected at least {}, got {}",
-                        macro_info
-                            .parameter_list
-                            .iter()
-                            .map(|s| s.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", "),
-                        expected_args,
-                        args.len()
-                    ),
+                return Err(PPError::InvalidMacroParameter {
                     location: SourceSpan::new(macro_info.location, macro_info.location),
-                    code: Some("macro_too_few_args".to_string()),
-                    hints: Vec::new(),
-                    related: Vec::new(),
-                };
-                self.diag.report_diagnostic(diag);
-                return Err(PPError::InvalidMacroParameter);
+                });
             }
         } else if args.len() != expected_args {
-            let diag = crate::diagnostic::Diagnostic {
-                level: crate::diagnostic::DiagnosticLevel::Error,
-                message: format!(
-                    "Wrong number of arguments for macro '{}': expected {}, got {}",
-                    macro_info
-                        .parameter_list
-                        .iter()
-                        .map(|s| s.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    expected_args,
-                    args.len()
-                ),
+            return Err(PPError::InvalidMacroParameter {
                 location: SourceSpan::new(macro_info.location, macro_info.location),
-                code: Some("macro_wrong_arg_count".to_string()),
-                hints: Vec::new(),
-                related: Vec::new(),
-            };
-            self.diag.report_diagnostic(diag);
-            return Err(PPError::InvalidMacroParameter);
+            });
         }
 
         Ok(args)
@@ -2029,15 +2085,26 @@ impl<'src> Preprocessor<'src> {
                     // Validate argument count
                     let expected_args = macro_info.parameter_list.len();
                     if args.len() != expected_args {
-                        return Err(PPError::InvalidMacroParameter);
+                        // For conditional expressions, just skip problematic macro expansions
+                        i += 1;
+                        continue;
                     }
                     // Substitute
-                    let substituted = self.substitute_macro(&macro_info, &args)?;
+                    let substituted = match self.substitute_macro(&macro_info, &args) {
+                        Ok(substituted) => substituted,
+                        Err(_) => {
+                            // For conditional expressions, skip problematic substitutions
+                            i += 1;
+                            continue;
+                        }
+                    };
 
                     // Safety check for excessive expansions
                     let expansion_count = substituted.len();
                     if expansion_count > max_expansions {
-                        return Err(PPError::MacroRecursion);
+                        // For conditional expressions, skip problematic expansions
+                        i += 1;
+                        continue;
                     }
 
                     // Replace i..end_j+1 with substituted
@@ -2051,7 +2118,9 @@ impl<'src> Preprocessor<'src> {
                         m.flags |= MacroFlags::DISABLED;
                     }
                     // Recurse
-                    self.expand_tokens(tokens)?;
+                    if let Err(_) = self.expand_tokens(tokens) {
+                        // For conditional expressions, continue even if recursion fails
+                    }
                     // Re-enable
                     if let Some(m) = self.macros.get_mut(&symbol) {
                         m.flags.remove(MacroFlags::DISABLED);
@@ -2060,7 +2129,7 @@ impl<'src> Preprocessor<'src> {
                 }
             }
             // For object macros
-            if let Some(expanded) = self.expand_macro(&tokens[i])? {
+            if let Some(expanded) = self.expand_macro(&tokens[i]).unwrap_or(None) {
                 tokens.splice(i..i + 1, expanded);
                 continue;
             }

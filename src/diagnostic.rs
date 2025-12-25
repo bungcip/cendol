@@ -110,12 +110,40 @@ impl DiagnosticEngine {
         let message = error.to_string();
         let location = error.location();
         self._report(DiagnosticLevel::Error, message, location);
+
+        // For redefinition errors, also generate a Note pointing to the previous definition
+        if let SemanticError::Redefinition {
+            name: _,
+            first_def,
+            second_def: _,
+        } = &error
+        {
+            self._report(
+                DiagnosticLevel::Note,
+                "previous definition is here".to_string(),
+                *first_def,
+            );
+        }
     }
 
     pub fn report_warning(&mut self, warning: SemanticWarning) {
         let message = warning.to_string();
         let location = warning.location();
         self._report(DiagnosticLevel::Warning, message, location);
+
+        // For redefinition warnings, also generate a Note pointing to the previous definition
+        if let SemanticWarning::Redefinition {
+            name: _,
+            first_def,
+            second_def: _,
+        } = &warning
+        {
+            self._report(
+                DiagnosticLevel::Note,
+                "previous definition is here".to_string(),
+                *first_def,
+            );
+        }
     }
 
     pub fn report_parse_error(&mut self, error: ParseError) {
@@ -146,7 +174,7 @@ impl DiagnosticEngine {
 pub enum SemanticError {
     #[error("Undeclared identifier '{name}'")]
     UndeclaredIdentifier { name: Symbol, location: SourceSpan },
-    #[error("Redefinition of '{name}'")]
+    #[error("redefinition of '{name}'")]
     Redefinition {
         name: Symbol,
         first_def: SourceSpan,
@@ -202,7 +230,7 @@ pub enum SemanticWarning {
     },
     #[error("Unreachable code")]
     UnreachableCode { location: SourceSpan },
-    #[error("Redefinition of '{name}'")]
+    #[error("redefinition of '{name}'")]
     Redefinition {
         name: Symbol,
         first_def: SourceSpan,

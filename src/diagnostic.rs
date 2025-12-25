@@ -311,17 +311,8 @@ impl ErrorFormatter {
             .unwrap_or("<unknown>");
 
         // Get line and column information
-        let source_buffer = source_manager.get_buffer(diag.location.source_id());
-        if let Ok(source_str) = std::str::from_utf8(source_buffer) {
-            // Calculate line and column from byte offset
-            let line = source_str[..diag.location.start.offset() as usize].lines().count() + 1;
-
-            let line_start = source_str[..diag.location.start.offset() as usize]
-                .rfind('\n')
-                .map(|pos| pos + 1)
-                .unwrap_or(0);
-            let col = (diag.location.start.offset() as usize - line_start) + 1;
-
+        let line_col = source_manager.get_line_column(diag.location.start);
+        if let Some((line, col)) = line_col {
             format!("{}:{}:{}", path, line, col)
         } else {
             path.to_string()

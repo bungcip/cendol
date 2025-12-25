@@ -273,6 +273,7 @@ impl SourceManager {
 
     /// Get the buffer for a given source ID
     /// Since SourceId is always valid (we panic if not found), we can use indexing
+    /// use get_source_text to get &str from SourceSpan instead if you need text
     pub fn get_buffer(&self, source_id: SourceId) -> &[u8] {
         let info = self.file_infos.get(&source_id).expect("Invalid SourceId");
         &self.buffers[info.buffer_index][..]

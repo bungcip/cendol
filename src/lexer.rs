@@ -2,9 +2,6 @@ use crate::pp::{PPToken, PPTokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
 use symbol_table::GlobalSymbol as Symbol;
 
-use hashbrown::HashMap;
-use std::sync::OnceLock;
-
 // Re-export DiagnosticEngine from diagnostic module for convenience
 pub use crate::diagnostic::DiagnosticEngine;
 
@@ -233,82 +230,84 @@ pub struct Token {
     pub location: SourceSpan,
 }
 
-/// Static punctuation mapping for systematic token classification
-static PUNCTUATION_MAP: OnceLock<HashMap<PPTokenKind, TokenKind>> = OnceLock::new();
+/// Classify a preprocessor punctuation token into a lexical token.
+///
+/// ⚡ Bolt: Optimized with a `match` statement.
+/// This is significantly faster than the previous `HashMap` implementation because
+/// the Rust compiler can optimize it into a perfect hash table or a more direct
+/// jump table, avoiding the overhead of runtime hashing and lookups.
+fn classify_punctuation(pp_token_kind: PPTokenKind) -> TokenKind {
+    match pp_token_kind {
+        // Arithmetic operators
+        PPTokenKind::Plus => TokenKind::Plus,
+        PPTokenKind::Minus => TokenKind::Minus,
+        PPTokenKind::Star => TokenKind::Star,
+        PPTokenKind::Slash => TokenKind::Slash,
+        PPTokenKind::Percent => TokenKind::Percent,
+        PPTokenKind::Increment => TokenKind::Increment,
+        PPTokenKind::Decrement => TokenKind::Decrement,
 
-/// Initialize the punctuation mapping
-fn init_punctuation_map() -> HashMap<PPTokenKind, TokenKind> {
-    let mut map = HashMap::new();
+        // Bitwise operators
+        PPTokenKind::And => TokenKind::And,
+        PPTokenKind::Or => TokenKind::Or,
+        PPTokenKind::Xor => TokenKind::Xor,
+        PPTokenKind::Not => TokenKind::Not,
+        PPTokenKind::Tilde => TokenKind::Tilde,
+        PPTokenKind::LeftShift => TokenKind::LeftShift,
+        PPTokenKind::RightShift => TokenKind::RightShift,
 
-    // Arithmetic operators
-    map.insert(PPTokenKind::Plus, TokenKind::Plus);
-    map.insert(PPTokenKind::Minus, TokenKind::Minus);
-    map.insert(PPTokenKind::Star, TokenKind::Star);
-    map.insert(PPTokenKind::Slash, TokenKind::Slash);
-    map.insert(PPTokenKind::Percent, TokenKind::Percent);
-    map.insert(PPTokenKind::Increment, TokenKind::Increment);
-    map.insert(PPTokenKind::Decrement, TokenKind::Decrement);
+        // Comparison operators
+        PPTokenKind::Less => TokenKind::Less,
+        PPTokenKind::Greater => TokenKind::Greater,
+        PPTokenKind::LessEqual => TokenKind::LessEqual,
+        PPTokenKind::GreaterEqual => TokenKind::GreaterEqual,
+        PPTokenKind::Equal => TokenKind::Equal,
+        PPTokenKind::NotEqual => TokenKind::NotEqual,
 
-    // Bitwise operators
-    map.insert(PPTokenKind::And, TokenKind::And);
-    map.insert(PPTokenKind::Or, TokenKind::Or);
-    map.insert(PPTokenKind::Xor, TokenKind::Xor);
-    map.insert(PPTokenKind::Not, TokenKind::Not);
-    map.insert(PPTokenKind::Tilde, TokenKind::Tilde);
-    map.insert(PPTokenKind::LeftShift, TokenKind::LeftShift);
-    map.insert(PPTokenKind::RightShift, TokenKind::RightShift);
+        // Assignment operators
+        PPTokenKind::Assign => TokenKind::Assign,
+        PPTokenKind::PlusAssign => TokenKind::PlusAssign,
+        PPTokenKind::MinusAssign => TokenKind::MinusAssign,
+        PPTokenKind::StarAssign => TokenKind::StarAssign,
+        PPTokenKind::DivAssign => TokenKind::DivAssign,
+        PPTokenKind::ModAssign => TokenKind::ModAssign,
+        PPTokenKind::AndAssign => TokenKind::AndAssign,
+        PPTokenKind::OrAssign => TokenKind::OrAssign,
+        PPTokenKind::XorAssign => TokenKind::XorAssign,
+        PPTokenKind::LeftShiftAssign => TokenKind::LeftShiftAssign,
+        PPTokenKind::RightShiftAssign => TokenKind::RightShiftAssign,
 
-    // Comparison operators
-    map.insert(PPTokenKind::Less, TokenKind::Less);
-    map.insert(PPTokenKind::Greater, TokenKind::Greater);
-    map.insert(PPTokenKind::LessEqual, TokenKind::LessEqual);
-    map.insert(PPTokenKind::GreaterEqual, TokenKind::GreaterEqual);
-    map.insert(PPTokenKind::Equal, TokenKind::Equal);
-    map.insert(PPTokenKind::NotEqual, TokenKind::NotEqual);
+        // Logical operators
+        PPTokenKind::LogicAnd => TokenKind::LogicAnd,
+        PPTokenKind::LogicOr => TokenKind::LogicOr,
 
-    // Assignment operators
-    map.insert(PPTokenKind::Assign, TokenKind::Assign);
-    map.insert(PPTokenKind::PlusAssign, TokenKind::PlusAssign);
-    map.insert(PPTokenKind::MinusAssign, TokenKind::MinusAssign);
-    map.insert(PPTokenKind::StarAssign, TokenKind::StarAssign);
-    map.insert(PPTokenKind::DivAssign, TokenKind::DivAssign);
-    map.insert(PPTokenKind::ModAssign, TokenKind::ModAssign);
-    map.insert(PPTokenKind::AndAssign, TokenKind::AndAssign);
-    map.insert(PPTokenKind::OrAssign, TokenKind::OrAssign);
-    map.insert(PPTokenKind::XorAssign, TokenKind::XorAssign);
-    map.insert(PPTokenKind::LeftShiftAssign, TokenKind::LeftShiftAssign);
-    map.insert(PPTokenKind::RightShiftAssign, TokenKind::RightShiftAssign);
+        // Member access
+        PPTokenKind::Arrow => TokenKind::Arrow,
+        PPTokenKind::Dot => TokenKind::Dot,
 
-    // Logical operators
-    map.insert(PPTokenKind::LogicAnd, TokenKind::LogicAnd);
-    map.insert(PPTokenKind::LogicOr, TokenKind::LogicOr);
+        // Ternary operator
+        PPTokenKind::Question => TokenKind::Question,
+        PPTokenKind::Colon => TokenKind::Colon,
 
-    // Member access
-    map.insert(PPTokenKind::Arrow, TokenKind::Arrow);
-    map.insert(PPTokenKind::Dot, TokenKind::Dot);
+        // Punctuation
+        PPTokenKind::Comma => TokenKind::Comma,
+        PPTokenKind::Semicolon => TokenKind::Semicolon,
+        PPTokenKind::Ellipsis => TokenKind::Ellipsis,
 
-    // Ternary operator
-    map.insert(PPTokenKind::Question, TokenKind::Question);
-    map.insert(PPTokenKind::Colon, TokenKind::Colon);
+        // Brackets and parentheses
+        PPTokenKind::LeftParen => TokenKind::LeftParen,
+        PPTokenKind::RightParen => TokenKind::RightParen,
+        PPTokenKind::LeftBracket => TokenKind::LeftBracket,
+        PPTokenKind::RightBracket => TokenKind::RightBracket,
+        PPTokenKind::LeftBrace => TokenKind::LeftBrace,
+        PPTokenKind::RightBrace => TokenKind::RightBrace,
 
-    // Punctuation
-    map.insert(PPTokenKind::Comma, TokenKind::Comma);
-    map.insert(PPTokenKind::Semicolon, TokenKind::Semicolon);
-    map.insert(PPTokenKind::Ellipsis, TokenKind::Ellipsis);
+        // Tokens that don't map directly to a parser token
+        PPTokenKind::Hash | PPTokenKind::HashHash => TokenKind::Unknown,
 
-    // Brackets and parentheses
-    map.insert(PPTokenKind::LeftParen, TokenKind::LeftParen);
-    map.insert(PPTokenKind::RightParen, TokenKind::RightParen);
-    map.insert(PPTokenKind::LeftBracket, TokenKind::LeftBracket);
-    map.insert(PPTokenKind::RightBracket, TokenKind::RightBracket);
-    map.insert(PPTokenKind::LeftBrace, TokenKind::LeftBrace);
-    map.insert(PPTokenKind::RightBrace, TokenKind::RightBrace);
-
-    // Special tokens that map to Unknown
-    map.insert(PPTokenKind::Hash, TokenKind::Unknown);
-    map.insert(PPTokenKind::HashHash, TokenKind::Unknown);
-
-    map
+        // Non-punctuation tokens are not handled by this function
+        _ => TokenKind::Unknown,
+    }
 }
 
 /// Check if a symbol represents a C11 keyword.
@@ -537,12 +536,8 @@ impl<'src> Lexer<'src> {
             }
             PPTokenKind::Eof => TokenKind::EndOfFile,
             PPTokenKind::Eod => TokenKind::Unknown,
-            // Handle punctuation tokens systematically
-            pptoken_kind => PUNCTUATION_MAP
-                .get_or_init(init_punctuation_map)
-                .get(&pptoken_kind)
-                .copied()
-                .unwrap_or(TokenKind::Unknown),
+            // Handle punctuation tokens using the optimized match-based function
+            pptoken_kind => classify_punctuation(pptoken_kind),
         }
     }
 

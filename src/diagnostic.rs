@@ -194,7 +194,6 @@ impl IntoDiagnostic for SemanticWarning {
             related: Vec::new(),
         }];
 
-
         diagnostics
     }
 }

@@ -36,8 +36,6 @@ pub enum ParseError {
     #[error("Unexpected End of File")]
     UnexpectedEof { location: SourceSpan },
 
-    #[error("Expected {expected} ")]
-    Expected { expected: String, location: SourceSpan },
     #[error("Invalid unary operator")]
     InvalidUnaryOperator { location: SourceSpan },
 
@@ -57,7 +55,6 @@ impl ParseError {
             ParseError::UnexpectedToken { location, .. } => *location,
             ParseError::UnexpectedEof { location } => *location,
             ParseError::InvalidNumericConstant { location, .. } => *location,
-            ParseError::Expected { location, .. } => *location,
             ParseError::InvalidUnaryOperator { location } => *location,
             ParseError::DeclarationNotAllowed { location } => *location,
             ParseError::InfiniteLoop { location } => *location,
@@ -188,7 +185,7 @@ impl IntoDiagnostic for SemanticError {
 
 impl IntoDiagnostic for SemanticWarning {
     fn into_diagnostic(self) -> Vec<Diagnostic> {
-        let mut diagnostics = vec![Diagnostic {
+        let diagnostics = vec![Diagnostic {
             level: DiagnosticLevel::Warning,
             message: self.to_string(),
             location: self.location(),
@@ -196,17 +193,6 @@ impl IntoDiagnostic for SemanticWarning {
             hints: Vec::new(),
             related: Vec::new(),
         }];
-
-        if let SemanticWarning::Redefinition { first_def, .. } = &self {
-            diagnostics.push(Diagnostic {
-                level: DiagnosticLevel::Note,
-                message: "previous definition is here".to_string(),
-                location: *first_def,
-                code: None,
-                hints: Vec::new(),
-                related: Vec::new(),
-            });
-        }
 
         diagnostics
     }
@@ -273,12 +259,6 @@ pub enum SemanticWarning {
     },
     #[error("Unreachable code")]
     UnreachableCode { location: SourceSpan },
-    #[error("redefinition of '{name}'")]
-    Redefinition {
-        name: Symbol,
-        first_def: SourceSpan,
-        second_def: SourceSpan,
-    },
 }
 
 impl SemanticWarning {
@@ -287,7 +267,6 @@ impl SemanticWarning {
             SemanticWarning::UnusedDeclaration { location, .. } => *location,
             SemanticWarning::ImplicitConversion { location, .. } => *location,
             SemanticWarning::UnreachableCode { location } => *location,
-            SemanticWarning::Redefinition { second_def, .. } => *second_def,
         }
     }
 }

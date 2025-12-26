@@ -130,9 +130,11 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
             "Expected type specifiers"
         };
 
-        return Err(ParseError::Expected {
-            expected: message.to_string(),
-            location: trx.parser.current_token()?.location,
+        let current_token = trx.parser.current_token()?;
+        return Err(ParseError::UnexpectedToken {
+            expected_tokens: message.to_string(),
+            found: current_token.kind,
+            location: current_token.location,
         });
     }
 
@@ -209,9 +211,11 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let semicolon_token = if let Some(token) = trx.parser.accept(TokenKind::Semicolon) {
         token
     } else {
-        return Err(ParseError::Expected {
-            expected: "';' after declaration".to_string(),
-            location: trx.parser.current_token()?.location,
+        let current_token = trx.parser.current_token()?;
+        return Err(ParseError::UnexpectedToken {
+            expected_tokens: "';' after declaration".to_string(),
+            found: current_token.kind,
+            location: current_token.location,
         });
     };
 

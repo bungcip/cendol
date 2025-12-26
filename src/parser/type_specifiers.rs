@@ -19,8 +19,7 @@ pub(crate) fn parse_type_specifier_with_context(
     parser: &mut Parser,
     in_struct_member: bool,
 ) -> Result<TypeSpecifier, ParseError> {
-    let token = parser.try_current_token().ok_or_else(|| ParseError::Expected {
-        expected: "type specifier".to_string(),
+    let token = parser.try_current_token().ok_or_else(|| ParseError::UnexpectedEof {
         location: parser.previous_token_span(),
     })?;
 

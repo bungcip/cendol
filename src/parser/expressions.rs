@@ -358,8 +358,9 @@ fn parse_infix(
         TokenKind::Comma => BinaryOp::Comma,
         // Postfix operators are handled in `parse_expression` and should not reach here.
         _ => {
-            return Err(ParseError::Expected {
-                expected: "binary operator".to_string(),
+            return Err(ParseError::UnexpectedToken {
+                expected_tokens: "binary operator".to_string(),
+                found: operator_token.kind,
                 location: operator_token.location,
             });
         }

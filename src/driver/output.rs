@@ -130,6 +130,13 @@ impl OutputHandler {
         }
     }
 
+    /// Get function name from symbol entry reference
+    fn get_function_name(&self, symbol_ref: crate::ast::SymbolEntryRef) -> String {
+        // For now, return a placeholder since we don't have access to the symbol table here
+        // In a real implementation, we would need access to the symbol table
+        format!("func_{}", symbol_ref.get())
+    }
+
     /// Dump a single AST node kind
     fn dump_parser_kind(&self, kind: &NodeKind) {
         match kind {
@@ -254,6 +261,16 @@ impl OutputHandler {
                 func_def.specifiers.len(),
                 func_def.body.get()
             ),
+            NodeKind::Function(function_data) => {
+                // Get the function name from the symbol table
+                let func_name = self.get_function_name(function_data.symbol);
+                println!(
+                    "Function(name={}, ty={}, body={})",
+                    func_name,
+                    function_data.ty.get(),
+                    function_data.body.get()
+                )
+            }
             NodeKind::EnumConstant(name, value) => println!(
                 "EnumConstant({}, {})",
                 name,

@@ -108,7 +108,6 @@ pub struct CompileConfig {
     pub defines: Vec<(String, Option<String>)>, // NAME -> VALUE
     pub warnings: Vec<String>,
     pub lang_options: LangOptions,
-    _temp_file: Option<tempfile::TempPath>,
 }
 
 impl CompileConfig {
@@ -230,7 +229,6 @@ impl Cli {
             defines,
             warnings,
             lang_options,
-            ..Default::default()
         })
     }
 }

@@ -251,6 +251,7 @@ pub mod ast_iterators {
                     | NodeKind::AlignOf(_)
                     | NodeKind::Declaration(_)
                     | NodeKind::FunctionDef(_)
+                    | NodeKind::Function(_)
                     | NodeKind::StaticAssert(_, _)
                     | NodeKind::TranslationUnit(_)
                     | NodeKind::If(_)

@@ -9,7 +9,6 @@ use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::semantic::symbol_table::{Namespace, ScopeKind, SymbolTable};
 use crate::source_manager::SourceSpan;
-use log::debug;
 
 /// Context for the semantic lowering phase
 pub struct LowerCtx<'a, 'src> {
@@ -200,7 +199,6 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
             .push_type(Type::new(TypeKind::Atomic { base_type: *inner_type }))),
         TypeSpecifier::Record(is_union, tag, definition) => {
             // Properly handle struct/union types with their member declarations
-            debug!("Processing record definition: {:?}", definition);
 
             let existing_entry = tag.and_then(|tag_name| ctx.symbol_table.lookup_tag(tag_name));
 
@@ -217,11 +215,9 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
 
                         if entry.is_completed {
                             // Redeclaration error - for now just return it
-                            debug!("Redefinition of struct tag {:?}", tag_name);
                             entry.type_info
                         } else {
                             // Completing a forward declaration in current scope
-                            debug!("Completing forward declaration for struct tag {:?}", tag_name);
                             entry.type_info
                         }
                     } else {
@@ -264,7 +260,6 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                         entry.type_info
                     } else {
                         // Not found anywhere, create an implicit forward declaration in current scope
-                        debug!("Implicit forward declaration for struct tag {:?}", tag_name);
                         let forward_type = Type::new(TypeKind::Record {
                             tag: Some(*tag_name),
                             members: Vec::new(),
@@ -549,19 +544,11 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
         }
         TypeSpecifier::TypedefName(name) => {
             // Lookup typedef in symbol table
-            debug!("Resolving typedef name: {}", name);
-            if let Some((entry_ref, scope_id)) = ctx.symbol_table.lookup_symbol(*name) {
+            if let Some((entry_ref, _scope_id)) = ctx.symbol_table.lookup_symbol(*name) {
                 let entry = ctx.symbol_table.get_symbol_entry(entry_ref);
-                debug!(
-                    "Found typedef '{}' in scope {} with aliased type {:?}",
-                    name,
-                    scope_id.get(),
-                    entry.type_info
-                );
                 if let SymbolKind::Typedef { aliased_type } = entry.kind {
                     Ok(aliased_type)
                 } else {
-                    debug!("Symbol '{}' is not a typedef", name);
                     // Get the kind of the symbol as a string for the error message
                     let kind_string = format!("{:?}", entry.kind);
                     let found_kind_str = kind_string.split_whitespace().next().unwrap_or("symbol");
@@ -572,16 +559,6 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     })
                 }
             } else {
-                debug!(
-                    "Typedef '{}' not found during semantic lowering - creating forward reference",
-                    name
-                );
-                // List all symbols in current scope for debugging
-                let current_scope = ctx.symbol_table.get_scope(ctx.symbol_table.current_scope());
-                debug!(
-                    "Current scope symbols: {:?}",
-                    current_scope.symbols.keys().collect::<Vec<_>>()
-                );
                 // Typedef not found during semantic lowering - this is expected
                 // when typedefs are defined later in the same scope.
                 // Create a forward reference that will be resolved during semantic analysis.
@@ -773,13 +750,6 @@ fn lower_type_definition(specifiers: &[DeclSpecifier], ctx: &mut LowerCtx, span:
 
 /// Process an init-declarator into a semantic node
 fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDeclarator, span: SourceSpan) -> NodeRef {
-    debug!(
-        "Processing init-declarator for name {:?}",
-        extract_identifier(&init.declarator)
-    );
-    debug!("Base type from spec: {:?}", spec.base_type);
-    debug!("Is typedef: {}", spec.is_typedef);
-
     // 1. Resolve final type (base + declarator)
     let base_ty = spec.base_type.unwrap_or_else(|| {
         ctx.report_error(SemanticError::TypeMismatch {
@@ -803,7 +773,6 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
     let final_ty = if let Declarator::Identifier(_, qualifiers, None) = &init.declarator {
         if qualifiers.is_empty() {
             // Simple case: just use the base type directly
-            debug!("Using base type directly for simple identifier '{}'", name);
             base_ty
         } else {
             // Has qualifiers, need to apply declarator
@@ -816,11 +785,8 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
         ctx.ast.push_type(ty)
     };
 
-    debug!("Final type for '{}': {:?}", name, final_ty);
-
     // 2. Handle typedefs
     if spec.is_typedef {
-        debug!("Creating typedef for name '{}' with type {:?}", name, final_ty);
         let typedef_decl = TypedefDeclData { name, ty: final_ty };
         let typedef_node = ctx.ast.push_node(Node::new(NodeKind::TypedefDecl(typedef_decl), span));
 
@@ -837,11 +803,7 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
             is_completed: true,
         };
 
-        let entry_ref = ctx.symbol_table.add_symbol(name, symbol_entry);
-        debug!(
-            "Added typedef '{}' to symbol table with entry ref {:?}",
-            name, entry_ref
-        );
+        let _entry_ref = ctx.symbol_table.add_symbol(name, symbol_entry);
 
         return typedef_node;
     }
@@ -885,10 +847,6 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
             pointer_type
         }
         Declarator::Identifier(_, qualifiers, _) => {
-            debug!(
-                "apply_declarator: Identifier with base_type {:?}, qualifiers {:?}",
-                base_type, qualifiers
-            );
             let mut ty = ctx.ast.get_type(base_type).clone();
             ty.qualifiers |= *qualifiers;
             ty
@@ -961,25 +919,18 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
 
 /// Main entry point for running semantic lowering on an entire AST
 pub fn run_semantic_lowering(ast: &mut Ast, diag: &mut DiagnosticEngine, symbol_table: &mut SymbolTable) {
-    debug!("Starting semantic lowering phase");
-
     // Check if we have a root node to start traversal from
     let root_node_ref = if let Some(root) = ast.root {
         root
     } else {
-        debug!("No root node found, skipping semantic lowering");
         return;
     };
-
-    debug!("Starting semantic lowering from root node: {}", root_node_ref.get());
 
     // Create lowering context
     let mut lower_ctx = LowerCtx::new(ast, diag, symbol_table);
 
     // Perform recursive scope-aware lowering
     lower_node_recursive(&mut lower_ctx, root_node_ref);
-
-    debug!("Semantic lowering complete");
 }
 
 fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
@@ -995,31 +946,18 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             }
         }
         NodeKind::FunctionDef(func_def) => {
-            // Create the function type and add it to the symbol table
+            // Extract function name from the declarator
             let func_name =
                 extract_identifier(&func_def.declarator).unwrap_or_else(|| Symbol::new("anonymous_function"));
-
-            debug!("Processing function definition '{}'", func_name);
 
             // Extract the return type from the function definition's specifiers
             let return_type_ref =
                 lower_decl_specifiers_for_function_return(&func_def.specifiers, ctx, ctx.ast.get_node(node_ref).span)
-                    .unwrap_or_else(|| {
-                        debug!("Failed to get return type from specifiers, defaulting to int");
-                        ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true }))
-                    });
+                    .unwrap_or_else(|| ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true })));
 
-            debug!(
-                "Function '{}' return type: {:?}",
-                func_name,
-                ctx.ast.get_type(return_type_ref).kind
-            );
-
-            // Create the function type with the correct return type
+            // Create the function type with the correct return type by applying the declarator
             let declarator_type = apply_declarator(return_type_ref, &func_def.declarator, ctx);
             let function_type_ref = ctx.ast.push_type(declarator_type);
-
-            debug!("Final function type: {:?}", ctx.ast.get_type(function_type_ref).kind);
 
             // Extract parameters from the function type for the symbol entry
             let parameters = if let TypeKind::Function { parameters, .. } = &ctx.ast.get_type(function_type_ref).kind {
@@ -1041,7 +979,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                     is_definition: true,
                     is_inline: false,
                     is_variadic: false,
-                    parameters,
+                    parameters: parameters.clone(),
                 },
                 type_info: function_type_ref,
                 storage_class: None,
@@ -1053,18 +991,64 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             };
 
             ctx.symbol_table.add_symbol(func_name, symbol_entry);
-            debug!(
-                "Added function '{}' to GLOBAL symbol table with type {:?}",
-                func_name, function_type_ref
-            );
 
             // Restore original scope
             ctx.symbol_table.set_current_scope(original_scope);
 
-            // Function scope for body
-            ctx.symbol_table.push_scope(ScopeKind::Function);
+            // Convert FunctionDef to Function semantic node
+            // First, we need to get the symbol entry ref for the function we just added
+            let (symbol_entry_ref, _) = ctx
+                .symbol_table
+                .lookup_symbol(func_name)
+                .expect("Function should be in symbol table");
 
-            // For now, just visit the body which is a CompoundStatement
+            // Create normalized parameters for the FunctionData
+            let normalized_params = parameters
+                .into_iter()
+                .map(|param| {
+                    // Create a symbol entry for the parameter
+                    let param_symbol_entry = crate::ast::SymbolEntry {
+                        name: param.name.unwrap_or_else(|| Symbol::new("unnamed_param")),
+                        kind: crate::ast::SymbolKind::Variable {
+                            is_global: false,
+                            is_static: false,
+                            initializer: None,
+                        },
+                        type_info: param.param_type,
+                        storage_class: None,
+                        scope_id: ctx.symbol_table.current_scope().get(),
+                        def_span: ctx.ast.get_node(node_ref).span,
+                        def_state: DefinitionState::Defined,
+                        is_referenced: false,
+                        is_completed: true,
+                    };
+
+                    let param_symbol_ref = ctx.symbol_table.add_symbol(param_symbol_entry.name, param_symbol_entry);
+
+                    crate::ast::ParamDecl {
+                        symbol: param_symbol_ref,
+                        ty: param.param_type,
+                    }
+                })
+                .collect();
+
+            // Create the Function semantic node
+            let function_data = crate::ast::FunctionData {
+                symbol: symbol_entry_ref,
+                ty: function_type_ref,
+                params: normalized_params,
+                body: func_def.body,
+            };
+
+            let function_node = Node::new(NodeKind::Function(function_data), ctx.ast.get_node(node_ref).span);
+            let function_node_ref = ctx.ast.push_node(function_node);
+
+            // Replace the FunctionDef node with the Function node
+            ctx.ast
+                .replace_node(node_ref, ctx.ast.get_node(function_node_ref).clone());
+
+            // Now process the function body with proper scope management
+            ctx.symbol_table.push_scope(ScopeKind::Function);
             lower_node_recursive(ctx, func_def.body);
             ctx.symbol_table.pop_scope();
         }
@@ -1140,7 +1124,6 @@ fn lower_decl_specifiers_for_function_return(
         if let DeclSpecifier::TypeSpecifier(ts) = spec {
             match resolve_type_specifier(ts, ctx, span) {
                 Ok(ty) => {
-                    debug!("Processing type specifier: {:?}", ctx.ast.get_type(ty).kind);
                     merged_type = merge_base_type(merged_type, ty, ctx);
                 }
                 Err(_) => continue,
@@ -1148,13 +1131,7 @@ fn lower_decl_specifiers_for_function_return(
         }
     }
 
-    if let Some(final_type) = merged_type {
-        debug!("Final merged return type: {:?}", ctx.ast.get_type(final_type).kind);
-        Some(final_type)
-    } else {
-        debug!("No return type found in specifiers");
-        None
-    }
+    merged_type
 }
 
 /// Lower declaration specifiers for struct members (simplified version)
@@ -1223,21 +1200,13 @@ fn apply_declarator_for_member(base_type: TypeRef, declarator: &Declarator, ctx:
 /// Process anonymous struct/union members by flattening them into the containing struct
 fn process_anonymous_struct_members(
     member_decls: &[DeclarationData],
-    is_union: bool,
+    _is_union: bool,
     ctx: &mut LowerCtx,
     span: SourceSpan,
 ) -> Vec<StructMember> {
     let mut flattened_members = Vec::new();
 
-    debug!(
-        "Processing anonymous {} with {} member declarations",
-        if is_union { "union" } else { "struct" },
-        member_decls.len()
-    );
-
-    for (i, decl) in member_decls.iter().enumerate() {
-        debug!("Processing anonymous member declaration {}: {:?}", i, decl);
-
+    for decl in member_decls {
         // Check if this is a nested anonymous struct/union
         let is_nested_anonymous = decl.specifiers.len() == 1
             && decl.specifiers.iter().any(|spec| {
@@ -1255,19 +1224,15 @@ fn process_anonymous_struct_members(
                 } else {
                     None
                 }
-            }) {
-                debug!("Found nested anonymous struct/union, recursing");
-                if let Some(nested_decls) = &definition.members {
-                    let nested_members = process_anonymous_struct_members(nested_decls, *nested_is_union, ctx, span);
-                    flattened_members.extend(nested_members);
-                }
+            }) && let Some(nested_decls) = &definition.members
+            {
+                let nested_members = process_anonymous_struct_members(nested_decls, *nested_is_union, ctx, span);
+                flattened_members.extend(nested_members);
             }
         } else {
             // This is a regular member - process it normally
             for init_declarator in &decl.init_declarators {
                 if let Some(member_name) = extract_identifier(&init_declarator.declarator) {
-                    debug!("Found anonymous member name: {}", member_name);
-
                     // Get the member type from declaration specifiers
                     let member_type =
                         if let Some(base_type_ref) = lower_decl_specifiers_for_member(&decl.specifiers, ctx, span) {
@@ -1276,7 +1241,6 @@ fn process_anonymous_struct_members(
                                 apply_declarator_for_member(base_type_ref, &init_declarator.declarator, ctx);
                             ctx.ast.push_type(member_type_with_declarator)
                         } else {
-                            debug!("Failed to get base type for anonymous member, defaulting to int");
                             ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true }))
                         };
 
@@ -1286,13 +1250,10 @@ fn process_anonymous_struct_members(
                         bit_field_size: None,
                         location: span,
                     });
-                } else {
-                    debug!("Failed to extract member name from anonymous struct member");
                 }
             }
         }
     }
 
-    debug!("Flattened {} anonymous members", flattened_members.len());
     flattened_members
 }

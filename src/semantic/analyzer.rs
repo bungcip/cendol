@@ -251,8 +251,13 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 }
             }
 
-            NodeKind::FunctionDef(func_def) => {
-                self.lower_function_def(&func_def, node_span);
+            NodeKind::Function(function_data) => {
+                self.lower_function(&function_data, node_span);
+            }
+
+            NodeKind::FunctionDef(_) => {
+                // This should have been converted to Function in earlier phases
+                panic!("NodeKind::FunctionDef still exists in AST during semantic analysis");
             }
 
             NodeKind::Declaration(_) => {
@@ -431,87 +436,24 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         }
     }
 
-    /// Extract the return type from a function declarator
-    fn extract_function_return_type(
-        &mut self,
-        declarator: &Declarator,
-        _specifiers: &[DeclSpecifier],
-        _location: SourceSpan,
-    ) -> TypeId {
-        // Start with a default return type (int)
-        let base_type_ref = self.ast.push_type(Type::new(TypeKind::Int { is_signed: true }));
+    /// Lower a function semantic node
+    fn lower_function(&mut self, function_data: &FunctionData, location: SourceSpan) {
+        debug!("Lowering function semantic node");
 
-        // The function declarator should be a Function type
-        if let Declarator::Function(base_declarator, _) = declarator {
-            // The base declarator contains the return type information
-            // We need to resolve what the base type is
+        // Get function name from symbol table entry
+        let symbol_entry = self.symbol_table.get_symbol_entry(function_data.symbol);
+        let func_name = symbol_entry.name;
 
-            // For now, we'll look at the function definition's specifiers
-            // In a more complete implementation, we would track the function's
-            // return type through the semantic lowering phase
+        debug!("Processing function '{}'", func_name);
 
-            // Check if we can find the function in the symbol table to get its type
-            if let Some(func_name) = extract_identifier(declarator) {
-                debug!("Looking for function '{}' in symbol table", func_name);
-                if let Some((entry_ref, _)) = self.symbol_table.lookup_symbol(func_name) {
-                    let entry = self.symbol_table.get_symbol_entry(entry_ref);
-                    debug!(
-                        "Found function '{}' in symbol table, type_info: {:?}",
-                        func_name, entry.type_info
-                    );
-                    // The function's return type is stored in the type_info field
-                    // which points to a function type that contains the return type
-                    if matches!(&entry.kind, SymbolKind::Function { .. }) {
-                        // Get the function type from type_info
-                        let func_type = self.ast.get_type(entry.type_info);
-                        debug!("Function type: {:?}", func_type.kind);
-                        if let TypeKind::Function { return_type, .. } = &func_type.kind {
-                            debug!("Found return type: {:?}", return_type);
-                            // Use the function's return type from the symbol table
-                            return self.lower_type_to_mir(*return_type);
-                        }
-                    }
-                } else {
-                    debug!("Function '{}' not found in symbol table", func_name);
-                }
-            }
-
-            // If we couldn't find the function in the symbol table, try to extract
-            // the return type from the base declarator
-            // For simple cases like "void" or "int", the base declarator is just an identifier
-            // We need to look at the function's specifiers to determine the return type
-            // This is a simplified approach - in a full implementation, we would
-            // have the return type properly tracked through semantic analysis
-            let _base = base_declarator; // Keep for potential future use
-        }
-
-        // Default to int if we couldn't determine the return type
-        debug!("Using default return type (int)");
-        self.lower_type_to_mir(base_type_ref)
-    }
-
-    /// Lower a function definition
-    fn lower_function_def(&mut self, func_def: &FunctionDefData, location: SourceSpan) {
-        debug!("Lowering function definition");
-
-        // Extract function name from declarator
-        let func_name = match extract_identifier(&func_def.declarator) {
-            Some(symbol) => {
-                debug!("Found function identifier directly: {}", symbol);
-                symbol
-            }
-            None => {
-                self.report_error(SemanticError::TypeMismatch {
-                    expected: "a named function declarator".to_string(),
-                    found: "an unnamed declarator".to_string(),
-                    location,
-                });
-                Symbol::new("unknown_function")
-            }
+        // Extract return type from the function type
+        let func_type = self.ast.get_type(function_data.ty);
+        let return_type = if let TypeKind::Function { return_type, .. } = &func_type.kind {
+            self.lower_type_to_mir(*return_type)
+        } else {
+            // Default to int if type is not a function type
+            self.get_int_type()
         };
-
-        // Extract the return type from the function declarator
-        let return_type = self.extract_function_return_type(&func_def.declarator, &func_def.specifiers, location);
 
         // Create MIR function
         let func_id = self.mir_builder.create_function(func_name, return_type);
@@ -541,56 +483,43 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         // Process function parameters and create locals for them
         // Skip parameters for main function
         if func_name.as_str() != "main" {
-            self.lower_function_parameters(&func_def.declarator, location);
+            self.lower_semantic_function_parameters(function_data, location);
         } else {
             debug!("Skipping parameters for main function");
         }
 
         // Process function body
-        self.lower_node_ref(func_def.body);
+        self.lower_node_ref(function_data.body);
 
         // Pop function scope
         self.symbol_table.pop_scope();
 
-        debug!("Completed function definition: {}", func_name);
+        debug!("Completed function semantic node: {}", func_name);
     }
 
-    /// Lower function parameters and create local variables for them
-    fn lower_function_parameters(&mut self, declarator: &Declarator, location: SourceSpan) {
-        debug!("Lowering function parameters");
+    /// Lower semantic function parameters from FunctionData
+    fn lower_semantic_function_parameters(&mut self, function_data: &FunctionData, location: SourceSpan) {
+        debug!("Lowering semantic function parameters");
 
-        // Extract parameters from the function declarator
-        if let Declarator::Function(_, parameters) = declarator {
-            debug!("Found {} function parameters", parameters.len());
+        debug!("Found {} semantic function parameters", function_data.params.len());
 
-            for param in parameters {
-                self.lower_function_parameter(param, location);
-            }
-        } else {
-            debug!("Declarator is not a function, skipping parameters");
+        for param in &function_data.params {
+            self.lower_semantic_function_parameter(param, location);
         }
     }
 
-    /// Lower a single function parameter
-    fn lower_function_parameter(&mut self, param: &ParamData, location: SourceSpan) {
-        debug!("Lowering function parameter");
+    /// Lower a single semantic function parameter
+    fn lower_semantic_function_parameter(&mut self, param: &ParamDecl, location: SourceSpan) {
+        debug!("Lowering semantic function parameter");
 
-        // Extract parameter name from declarator if present
-        let param_name = if let Some(declarator) = &param.declarator {
-            if let Some(symbol) = extract_identifier(declarator) {
-                symbol
-            } else {
-                // Abstract parameter (no name) - skip for now
-                debug!("Skipping abstract parameter without name");
-                return;
-            }
-        } else {
-            // No declarator - skip for now
-            debug!("Skipping parameter without declarator");
-            return;
-        };
+        // Get parameter information from the semantic data
+        let param_name = self.symbol_table.get_symbol_entry(param.symbol).name;
+        let param_type = param.ty;
 
-        debug!("Processing parameter: {}", param_name);
+        debug!(
+            "Processing semantic parameter: {} with type {:?}",
+            param_name, param_type
+        );
 
         // Check for redeclaration in current scope
         if let Some((existing_entry, scope_id)) = self.symbol_table.lookup_symbol(param_name)
@@ -608,19 +537,19 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             }
 
             // Symbol already exists from previous pass (lowering). Re-use it and create MIR local.
-            let type_id = self.get_int_type(); // Default to int for now
-            let local_id = self.mir_builder.create_local(Some(param_name), type_id, true);
+            let mir_type_id = self.lower_type_to_mir(param_type);
+            let local_id = self.mir_builder.create_local(Some(param_name), mir_type_id, true);
             self.local_map.insert(existing_entry, local_id);
             debug!(
-                "Re-using symbol entry from lowering pass for parameter '{}'",
+                "Re-using symbol entry from lowering pass for semantic parameter '{}'",
                 param_name
             );
             return;
         }
 
         // Create MIR local for the parameter
-        let type_id = self.get_int_type(); // Default to int for now
-        let local_id = self.mir_builder.create_local(Some(param_name), type_id, true);
+        let mir_type_id = self.lower_type_to_mir(param_type);
+        let local_id = self.mir_builder.create_local(Some(param_name), mir_type_id, true);
 
         // Add to symbol table and store in local map
         let symbol_entry = SymbolEntry {
@@ -630,12 +559,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 is_static: false,
                 initializer: None,
             },
-            type_info: self.ast.push_type(Type {
-                kind: TypeKind::Int { is_signed: true },
-                qualifiers: TypeQualifiers::empty(),
-                size: None,
-                alignment: None,
-            }),
+            type_info: param_type,
             storage_class: None,
             scope_id: self.symbol_table.current_scope().get(),
             def_span: location,

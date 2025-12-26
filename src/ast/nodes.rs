@@ -55,7 +55,6 @@ pub enum NodeKind {
 
     // --- Statements (Complex statements are separate structs) ---
     CompoundStatement(Vec<NodeRef> /* block items */),
-    DeclarationList(Vec<NodeRef> /* declarations */),
     If(IfStmt),
     While(WhileStmt),
     DoWhile(NodeRef /* body */, NodeRef /* condition */),
@@ -86,10 +85,14 @@ pub enum NodeKind {
     StaticAssert(NodeRef /* condition */, Symbol /* message */),
 
     // --- Semantic Nodes (Type-Resolved) ---
+    // declarations of VarDecl/FunctionDecl/TypedefDecl/RecordDecl
+    DeclarationList(Vec<NodeRef>),
+
     VarDecl(VarDeclData),
     FunctionDecl(FunctionDeclData),
     TypedefDecl(TypedefDeclData),
     RecordDecl(RecordDeclData),
+    Function(FunctionData),
 
     // --- Top Level ---
     TranslationUnit(Vec<NodeRef> /* top-level declarations */),
@@ -141,6 +144,21 @@ pub struct FunctionDefData {
     pub specifiers: ThinVec<DeclSpecifier>,
     pub declarator: Declarator,
     pub body: NodeRef, // A CompoundStatement
+}
+
+// Semantic node data structures (type-resolved)
+#[derive(Debug, Clone, Serialize)]
+pub struct FunctionData {
+    pub symbol: SymbolEntryRef,
+    pub ty: TypeRef,            // function type
+    pub params: Vec<ParamDecl>, // normalized params
+    pub body: NodeRef,          // compound statement
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ParamDecl {
+    pub symbol: SymbolEntryRef,
+    pub ty: TypeRef,
 }
 
 // Semantic node data structures (type-resolved)
@@ -463,104 +481,11 @@ impl DeclarationDataBuilder {
     }
 }
 
-// Add more builders as needed...
-
-// --- Convenience Constructors ---
-
-impl NodeKind {
-    /// Create a literal integer node
-    pub fn literal_int(value: i64) -> Self {
-        NodeKind::LiteralInt(value)
-    }
-
-    /// Create a literal float node
-    pub fn literal_float(value: f64) -> Self {
-        NodeKind::LiteralFloat(value)
-    }
-
-    /// Create a literal string node
-    pub fn literal_string(value: Symbol) -> Self {
-        NodeKind::LiteralString(value)
-    }
-
-    /// Create a literal char node
-    pub fn literal_char(value: u8) -> Self {
-        NodeKind::LiteralChar(value)
-    }
-
-    /// Create an identifier node
-    pub fn ident(name: Symbol) -> Self {
-        NodeKind::Ident(name, Cell::new(None))
-    }
-
-    /// Create a binary operation node
-    pub fn binary_op(op: BinaryOp, left: NodeRef, right: NodeRef) -> Self {
-        NodeKind::BinaryOp(op, left, right)
-    }
-
-    /// Create a function call node
-    pub fn function_call(func: NodeRef, args: Vec<NodeRef>) -> Self {
-        NodeKind::FunctionCall(func, args)
-    }
-
-    // Add more constructors as needed...
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ast::{Ast, Node};
     use crate::source_manager::SourceSpan;
-
-    #[test]
-    fn test_literal_int_constructor() {
-        let node = NodeKind::literal_int(42);
-        assert!(matches!(node, NodeKind::LiteralInt(42)));
-    }
-
-    #[test]
-    fn test_literal_float_constructor() {
-        let node = NodeKind::literal_float(1.5);
-        assert!(matches!(node, NodeKind::LiteralFloat(val) if val == 1.5));
-    }
-
-    #[test]
-    fn test_literal_string_constructor() {
-        let symbol: Symbol = "hello".into();
-        let node = NodeKind::literal_string(symbol);
-        assert!(matches!(node, NodeKind::LiteralString(s) if s == symbol));
-    }
-
-    #[test]
-    fn test_literal_char_constructor() {
-        let node = NodeKind::literal_char(b'a');
-        assert!(matches!(node, NodeKind::LiteralChar(b'a')));
-    }
-
-    #[test]
-    fn test_ident_constructor() {
-        let symbol: Symbol = "x".into();
-        let node = NodeKind::ident(symbol);
-        assert!(matches!(node, NodeKind::Ident(s, _) if s == symbol));
-    }
-
-    #[test]
-    fn test_binary_op_constructor() {
-        let mut ast = Ast::new();
-        let left = ast.push_node(Node::new(NodeKind::LiteralInt(1), SourceSpan::empty()));
-        let right = ast.push_node(Node::new(NodeKind::LiteralInt(2), SourceSpan::empty()));
-        let node = NodeKind::binary_op(BinaryOp::Add, left, right);
-        assert!(matches!(node, NodeKind::BinaryOp(BinaryOp::Add, l, r) if l == left && r == right));
-    }
-
-    #[test]
-    fn test_function_call_constructor() {
-        let mut ast = Ast::new();
-        let func = ast.push_node(Node::new(NodeKind::ident("my_func".into()), SourceSpan::empty()));
-        let arg = ast.push_node(Node::new(NodeKind::LiteralInt(42), SourceSpan::empty()));
-        let node = NodeKind::function_call(func, vec![arg]);
-        assert!(matches!(node, NodeKind::FunctionCall(f, args) if f == func && args[0] == arg));
-    }
 
     #[test]
     fn test_if_stmt_builder_success() {

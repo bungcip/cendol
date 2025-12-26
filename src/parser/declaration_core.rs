@@ -161,8 +161,9 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                         AlignmentSpecifier::Expr(expr)
                     }
                 } else {
-                    return Err(ParseError::Expected {
-                        expected: "'(' after _Alignas".to_string(),
+                    return Err(ParseError::UnexpectedToken {
+                        expected_tokens: "'(' after _Alignas".to_string(),
+                        found: token.kind,
                         location: token.location,
                     });
                 };
@@ -191,9 +192,11 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
     );
 
     if specifiers.is_empty() {
-        return Err(ParseError::Expected {
-            expected: "declaration specifiers".to_string(),
-            location: parser.current_token_span()?,
+        let current_token = parser.current_token()?;
+        return Err(ParseError::UnexpectedToken {
+            expected_tokens: "declaration specifiers".to_string(),
+            found: current_token.kind,
+            location: current_token.location,
         });
     }
 

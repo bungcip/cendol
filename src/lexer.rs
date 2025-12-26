@@ -2,7 +2,6 @@ use crate::pp::{PPToken, PPTokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
 use symbol_table::GlobalSymbol as Symbol;
 
-
 // Re-export DiagnosticEngine from diagnostic module for convenience
 pub use crate::diagnostic::DiagnosticEngine;
 

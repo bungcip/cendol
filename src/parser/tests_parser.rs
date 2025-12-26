@@ -1,6 +1,9 @@
 #![cfg(test)]
 use crate::ast::{Ast, BinaryOp, DeclSpecifier, Declarator, NodeKind, NodeRef, TypeSpecifier, UnaryOp};
 use crate::diagnostic::DiagnosticEngine;
+use crate::driver::CompilerDriver;
+use crate::driver::cli::CompileConfig;
+use crate::driver::compiler::CompilePhase;
 use crate::lang_options::LangOptions;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
@@ -409,30 +412,19 @@ fn setup_source<F, T>(source: &str, parse_fn: F) -> (Ast, T)
 where
     F: FnOnce(&mut Parser<'_, '_>) -> T,
 {
-    let mut sm = SourceManager::new();
+    let phase = CompilePhase::Lex;
+    let config = CompileConfig::from_virtual_file(source.to_string(), phase);
+    let mut driver = CompilerDriver::from_config(config);
+    let mut out = driver.run_pipeline(phase).unwrap();
+    let first = out.units.first_mut().unwrap();
+    let artifact = first.1;
+    let tokens = artifact.lexed.clone().unwrap();
+
     let mut diag = DiagnosticEngine::new();
-    let lang_opts = LangOptions::c11();
-    let target_info = Triple::unknown();
-    let source_id = sm.add_buffer(source.as_bytes().to_vec(), "test.c");
-
-    let mut pp = Preprocessor::new(
-        &mut sm,
-        &mut diag,
-        lang_opts.clone(),
-        target_info.clone(),
-        &crate::pp::PPConfig {
-            max_include_depth: 200,
-            ..Default::default()
-        },
-    );
-    let pp_tokens = pp.process(source_id, &Default::default()).unwrap();
-
-    let mut lexer = Lexer::new(&pp_tokens);
-    let tokens = lexer.tokenize_all();
-
     let mut ast = Ast::new();
     let mut parser = Parser::new(&tokens, &mut ast, &mut diag);
     let result = parse_fn(&mut parser);
+
     assert!(diag.diagnostics.is_empty());
     (ast, result)
 }

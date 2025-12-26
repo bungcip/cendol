@@ -1,29 +1,44 @@
+use crate::driver::compiler::CompilePhase;
 use crate::driver::{cli::CompileConfig, compiler::CompilerDriver};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mir_dumper::{MirDumpConfig, MirDumper};
 
     /// helper function to setup compiler driver with given source code
     fn setup_mir(source: &str) -> String {
-        // Use string-based MIR dump with no header for cleaner testing
-        let mut config = CompileConfig::from_source_code(source.to_string());
-        config.dump_mir = false; // Don't dump to file
-
+        let phase = CompilePhase::Mir;
+        let config = CompileConfig::from_virtual_file(source.to_string(), phase);
         let mut driver = CompilerDriver::from_config(config);
-        driver.get_mir_dump_string(false).expect("Failed to get MIR dump")
+        let mut out = driver.run_pipeline(phase).unwrap();
+        let first = out.units.first_mut().unwrap();
+        let artifact = first.1;
+
+        // Get the complete semantic analysis output
+        let sema_output = match artifact.sema_output.clone() {
+            Some(sema_output) => sema_output,
+            None => {
+                let d = driver.get_diagnostics();
+                println!("{:?}", d);
+                panic!("No semantic output available");
+            }
+        };
+
+        // Output MIR dump to string
+        let dump_config = MirDumpConfig { include_header: false };
+        let dumper = MirDumper::new(&sema_output, &dump_config);
+
+        dumper.generate_mir_dump().unwrap()
     }
 
     /// helper function to setup compiler driver and return diagnostics output string
     fn setup_diagnostics_output(source: &str) -> String {
-        let mut config = CompileConfig::from_source_code(source.to_string());
-        config.dump_mir = false; // Don't dump to file
-        config.skip_validation = true; // Skip validation for testing
-
+        // Use string-based MIR dump with no header for cleaner testing
+        let config = CompileConfig::from_virtual_file(source.to_string(), CompilePhase::Mir);
         let mut driver = CompilerDriver::from_config(config);
 
-        // must be called to generate diagnostics
-        let _mir_dump = driver.get_mir_dump_string(false);
+        let _ = driver.run_pipeline(CompilePhase::Mir);
 
         // Get diagnostics from the driver
         let diagnostics = driver.get_diagnostics();

@@ -7,6 +7,7 @@
 //! - Assume MIR is valid
 //! - 1:1 mapping from MIR to Cranelift
 
+use crate::driver::compiler::SemaOutput;
 use crate::mir::{
     BinaryOp, CallTarget, ConstValue, ConstValueId, Global, GlobalId, Local, LocalId, MirBlock, MirBlockId,
     MirFunction, MirFunctionId, MirModule, MirStmt, MirStmtId, MirType, Operand, Place, Rvalue, Terminator, TypeId,
@@ -22,6 +23,18 @@ use hashbrown::HashMap;
 use hashbrown::HashSet;
 use symbol_table::GlobalSymbol as Symbol;
 use target_lexicon::Triple;
+
+/// emitted from codegen
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmitKind {
+    Object,
+    Clif,
+}
+
+pub enum ClifOutput {
+    ObjectFile(Vec<u8>),
+    ClifDump(String),
+}
 
 /// Helper function to convert MIR type to Cranelift type
 /// Returns None for void types, as they don't have a representation in Cranelift
@@ -500,7 +513,7 @@ fn resolve_place_to_addr(
 /// MIR to Cranelift IR Lowerer
 pub struct MirToCraneliftLowerer {
     builder_context: FunctionBuilderContext,
-    ctx: cranelift::codegen::Context,
+    // ctx: cranelift::codegen::Context,
     module: ObjectModule,
     mir_module: MirModule,
     // State tracking
@@ -511,26 +524,15 @@ pub struct MirToCraneliftLowerer {
     types: HashMap<TypeId, MirType>,
     constants: HashMap<ConstValueId, ConstValue>,
     statements: HashMap<MirStmtId, MirStmt>,
-    // Cranelift state
-    // _cranelift_blocks: HashMap<MirBlockId, Block>,
     cranelift_stack_slots: HashMap<LocalId, StackSlot>,
-    // _cranelift_global_vars: HashMap<GlobalId, Variable>,
-    // Function signatures cache
-    // _signatures: HashMap<MirFunctionId, Signature>,
     // Store compiled functions for dumping
     compiled_functions: HashMap<String, String>,
+
+    emit_kind: EmitKind,
 }
 
 impl MirToCraneliftLowerer {
-    pub fn new(
-        mir_module: MirModule,
-        functions: HashMap<MirFunctionId, MirFunction>,
-        blocks: HashMap<MirBlockId, MirBlock>,
-        locals: HashMap<LocalId, Local>,
-        globals: HashMap<GlobalId, Global>,
-        types: HashMap<TypeId, MirType>,
-        statements: HashMap<MirStmtId, MirStmt>,
-    ) -> Self {
+    pub fn new(sema_output: SemaOutput) -> Self {
         let triple = Triple::host();
         let builder = ObjectBuilder::new(
             cranelift::prelude::isa::lookup(triple)
@@ -547,42 +549,25 @@ impl MirToCraneliftLowerer {
 
         Self {
             builder_context: FunctionBuilderContext::new(),
-            ctx: module.make_context(),
+            // ctx: module.make_context(),
             module,
-            mir_module,
-            functions,
-            blocks,
-            locals,
-            globals,
-            types,
-            constants: HashMap::new(),
-            statements,
-            // _cranelift_blocks: HashMap::new(),
+            mir_module: sema_output.module,
+            functions: sema_output.functions,
+            blocks: sema_output.blocks,
+            locals: sema_output.locals,
+            globals: sema_output.globals,
+            types: sema_output.types,
+            constants: sema_output.constants,
+            statements: sema_output.statements,
             cranelift_stack_slots: HashMap::new(),
-            // _cranelift_global_vars: HashMap<new(),
-            // _signatures: HashMap<new(),
             compiled_functions: HashMap::new(),
+            emit_kind: EmitKind::Object,
         }
     }
 
-    /// Get the compiled functions for dumping (before final compilation)
-    pub(crate) fn get_compiled_functions_for_dump(&mut self) -> &HashMap<String, String> {
-        // First, populate all the state from the MIR module
-        self.populate_state();
+    pub(crate) fn compile_module(mut self, emit_kind: EmitKind) -> Result<ClifOutput, String> {
+        self.emit_kind = emit_kind;
 
-        // If we have functions to lower, lower them
-        for func_id in self.mir_module.functions.clone() {
-            if let Err(e) = self.lower_function(func_id) {
-                eprintln!("Error lowering function: {}", e);
-                continue;
-            }
-        }
-
-        &self.compiled_functions
-    }
-
-    /// Compile the MIR module to Cranelift IR
-    pub(crate) fn compile(mut self) -> Result<Vec<u8>, String> {
         // First, populate all the state from the MIR module
         self.populate_state();
 
@@ -659,9 +644,9 @@ impl MirToCraneliftLowerer {
         }
 
         // Store the string representation of the final function
-        let final_func_ir = self.ctx.func.to_string();
-        let final_func_name = "final".to_string();
-        self.compiled_functions.insert(final_func_name, final_func_ir);
+        // let final_func_ir = self.ctx.func.to_string();
+        // let final_func_name = "final".to_string();
+        // self.compiled_functions.insert(final_func_name, final_func_ir);
 
         // Finalize and return the compiled code
         let product = self.module.finish();
@@ -669,7 +654,19 @@ impl MirToCraneliftLowerer {
             .object
             .write()
             .map_err(|e| format!("Failed to write object file: {:?}", e))?;
-        Ok(code)
+
+        if emit_kind == EmitKind::Object {
+            Ok(ClifOutput::ObjectFile(code))
+        } else {
+            // For Clif dump, concatenate all function IRs
+            let mut clif_dump = String::new();
+            for (func_name, func_ir) in &self.compiled_functions {
+                clif_dump.push_str(&format!("; Function: {}\n", func_name));
+                clif_dump.push_str(func_ir);
+                clif_dump.push_str("\n\n");
+            }
+            Ok(ClifOutput::ClifDump(clif_dump))
+        }
     }
 
     /// Populate state from MIR module
@@ -1090,9 +1087,11 @@ impl MirToCraneliftLowerer {
             .define_function(id, &mut func_ctx)
             .map_err(|e| format!("Failed to define function {}: {:?}", func.name, e))?;
 
-        // Store the function IR string for dumping
-        let func_ir = func_ctx.func.to_string();
-        self.compiled_functions.insert(func.name.to_string(), func_ir);
+        if self.emit_kind == EmitKind::Clif {
+            // Store the function IR string for dumping
+            let func_ir = func_ctx.func.to_string();
+            self.compiled_functions.insert(func.name.to_string(), func_ir);
+        }
 
         Ok(())
     }

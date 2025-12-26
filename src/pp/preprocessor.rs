@@ -1,4 +1,4 @@
-use crate::diagnostic::DiagnosticEngine;
+use crate::diagnostic::{Diagnostic, DiagnosticEngine};
 use crate::lang_options::LangOptions;
 use crate::source_manager::{SourceId, SourceLoc, SourceManager, SourceSpan};
 use chrono::{DateTime, Datelike, Timelike, Utc};
@@ -337,6 +337,33 @@ pub enum PPError {
     CircularInclude,
     #[error("Expected end of directive")]
     ExpectedEod,
+}
+
+impl PPError {
+    pub fn location(&self) -> SourceSpan {
+        match self {
+            PPError::InvalidMacroParameter { location } => *location,
+            _ => SourceSpan::new(SourceLoc::builtin(), SourceLoc::builtin()),
+        }
+    }
+}
+
+impl From<PPError> for Diagnostic {
+    fn from(val: PPError) -> Self {
+        let level = match &val {
+            PPError::ErrorDirective(_) => crate::diagnostic::DiagnosticLevel::Error,
+            _ => crate::diagnostic::DiagnosticLevel::Error,
+        };
+
+        Diagnostic {
+            level,
+            message: val.to_string(),
+            location: val.location(),
+            code: None,
+            hints: Vec::new(),
+            related: Vec::new(),
+        }
+    }
 }
 
 impl<'src> Preprocessor<'src> {
@@ -839,13 +866,7 @@ impl<'src> Preprocessor<'src> {
                     Some(DirectiveKind::Undef) => self.handle_undef()?,
                     Some(DirectiveKind::Include) => self.handle_include()?,
                     Some(DirectiveKind::If) => {
-                        let expr_tokens = match self.parse_conditional_expression() {
-                            Ok(tokens) => tokens,
-                            Err(_) => {
-                                // For empty or invalid expressions, treat as false
-                                Vec::new()
-                            }
-                        };
+                        let expr_tokens = self.parse_conditional_expression().unwrap_or_default();
                         let condition = self.evaluate_conditional_expression(&expr_tokens).unwrap_or(false);
                         self.handle_if_directive(condition)?;
                     }
@@ -856,13 +877,7 @@ impl<'src> Preprocessor<'src> {
                         self.handle_ifndef()?;
                     }
                     Some(DirectiveKind::Elif) => {
-                        let expr_tokens = match self.parse_conditional_expression() {
-                            Ok(tokens) => tokens,
-                            Err(_) => {
-                                // For empty or invalid expressions, treat as false
-                                Vec::new()
-                            }
-                        };
+                        let expr_tokens = self.parse_conditional_expression().unwrap_or_default();
                         let condition = self.evaluate_conditional_expression(&expr_tokens).unwrap_or(false);
                         self.handle_elif_directive(condition)?;
                     }
@@ -2118,7 +2133,7 @@ impl<'src> Preprocessor<'src> {
                         m.flags |= MacroFlags::DISABLED;
                     }
                     // Recurse
-                    if let Err(_) = self.expand_tokens(tokens) {
+                    if self.expand_tokens(tokens).is_err() {
                         // For conditional expressions, continue even if recursion fails
                     }
                     // Re-enable

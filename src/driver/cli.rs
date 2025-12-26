@@ -6,7 +6,10 @@
 use clap::{Args, Parser as CliParser};
 use std::path::PathBuf;
 
-use crate::lang_options::LangOptions;
+use crate::{
+    driver::compiler::CompilePhase,
+    lang_options::{CStandard, LangOptions},
+};
 
 /// CLI interface using clap
 #[derive(CliParser, Debug)]
@@ -74,7 +77,7 @@ pub struct Cli {
 
     /// Set C language standard (e.g., c99, c11)
     #[clap(long = "std", value_name = "STANDARD")]
-    pub c_standard: Option<String>,
+    pub c_standard: Option<CStandard>,
 }
 
 #[derive(Args, Debug)]
@@ -84,17 +87,21 @@ pub struct PreprocessorOptions {
     pub max_include_depth: usize,
 }
 
+/// input file can be path to file or string buffer pair (filename, buffer)
+#[derive(Debug, Clone)]
+pub enum PathOrBuffer {
+    Path(PathBuf),
+    Buffer(String, Vec<u8>),
+}
+
 /// Configuration for compilation
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct CompileConfig {
-    pub input_files: Vec<PathBuf>,
+    pub input_files: Vec<PathOrBuffer>,
     pub output_path: Option<PathBuf>,
-    pub dump_mir: bool,
-    pub dump_cranelift: bool,
-    pub dump_parser: bool,
-    pub preprocess_only: bool,
+    pub stop_after: CompilePhase,
+
     pub verbose: bool,
-    pub skip_validation: bool, // NEW: Skip MIR validation for testing
     pub preprocessor: crate::pp::PPConfig,
     pub suppress_line_markers: bool,
     pub include_paths: Vec<PathBuf>,
@@ -106,29 +113,14 @@ pub struct CompileConfig {
 
 impl CompileConfig {
     /// Create a new CompileConfig from a string of source code
-    pub fn from_source_code(source: String) -> Self {
-        use std::io::Write;
-        let mut tmpfile = tempfile::Builder::new().suffix(".c").tempfile().unwrap();
-        write!(tmpfile, "{}", source).unwrap();
-        let temp_path = tmpfile.into_temp_path();
-        let path = temp_path.to_path_buf();
+    pub fn from_virtual_file(source: String, stop_after: CompilePhase) -> Self {
+        let filename = "example.c";
+        let source = source.into_bytes();
 
         Self {
-            input_files: vec![path],
-            output_path: None,
-            dump_mir: false,
-            dump_cranelift: false,
-            dump_parser: false,
-            preprocess_only: false,
-            verbose: false,
-            skip_validation: false, // Default to false
-            preprocessor: crate::pp::PPConfig::default(),
-            suppress_line_markers: false,
-            include_paths: vec![],
-            defines: vec![],
-            warnings: vec![],
-            lang_options: LangOptions::default(),
-            _temp_file: Some(temp_path),
+            input_files: vec![PathOrBuffer::Buffer(filename.to_string(), source)],
+            stop_after,
+            ..Default::default()
         }
     }
 }
@@ -211,28 +203,34 @@ impl Cli {
             }
         }
 
+        let stop_after = if self.preprocess_only {
+            CompilePhase::Preprocess
+        } else if self.dump_parser {
+            CompilePhase::Parse
+        } else if self.dump_mir {
+            CompilePhase::Mir
+        } else if self.dump_cranelift {
+            CompilePhase::Cranelift
+        } else {
+            CompilePhase::EmitObject
+        };
+
         Ok(CompileConfig {
-            input_files: self.input_files,
+            input_files: self.input_files.into_iter().map(PathOrBuffer::Path).collect(),
             output_path: self.output,
-            dump_mir: self.dump_mir,
-            dump_cranelift: self.dump_cranelift,
-            dump_parser: self.dump_parser,
-            preprocess_only: self.preprocess_only,
+            stop_after,
             verbose: self.verbose,
-            skip_validation: false, // Default to false for CLI usage
             preprocessor: crate::pp::PPConfig {
                 max_include_depth: self.preprocessor.max_include_depth,
                 system_include_paths,
-                quoted_include_paths: Vec::new(),
-                angled_include_paths: Vec::new(),
-                framework_paths: Vec::new(),
+                ..Default::default()
             },
             suppress_line_markers: self.suppress_line_markers,
             include_paths: self.include_paths,
             defines,
             warnings,
             lang_options,
-            _temp_file: None,
+            ..Default::default()
         })
     }
 }

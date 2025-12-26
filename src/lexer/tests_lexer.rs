@@ -1,44 +1,25 @@
 use super::*;
-use crate::diagnostic::DiagnosticEngine;
-use crate::lang_options::LangOptions;
-use crate::pp::{PPConfig, Preprocessor};
-use crate::source_manager::SourceManager;
+use crate::driver::CompilerDriver;
+use crate::driver::cli::CompileConfig;
+use crate::driver::compiler::CompilePhase;
 use symbol_table::GlobalSymbol as Symbol;
-use target_lexicon::Triple;
 
 /// Helper function to test lexing from string to TokenKind
 /// This tests the full pipeline: string -> PPToken -> TokenKind
-fn lex_string_to_token_kind(input: &str) -> Vec<TokenKind> {
-    lex_string_to_token_kind_with_eof(input, false)
+fn setup_lexer(input: &str) -> Vec<TokenKind> {
+    setup_lexer_with_eof(input, false)
 }
 
 /// Helper function to test lexing from string to TokenKind, optionally including EndOfFile
-fn lex_string_to_token_kind_with_eof(input: &str, include_eof: bool) -> Vec<TokenKind> {
-    let mut source_manager = SourceManager::new();
-    let source_id = source_manager.add_buffer(input.as_bytes().to_vec(), "test_input");
-    let mut diag = DiagnosticEngine::new();
-    let lang_opts = LangOptions::c11();
-    let target_info = Triple::host();
+fn setup_lexer_with_eof(source: &str, include_eof: bool) -> Vec<TokenKind> {
+    let phase = CompilePhase::Lex;
+    let config = CompileConfig::from_virtual_file(source.to_string(), phase);
+    let mut driver = CompilerDriver::from_config(config);
+    let mut out = driver.run_pipeline(phase).unwrap();
+    let first = out.units.first_mut().unwrap();
+    let artifact = first.1;
+    let tokens = artifact.lexed.clone().unwrap();
 
-    let pp_config = PPConfig {
-        max_include_depth: 10,
-        ..Default::default()
-    };
-
-    let pp_tokens = {
-        let mut preprocessor = Preprocessor::new(
-            &mut source_manager,
-            &mut diag,
-            lang_opts.clone(),
-            target_info.clone(),
-            &pp_config,
-        );
-        preprocessor.process(source_id, &pp_config).unwrap()
-    }; // preprocessor is dropped here
-
-    let mut lexer = Lexer::new(&pp_tokens);
-
-    let tokens = lexer.tokenize_all();
     if include_eof {
         tokens.into_iter().map(|t| t.kind).collect()
     } else {
@@ -73,7 +54,7 @@ mod tests {
             let symbol = Symbol::new(keyword);
             let expected_kind = super::is_keyword(symbol).unwrap_or_else(|| panic!("{} should be a keyword", keyword));
 
-            let token_kinds = lex_string_to_token_kind(keyword);
+            let token_kinds = setup_lexer(keyword);
             assert_eq!(token_kinds.len(), 1, "Expected 1 token for keyword: {}", keyword);
             assert_eq!(token_kinds[0], expected_kind, "Failed for keyword: {}", keyword);
         }
@@ -131,7 +112,7 @@ mod tests {
         ];
 
         for (text, expected_kind) in operators {
-            let token_kinds = lex_string_to_token_kind(text);
+            let token_kinds = setup_lexer(text);
             assert_eq!(token_kinds.len(), 1, "Expected 1 token for operator: {}", text);
             assert_eq!(token_kinds[0], expected_kind, "Failed for operator: {}", text);
         }
@@ -177,7 +158,7 @@ mod tests {
         ];
 
         for (text, expected_kind) in int_literals {
-            let token_kinds = lex_string_to_token_kind(text);
+            let token_kinds = setup_lexer(text);
             assert_eq!(token_kinds.len(), 1, "Expected 1 token for integer literal: {}", text);
             assert_eq!(token_kinds[0], expected_kind, "Failed for integer literal: {}", text);
         }
@@ -190,7 +171,7 @@ mod tests {
         ];
 
         for (text, expected_kind) in float_literals {
-            let token_kinds = lex_string_to_token_kind(text);
+            let token_kinds = setup_lexer(text);
             assert_eq!(token_kinds.len(), 1, "Expected 1 token for float literal: {}", text);
             assert_eq!(token_kinds[0], expected_kind, "Failed for float literal: {}", text);
         }
@@ -202,7 +183,7 @@ mod tests {
         ];
 
         for (text, expected_kind) in char_literals {
-            let token_kinds = lex_string_to_token_kind(text);
+            let token_kinds = setup_lexer(text);
             assert_eq!(token_kinds.len(), 1, "Expected 1 token for character literal: {}", text);
             assert_eq!(token_kinds[0], expected_kind, "Failed for character literal: {}", text);
         }
@@ -214,7 +195,7 @@ mod tests {
         ];
 
         for (text, expected_kind) in string_literals {
-            let token_kinds = lex_string_to_token_kind(text);
+            let token_kinds = setup_lexer(text);
             assert_eq!(token_kinds.len(), 1, "Expected 1 token for string literal: {}", text);
             assert_eq!(token_kinds[0], expected_kind, "Failed for string literal: {}", text);
         }
@@ -226,7 +207,7 @@ mod tests {
 
         for ident in identifiers {
             let symbol = Symbol::new(ident);
-            let token_kinds = lex_string_to_token_kind(ident);
+            let token_kinds = setup_lexer(ident);
             assert_eq!(token_kinds.len(), 1, "Expected 1 token for identifier: {}", ident);
             assert_eq!(
                 token_kinds[0],
@@ -254,7 +235,7 @@ mod tests {
         ];
 
         for (input, expected_content) in test_cases {
-            let token_kinds = lex_string_to_token_kind(input);
+            let token_kinds = setup_lexer(input);
             assert_eq!(
                 token_kinds.len(),
                 1,
@@ -276,7 +257,7 @@ mod tests {
         }
 
         // Test that non-adjacent strings are not concatenated
-        let token_kinds = lex_string_to_token_kind("\"hello\" ; \"world\"");
+        let token_kinds = setup_lexer("\"hello\" ; \"world\"");
         assert_eq!(token_kinds.len(), 3, "Expected 3 tokens for non-adjacent strings");
         assert!(
             matches!(token_kinds[0], TokenKind::StringLiteral(_)),
@@ -292,7 +273,7 @@ mod tests {
     #[test]
     fn test_special_tokens() {
         // EndOfFile - empty string should produce EndOfFile when included
-        let token_kinds = lex_string_to_token_kind_with_eof("", true);
+        let token_kinds = setup_lexer_with_eof("", true);
         assert_eq!(token_kinds.len(), 1, "Expected 1 token for empty string");
         assert_eq!(
             token_kinds[0],
@@ -301,7 +282,7 @@ mod tests {
         );
 
         // Unknown - unrecognized character should produce Unknown
-        let token_kinds = lex_string_to_token_kind("@");
+        let token_kinds = setup_lexer("@");
         assert_eq!(token_kinds.len(), 1, "Expected 1 token for unknown character");
         assert_eq!(
             token_kinds[0],

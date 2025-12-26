@@ -9,4 +9,4 @@ pub mod output;
 
 // Re-export public API
 pub use cli::Cli;
-pub use compiler::{CompilerDriver, CompilerError};
+pub use compiler::{CompilerDriver, DriverError};

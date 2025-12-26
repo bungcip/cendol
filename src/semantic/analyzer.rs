@@ -8,6 +8,7 @@ use crate::ast::BinaryOp;
 use crate::ast::SymbolEntryRef;
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
+use crate::driver::compiler::SemaOutput;
 use crate::mir::{
     self, BinaryOp as MirBinaryOp, CallTarget, ConstValue, ConstValueId, Local, LocalId, MirBlock, MirBlockId,
     MirBuilder, MirFunction, MirFunctionId, MirModule, MirStmt, Operand, Place, Rvalue, Terminator, TypeId,
@@ -75,6 +76,65 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         self.finalize_globals();
 
         self.mir_builder.finalize_module()
+    }
+
+    /// Lower module and return complete MIR data for testing
+    pub fn lower_module_complete(&mut self) -> SemaOutput {
+        debug!("Starting semantic analysis and MIR construction (complete)");
+
+        // Check if we have a root node to start traversal from
+        let Some(root_node_ref) = self.ast.root else {
+            debug!("No root node found, skipping semantic analysis");
+            let module = self.mir_builder.finalize_module();
+            let functions = self.mir_builder.get_functions().clone();
+            let blocks = self.mir_builder.get_blocks().clone();
+            let locals = self.mir_builder.get_locals().clone();
+            let globals = self.mir_builder.get_globals().clone();
+            let types = self.mir_builder.get_types().clone();
+            let constants = self.mir_builder.get_constants().clone();
+            let statements = self.mir_builder.get_statements().clone();
+            return SemaOutput {
+                module,
+                functions,
+                blocks,
+                locals,
+                globals,
+                types,
+                constants,
+                statements,
+            };
+        };
+
+        // Reset symbol table traversal to re-enter scopes in the same order
+        self.symbol_table.reset_traversal();
+
+        // Process the entire AST starting from root
+        self.lower_node_ref(root_node_ref);
+
+        debug!("Semantic analysis complete");
+
+        // Finalize global variables - convert tentative definitions to defined with implicit zero-initialization
+        self.finalize_globals();
+
+        let module = self.mir_builder.finalize_module();
+        let functions = self.mir_builder.get_functions().clone();
+        let blocks = self.mir_builder.get_blocks().clone();
+        let locals = self.mir_builder.get_locals().clone();
+        let globals = self.mir_builder.get_globals().clone();
+        let types = self.mir_builder.get_types().clone();
+        let constants = self.mir_builder.get_constants().clone();
+        let statements = self.mir_builder.get_statements().clone();
+
+        SemaOutput {
+            module,
+            functions,
+            blocks,
+            locals,
+            globals,
+            types,
+            constants,
+            statements,
+        }
     }
 
     /// Report a semantic error and mark analyzer as having errors

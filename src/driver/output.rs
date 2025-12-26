@@ -9,7 +9,7 @@ use crate::ast::{Ast, NodeKind};
 use crate::pp::PPToken;
 use crate::source_manager::SourceManager;
 
-use super::compiler::CompilerError;
+use super::compiler::DriverError;
 
 /// Handler for various output formats
 pub struct OutputHandler;
@@ -32,7 +32,7 @@ impl OutputHandler {
         pp_tokens: &[PPToken],
         suppress_line_markers: bool,
         source_manager: &SourceManager,
-    ) -> Result<(), CompilerError> {
+    ) -> Result<(), DriverError> {
         if pp_tokens.is_empty() {
             return Ok(());
         }

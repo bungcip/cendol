@@ -233,7 +233,6 @@ impl CompilerDriver {
             return Err(PipelineError::Fatal);
         }
 
-
         // Run type checker phase immediately after symbol resolver
         {
             use crate::semantic::type_checker::run_type_checker;
@@ -256,6 +255,11 @@ impl CompilerDriver {
         }
 
         // Check for semantic analysis errors and stop if any
+        if self.diagnostics.has_errors() {
+            return Err(PipelineError::Fatal);
+        }
+
+        // Check for semantic analysis errors after resolver and stop if any
         if self.diagnostics.has_errors() {
             return Err(PipelineError::Fatal);
         }

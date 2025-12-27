@@ -945,7 +945,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             let def_state = if initializer_node_ref.is_some() {
                 DefinitionState::Defined
             } else if var_decl.storage == Some(StorageClass::Extern) {
-                DefinitionState::DeclaredOnly
+                DefinitionState::Declared
             } else {
                 DefinitionState::Tentative
             };
@@ -1008,7 +1008,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 let def_state = if initializer_node_ref.is_some() {
                     DefinitionState::Defined
                 } else if var_decl.storage == Some(StorageClass::Extern) {
-                    DefinitionState::DeclaredOnly
+                    DefinitionState::Declared
                 } else {
                     DefinitionState::Tentative
                 };

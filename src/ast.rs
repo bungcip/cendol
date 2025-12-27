@@ -166,9 +166,9 @@ impl Node {
 /// Represents the definition state of a symbol entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DefinitionState {
-    Tentative,    // int x;
-    Defined,      // int x = ...;
-    DeclaredOnly, // extern int x;
+    Tentative, // int x;
+    Defined,   // int x = ...;
+    Declared,  // extern int x; or function prototype
 }
 
 /// Represents a resolved symbol entry from the symbol table.

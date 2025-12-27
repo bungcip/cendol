@@ -233,7 +233,6 @@ impl CompilerDriver {
             return Err(PipelineError::Fatal);
         }
 
-
         // Run type checker phase immediately after symbol resolver
         {
             use crate::semantic::type_checker::run_type_checker;

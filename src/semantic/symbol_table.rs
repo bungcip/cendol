@@ -271,8 +271,15 @@ impl SymbolTable {
 
             match (&mut existing.kind, &mut new_entry.kind) {
                 (
-                    SymbolKind::Function { is_definition: is_existing_def, .. },
-                    SymbolKind::Function { is_definition: is_new_def, parameters: new_params, .. },
+                    SymbolKind::Function {
+                        is_definition: is_existing_def,
+                        ..
+                    },
+                    SymbolKind::Function {
+                        is_definition: is_new_def,
+                        parameters: new_params,
+                        ..
+                    },
                 ) => {
                     if *is_existing_def && *is_new_def {
                         debug!("Multiple definitions of function '{}'", name);
@@ -283,7 +290,12 @@ impl SymbolTable {
                         // Update existing declaration to a definition
                         debug!("Updating function declaration to definition for '{}'", name);
                         existing.def_state = DefinitionState::Defined;
-                        if let SymbolKind::Function { is_definition, parameters, .. } = &mut existing.kind {
+                        if let SymbolKind::Function {
+                            is_definition,
+                            parameters,
+                            ..
+                        } = &mut existing.kind
+                        {
                             *is_definition = true;
                             *parameters = new_params.clone();
                         }
@@ -298,8 +310,13 @@ impl SymbolTable {
                         | (DefinitionState::Declared, DefinitionState::Defined) => {
                             existing_var.def_state = DefinitionState::Defined;
                             if let (
-                                SymbolKind::Variable { initializer: existing_init, .. },
-                                SymbolKind::Variable { initializer: new_init, .. },
+                                SymbolKind::Variable {
+                                    initializer: existing_init,
+                                    ..
+                                },
+                                SymbolKind::Variable {
+                                    initializer: new_init, ..
+                                },
                             ) = (&mut existing_var.kind, &new_var.kind)
                             {
                                 *existing_init = *new_init;
@@ -321,7 +338,10 @@ impl SymbolTable {
                 }
             }
         } else {
-            debug!("Adding new global symbol '{}' with def_state {:?}", name, new_entry.def_state);
+            debug!(
+                "Adding new global symbol '{}' with def_state {:?}",
+                name, new_entry.def_state
+            );
             Ok(self.add_symbol(name, new_entry))
         }
     }

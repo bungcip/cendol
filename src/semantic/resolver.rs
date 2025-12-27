@@ -1017,7 +1017,6 @@ fn lower_node_recursive_phase1(ctx: &mut LowerCtx, node_ref: NodeRef) {
                 Vec::new()
             };
 
-
             let symbol_entry = crate::ast::SymbolEntry {
                 name: func_name,
                 kind: crate::ast::SymbolKind::Function {

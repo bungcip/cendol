@@ -48,7 +48,10 @@ pub enum ScopeKind {
 pub enum Namespace {
     Ordinary, // Variables, functions, typedefs, enum constants
     Tag,      // Struct, union, and enum tags
-    Label,    // Goto labels
+
+    // TODO: currently, no code write Namespace::Label, need to fix
+    #[allow(unused)]
+    Label, // Goto labels
 }
 
 /// Scope information

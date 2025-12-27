@@ -1,9 +1,7 @@
 use super::*;
 use crate::diagnostic::DiagnosticEngine;
-use crate::lang_options::LangOptions;
 use crate::source_manager::SourceManager;
 use symbol_table::GlobalSymbol as Symbol;
-use target_lexicon::Triple;
 
 /// Helper function to set up preprocessor testing
 fn setup_preprocessor_test(src: &str) -> Vec<PPToken> {
@@ -19,8 +17,6 @@ fn setup_preprocessor_test_with_diagnostics(
 
     let mut source_manager = SourceManager::new();
     let mut diagnostics = DiagnosticEngine::new();
-    let lang_options = LangOptions::c11();
-    let target_info = Triple::host();
     let config = PPConfig {
         max_include_depth: 100,
         ..Default::default()
@@ -28,13 +24,7 @@ fn setup_preprocessor_test_with_diagnostics(
 
     let source_id = source_manager.add_buffer(src.as_bytes().to_vec(), "<test>");
 
-    let mut preprocessor = Preprocessor::new(
-        &mut source_manager,
-        &mut diagnostics,
-        lang_options,
-        target_info,
-        &config,
-    );
+    let mut preprocessor = Preprocessor::new(&mut source_manager, &mut diagnostics, &config);
 
     let tokens = preprocessor.process(source_id, &config)?;
 
@@ -471,13 +461,11 @@ fn test_circular_include_in_memory() {
     let main_id = sm.add_buffer("#include \"a.h\"".as_bytes().to_vec(), "main.c");
 
     let mut diag = DiagnosticEngine::new();
-    let lang_opts = LangOptions::c11();
-    let target_info = Triple::unknown();
     let config = PPConfig {
         max_include_depth: 10,
         ..Default::default()
     };
-    let mut pp = Preprocessor::new(&mut sm, &mut diag, lang_opts, target_info, &config);
+    let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
     let result = pp.process(main_id, &config);
 
     assert!(matches!(result, Err(PPError::CircularInclude)));
@@ -498,13 +486,11 @@ fn test_circular_include_error_with_temp_files() {
     let source_id_main = sm.add_file_from_path(&path_main).unwrap();
 
     let mut diag = DiagnosticEngine::new();
-    let lang_opts = LangOptions::c11();
-    let target_info = Triple::unknown();
     let config = PPConfig {
         max_include_depth: 10,
         ..Default::default()
     };
-    let mut pp = Preprocessor::new(&mut sm, &mut diag, lang_opts, target_info, &config);
+    let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
     let result = pp.process(source_id_main, &config);
 
     assert!(matches!(result, Err(PPError::CircularInclude)));

@@ -10,7 +10,6 @@ use indexmap::IndexMap;
 use crate::ast::{Ast, SourceId, SourceSpan};
 use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
 use crate::driver::cli::PathOrBuffer;
-use crate::lang_options::LangOptions;
 use crate::lexer::{Lexer, Token};
 use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer};
 use crate::mir::validation::MirValidator;
@@ -23,7 +22,6 @@ use crate::parser::Parser;
 use crate::pp::{PPToken, Preprocessor};
 use crate::semantic::{SemanticAnalyzer, SymbolTable};
 use crate::source_manager::SourceManager;
-use target_lexicon::Triple;
 
 use super::cli::CompileConfig;
 use super::output::OutputHandler;
@@ -129,11 +127,8 @@ impl CompilerDriver {
             object_file: None,
         };
 
-        let lang_options = self.config.lang_options;
-        let target_triple = Triple::host();
-
         // Preprocessing phase
-        let pp_tokens = self.run_preprocessor(source_id, &lang_options, &target_triple)?;
+        let pp_tokens = self.run_preprocessor(source_id)?;
         if stop_after == CompilePhase::Preprocess {
             out.preprocessed = Some(pp_tokens);
             return Ok(out);
@@ -180,17 +175,10 @@ impl CompilerDriver {
         Ok(out)
     }
 
-    fn run_preprocessor(
-        &mut self,
-        source_id: SourceId,
-        lang_options: &LangOptions,
-        target_triple: &Triple,
-    ) -> Result<Vec<PPToken>, PipelineError> {
+    fn run_preprocessor(&mut self, source_id: SourceId) -> Result<Vec<PPToken>, PipelineError> {
         let mut preprocessor = Preprocessor::new(
             &mut self.source_manager,
             &mut self.diagnostics,
-            *lang_options,         // TODO: make it to just borrow
-            target_triple.clone(), // TODO: make it to just borrow
             &self.config.preprocessor,
         );
 

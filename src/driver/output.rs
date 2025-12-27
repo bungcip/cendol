@@ -137,6 +137,86 @@ impl OutputHandler {
         format!("func_{}", symbol_ref.get())
     }
 
+    /// Format a DeclSpecifier for display
+    fn format_decl_specifier(&self, specifier: &crate::ast::nodes::DeclSpecifier) -> String {
+        match specifier {
+            crate::ast::nodes::DeclSpecifier::StorageClass(storage) => match storage {
+                crate::ast::nodes::StorageClass::Typedef => "typedef".to_string(),
+                crate::ast::nodes::StorageClass::Extern => "extern".to_string(),
+                crate::ast::nodes::StorageClass::Static => "static".to_string(),
+                crate::ast::nodes::StorageClass::Auto => "auto".to_string(),
+                crate::ast::nodes::StorageClass::Register => "register".to_string(),
+                crate::ast::nodes::StorageClass::ThreadLocal => "_Thread_local".to_string(),
+            },
+            crate::ast::nodes::DeclSpecifier::TypeQualifiers(quals) => {
+                let mut parts = Vec::new();
+                if quals.contains(crate::ast::types::TypeQualifiers::CONST) {
+                    parts.push("const");
+                }
+                if quals.contains(crate::ast::types::TypeQualifiers::VOLATILE) {
+                    parts.push("volatile");
+                }
+                if quals.contains(crate::ast::types::TypeQualifiers::RESTRICT) {
+                    parts.push("restrict");
+                }
+                if quals.contains(crate::ast::types::TypeQualifiers::ATOMIC) {
+                    parts.push("_Atomic");
+                }
+                if parts.is_empty() {
+                    "TypeQualifiers(0x0)".to_string()
+                } else {
+                    parts.join(" ")
+                }
+            }
+            crate::ast::nodes::DeclSpecifier::FunctionSpecifiers(func_spec) => {
+                let mut parts = Vec::new();
+                if func_spec.contains(crate::ast::nodes::FunctionSpecifiers::INLINE) {
+                    parts.push("inline");
+                }
+                if func_spec.contains(crate::ast::nodes::FunctionSpecifiers::NORETURN) {
+                    parts.push("_Noreturn");
+                }
+                if parts.is_empty() {
+                    "FunctionSpecifiers(0x0)".to_string()
+                } else {
+                    parts.join(" ")
+                }
+            }
+            crate::ast::nodes::DeclSpecifier::AlignmentSpecifier(_) => "_Alignas(...)".to_string(),
+            crate::ast::nodes::DeclSpecifier::TypeSpecifier(type_spec) => match type_spec {
+                crate::ast::nodes::TypeSpecifier::Void => "void".to_string(),
+                crate::ast::nodes::TypeSpecifier::Char => "char".to_string(),
+                crate::ast::nodes::TypeSpecifier::Short => "short".to_string(),
+                crate::ast::nodes::TypeSpecifier::Int => "int".to_string(),
+                crate::ast::nodes::TypeSpecifier::Long => "long".to_string(),
+                crate::ast::nodes::TypeSpecifier::LongLong => "long long".to_string(),
+                crate::ast::nodes::TypeSpecifier::Float => "float".to_string(),
+                crate::ast::nodes::TypeSpecifier::Double => "double".to_string(),
+                crate::ast::nodes::TypeSpecifier::LongDouble => "long double".to_string(),
+                crate::ast::nodes::TypeSpecifier::Signed => "signed".to_string(),
+                crate::ast::nodes::TypeSpecifier::Unsigned => "unsigned".to_string(),
+                crate::ast::nodes::TypeSpecifier::Bool => "_Bool".to_string(),
+                crate::ast::nodes::TypeSpecifier::Complex => "_Complex".to_string(),
+                crate::ast::nodes::TypeSpecifier::Atomic(_) => "_Atomic(...)".to_string(),
+                crate::ast::nodes::TypeSpecifier::Record(is_union, tag, _) => {
+                    let type_name = if *is_union { "union" } else { "struct" };
+                    match tag {
+                        Some(symbol) => format!("{} {}", type_name, symbol),
+                        None => type_name.to_string(),
+                    }
+                }
+                crate::ast::nodes::TypeSpecifier::Enum(tag, _) => match tag {
+                    Some(symbol) => format!("enum {}", symbol),
+                    None => "enum".to_string(),
+                },
+                crate::ast::nodes::TypeSpecifier::TypedefName(symbol) => {
+                    format!("typedef {}", symbol)
+                }
+            },
+            crate::ast::nodes::DeclSpecifier::Attribute => "__attribute__(...)".to_string(),
+        }
+    }
+
     /// Dump a single AST node kind
     fn dump_parser_kind(&self, kind: &NodeKind) {
         match kind {
@@ -247,20 +327,28 @@ impl OutputHandler {
             ),
             NodeKind::EmptyStatement => println!("EmptyStatement"),
             NodeKind::Declaration(decl) => {
+                let specifiers_str = decl
+                    .specifiers
+                    .iter()
+                    .map(|spec| self.format_decl_specifier(spec))
+                    .join(", ");
                 println!(
-                    "Declaration({} specifiers, init_declarators = [{}])",
-                    decl.specifiers.len(),
+                    "Declaration({}, init_declarators = [{}])",
+                    specifiers_str,
                     decl.init_declarators
                         .iter()
                         .map(|x| { format!("{:?} {:?}", x.declarator, x.initializer) })
                         .join(", ")
                 );
             }
-            NodeKind::FunctionDef(func_def) => println!(
-                "FunctionDef({} specifiers, body={})",
-                func_def.specifiers.len(),
-                func_def.body.get()
-            ),
+            NodeKind::FunctionDef(func_def) => {
+                let specifiers_str = func_def
+                    .specifiers
+                    .iter()
+                    .map(|spec| self.format_decl_specifier(spec))
+                    .join(", ");
+                println!("FunctionDef({}, body={})", specifiers_str, func_def.body.get());
+            }
             NodeKind::Function(function_data) => {
                 // Get the function name from the symbol table
                 let func_name = self.get_function_name(function_data.symbol);

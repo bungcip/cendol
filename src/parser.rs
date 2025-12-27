@@ -272,21 +272,6 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         self.parse_expr_bp(BindingPower::ASSIGNMENT)
     }
 
-    /// Parse expression up to conditional
-    pub(crate) fn parse_expr_conditional(&mut self) -> Result<NodeRef, ParseError> {
-        self.parse_expr_bp(BindingPower::CONDITIONAL)
-    }
-
-    /// Parse expression up to unary
-    pub(crate) fn parse_expr_unary(&mut self) -> Result<NodeRef, ParseError> {
-        self.parse_expr_bp(BindingPower::UNARY)
-    }
-
-    /// Parse expression up to cast
-    pub fn parse_expr_cast(&mut self) -> Result<NodeRef, ParseError> {
-        self.parse_expr_bp(BindingPower::CAST)
-    }
-
     /// Parse translation unit (top level)
     pub fn parse_translation_unit(&mut self) -> Result<NodeRef, ParseError> {
         declarations::parse_translation_unit(self)

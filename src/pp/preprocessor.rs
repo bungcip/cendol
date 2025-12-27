@@ -1,4 +1,4 @@
-use crate::diagnostic::{Diagnostic, DiagnosticEngine};
+use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
 use crate::lang_options::LangOptions;
 use crate::source_manager::{SourceId, SourceLoc, SourceManager, SourceSpan};
 use chrono::{DateTime, Datelike, Timelike, Utc};
@@ -9,7 +9,6 @@ use crate::pp::interpreter::Interpreter;
 use crate::pp::{PPLexer, PPToken, PPTokenFlags, PPTokenKind};
 use std::path::{Path, PathBuf};
 use symbol_table::GlobalSymbol as Symbol;
-use target_lexicon::Triple as TargetInfo;
 
 /// Preprocessor directive kinds
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -257,6 +256,7 @@ pub struct PPConfig {
     pub quoted_include_paths: Vec<PathBuf>,
     pub angled_include_paths: Vec<PathBuf>,
     pub framework_paths: Vec<PathBuf>,
+    pub lang_options: LangOptions,
 }
 
 /// Main preprocessor structure
@@ -264,8 +264,6 @@ pub struct Preprocessor<'src> {
     source_manager: &'src mut SourceManager,
     diag: &'src mut DiagnosticEngine,
     lang_opts: LangOptions,
-    #[allow(unused)]
-    target_info: TargetInfo,
 
     // Pre-interned directive keywords for fast comparison
     directive_keywords: DirectiveKeywordTable,
@@ -353,8 +351,8 @@ impl PPError {
 impl From<PPError> for Diagnostic {
     fn from(val: PPError) -> Self {
         let level = match &val {
-            PPError::ErrorDirective(_) => crate::diagnostic::DiagnosticLevel::Error,
-            _ => crate::diagnostic::DiagnosticLevel::Error,
+            PPError::ErrorDirective(_) => DiagnosticLevel::Error,
+            _ => DiagnosticLevel::Error,
         };
 
         Diagnostic {
@@ -370,13 +368,7 @@ impl From<PPError> for Diagnostic {
 
 impl<'src> Preprocessor<'src> {
     /// Create a new preprocessor
-    pub fn new(
-        source_manager: &'src mut SourceManager,
-        diag: &'src mut DiagnosticEngine,
-        lang_opts: LangOptions,
-        target_info: TargetInfo,
-        config: &PPConfig,
-    ) -> Self {
+    pub fn new(source_manager: &'src mut SourceManager, diag: &'src mut DiagnosticEngine, config: &PPConfig) -> Self {
         let mut header_search = HeaderSearch {
             search_path: config
                 .system_include_paths
@@ -415,8 +407,7 @@ impl<'src> Preprocessor<'src> {
         let mut preprocessor = Preprocessor {
             source_manager,
             diag,
-            lang_opts,
-            target_info,
+            lang_opts: config.lang_options,
             directive_keywords: DirectiveKeywordTable::new(),
             macros: HashMap::new(),
             once_included: HashSet::new(),

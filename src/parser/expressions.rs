@@ -159,7 +159,7 @@ pub(crate) fn parse_expression(parser: &mut Parser, min_binding_power: BindingPo
                 let true_expr = parser.parse_expr_assignment()?;
                 parser.expect(TokenKind::Colon)?;
                 // The third operand is a `conditional-expression`, which has higher precedence.
-                let false_expr = parser.parse_expr_conditional()?;
+                let false_expr = parser.parse_expr_bp(BindingPower::CONDITIONAL)?;
 
                 let span = SourceSpan::new(
                     parser.ast.get_node(left).span.start,
@@ -292,7 +292,7 @@ fn parse_unary_operator(parser: &mut Parser, token: Token) -> Result<NodeRef, Pa
     };
 
     parser.advance();
-    let operand_node = parser.parse_expr_unary()?;
+    let operand_node = parser.parse_expr_bp(BindingPower::UNARY)?;
     let span = SourceSpan::new(token.span.start, parser.ast.get_node(operand_node).span.end);
     let node = parser.push_node(NodeKind::UnaryOp(op, operand_node), span);
     Ok(node)
@@ -484,7 +484,7 @@ pub(crate) fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, Pa
     parser.expect(TokenKind::LeftParen)?;
 
     // Parse controlling expression, but stop before comma to avoid treating it as comma operator
-    let controlling_expr = parser.parse_expr_conditional()?;
+    let controlling_expr = parser.parse_expr_bp(BindingPower::CONDITIONAL)?;
 
     parser.expect(TokenKind::Comma)?;
 
@@ -574,7 +574,7 @@ pub(crate) fn parse_sizeof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         }
     } else {
         debug!("parse_sizeof: no '(', parsing unary expression");
-        let expr = parser.parse_expr_unary()?;
+        let expr = parser.parse_expr_bp(BindingPower::UNARY)?;
 
         let end_loc = parser.ast.get_node(expr).span.end;
         let span = SourceSpan::new(start_loc, end_loc);
@@ -652,7 +652,7 @@ pub(crate) fn parse_cast_expression_from_type_and_paren(
     right_paren_token: Token,
 ) -> Result<NodeRef, ParseError> {
     // Parse the expression being cast
-    let expr_node = parser.parse_expr_cast()?;
+    let expr_node = parser.parse_expr_bp(BindingPower::CAST)?;
 
     let span = SourceSpan::new(
         right_paren_token.span.start, // Start from the opening paren

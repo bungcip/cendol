@@ -2,3 +2,6 @@ target
 ast_dump.html
 c-testsuite
 coverage_report/
+a.out
+a.out.o
+contoh.c

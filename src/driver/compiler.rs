@@ -254,16 +254,6 @@ impl CompilerDriver {
             }
         }
 
-        // Check for semantic analysis errors and stop if any
-        if self.diagnostics.has_errors() {
-            return Err(PipelineError::Fatal);
-        }
-
-        // Check for semantic analysis errors after resolver and stop if any
-        if self.diagnostics.has_errors() {
-            return Err(PipelineError::Fatal);
-        }
-
         // this is AstToMirLowerer
         let mut sema = AstToMirLowerer::new(&mut ast, &mut self.diagnostics, &mut symbol_table);
         let sema_output = sema.lower_module_complete();

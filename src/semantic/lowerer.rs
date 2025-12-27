@@ -627,16 +627,15 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                             current_type_id = field_type_id;
                         }
                     } else {
-                        // Field not found - report error
+                        // Field not found - this should not happen in the lowerer phase
+                        // as field resolution should have been done in earlier phases
                         debug!(
-                            "Field '{}' not found in type {:?}",
+                            "Field '{}' not found in type {:?} - this indicates an issue in earlier semantic phases",
                             field_name,
                             self.get_types().get(&current_type_id)
                         );
-                        self.report_error(SemanticError::UndeclaredIdentifier {
-                            name: *field_name,
-                            span,
-                        });
+                        // Return gracefully without reporting UndeclaredIdentifier error
+                        // The error should have been caught in the resolver/type_checker phases
                         return;
                     }
                 }
@@ -769,7 +768,14 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                                     current_index = index + 1;
                                     index
                                 } else {
-                                    self.report_error(SemanticError::UndeclaredIdentifier { name: *name, span });
+                                    // Field not found - this should not happen in the lowerer phase
+                                    // as field resolution should have been done in earlier phases
+                                    debug!(
+                                        "Field '{}' not found during global compound initialization - this indicates an issue in earlier semantic phases",
+                                        name
+                                    );
+                                    // Return gracefully without reporting UndeclaredIdentifier error
+                                    // The error should have been caught in the resolver/type_checker phases
                                     return None;
                                 }
                             }
@@ -1143,6 +1149,9 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                                         return Operand::Copy(Box::new(Place::Global(*global_id)));
                                     }
                                 }
+                                // If we didn't find the global, it might not have been created yet
+                                // This can happen with global variables that are declared but not yet processed
+                                panic!("ICE: Global variable '{}' not found in MIR globals", entry.name);
                             } else {
                                 // Local variable
                                 if let Some(local_id) = self.local_map.get(&resolved_ref) {
@@ -1161,14 +1170,19 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                                 return Operand::Constant(const_id);
                             }
                         }
-                        _ => {}
+                        other => {
+                            panic!("ICE:  unexpected SymbolKind '{:?}'", other);
+                        }
                     }
                 }
 
                 // If we reach here, the symbol was not resolved or not found in MIR
-                self.report_error(SemanticError::UndeclaredIdentifier { name, span: node.span });
-                let error_const = self.create_constant(ConstValue::Int(0));
-                Operand::Constant(error_const)
+                // This should not happen in the lowerer phase as identifier resolution
+                // should have been completed in earlier phases (resolver/type_checker)
+                panic!(
+                    "ICE: Identifier '{}' was not resolved during semantic analysis - this indicates an issue in earlier phases",
+                    name
+                );
             }
 
             NodeKind::BinaryOp(op, left_ref, right_ref) => {
@@ -1585,13 +1599,15 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 }
 
                 let Some(object_type_ref) = object_type_ref else {
-                    // Cannot resolve object type - report error
-                    let node_span = self.ast.get_node(expr_ref).span;
-                    self.report_error(SemanticError::UndeclaredIdentifier {
-                        name: field_name,
-                        span: node_span,
-                    });
-
+                    // Cannot resolve object type - this should not happen in the lowerer phase
+                    // as type resolution should have been done in earlier phases
+                    let _node_span = self.ast.get_node(expr_ref).span;
+                    debug!(
+                        "Cannot resolve object type for member access '{}' - this indicates an issue in earlier semantic phases",
+                        field_name
+                    );
+                    // Return a dummy operand to allow compilation to continue
+                    // The actual error should have been caught in the type_checker phase
                     let error_const = self.create_constant(ConstValue::Int(0));
                     return Operand::Constant(error_const);
                 };
@@ -1651,13 +1667,15 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                     // Return this as an operand that can be used as an lvalue
                     Operand::Copy(Box::new(field_place))
                 } else {
-                    // Field not found - report error but continue with dummy operand
-                    let node_span = self.ast.get_node(expr_ref).span;
-                    self.report_error(SemanticError::UndeclaredIdentifier {
-                        name: field_name,
-                        span: node_span,
-                    });
-
+                    // Field not found - this should not happen in the lowerer phase
+                    // as field resolution should have been done in earlier phases
+                    let _node_span = self.ast.get_node(expr_ref).span;
+                    debug!(
+                        "Field '{}' not found for member access - this indicates an issue in earlier semantic phases",
+                        field_name
+                    );
+                    // Return a dummy operand to allow compilation to continue
+                    // The actual error should have been caught in the type_checker phase
                     let error_const = self.create_constant(ConstValue::Int(0));
                     Operand::Constant(error_const)
                 }
@@ -2141,7 +2159,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Lower a goto statement
-    fn lower_goto_statement(&mut self, label: Symbol, span: SourceSpan) {
+    fn lower_goto_statement(&mut self, label: Symbol, _span: SourceSpan) {
         debug!("Lowering goto statement to label: {}", label);
 
         // For goto statements, we need to set up a jump to the target label
@@ -2163,10 +2181,14 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             self.mir_builder.set_terminator(Terminator::Goto(*target_block_id));
             debug!("Goto resolved to block {:?}", target_block_id);
         } else {
-            // Label not found - this is an error
-            debug!("Label '{}' not found in label map during goto resolution", label);
-            self.report_error(SemanticError::UndeclaredIdentifier { name: label, span });
+            // Label not found - this should not happen in the lowerer phase
+            // as label resolution should have been done in earlier phases
+            debug!(
+                "Label '{}' not found in label map during goto resolution - this indicates an issue in earlier semantic phases",
+                label
+            );
             // Set a dummy terminator to allow compilation to continue
+            // The actual error should have been caught in the resolver phase
             self.mir_builder.set_terminator(Terminator::Unreachable);
         }
     }

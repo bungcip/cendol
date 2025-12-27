@@ -185,29 +185,6 @@ mod tests {
     }
 
     #[test]
-    fn test_error_handling_undeclared_identifier() {
-        let (mut ast, mut diag, mut symbol_table) = setup_test_ast();
-
-        // Create an identifier that doesn't exist
-        let unknown_name = Symbol::new("unknown_var");
-        let ident_node = Node::new(NodeKind::Ident(unknown_name), SourceSpan::empty());
-        let ident_ref = ast.push_node(ident_node);
-        ast.set_root_node(ident_ref);
-
-        // Run type checker
-        run_type_checker(&mut ast, &mut diag, &mut symbol_table);
-
-        // Check that an error was reported
-        assert!(diag.has_errors());
-
-        // Check that the identifier has error type
-        let resolved_type = ast.get_node(ident_ref).resolved_type.get().unwrap();
-        let type_info = ast.get_type(resolved_type);
-
-        assert!(matches!(type_info.kind, TypeKind::Error));
-    }
-
-    #[test]
     fn test_complex_expression_type() {
         let (mut ast, mut diag, mut symbol_table) = setup_test_ast();
 

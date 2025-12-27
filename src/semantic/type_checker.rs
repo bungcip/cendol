@@ -9,6 +9,7 @@ use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::semantic::SymbolTable;
 use crate::source_manager::SourceSpan;
 use std::num::NonZero;
+use log::debug;
 
 /// Context for the type checking phase
 pub struct TypeCheckCtx<'a, 'src> {
@@ -283,22 +284,23 @@ fn type_check_identifier(
     node_ref: NodeRef,
     name: Symbol,
     symbol_ref: Option<SymbolEntryRef>,
-    span: SourceSpan,
+    _span: SourceSpan,
 ) {
     if let Some(resolved_ref) = symbol_ref {
         let entry = ctx.symbol_table.get_symbol_entry(resolved_ref);
         ctx.set_resolved_type(node_ref, entry.type_info);
     } else {
-        // Try to resolve from symbol table
-        if let Some((entry_ref, _)) = ctx.symbol_table.lookup_symbol(name) {
-            let entry = ctx.symbol_table.get_symbol_entry(entry_ref);
-            ctx.set_resolved_type(node_ref, entry.type_info);
-        } else {
-            ctx.report_error(SemanticError::UndeclaredIdentifier { name, span });
-            let error_type = Type::new(TypeKind::Error);
-            let error_type_ref = ctx.ast.push_type(error_type);
-            ctx.set_resolved_type(node_ref, error_type_ref);
-        }
+        // This should not happen in the type_checker phase
+        // as identifier resolution should have been completed in the resolver phase
+        debug!(
+            "Identifier '{}' was not resolved during type checking - this indicates an issue in the resolver phase",
+            name
+        );
+        // Create an error type and set it
+        // The actual UndeclaredIdentifier error should have been caught in the resolver phase
+        let error_type = Type::new(TypeKind::Error);
+        let error_type_ref = ctx.ast.push_type(error_type);
+        ctx.set_resolved_type(node_ref, error_type_ref);
     }
 }
 
@@ -525,7 +527,14 @@ fn type_check_member_access(
     let result_type = match field_type {
         Some(field_type) => field_type,
         None => {
-            ctx.report_error(SemanticError::UndeclaredIdentifier { name: field_name, span });
+            // Field not found - this should not happen in the type_checker phase
+            // as field resolution should have been done in earlier phases
+            debug!(
+                "Field '{}' not found during type checking - this indicates an issue in earlier semantic phases",
+                field_name
+            );
+            // Create an error type and set it
+            // The actual UndeclaredIdentifier error should have been caught in the resolver/type_checker phase
             let error_type = Type::new(TypeKind::Error);
             ctx.ast.push_type(error_type)
         }

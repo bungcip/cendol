@@ -353,11 +353,9 @@ impl CompilerDriver {
     }
 
     /// Print accumulated diagnostics without returning an error
-    fn print_diagnostics(&self) {
-        if self.diagnostics.has_errors() {
-            let formatter = crate::diagnostic::ErrorFormatter::default();
-            formatter.print_diagnostics(self.diagnostics.diagnostics(), &self.source_manager);
-        }
+    pub fn print_diagnostics(&self) {
+        let formatter = crate::diagnostic::ErrorFormatter::default();
+        formatter.print_diagnostics(self.diagnostics.diagnostics(), &self.source_manager);
     }
 }
 
@@ -366,24 +364,6 @@ impl CompilerDriver {
 pub enum DriverError {
     #[error("I/O error: {0}")]
     IoError(String),
-
-    //// TODO: remove this
-    #[error("Preprocessing failed: {0}")]
-    PreprocessorError(String),
-
-    //// TODO: remove this
-    #[error("Lexing failed: {0}")]
-    LexerError(String),
-
-    //// TODO: remove this
-    #[error("Parsing failed: {0}")]
-    ParserError(String),
-    //// TODO: remove this
-    #[error("Semantic analysis failed: {0}")]
-    SemanticError(String),
-    //// TODO: remove this
-    #[error("MIR dump failed: {0}")]
-    MirDumpError(String),
 
     #[error("Compilation failed due to errors")]
     CompilationFailed,

@@ -1,4 +1,4 @@
-use cendol::driver::{Cli, CompilerDriver};
+use cendol::driver::{Cli, CompilerDriver, DriverError};
 use clap::Parser;
 
 fn main() {
@@ -7,9 +7,15 @@ fn main() {
 
     match CompilerDriver::new(cli) {
         Ok(mut driver) => {
-            if let Err(e) = driver.run() {
-                eprintln!("Compilation failed: {:?}", e);
-                std::process::exit(1);
+            match driver.run() {
+                Ok(_) => std::process::exit(0),
+                Err(e) => {
+                    match e {
+                        DriverError::IoError(e) => eprintln!("I/O error: {:?}", e),
+                        DriverError::CompilationFailed => (), // diagnostic already printed by driver.run()
+                    };
+                    std::process::exit(1);
+                }
             }
         }
         Err(e) => {

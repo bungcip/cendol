@@ -837,9 +837,9 @@ fn lower_function_parameters(params: &[ParamData], ctx: &mut LowerCtx) -> Vec<Fu
             let spec_info = lower_decl_specifiers(&param.specifiers, ctx, span);
 
             // C standard: if type specifier is missing in a parameter, it defaults to int.
-            let base_ty = spec_info.base_type.unwrap_or_else(|| {
-                ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true }))
-            });
+            let base_ty = spec_info
+                .base_type
+                .unwrap_or_else(|| ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true })));
 
             let final_ty = if let Some(declarator) = &param.declarator {
                 let ty = apply_declarator(base_ty, declarator, ctx);

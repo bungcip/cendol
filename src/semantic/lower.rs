@@ -19,6 +19,27 @@ pub struct LowerCtx<'a, 'src> {
     pub has_errors: bool,
 }
 
+/// Evaluate a constant expression node to an i64 value
+fn eval_const_expr(ctx: &LowerCtx, expr_node_ref: NodeRef) -> Option<i64> {
+    let node = ctx.ast.get_node(expr_node_ref);
+    match &node.kind {
+        NodeKind::LiteralInt(val) => Some(*val),
+        NodeKind::BinaryOp(op, left_ref, right_ref) => {
+            let left_val = eval_const_expr(ctx, *left_ref)?;
+            let right_val = eval_const_expr(ctx, *right_ref)?;
+            match op {
+                BinaryOp::Add => Some(left_val + right_val),
+                BinaryOp::Sub => Some(left_val - right_val),
+                BinaryOp::Mul => Some(left_val * right_val),
+                BinaryOp::Div => Some(left_val / right_val),
+                // TODO: Add other binary operations as needed
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
 impl<'a, 'src> LowerCtx<'a, 'src> {
     /// Create a new lowering context
     pub fn new(ast: &'a mut Ast, diag: &'src mut DiagnosticEngine, symbol_table: &'a mut SymbolTable) -> Self {
@@ -880,9 +901,20 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
         Declarator::Array(base, size) => {
             let element_type = apply_declarator(base_type, base, ctx);
             let array_size = match size {
-                ArraySize::Expression { expr: _, qualifiers: _ } => {
-                    // TODO: Evaluate expression for constant size
-                    ArraySizeType::Incomplete
+                ArraySize::Expression { expr, qualifiers: _ } => {
+                    if let Some(const_val) = eval_const_expr(ctx, *expr) {
+                        if const_val > 0 {
+                            ArraySizeType::Constant(const_val as usize)
+                        } else {
+                            ctx.report_error(SemanticError::InvalidArraySize {
+                                span: ctx.ast.get_node(*expr).span,
+                            });
+                            ArraySizeType::Incomplete
+                        }
+                    } else {
+                        // TODO: Handle non-constant array sizes (VLAs)
+                        ArraySizeType::Incomplete
+                    }
                 }
                 ArraySize::Star { qualifiers: _ } => ArraySizeType::Star,
                 ArraySize::Incomplete => ArraySizeType::Incomplete,
@@ -1202,9 +1234,20 @@ fn apply_declarator_for_member(base_type: TypeRef, declarator: &Declarator, ctx:
         Declarator::Array(base, size) => {
             let element_type = apply_declarator_for_member(base_type, base, ctx);
             let array_size = match size {
-                ArraySize::Expression { expr: _, qualifiers: _ } => {
-                    // TODO: Evaluate expression for constant size
-                    ArraySizeType::Incomplete
+                ArraySize::Expression { expr, qualifiers: _ } => {
+                    if let Some(const_val) = eval_const_expr(ctx, *expr) {
+                        if const_val > 0 {
+                            ArraySizeType::Constant(const_val as usize)
+                        } else {
+                            ctx.report_error(SemanticError::InvalidArraySize {
+                                span: ctx.ast.get_node(*expr).span,
+                            });
+                            ArraySizeType::Incomplete
+                        }
+                    } else {
+                        // VLA in struct is a GNU extension, not supported yet
+                        ArraySizeType::Incomplete
+                    }
                 }
                 ArraySize::Star { qualifiers: _ } => ArraySizeType::Star,
                 ArraySize::Incomplete => ArraySizeType::Incomplete,

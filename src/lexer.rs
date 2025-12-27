@@ -2,9 +2,6 @@ use crate::pp::{PPToken, PPTokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
 use symbol_table::GlobalSymbol as Symbol;
 
-// Re-export DiagnosticEngine from diagnostic module for convenience
-pub use crate::diagnostic::DiagnosticEngine;
-
 /// C11 token kinds for the lexical analyzer
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenKind {
@@ -378,7 +375,7 @@ pub fn is_keyword(symbol: Symbol) -> Option<TokenKind> {
 pub struct Lexer<'src> {
     // Current position in token stream
     tokens: &'src [PPToken],
-    current_index: usize,
+    // current_index: usize,
 }
 
 impl<'src> Lexer<'src> {
@@ -386,7 +383,7 @@ impl<'src> Lexer<'src> {
     pub fn new(tokens: &'src [PPToken]) -> Self {
         Lexer {
             tokens,
-            current_index: 0,
+            // current_index: 0,
         }
     }
 
@@ -489,29 +486,6 @@ impl<'src> Lexer<'src> {
         text
     }
 
-    /// Get the next token from the stream
-    pub fn next_token(&mut self) -> Option<Token> {
-        if self.current_index >= self.tokens.len() {
-            return None;
-        }
-
-        let pptoken = &self.tokens[self.current_index];
-        self.current_index += 1;
-
-        let token_kind = self.classify_token(pptoken);
-        let span = SourceSpan {
-            start: pptoken.location,
-            end: SourceLoc::new(
-                pptoken.location.source_id(),
-                pptoken.location.offset() + pptoken.length as u32,
-            ),
-        };
-
-        let token = Token { kind: token_kind, span };
-
-        Some(token)
-    }
-
     /// Classify a preprocessor token into a lexical token
     fn classify_token(&self, pptoken: &PPToken) -> TokenKind {
         match pptoken.kind {
@@ -536,19 +510,6 @@ impl<'src> Lexer<'src> {
             // Handle punctuation tokens using the optimized match-based function
             pptoken_kind => classify_punctuation(pptoken_kind),
         }
-    }
-
-    /// Peek at the next token without consuming it
-    pub fn peek_token(&self) -> Option<TokenKind> {
-        if self.current_index >= self.tokens.len() {
-            return None;
-        }
-
-        let pptoken = &self.tokens[self.current_index];
-        Some(match self.classify_token(pptoken) {
-            TokenKind::EndOfFile => TokenKind::EndOfFile,
-            kind => kind,
-        })
     }
 
     /// Get all tokens from the stream

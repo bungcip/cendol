@@ -1,8 +1,5 @@
-// Re-export types from pp_lexer module for backward compatibility
 pub use crate::pp::pp_lexer::{PPLexer, PPToken, PPTokenFlags, PPTokenKind};
-
-// Re-export preprocessor types for backward compatibility
-pub use crate::pp::preprocessor::*;
+pub use crate::pp::preprocessor::{PPConfig, PPError, Preprocessor};
 
 mod interpreter;
 mod pp_lexer;

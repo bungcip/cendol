@@ -38,11 +38,9 @@ impl ScopeId {
 /// Scope types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScopeKind {
-    Global,
-    File,
+    // Global,
     Function,
     Block,
-    FunctionPrototype,
 }
 
 /// Symbol namespaces in C
@@ -60,7 +58,7 @@ pub struct Scope {
     pub symbols: HashMap<Symbol, SymbolEntryRef>, // Ordinary identifiers
     pub tags: HashMap<Symbol, SymbolEntryRef>,    // Struct/union/enum tags
     pub labels: HashMap<Symbol, SymbolEntryRef>,  // Goto labels
-    pub kind: ScopeKind,
+    // pub kind: ScopeKind,
     pub level: u32,
 }
 
@@ -94,14 +92,14 @@ impl SymbolTable {
             symbols: HashMap::new(),
             tags: HashMap::new(),
             labels: HashMap::new(),
-            kind: ScopeKind::Global,
+            // kind: ScopeKind::Global,
             level: 0,
         });
 
         table
     }
 
-    pub fn push_scope(&mut self, kind: ScopeKind) -> ScopeId {
+    pub fn push_scope(&mut self, _kind: ScopeKind) -> ScopeId {
         let new_scope_id = ScopeId::new(self.next_scope_id).unwrap();
         self.next_scope_id += 1;
 
@@ -121,7 +119,7 @@ impl SymbolTable {
             symbols: HashMap::new(),
             tags: HashMap::new(),
             labels: HashMap::new(),
-            kind,
+            // kind,
             level: self.scopes[self.current_scope_id.get() as usize - 1].level + 1,
         };
 
@@ -141,48 +139,6 @@ impl SymbolTable {
         self.current_scope_id = ScopeId::GLOBAL;
         self.next_scope_id = 2;
         debug!("SymbolTable: Traversal reset to GLOBAL");
-    }
-
-    pub fn push_scope_with_id(&mut self, scope_id: ScopeId, kind: ScopeKind) -> ScopeId {
-        // Update next_scope_id to ensure uniqueness
-        if scope_id.get() >= self.next_scope_id {
-            self.next_scope_id = scope_id.get() + 1;
-        }
-
-        let new_scope = Scope {
-            parent: Some(self.current_scope_id),
-            symbols: HashMap::new(),
-            tags: HashMap::new(),
-            labels: HashMap::new(),
-            kind,
-            level: self.scopes[self.current_scope_id.get() as usize - 1].level + 1,
-        };
-
-        // Ensure the scope vector is large enough
-        while self.scopes.len() < scope_id.get() as usize {
-            self.scopes.push(Scope {
-                parent: None,
-                symbols: HashMap::new(),
-                tags: HashMap::new(),
-                labels: HashMap::new(),
-                kind: ScopeKind::Global,
-                level: 0,
-            });
-        }
-
-        // Replace the scope at the given index
-        if scope_id.get() as usize <= self.scopes.len() {
-            self.scopes[scope_id.get() as usize - 1] = new_scope;
-        } else {
-            self.scopes.push(new_scope);
-        }
-
-        self.current_scope_id = scope_id;
-        debug!(
-            "SymbolTable: Pushed scope with ID. New current_scope_id: {}",
-            self.current_scope_id.get()
-        );
-        scope_id
     }
 
     pub fn pop_scope(&mut self) -> Option<ScopeId> {
@@ -243,10 +199,6 @@ impl SymbolTable {
 
     pub fn lookup_tag(&self, name: Symbol) -> Option<(SymbolEntryRef, ScopeId)> {
         self.lookup_symbol_from_ns(name, self.current_scope_id, Namespace::Tag)
-    }
-
-    pub fn lookup_symbol_from(&self, name: Symbol, start_scope: ScopeId) -> Option<(SymbolEntryRef, ScopeId)> {
-        self.lookup_symbol_from_ns(name, start_scope, Namespace::Ordinary)
     }
 
     pub fn lookup_symbol_from_ns(

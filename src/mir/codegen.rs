@@ -345,11 +345,16 @@ fn get_place_type_id(
             .get(global_id)
             .map(|g| g.type_id)
             .ok_or_else(|| format!("Global {} not found", global_id.get())),
-        Place::Deref(_operand) => {
+        Place::Deref(operand) => {
             // To get the type of a dereference, we need the type of the operand,
             // which should be a pointer. The resulting type is the pointee.
-            // This requires a way to get an operand's type, which is complex.
-            todo!("get_place_type_id for Deref is not implemented");
+            // For now, we'll try to extract the type from the operand if it's a place.
+            match operand.as_ref() {
+                Operand::Copy(place_box) | Operand::Move(place_box) => {
+                    get_place_type_id(place_box, locals, globals, types)
+                }
+                _ => Err("Cannot determine type for deref operand".to_string()),
+            }
         }
         Place::StructField(base_place, field_index) => {
             let base_type_id = get_place_type_id(base_place, locals, globals, types)?;
@@ -483,7 +488,7 @@ fn resolve_place_to_addr(
                 module,
             )?;
 
-            // Determine the size of the element
+            // Determine the size of the element by getting the type of the base place
             let base_place_type_id =
                 get_place_type_id(base_place, locals, globals, types).map_err(|e| e.to_string())?;
 

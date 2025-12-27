@@ -34,7 +34,7 @@ impl BindingPower {
     pub const CAST: Self = Self(28);
     pub const UNARY: Self = Self(30);
     pub const POSTFIX: Self = Self(32);
-    pub const PRIMARY: Self = Self(34);
+    // pub const PRIMARY: Self = Self(34);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,10 +108,7 @@ impl PrattParser {
 }
 
 /// Main expression parsing using Pratt algorithm
-pub(crate) fn parse_expression(
-    parser: &mut Parser,
-    min_binding_power: BindingPower,
-) -> Result<super::ParseExprOutput, ParseError> {
+pub(crate) fn parse_expression(parser: &mut Parser, min_binding_power: BindingPower) -> Result<NodeRef, ParseError> {
     trace!("parse_expression: min_binding_power={}", min_binding_power.0);
     let mut left = parse_prefix(parser)?;
 
@@ -183,7 +180,7 @@ pub(crate) fn parse_expression(
         };
     }
 
-    Ok(super::ParseExprOutput::Expression(left))
+    Ok(left)
 }
 
 /// Parse prefix expression
@@ -314,14 +311,7 @@ fn parse_infix(
     );
 
     // For all binary operators, parse the right operand
-    let right_node = match parser.parse_expression(min_bp)? {
-        super::ParseExprOutput::Expression(node) => node,
-        super::ParseExprOutput::Declaration(_) => {
-            return Err(ParseError::DeclarationNotAllowed {
-                span: parser.current_token_span()?,
-            });
-        }
-    };
+    let right_node = parser.parse_expression(min_bp)?;
 
     let op = match operator_token.kind {
         TokenKind::Plus => BinaryOp::Add,
@@ -509,14 +499,7 @@ pub(crate) fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, Pa
 
         parser.expect(TokenKind::Colon)?;
 
-        let result_expr = match parser.parse_expression(BindingPower(2))? {
-            super::ParseExprOutput::Expression(node) => node,
-            super::ParseExprOutput::Declaration(_) => {
-                return Err(ParseError::DeclarationNotAllowed {
-                    span: parser.current_token_span()?,
-                });
-            }
-        };
+        let result_expr = parser.parse_expression(BindingPower::COMMA)?;
 
         associations.push(GenericAssociation { type_name, result_expr });
 

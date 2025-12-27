@@ -6,6 +6,7 @@ use hashbrown::HashMap;
 use std::collections::HashSet;
 
 use crate::pp::interpreter::Interpreter;
+use crate::pp::{PPLexer, PPToken, PPTokenFlags, PPTokenKind};
 use std::path::{Path, PathBuf};
 use symbol_table::GlobalSymbol as Symbol;
 use target_lexicon::Triple as TargetInfo;
@@ -111,9 +112,6 @@ impl DirectiveKeywordTable {
     }
 }
 
-// Re-export types from pp_lexer module for backward compatibility
-pub use crate::pp::pp_lexer::{PPLexer, PPToken, PPTokenFlags, PPTokenKind};
-
 // Packed boolean flags for macro properties
 bitflags::bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -159,7 +157,9 @@ pub struct HeaderSearch {
 impl HeaderSearch {
     /// Add a system include path
     pub fn add_system_path(&mut self, path: PathBuf) {
-        self.system_path.push(SearchPath { path, is_system: true });
+        self.system_path.push(SearchPath {
+            path, /* , is_system: true */
+        });
     }
 
     /// Add a quoted include path (-iquote)
@@ -174,7 +174,9 @@ impl HeaderSearch {
 
     /// Add a framework path
     pub fn add_framework_path(&mut self, path: PathBuf) {
-        self.framework_path.push(SearchPath { path, is_system: true });
+        self.framework_path.push(SearchPath {
+            path, /* , is_system: true */
+        });
     }
 
     /// Resolve an include path to an absolute path
@@ -237,14 +239,14 @@ impl HeaderSearch {
 #[derive(Clone)]
 pub struct SearchPath {
     pub path: PathBuf,
-    pub is_system: bool,
+    // pub is_system: bool,
 }
 
 /// Include stack information
 #[derive(Clone)]
 pub struct IncludeStackInfo {
     pub file_id: SourceId,
-    pub location: SourceLoc,
+    // pub location: SourceLoc,
 }
 
 /// Configuration for preprocessor
@@ -381,7 +383,7 @@ impl<'src> Preprocessor<'src> {
                 .iter()
                 .map(|p| SearchPath {
                     path: p.clone(),
-                    is_system: true,
+                    // is_system: true,
                 })
                 .collect(),
             system_path: Vec::new(),
@@ -1243,7 +1245,7 @@ impl<'src> Preprocessor<'src> {
         // Push to include stack
         self.include_stack.push(IncludeStackInfo {
             file_id: include_source_id,
-            location: token.location,
+            // location: token.location,
         });
 
         self.expect_eod()?;

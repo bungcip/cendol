@@ -1,7 +1,5 @@
 use crate::ast::{BinaryOp, UnaryOp};
-use crate::pp::Preprocessor;
-use crate::pp::pp_lexer::{PPToken, PPTokenKind};
-use crate::pp::preprocessor::PPError;
+use crate::pp::{PPError, PPToken, PPTokenKind, Preprocessor};
 use symbol_table::GlobalSymbol as Symbol;
 
 #[derive(Debug)]

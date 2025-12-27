@@ -10,10 +10,12 @@ use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::driver::compiler::SemaOutput;
 use crate::mir::{
-    self, BinaryOp as MirBinaryOp, CallTarget, ConstValue, ConstValueId, Local, LocalId, MirBlock, MirBlockId,
-    MirBuilder, MirFunction, MirFunctionId, MirStmt, Operand, Place, Rvalue, Terminator, TypeId,
+    self, BinaryOp as MirBinaryOp, CallTarget, ConstValue, ConstValueId, Local, LocalId, MirBlockId, MirBuilder,
+    MirFunctionId, MirStmt, Operand, Place, Rvalue, Terminator, TypeId,
 };
-use crate::semantic::symbol_table::SymbolTable;
+use crate::semantic::ScopeId;
+use crate::semantic::ScopeKind;
+use crate::semantic::SymbolTable;
 use crate::source_manager::SourceSpan;
 use hashbrown::HashMap;
 use log::debug;
@@ -124,7 +126,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     fn finalize_globals(&mut self) {
         debug!("Finalizing global variables - converting tentative definitions to defined");
 
-        let global_scope_id = crate::semantic::symbol_table::ScopeId::GLOBAL;
+        let global_scope_id = ScopeId::GLOBAL;
         let global_scope = self.symbol_table.get_scope(global_scope_id);
 
         // First pass: collect tentative global variable names and their entry refs
@@ -321,8 +323,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         }
 
         // Second pass: process all statements with proper scope management
-        self.symbol_table
-            .push_scope(crate::semantic::symbol_table::ScopeKind::Block);
+        self.symbol_table.push_scope(ScopeKind::Block);
 
         for &stmt_ref in nodes {
             self.lower_node_ref(stmt_ref);
@@ -451,9 +452,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         self.current_block = Some(entry_block_id);
 
         // Push function scope for parameters and locals
-        let func_scope = self
-            .symbol_table
-            .push_scope(crate::semantic::symbol_table::ScopeKind::Function);
+        let func_scope = self.symbol_table.push_scope(ScopeKind::Function);
         debug!("Pushed function scope: {:?}", func_scope);
 
         // Process function parameters and create locals for them
@@ -2184,6 +2183,25 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 };
                 self.add_type(mir_type)
             }
+            crate::ast::TypeKind::Array { element_type, size } => {
+                // Convert the element type first
+                let element_type_id = self.lower_type_to_mir(element_type);
+                let size = match size {
+                    crate::ast::types::ArraySizeType::Constant(size) => {
+                        debug!("Array with constant size: {}", size);
+                        size
+                    }
+                    _ => {
+                        debug!("Array with non-constant size: {:?}", size);
+                        0 // For variable length arrays or incomplete arrays, use 0
+                    }
+                };
+                let mir_type = crate::mir::MirType::Array {
+                    element: element_type_id,
+                    size,
+                };
+                self.add_type(mir_type)
+            }
             crate::ast::TypeKind::Record {
                 tag, members, is_union, ..
             } => {
@@ -2243,39 +2261,14 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         self.add_type(mir_type)
     }
 
-    /// Get functions for validation
-    pub fn get_functions(&self) -> &HashMap<MirFunctionId, MirFunction> {
-        self.mir_builder.get_functions()
-    }
-
-    /// Get blocks for validation
-    pub fn get_blocks(&self) -> &HashMap<MirBlockId, MirBlock> {
-        self.mir_builder.get_blocks()
-    }
-
     /// Get locals for validation
     pub fn get_locals(&self) -> &HashMap<LocalId, Local> {
         self.mir_builder.get_locals()
     }
 
-    /// Get globals for validation
-    pub fn get_globals(&self) -> &HashMap<mir::GlobalId, mir::Global> {
-        self.mir_builder.get_globals()
-    }
-
     /// Get types for validation
     pub fn get_types(&self) -> &HashMap<TypeId, crate::mir::MirType> {
         self.mir_builder.get_types()
-    }
-
-    /// Get statements for validation
-    pub fn get_statements(&self) -> &HashMap<crate::mir::MirStmtId, crate::mir::MirStmt> {
-        self.mir_builder.get_statements()
-    }
-
-    /// Get constants for validation
-    pub fn get_constants(&self) -> &HashMap<crate::mir::ConstValueId, crate::mir::ConstValue> {
-        self.mir_builder.get_constants()
     }
 
     /// Lower a goto statement

@@ -24,7 +24,7 @@ pub mod type_specifiers;
 pub mod utils;
 
 // Re-export commonly used types
-pub use expressions::{Associativity, BindingPower, PrattParser};
+pub use expressions::BindingPower;
 
 use expressions::parse_expression;
 
@@ -74,13 +74,6 @@ impl TypeContext {
     pub fn add_typedef(&mut self, symbol: Symbol) {
         self.typedef_names.insert(symbol);
     }
-}
-
-/// Result of parsing an expression
-#[derive(Debug)]
-pub enum ParseExprOutput {
-    Expression(NodeRef),
-    Declaration(NodeRef), // For cases where we parse a declaration instead
 }
 
 #[derive(Debug, Clone)]
@@ -260,21 +253,13 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Main expression parsing using Pratt algorithm
-    pub fn parse_expression(
-        &mut self,
-        min_binding_power: expressions::BindingPower,
-    ) -> Result<ParseExprOutput, ParseError> {
+    pub fn parse_expression(&mut self, min_binding_power: expressions::BindingPower) -> Result<NodeRef, ParseError> {
         parse_expression(self, min_binding_power)
     }
 
     /// Private helper to parse an expression with a given binding power, ensuring it's not a declaration.
     fn parse_expr_bp(&mut self, min_binding_power: BindingPower) -> Result<NodeRef, ParseError> {
-        match self.parse_expression(min_binding_power)? {
-            ParseExprOutput::Expression(node) => Ok(node),
-            ParseExprOutput::Declaration(_) => Err(ParseError::DeclarationNotAllowed {
-                span: self.current_token_span()?,
-            }),
-        }
+        self.parse_expression(min_binding_power)
     }
 
     /// Parse expression with minimum binding power
@@ -298,16 +283,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Parse expression up to cast
-    pub(crate) fn parse_expr_cast(&mut self) -> Result<NodeRef, ParseError> {
+    pub fn parse_expr_cast(&mut self) -> Result<NodeRef, ParseError> {
         self.parse_expr_bp(BindingPower::CAST)
-    }
-
-    pub(crate) fn parse_declaration(&mut self) -> Result<NodeRef, ParseError> {
-        declarations::parse_declaration(self)
-    }
-
-    pub(crate) fn parse_statement(&mut self) -> Result<NodeRef, ParseError> {
-        statements::parse_statement(self)
     }
 
     /// Parse translation unit (top level)

@@ -7,7 +7,7 @@
 
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
-use crate::semantic::symbol_table::{Namespace, ScopeKind, SymbolTable};
+use crate::semantic::{Namespace, ScopeKind, SymbolTable};
 use crate::source_manager::SourceSpan;
 
 /// Context for the semantic lowering phase
@@ -967,7 +967,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             };
 
             // Add function to GLOBAL scope (not function scope)
-            let global_scope_id = crate::semantic::symbol_table::ScopeId::new(1).unwrap(); // Global scope is typically 1
+            let global_scope_id = crate::semantic::ScopeId::new(1).unwrap(); // Global scope is typically 1
 
             // Switch to global scope to add the function
             let original_scope = ctx.symbol_table.current_scope();

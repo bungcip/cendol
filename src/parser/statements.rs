@@ -357,18 +357,11 @@ fn parse_break_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 fn parse_return_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.expect(TokenKind::Return)?;
     let start_loc = token.span.start;
-    debug!("parse_return_statement: parsing return expression");
 
     let value = if parser.is_token(TokenKind::Semicolon) {
-        debug!("parse_return_statement: empty return");
         None
     } else {
-        debug!(
-            "parse_return_statement: parsing return expression with current token {:?}",
-            parser.current_token_kind()
-        );
         let expr = parser.parse_expr_min()?;
-        debug!("parse_return_statement: parsed expression successfully");
         Some(expr)
     };
 

@@ -1,17 +1,12 @@
 #![cfg(test)]
 use crate::ast::{Ast, BinaryOp, DeclSpecifier, Declarator, NodeKind, NodeRef, TypeSpecifier, UnaryOp};
-use crate::diagnostic::DiagnosticEngine;
+use crate::diagnostic::{DiagnosticEngine, ParseError};
 use crate::driver::CompilerDriver;
 use crate::driver::cli::CompileConfig;
 use crate::driver::compiler::CompilePhase;
-use crate::lang_options::LangOptions;
-use crate::lexer::Lexer;
-use crate::parser::Parser;
 use crate::parser::statements::parse_compound_statement;
-use crate::pp::Preprocessor;
-use crate::source_manager::SourceManager;
+use crate::parser::{Parser, declarations, statements};
 use serde::Serialize;
-use target_lexicon::Triple;
 
 /// Resolved AST node kind for testing - replaces NodeRef with actual content
 #[derive(Debug, Serialize)]
@@ -434,14 +429,12 @@ fn setup_expr(source: &str) -> ResolvedNodeKind {
         parser.parse_expression(crate::parser::BindingPower::MIN)
     });
 
-    match expr_result {
-        Ok(crate::parser::ParseExprOutput::Expression(node_ref)) => resolve_node(&ast, node_ref),
-        _ => panic!("Expected expression"),
-    }
+    let node_ref = expr_result.unwrap();
+    resolve_node(&ast, node_ref)
 }
 
 fn setup_declaration(source: &str) -> ResolvedNodeKind {
-    let (ast, decl_result) = setup_source(source, |parser| parser.parse_declaration());
+    let (ast, decl_result) = setup_source(source, |mut parser| declarations::parse_declaration(&mut parser));
 
     match decl_result {
         Ok(node_ref) => resolve_node(&ast, node_ref),
@@ -449,40 +442,16 @@ fn setup_declaration(source: &str) -> ResolvedNodeKind {
     }
 }
 
-fn parse_declaration_with_errors(source: &str) -> Result<ResolvedNodeKind, crate::diagnostic::ParseError> {
-    let mut sm = SourceManager::new();
-    let mut diag = DiagnosticEngine::new();
-    let lang_opts = LangOptions::c11();
-    let target_info = Triple::unknown();
-    let source_id = sm.add_buffer(source.as_bytes().to_vec(), "test.c");
-
-    let mut pp = Preprocessor::new(
-        &mut sm,
-        &mut diag,
-        lang_opts.clone(),
-        target_info.clone(),
-        &crate::pp::PPConfig {
-            max_include_depth: 200,
-            ..Default::default()
-        },
-    );
-    let pp_tokens = pp.process(source_id, &Default::default()).unwrap();
-
-    let mut lexer = Lexer::new(&pp_tokens);
-    let tokens = lexer.tokenize_all();
-
-    let mut ast = Ast::new();
-    let mut parser = Parser::new(&tokens, &mut ast, &mut diag);
-    let result = parser.parse_declaration();
-
-    match result {
-        Ok(node_ref) => Ok(resolve_node(&ast, node_ref)),
-        Err(e) => Err(e),
+fn setup_declaration_with_errors(source: &str) -> ParseError {
+    let (_, decl_result) = setup_source(source, |mut parser| declarations::parse_declaration(&mut parser));
+    match decl_result {
+        Ok(_) => panic!("Expected parse error"),
+        Err(e) => e,
     }
 }
 
 fn setup_statement(source: &str) -> ResolvedNodeKind {
-    let (ast, stmt_result) = setup_source(source, |parser| parser.parse_statement());
+    let (ast, stmt_result) = setup_source(source, |mut parser| statements::parse_statement(&mut parser));
 
     match stmt_result {
         Ok(node_ref) => resolve_node(&ast, node_ref),
@@ -503,9 +472,7 @@ fn setup_compound(source: &str) -> ResolvedNodeKind {
 
 #[test]
 fn test_function_returning_array_rejected() {
-    let result = parse_declaration_with_errors("int f(int)[3];");
-    assert!(result.is_err(), "Parser should reject function returning array");
-    let err = result.unwrap_err();
+    let err = setup_declaration_with_errors("int f(int)[3];");
     assert!(matches!(
         err,
         crate::diagnostic::ParseError::DeclarationNotAllowed { .. }
@@ -1008,20 +975,17 @@ fn test_insane_parentheses_on_pointer_to_array_to_function() {
 
 #[test]
 fn test_array_of_functions_rejected() {
-    let result = parse_declaration_with_errors("int f[3](int);");
-    assert!(result.is_err(), "Parser should reject array of functions");
+    let _ = setup_declaration_with_errors("int f[3](int);");
 }
 
 #[test]
 fn test_function_returning_function_rejected() {
-    let result = parse_declaration_with_errors("int f(int)(float);");
-    assert!(result.is_err(), "Parser should reject function returning function");
+    let _ = setup_declaration_with_errors("int f(int)(float);");
 }
 
 #[test]
 fn test_ellipsis_not_last_parameter_rejected() {
-    let result = parse_declaration_with_errors("int f(int ..., int);");
-    assert!(result.is_err(), "Expected parse error for ellipsis not last parameter");
+    let _ = setup_declaration_with_errors("int f(int ..., int);");
 }
 
 #[test]

@@ -20,5 +20,4 @@ pub mod tests_mir;
 
 // Re-export key types for public API
 pub use analyzer::SemanticAnalyzer;
-pub use lower::{DeclSpecInfo, LowerCtx};
-pub use symbol_table::{Scope, ScopeId, ScopeKind, SymbolTable};
+pub use symbol_table::{Namespace, ScopeId, ScopeKind, SymbolTable};

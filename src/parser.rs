@@ -122,10 +122,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         self.try_current_token().ok_or_else(|| {
             let prev = self.tokens.get(self.current_idx - 1);
             let span = match prev {
-                Some(token) => token.location,
+                Some(token) => token.span,
                 None => SourceSpan::empty(),
             };
-            ParseError::UnexpectedEof { location: span }
+            ParseError::UnexpectedEof { span }
         })
     }
 
@@ -136,7 +136,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Get the current token location
     fn current_token_span(&self) -> Result<SourceSpan, ParseError> {
-        Ok(self.current_token()?.location)
+        Ok(self.current_token()?.span)
     }
 
     /// Get the location of the previous token, or an empty span if not available.
@@ -144,7 +144,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         if self.current_idx > 0 {
             self.tokens
                 .get(self.current_idx - 1)
-                .map_or(SourceSpan::empty(), |token| token.location)
+                .map_or(SourceSpan::empty(), |token| token.span)
         } else {
             SourceSpan::empty()
         }
@@ -185,7 +185,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             Err(ParseError::UnexpectedToken {
                 expected_tokens: format!("{:?}", expected),
                 found: token.kind,
-                location: token.location,
+                span: token.span,
             })
         }
     }
@@ -272,7 +272,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         match self.parse_expression(min_binding_power)? {
             ParseExprOutput::Expression(node) => Ok(node),
             ParseExprOutput::Declaration(_) => Err(ParseError::DeclarationNotAllowed {
-                location: self.current_token_span()?,
+                span: self.current_token_span()?,
             }),
         }
     }
@@ -403,12 +403,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         let token = self.current_token()?;
         if let TokenKind::Identifier(symbol) = token.kind {
             self.advance();
-            Ok((symbol, token.location))
+            Ok((symbol, token.span))
         } else {
             Err(ParseError::UnexpectedToken {
                 expected_tokens: "identifier".to_string(),
                 found: token.kind,
-                location: token.location,
+                span: token.span,
             })
         }
     }

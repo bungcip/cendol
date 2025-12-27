@@ -269,7 +269,7 @@ impl CompilerDriver {
                 self.diagnostics.report_diagnostic(Diagnostic {
                     level: DiagnosticLevel::Error,
                     message: e.to_string(),
-                    location: SourceSpan::empty(),
+                    span: SourceSpan::empty(),
                     code: None,
                     hints: vec![],
                     related: vec![],

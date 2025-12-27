@@ -223,11 +223,11 @@ impl TokenKind {
     }
 }
 
-/// Token with source location for the parser
+/// Token with source span for the parser
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Token {
     pub kind: TokenKind,
-    pub location: SourceSpan,
+    pub span: SourceSpan,
 }
 
 /// Classify a preprocessor punctuation token into a lexical token.
@@ -499,7 +499,7 @@ impl<'src> Lexer<'src> {
         self.current_index += 1;
 
         let token_kind = self.classify_token(pptoken);
-        let location = SourceSpan {
+        let span = SourceSpan {
             start: pptoken.location,
             end: SourceLoc::new(
                 pptoken.location.source_id(),
@@ -507,10 +507,7 @@ impl<'src> Lexer<'src> {
             ),
         };
 
-        let token = Token {
-            kind: token_kind,
-            location,
-        };
+        let token = Token { kind: token_kind, span };
 
         Some(token)
     }
@@ -563,7 +560,7 @@ impl<'src> Lexer<'src> {
             // next_token logic inlined and adapted
             let mut token = Token {
                 kind: self.classify_token(pptoken),
-                location: SourceSpan {
+                span: SourceSpan {
                     start: pptoken.location,
                     end: SourceLoc::new(
                         pptoken.location.source_id(),
@@ -588,7 +585,7 @@ impl<'src> Lexer<'src> {
 
                     // Collect all adjacent string literal symbols first.
                     let mut symbols_to_concat = vec![symbol];
-                    let mut end_location = token.location.end;
+                    let mut end_location = token.span.end;
 
                     while let Some(next_pptoken) = current_token_iter.peek() {
                         if let PPTokenKind::StringLiteral(next_symbol) = next_pptoken.kind {
@@ -619,7 +616,7 @@ impl<'src> Lexer<'src> {
 
                     // Create a new symbol with the concatenated content and update the token.
                     token.kind = TokenKind::StringLiteral(Symbol::new(format!("\"{}\"", content)));
-                    token.location.end = end_location;
+                    token.span.end = end_location;
                 }
                 // If the next token is not a string literal, we do nothing. The original,
                 // un-concatenated StringLiteral token is used, avoiding any string allocation.

@@ -20,7 +20,7 @@ pub(crate) fn parse_type_specifier_with_context(
     in_struct_member: bool,
 ) -> Result<TypeSpecifier, ParseError> {
     let token = parser.try_current_token().ok_or_else(|| ParseError::UnexpectedEof {
-        location: parser.previous_token_span(),
+        span: parser.previous_token_span(),
     })?;
 
     match token.kind {
@@ -115,7 +115,7 @@ pub(crate) fn parse_type_specifier_with_context(
             Err(ParseError::UnexpectedToken {
                 expected_tokens: expected.to_string(),
                 found: token.kind,
-                location: token.location,
+                span: token.span,
             })
         }
     }

@@ -50,8 +50,8 @@ mod tests {
             diagnostics
                 .iter()
                 .map(|diag| format!(
-                    "Level: {:?}\nMessage: {}\nLocation: {}",
-                    diag.level, diag.message, diag.location
+                    "Level: {:?}\nMessage: {}\nSpan: {}",
+                    diag.level, diag.message, diag.span
                 ))
                 .collect::<Vec<_>>()
                 .join("\n\n")
@@ -755,11 +755,11 @@ mod tests {
 
         Level: Error
         Message: redefinition of 'x'
-        Location: SourceSpan(source_id=SourceId(2), start=36, end=46)
+        Span: SourceSpan(source_id=SourceId(2), start=36, end=46)
 
         Level: Note
         Message: previous definition is here
-        Location: SourceSpan(source_id=SourceId(2), start=13, end=23)
+        Span: SourceSpan(source_id=SourceId(2), start=13, end=23)
         ");
     }
 }

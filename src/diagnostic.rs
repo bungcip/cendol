@@ -17,7 +17,7 @@ pub enum DiagnosticLevel {
 pub struct Diagnostic {
     pub level: DiagnosticLevel,
     pub message: String,
-    pub location: SourceSpan,
+    pub span: SourceSpan,
     pub code: Option<String>,     // Error code like "E001"
     pub hints: Vec<String>,       // Suggestions for fixing
     pub related: Vec<SourceSpan>, // Related locations
@@ -30,34 +30,34 @@ pub enum ParseError {
     UnexpectedToken {
         expected_tokens: String,
         found: TokenKind,
-        location: SourceSpan,
+        span: SourceSpan,
     },
 
     #[error("Unexpected End of File")]
-    UnexpectedEof { location: SourceSpan },
+    UnexpectedEof { span: SourceSpan },
 
     #[error("Invalid unary operator")]
-    InvalidUnaryOperator { location: SourceSpan },
+    InvalidUnaryOperator { span: SourceSpan },
 
     #[error("Declaration not allowed in this context")]
-    DeclarationNotAllowed { location: SourceSpan },
+    DeclarationNotAllowed { span: SourceSpan },
 
     #[error("Parser exceeded maximum iteration limit - possible infinite loop")]
-    InfiniteLoop { location: SourceSpan },
+    InfiniteLoop { span: SourceSpan },
 
     #[error("Invalid numeric constant: {text}")]
-    InvalidNumericConstant { text: String, location: SourceSpan },
+    InvalidNumericConstant { text: String, span: SourceSpan },
 }
 
 impl ParseError {
-    pub fn location(&self) -> SourceSpan {
+    pub fn span(&self) -> SourceSpan {
         match self {
-            ParseError::UnexpectedToken { location, .. } => *location,
-            ParseError::UnexpectedEof { location } => *location,
-            ParseError::InvalidNumericConstant { location, .. } => *location,
-            ParseError::InvalidUnaryOperator { location } => *location,
-            ParseError::DeclarationNotAllowed { location } => *location,
-            ParseError::InfiniteLoop { location } => *location,
+            ParseError::UnexpectedToken { span, .. } => *span,
+            ParseError::UnexpectedEof { span } => *span,
+            ParseError::InvalidNumericConstant { span, .. } => *span,
+            ParseError::InvalidUnaryOperator { span } => *span,
+            ParseError::DeclarationNotAllowed { span } => *span,
+            ParseError::InfiniteLoop { span } => *span,
         }
     }
 }
@@ -93,7 +93,7 @@ impl DiagnosticEngine {
         }
     }
 
-    fn _report(&mut self, level: DiagnosticLevel, message: String, location: SourceSpan) {
+    fn _report(&mut self, level: DiagnosticLevel, message: String, span: SourceSpan) {
         if level == DiagnosticLevel::Warning && self.disable_all_warnings {
             return;
         }
@@ -107,15 +107,15 @@ impl DiagnosticEngine {
         self.diagnostics.push(Diagnostic {
             level: final_level,
             message,
-            location,
+            span,
             code: None,
             hints: Vec::new(),
             related: Vec::new(),
         });
     }
 
-    pub fn report_note(&mut self, message: String, location: SourceSpan) {
-        self._report(DiagnosticLevel::Note, message, location);
+    pub fn report_note(&mut self, message: String, span: SourceSpan) {
+        self._report(DiagnosticLevel::Note, message, span);
     }
 
     pub fn report_diagnostic(&mut self, diagnostic: Diagnostic) {
@@ -146,7 +146,7 @@ impl IntoDiagnostic for ParseError {
         vec![Diagnostic {
             level: DiagnosticLevel::Error,
             message: self.to_string(),
-            location: self.location(),
+            span: self.span(),
             code: None,
             hints: Vec::new(),
             related: Vec::new(),
@@ -159,7 +159,7 @@ impl IntoDiagnostic for SemanticError {
         let main_diagnostic = Diagnostic {
             level: DiagnosticLevel::Error,
             message: self.to_string(),
-            location: self.location(),
+            span: self.span(),
             code: None,
             hints: Vec::new(),
             related: Vec::new(),
@@ -171,7 +171,7 @@ impl IntoDiagnostic for SemanticError {
                 Diagnostic {
                     level: DiagnosticLevel::Note,
                     message: "previous definition is here".to_string(),
-                    location: *first_def,
+                    span: *first_def,
                     code: None,
                     hints: Vec::new(),
                     related: Vec::new(),
@@ -188,7 +188,7 @@ impl IntoDiagnostic for SemanticWarning {
         let diagnostics = vec![Diagnostic {
             level: DiagnosticLevel::Warning,
             message: self.to_string(),
-            location: self.location(),
+            span: self.span(),
             code: None,
             hints: Vec::new(),
             related: Vec::new(),
@@ -202,7 +202,7 @@ impl IntoDiagnostic for SemanticWarning {
 #[derive(Debug, thiserror::Error)]
 pub enum SemanticError {
     #[error("Undeclared identifier '{name}'")]
-    UndeclaredIdentifier { name: Symbol, location: SourceSpan },
+    UndeclaredIdentifier { name: Symbol, span: SourceSpan },
     #[error("redefinition of '{name}'")]
     Redefinition {
         name: Symbol,
@@ -213,35 +213,35 @@ pub enum SemanticError {
     TypeMismatch {
         expected: String,
         found: String,
-        location: SourceSpan,
+        span: SourceSpan,
     },
     #[error("Expression is not assignable (not an lvalue)")]
-    NotAnLvalue { location: SourceSpan },
+    NotAnLvalue { span: SourceSpan },
     #[error("Invalid operands for binary operation: have '{left_ty}' and '{right_ty}'")]
     InvalidBinaryOperands {
         left_ty: String,
         right_ty: String,
-        location: SourceSpan,
+        span: SourceSpan,
     },
     #[error("Initializer element is not a compile-time constant")]
-    NonConstantInitializer { location: SourceSpan },
+    NonConstantInitializer { span: SourceSpan },
     #[error("Invalid use of void type in expression")]
-    InvalidUseOfVoid { location: SourceSpan },
+    InvalidUseOfVoid { span: SourceSpan },
     #[error("Unsupported feature: {feature}")]
-    UnsupportedFeature { feature: String, location: SourceSpan },
+    UnsupportedFeature { feature: String, span: SourceSpan },
 }
 
 impl SemanticError {
-    pub fn location(&self) -> SourceSpan {
+    pub fn span(&self) -> SourceSpan {
         match self {
-            SemanticError::UndeclaredIdentifier { location, .. } => *location,
+            SemanticError::UndeclaredIdentifier { span, .. } => *span,
             SemanticError::Redefinition { second_def, .. } => *second_def,
-            SemanticError::TypeMismatch { location, .. } => *location,
-            SemanticError::NotAnLvalue { location } => *location,
-            SemanticError::InvalidBinaryOperands { location, .. } => *location,
-            SemanticError::NonConstantInitializer { location } => *location,
-            SemanticError::InvalidUseOfVoid { location } => *location,
-            SemanticError::UnsupportedFeature { location, .. } => *location,
+            SemanticError::TypeMismatch { span, .. } => *span,
+            SemanticError::NotAnLvalue { span } => *span,
+            SemanticError::InvalidBinaryOperands { span, .. } => *span,
+            SemanticError::NonConstantInitializer { span } => *span,
+            SemanticError::InvalidUseOfVoid { span } => *span,
+            SemanticError::UnsupportedFeature { span, .. } => *span,
         }
     }
 }
@@ -250,23 +250,23 @@ impl SemanticError {
 #[derive(Debug, thiserror::Error)]
 pub enum SemanticWarning {
     #[error("Unused declaration '{name}'")]
-    UnusedDeclaration { name: Symbol, location: SourceSpan },
+    UnusedDeclaration { name: Symbol, span: SourceSpan },
     #[error("Implicit conversion from {from_type} to {to_type}")]
     ImplicitConversion {
         from_type: String,
         to_type: String,
-        location: SourceSpan,
+        span: SourceSpan,
     },
     #[error("Unreachable code")]
-    UnreachableCode { location: SourceSpan },
+    UnreachableCode { span: SourceSpan },
 }
 
 impl SemanticWarning {
-    pub fn location(&self) -> SourceSpan {
+    pub fn span(&self) -> SourceSpan {
         match self {
-            SemanticWarning::UnusedDeclaration { location, .. } => *location,
-            SemanticWarning::ImplicitConversion { location, .. } => *location,
-            SemanticWarning::UnreachableCode { location } => *location,
+            SemanticWarning::UnusedDeclaration { span, .. } => *span,
+            SemanticWarning::ImplicitConversion { span, .. } => *span,
+            SemanticWarning::UnreachableCode { span } => *span,
         }
     }
 }
@@ -327,12 +327,12 @@ impl ErrorFormatter {
 
     fn format_location(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
         let path = source_manager
-            .get_file_info(diag.location.source_id())
+            .get_file_info(diag.span.source_id())
             .map(|fi| fi.path.to_str().unwrap_or("<unknown>"))
             .unwrap_or("<unknown>");
 
         // Get line and column information
-        let line_col = source_manager.get_line_column(diag.location.start);
+        let line_col = source_manager.get_line_column(diag.span.start);
         if let Some((line, col)) = line_col {
             format!("{}:{}:{}", path, line, col)
         } else {
@@ -353,10 +353,10 @@ impl ErrorFormatter {
         diag: &'a Diagnostic,
         source_manager: &'a SourceManager,
     ) -> Snippet<'a, annotate_snippets::Annotation<'a>> {
-        let source_buffer = source_manager.get_buffer(diag.location.source_id());
+        let source_buffer = source_manager.get_buffer(diag.span.source_id());
         let source = std::str::from_utf8(source_buffer).unwrap_or("");
         let path = source_manager
-            .get_file_info(diag.location.source_id())
+            .get_file_info(diag.span.source_id())
             .map(|fi| fi.path.to_str().unwrap_or("<unknown>"))
             .unwrap_or("<unknown>");
 
@@ -364,9 +364,8 @@ impl ErrorFormatter {
 
         let annotation_kind = AnnotationKind::Primary;
 
-        snippet = snippet.annotation(
-            annotation_kind.span(diag.location.start.offset() as usize..diag.location.end.offset() as usize),
-        );
+        snippet = snippet
+            .annotation(annotation_kind.span(diag.span.start.offset() as usize..diag.span.end.offset() as usize));
 
         snippet
     }

@@ -11,7 +11,7 @@ use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::driver::compiler::SemaOutput;
 use crate::mir::{
     self, BinaryOp as MirBinaryOp, CallTarget, ConstValue, ConstValueId, Local, LocalId, MirBlock, MirBlockId,
-    MirBuilder, MirFunction, MirFunctionId, MirModule, MirStmt, Operand, Place, Rvalue, Terminator, TypeId,
+    MirBuilder, MirFunction, MirFunctionId, MirStmt, Operand, Place, Rvalue, Terminator, TypeId,
 };
 use crate::semantic::symbol_table::SymbolTable;
 use crate::source_manager::SourceSpan;
@@ -52,30 +52,6 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             label_map: HashMap::new(),
             has_errors: false,
         }
-    }
-
-    /// Main entry point - analyze AST and produce MIR module
-    pub fn lower_module(&mut self) -> MirModule {
-        debug!("Starting semantic analysis and MIR construction");
-
-        // Check if we have a root node to start traversal from
-        let Some(root_node_ref) = self.ast.root else {
-            debug!("No root node found, skipping semantic analysis");
-            return self.mir_builder.finalize_module();
-        };
-
-        // Reset symbol table traversal to re-enter scopes in the same order
-        self.symbol_table.reset_traversal();
-
-        // Process the entire AST starting from root
-        self.lower_node_ref(root_node_ref);
-
-        debug!("Semantic analysis complete");
-
-        // Finalize global variables - convert tentative definitions to defined with implicit zero-initialization
-        self.finalize_globals();
-
-        self.mir_builder.finalize_module()
     }
 
     /// Lower module and return complete MIR data for testing
@@ -437,7 +413,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     }
 
     /// Lower a function semantic node
-    fn lower_function(&mut self, function_data: &FunctionData, location: SourceSpan) {
+    fn lower_function(&mut self, function_data: &FunctionData, span: SourceSpan) {
         debug!("Lowering function semantic node");
 
         // Get function name from symbol table entry
@@ -483,7 +459,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         // Process function parameters and create locals for them
         // Skip parameters for main function
         if func_name.as_str() != "main" {
-            self.lower_semantic_function_parameters(function_data, location);
+            self.lower_semantic_function_parameters(function_data, span);
         } else {
             debug!("Skipping parameters for main function");
         }
@@ -498,18 +474,18 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     }
 
     /// Lower semantic function parameters from FunctionData
-    fn lower_semantic_function_parameters(&mut self, function_data: &FunctionData, location: SourceSpan) {
+    fn lower_semantic_function_parameters(&mut self, function_data: &FunctionData, span: SourceSpan) {
         debug!("Lowering semantic function parameters");
 
         debug!("Found {} semantic function parameters", function_data.params.len());
 
         for param in &function_data.params {
-            self.lower_semantic_function_parameter(param, location);
+            self.lower_semantic_function_parameter(param, span);
         }
     }
 
     /// Lower a single semantic function parameter
-    fn lower_semantic_function_parameter(&mut self, param: &ParamDecl, location: SourceSpan) {
+    fn lower_semantic_function_parameter(&mut self, param: &ParamDecl, span: SourceSpan) {
         debug!("Lowering semantic function parameter");
 
         // Get parameter information from the semantic data
@@ -531,7 +507,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 self.report_error(SemanticError::Redefinition {
                     name: param_name,
                     first_def: existing.def_span,
-                    second_def: location,
+                    second_def: span,
                 });
                 return;
             }
@@ -562,7 +538,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             type_info: param_type,
             storage_class: None,
             scope_id: self.symbol_table.current_scope().get(),
-            def_span: location,
+            def_span: span,
             def_state: DefinitionState::Defined,
             is_referenced: false,
             is_completed: true,
@@ -573,13 +549,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     }
 
     /// Second pass: Process an initializer and emit assignment
-    fn process_initializer(
-        &mut self,
-        initializer: &Initializer,
-        local_id: LocalId,
-        var_name: &str,
-        location: SourceSpan,
-    ) {
+    fn process_initializer(&mut self, initializer: &Initializer, local_id: LocalId, var_name: &str, span: SourceSpan) {
         debug!("Processing initializer for variable '{}'", var_name);
 
         match initializer {
@@ -588,11 +558,11 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 let init_operand = self.lower_expression(*expr_ref);
 
                 // Emit assignment: local = initializer
-                self.emit_assignment(Place::Local(local_id), init_operand, location);
+                self.emit_assignment(Place::Local(local_id), init_operand, span);
             }
             Initializer::List(designated_initializers) => {
                 // Process designated initializers (both positional and named)
-                self.process_designated_initializers(designated_initializers, local_id, var_name, location);
+                self.process_designated_initializers(designated_initializers, local_id, var_name, span);
             }
         }
     }
@@ -603,7 +573,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         designated_initializers: &[DesignatedInitializer],
         local_id: LocalId,
         var_name: &str,
-        location: SourceSpan,
+        span: SourceSpan,
     ) {
         debug!(
             "Processing {} designated initializers for variable '{}'",
@@ -624,13 +594,13 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                     local_id,
                     var_name,
                     current_index,
-                    location,
+                    span,
                 );
                 current_index += 1;
             } else {
                 // This is a designated initializer with explicit field/index
                 // Process named designated initializer
-                self.process_named_designated_initializer(designated_init, local_id, var_name, location);
+                self.process_named_designated_initializer(designated_init, local_id, var_name, span);
             }
         }
     }
@@ -641,7 +611,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         designated_init: &DesignatedInitializer,
         local_id: LocalId,
         var_name: &str,
-        location: SourceSpan,
+        span: SourceSpan,
     ) {
         debug!("Processing named designated initializer for variable '{}'", var_name);
 
@@ -678,7 +648,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                         );
                         self.report_error(SemanticError::UndeclaredIdentifier {
                             name: *field_name,
-                            location,
+                            span,
                         });
                         return;
                     }
@@ -697,7 +667,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                     // GNU extension: range designator [start ... end]
                     self.report_error(SemanticError::UnsupportedFeature {
                         feature: "GNU array range designator".to_string(),
-                        location,
+                        span,
                     });
                     return;
                 }
@@ -711,11 +681,11 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 let init_operand = self.lower_expression(*expr_ref);
 
                 // Emit assignment to the designated field: field = initializer
-                self.emit_assignment(current_place, init_operand, location);
+                self.emit_assignment(current_place, init_operand, span);
             }
             Initializer::List(_nested_inits) => {
                 // Nested compound initializer - for now, just report as unsupported
-                self.report_error(SemanticError::NonConstantInitializer { location });
+                self.report_error(SemanticError::NonConstantInitializer { span });
             }
         }
     }
@@ -727,7 +697,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         local_id: LocalId,
         var_name: &str,
         index: usize,
-        location: SourceSpan,
+        span: SourceSpan,
     ) {
         debug!(
             "Processing positional initializer {} for variable '{}'",
@@ -747,19 +717,19 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
 
                 // Emit assignment to temporary: temp = initializer
-                self.emit_assignment(Place::Local(temp_local_id), init_operand, location);
+                self.emit_assignment(Place::Local(temp_local_id), init_operand, span);
 
                 // TODO: Emit assignment to the appropriate struct member or array element
                 // For now, just assign to the main local
                 self.emit_assignment(
                     Place::Local(local_id),
                     Operand::Copy(Box::new(Place::Local(temp_local_id))),
-                    location,
+                    span,
                 );
             }
             Initializer::List(_) => {
                 // Nested compound initializer - for now, just report as unsupported
-                self.report_error(SemanticError::NonConstantInitializer { location });
+                self.report_error(SemanticError::NonConstantInitializer { span });
             }
         }
     }
@@ -770,7 +740,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         initializer: &Initializer,
         var_name: Symbol,
         _var_type_id: TypeId,
-        location: SourceSpan,
+        span: SourceSpan,
     ) -> Option<ConstValueId> {
         debug!("Processing global compound initializer for variable '{}'", var_name);
 
@@ -798,7 +768,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                         // Nested designation (e.g., .a.b = 1) is not supported for globals yet
 
                         if designated_init.designation.len() > 1 {
-                            self.report_error(SemanticError::NonConstantInitializer { location });
+                            self.report_error(SemanticError::NonConstantInitializer { span });
                             return None;
                         }
 
@@ -809,16 +779,16 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                                     current_index = index + 1;
                                     index
                                 } else {
-                                    self.report_error(SemanticError::UndeclaredIdentifier { name: *name, location });
+                                    self.report_error(SemanticError::UndeclaredIdentifier { name: *name, span });
                                     return None;
                                 }
                             }
                             Designator::ArrayIndex(_) => {
-                                self.report_error(SemanticError::NonConstantInitializer { location });
+                                self.report_error(SemanticError::NonConstantInitializer { span });
                                 return None;
                             }
                             Designator::GnuArrayRange(_, _) => {
-                                self.report_error(SemanticError::NonConstantInitializer { location });
+                                self.report_error(SemanticError::NonConstantInitializer { span });
                                 return None;
                             }
                         }
@@ -847,13 +817,13 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                                     let const_id = self.create_constant(const_val);
                                     field_values_map.insert(target_index, const_id);
                                 } else {
-                                    self.report_error(SemanticError::NonConstantInitializer { location });
+                                    self.report_error(SemanticError::NonConstantInitializer { span });
                                     return None;
                                 }
                             }
                             _ => {
                                 // Non-constant expression in global initializer - report error
-                                self.report_error(SemanticError::NonConstantInitializer { location });
+                                self.report_error(SemanticError::NonConstantInitializer { span });
                                 return None;
                             }
                         }
@@ -868,7 +838,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                                 // If it's an array, use the element type
                                 element_type_id
                             } else {
-                                self.report_error(SemanticError::NonConstantInitializer { location });
+                                self.report_error(SemanticError::NonConstantInitializer { span });
                                 return None;
                             };
 
@@ -876,7 +846,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                             &designated_init.initializer,
                             var_name,
                             field_type_id,
-                            location,
+                            span,
                         ) {
                             debug!(
                                 "Global compound initializer: field {} = nested constant {:?}",
@@ -913,7 +883,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     }
 
     /// Lower a variable declaration (from semantic AST)
-    fn lower_var_declaration(&mut self, var_decl: &VarDeclData, location: SourceSpan) {
+    fn lower_var_declaration(&mut self, var_decl: &VarDeclData, span: SourceSpan) {
         debug!("Lowering semantic var declaration for '{}'", var_decl.name);
 
         // Check for redeclaration
@@ -928,7 +898,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 self.report_error(SemanticError::Redefinition {
                     name: var_decl.name,
                     first_def: existing.def_span,
-                    second_def: location,
+                    second_def: span,
                 });
                 return;
             }
@@ -987,7 +957,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                         _ => {
                             // For compound initializers in global variables, we need to process them properly
                             if let Some(struct_const_id) =
-                                self.process_global_compound_initializer(init, var_decl.name, mir_type_id, location)
+                                self.process_global_compound_initializer(init, var_decl.name, mir_type_id, span)
                             {
                                 initial_value_id = Some(struct_const_id);
                             }
@@ -1021,7 +991,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 type_info: var_decl.ty,
                 storage_class: var_decl.storage,
                 scope_id: self.symbol_table.current_scope().get(),
-                def_span: location,
+                def_span: span,
                 def_state,
                 is_referenced: false,
                 is_completed: true,
@@ -1051,14 +1021,14 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                         self.report_error(SemanticError::Redefinition {
                             name: var_decl.name,
                             first_def: existing.def_span,
-                            second_def: location,
+                            second_def: span,
                         });
                     } else {
                         // This shouldn't happen, but provide a fallback error
                         self.report_error(SemanticError::Redefinition {
                             name: var_decl.name,
-                            first_def: location,
-                            second_def: location,
+                            first_def: span,
+                            second_def: span,
                         });
                     }
                     return;
@@ -1100,7 +1070,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                     type_info: var_decl.ty,
                     storage_class: var_decl.storage,
                     scope_id: self.symbol_table.current_scope().get(),
-                    def_span: location,
+                    def_span: span,
                     def_state,
                     is_referenced: false,
                     is_completed: true,
@@ -1113,7 +1083,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
             // Process initializer if present
             if let Some(initializer) = &var_decl.init {
-                self.process_initializer(initializer, local_id, &var_decl.name.to_string(), location);
+                self.process_initializer(initializer, local_id, &var_decl.name.to_string(), span);
             }
 
             debug!("Created semantic local '{}' with id {:?}", var_decl.name, local_id);
@@ -1121,7 +1091,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     }
 
     /// Lower a typedef declaration
-    fn lower_typedef_declaration(&mut self, typedef_decl: &TypedefDeclData, location: SourceSpan) {
+    fn lower_typedef_declaration(&mut self, typedef_decl: &TypedefDeclData, span: SourceSpan) {
         // Check if typedef is already in symbol table (added during semantic lowering)
         if let Some((existing_entry, _)) = self.symbol_table.lookup_symbol(typedef_decl.name) {
             let existing = self.symbol_table.get_symbol_entry(existing_entry);
@@ -1137,7 +1107,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 self.report_error(SemanticError::Redefinition {
                     name: typedef_decl.name,
                     first_def: existing.def_span,
-                    second_def: location,
+                    second_def: span,
                 });
                 return;
             }
@@ -1152,7 +1122,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             type_info: typedef_decl.ty, // Typedef points to the aliased type
             storage_class: Some(StorageClass::Typedef),
             scope_id: self.symbol_table.current_scope().get(),
-            def_span: location,
+            def_span: span,
             def_state: DefinitionState::Defined,
             is_referenced: false,
             is_completed: true,
@@ -1162,7 +1132,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     }
 
     /// Lower a record declaration (struct/union)
-    fn lower_record_declaration(&mut self, record_decl: &RecordDeclData, _location: SourceSpan) {
+    fn lower_record_declaration(&mut self, record_decl: &RecordDeclData, _span: SourceSpan) {
         debug!(
             "Lowering record declaration for '{}'",
             record_decl.name.map_or("<anonymous>".to_string(), |n| n.to_string())
@@ -1325,7 +1295,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
                 self.report_error(SemanticError::UndeclaredIdentifier {
                     name,
-                    location: self.ast.get_node(expr_ref).span,
+                    span: self.ast.get_node(expr_ref).span,
                 });
 
                 // Return a dummy operand to allow compilation to continue
@@ -1451,7 +1421,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                             Operand::AddressOf(Box::new(place))
                         } else {
                             // For other cases, return a dummy operand
-                            self.report_error(SemanticError::NotAnLvalue { location: node_span });
+                            self.report_error(SemanticError::NotAnLvalue { span: node_span });
                             let error_const = self.create_constant(ConstValue::Int(0));
                             Operand::Constant(error_const)
                         }
@@ -1511,7 +1481,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                             Operand::Copy(place_box) => *place_box.clone(),
                             _ => {
                                 // Operand is not a valid lvalue - report error
-                                self.report_error(SemanticError::NotAnLvalue { location: node_span });
+                                self.report_error(SemanticError::NotAnLvalue { span: node_span });
                                 let error_const = self.create_constant(ConstValue::Int(0));
                                 return Operand::Constant(error_const);
                             }
@@ -1751,7 +1721,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                     let node_span = self.ast.get_node(expr_ref).span;
                     self.report_error(SemanticError::UndeclaredIdentifier {
                         name: field_name,
-                        location: node_span,
+                        span: node_span,
                     });
 
                     let error_const = self.create_constant(ConstValue::Int(0));
@@ -1817,7 +1787,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                     let node_span = self.ast.get_node(expr_ref).span;
                     self.report_error(SemanticError::UndeclaredIdentifier {
                         name: field_name,
-                        location: node_span,
+                        span: node_span,
                     });
 
                     let error_const = self.create_constant(ConstValue::Int(0));
@@ -1836,7 +1806,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     }
 
     /// Lower a return statement
-    fn lower_return_statement(&mut self, expr: &Option<NodeRef>, _location: SourceSpan) {
+    fn lower_return_statement(&mut self, expr: &Option<NodeRef>, _span: SourceSpan) {
         // Check if we're in a void function
         if let Some(current_func_id) = self.current_function
             && let Some(func) = self.mir_builder.get_functions().get(&current_func_id)
@@ -1858,7 +1828,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     }
 
     /// Lower an if statement
-    fn lower_if_statement(&mut self, if_stmt: &IfStmt, _location: SourceSpan) {
+    fn lower_if_statement(&mut self, if_stmt: &IfStmt, _span: SourceSpan) {
         debug!("Lowering if statement");
 
         // Create blocks for then and else branches
@@ -1939,7 +1909,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     }
 
     /// Lower a while statement
-    fn lower_while_statement(&mut self, while_stmt: &WhileStmt, _location: SourceSpan) {
+    fn lower_while_statement(&mut self, while_stmt: &WhileStmt, _span: SourceSpan) {
         debug!("Lowering while statement");
 
         // Create blocks for condition check, body, and continuation
@@ -1979,7 +1949,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     }
 
     /// Lower a do-while statement
-    fn lower_do_while_statement(&mut self, body_ref: NodeRef, condition_ref: NodeRef, _location: SourceSpan) {
+    fn lower_do_while_statement(&mut self, body_ref: NodeRef, condition_ref: NodeRef, _span: SourceSpan) {
         debug!("Lowering do-while statement");
 
         // Create blocks for body, condition check, and continuation
@@ -2038,7 +2008,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             _ => {
                 // Left operand is not a valid lvalue - report error
                 let node_span = self.ast.get_node(expr_ref).span;
-                self.report_error(SemanticError::NotAnLvalue { location: node_span });
+                self.report_error(SemanticError::NotAnLvalue { span: node_span });
                 // Return a dummy operand to allow compilation to continue
                 let error_const = self.create_constant(ConstValue::Int(0));
                 return Operand::Constant(error_const);
@@ -2123,7 +2093,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         place: Place,
         right_operand: Operand,
         binary_op: MirBinaryOp,
-        location: SourceSpan,
+        span: SourceSpan,
     ) -> Operand {
         debug!("Lowering compound assignment with operation: {:?}", binary_op);
 
@@ -2141,14 +2111,14 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         self.mir_builder.add_statement(assign_stmt);
 
         // Assign the result back to the original place: left = temp
-        self.emit_assignment(place, Operand::Copy(Box::new(temp_place.clone())), location);
+        self.emit_assignment(place, Operand::Copy(Box::new(temp_place.clone())), span);
 
         // Return the assigned value (for chained assignments)
         Operand::Copy(Box::new(temp_place))
     }
 
     /// Emit an assignment statement
-    fn emit_assignment(&mut self, place: Place, operand: Operand, _location: SourceSpan) {
+    fn emit_assignment(&mut self, place: Place, operand: Operand, _span: SourceSpan) {
         // Check if current block is already terminated (unreachable code)
         if self.mir_builder.current_block_has_terminator() {
             debug!("Skipping unreachable assignment statement");
@@ -2309,7 +2279,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     }
 
     /// Lower a goto statement
-    fn lower_goto_statement(&mut self, label: Symbol, location: SourceSpan) {
+    fn lower_goto_statement(&mut self, label: Symbol, span: SourceSpan) {
         debug!("Lowering goto statement to label: {}", label);
 
         // For goto statements, we need to set up a jump to the target label
@@ -2333,14 +2303,14 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         } else {
             // Label not found - this is an error
             debug!("Label '{}' not found in label map during goto resolution", label);
-            self.report_error(SemanticError::UndeclaredIdentifier { name: label, location });
+            self.report_error(SemanticError::UndeclaredIdentifier { name: label, span });
             // Set a dummy terminator to allow compilation to continue
             self.mir_builder.set_terminator(Terminator::Unreachable);
         }
     }
 
     /// Lower a label statement
-    fn lower_label_statement(&mut self, label: Symbol, statement: NodeRef, _location: SourceSpan) {
+    fn lower_label_statement(&mut self, label: Symbol, statement: NodeRef, _span: SourceSpan) {
         // Get the existing block for this label (created in first pass)
         if let Some(&target_block_id) = self.label_map.get(&label) {
             // Switch to the existing block for the label's statement
@@ -2517,7 +2487,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     /// * `left_type` - Type of left operand
     /// * `right` - Right operand  
     /// * `right_type` - Type of right operand
-    /// * `location` - Source location for error reporting
+    /// * `span` - Source location for error reporting
     ///
     /// # Returns
     /// Returns a tuple of (converted_left, converted_right, common_type) or an error
@@ -2527,7 +2497,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         left_type: TypeId,
         right: Operand,
         right_type: TypeId,
-        location: SourceSpan,
+        span: SourceSpan,
     ) -> Result<(Operand, Operand, TypeId), SemanticError> {
         debug!(
             "Applying binary operand conversion: {:?} : {:?} and {:?} : {:?}",
@@ -2538,13 +2508,13 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         if let Some(left_mir_type) = self.get_types().get(&left_type)
             && matches!(left_mir_type, crate::mir::MirType::Void)
         {
-            return Err(SemanticError::InvalidUseOfVoid { location });
+            return Err(SemanticError::InvalidUseOfVoid { span });
         }
 
         if let Some(right_mir_type) = self.get_types().get(&right_type)
             && matches!(right_mir_type, crate::mir::MirType::Void)
         {
-            return Err(SemanticError::InvalidUseOfVoid { location });
+            return Err(SemanticError::InvalidUseOfVoid { span });
         }
 
         // Get MIR types for both operands
@@ -2557,7 +2527,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                     return Err(SemanticError::InvalidBinaryOperands {
                         left_ty: "unknown".to_string(),
                         right_ty: "unknown".to_string(),
-                        location,
+                        span,
                     });
                 }
             };
@@ -2571,7 +2541,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 right_type,
                 &left_mir_type,
                 &right_mir_type,
-                location,
+                span,
             )?;
 
             Ok((converted_left, converted_right, common_type))
@@ -2584,7 +2554,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 right_type,
                 &left_mir_type,
                 &right_mir_type,
-                location,
+                span,
             )?;
 
             Ok((converted_left, converted_right, common_type))
@@ -2597,7 +2567,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 right_type,
                 &left_mir_type,
                 &right_mir_type,
-                location,
+                span,
             )?;
 
             Ok((converted_left, converted_right, common_type))
@@ -2610,7 +2580,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 right_type,
                 &left_mir_type,
                 &right_mir_type,
-                location,
+                span,
             )?;
 
             Ok((converted_left, converted_right, common_type))
@@ -2619,7 +2589,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             Err(SemanticError::InvalidBinaryOperands {
                 left_ty: format!("{:?}", left_mir_type),
                 right_ty: format!("{:?}", right_mir_type),
-                location,
+                span,
             })
         }
     }
@@ -2642,7 +2612,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         right_type: TypeId,
         left_mir_type: &crate::mir::MirType,
         right_mir_type: &crate::mir::MirType,
-        location: SourceSpan,
+        span: SourceSpan,
     ) -> Result<(Operand, Operand, TypeId), SemanticError> {
         debug!(
             "Applying arithmetic conversions: {:?} : {:?} and {:?} : {:?}",
@@ -2650,8 +2620,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         );
 
         // Apply integer promotions first (C11 6.3.1.1)
-        let (promoted_left, promoted_left_type) = self.apply_integer_promotions(left, left_type, location)?;
-        let (promoted_right, promoted_right_type) = self.apply_integer_promotions(right, right_type, location)?;
+        let (promoted_left, promoted_left_type) = self.apply_integer_promotions(left, left_type, span)?;
+        let (promoted_right, promoted_right_type) = self.apply_integer_promotions(right, right_type, span)?;
 
         // Get promoted types
         let (promoted_left_mir_type, promoted_right_mir_type) = match (
@@ -2668,8 +2638,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         }
 
         // Apply usual arithmetic conversions
-        let common_type =
-            self.find_common_arithmetic_type(&promoted_left_mir_type, &promoted_right_mir_type, location)?;
+        let common_type = self.find_common_arithmetic_type(&promoted_left_mir_type, &promoted_right_mir_type, span)?;
 
         // Convert operands to common type
         let converted_left = if promoted_left_type == common_type {
@@ -2697,7 +2666,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         &mut self,
         operand: Operand,
         operand_type: TypeId,
-        location: SourceSpan,
+        span: SourceSpan,
     ) -> Result<(Operand, TypeId), SemanticError> {
         let mir_type = self.get_types().get(&operand_type).cloned();
         if let Some(mir_type) = mir_type {
@@ -2733,7 +2702,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             Err(SemanticError::TypeMismatch {
                 expected: "integer type".to_string(),
                 found: "unknown".to_string(),
-                location,
+                span,
             })
         }
     }
@@ -2743,7 +2712,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         &mut self,
         left_type: &crate::mir::MirType,
         right_type: &crate::mir::MirType,
-        location: SourceSpan,
+        span: SourceSpan,
     ) -> Result<TypeId, SemanticError> {
         debug!(
             "Finding common arithmetic type for {:?} and {:?}",
@@ -2762,7 +2731,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             }
             _ => {
                 // Both are integer types, apply integer conversion rules
-                self.find_common_integer_type(left_type, right_type, location)
+                self.find_common_integer_type(left_type, right_type, span)
             }
         }
     }
@@ -2772,7 +2741,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         &mut self,
         left_type: &crate::mir::MirType,
         right_type: &crate::mir::MirType,
-        location: SourceSpan,
+        span: SourceSpan,
     ) -> Result<TypeId, SemanticError> {
         let (left_is_signed, left_width) = match left_type {
             crate::mir::MirType::Int { is_signed, width } => (*is_signed, *width),
@@ -2824,7 +2793,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 Err(SemanticError::InvalidBinaryOperands {
                     left_ty: format!("{:?}", left_type),
                     right_ty: format!("{:?}", right_type),
-                    location,
+                    span,
                 })
             }
         }
@@ -2849,7 +2818,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         right_type: TypeId,
         _left_mir_type: &crate::mir::MirType,
         _right_mir_type: &crate::mir::MirType,
-        _location: SourceSpan,
+        _span: SourceSpan,
     ) -> Result<(Operand, Operand, TypeId), SemanticError> {
         // For pointer equality comparisons, we can use either type
         // but prefer void* for compatibility
@@ -2879,10 +2848,10 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         right_type: TypeId,
         _left_mir_type: &crate::mir::MirType,
         _right_mir_type: &crate::mir::MirType,
-        _location: SourceSpan,
+        _span: SourceSpan,
     ) -> Result<(Operand, Operand, TypeId), SemanticError> {
         // Pointer + integer -> pointer type (with integer promoted if needed)
-        let (promoted_right, _promoted_right_type) = self.apply_integer_promotions(right, right_type, _location)?;
+        let (promoted_right, _promoted_right_type) = self.apply_integer_promotions(right, right_type, _span)?;
 
         Ok((left, promoted_right, left_type))
     }
@@ -2896,10 +2865,10 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         right_type: TypeId,
         _left_mir_type: &crate::mir::MirType,
         _right_mir_type: &crate::mir::MirType,
-        _location: SourceSpan,
+        _span: SourceSpan,
     ) -> Result<(Operand, Operand, TypeId), SemanticError> {
         // Integer + pointer -> pointer type (with integer promoted if needed)
-        let (promoted_left, _promoted_left_type) = self.apply_integer_promotions(left, left_type, _location)?;
+        let (promoted_left, _promoted_left_type) = self.apply_integer_promotions(left, left_type, _span)?;
 
         Ok((promoted_left, right, right_type))
     }
@@ -2990,7 +2959,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     }
 
     /// Map AST BinaryOp to MIR BinaryOp
-    fn map_ast_binary_op_to_mir(&self, ast_op: &BinaryOp, location: SourceSpan) -> Result<MirBinaryOp, SemanticError> {
+    fn map_ast_binary_op_to_mir(&self, ast_op: &BinaryOp, span: SourceSpan) -> Result<MirBinaryOp, SemanticError> {
         use crate::ast::BinaryOp::*;
         use crate::mir::BinaryOp as MirBinaryOp;
 
@@ -3032,7 +3001,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 // separately in `lower_expression` and not passed to this function.
                 panic!(
                     "ICE: Assignment operation unexpectedly passed to map_ast_binary_op_to_mir at {:?}",
-                    location
+                    span
                 );
             }
         };

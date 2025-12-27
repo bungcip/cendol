@@ -308,7 +308,7 @@ pub enum PPError {
     #[error("Unexpected end of file")]
     UnexpectedEndOfFile,
     #[error("Invalid macro parameter")]
-    InvalidMacroParameter { location: SourceSpan },
+    InvalidMacroParameter { span: SourceSpan },
     #[error("Invalid include path")]
     InvalidIncludePath,
     #[error("Unmatched #endif")]
@@ -340,9 +340,9 @@ pub enum PPError {
 }
 
 impl PPError {
-    pub fn location(&self) -> SourceSpan {
+    pub fn span(&self) -> SourceSpan {
         match self {
-            PPError::InvalidMacroParameter { location } => *location,
+            PPError::InvalidMacroParameter { span } => *span,
             _ => SourceSpan::new(SourceLoc::builtin(), SourceLoc::builtin()),
         }
     }
@@ -358,7 +358,7 @@ impl From<PPError> for Diagnostic {
         Diagnostic {
             level,
             message: val.to_string(),
-            location: val.location(),
+            span: val.span(),
             code: None,
             hints: Vec::new(),
             related: Vec::new(),
@@ -727,11 +727,11 @@ impl<'src> Preprocessor<'src> {
         }
 
         if tokens.is_empty() {
-            let location = SourceSpan::new(self.get_current_location(), self.get_current_location());
+            let span = SourceSpan::new(self.get_current_location(), self.get_current_location());
             let diag = crate::diagnostic::Diagnostic {
                 level: crate::diagnostic::DiagnosticLevel::Error,
                 message: "Invalid conditional expression".to_string(),
-                location,
+                span,
                 code: Some("invalid_conditional_expression".to_string()),
                 hints: vec!["Conditional directives require an expression".to_string()],
                 related: Vec::new(),
@@ -774,7 +774,7 @@ impl<'src> Preprocessor<'src> {
             Ok(_) => {}
             Err(_e) => {
                 // If macro expansion fails, emit diagnostic and treat as false
-                let location = if !tokens.is_empty() {
+                let span = if !tokens.is_empty() {
                     SourceSpan::new(tokens[0].location, tokens.last().unwrap().location)
                 } else {
                     let loc = self.get_current_location();
@@ -783,7 +783,7 @@ impl<'src> Preprocessor<'src> {
                 let diag = crate::diagnostic::Diagnostic {
                     level: crate::diagnostic::DiagnosticLevel::Warning,
                     message: "Failed to expand macros in conditional expression".to_string(),
-                    location,
+                    span,
                     code: Some("macro_expansion_failed".to_string()),
                     hints: vec!["Expression will be treated as false".to_string()],
                     related: Vec::new(),
@@ -808,7 +808,7 @@ impl<'src> Preprocessor<'src> {
             Ok(e) => e,
             Err(_) => {
                 // For complex expressions that can't be parsed, emit a warning and treat as false
-                let location = if !tokens.is_empty() {
+                let span = if !tokens.is_empty() {
                     SourceSpan::new(tokens[0].location, tokens.last().unwrap().location)
                 } else {
                     let loc = self.get_current_location();
@@ -817,7 +817,7 @@ impl<'src> Preprocessor<'src> {
                 let diag = crate::diagnostic::Diagnostic {
                     level: crate::diagnostic::DiagnosticLevel::Warning,
                     message: "Invalid conditional expression in preprocessor directive".to_string(),
-                    location,
+                    span,
                     code: Some("invalid_conditional_expression".to_string()),
                     hints: vec!["Expression will be treated as false".to_string()],
                     related: Vec::new(),
@@ -896,7 +896,7 @@ impl<'src> Preprocessor<'src> {
                         let diag = crate::diagnostic::Diagnostic {
                             level: crate::diagnostic::DiagnosticLevel::Error,
                             message: format!("Invalid preprocessor directive '{name}'"),
-                            location: SourceSpan::new(token.location, token.location),
+                            span: SourceSpan::new(token.location, token.location),
                             code: Some("invalid_directive".to_string()),
                             hints: vec!["Valid directives include #define, #include, #if, #ifdef, #ifndef, #elif, #else, #endif, #line, #pragma, #error, #warning".to_string()],
                             related: Vec::new(),
@@ -910,7 +910,7 @@ impl<'src> Preprocessor<'src> {
                 let diag = crate::diagnostic::Diagnostic {
                     level: crate::diagnostic::DiagnosticLevel::Error,
                     message: "Invalid preprocessor directive".to_string(),
-                    location: SourceSpan::new(token.location, token.location),
+                    span: SourceSpan::new(token.location, token.location),
                     code: Some("invalid_directive".to_string()),
                     hints: vec!["Valid directives include #define, #include, #if, #ifdef, #ifndef, #elif, #else, #endif, #line, #pragma, #error, #warning".to_string()],
                     related: Vec::new(),
@@ -939,7 +939,7 @@ impl<'src> Preprocessor<'src> {
             let diag = crate::diagnostic::Diagnostic {
                 level: crate::diagnostic::DiagnosticLevel::Warning,
                 message: format!("Redefinition of macro '{}'", name.as_str()),
-                location: SourceSpan::new(name_token.location, name_token.location),
+                span: SourceSpan::new(name_token.location, name_token.location),
                 code: Some("macro_redefinition".to_string()),
                 hints: Vec::new(),
                 related: vec![SourceSpan::new(existing.location, existing.location)],
@@ -971,7 +971,7 @@ impl<'src> Preprocessor<'src> {
                                 PPTokenKind::Identifier(sym) => {
                                     if params.contains(&sym) {
                                         return Err(PPError::InvalidMacroParameter {
-                                            location: SourceSpan::new(
+                                            span: SourceSpan::new(
                                                 self.get_current_location(),
                                                 self.get_current_location(),
                                             ),
@@ -988,7 +988,7 @@ impl<'src> Preprocessor<'src> {
                                             let rparen = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
                                             if rparen.kind != PPTokenKind::RightParen {
                                                 return Err(PPError::InvalidMacroParameter {
-                                                    location: SourceSpan::new(
+                                                    span: SourceSpan::new(
                                                         self.get_current_location(),
                                                         self.get_current_location(),
                                                     ),
@@ -1014,7 +1014,7 @@ impl<'src> Preprocessor<'src> {
                                     let rparen = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
                                     if rparen.kind != PPTokenKind::RightParen {
                                         return Err(PPError::InvalidMacroParameter {
-                                            location: SourceSpan::new(
+                                            span: SourceSpan::new(
                                                 self.get_current_location(),
                                                 self.get_current_location(),
                                             ),
@@ -1030,7 +1030,7 @@ impl<'src> Preprocessor<'src> {
                                             "Invalid macro parameter token in #define '{}'",
                                             name.as_str()
                                         ),
-                                        location: SourceSpan::new(param_token.location, param_token.location),
+                                        span: SourceSpan::new(param_token.location, param_token.location),
                                         code: Some("invalid_macro_parameter".to_string()),
                                         hints: vec!["Macro parameters must be identifiers".to_string()],
                                         related: Vec::new(),
@@ -1191,7 +1191,7 @@ impl<'src> Preprocessor<'src> {
                         let diag = crate::diagnostic::Diagnostic {
                             level: crate::diagnostic::DiagnosticLevel::Error,
                             message: format!("Include file '{}' not found", path_str),
-                            location: SourceSpan::new(token.location, token.location),
+                            span: SourceSpan::new(token.location, token.location),
                             code: Some("include_file_not_found".to_string()),
                             hints: vec!["Check the include path and ensure the file exists".to_string()],
                             related: Vec::new(),
@@ -1204,7 +1204,7 @@ impl<'src> Preprocessor<'src> {
                     let diag = crate::diagnostic::Diagnostic {
                         level: crate::diagnostic::DiagnosticLevel::Warning,
                         message: format!("Include file '{}' not found, skipping", path_str),
-                        location: SourceSpan::new(token.location, token.location),
+                        span: SourceSpan::new(token.location, token.location),
                         code: Some("include_file_not_found".to_string()),
                         hints: vec!["Check the include path and ensure the file exists".to_string()],
                         related: Vec::new(),
@@ -1524,7 +1524,7 @@ impl<'src> Preprocessor<'src> {
         let diag = crate::diagnostic::Diagnostic {
             level: crate::diagnostic::DiagnosticLevel::Error,
             message: format!("#error directive: {}", message),
-            location: SourceSpan::new(directive_location, directive_location),
+            span: SourceSpan::new(directive_location, directive_location),
             code: Some("error_directive".to_string()),
             hints: Vec::new(),
             related: Vec::new(),
@@ -1559,7 +1559,7 @@ impl<'src> Preprocessor<'src> {
         let diag = crate::diagnostic::Diagnostic {
             level: crate::diagnostic::DiagnosticLevel::Warning,
             message,
-            location: SourceSpan::new(directive_location, directive_location),
+            span: SourceSpan::new(directive_location, directive_location),
             code: None,
             hints: Vec::new(),
             related: Vec::new(),
@@ -1739,7 +1739,7 @@ impl<'src> Preprocessor<'src> {
                         lexer.put_back(token);
                     }
                     return Err(PPError::InvalidMacroParameter {
-                        location: SourceSpan::new(token.location, token.location),
+                        span: SourceSpan::new(token.location, token.location),
                     });
                 }
             }
@@ -1806,12 +1806,12 @@ impl<'src> Preprocessor<'src> {
         if has_variadic {
             if args.len() < expected_args {
                 return Err(PPError::InvalidMacroParameter {
-                    location: SourceSpan::new(macro_info.location, macro_info.location),
+                    span: SourceSpan::new(macro_info.location, macro_info.location),
                 });
             }
         } else if args.len() != expected_args {
             return Err(PPError::InvalidMacroParameter {
-                location: SourceSpan::new(macro_info.location, macro_info.location),
+                span: SourceSpan::new(macro_info.location, macro_info.location),
             });
         }
 

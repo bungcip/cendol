@@ -164,7 +164,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                     return Err(ParseError::UnexpectedToken {
                         expected_tokens: "'(' after _Alignas".to_string(),
                         found: token.kind,
-                        location: token.location,
+                        span: token.span,
                     });
                 };
 
@@ -196,7 +196,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
         return Err(ParseError::UnexpectedToken {
             expected_tokens: "declaration specifiers".to_string(),
             found: current_token.kind,
-            location: current_token.location,
+            span: current_token.span,
         });
     }
 

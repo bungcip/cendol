@@ -84,7 +84,7 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
                 init_declarators: ThinVec::new(),
             };
 
-            let end_loc = semi.location.end;
+            let end_loc = semi.span.end;
             let span = SourceSpan::new(start_loc, end_loc);
 
             let node = trx.parser.push_node(NodeKind::Declaration(declaration_data), span);
@@ -134,7 +134,7 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         return Err(ParseError::UnexpectedToken {
             expected_tokens: message.to_string(),
             found: current_token.kind,
-            location: current_token.location,
+            span: current_token.span,
         });
     }
 
@@ -215,11 +215,11 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         return Err(ParseError::UnexpectedToken {
             expected_tokens: "';' after declaration".to_string(),
             found: current_token.kind,
-            location: current_token.location,
+            span: current_token.span,
         });
     };
 
-    let end_loc = semicolon_token.location.end;
+    let end_loc = semicolon_token.span.end;
 
     let span = SourceSpan::new(start_loc, end_loc);
 
@@ -254,7 +254,7 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
 /// Parse function definition
 pub fn parse_function_definition(parser: &mut Parser) -> Result<NodeRef, ParseError> {
-    let start_loc = parser.current_token()?.location.start;
+    let start_loc = parser.current_token()?.span.start;
 
     // Parse declaration specifiers
     let specifiers = parse_declaration_specifiers(parser)?;
@@ -279,7 +279,7 @@ pub fn parse_function_definition(parser: &mut Parser) -> Result<NodeRef, ParseEr
 
 /// Parse translation unit (top level)
 pub fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError> {
-    let start_loc = parser.current_token()?.location.start;
+    let start_loc = parser.current_token()?.span.start;
     let mut end_loc = SourceLoc::empty();
 
     let mut top_level_declarations = Vec::new();
@@ -288,7 +288,7 @@ pub fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError
 
     while let Some(token) = parser.try_current_token() {
         if token.kind == TokenKind::EndOfFile {
-            end_loc = token.location.end;
+            end_loc = token.span.end;
             break;
         }
 
@@ -299,9 +299,7 @@ pub fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError
                 "Parser exceeded maximum iteration limit at token {:?}, position {}",
                 token.kind, parser.current_idx
             );
-            return Err(ParseError::InfiniteLoop {
-                location: token.location,
-            });
+            return Err(ParseError::InfiniteLoop { span: token.span });
         }
 
         let initial_idx = parser.current_idx;
@@ -339,7 +337,7 @@ pub fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError
 /// Parse static assert (C11)
 pub fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<NodeRef, ParseError> {
     // already consumed `_Static_assert`
-    let start_loc = start_token.location.start;
+    let start_loc = start_token.span.start;
     parser.expect(TokenKind::LeftParen)?;
 
     let condition = parser.parse_expr_min()?;
@@ -353,7 +351,7 @@ pub fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<No
             return Err(ParseError::UnexpectedToken {
                 expected_tokens: "string literal".to_string(),
                 found: token.kind,
-                location: token.location,
+                span: token.span,
             });
         }
     };
@@ -361,7 +359,7 @@ pub fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<No
     parser.advance();
     parser.expect(TokenKind::RightParen)?;
     let semicolon_token = parser.expect(TokenKind::Semicolon)?;
-    let end_loc = semicolon_token.location.end;
+    let end_loc = semicolon_token.span.end;
     let span = SourceSpan::new(start_loc, end_loc);
     let node = parser.push_node(NodeKind::StaticAssert(condition, message), span);
     Ok(node)

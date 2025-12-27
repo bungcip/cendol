@@ -21,19 +21,19 @@ enum DeclaratorComponent {
 }
 
 /// Validate declarator combinations
-fn validate_declarator_combination(base: &Declarator, new_kind: &str, location: SourceSpan) -> Result<(), ParseError> {
+fn validate_declarator_combination(base: &Declarator, new_kind: &str, span: SourceSpan) -> Result<(), ParseError> {
     match base {
         Declarator::Function(..) => {
             if new_kind == "array" {
-                return Err(ParseError::DeclarationNotAllowed { location });
+                return Err(ParseError::DeclarationNotAllowed { span });
             }
             if new_kind == "function" {
-                return Err(ParseError::DeclarationNotAllowed { location });
+                return Err(ParseError::DeclarationNotAllowed { span });
             }
         }
         Declarator::Array(..) => {
             if new_kind == "function" {
-                return Err(ParseError::DeclarationNotAllowed { location });
+                return Err(ParseError::DeclarationNotAllowed { span });
             }
         }
         _ => {}
@@ -183,7 +183,7 @@ fn parse_trailing_declarators_for_type_names(
     mut current_base: Declarator,
 ) -> Result<Declarator, ParseError> {
     loop {
-        let current_token_span = parser.try_current_token().map_or(SourceSpan::empty(), |t| t.location);
+        let current_token_span = parser.try_current_token().map_or(SourceSpan::empty(), |t| t.span);
         if parser.accept(TokenKind::LeftBracket).is_some() {
             // Array declarator
             validate_declarator_combination(&current_base, "array", current_token_span)?;
@@ -207,7 +207,7 @@ fn parse_trailing_declarators_for_type_names(
 /// Parse trailing declarators (arrays, functions, bit-fields) that follow the base declarator
 fn parse_trailing_declarators(parser: &mut Parser, mut current_base: Declarator) -> Result<Declarator, ParseError> {
     loop {
-        let current_token_span = parser.try_current_token().map_or(SourceSpan::empty(), |t| t.location);
+        let current_token_span = parser.try_current_token().map_or(SourceSpan::empty(), |t| t.span);
         if parser.accept(TokenKind::LeftBracket).is_some() {
             // Array declarator
             validate_declarator_combination(&current_base, "array", current_token_span)?;

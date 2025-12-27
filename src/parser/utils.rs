@@ -76,7 +76,7 @@ impl<'arena, 'src> ParserExt for Parser<'arena, 'src> {
         match result {
             Ok(ParseExprOutput::Expression(node)) => Ok(node),
             Ok(ParseExprOutput::Declaration(node_ref)) => Err(ParseError::DeclarationNotAllowed {
-                location: self.ast.get_node(node_ref).span,
+                span: self.ast.get_node(node_ref).span,
             }),
             Err(e) => Err(e),
         }

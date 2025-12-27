@@ -107,7 +107,7 @@ fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: Sour
                     ctx.report_error(SemanticError::TypeMismatch {
                         expected: "at most one storage class".to_string(),
                         found: "multiple storage classes".to_string(),
-                        location: span,
+                        span,
                     });
                 }
 
@@ -347,7 +347,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                                         name: member_name,
                                         member_type,
                                         bit_field_size: None,
-                                        location: span,
+                                        span,
                                     });
                                 }
                             }
@@ -495,7 +495,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                         let enum_constant = EnumConstant {
                             name: *name,
                             value,
-                            location: enum_node.span,
+                            span: enum_node.span,
                         };
                         enumerators_list.push(enum_constant);
 
@@ -555,7 +555,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     Err(SemanticError::TypeMismatch {
                         expected: "a typedef name".to_string(),
                         found: format!("a {}", found_kind_str.to_lowercase()),
-                        location: span,
+                        span,
                     })
                 }
             } else {
@@ -678,7 +678,7 @@ fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span
         ctx.report_error(SemanticError::TypeMismatch {
             expected: "at most one storage class".to_string(),
             found: "a mix of typedef and other storage classes".to_string(),
-            location: span,
+            span,
         });
     }
 
@@ -755,7 +755,7 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
         ctx.report_error(SemanticError::TypeMismatch {
             expected: "a type specifier".to_string(),
             found: "no type specifier".to_string(),
-            location: span,
+            span,
         });
         // Create an error type
         let error_type = Type {
@@ -1248,7 +1248,7 @@ fn process_anonymous_struct_members(
                         name: member_name,
                         member_type,
                         bit_field_size: None,
-                        location: span,
+                        span,
                     });
                 }
             }

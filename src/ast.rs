@@ -200,7 +200,7 @@ impl Node {
     }
 }
 
-/// Represents the definition state of a symbol.
+/// Represents the definition state of a symbol entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DefinitionState {
     Tentative,    // int x;
@@ -210,7 +210,7 @@ pub enum DefinitionState {
 
 /// Represents a resolved symbol entry from the symbol table.
 /// This structure is typically populated during the semantic analysis phase.
-/// Symbol entries are stored in a separate Vec<SymbolEntry> with SymbolEntryIndex references.
+/// Symbol entries are stored in a separate Vec<SymbolEntry> with SymbolEntryRef references.
 #[derive(Debug)]
 pub struct SymbolEntry {
     pub name: Symbol,
@@ -275,7 +275,7 @@ pub struct StructMember {
     pub name: Symbol,
     pub member_type: TypeRef,
     pub bit_field_size: Option<usize>,
-    pub location: SourceSpan,
+    pub span: SourceSpan,
 }
 
 /// Enum constant information
@@ -283,5 +283,5 @@ pub struct StructMember {
 pub struct EnumConstant {
     pub name: Symbol,
     pub value: i64, // Resolved value
-    pub location: SourceSpan,
+    pub span: SourceSpan,
 }

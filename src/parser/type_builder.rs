@@ -184,7 +184,7 @@ fn specifiers_to_type_kind(
                                         name,
                                         member_type,
                                         bit_field_size: None,
-                                        location: crate::source_manager::SourceSpan::empty(), // TODO: Pass location
+                                        span: SourceSpan::empty(), // TODO: Pass location
                                     });
                                 }
                             }

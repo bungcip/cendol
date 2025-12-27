@@ -119,8 +119,9 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    pub fn parse_expression(&mut self) -> Result<PPExpr, PPError> {
-        self.parse_conditional()
+    pub fn evaluate(&mut self) -> Result<i64, PPError> {
+        let expr = self.parse_conditional()?;
+        expr.evaluate(self.preprocessor)
     }
 
     fn parse_conditional(&mut self) -> Result<PPExpr, PPError> {
@@ -372,7 +373,7 @@ impl<'a> Interpreter<'a> {
                 Ok(PPExpr::Identifier(sym.as_str().to_string()))
             }
             PPTokenKind::LeftParen => {
-                let result = self.parse_expression()?;
+                let result = self.parse_conditional()?;
                 if self.pos < self.tokens.len() && matches!(self.tokens[self.pos].kind, PPTokenKind::RightParen) {
                     self.pos += 1;
                     Ok(result)

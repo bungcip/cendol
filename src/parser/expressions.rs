@@ -47,7 +47,7 @@ pub enum Associativity {
 pub struct PrattParser;
 
 impl PrattParser {
-    pub fn get_binding_power(token_kind: TokenKind) -> Option<(BindingPower, Associativity)> {
+    fn get_binding_power(token_kind: TokenKind) -> Option<(BindingPower, Associativity)> {
         match token_kind {
             // Assignment operators (right-associative)
             TokenKind::Assign
@@ -108,7 +108,7 @@ impl PrattParser {
 }
 
 /// Main expression parsing using Pratt algorithm
-pub fn parse_expression(
+pub(crate) fn parse_expression(
     parser: &mut Parser,
     min_binding_power: BindingPower,
 ) -> Result<super::ParseExprOutput, ParseError> {
@@ -533,17 +533,6 @@ pub(crate) fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, Pa
     Ok(node)
 }
 
-/// Parse compound literal (C99)
-pub(crate) fn parse_compound_literal(parser: &mut Parser) -> Result<NodeRef, ParseError> {
-    let token = parser.expect(TokenKind::LeftParen)?;
-    let start_loc = token.span.start;
-
-    let type_ref = super::declaration_core::parse_type_name(parser)?;
-    parser.expect(TokenKind::RightParen)?;
-
-    parse_compound_literal_from_type_and_start(parser, type_ref, start_loc)
-}
-
 /// Parse compound literal given the type and start location
 pub(crate) fn parse_compound_literal_from_type_and_start(
     parser: &mut Parser,
@@ -561,7 +550,7 @@ pub(crate) fn parse_compound_literal_from_type_and_start(
 }
 
 /// Parse sizeof expression or type
-pub fn parse_sizeof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
+pub(crate) fn parse_sizeof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.expect(TokenKind::Sizeof)?;
     let start_loc = token.span.start;
 
@@ -615,7 +604,7 @@ pub fn parse_sizeof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 }
 
 /// Parse _Alignof (C11)
-pub fn parse_alignof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
+pub(crate) fn parse_alignof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.expect(TokenKind::Alignof)?;
     let start_loc = token.span.start;
 

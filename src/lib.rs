@@ -1,11 +1,11 @@
 pub mod ast;
 pub mod diagnostic;
 pub mod driver;
-pub mod lang_options;
-pub mod lexer;
+mod lang_options;
+mod lexer;
 pub mod mir;
-pub mod mir_dumper;
-pub mod parser;
-pub mod pp;
-pub mod semantic;
-pub mod source_manager;
+mod mir_dumper;
+mod parser;
+mod pp;
+mod semantic;
+mod source_manager;

@@ -803,9 +803,11 @@ impl<'src> Preprocessor<'src> {
             return Err(PPError::InvalidConditionalExpression);
         }
 
-        let mut parser = Interpreter::new(tokens, self);
-        let expr = match parser.parse_expression() {
-            Ok(e) => e,
+        let mut interpreter = Interpreter::new(tokens, self);
+        let result = interpreter.evaluate();
+
+        match result {
+            Ok(val) => Ok(val != 0),
             Err(_) => {
                 // For complex expressions that can't be parsed, emit a warning and treat as false
                 let span = if !tokens.is_empty() {
@@ -824,11 +826,9 @@ impl<'src> Preprocessor<'src> {
                 };
                 self.diag.report_diagnostic(diag);
                 // Return false for unparseable expressions to allow compilation to continue
-                return Ok(false);
+                Ok(false)
             }
-        };
-        let result = expr.evaluate(self)?;
-        Ok(result != 0)
+        }
     }
 
     /// Lex the next token

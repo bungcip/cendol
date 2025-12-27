@@ -91,19 +91,14 @@ impl Ast {
         }
     }
 
-    /// Get the root node of the AST
-    pub fn get_root_node(&self) -> Option<&Node> {
-        self.root.map(|node_ref| self.get_node(node_ref))
-    }
-
     /// Set the root node of the AST
-    pub fn set_root_node(&mut self, node_ref: NodeRef) {
+    pub(crate) fn set_root_node(&mut self, node_ref: NodeRef) {
         self.root = Some(node_ref);
     }
 
     /// Replace a node in the AST and update parent references
     /// Returns the reference to the new node
-    pub fn replace_node(&mut self, old_node_ref: NodeRef, new_node: Node) -> NodeRef {
+    pub(crate) fn replace_node(&mut self, old_node_ref: NodeRef, new_node: Node) -> NodeRef {
         // Replace the old node in the vector
         let old_index = (old_node_ref.get() - 1) as usize;
         self.nodes[old_index] = new_node;
@@ -113,7 +108,7 @@ impl Ast {
     }
 
     /// Add a node to the AST and return its reference
-    pub fn push_node(&mut self, node: Node) -> NodeRef {
+    pub(crate) fn push_node(&mut self, node: Node) -> NodeRef {
         let index = self.nodes.len() as u32 + 1; // Start from 1 for NonZeroU32
         self.nodes.push(node);
         NodeRef::new(index).expect("NodeRef overflow")
@@ -124,13 +119,8 @@ impl Ast {
         &self.nodes[(index.get() - 1) as usize]
     }
 
-    /// Get a mutable node by its reference
-    pub fn get_node_mut(&mut self, index: NodeRef) -> &mut Node {
-        &mut self.nodes[(index.get() - 1) as usize]
-    }
-
     /// Add a type to the AST and return its reference
-    pub fn push_type(&mut self, ty: Type) -> TypeRef {
+    pub(crate) fn push_type(&mut self, ty: Type) -> TypeRef {
         let index = self.types.len() as u32 + 1;
         self.types.push(ty);
         TypeRef::new(index).expect("TypeRef overflow")
@@ -149,28 +139,11 @@ impl Ast {
         &self.types[idx]
     }
 
-    /// Add a symbol entry to the AST and return its reference
-    pub fn push_symbol_entry(&mut self, entry: SymbolEntry) -> SymbolEntryRef {
-        let index = self.symbol_entries.len() as u32 + 1;
-        self.symbol_entries.push(entry);
-        SymbolEntryRef::new(index).expect("SymbolEntryRef overflow")
-    }
-
-    /// Get a symbol entry by its reference
-    pub fn get_symbol_entry(&self, index: SymbolEntryRef) -> &SymbolEntry {
-        &self.symbol_entries[(index.get() - 1) as usize]
-    }
-
     /// Add an initializer to the AST and return its reference
-    pub fn push_initializer(&mut self, init: Initializer) -> InitializerRef {
+    pub(crate) fn push_initializer(&mut self, init: Initializer) -> InitializerRef {
         let index = self.initializers.len() as u32 + 1;
         self.initializers.push(init);
         InitializerRef::new(index).expect("InitializerRef overflow")
-    }
-
-    /// Get an initializer by its reference
-    pub fn get_initializer(&self, index: InitializerRef) -> &Initializer {
-        &self.initializers[(index.get() - 1) as usize]
     }
 }
 

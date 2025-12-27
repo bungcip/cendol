@@ -302,49 +302,17 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         self.parse_expr_bp(BindingPower::CAST)
     }
 
-    /// Parse a declaration
-    pub fn parse_declaration(&mut self) -> Result<NodeRef, ParseError> {
+    pub(crate) fn parse_declaration(&mut self) -> Result<NodeRef, ParseError> {
         declarations::parse_declaration(self)
     }
 
-    /// Parse a statement
-    pub fn parse_statement(&mut self) -> Result<NodeRef, ParseError> {
+    pub(crate) fn parse_statement(&mut self) -> Result<NodeRef, ParseError> {
         statements::parse_statement(self)
-    }
-
-    /// Parse function definition
-    pub fn parse_function_definition(&mut self) -> Result<NodeRef, ParseError> {
-        declarations::parse_function_definition(self)
     }
 
     /// Parse translation unit (top level)
     pub fn parse_translation_unit(&mut self) -> Result<NodeRef, ParseError> {
         declarations::parse_translation_unit(self)
-    }
-
-    /// Parse _Generic selection (C11)
-    pub fn parse_generic_selection(&mut self) -> Result<NodeRef, ParseError> {
-        expressions::parse_generic_selection(self)
-    }
-
-    /// Parse compound literal (C99)
-    pub fn parse_compound_literal(&mut self) -> Result<NodeRef, ParseError> {
-        expressions::parse_compound_literal(self)
-    }
-
-    /// Parse static assert (C11)
-    pub fn parse_static_assert(&mut self, start_token: Token) -> Result<NodeRef, ParseError> {
-        declarations::parse_static_assert(self, start_token)
-    }
-
-    /// Parse sizeof expression or type
-    pub fn parse_sizeof(&mut self) -> Result<NodeRef, ParseError> {
-        expressions::parse_sizeof(self)
-    }
-
-    /// Parse _Alignof (C11)
-    pub fn parse_alignof(&mut self) -> Result<NodeRef, ParseError> {
-        expressions::parse_alignof(self)
     }
 
     /// Check if current token starts an abstract declarator
@@ -431,12 +399,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         self.diag.diagnostics.truncate(state.diag_len);
     }
 
-    pub fn start_transaction(&mut self) -> utils::ParserTransaction<'_, 'arena, 'src> {
+    pub(crate) fn start_transaction(&mut self) -> utils::ParserTransaction<'_, 'arena, 'src> {
         utils::ParserTransaction::new(self)
     }
 
     /// Check if the current token can start a declaration
-    pub fn starts_declaration(&self) -> bool {
+    pub(crate) fn starts_declaration(&self) -> bool {
         if let Some(token) = self.try_current_token() {
             let is_typedef = if let TokenKind::Identifier(symbol) = token.kind {
                 self.is_type_name(symbol)

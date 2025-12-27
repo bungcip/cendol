@@ -1017,12 +1017,6 @@ fn lower_node_recursive_phase1(ctx: &mut LowerCtx, node_ref: NodeRef) {
                 Vec::new()
             };
 
-            // Add function to GLOBAL scope (not function scope)
-            let global_scope_id = crate::semantic::ScopeId::new(1).unwrap(); // Global scope is typically 1
-
-            // Switch to global scope to add the function
-            let original_scope = ctx.symbol_table.current_scope();
-            ctx.symbol_table.set_current_scope(global_scope_id);
 
             let symbol_entry = crate::ast::SymbolEntry {
                 name: func_name,
@@ -1034,28 +1028,41 @@ fn lower_node_recursive_phase1(ctx: &mut LowerCtx, node_ref: NodeRef) {
                 },
                 type_info: function_type_ref,
                 storage_class: None,
-                scope_id: global_scope_id.get(),
+                scope_id: 1, // Global scope
                 def_span: ctx.ast.get_node(node_ref).span,
                 def_state: DefinitionState::Defined,
                 is_referenced: false,
                 is_completed: true,
             };
 
-            let symbol_entry_ref = ctx.symbol_table.add_symbol(func_name, symbol_entry);
+            // Use merge_global_symbol for functions to handle redefinitions and forward declarations
+            let symbol_entry_ref = match ctx.symbol_table.merge_global_symbol(func_name, symbol_entry.clone()) {
+                Ok(entry_ref) => entry_ref,
+                Err(_) => {
+                    // Error is already reported by merge_global_symbol
+                    // For graceful recovery, we need a valid ref. We look it up.
+                    // If it's a redefinition, it should exist.
+                    ctx.symbol_table
+                        .lookup_symbol(func_name)
+                        .map(|(entry_ref, _)| entry_ref)
+                        .unwrap_or_else(|| {
+                            // This path should ideally not be taken if merge_global_symbol is correct.
+                            // As a fallback, we add the symbol to avoid a panic,
+                            // even though this might lead to cascading errors.
+                            ctx.symbol_table.add_symbol(func_name, symbol_entry)
+                        })
+                }
+            };
 
             // Set resolved_symbol for the FunctionDef node
             let node = ctx.ast.get_node(node_ref);
             node.resolved_symbol.set(Some(symbol_entry_ref));
 
-            // Restore original scope
-            ctx.symbol_table.set_current_scope(original_scope);
+            // Enter function scope BEFORE processing parameters
+            ctx.symbol_table.push_scope(ScopeKind::Function);
 
             // Convert FunctionDef to Function semantic node
-            // First, we need to get the symbol entry ref for the function we just added
-            let (symbol_entry_ref, _) = ctx
-                .symbol_table
-                .lookup_symbol(func_name)
-                .expect("Function should be in symbol table");
+            // The symbol_entry_ref is already available from merge_global_symbol
 
             // Create normalized parameters for the FunctionData with redefinition checking
             let mut seen_params = std::collections::HashSet::new();
@@ -1068,21 +1075,11 @@ fn lower_node_recursive_phase1(ctx: &mut LowerCtx, node_ref: NodeRef) {
                     if seen_params.contains(&param_name) {
                         ctx.report_error(SemanticError::Redefinition {
                             name: param_name,
-                            first_def: ctx.ast.get_node(node_ref).span, // FIXME: Get proper first definition span
+                            first_def: ctx.ast.get_node(node_ref).span, // FIXME: Need to store first def span
                             second_def: ctx.ast.get_node(node_ref).span,
                         });
                     } else {
                         seen_params.insert(param_name);
-                    }
-
-                    // Check if parameter name already exists in current scope
-                    if let Some((existing_entry, _)) = ctx.symbol_table.lookup_symbol(param_name) {
-                        let existing = ctx.symbol_table.get_symbol_entry(existing_entry);
-                        ctx.report_error(SemanticError::Redefinition {
-                            name: param_name,
-                            first_def: existing.def_span,
-                            second_def: ctx.ast.get_node(node_ref).span,
-                        });
                     }
 
                     // Create a symbol entry for the parameter
@@ -1126,8 +1123,7 @@ fn lower_node_recursive_phase1(ctx: &mut LowerCtx, node_ref: NodeRef) {
             ctx.ast
                 .replace_node(node_ref, ctx.ast.get_node(function_node_ref).clone());
 
-            // Now process the function body with proper scope management
-            ctx.symbol_table.push_scope(ScopeKind::Function);
+            // Now process the function body within the new function scope
             lower_node_recursive_phase1(ctx, func_def.body);
             ctx.symbol_table.pop_scope();
         }
@@ -1714,7 +1710,7 @@ fn lower_init_declarator_phase1(
     }
 
     // 3. Distinguish between functions and variables
-    let type_info = ctx.ast.get_type(final_ty);
+    let type_info = ctx.ast.get_type(final_ty).clone();
     if matches!(type_info.kind, TypeKind::Function { .. }) {
         let func_decl = FunctionDeclData {
             name,
@@ -1724,11 +1720,48 @@ fn lower_init_declarator_phase1(
         };
         let func_node = ctx.ast.push_node(Node::new(NodeKind::FunctionDecl(func_decl), span));
 
+        // Create a symbol entry for the function declaration
+        let parameters = if let TypeKind::Function { parameters, .. } = &type_info.kind {
+            parameters.clone()
+        } else {
+            Vec::new()
+        };
+
+        let symbol_entry = crate::ast::SymbolEntry {
+            name,
+            kind: crate::ast::SymbolKind::Function {
+                is_definition: false, // This is a declaration
+                is_inline: false,     // TODO: from spec
+                is_variadic: false,   // TODO: from type
+                parameters,
+            },
+            type_info: final_ty,
+            storage_class: spec.storage,
+            scope_id: ctx.symbol_table.current_scope().get(),
+            def_span: span,
+            def_state: DefinitionState::Declared,
+            is_referenced: false,
+            is_completed: false,
+        };
+
+        // Use merge_global_symbol to correctly handle declarations and definitions
+        let entry_ref = match ctx.symbol_table.merge_global_symbol(name, symbol_entry.clone()) {
+            Ok(entry_ref) => entry_ref,
+            Err(_) => {
+                // Error is reported by merge_global_symbol. Look up the symbol for recovery.
+                ctx.symbol_table
+                    .lookup_symbol(name)
+                    .map(|(entry_ref, _)| entry_ref)
+                    .unwrap_or_else(|| {
+                        // Fallback, should not happen if merge is correct
+                        ctx.symbol_table.add_symbol(name, symbol_entry)
+                    })
+            }
+        };
+
         // Set resolved_symbol for the FunctionDecl node
-        if let Some((entry_ref, _)) = ctx.symbol_table.lookup_symbol(name) {
-            let node = ctx.ast.get_node(func_node);
-            node.resolved_symbol.set(Some(entry_ref));
-        }
+        let node = ctx.ast.get_node(func_node);
+        node.resolved_symbol.set(Some(entry_ref));
 
         func_node
     } else {

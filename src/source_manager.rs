@@ -26,12 +26,13 @@ impl SourceId {
 /// - Bits 0-21: Byte Offset (max 4 MiB file size)
 /// - Bits 22-31: Source ID Index (max 1023 unique source files)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct SourceLoc(u32);
+pub struct SourceLoc(pub u32);
 
 impl SourceLoc {
     const OFFSET_MASK: u32 = (1 << 22) - 1; // 22 bits for offset
     const ID_SHIFT: u32 = 22; // Shift for SourceId
 
+    #[allow(dead_code)] // TODO: Currently `new` is not used, but will be useful for future semantic checks
     pub fn new(source_id: SourceId, offset: u32) -> Self {
         assert!(offset <= Self::OFFSET_MASK, "Offset exceeds 4 MiB limit");
         assert!(

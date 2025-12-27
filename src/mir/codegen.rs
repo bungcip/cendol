@@ -796,11 +796,7 @@ impl MirToCraneliftLowerer {
 
             // Don't allocate space for zero-sized types
             if size > 0 {
-                let slot = builder.create_sized_stack_slot(StackSlotData::new(
-                    StackSlotKind::ExplicitSlot,
-                    size,
-                    0,
-                ));
+                let slot = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, size, 0));
                 self.cranelift_stack_slots.insert(local_id, slot);
             }
         }
@@ -1005,8 +1001,7 @@ impl MirToCraneliftLowerer {
 
                     MirStmt::Store(operand, place) => {
                         // We need to determine the correct type for the operand
-                        let place_type_id =
-                            get_place_type_id(place, &self.locals, &self.globals, &self.types)?;
+                        let place_type_id = get_place_type_id(place, &self.locals, &self.globals, &self.types)?;
                         let place_type = self
                             .types
                             .get(&place_type_id)
@@ -1032,9 +1027,7 @@ impl MirToCraneliftLowerer {
                                 let stack_slot = self
                                     .cranelift_stack_slots
                                     .get(local_id)
-                                    .ok_or_else(|| {
-                                        format!("Stack slot not found for local {}", local_id.get())
-                                    })?;
+                                    .ok_or_else(|| format!("Stack slot not found for local {}", local_id.get()))?;
                                 builder.ins().stack_store(value, *stack_slot, 0);
                             }
                             _ => {

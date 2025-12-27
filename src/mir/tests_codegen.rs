@@ -4,8 +4,8 @@
 use crate::driver::compiler::SemaOutput;
 use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer};
 use crate::mir::{
-    MirBlock, MirBlockId, MirFunction, MirFunctionId, MirModule, MirModuleId, MirStmt, MirStmtId,
-    MirType, Operand, Place, Terminator, TypeId, ConstValue, ConstValueId, Local, LocalId,
+    ConstValue, ConstValueId, Local, LocalId, MirBlock, MirBlockId, MirFunction, MirFunctionId, MirModule, MirModuleId,
+    MirStmt, MirStmtId, MirType, Operand, Place, Terminator, TypeId,
 };
 use hashbrown::HashMap;
 use std::num::NonZeroU32;
@@ -105,7 +105,13 @@ fn test_store_deref_pointer() {
     let int_type_id = TypeId::new(1).unwrap();
     let ptr_type_id = TypeId::new(2).unwrap();
     let void_type_id = TypeId::new(3).unwrap();
-    types.insert(int_type_id, MirType::Int { width: 32, is_signed: true });
+    types.insert(
+        int_type_id,
+        MirType::Int {
+            width: 32,
+            is_signed: true,
+        },
+    );
     types.insert(ptr_type_id, MirType::Pointer { pointee: int_type_id });
     types.insert(void_type_id, MirType::Void);
 
@@ -118,20 +124,43 @@ fn test_store_deref_pointer() {
     let mut locals = HashMap::new();
     let local_x_id = LocalId::new(1).unwrap();
     let local_p_id = LocalId::new(2).unwrap();
-    locals.insert(local_x_id, Local::new(local_x_id, Some(Symbol::new("x")), int_type_id, false));
-    locals.insert(local_p_id, Local::new(local_p_id, Some(Symbol::new("p")), ptr_type_id, false));
+    locals.insert(
+        local_x_id,
+        Local::new(local_x_id, Some(Symbol::new("x")), int_type_id, false),
+    );
+    locals.insert(
+        local_p_id,
+        Local::new(local_p_id, Some(Symbol::new("p")), ptr_type_id, false),
+    );
 
     let mut statements = HashMap::new();
     let stmt1_id = MirStmtId::new(1).unwrap();
     let stmt2_id = MirStmtId::new(2).unwrap();
     let stmt3_id = MirStmtId::new(3).unwrap();
     // x = 10
-    statements.insert(stmt1_id, MirStmt::Assign(Place::Local(local_x_id), crate::mir::Rvalue::Use(Operand::Constant(const_10_id))));
+    statements.insert(
+        stmt1_id,
+        MirStmt::Assign(
+            Place::Local(local_x_id),
+            crate::mir::Rvalue::Use(Operand::Constant(const_10_id)),
+        ),
+    );
     // p = &x
-    statements.insert(stmt2_id, MirStmt::Assign(Place::Local(local_p_id), crate::mir::Rvalue::Use(Operand::AddressOf(Box::new(Place::Local(local_x_id))))));
+    statements.insert(
+        stmt2_id,
+        MirStmt::Assign(
+            Place::Local(local_p_id),
+            crate::mir::Rvalue::Use(Operand::AddressOf(Box::new(Place::Local(local_x_id)))),
+        ),
+    );
     // *p = 42
-    statements.insert(stmt3_id, MirStmt::Store(Operand::Constant(const_42_id), Place::Deref(Box::new(Operand::Copy(Box::new(Place::Local(local_p_id)))))));
-
+    statements.insert(
+        stmt3_id,
+        MirStmt::Store(
+            Operand::Constant(const_42_id),
+            Place::Deref(Box::new(Operand::Copy(Box::new(Place::Local(local_p_id))))),
+        ),
+    );
 
     let mut blocks = HashMap::new();
     let entry_block_id = MirBlockId::new(1).unwrap();

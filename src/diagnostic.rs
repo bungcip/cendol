@@ -5,15 +5,16 @@ use annotate_snippets::{AnnotationKind, Level, Renderer, Snippet};
 use symbol_table::GlobalSymbol as Symbol;
 
 /// Diagnostic severity levels
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DiagnosticLevel {
+    #[default]
     Error,
     Warning,
     Note,
 }
 
 /// Individual diagnostic with rich context
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Diagnostic {
     pub level: DiagnosticLevel,
     pub message: String,
@@ -108,9 +109,7 @@ impl DiagnosticEngine {
             level: final_level,
             message,
             span,
-            code: None,
-            hints: Vec::new(),
-            related: Vec::new(),
+            ..Default::default()
         });
     }
 
@@ -147,9 +146,7 @@ impl IntoDiagnostic for ParseError {
             level: DiagnosticLevel::Error,
             message: self.to_string(),
             span: self.span(),
-            code: None,
-            hints: Vec::new(),
-            related: Vec::new(),
+            ..Default::default()
         }]
     }
 }
@@ -160,9 +157,7 @@ impl IntoDiagnostic for SemanticError {
             level: DiagnosticLevel::Error,
             message: self.to_string(),
             span: self.span(),
-            code: None,
-            hints: Vec::new(),
-            related: Vec::new(),
+            ..Default::default()
         };
 
         if let SemanticError::Redefinition { first_def, .. } = &self {
@@ -172,9 +167,7 @@ impl IntoDiagnostic for SemanticError {
                     level: DiagnosticLevel::Note,
                     message: "previous definition is here".to_string(),
                     span: *first_def,
-                    code: None,
-                    hints: Vec::new(),
-                    related: Vec::new(),
+                    ..Default::default()
                 },
             ]
         } else {
@@ -189,9 +182,7 @@ impl IntoDiagnostic for SemanticWarning {
             level: DiagnosticLevel::Warning,
             message: self.to_string(),
             span: self.span(),
-            code: None,
-            hints: Vec::new(),
-            related: Vec::new(),
+            ..Default::default()
         }];
 
         diagnostics
@@ -293,7 +284,6 @@ impl Default for ErrorFormatter {
 impl ErrorFormatter {
     /// Format a single diagnostic with rich source code context
     pub fn format_diagnostic(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
-        let snippet = self.create_snippet(diag, source_manager);
         let renderer = if self.use_colors {
             Renderer::styled().decor_style(DecorStyle::Unicode)
         } else {
@@ -315,14 +305,17 @@ impl ErrorFormatter {
             }
         };
 
-        let mut group = self.level(diag).primary_title(&message).element(snippet);
-
-        for hint in &diag.hints {
-            group = group.element(Level::HELP.message(hint));
+        if diag.span.is_source_id_builtin() == false {
+            let snippet = self.create_snippet(diag, source_manager);
+            let mut group = self.level(diag).primary_title(&message).element(snippet);
+            for hint in &diag.hints {
+                group = group.element(Level::HELP.message(hint));
+            }
+            let report = &[group];
+            renderer.render(report).to_string()
+        } else {
+            message
         }
-
-        let report = &[group];
-        renderer.render(report).to_string()
     }
 
     fn format_location(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {

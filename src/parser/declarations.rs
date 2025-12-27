@@ -280,7 +280,7 @@ pub fn parse_function_definition(parser: &mut Parser) -> Result<NodeRef, ParseEr
 /// Parse translation unit (top level)
 pub fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let start_loc = parser.current_token()?.span.start;
-    let mut end_loc = SourceLoc::empty();
+    let mut end_loc = SourceLoc::builtin();
 
     let mut top_level_declarations = Vec::new();
     let mut iteration_count = 0;

@@ -667,9 +667,7 @@ impl MirToCraneliftLowerer {
             Ok(())
         })();
 
-        if let Err(e) = result {
-            return Err(e);
-        }
+        result?;
 
         // Store the string representation of the final function
         // let final_func_ir = self.ctx.func.to_string();

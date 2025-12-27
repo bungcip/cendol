@@ -60,8 +60,9 @@ fn test_source_span_new() {
 #[test]
 fn test_source_span_empty() {
     let empty = SourceSpan::empty();
-    assert_eq!(empty.start.0, 0);
-    assert_eq!(empty.end.0, 0);
+    assert_eq!(empty.start.source_id(), SourceId::new(1));
+    assert_eq!(empty.start.offset(), 0);
+    assert_eq!(empty.end.offset(), 0);
 }
 
 #[test]

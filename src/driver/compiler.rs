@@ -7,7 +7,7 @@
 use hashbrown::HashMap;
 use indexmap::IndexMap;
 
-use crate::ast::{Ast, SourceId, SourceSpan};
+use crate::ast::{Ast, SourceId};
 use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
 use crate::driver::cli::PathOrBuffer;
 use crate::lexer::{Lexer, Token};
@@ -257,10 +257,7 @@ impl CompilerDriver {
                 self.diagnostics.report_diagnostic(Diagnostic {
                     level: DiagnosticLevel::Error,
                     message: e.to_string(),
-                    span: SourceSpan::empty(),
-                    code: None,
-                    hints: vec![],
-                    related: vec![],
+                    ..Default::default()
                 });
                 Err(PipelineError::Fatal)
             }

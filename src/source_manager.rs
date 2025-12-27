@@ -3,7 +3,7 @@ use std::{cmp::Ordering, num::NonZeroU32, path::PathBuf};
 
 /// Source ID for identifying source files
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SourceId(pub NonZeroU32);
+pub struct SourceId(NonZeroU32);
 
 impl std::fmt::Display for SourceId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -16,13 +16,17 @@ impl SourceId {
     pub fn new(id: u32) -> Self {
         SourceId(NonZeroU32::new(id).expect("SourceId must be non-zero"))
     }
+
+    pub fn to_u32(&self) -> u32 {
+        self.0.get()
+    }
 }
 
 /// Packed file ID and byte offset in a single u32.
 /// - Bits 0-21: Byte Offset (max 4 MiB file size)
 /// - Bits 22-31: Source ID Index (max 1023 unique source files)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SourceLoc(pub u32);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct SourceLoc(u32);
 
 impl SourceLoc {
     const OFFSET_MASK: u32 = (1 << 22) - 1; // 22 bits for offset
@@ -37,10 +41,6 @@ impl SourceLoc {
 
         let packed = (offset & Self::OFFSET_MASK) | (source_id.0.get() << Self::ID_SHIFT);
         SourceLoc(packed)
-    }
-
-    pub fn empty() -> Self {
-        SourceLoc(0)
     }
 
     /// built-in source location (SourceId = 1, offset = 0)
@@ -64,7 +64,7 @@ impl std::fmt::Display for SourceLoc {
 }
 
 /// Represents a range in the source file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SourceSpan {
     pub start: SourceLoc,
     pub end: SourceLoc,
@@ -77,13 +77,17 @@ impl SourceSpan {
 
     pub fn empty() -> Self {
         Self {
-            start: SourceLoc::empty(),
-            end: SourceLoc::empty(),
+            start: SourceLoc::builtin(),
+            end: SourceLoc::builtin(),
         }
     }
 
     pub fn source_id(&self) -> SourceId {
         self.start.source_id()
+    }
+
+    pub fn is_source_id_builtin(&self) -> bool {
+        self.start.source_id().to_u32() == 1
     }
 }
 
@@ -275,7 +279,10 @@ impl SourceManager {
     /// Since SourceId is always valid (we panic if not found), we can use indexing
     /// use get_source_text to get &str from SourceSpan instead if you need text
     pub fn get_buffer(&self, source_id: SourceId) -> &[u8] {
-        let info = self.file_infos.get(&source_id).expect("Invalid SourceId");
+        let info = match self.file_infos.get(&source_id) {
+            Some(info) => info,
+            None => panic!("invalid source_id {source_id}"),
+        };
         &self.buffers[info.buffer_index][..]
     }
 

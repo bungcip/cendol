@@ -8,7 +8,6 @@ use crate::mir::{
     MirStmt, MirStmtId, MirType, Operand, Place, Terminator, TypeId,
 };
 use hashbrown::HashMap;
-use std::num::NonZeroU32;
 use symbol_table::GlobalSymbol as Symbol;
 
 #[test]

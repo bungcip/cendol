@@ -287,7 +287,6 @@ pub struct Preprocessor<'src> {
 
     // State
     include_depth: usize,
-    skipping: bool, // Whether we are currently skipping tokens due to conditional compilation
 }
 
 /// Preprocessor errors
@@ -359,9 +358,7 @@ impl From<PPError> for Diagnostic {
             level,
             message: val.to_string(),
             span: val.span(),
-            code: None,
-            hints: Vec::new(),
-            related: Vec::new(),
+            ..Default::default()
         }
     }
 }
@@ -417,7 +414,6 @@ impl<'src> Preprocessor<'src> {
             built_in_headers,
             lexer_stack: Vec::new(),
             include_depth: 0,
-            skipping: false,
         };
 
         preprocessor.initialize_builtin_macros();
@@ -686,12 +682,17 @@ impl<'src> Preprocessor<'src> {
 
     /// Check if we are currently skipping tokens
     fn is_currently_skipping(&self) -> bool {
-        self.skipping || self.conditional_stack.iter().any(|info| info.was_skipping)
+        // Check if any conditional in the stack is currently skipping
+        self.conditional_stack.iter().any(|info| info.was_skipping)
     }
 
-    /// Set the skipping state
+    /// Set the skipping state for the current conditional level
     fn set_skipping(&mut self, skipping: bool) {
-        self.skipping = skipping;
+        if let Some(info) = self.conditional_stack.last_mut() {
+            info.was_skipping = skipping;
+        } else {
+            // No conditionals, don't skip
+        }
     }
 
     /// Parse a conditional expression for #if and #elif
@@ -705,7 +706,7 @@ impl<'src> Preprocessor<'src> {
 
         while let Some(token) = self.lex_token() {
             let token_line = if let Some(lexer) = self.lexer_stack.last() {
-                lexer.get_line(token.location.0)
+                lexer.get_line(token.location.offset())
             } else {
                 0
             };
@@ -721,8 +722,8 @@ impl<'src> Preprocessor<'src> {
 
         if tokens.is_empty() {
             let span = SourceSpan::new(self.get_current_location(), self.get_current_location());
-            let diag = crate::diagnostic::Diagnostic {
-                level: crate::diagnostic::DiagnosticLevel::Error,
+            let diag = Diagnostic {
+                level: DiagnosticLevel::Error,
                 message: "Invalid conditional expression".to_string(),
                 span,
                 code: Some("invalid_conditional_expression".to_string()),
@@ -748,15 +749,17 @@ impl<'src> Preprocessor<'src> {
             if tokens.len() == 2 {
                 // defined identifier
                 if let PPTokenKind::Identifier(sym) = &tokens[1].kind {
-                    return Ok(self.macros.contains_key(sym));
+                    let is_defined = self.macros.contains_key(sym);
+                    return Ok(is_defined);
                 }
-            } else if tokens.len() == 4
+            } else if tokens.len() >= 4
                 && matches!(tokens[1].kind, PPTokenKind::LeftParen)
                 && matches!(tokens[3].kind, PPTokenKind::RightParen)
             {
                 // defined(identifier)
                 if let PPTokenKind::Identifier(sym) = &tokens[2].kind {
-                    return Ok(self.macros.contains_key(sym));
+                    let is_defined = self.macros.contains_key(sym);
+                    return Ok(is_defined);
                 }
             }
         }
@@ -773,8 +776,8 @@ impl<'src> Preprocessor<'src> {
                     let loc = self.get_current_location();
                     SourceSpan::new(loc, loc)
                 };
-                let diag = crate::diagnostic::Diagnostic {
-                    level: crate::diagnostic::DiagnosticLevel::Warning,
+                let diag = Diagnostic {
+                    level: DiagnosticLevel::Warning,
                     message: "Failed to expand macros in conditional expression".to_string(),
                     span,
                     code: Some("macro_expansion_failed".to_string()),
@@ -809,8 +812,8 @@ impl<'src> Preprocessor<'src> {
                     let loc = self.get_current_location();
                     SourceSpan::new(loc, loc)
                 };
-                let diag = crate::diagnostic::Diagnostic {
-                    level: crate::diagnostic::DiagnosticLevel::Warning,
+                let diag = Diagnostic {
+                    level: DiagnosticLevel::Warning,
                     message: "Invalid conditional expression in preprocessor directive".to_string(),
                     span,
                     code: Some("invalid_conditional_expression".to_string()),
@@ -886,8 +889,8 @@ impl<'src> Preprocessor<'src> {
                     Some(DirectiveKind::Warning) => self.handle_warning()?,
                     None => {
                         let name = sym.as_str();
-                        let diag = crate::diagnostic::Diagnostic {
-                            level: crate::diagnostic::DiagnosticLevel::Error,
+                        let diag = Diagnostic {
+                            level: DiagnosticLevel::Error,
                             message: format!("Invalid preprocessor directive '{name}'"),
                             span: SourceSpan::new(token.location, token.location),
                             code: Some("invalid_directive".to_string()),
@@ -900,8 +903,8 @@ impl<'src> Preprocessor<'src> {
                 }
             }
             _ => {
-                let diag = crate::diagnostic::Diagnostic {
-                    level: crate::diagnostic::DiagnosticLevel::Error,
+                let diag = Diagnostic {
+                    level: DiagnosticLevel::Error,
                     message: "Invalid preprocessor directive".to_string(),
                     span: SourceSpan::new(token.location, token.location),
                     code: Some("invalid_directive".to_string()),
@@ -929,8 +932,8 @@ impl<'src> Preprocessor<'src> {
             && !existing.flags.contains(MacroFlags::BUILTIN)
         {
             // Emit warning for redefinition
-            let diag = crate::diagnostic::Diagnostic {
-                level: crate::diagnostic::DiagnosticLevel::Warning,
+            let diag = Diagnostic {
+                level: DiagnosticLevel::Warning,
                 message: format!("Redefinition of macro '{}'", name.as_str()),
                 span: SourceSpan::new(name_token.location, name_token.location),
                 code: Some("macro_redefinition".to_string()),
@@ -1017,8 +1020,8 @@ impl<'src> Preprocessor<'src> {
                                 }
                                 _ => {
                                     // For problematic parameter tokens, emit a warning and continue
-                                    let diag = crate::diagnostic::Diagnostic {
-                                        level: crate::diagnostic::DiagnosticLevel::Warning,
+                                    let diag = Diagnostic {
+                                        level: DiagnosticLevel::Warning,
                                         message: format!(
                                             "Invalid macro parameter token in #define '{}'",
                                             name.as_str()
@@ -1181,8 +1184,8 @@ impl<'src> Preprocessor<'src> {
                     // Load the file
                     self.source_manager.add_file_from_path(&resolved_path).map_err(|_| {
                         // Emit diagnostic for file not found
-                        let diag = crate::diagnostic::Diagnostic {
-                            level: crate::diagnostic::DiagnosticLevel::Error,
+                        let diag = Diagnostic {
+                            level: DiagnosticLevel::Error,
                             message: format!("Include file '{}' not found", path_str),
                             span: SourceSpan::new(token.location, token.location),
                             code: Some("include_file_not_found".to_string()),
@@ -1194,8 +1197,8 @@ impl<'src> Preprocessor<'src> {
                     })?
                 } else {
                     // For angled includes, if not found, emit warning and skip
-                    let diag = crate::diagnostic::Diagnostic {
-                        level: crate::diagnostic::DiagnosticLevel::Warning,
+                    let diag = Diagnostic {
+                        level: DiagnosticLevel::Warning,
                         message: format!("Include file '{}' not found, skipping", path_str),
                         span: SourceSpan::new(token.location, token.location),
                         code: Some("include_file_not_found".to_string()),
@@ -1259,7 +1262,7 @@ impl<'src> Preprocessor<'src> {
         };
         self.conditional_stack.push(info);
 
-        // Set skipping state based on condition
+        // Set skipping state for this conditional level
         if !condition {
             self.set_skipping(true);
         }
@@ -1282,6 +1285,7 @@ impl<'src> Preprocessor<'src> {
         };
         self.conditional_stack.push(info);
 
+        // Set skipping state for this conditional level
         if !defined {
             self.set_skipping(true);
         }
@@ -1306,6 +1310,7 @@ impl<'src> Preprocessor<'src> {
         };
         self.conditional_stack.push(info);
 
+        // Set skipping state for this conditional level
         if defined {
             self.set_skipping(true);
         }
@@ -1351,11 +1356,9 @@ impl<'src> Preprocessor<'src> {
 
         // Process else block if no previous branch was taken
         let should_process = !current.found_non_skipping;
-        if should_process {
-            self.set_skipping(false);
-        } else {
-            self.set_skipping(true);
-        }
+
+        // Only change the skipping state for the current conditional level
+        current.was_skipping = !should_process;
 
         self.expect_eod()?;
 
@@ -1498,7 +1501,7 @@ impl<'src> Preprocessor<'src> {
         let directive_location = if let Some(lexer) = self.lexer_stack.last() {
             SourceLoc::new(lexer.source_id, lexer.position)
         } else {
-            SourceLoc(0)
+            SourceLoc::builtin()
         };
         while let Some(token) = self.lex_token() {
             if token.kind == PPTokenKind::Eod {
@@ -1514,13 +1517,11 @@ impl<'src> Preprocessor<'src> {
             }
         }
         let message = message_parts.join(" ");
-        let diag = crate::diagnostic::Diagnostic {
-            level: crate::diagnostic::DiagnosticLevel::Error,
+        let diag = Diagnostic {
+            level: DiagnosticLevel::Error,
             message: format!("#error directive: {}", message),
             span: SourceSpan::new(directive_location, directive_location),
-            code: Some("error_directive".to_string()),
-            hints: Vec::new(),
-            related: Vec::new(),
+            ..Default::default()
         };
         self.diag.report_diagnostic(diag);
         Err(PPError::ErrorDirective(message))
@@ -1532,7 +1533,7 @@ impl<'src> Preprocessor<'src> {
         let directive_location = if let Some(lexer) = self.lexer_stack.last() {
             SourceLoc::new(lexer.source_id, lexer.position)
         } else {
-            SourceLoc(0)
+            SourceLoc::builtin()
         };
         while let Some(token) = self.lex_token() {
             if token.kind == PPTokenKind::Eod {
@@ -1549,8 +1550,8 @@ impl<'src> Preprocessor<'src> {
         }
         let message = message_parts.join(" ");
         // For warning, we emit a diagnostic but don't stop compilation
-        let diag = crate::diagnostic::Diagnostic {
-            level: crate::diagnostic::DiagnosticLevel::Warning,
+        let diag = Diagnostic {
+            level: DiagnosticLevel::Warning,
             message,
             span: SourceSpan::new(directive_location, directive_location),
             code: None,
@@ -2136,6 +2137,7 @@ impl<'src> Preprocessor<'src> {
                     continue;
                 }
             }
+
             // For object macros
             if let Some(expanded) = self.expand_macro(&tokens[i]).unwrap_or(None) {
                 tokens.splice(i..i + 1, expanded);

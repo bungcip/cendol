@@ -506,10 +506,7 @@ fn test_function_returning_array_rejected() {
     let result = parse_declaration_with_errors("int f(int)[3];");
     assert!(result.is_err(), "Parser should reject function returning array");
     let err = result.unwrap_err();
-    assert!(matches!(
-        err,
-        crate::diagnostic::ParseError::DeclarationNotAllowed { .. }
-    ));
+    assert!(matches!(err, crate::diagnostic::ParseError::Generic { .. }));
 }
 
 #[test]

@@ -271,7 +271,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     fn parse_expr_bp(&mut self, min_binding_power: BindingPower) -> Result<NodeRef, ParseError> {
         match self.parse_expression(min_binding_power)? {
             ParseExprOutput::Expression(node) => Ok(node),
-            ParseExprOutput::Declaration(_) => Err(ParseError::DeclarationNotAllowed {
+            ParseExprOutput::Declaration(_) => Err(ParseError::Generic {
+                message: "Declaration not allowed in this context".to_string(),
                 span: self.current_token_span()?,
             }),
         }

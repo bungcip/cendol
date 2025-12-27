@@ -290,7 +290,10 @@ fn parse_unary_operator(parser: &mut Parser, token: Token) -> Result<NodeRef, Pa
         TokenKind::Star => UnaryOp::Deref,
         TokenKind::And => UnaryOp::AddrOf,
         _ => {
-            return Err(ParseError::InvalidUnaryOperator { span: token.span });
+            return Err(ParseError::Generic {
+                message: "Invalid unary operator".to_string(),
+                span: token.span,
+            });
         }
     };
 
@@ -317,7 +320,8 @@ fn parse_infix(
     let right_node = match parser.parse_expression(min_bp)? {
         super::ParseExprOutput::Expression(node) => node,
         super::ParseExprOutput::Declaration(_) => {
-            return Err(ParseError::DeclarationNotAllowed {
+            return Err(ParseError::Generic {
+                message: "Declaration not allowed in this context".to_string(),
                 span: parser.current_token_span()?,
             });
         }
@@ -512,7 +516,8 @@ pub(crate) fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, Pa
         let result_expr = match parser.parse_expression(BindingPower(2))? {
             super::ParseExprOutput::Expression(node) => node,
             super::ParseExprOutput::Declaration(_) => {
-                return Err(ParseError::DeclarationNotAllowed {
+                return Err(ParseError::Generic {
+                    message: "Declaration not allowed in this context".to_string(),
                     span: parser.current_token_span()?,
                 });
             }

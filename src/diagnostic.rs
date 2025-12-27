@@ -36,17 +36,11 @@ pub enum ParseError {
     #[error("Unexpected End of File")]
     UnexpectedEof { span: SourceSpan },
 
-    #[error("Invalid unary operator")]
-    InvalidUnaryOperator { span: SourceSpan },
-
-    #[error("Declaration not allowed in this context")]
-    DeclarationNotAllowed { span: SourceSpan },
-
     #[error("Parser exceeded maximum iteration limit - possible infinite loop")]
     InfiniteLoop { span: SourceSpan },
 
-    #[error("Invalid numeric constant: {text}")]
-    InvalidNumericConstant { text: String, span: SourceSpan },
+    #[error("{message}")]
+    Generic { message: String, span: SourceSpan },
 }
 
 impl ParseError {
@@ -54,10 +48,8 @@ impl ParseError {
         match self {
             ParseError::UnexpectedToken { span, .. } => *span,
             ParseError::UnexpectedEof { span } => *span,
-            ParseError::InvalidNumericConstant { span, .. } => *span,
-            ParseError::InvalidUnaryOperator { span } => *span,
-            ParseError::DeclarationNotAllowed { span } => *span,
             ParseError::InfiniteLoop { span } => *span,
+            ParseError::Generic { span, .. } => *span,
         }
     }
 }

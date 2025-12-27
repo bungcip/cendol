@@ -75,7 +75,8 @@ impl<'arena, 'src> ParserExt for Parser<'arena, 'src> {
     ) -> Result<NodeRef, ParseError> {
         match result {
             Ok(ParseExprOutput::Expression(node)) => Ok(node),
-            Ok(ParseExprOutput::Declaration(node_ref)) => Err(ParseError::DeclarationNotAllowed {
+            Ok(ParseExprOutput::Declaration(node_ref)) => Err(ParseError::Generic {
+                message: "Declaration not allowed in this context".to_string(),
                 span: self.ast.get_node(node_ref).span,
             }),
             Err(e) => Err(e),

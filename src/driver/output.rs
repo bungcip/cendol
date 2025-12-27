@@ -398,7 +398,13 @@ impl OutputHandler {
                 "DeclarationList([{}])",
                 stmts.iter().map(|&r| r.get().to_string()).join(", ")
             ),
-            NodeKind::Initializer(_) => todo!("write it"),
+            NodeKind::ListInitializer(designated_inits) => println!(
+                "ListInitializer([{}])",
+                designated_inits
+                    .iter()
+                    .map(|init| format!("{:?} : {}", init.designation, init.initializer.get()))
+                    .join(", ")
+            ),
             NodeKind::Dummy => println!("DUMMY"),
         }
     }

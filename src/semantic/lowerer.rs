@@ -538,18 +538,18 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     ) {
         debug!("Processing initializer for variable '{}'", var_name);
 
-        let initializer = self.ast.get_node(initializer_node_ref).clone_initializer_kind().clone();
-        match initializer {
-            Initializer::Expression(expr_ref) => {
+        let initializer = self.ast.get_node(initializer_node_ref).clone();
+        match &initializer.kind {
+            NodeKind::ListInitializer(designated_initializers) => {
+                // Process designated initializers (both positional and named)
+                self.process_designated_initializers(designated_initializers, local_id, var_name, span);
+            }
+            _ => {
                 // Lower the initializer expression to an operand
-                let init_operand = self.lower_expression(expr_ref);
+                let init_operand = self.lower_expression(initializer_node_ref);
 
                 // Emit assignment: local = initializer
                 self.emit_assignment(Place::Local(local_id), init_operand, span);
-            }
-            Initializer::List(designated_initializers) => {
-                // Process designated initializers (both positional and named)
-                self.process_designated_initializers(&designated_initializers, local_id, var_name, span);
             }
         }
     }
@@ -664,22 +664,17 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         // Process the initializer for this designated field
         let designated_init_node = self.ast.get_node(designated_init.initializer);
         match &designated_init_node.kind {
-            NodeKind::Initializer(initializer) => {
-                match initializer {
-                    Initializer::Expression(expr_ref) => {
-                        // Lower the initializer expression to an operand
-                        let init_operand = self.lower_expression(*expr_ref);
-
-                        // Emit assignment to the designated field: field = initializer
-                        self.emit_assignment(current_place, init_operand, span);
-                    }
-                    Initializer::List(_nested_inits) => {
-                        // Nested compound initializer - for now, just report as unsupported
-                        self.report_error(SemanticError::NonConstantInitializer { span });
-                    }
-                }
+            NodeKind::ListInitializer(_nested_inits) => {
+                // Nested compound initializer - for now, just report as unsupported
+                self.report_error(SemanticError::NonConstantInitializer { span });
             }
-            _ => panic!("Expected NodeKind::Initializer, got {:?}", designated_init_node.kind),
+            _ => {
+                // Lower the initializer expression to an operand
+                let init_operand = self.lower_expression(designated_init.initializer);
+
+                // Emit assignment to the designated field: field = initializer
+                self.emit_assignment(current_place, init_operand, span);
+            }
         }
     }
 
@@ -699,37 +694,32 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
 
         let initializer_node = self.ast.get_node(initializer_node_ref);
         match &initializer_node.kind {
-            NodeKind::Initializer(initializer) => {
-                match initializer {
-                    Initializer::Expression(expr_ref) => {
-                        // For simple positional initializers, we can use the existing logic
-                        // but we need to handle struct/array member access
-                        let init_operand = self.lower_expression(*expr_ref);
-
-                        // Get the type for the temporary local
-                        let temp_type_id = self.get_int_type(); // For now, assume int type
-
-                        // Create a temporary local for the initializer
-                        let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
-
-                        // Emit assignment to temporary: temp = initializer
-                        self.emit_assignment(Place::Local(temp_local_id), init_operand, span);
-
-                        // TODO: Emit assignment to the appropriate struct member or array element
-                        // For now, just assign to the main local
-                        self.emit_assignment(
-                            Place::Local(local_id),
-                            Operand::Copy(Box::new(Place::Local(temp_local_id))),
-                            span,
-                        );
-                    }
-                    Initializer::List(_) => {
-                        // Nested compound initializer - for now, just report as unsupported
-                        self.report_error(SemanticError::NonConstantInitializer { span });
-                    }
-                }
+            NodeKind::ListInitializer(_) => {
+                // Nested compound initializer - for now, just report as unsupported
+                self.report_error(SemanticError::NonConstantInitializer { span });
             }
-            _ => panic!("Expected NodeKind::Initializer, got {:?}", initializer_node.kind),
+            _ => {
+                // For simple positional initializers, we can use the existing logic
+                // but we need to handle struct/array member access
+                let init_operand = self.lower_expression(initializer_node_ref);
+
+                // Get the type for the temporary local
+                let temp_type_id = self.get_int_type(); // For now, assume int type
+
+                // Create a temporary local for the initializer
+                let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
+
+                // Emit assignment to temporary: temp = initializer
+                self.emit_assignment(Place::Local(temp_local_id), init_operand, span);
+
+                // TODO: Emit assignment to the appropriate struct member or array element
+                // For now, just assign to the main local
+                self.emit_assignment(
+                    Place::Local(local_id),
+                    Operand::Copy(Box::new(Place::Local(temp_local_id))),
+                    span,
+                );
+            }
         }
     }
 
@@ -743,9 +733,9 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     ) -> Option<ConstValueId> {
         debug!("Processing global compound initializer for variable '{}'", var_name);
 
-        let initializer_node = self.ast.get_node(initializer_node_ref).clone_initializer_kind();
-        match initializer_node {
-            Initializer::List(designated_initializers) => {
+        let initializer_node = self.ast.get_node(initializer_node_ref).clone();
+        match initializer_node.kind {
+            NodeKind::ListInitializer(designated_initializers) => {
                 // Collect constant values for fields
                 // We use a map to handle out-of-order and designated initializers
                 // Key is the field index
@@ -795,41 +785,10 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                     };
 
                     // Process the initializer value
-                    let init = designated_init.initializer;
-                    let init = self.ast.get_node(init).clone_initializer_kind();
-                    if let Initializer::Expression(expr_ref) = init {
-                        // Lower the initializer expression to get the constant value
-                        let init_operand = self.lower_expression(expr_ref);
+                    let init_ref = designated_init.initializer;
+                    let init = self.ast.get_node(init_ref);
 
-                        match init_operand {
-                            Operand::Constant(const_id) => {
-                                debug!(
-                                    "Global compound initializer: field {} = constant {:?}",
-                                    target_index, const_id
-                                );
-                                field_values_map.insert(target_index, const_id);
-                            }
-                            Operand::AddressOf(place_box) => {
-                                if let Place::Global(global_id) = *place_box {
-                                    debug!(
-                                        "Global compound initializer: field {} = address of global {:?}",
-                                        target_index, global_id
-                                    );
-                                    let const_val = ConstValue::GlobalAddress(global_id);
-                                    let const_id = self.create_constant(const_val);
-                                    field_values_map.insert(target_index, const_id);
-                                } else {
-                                    self.report_error(SemanticError::NonConstantInitializer { span });
-                                    return None;
-                                }
-                            }
-                            _ => {
-                                // Non-constant expression in global initializer - report error
-                                self.report_error(SemanticError::NonConstantInitializer { span });
-                                return None;
-                            }
-                        }
-                    } else {
+                    if let NodeKind::ListInitializer(_) = init.kind {
                         // Nested compound literal
                         // Get the type of the field we are initializing
                         // Try to get struct field type first
@@ -857,6 +816,37 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                             field_values_map.insert(target_index, nested_const_id);
                         } else {
                             return None;
+                        }
+                    } else {
+                        // Lower the initializer expression to get the constant value
+                        let init_operand = self.lower_expression(init_ref);
+                        match init_operand {
+                            Operand::Constant(const_id) => {
+                                debug!(
+                                    "Global compound initializer: field {} = constant {:?}",
+                                    target_index, const_id
+                                );
+                                field_values_map.insert(target_index, const_id);
+                            }
+                            Operand::AddressOf(place_box) => {
+                                if let Place::Global(global_id) = *place_box {
+                                    debug!(
+                                        "Global compound initializer: field {} = address of global {:?}",
+                                        target_index, global_id
+                                    );
+                                    let const_val = ConstValue::GlobalAddress(global_id);
+                                    let const_id = self.create_constant(const_val);
+                                    field_values_map.insert(target_index, const_id);
+                                } else {
+                                    self.report_error(SemanticError::NonConstantInitializer { span });
+                                    return None;
+                                }
+                            }
+                            _ => {
+                                // Non-constant expression in global initializer - report error
+                                self.report_error(SemanticError::NonConstantInitializer { span });
+                                return None;
+                            }
                         }
                     }
                 }
@@ -901,13 +891,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         let mir_type_id = self.lower_type_to_mir(canonical_type_id);
 
         let is_global = self.current_function.is_none();
-        let initializer_node_ref = var_decl.init.as_ref().and_then(|init| {
-            let init = self.ast.get_node(*init).clone_initializer_kind();
-            match init {
-                Initializer::Expression(expr_ref) => Some(expr_ref),
-                _ => None,
-            }
-        });
+        let initializer_node_ref = var_decl.init;
 
         if is_global {
             // Check if a global with this name already exists
@@ -930,21 +914,21 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 // Process initializer to get constant value
                 let mut initial_value_id = None;
                 if let Some(init) = &var_decl.init {
-                    let node = self.ast.get_node(*init).clone_initializer_kind();
-                    match node {
-                        Initializer::Expression(expr_ref) => {
-                            // Try to evaluate the initializer as a constant
-                            let init_operand = self.lower_expression(expr_ref);
-                            if let Operand::Constant(const_id) = init_operand {
-                                initial_value_id = Some(const_id);
-                            }
-                        }
-                        _ => {
+                    let node = self.ast.get_node(*init);
+                    match node.kind {
+                        NodeKind::ListInitializer(_) => {
                             // For compound initializers in global variables, we need to process them properly
                             if let Some(struct_const_id) =
                                 self.process_global_compound_initializer(*init, var_decl.name, mir_type_id, span)
                             {
                                 initial_value_id = Some(struct_const_id);
+                            }
+                        }
+                        _ => {
+                            // Try to evaluate the initializer as a constant
+                            let init_operand = self.lower_expression(*init);
+                            if let Operand::Constant(const_id) = init_operand {
+                                initial_value_id = Some(const_id);
                             }
                         }
                     }
@@ -984,7 +968,10 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
 
             // Use merge_global_symbol to handle C11 6.9.2 merging rules and detect redefinitions
             // Redefinition errors are now handled in resolver.rs during symbol resolution
-            let entry_ref = match self.symbol_table.merge_global_symbol(var_decl.name, symbol_entry.clone()) {
+            let _ = match self
+                .symbol_table
+                .merge_global_symbol(var_decl.name, symbol_entry.clone())
+            {
                 Ok(entry_ref) => {
                     debug!("Global variable '{}' processed successfully", var_decl.name);
                     entry_ref
@@ -992,7 +979,10 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 Err(_error) => {
                     // merge_global_symbol detected a redefinition error, but this should have been
                     // handled by resolver.rs during symbol resolution. Continue processing anyway.
-                    debug!("Global variable '{}' merge failed, but continuing processing", var_decl.name);
+                    debug!(
+                        "Global variable '{}' merge failed, but continuing processing",
+                        var_decl.name
+                    );
                     // Return a dummy entry ref to avoid panicking
                     self.symbol_table.add_symbol(var_decl.name, symbol_entry)
                 }
@@ -1176,10 +1166,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 }
 
                 // If we reach here, the symbol was not resolved or not found in MIR
-                self.report_error(SemanticError::UndeclaredIdentifier {
-                    name,
-                    span: node.span,
-                });
+                self.report_error(SemanticError::UndeclaredIdentifier { name, span: node.span });
                 let error_const = self.create_constant(ConstValue::Int(0));
                 Operand::Constant(error_const)
             }
@@ -2331,10 +2318,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     /// Check if a type is arithmetic (integer or floating-point)
     fn is_arithmetic_type(&self, type_id: TypeId) -> bool {
         if let Some(mir_type) = self.get_types().get(&type_id) {
-            matches!(
-                mir_type,
-                MirType::Int { .. } | MirType::Float { .. }
-            )
+            matches!(mir_type, MirType::Int { .. } | MirType::Float { .. })
         } else {
             false
         }

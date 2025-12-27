@@ -4,7 +4,7 @@
 //! including type inference, type unification, and error detection.
 
 use crate::ast::*;
-use crate::diagnostic::{DiagnosticEngine};
+use crate::diagnostic::DiagnosticEngine;
 use crate::semantic::SymbolTable;
 use crate::semantic::type_checker::run_type_checker;
 

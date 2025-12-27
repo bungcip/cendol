@@ -161,14 +161,6 @@ impl Node {
             resolved_type: Cell::new(None),
         }
     }
-
-    /// try to get initializer, panic if not. it clone for now
-    pub fn clone_initializer_kind(&self) -> Initializer {
-        match &self.kind {
-            NodeKind::Initializer(init) => init.clone(),
-            _ => panic!("not initializer kind"),
-        }
-    }
 }
 
 /// Represents the definition state of a symbol entry.

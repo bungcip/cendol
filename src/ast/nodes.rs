@@ -96,7 +96,7 @@ pub enum NodeKind {
     TranslationUnit(Vec<NodeRef> /* top-level declarations */),
 
     // --- Initializers ---
-    Initializer(Initializer),
+    ListInitializer(Vec<DesignatedInitializer>),
 
     // --- Dummy Node ---
     Dummy,
@@ -356,22 +356,6 @@ pub struct RecordDefData {
     pub tag: Option<Symbol>,                   // None if anonymous
     pub members: Option<Vec<DeclarationData>>, // Field declarations
     pub is_union: bool,
-}
-
-// Initializers
-#[derive(Debug, Clone, Serialize)]
-pub enum Initializer {
-    Expression(NodeRef),              // = 5
-    List(Vec<DesignatedInitializer>), // = { .x = 1, [0] = 2 }
-}
-
-impl Initializer {
-    pub fn get_expression(&self) -> NodeRef {
-        match self {
-            Initializer::Expression(node_ref) => *node_ref,
-            _ => panic!("Initializer is not an expression"),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize)]

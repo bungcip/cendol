@@ -1,5 +1,5 @@
 #![cfg(test)]
-use crate::ast::{Ast, BinaryOp, DeclSpecifier, Declarator, Initializer, NodeKind, NodeRef, TypeSpecifier, UnaryOp};
+use crate::ast::{Ast, BinaryOp, DeclSpecifier, Declarator, NodeKind, NodeRef, TypeSpecifier, UnaryOp};
 use crate::diagnostic::{DiagnosticEngine, ParseError};
 use crate::driver::CompilerDriver;
 use crate::driver::cli::CompileConfig;
@@ -279,6 +279,9 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
             Box::new(resolve_node(ast, for_stmt.body)),
         ),
         NodeKind::EmptyStatement => ResolvedNodeKind::Empty,
+        NodeKind::ListInitializer(list) => {
+            ResolvedNodeKind::InitializerList(list.iter().map(|x| resolve_node(ast, x.initializer)).collect())
+        }
         // Add more cases as needed for other NodeKind variants used in tests
         _ => panic!("Unsupported NodeKind for resolution: {:?}", node.kind),
     }
@@ -388,19 +391,7 @@ fn extract_declarator_kind(declarator: &Declarator) -> String {
 }
 
 fn resolve_initializer(ast: &Ast, initializer: NodeRef) -> ResolvedNodeKind {
-    let node = ast.get_node(initializer).clone_initializer_kind();
-    match node {
-        Initializer::Expression(expr) => resolve_node(ast, expr),
-        Initializer::List(designated_inits) => {
-            let mut elements = Vec::new();
-            for designated in designated_inits {
-                // For now, ignore designations and just collect the initializer values
-                // In a full implementation, we'd handle [index] and .field designators
-                elements.push(resolve_initializer(ast, designated.initializer));
-            }
-            ResolvedNodeKind::InitializerList(elements)
-        }
-    }
+    resolve_node(ast, initializer)
 }
 
 /// Generic helper function for parsing source code with common setup

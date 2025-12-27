@@ -815,7 +815,9 @@ pub fn run_symbol_resolver(ast: &mut Ast, diag: &mut DiagnosticEngine, symbol_ta
 
     // Reset symbol table traversal and current scope for Phase 2
     lower_ctx.symbol_table.reset_traversal();
-    lower_ctx.symbol_table.set_current_scope(crate::semantic::ScopeId::GLOBAL);
+    lower_ctx
+        .symbol_table
+        .set_current_scope(crate::semantic::ScopeId::GLOBAL);
 
     // Phase 2: Process expressions and resolve identifiers
     lower_node_recursive_phase2(&mut lower_ctx, root_node_ref);
@@ -1268,9 +1270,8 @@ fn lower_node_recursive_phase2(ctx: &mut LowerCtx, node_ref: NodeRef) {
             }
 
             // Process initializer if present
-            if let Some(init) = &var_decl.init {
-                let init = ctx.ast.get_node(*init).clone_initializer_kind();
-                lower_initializer_phase2(ctx, &init);
+            if let Some(init) = var_decl.init {
+                lower_node_recursive_phase2(ctx, init);
             }
         }
         NodeKind::RecordDecl(record_decl) => {
@@ -1418,7 +1419,8 @@ fn lower_node_recursive_phase2(ctx: &mut LowerCtx, node_ref: NodeRef) {
                 // In case of multi-declarator, replace with DeclarationList
                 if semantic_nodes.len() > 1 {
                     let original_node = ctx.ast.get_node(node_ref);
-                    let compound_node = Node::new(NodeKind::DeclarationList(semantic_nodes.clone()), original_node.span);
+                    let compound_node =
+                        Node::new(NodeKind::DeclarationList(semantic_nodes.clone()), original_node.span);
                     ctx.ast.replace_node(node_ref, compound_node);
                 } else {
                     let semantic_node_data = ctx.ast.get_node(semantic_nodes[0]).clone();
@@ -1731,13 +1733,7 @@ fn lower_init_declarator_phase1(
         func_node
     } else {
         // Extract initializer for symbol entry before moving it
-        let initializer_node_ref = init.initializer.and_then(|init_node_ref| {
-            let init_kind = ctx.ast.get_node(init_node_ref).clone_initializer_kind();
-            match init_kind {
-                Initializer::Expression(expr_ref) => Some(expr_ref),
-                Initializer::List(_) => None, // Initializer list is handled separately
-            }
-        });
+        let initializer_node_ref = init.initializer;
 
         let var_decl = VarDeclData {
             name,
@@ -1778,7 +1774,7 @@ fn lower_init_declarator_phase1(
                     // merge_global_symbol returned an error for a legitimate redefinition issue
                     // (e.g., trying to redefine a function as a variable)
                     debug!("merge_global_symbol error for global variable '{}'", name);
-                    
+
                     // Get the existing symbol to report proper redefinition error
                     let existing_entry = ctx
                         .symbol_table
@@ -1790,10 +1786,11 @@ fn lower_init_declarator_phase1(
                         first_def: existing_entry,
                         second_def: span,
                     });
-                    
+
                     // Return existing entry to continue processing without panicking
                     // In case of real redefinition error, the error has been reported above
-                    ctx.symbol_table.lookup_symbol(name)
+                    ctx.symbol_table
+                        .lookup_symbol(name)
                         .map(|(entry_ref, _)| entry_ref)
                         .unwrap_or_else(|| {
                             // This shouldn't happen, but provide a fallback
@@ -1910,22 +1907,5 @@ fn lower_type_definition_phase1(ctx: &mut LowerCtx, specifiers: &[DeclSpecifier]
             Some(record_node_ref)
         }
         _ => None,
-    }
-}
-
-/// Process initializer for Phase 2
-fn lower_initializer_phase2(ctx: &mut LowerCtx, init: &Initializer) {
-    match init {
-        Initializer::Expression(expr_ref) => {
-            lower_node_recursive_phase2(ctx, *expr_ref);
-        }
-        Initializer::List(items) => {
-            for item in items {
-                // InitializerListItem has an optional designation and an initializer.
-                // We only care about the initializer for now.
-                let item_init = ctx.ast.get_node(item.initializer).clone_initializer_kind();
-                lower_initializer_phase2(ctx, &item_init);
-            }
-        }
     }
 }

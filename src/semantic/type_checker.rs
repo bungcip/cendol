@@ -615,17 +615,14 @@ fn type_check_assignment(
 
 /// Type check an initializer
 fn type_check_initializer(ctx: &mut TypeCheckCtx, _target_type: TypeRef, initializer: NodeRef, _span: SourceSpan) {
-    let initializer = ctx.ast.get_node(initializer).clone_initializer_kind().clone();
-    match initializer {
-        Initializer::Expression(expr_ref) => {
-            type_check_node_recursive(ctx, expr_ref);
-            let _expr_type = ctx.get_resolved_type(expr_ref);
-            // For now, skip type checking initializers
-            // In a full implementation, this would check type compatibility
-        }
-        Initializer::List(_designated_initializers) => {
+    let node = ctx.ast.get_node(initializer);
+    match &node.kind {
+        NodeKind::ListInitializer(_designated_initializers) => {
             // For compound initializers, skip type checking for now
             // In a full implementation, this would check each field's type
+        }
+        _ => {
+            // Unexpected node kind for initializer
         }
     }
 }

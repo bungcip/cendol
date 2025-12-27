@@ -229,10 +229,7 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<NodeRef, ParseErr
                     parse_initializer(parser)?
                 } else {
                     // Expression initializer - parse until comma or closing brace
-                    let expr = parse_initializer_expression(parser)?;
-                    let kind = NodeKind::Initializer(Initializer::Expression(expr));
-                    let node = parser.push_node(kind, parser.current_token_span()?);
-                    node
+                    parse_initializer_expression(parser)?
                 };
 
                 // Wrap in DesignatedInitializer with empty designation
@@ -250,7 +247,7 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<NodeRef, ParseErr
         }
 
         parser.expect(TokenKind::RightBrace)?;
-        let kind = NodeKind::Initializer(Initializer::List(initializers));
+        let kind = NodeKind::ListInitializer(initializers);
         // TODO: fix span
         let span = parser.current_token_span()?;
         let node_ref = parser.push_node(kind, span);
@@ -263,13 +260,7 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<NodeRef, ParseErr
         );
         // Expression initializer - use simple parsing to avoid comma operators
         let expr = parse_initializer_expression(parser)?;
-        let kind = NodeKind::Initializer(Initializer::Expression(expr));
-
-        // TODO: fix span
-        let span = parser.current_token_span()?;
-        let node_ref = parser.push_node(kind, span);
-
-        Ok(node_ref)
+        Ok(expr)
     }
 }
 

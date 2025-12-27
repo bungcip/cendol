@@ -204,7 +204,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
 }
 
 /// Parse initializer
-pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<Initializer, ParseError> {
+pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     debug!(
         "parse_initializer: called at position {}, current token: {:?}",
         parser.current_idx,
@@ -229,8 +229,10 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<Initializer, Pars
                     parse_initializer(parser)?
                 } else {
                     // Expression initializer - parse until comma or closing brace
-                    let expr_result = parse_initializer_expression(parser)?;
-                    Initializer::Expression(expr_result)
+                    let expr = parse_initializer_expression(parser)?;
+                    let kind = NodeKind::Initializer(Initializer::Expression(expr));
+                    let node = parser.push_node(kind, parser.current_token_span()?);
+                    node
                 };
 
                 // Wrap in DesignatedInitializer with empty designation
@@ -248,15 +250,26 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<Initializer, Pars
         }
 
         parser.expect(TokenKind::RightBrace)?;
-        Ok(Initializer::List(initializers))
+        let kind = NodeKind::Initializer(Initializer::List(initializers));
+        // TODO: fix span
+        let span = parser.current_token_span()?;
+        let node_ref = parser.push_node(kind, span);
+
+        Ok(node_ref)
     } else {
         debug!(
             "parse_initializer: no LeftBrace found, current token: {:?}, trying expression initializer",
             parser.current_token_kind()
         );
         // Expression initializer - use simple parsing to avoid comma operators
-        let node = parse_initializer_expression(parser)?;
-        Ok(Initializer::Expression(node))
+        let expr = parse_initializer_expression(parser)?;
+        let kind = NodeKind::Initializer(Initializer::Expression(expr));
+
+        // TODO: fix span
+        let span = parser.current_token_span()?;
+        let node_ref = parser.push_node(kind, span);
+
+        Ok(node_ref)
     }
 }
 

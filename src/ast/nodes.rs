@@ -5,10 +5,9 @@
 //! for creating complex AST nodes ergonomically.
 
 use serde::Serialize;
-use std::cell::Cell;
 use thin_vec::ThinVec;
 
-use crate::ast::{InitializerRef, NodeRef, Symbol, SymbolEntryRef, TypeRef};
+use crate::ast::{NodeRef, Symbol, SymbolEntryRef, TypeRef};
 
 /// The core enum defining all possible AST node types for C11.
 /// Variants use NodeIndex for child references, enabling flattened storage.
@@ -22,8 +21,7 @@ pub enum NodeKind {
     LiteralChar(u8),
 
     // --- Expressions ---
-    // Ident now includes a Cell for resolved SymbolEntry after semantic analysis
-    Ident(Symbol, Cell<Option<SymbolEntryRef>>),
+    Ident(Symbol),
     UnaryOp(UnaryOp, NodeRef),
     BinaryOp(BinaryOp, NodeRef, NodeRef),
     TernaryOp(NodeRef, NodeRef, NodeRef),
@@ -49,7 +47,7 @@ pub enum NodeKind {
     SizeOfType(TypeRef),
     AlignOf(TypeRef), // C11 _Alignof
 
-    CompoundLiteral(TypeRef, InitializerRef),
+    CompoundLiteral(TypeRef, NodeRef),
     GenericSelection(NodeRef /* controlling_expr */, Vec<GenericAssociation>),
     VaArg(NodeRef /* va_list_expr */, TypeRef), // va_arg macro expansion
 
@@ -97,6 +95,9 @@ pub enum NodeKind {
     // --- Top Level ---
     TranslationUnit(Vec<NodeRef> /* top-level declarations */),
 
+    // --- Initializers ---
+    Initializer(Initializer),
+
     // --- Dummy Node ---
     Dummy,
 }
@@ -136,7 +137,7 @@ pub struct DeclarationData {
 #[derive(Debug, Clone, Serialize)]
 pub struct InitDeclarator {
     pub declarator: Declarator,
-    pub initializer: Option<Initializer>,
+    pub initializer: Option<NodeRef>, // Initializer
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -167,7 +168,7 @@ pub struct VarDeclData {
     pub name: Symbol,
     pub ty: TypeRef,
     pub storage: Option<StorageClass>,
-    pub init: Option<Initializer>,
+    pub init: Option<NodeRef>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -376,7 +377,7 @@ impl Initializer {
 #[derive(Debug, Clone, Serialize)]
 pub struct DesignatedInitializer {
     pub designation: Vec<Designator>,
-    pub initializer: Initializer,
+    pub initializer: NodeRef, // Initializer
 }
 
 #[derive(Debug, Clone, Serialize)]

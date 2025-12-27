@@ -7,7 +7,7 @@
 use hashbrown::HashMap;
 use indexmap::IndexMap;
 
-use crate::ast::{Ast, SourceId};
+use crate::ast::{Ast, NodeKind, SourceId};
 use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
 use crate::driver::cli::PathOrBuffer;
 use crate::lexer::{Lexer, Token};
@@ -20,7 +20,7 @@ use crate::mir::{
 use crate::mir_dumper::{MirDumpConfig, MirDumper};
 use crate::parser::Parser;
 use crate::pp::{PPToken, Preprocessor};
-use crate::semantic::{SemanticAnalyzer, SymbolTable};
+use crate::semantic::{AstToMirLowerer, SymbolTable};
 use crate::source_manager::SourceManager;
 
 use super::cli::CompileConfig;
@@ -222,15 +222,35 @@ impl CompilerDriver {
     fn run_mir(&mut self, mut ast: Ast) -> Result<SemaOutput, PipelineError> {
         let mut symbol_table = SymbolTable::new();
 
-        use crate::semantic::lower::run_semantic_lowering;
-        run_semantic_lowering(&mut ast, &mut self.diagnostics, &mut symbol_table);
+        // Run symbol resolver to resolve identifiers using the symbol table
+        {
+            use crate::semantic::resolver::run_symbol_resolver;
+            run_symbol_resolver(&mut ast, &mut self.diagnostics, &mut symbol_table);
+        }
 
-        // Check for semantic lowering errors and stop if any
+        // Run type checker phase immediately after symbol resolver
+        {
+            use crate::semantic::type_checker::run_type_checker;
+            run_type_checker(&mut ast, &mut self.diagnostics, &mut symbol_table);
+        }
+
+        // validation: all node of identifier must have symbol in ast
+        for node in &ast.nodes {
+            match &node.kind {
+                NodeKind::VarDecl(..) | NodeKind::Ident(..) if node.resolved_symbol.get() == None => {
+                    panic!("node.resolved_symbol still None: {:?}", node)
+                }
+                _ => (),
+            }
+        }
+
+        // Check for semantic analysis errors and stop if any
         if self.diagnostics.has_errors() {
             return Err(PipelineError::Fatal);
         }
 
-        let mut sema = SemanticAnalyzer::new(&mut ast, &mut self.diagnostics, &mut symbol_table);
+        // this is AstToMirLowerer
+        let mut sema = AstToMirLowerer::new(&mut ast, &mut self.diagnostics, &mut symbol_table);
         let sema_output = sema.lower_module_complete();
 
         // Check for semantic analysis errors and stop if any

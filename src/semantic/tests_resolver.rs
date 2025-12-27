@@ -68,7 +68,18 @@ mod tests {
         let phase = CompilePhase::Mir;
         let config = CompileConfig::from_virtual_file(source.to_string(), phase);
         let mut driver = CompilerDriver::from_config(config);
-        let mut out = driver.run_pipeline(phase).unwrap();
+
+        // Print diagnostics if compilation fails
+        let result = driver.run_pipeline(phase);
+        let mut out = match result {
+            Ok(out) => out,
+            Err(e) => {
+                // Print diagnostics before panicking
+                driver.print_diagnostics();
+                panic!("Compilation failed with error: {:?}", e);
+            }
+        };
+
         let first = out.units.first_mut().unwrap();
         let artifact = first.1;
 

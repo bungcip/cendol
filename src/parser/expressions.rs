@@ -8,7 +8,6 @@ use crate::diagnostic::ParseError;
 use crate::lexer::{Token, TokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
 use log::{debug, trace};
-use std::cell::Cell;
 
 use super::{Parser, utils::ParserExt};
 
@@ -192,7 +191,7 @@ pub(crate) fn parse_prefix(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         TokenKind::Identifier(symbol) => {
             parser.advance();
             debug!("parse_prefix: parsed identifier {:?}", symbol);
-            let node = parser.push_node(NodeKind::Ident(symbol, Cell::new(None)), token.span);
+            let node = parser.push_node(NodeKind::Ident(symbol), token.span);
             Ok(node)
         }
         TokenKind::IntegerConstant(value) => {
@@ -522,12 +521,11 @@ pub(crate) fn parse_compound_literal_from_type_and_start(
     type_ref: TypeRef,
     start_loc: SourceLoc,
 ) -> Result<NodeRef, ParseError> {
-    let initializer = super::declaration_core::parse_initializer(parser)?;
+    let initializer_ref = super::declaration_core::parse_initializer(parser)?;
 
     let end_loc = parser.current_token_span()?.end;
     let span = SourceSpan::new(start_loc, end_loc);
 
-    let initializer_ref = parser.ast.push_initializer(initializer);
     let node = parser.push_node(NodeKind::CompoundLiteral(type_ref, initializer_ref), span);
     Ok(node)
 }

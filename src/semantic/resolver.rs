@@ -9,6 +9,7 @@ use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::semantic::{Namespace, ScopeKind, SymbolTable};
 use crate::source_manager::SourceSpan;
+use log::debug;
 
 /// Context for the semantic lowering phase
 pub struct LowerCtx<'a, 'src> {
@@ -72,48 +73,6 @@ pub struct DeclSpecInfo {
     pub is_typedef: bool,
     pub is_inline: bool,
     pub is_noreturn: bool,
-}
-
-/// Main entry point for lowering a declaration
-/// Returns a vector of semantic nodes (one for each declarator)
-pub fn lower_declaration(ctx: &mut LowerCtx, decl_node: NodeRef) -> Vec<NodeRef> {
-    // Get the declaration data from the AST node
-    let (declaration_span, decl) = {
-        let decl_node_data = ctx.ast.get_node(decl_node);
-        let span = decl_node_data.span;
-        let declaration_data = match &decl_node_data.kind {
-            NodeKind::Declaration(d) => d.clone(),
-            _ => unreachable!("Expected Declaration node"),
-        };
-        (span, declaration_data)
-    };
-
-    // Handle declarations with 0 init_declarators (type definitions)
-    if decl.init_declarators.is_empty() {
-        let type_def_node = lower_type_definition(&decl.specifiers, ctx, declaration_span);
-        if let Some(type_def_node_ref) = type_def_node {
-            return vec![type_def_node_ref];
-        } else {
-            return Vec::new();
-        }
-    }
-
-    // 1. Parse and validate declaration specifiers
-    let spec = lower_decl_specifiers(&decl.specifiers, ctx, declaration_span);
-
-    // If we have errors in specifiers, return empty vector
-    if ctx.has_errors() {
-        return Vec::new();
-    }
-
-    // 2. Process init-declarators into semantic nodes
-    let semantic_nodes: Vec<NodeRef> = decl
-        .init_declarators
-        .into_iter()
-        .map(|init| lower_init_declarator(ctx, &spec, init, declaration_span))
-        .collect();
-
-    semantic_nodes
 }
 
 /// Process declaration specifiers into consolidated information
@@ -709,147 +668,6 @@ fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span
     // - Check for missing required specifiers
 }
 
-/// Create a type definition semantic node for declarations with 0 init_declarators
-fn lower_type_definition(specifiers: &[DeclSpecifier], ctx: &mut LowerCtx, span: SourceSpan) -> Option<NodeRef> {
-    // Find the type specifier
-    let mut type_specifier = None;
-    for spec in specifiers {
-        if let DeclSpecifier::TypeSpecifier(ts) = spec {
-            type_specifier = Some(ts);
-            break;
-        }
-    }
-
-    let type_spec = type_specifier?;
-
-    match type_spec {
-        TypeSpecifier::Record(is_union, tag, _definition) => {
-            // Create the record type
-            let record_type = match resolve_type_specifier(type_spec, ctx, span) {
-                Ok(ty) => ty,
-                Err(e) => {
-                    ctx.report_error(e);
-                    return None;
-                }
-            };
-
-            // Create RecordDecl semantic node
-            let record_decl = RecordDeclData {
-                name: *tag,
-                ty: record_type,
-                members: Vec::new(), // TODO: Extract members from definition
-                is_union: *is_union,
-            };
-
-            let record_node = Node::new(NodeKind::RecordDecl(record_decl), span);
-            Some(ctx.ast.push_node(record_node))
-        }
-        TypeSpecifier::Enum(tag, _enumerators) => {
-            // Create the enum type
-            let enum_type = match resolve_type_specifier(type_spec, ctx, span) {
-                Ok(ty) => ty,
-                Err(e) => {
-                    ctx.report_error(e);
-                    return None;
-                }
-            };
-
-            // Create RecordDecl semantic node (reuse for enums)
-            let record_decl = RecordDeclData {
-                name: *tag,
-                ty: enum_type,
-                members: Vec::new(), // TODO: Extract enumerators
-                is_union: false,     // enums are not unions
-            };
-
-            let record_node = Node::new(NodeKind::RecordDecl(record_decl), span);
-            Some(ctx.ast.push_node(record_node))
-        }
-        _ => None,
-    }
-}
-
-/// Process an init-declarator into a semantic node
-fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDeclarator, span: SourceSpan) -> NodeRef {
-    // 1. Resolve final type (base + declarator)
-    let base_ty = spec.base_type.unwrap_or_else(|| {
-        ctx.report_error(SemanticError::TypeMismatch {
-            expected: "a type specifier".to_string(),
-            found: "no type specifier".to_string(),
-            span,
-        });
-        // Create an error type
-        let error_type = Type {
-            kind: TypeKind::Error,
-            qualifiers: TypeQualifiers::empty(),
-            size: None,
-            alignment: None,
-        };
-        ctx.ast.push_type(error_type)
-    });
-
-    let name = extract_identifier(&init.declarator).expect("Anonymous declarations unsupported");
-
-    // For simple identifiers without qualifiers, don't create a new type entry
-    let final_ty = if let Declarator::Identifier(_, qualifiers, None) = &init.declarator {
-        if qualifiers.is_empty() {
-            // Simple case: just use the base type directly
-            base_ty
-        } else {
-            // Has qualifiers, need to apply declarator
-            let ty = apply_declarator(base_ty, &init.declarator, ctx);
-            ctx.ast.push_type(ty)
-        }
-    } else {
-        // Complex case: apply declarator transformations and create new type
-        let ty = apply_declarator(base_ty, &init.declarator, ctx);
-        ctx.ast.push_type(ty)
-    };
-
-    // 2. Handle typedefs
-    if spec.is_typedef {
-        let typedef_decl = TypedefDeclData { name, ty: final_ty };
-        let typedef_node = ctx.ast.push_node(Node::new(NodeKind::TypedefDecl(typedef_decl), span));
-
-        // Add typedef to symbol table to resolve forward references
-        let symbol_entry = crate::ast::SymbolEntry {
-            name: name.as_str().into(),
-            kind: crate::ast::SymbolKind::Typedef { aliased_type: final_ty },
-            type_info: final_ty,
-            storage_class: Some(StorageClass::Typedef),
-            scope_id: ctx.symbol_table.current_scope().get(),
-            def_span: span,
-            def_state: DefinitionState::Defined,
-            is_referenced: false,
-            is_completed: true,
-        };
-
-        let _entry_ref = ctx.symbol_table.add_symbol(name, symbol_entry);
-
-        return typedef_node;
-    }
-
-    // 3. Distinguish between functions and variables
-    let type_info = ctx.ast.get_type(final_ty);
-    if matches!(type_info.kind, TypeKind::Function { .. }) {
-        let func_decl = FunctionDeclData {
-            name,
-            ty: final_ty,
-            storage: spec.storage,
-            body: None,
-        };
-        ctx.ast.push_node(Node::new(NodeKind::FunctionDecl(func_decl), span))
-    } else {
-        let var_decl = VarDeclData {
-            name,
-            ty: final_ty,
-            storage: spec.storage,
-            init: init.initializer,
-        };
-        ctx.ast.push_node(Node::new(NodeKind::VarDecl(var_decl), span))
-    }
-}
-
 fn lower_function_parameters(params: &[ParamData], ctx: &mut LowerCtx) -> Vec<FunctionParameter> {
     params
         .iter()
@@ -981,7 +799,7 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
 }
 
 /// Main entry point for running semantic lowering on an entire AST
-pub fn run_semantic_lowering(ast: &mut Ast, diag: &mut DiagnosticEngine, symbol_table: &mut SymbolTable) {
+pub fn run_symbol_resolver(ast: &mut Ast, diag: &mut DiagnosticEngine, symbol_table: &mut SymbolTable) {
     // Check if we have a root node to start traversal from
     let root_node_ref = if let Some(root) = ast.root {
         root
@@ -992,187 +810,17 @@ pub fn run_semantic_lowering(ast: &mut Ast, diag: &mut DiagnosticEngine, symbol_
     // Create lowering context
     let mut lower_ctx = LowerCtx::new(ast, diag, symbol_table);
 
-    // Perform recursive scope-aware lowering
-    lower_node_recursive(&mut lower_ctx, root_node_ref);
-}
+    // Phase 1: Process declarations and create symbol table entries
+    lower_node_recursive_phase1(&mut lower_ctx, root_node_ref);
 
-fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
-    let node_kind = {
-        let node = ctx.ast.get_node(node_ref);
-        node.kind.clone()
-    };
+    // Reset symbol table traversal to re-enter scopes in the same order for Phase 2
+    lower_ctx.symbol_table.reset_traversal();
 
-    match node_kind {
-        NodeKind::TranslationUnit(nodes) => {
-            for node in nodes {
-                lower_node_recursive(ctx, node);
-            }
-        }
-        NodeKind::FunctionDef(func_def) => {
-            // Extract function name from the declarator
-            let func_name =
-                extract_identifier(&func_def.declarator).unwrap_or_else(|| Symbol::new("anonymous_function"));
+    // Phase 2: Process expressions and resolve identifiers
+    lower_node_recursive_phase2(&mut lower_ctx, root_node_ref);
 
-            // Extract the return type from the function definition's specifiers
-            let return_type_ref =
-                lower_decl_specifiers_for_function_return(&func_def.specifiers, ctx, ctx.ast.get_node(node_ref).span)
-                    .unwrap_or_else(|| ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true })));
-
-            // Create the function type with the correct return type by applying the declarator
-            let declarator_type = apply_declarator(return_type_ref, &func_def.declarator, ctx);
-            let function_type_ref = ctx.ast.push_type(declarator_type);
-
-            // Extract parameters from the function type for the symbol entry
-            let parameters = if let TypeKind::Function { parameters, .. } = &ctx.ast.get_type(function_type_ref).kind {
-                parameters.clone()
-            } else {
-                Vec::new()
-            };
-
-            // Add function to GLOBAL scope (not function scope)
-            let global_scope_id = crate::semantic::ScopeId::new(1).unwrap(); // Global scope is typically 1
-
-            // Switch to global scope to add the function
-            let original_scope = ctx.symbol_table.current_scope();
-            ctx.symbol_table.set_current_scope(global_scope_id);
-
-            let symbol_entry = crate::ast::SymbolEntry {
-                name: func_name,
-                kind: crate::ast::SymbolKind::Function {
-                    is_definition: true,
-                    is_inline: false,
-                    is_variadic: false,
-                    parameters: parameters.clone(),
-                },
-                type_info: function_type_ref,
-                storage_class: None,
-                scope_id: global_scope_id.get(),
-                def_span: ctx.ast.get_node(node_ref).span,
-                def_state: DefinitionState::Defined,
-                is_referenced: false,
-                is_completed: true,
-            };
-
-            ctx.symbol_table.add_symbol(func_name, symbol_entry);
-
-            // Restore original scope
-            ctx.symbol_table.set_current_scope(original_scope);
-
-            // Convert FunctionDef to Function semantic node
-            // First, we need to get the symbol entry ref for the function we just added
-            let (symbol_entry_ref, _) = ctx
-                .symbol_table
-                .lookup_symbol(func_name)
-                .expect("Function should be in symbol table");
-
-            // Create normalized parameters for the FunctionData
-            let normalized_params = parameters
-                .into_iter()
-                .map(|param| {
-                    // Create a symbol entry for the parameter
-                    let param_symbol_entry = crate::ast::SymbolEntry {
-                        name: param.name.unwrap_or_else(|| Symbol::new("unnamed_param")),
-                        kind: crate::ast::SymbolKind::Variable {
-                            is_global: false,
-                            is_static: false,
-                            initializer: None,
-                        },
-                        type_info: param.param_type,
-                        storage_class: None,
-                        scope_id: ctx.symbol_table.current_scope().get(),
-                        def_span: ctx.ast.get_node(node_ref).span,
-                        def_state: DefinitionState::Defined,
-                        is_referenced: false,
-                        is_completed: true,
-                    };
-
-                    let param_symbol_ref = ctx.symbol_table.add_symbol(param_symbol_entry.name, param_symbol_entry);
-
-                    crate::ast::ParamDecl {
-                        symbol: param_symbol_ref,
-                        ty: param.param_type,
-                    }
-                })
-                .collect();
-
-            // Create the Function semantic node
-            let function_data = crate::ast::FunctionData {
-                symbol: symbol_entry_ref,
-                ty: function_type_ref,
-                params: normalized_params,
-                body: func_def.body,
-            };
-
-            let function_node = Node::new(NodeKind::Function(function_data), ctx.ast.get_node(node_ref).span);
-            let function_node_ref = ctx.ast.push_node(function_node);
-
-            // Replace the FunctionDef node with the Function node
-            ctx.ast
-                .replace_node(node_ref, ctx.ast.get_node(function_node_ref).clone());
-
-            // Now process the function body with proper scope management
-            ctx.symbol_table.push_scope(ScopeKind::Function);
-            lower_node_recursive(ctx, func_def.body);
-            ctx.symbol_table.pop_scope();
-        }
-        NodeKind::CompoundStatement(nodes) => {
-            ctx.symbol_table.push_scope(ScopeKind::Block);
-            for node in nodes {
-                lower_node_recursive(ctx, node);
-            }
-            ctx.symbol_table.pop_scope();
-        }
-        NodeKind::Declaration(_) => {
-            let semantic_nodes = lower_declaration(ctx, node_ref);
-
-            if !semantic_nodes.is_empty() {
-                if semantic_nodes.len() == 1 {
-                    // Single declarator case: replace the original declaration node with the semantic node
-                    let semantic_node_data = ctx.ast.get_node(semantic_nodes[0]).clone();
-                    ctx.ast.replace_node(node_ref, semantic_node_data);
-                } else {
-                    // Multi-declarator case: create a DeclarationList containing all semantic nodes
-                    let original_node = ctx.ast.get_node(node_ref);
-                    let compound_node = Node::new(NodeKind::DeclarationList(semantic_nodes), original_node.span);
-                    ctx.ast.replace_node(node_ref, compound_node);
-                }
-            }
-        }
-        NodeKind::For(for_stmt) => {
-            ctx.symbol_table.push_scope(ScopeKind::Block);
-            if let Some(init) = for_stmt.init {
-                lower_node_recursive(ctx, init);
-            }
-            if let Some(cond) = for_stmt.condition {
-                lower_node_recursive(ctx, cond);
-            }
-            if let Some(inc) = for_stmt.increment {
-                lower_node_recursive(ctx, inc);
-            }
-            lower_node_recursive(ctx, for_stmt.body);
-            ctx.symbol_table.pop_scope();
-        }
-        // Other nodes that might contain statements/declarations
-        NodeKind::If(if_stmt) => {
-            lower_node_recursive(ctx, if_stmt.then_branch);
-            if let Some(else_branch) = if_stmt.else_branch {
-                lower_node_recursive(ctx, else_branch);
-            }
-        }
-        NodeKind::While(while_stmt) => {
-            lower_node_recursive(ctx, while_stmt.body);
-        }
-        NodeKind::DoWhile(body, _) => {
-            lower_node_recursive(ctx, body);
-        }
-        NodeKind::Switch(_, body) => {
-            lower_node_recursive(ctx, body);
-        }
-        NodeKind::Label(_, stmt) => {
-            lower_node_recursive(ctx, stmt);
-        }
-        _ => {}
-    }
+    // Phase 3: Validate that all required nodes have resolved_symbol set
+    validate_symbol_resolution(&mut lower_ctx, root_node_ref);
 }
 
 /// Lower declaration specifiers for function return type
@@ -1330,4 +978,890 @@ fn process_anonymous_struct_members(
     }
 
     flattened_members
+}
+
+/// Phase 1: Process declarations and create symbol table entries
+fn lower_node_recursive_phase1(ctx: &mut LowerCtx, node_ref: NodeRef) {
+    let node_kind = {
+        let node = ctx.ast.get_node(node_ref);
+        node.kind.clone()
+    };
+
+    match node_kind {
+        NodeKind::TranslationUnit(nodes) => {
+            for node in nodes {
+                lower_node_recursive_phase1(ctx, node);
+            }
+        }
+        NodeKind::FunctionDef(func_def) => {
+            // Extract function name from the declarator
+            let func_name =
+                extract_identifier(&func_def.declarator).unwrap_or_else(|| Symbol::new("anonymous_function"));
+
+            // Extract the return type from the function definition's specifiers
+            let return_type_ref =
+                lower_decl_specifiers_for_function_return(&func_def.specifiers, ctx, ctx.ast.get_node(node_ref).span)
+                    .unwrap_or_else(|| ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true })));
+
+            // Create the function type with the correct return type by applying the declarator
+            let declarator_type = apply_declarator(return_type_ref, &func_def.declarator, ctx);
+            let function_type_ref = ctx.ast.push_type(declarator_type);
+
+            // Extract parameters from the function type for the symbol entry
+            let parameters = if let TypeKind::Function { parameters, .. } = &ctx.ast.get_type(function_type_ref).kind {
+                parameters.clone()
+            } else {
+                Vec::new()
+            };
+
+            // Add function to GLOBAL scope (not function scope)
+            let global_scope_id = crate::semantic::ScopeId::new(1).unwrap(); // Global scope is typically 1
+
+            // Switch to global scope to add the function
+            let original_scope = ctx.symbol_table.current_scope();
+            ctx.symbol_table.set_current_scope(global_scope_id);
+
+            let symbol_entry = crate::ast::SymbolEntry {
+                name: func_name,
+                kind: crate::ast::SymbolKind::Function {
+                    is_definition: true,
+                    is_inline: false,
+                    is_variadic: false,
+                    parameters: parameters.clone(),
+                },
+                type_info: function_type_ref,
+                storage_class: None,
+                scope_id: global_scope_id.get(),
+                def_span: ctx.ast.get_node(node_ref).span,
+                def_state: DefinitionState::Defined,
+                is_referenced: false,
+                is_completed: true,
+            };
+
+            let symbol_entry_ref = ctx.symbol_table.add_symbol(func_name, symbol_entry);
+
+            // Set resolved_symbol for the FunctionDef node
+            let node = ctx.ast.get_node(node_ref);
+            node.resolved_symbol.set(Some(symbol_entry_ref));
+
+            // Restore original scope
+            ctx.symbol_table.set_current_scope(original_scope);
+
+            // Convert FunctionDef to Function semantic node
+            // First, we need to get the symbol entry ref for the function we just added
+            let (symbol_entry_ref, _) = ctx
+                .symbol_table
+                .lookup_symbol(func_name)
+                .expect("Function should be in symbol table");
+
+            // Create normalized parameters for the FunctionData with redefinition checking
+            let mut seen_params = std::collections::HashSet::new();
+            let normalized_params = parameters
+                .into_iter()
+                .map(|param| {
+                    let param_name = param.name.unwrap_or_else(|| Symbol::new("unnamed_param"));
+
+                    // Check for parameter redefinition in function scope
+                    if seen_params.contains(&param_name) {
+                        ctx.report_error(SemanticError::Redefinition {
+                            name: param_name,
+                            first_def: ctx.ast.get_node(node_ref).span, // FIXME: Get proper first definition span
+                            second_def: ctx.ast.get_node(node_ref).span,
+                        });
+                    } else {
+                        seen_params.insert(param_name);
+                    }
+
+                    // Check if parameter name already exists in current scope
+                    if let Some((existing_entry, _)) = ctx.symbol_table.lookup_symbol(param_name) {
+                        let existing = ctx.symbol_table.get_symbol_entry(existing_entry);
+                        ctx.report_error(SemanticError::Redefinition {
+                            name: param_name,
+                            first_def: existing.def_span,
+                            second_def: ctx.ast.get_node(node_ref).span,
+                        });
+                    }
+
+                    // Create a symbol entry for the parameter
+                    let param_symbol_entry = crate::ast::SymbolEntry {
+                        name: param_name,
+                        kind: crate::ast::SymbolKind::Variable {
+                            is_global: false,
+                            is_static: false,
+                            initializer: None,
+                        },
+                        type_info: param.param_type,
+                        storage_class: None,
+                        scope_id: ctx.symbol_table.current_scope().get(),
+                        def_span: ctx.ast.get_node(node_ref).span,
+                        def_state: DefinitionState::Defined,
+                        is_referenced: false,
+                        is_completed: true,
+                    };
+
+                    let param_symbol_ref = ctx.symbol_table.add_symbol(param_name, param_symbol_entry);
+
+                    crate::ast::ParamDecl {
+                        symbol: param_symbol_ref,
+                        ty: param.param_type,
+                    }
+                })
+                .collect();
+
+            // Create the Function semantic node
+            let function_data = crate::ast::FunctionData {
+                symbol: symbol_entry_ref,
+                ty: function_type_ref,
+                params: normalized_params,
+                body: func_def.body,
+            };
+
+            let function_node = Node::new(NodeKind::Function(function_data), ctx.ast.get_node(node_ref).span);
+            let function_node_ref = ctx.ast.push_node(function_node);
+
+            // Replace the FunctionDef node with the Function node
+            ctx.ast
+                .replace_node(node_ref, ctx.ast.get_node(function_node_ref).clone());
+
+            // Now process the function body with proper scope management
+            ctx.symbol_table.push_scope(ScopeKind::Function);
+            lower_node_recursive_phase1(ctx, func_def.body);
+            ctx.symbol_table.pop_scope();
+        }
+        NodeKind::CompoundStatement(nodes) => {
+            let old_scope = ctx.symbol_table.current_scope();
+            ctx.symbol_table.push_scope(ScopeKind::Block);
+            let new_scope = ctx.symbol_table.current_scope();
+            debug!(
+                "Phase 1: CompoundStatement - old scope: {}, new scope: {}",
+                old_scope.get(),
+                new_scope.get()
+            );
+            for node in nodes {
+                lower_node_recursive_phase1(ctx, node);
+            }
+            ctx.symbol_table.pop_scope();
+        }
+        NodeKind::Declaration(_) => {
+            let semantic_nodes = lower_declaration_phase1(ctx, node_ref);
+
+            if !semantic_nodes.is_empty() {
+                if semantic_nodes.len() == 1 {
+                    // Single declarator case: replace the original declaration node with the semantic node
+                    let semantic_node_data = ctx.ast.get_node(semantic_nodes[0]).clone();
+                    ctx.ast.replace_node(node_ref, semantic_node_data);
+                } else {
+                    // Multi-declarator case: create a DeclarationList containing all semantic nodes
+                    let original_node = ctx.ast.get_node(node_ref);
+                    let compound_node = Node::new(NodeKind::DeclarationList(semantic_nodes), original_node.span);
+                    ctx.ast.replace_node(node_ref, compound_node);
+                }
+            }
+        }
+        NodeKind::For(for_stmt) => {
+            ctx.symbol_table.push_scope(ScopeKind::Block);
+            if let Some(init) = for_stmt.init {
+                lower_node_recursive_phase1(ctx, init);
+            }
+            if let Some(cond) = for_stmt.condition {
+                lower_node_recursive_phase1(ctx, cond);
+            }
+            if let Some(inc) = for_stmt.increment {
+                lower_node_recursive_phase1(ctx, inc);
+            }
+            lower_node_recursive_phase1(ctx, for_stmt.body);
+            ctx.symbol_table.pop_scope();
+        }
+        // Other nodes that might contain statements/declarations
+        NodeKind::If(if_stmt) => {
+            lower_node_recursive_phase1(ctx, if_stmt.then_branch);
+            if let Some(else_branch) = if_stmt.else_branch {
+                lower_node_recursive_phase1(ctx, else_branch);
+            }
+        }
+        NodeKind::While(while_stmt) => {
+            lower_node_recursive_phase1(ctx, while_stmt.body);
+        }
+        NodeKind::DoWhile(body, _) => {
+            lower_node_recursive_phase1(ctx, body);
+        }
+        NodeKind::Switch(_, body) => {
+            lower_node_recursive_phase1(ctx, body);
+        }
+        NodeKind::Label(_, stmt) => {
+            // Check for label redefinition in current function scope
+            if let NodeKind::Label(label_name, _) = ctx.ast.get_node(node_ref).kind.clone() {
+                if let Some((existing_entry, scope_id)) = ctx.symbol_table.lookup_symbol(label_name) {
+                    if scope_id == ctx.symbol_table.current_scope() {
+                        let existing = ctx.symbol_table.get_symbol_entry(existing_entry);
+                        ctx.report_error(SemanticError::Redefinition {
+                            name: label_name,
+                            first_def: existing.def_span,
+                            second_def: ctx.ast.get_node(node_ref).span,
+                        });
+                    }
+                }
+            }
+            lower_node_recursive_phase1(ctx, stmt);
+        }
+        _ => {}
+    }
+}
+
+/// Phase 2: Process expressions and resolve identifiers
+fn lower_node_recursive_phase2(ctx: &mut LowerCtx, node_ref: NodeRef) {
+    let node_kind = {
+        let node = ctx.ast.get_node(node_ref);
+        node.kind.clone()
+    };
+
+    match node_kind {
+        NodeKind::TranslationUnit(nodes) => {
+            for node in nodes {
+                lower_node_recursive_phase2(ctx, node);
+            }
+        }
+        NodeKind::Function(function_data) => {
+            // Set resolved_symbol for the Function node
+            let node = ctx.ast.get_node(node_ref);
+            node.resolved_symbol.set(Some(function_data.symbol));
+
+            // Process function body with proper scope management
+            ctx.symbol_table.push_scope(ScopeKind::Function);
+            lower_node_recursive_phase2(ctx, function_data.body);
+            ctx.symbol_table.pop_scope();
+        }
+        NodeKind::CompoundStatement(nodes) => {
+            let old_scope = ctx.symbol_table.current_scope();
+            ctx.symbol_table.push_scope(ScopeKind::Block);
+            let new_scope = ctx.symbol_table.current_scope();
+            debug!(
+                "Phase 2: CompoundStatement - old scope: {}, new scope: {}",
+                old_scope.get(),
+                new_scope.get()
+            );
+            for node in nodes {
+                lower_node_recursive_phase2(ctx, node);
+            }
+            ctx.symbol_table.pop_scope();
+        }
+        NodeKind::DeclarationList(nodes) => {
+            for node in nodes {
+                lower_node_recursive_phase2(ctx, node);
+            }
+        }
+        NodeKind::VarDecl(var_decl) => {
+            // Set resolved_symbol for the VarDecl node
+            if let Some((entry_ref, _)) = ctx.symbol_table.lookup_symbol(var_decl.name) {
+                let node = ctx.ast.get_node(node_ref);
+                node.resolved_symbol.set(Some(entry_ref));
+                debug!("VarDecl '{}': resolved to symbol entry {:?}", var_decl.name, entry_ref);
+            } else {
+                debug!("VarDecl '{}': symbol not found in symbol table!", var_decl.name);
+                debug!("Current scope: {:?}", ctx.symbol_table.current_scope());
+                let current_scope = ctx.symbol_table.get_scope(ctx.symbol_table.current_scope());
+                debug!(
+                    "Symbols in current scope: {:?}",
+                    current_scope.symbols.keys().collect::<Vec<_>>()
+                );
+            }
+
+            // Process initializer if present
+            if let Some(init) = &var_decl.init {
+                let init = ctx.ast.get_node(*init).clone_initializer_kind();
+                lower_initializer_phase2(ctx, &init);
+            }
+        }
+        NodeKind::RecordDecl(record_decl) => {
+            // Set resolved_symbol for the RecordDecl node
+            if let Some(tag_name) = record_decl.name {
+                if let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(tag_name) {
+                    let node = ctx.ast.get_node(node_ref);
+                    node.resolved_symbol.set(Some(entry_ref));
+                }
+            }
+
+            // Process members
+            for member in &record_decl.members {
+                // Set resolved_symbol for member variables
+                if let Some((_entry_ref, _)) = ctx.symbol_table.lookup_symbol(member.name) {
+                    // Note: We can't directly set resolved_symbol on members since they're not separate nodes
+                    // This is handled during member processing in the original lowering
+                }
+            }
+        }
+        NodeKind::TypedefDecl(typedef_decl) => {
+            // Set resolved_symbol for the TypedefDecl node
+            if let Some((entry_ref, _)) = ctx.symbol_table.lookup_symbol(typedef_decl.name) {
+                let node = ctx.ast.get_node(node_ref);
+                node.resolved_symbol.set(Some(entry_ref));
+            }
+        }
+        NodeKind::Ident(name) => {
+            // Resolve identifier symbol
+            debug!("Looking up identifier '{}' in symbol table", name);
+            debug!("Current scope: {:?}", ctx.symbol_table.current_scope());
+            let current_scope = ctx.symbol_table.get_scope(ctx.symbol_table.current_scope());
+            debug!(
+                "Symbols in current scope: {:?}",
+                current_scope.symbols.keys().collect::<Vec<_>>()
+            );
+
+            if let Some((entry_ref, _)) = ctx.symbol_table.lookup_symbol(name) {
+                let node = ctx.ast.get_node(node_ref);
+                node.resolved_symbol.set(Some(entry_ref));
+                debug!("Identifier '{}': resolved to symbol entry {:?}", name, entry_ref);
+            } else {
+                // Report error for undeclared identifier
+                debug!("Identifier '{}': not found in symbol table!", name);
+                ctx.report_error(SemanticError::UndeclaredIdentifier {
+                    name: name,
+                    span: ctx.ast.get_node(node_ref).span,
+                });
+            }
+        }
+        NodeKind::For(for_stmt) => {
+            ctx.symbol_table.push_scope(ScopeKind::Block);
+            if let Some(init) = for_stmt.init {
+                lower_node_recursive_phase2(ctx, init);
+            }
+            if let Some(cond) = for_stmt.condition {
+                lower_node_recursive_phase2(ctx, cond);
+            }
+            if let Some(inc) = for_stmt.increment {
+                lower_node_recursive_phase2(ctx, inc);
+            }
+            lower_node_recursive_phase2(ctx, for_stmt.body);
+            ctx.symbol_table.pop_scope();
+        }
+        NodeKind::If(if_stmt) => {
+            lower_node_recursive_phase2(ctx, if_stmt.then_branch);
+            if let Some(else_branch) = if_stmt.else_branch {
+                lower_node_recursive_phase2(ctx, else_branch);
+            }
+        }
+        NodeKind::While(while_stmt) => {
+            lower_node_recursive_phase2(ctx, while_stmt.body);
+        }
+        NodeKind::DoWhile(body, _) => {
+            lower_node_recursive_phase2(ctx, body);
+        }
+        NodeKind::Switch(_, body) => {
+            lower_node_recursive_phase2(ctx, body);
+        }
+        NodeKind::Label(_, stmt) => {
+            lower_node_recursive_phase2(ctx, stmt);
+        }
+        NodeKind::Return(expr_ref) => {
+            if let Some(expr) = expr_ref {
+                lower_node_recursive_phase2(ctx, expr);
+            }
+        }
+        // Handle other expression types that might contain identifiers
+        NodeKind::BinaryOp(_, left_ref, right_ref) => {
+            lower_node_recursive_phase2(ctx, left_ref);
+            lower_node_recursive_phase2(ctx, right_ref);
+        }
+        NodeKind::UnaryOp(_, operand_ref) => {
+            lower_node_recursive_phase2(ctx, operand_ref);
+        }
+        NodeKind::FunctionCall(func_ref, args) => {
+            lower_node_recursive_phase2(ctx, func_ref);
+            for arg_ref in args {
+                lower_node_recursive_phase2(ctx, arg_ref);
+            }
+        }
+        NodeKind::MemberAccess(object_ref, _, _) => {
+            lower_node_recursive_phase2(ctx, object_ref);
+        }
+        NodeKind::IndexAccess(array_ref, index_ref) => {
+            lower_node_recursive_phase2(ctx, array_ref);
+            lower_node_recursive_phase2(ctx, index_ref);
+        }
+        NodeKind::Cast(_, expr_ref) => {
+            lower_node_recursive_phase2(ctx, expr_ref);
+        }
+        NodeKind::TernaryOp(cond_ref, then_ref, else_ref) => {
+            lower_node_recursive_phase2(ctx, cond_ref);
+            lower_node_recursive_phase2(ctx, then_ref);
+            lower_node_recursive_phase2(ctx, else_ref);
+        }
+        _ => {}
+    }
+}
+
+/// Phase 3: Validate that all required nodes have resolved_symbol set
+fn validate_symbol_resolution(ctx: &mut LowerCtx, node_ref: NodeRef) {
+    let node_kind = {
+        let node = ctx.ast.get_node(node_ref);
+        node.kind.clone()
+    };
+
+    match node_kind {
+        NodeKind::TranslationUnit(nodes) => {
+            for node in nodes {
+                validate_symbol_resolution(ctx, node);
+            }
+        }
+        NodeKind::Function(function_data) => {
+            // Validate Function node
+            let node = ctx.ast.get_node(node_ref);
+            if node.resolved_symbol.get().is_none() {
+                ctx.report_error(SemanticError::InvalidBinaryOperands {
+                    left_ty: "function".to_string(),
+                    right_ty: "missing symbol".to_string(),
+                    span: node.span,
+                });
+            }
+
+            // Validate function body
+            validate_symbol_resolution(ctx, function_data.body);
+        }
+        NodeKind::VarDecl(_var_decl) => {
+            // Validate VarDecl node
+            let node = ctx.ast.get_node(node_ref);
+            if node.resolved_symbol.get().is_none() {
+                ctx.report_error(SemanticError::InvalidBinaryOperands {
+                    left_ty: "variable".to_string(),
+                    right_ty: "missing symbol".to_string(),
+                    span: node.span,
+                });
+            }
+        }
+        NodeKind::RecordDecl(_record_decl) => {
+            // Validate RecordDecl node
+            let node = ctx.ast.get_node(node_ref);
+            if node.resolved_symbol.get().is_none() {
+                ctx.report_error(SemanticError::InvalidBinaryOperands {
+                    left_ty: "record".to_string(),
+                    right_ty: "missing symbol".to_string(),
+                    span: node.span,
+                });
+            }
+        }
+        NodeKind::TypedefDecl(_typedef_decl) => {
+            // Validate TypedefDecl node
+            let node = ctx.ast.get_node(node_ref);
+            if node.resolved_symbol.get().is_none() {
+                ctx.report_error(SemanticError::InvalidBinaryOperands {
+                    left_ty: "typedef".to_string(),
+                    right_ty: "missing symbol".to_string(),
+                    span: node.span,
+                });
+            }
+        }
+        NodeKind::Ident(name) => {
+            // Validate Ident node
+            let node = ctx.ast.get_node(node_ref);
+            if node.resolved_symbol.get().is_none() {
+                ctx.report_error(SemanticError::UndeclaredIdentifier {
+                    name: name,
+                    span: node.span,
+                });
+            }
+        }
+        NodeKind::DeclarationList(nodes) => {
+            for node in nodes {
+                validate_symbol_resolution(ctx, node);
+            }
+        }
+        NodeKind::CompoundStatement(nodes) => {
+            for node in nodes {
+                validate_symbol_resolution(ctx, node);
+            }
+        }
+        NodeKind::For(for_stmt) => {
+            if let Some(init) = for_stmt.init {
+                validate_symbol_resolution(ctx, init);
+            }
+            if let Some(cond) = for_stmt.condition {
+                validate_symbol_resolution(ctx, cond);
+            }
+            if let Some(inc) = for_stmt.increment {
+                validate_symbol_resolution(ctx, inc);
+            }
+            validate_symbol_resolution(ctx, for_stmt.body);
+        }
+        NodeKind::If(if_stmt) => {
+            validate_symbol_resolution(ctx, if_stmt.then_branch);
+            if let Some(else_branch) = if_stmt.else_branch {
+                validate_symbol_resolution(ctx, else_branch);
+            }
+        }
+        NodeKind::While(while_stmt) => {
+            validate_symbol_resolution(ctx, while_stmt.body);
+        }
+        NodeKind::DoWhile(body, _) => {
+            validate_symbol_resolution(ctx, body);
+        }
+        NodeKind::Switch(_, body) => {
+            validate_symbol_resolution(ctx, body);
+        }
+        NodeKind::Label(_, stmt) => {
+            validate_symbol_resolution(ctx, stmt);
+        }
+        // Handle other expression types
+        NodeKind::BinaryOp(_, left_ref, right_ref) => {
+            validate_symbol_resolution(ctx, left_ref);
+            validate_symbol_resolution(ctx, right_ref);
+        }
+        NodeKind::UnaryOp(_, operand_ref) => {
+            validate_symbol_resolution(ctx, operand_ref);
+        }
+        NodeKind::FunctionCall(func_ref, args) => {
+            validate_symbol_resolution(ctx, func_ref);
+            for arg_ref in args {
+                validate_symbol_resolution(ctx, arg_ref);
+            }
+        }
+        NodeKind::MemberAccess(object_ref, _, _) => {
+            validate_symbol_resolution(ctx, object_ref);
+        }
+        NodeKind::IndexAccess(array_ref, index_ref) => {
+            validate_symbol_resolution(ctx, array_ref);
+            validate_symbol_resolution(ctx, index_ref);
+        }
+        NodeKind::Cast(_, expr_ref) => {
+            validate_symbol_resolution(ctx, expr_ref);
+        }
+        NodeKind::TernaryOp(cond_ref, then_ref, else_ref) => {
+            validate_symbol_resolution(ctx, cond_ref);
+            validate_symbol_resolution(ctx, then_ref);
+            validate_symbol_resolution(ctx, else_ref);
+        }
+        _ => {}
+    }
+}
+
+/// Enhanced version of lower_declaration for Phase 1 that sets resolved_symbol
+fn lower_declaration_phase1(ctx: &mut LowerCtx, decl_node: NodeRef) -> Vec<NodeRef> {
+    // Get the declaration data from the AST node
+    let (declaration_span, decl) = {
+        let decl_node_data = ctx.ast.get_node(decl_node);
+        let span = decl_node_data.span;
+        let declaration_data = match &decl_node_data.kind {
+            NodeKind::Declaration(d) => d.clone(),
+            _ => unreachable!("Expected Declaration node"),
+        };
+        (span, declaration_data)
+    };
+
+    // Handle declarations with 0 init_declarators (type definitions)
+    if decl.init_declarators.is_empty() {
+        let type_def_node = lower_type_definition_phase1(ctx, &decl.specifiers, declaration_span);
+        if let Some(type_def_node_ref) = type_def_node {
+            return vec![type_def_node_ref];
+        } else {
+            return Vec::new();
+        }
+    }
+
+    // 1. Parse and validate declaration specifiers
+    let spec = lower_decl_specifiers(&decl.specifiers, ctx, declaration_span);
+
+    // If we have errors in specifiers, return empty vector
+    if ctx.has_errors() {
+        return Vec::new();
+    }
+
+    // 2. Process init-declarators into semantic nodes
+    let semantic_nodes: Vec<NodeRef> = decl
+        .init_declarators
+        .into_iter()
+        .map(|init| lower_init_declarator_phase1(ctx, &spec, init, declaration_span))
+        .collect();
+
+    semantic_nodes
+}
+
+/// Enhanced version of lower_init_declarator for Phase 1 that sets resolved_symbol
+fn lower_init_declarator_phase1(
+    ctx: &mut LowerCtx,
+    spec: &DeclSpecInfo,
+    init: InitDeclarator,
+    span: SourceSpan,
+) -> NodeRef {
+    debug!("lower_init_declarator_phase1 called for identifier at span {:?}", span);
+
+    // 1. Resolve final type (base + declarator)
+    let base_ty = spec.base_type.unwrap_or_else(|| {
+        ctx.report_error(SemanticError::TypeMismatch {
+            expected: "a type specifier".to_string(),
+            found: "no type specifier".to_string(),
+            span,
+        });
+        // Create an error type
+        let error_type = Type {
+            kind: TypeKind::Error,
+            qualifiers: TypeQualifiers::empty(),
+            size: None,
+            alignment: None,
+        };
+        ctx.ast.push_type(error_type)
+    });
+
+    let name = extract_identifier(&init.declarator).expect("Anonymous declarations unsupported");
+
+    // For simple identifiers without qualifiers, don't create a new type entry
+    let final_ty = if let Declarator::Identifier(_, qualifiers, None) = &init.declarator {
+        if qualifiers.is_empty() {
+            // Simple case: just use the base type directly
+            base_ty
+        } else {
+            // Has qualifiers, need to apply declarator
+            let ty = apply_declarator(base_ty, &init.declarator, ctx);
+            ctx.ast.push_type(ty)
+        }
+    } else {
+        // Complex case: apply declarator transformations and create new type
+        let ty = apply_declarator(base_ty, &init.declarator, ctx);
+        ctx.ast.push_type(ty)
+    };
+
+    // 2. Handle typedefs
+    if spec.is_typedef {
+        // Check for typedef redefinition in current scope
+        if let Some((existing_entry, scope_id)) = ctx.symbol_table.lookup_symbol(name) {
+            if scope_id == ctx.symbol_table.current_scope() {
+                let existing = ctx.symbol_table.get_symbol_entry(existing_entry);
+                ctx.report_error(SemanticError::Redefinition {
+                    name,
+                    first_def: existing.def_span,
+                    second_def: span,
+                });
+                // Continue processing to create the typedef node anyway
+            }
+        }
+
+        let typedef_decl = TypedefDeclData { name, ty: final_ty };
+        let typedef_node = ctx.ast.push_node(Node::new(NodeKind::TypedefDecl(typedef_decl), span));
+
+        // Add typedef to symbol table to resolve forward references
+        let symbol_entry = crate::ast::SymbolEntry {
+            name: name.as_str().into(),
+            kind: crate::ast::SymbolKind::Typedef { aliased_type: final_ty },
+            type_info: final_ty,
+            storage_class: Some(StorageClass::Typedef),
+            scope_id: ctx.symbol_table.current_scope().get(),
+            def_span: span,
+            def_state: DefinitionState::Defined,
+            is_referenced: false,
+            is_completed: true,
+        };
+
+        let entry_ref = ctx.symbol_table.add_symbol(name, symbol_entry);
+
+        // Set resolved_symbol for the TypedefDecl node
+        let node = ctx.ast.get_node(typedef_node);
+        node.resolved_symbol.set(Some(entry_ref));
+
+        return typedef_node;
+    }
+
+    // 3. Distinguish between functions and variables
+    let type_info = ctx.ast.get_type(final_ty);
+    if matches!(type_info.kind, TypeKind::Function { .. }) {
+        let func_decl = FunctionDeclData {
+            name,
+            ty: final_ty,
+            storage: spec.storage,
+            body: None,
+        };
+        let func_node = ctx.ast.push_node(Node::new(NodeKind::FunctionDecl(func_decl), span));
+
+        // Set resolved_symbol for the FunctionDecl node
+        if let Some((entry_ref, _)) = ctx.symbol_table.lookup_symbol(name) {
+            let node = ctx.ast.get_node(func_node);
+            node.resolved_symbol.set(Some(entry_ref));
+        }
+
+        func_node
+    } else {
+        // Extract initializer for symbol entry before moving it
+        let initializer_node_ref = init.initializer.map(|init| {
+            let init = ctx.ast.get_node(init).clone_initializer_kind();
+            match init {
+                Initializer::Expression(expr_ref) => expr_ref,
+                _ => panic!("Complex initializers not supported yet"),
+            }
+        });
+
+        let var_decl = VarDeclData {
+            name,
+            ty: final_ty,
+            storage: spec.storage,
+            init: init.initializer,
+        };
+        let var_node = ctx.ast.push_node(Node::new(NodeKind::VarDecl(var_decl), span));
+
+        // Add variable to symbol table using merge_global_symbol for proper C standard redefinition handling
+        let symbol_entry = crate::ast::SymbolEntry {
+            name: name.as_str().into(),
+            kind: crate::ast::SymbolKind::Variable {
+                is_global: false,
+                is_static: false,
+                initializer: initializer_node_ref,
+            },
+            type_info: final_ty,
+            storage_class: spec.storage,
+            scope_id: ctx.symbol_table.current_scope().get(),
+            def_span: span,
+            def_state: DefinitionState::Defined,
+            is_referenced: false,
+            is_completed: true,
+        };
+
+        // Use merge_global_symbol for global scope to handle C standard redefinition rules
+        let entry_ref = if ctx.symbol_table.current_scope().get() == 1 {
+            // Global scope - use merge_global_symbol to handle redefinitions properly
+            let symbol_entry_clone = symbol_entry.clone();
+            debug!("Processing global variable '{}' with merge_global_symbol", name);
+            match ctx.symbol_table.merge_global_symbol(name, symbol_entry_clone) {
+                Ok(entry_ref) => {
+                    debug!("Successfully merged global variable '{}'", name);
+                    entry_ref
+                }
+                Err(_e) => {
+                    // merge_global_symbol returned an error for a legitimate redefinition issue
+                    // (e.g., trying to redefine a function as a variable)
+                    debug!("merge_global_symbol error for global variable '{}'", name);
+                    
+                    // Get the existing symbol to report proper redefinition error
+                    let existing_entry = ctx
+                        .symbol_table
+                        .lookup_symbol(name)
+                        .map(|(entry_ref, _)| ctx.symbol_table.get_symbol_entry(entry_ref).def_span)
+                        .unwrap_or(span);
+                    ctx.report_error(SemanticError::Redefinition {
+                        name,
+                        first_def: existing_entry,
+                        second_def: span,
+                    });
+                    
+                    // Return existing entry to continue processing without panicking
+                    // In case of real redefinition error, the error has been reported above
+                    ctx.symbol_table.lookup_symbol(name)
+                        .map(|(entry_ref, _)| entry_ref)
+                        .unwrap_or_else(|| {
+                            // This shouldn't happen, but provide a fallback
+                            ctx.symbol_table.add_symbol(name, symbol_entry)
+                        })
+                }
+            }
+        } else {
+            // Non-global scope - use regular add_symbol with redefinition checking
+            debug!("Processing local variable '{}' with add_symbol", name);
+
+            // Check for local variable redefinition in current scope
+            if let Some((existing_entry, scope_id)) = ctx.symbol_table.lookup_symbol(name) {
+                if scope_id == ctx.symbol_table.current_scope() {
+                    let existing = ctx.symbol_table.get_symbol_entry(existing_entry);
+                    ctx.report_error(SemanticError::Redefinition {
+                        name,
+                        first_def: existing.def_span,
+                        second_def: span,
+                    });
+                    // Return existing entry to avoid duplicate symbol issues
+                    existing_entry
+                } else {
+                    // Shadowing is allowed in C, so just add the new symbol
+                    ctx.symbol_table.add_symbol(name, symbol_entry)
+                }
+            } else {
+                ctx.symbol_table.add_symbol(name, symbol_entry)
+            }
+        };
+
+        // Set resolved_symbol for the VarDecl node
+        let node = ctx.ast.get_node(var_node);
+        node.resolved_symbol.set(Some(entry_ref));
+
+        var_node
+    }
+}
+
+/// Enhanced version of lower_type_definition for Phase 1 that sets resolved_symbol
+fn lower_type_definition_phase1(ctx: &mut LowerCtx, specifiers: &[DeclSpecifier], span: SourceSpan) -> Option<NodeRef> {
+    // Find the type specifier
+    let mut type_specifier = None;
+    for spec in specifiers {
+        if let DeclSpecifier::TypeSpecifier(ts) = spec {
+            type_specifier = Some(ts);
+            break;
+        }
+    }
+
+    let type_spec = type_specifier?;
+
+    match type_spec {
+        TypeSpecifier::Record(is_union, tag, _definition) => {
+            // Create the record type
+            let record_type = match resolve_type_specifier(type_spec, ctx, span) {
+                Ok(ty) => ty,
+                Err(e) => {
+                    ctx.report_error(e);
+                    return None;
+                }
+            };
+
+            // Create RecordDecl semantic node
+            let record_decl = RecordDeclData {
+                name: *tag,
+                ty: record_type,
+                members: Vec::new(), // TODO: Extract members from definition
+                is_union: *is_union,
+            };
+
+            let record_node = Node::new(NodeKind::RecordDecl(record_decl), span);
+            let record_node_ref = ctx.ast.push_node(record_node);
+
+            // Set resolved_symbol for the RecordDecl node
+            if let Some(tag_name) = tag {
+                if let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(*tag_name) {
+                    let node = ctx.ast.get_node(record_node_ref);
+                    node.resolved_symbol.set(Some(entry_ref));
+                }
+            }
+
+            Some(record_node_ref)
+        }
+        TypeSpecifier::Enum(tag, _enumerators) => {
+            // Create the enum type
+            let enum_type = match resolve_type_specifier(type_spec, ctx, span) {
+                Ok(ty) => ty,
+                Err(e) => {
+                    ctx.report_error(e);
+                    return None;
+                }
+            };
+
+            // Create RecordDecl semantic node (reuse for enums)
+            let record_decl = RecordDeclData {
+                name: *tag,
+                ty: enum_type,
+                members: Vec::new(), // TODO: Extract enumerators
+                is_union: false,     // enums are not unions
+            };
+
+            let record_node = Node::new(NodeKind::RecordDecl(record_decl), span);
+            let record_node_ref = ctx.ast.push_node(record_node);
+
+            // Set resolved_symbol for the RecordDecl node
+            if let Some(tag_name) = tag {
+                if let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(*tag_name) {
+                    let node = ctx.ast.get_node(record_node_ref);
+                    node.resolved_symbol.set(Some(entry_ref));
+                }
+            }
+
+            Some(record_node_ref)
+        }
+        _ => None,
+    }
+}
+
+/// Process initializer for Phase 2
+fn lower_initializer_phase2(_ctx: &mut LowerCtx, _init: &Initializer) {
+    // For now, we don't need to do anything special for initializers in Phase 2
+    // The expressions within initializers will be processed when we encounter them
 }

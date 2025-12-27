@@ -57,12 +57,11 @@ pub use nodes::{BinaryOp, UnaryOp};
 pub use utils::extract_identifier;
 
 /// The flattened AST storage.
-/// Contains all AST nodes, types, symbol entries, and initializers in contiguous vectors.
+/// Contains all AST nodes, types, and symbol entries in contiguous vectors.
 pub struct Ast {
     pub nodes: Vec<Node>,
     pub types: Vec<Type>,
     pub symbol_entries: Vec<SymbolEntry>,
-    pub initializers: Vec<Initializer>,
     pub root: Option<NodeRef>,
 }
 
@@ -70,7 +69,6 @@ pub struct Ast {
 pub type NodeRef = NonZeroU32;
 pub type TypeRef = NonZeroU32;
 pub type SymbolEntryRef = NonZeroU32;
-pub type InitializerRef = NonZeroU32;
 
 /// Helper methods for Ast.
 impl Default for Ast {
@@ -86,7 +84,6 @@ impl Ast {
             nodes: Vec::new(),
             types: Vec::new(),
             symbol_entries: Vec::new(),
-            initializers: Vec::new(),
             root: None,
         }
     }
@@ -138,13 +135,6 @@ impl Ast {
         }
         &self.types[idx]
     }
-
-    /// Add an initializer to the AST and return its reference
-    pub(crate) fn push_initializer(&mut self, init: Initializer) -> InitializerRef {
-        let index = self.initializers.len() as u32 + 1;
-        self.initializers.push(init);
-        InitializerRef::new(index).expect("InitializerRef overflow")
-    }
 }
 
 /// The primary AST node structure.
@@ -171,6 +161,14 @@ impl Node {
             resolved_type: Cell::new(None),
         }
     }
+
+    /// try to get initializer, panic if not. it clone for now
+    pub fn clone_initializer_kind(&self) -> Initializer {
+        match &self.kind {
+            NodeKind::Initializer(init) => init.clone(),
+            _ => panic!("not initializer kind"),
+        }
+    }
 }
 
 /// Represents the definition state of a symbol entry.
@@ -184,7 +182,7 @@ pub enum DefinitionState {
 /// Represents a resolved symbol entry from the symbol table.
 /// This structure is typically populated during the semantic analysis phase.
 /// Symbol entries are stored in a separate Vec<SymbolEntry> with SymbolEntryRef references.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SymbolEntry {
     pub name: Symbol,
     pub kind: SymbolKind, // e.g., Variable, Function, Typedef
@@ -199,7 +197,7 @@ pub struct SymbolEntry {
 }
 
 /// Defines the kind of symbol.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SymbolKind {
     Variable {
         is_global: bool,

@@ -9,6 +9,7 @@ use crate::ast::SymbolEntryRef;
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::driver::compiler::SemaOutput;
+use crate::mir::MirType;
 use crate::mir::{
     self, BinaryOp as MirBinaryOp, CallTarget, ConstValue, ConstValueId, Local, LocalId, MirBlockId, MirBuilder,
     MirFunctionId, MirStmt, Operand, Place, Rvalue, Terminator, TypeId,
@@ -21,7 +22,7 @@ use hashbrown::HashMap;
 use log::debug;
 
 /// Main entry point for semantic analysis that produces MIR
-pub struct SemanticAnalyzer<'a, 'src> {
+pub struct AstToMirLowerer<'a, 'src> {
     ast: &'a mut Ast,
     diag: &'src mut DiagnosticEngine,
     symbol_table: &'a mut SymbolTable,
@@ -38,7 +39,7 @@ pub struct SemanticAnalyzer<'a, 'src> {
     has_errors: bool,
 }
 
-impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
+impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     /// Create a new semantic analyzer
     pub fn new(ast: &'a mut Ast, diag: &'src mut DiagnosticEngine, symbol_table: &'a mut SymbolTable) -> Self {
         let mir_builder = MirBuilder::new(mir::MirModuleId::new(1).unwrap());
@@ -191,10 +192,10 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             if let Some(mir_type) = global_type {
                 // Create an appropriate zero constant based on the type
                 let zero_const = match mir_type {
-                    crate::mir::MirType::Int { is_signed: _, width: _ } => ConstValue::Int(0),
-                    crate::mir::MirType::Float { width: _ } => ConstValue::Float(0.0),
-                    crate::mir::MirType::Bool => ConstValue::Bool(false),
-                    crate::mir::MirType::Pointer { .. } => ConstValue::Null,
+                    MirType::Int { is_signed: _, width: _ } => ConstValue::Int(0),
+                    MirType::Float { width: _ } => ConstValue::Float(0.0),
+                    MirType::Bool => ConstValue::Bool(false),
+                    MirType::Pointer { .. } => ConstValue::Null,
                     _ => {
                         // For complex types like structs, we can't easily create zero
                         // For now, just skip complex types
@@ -351,16 +352,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
                 // Traverse the chain of consecutive labels, mapping each to the same block.
                 while let NodeKind::Label(current_label, next_stmt) = self.ast.get_node(current_stmt).kind.clone() {
-                    if self.label_map.contains_key(&current_label) {
-                        let node_span = self.ast.get_node(current_stmt).span;
-                        self.report_error(SemanticError::Redefinition {
-                            name: current_label,
-                            first_def: node_span, // Note: This is not the ideal span for first_def
-                            second_def: node_span,
-                        });
-                    } else {
-                        self.label_map.insert(current_label, target_block_id);
-                    }
+                    self.label_map.insert(current_label, target_block_id);
                     current_stmt = next_stmt;
                 }
 
@@ -500,17 +492,6 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         if let Some((existing_entry, scope_id)) = self.symbol_table.lookup_symbol(param_name)
             && scope_id == self.symbol_table.current_scope()
         {
-            // If we've already created a MIR local for this entry in this pass, it's a real redefinition
-            if self.local_map.contains_key(&existing_entry) {
-                let existing = self.symbol_table.get_symbol_entry(existing_entry);
-                self.report_error(SemanticError::Redefinition {
-                    name: param_name,
-                    first_def: existing.def_span,
-                    second_def: span,
-                });
-                return;
-            }
-
             // Symbol already exists from previous pass (lowering). Re-use it and create MIR local.
             let mir_type_id = self.lower_type_to_mir(param_type);
             let local_id = self.mir_builder.create_local(Some(param_name), mir_type_id, true);
@@ -548,20 +529,27 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     }
 
     /// Second pass: Process an initializer and emit assignment
-    fn process_initializer(&mut self, initializer: &Initializer, local_id: LocalId, var_name: &str, span: SourceSpan) {
+    fn process_initializer(
+        &mut self,
+        initializer_node_ref: NodeRef,
+        local_id: LocalId,
+        var_name: &str,
+        span: SourceSpan,
+    ) {
         debug!("Processing initializer for variable '{}'", var_name);
 
+        let initializer = self.ast.get_node(initializer_node_ref).clone_initializer_kind().clone();
         match initializer {
             Initializer::Expression(expr_ref) => {
                 // Lower the initializer expression to an operand
-                let init_operand = self.lower_expression(*expr_ref);
+                let init_operand = self.lower_expression(expr_ref);
 
                 // Emit assignment: local = initializer
                 self.emit_assignment(Place::Local(local_id), init_operand, span);
             }
             Initializer::List(designated_initializers) => {
                 // Process designated initializers (both positional and named)
-                self.process_designated_initializers(designated_initializers, local_id, var_name, span);
+                self.process_designated_initializers(&designated_initializers, local_id, var_name, span);
             }
         }
     }
@@ -589,7 +577,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             if designated_init.designation.is_empty() {
                 // This is a positional initializer
                 self.process_positional_initializer(
-                    &designated_init.initializer,
+                    designated_init.initializer,
                     local_id,
                     var_name,
                     current_index,
@@ -674,25 +662,31 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         }
 
         // Process the initializer for this designated field
-        match &designated_init.initializer {
-            Initializer::Expression(expr_ref) => {
-                // Lower the initializer expression to an operand
-                let init_operand = self.lower_expression(*expr_ref);
+        let designated_init_node = self.ast.get_node(designated_init.initializer);
+        match &designated_init_node.kind {
+            NodeKind::Initializer(initializer) => {
+                match initializer {
+                    Initializer::Expression(expr_ref) => {
+                        // Lower the initializer expression to an operand
+                        let init_operand = self.lower_expression(*expr_ref);
 
-                // Emit assignment to the designated field: field = initializer
-                self.emit_assignment(current_place, init_operand, span);
+                        // Emit assignment to the designated field: field = initializer
+                        self.emit_assignment(current_place, init_operand, span);
+                    }
+                    Initializer::List(_nested_inits) => {
+                        // Nested compound initializer - for now, just report as unsupported
+                        self.report_error(SemanticError::NonConstantInitializer { span });
+                    }
+                }
             }
-            Initializer::List(_nested_inits) => {
-                // Nested compound initializer - for now, just report as unsupported
-                self.report_error(SemanticError::NonConstantInitializer { span });
-            }
+            _ => panic!("Expected NodeKind::Initializer, got {:?}", designated_init_node.kind),
         }
     }
 
     /// Process a positional initializer (no designation)
     fn process_positional_initializer(
         &mut self,
-        initializer: &Initializer,
+        initializer_node_ref: NodeRef,
         local_id: LocalId,
         var_name: &str,
         index: usize,
@@ -703,47 +697,54 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             index, var_name
         );
 
-        match initializer {
-            Initializer::Expression(expr_ref) => {
-                // For simple positional initializers, we can use the existing logic
-                // but we need to handle struct/array member access
-                let init_operand = self.lower_expression(*expr_ref);
+        let initializer_node = self.ast.get_node(initializer_node_ref);
+        match &initializer_node.kind {
+            NodeKind::Initializer(initializer) => {
+                match initializer {
+                    Initializer::Expression(expr_ref) => {
+                        // For simple positional initializers, we can use the existing logic
+                        // but we need to handle struct/array member access
+                        let init_operand = self.lower_expression(*expr_ref);
 
-                // Get the type for the temporary local
-                let temp_type_id = self.get_int_type(); // For now, assume int type
+                        // Get the type for the temporary local
+                        let temp_type_id = self.get_int_type(); // For now, assume int type
 
-                // Create a temporary local for the initializer
-                let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
+                        // Create a temporary local for the initializer
+                        let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
 
-                // Emit assignment to temporary: temp = initializer
-                self.emit_assignment(Place::Local(temp_local_id), init_operand, span);
+                        // Emit assignment to temporary: temp = initializer
+                        self.emit_assignment(Place::Local(temp_local_id), init_operand, span);
 
-                // TODO: Emit assignment to the appropriate struct member or array element
-                // For now, just assign to the main local
-                self.emit_assignment(
-                    Place::Local(local_id),
-                    Operand::Copy(Box::new(Place::Local(temp_local_id))),
-                    span,
-                );
+                        // TODO: Emit assignment to the appropriate struct member or array element
+                        // For now, just assign to the main local
+                        self.emit_assignment(
+                            Place::Local(local_id),
+                            Operand::Copy(Box::new(Place::Local(temp_local_id))),
+                            span,
+                        );
+                    }
+                    Initializer::List(_) => {
+                        // Nested compound initializer - for now, just report as unsupported
+                        self.report_error(SemanticError::NonConstantInitializer { span });
+                    }
+                }
             }
-            Initializer::List(_) => {
-                // Nested compound initializer - for now, just report as unsupported
-                self.report_error(SemanticError::NonConstantInitializer { span });
-            }
+            _ => panic!("Expected NodeKind::Initializer, got {:?}", initializer_node.kind),
         }
     }
 
     /// Process compound initializers for global variables
     fn process_global_compound_initializer(
         &mut self,
-        initializer: &Initializer,
+        initializer_node_ref: NodeRef,
         var_name: Symbol,
         _var_type_id: TypeId,
         span: SourceSpan,
     ) -> Option<ConstValueId> {
         debug!("Processing global compound initializer for variable '{}'", var_name);
 
-        match initializer {
+        let initializer_node = self.ast.get_node(initializer_node_ref).clone_initializer_kind();
+        match initializer_node {
             Initializer::List(designated_initializers) => {
                 // Collect constant values for fields
                 // We use a map to handle out-of-order and designated initializers
@@ -794,9 +795,11 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                     };
 
                     // Process the initializer value
-                    if let Initializer::Expression(expr_ref) = &designated_init.initializer {
+                    let init = designated_init.initializer;
+                    let init = self.ast.get_node(init).clone_initializer_kind();
+                    if let Initializer::Expression(expr_ref) = init {
                         // Lower the initializer expression to get the constant value
-                        let init_operand = self.lower_expression(*expr_ref);
+                        let init_operand = self.lower_expression(expr_ref);
 
                         match init_operand {
                             Operand::Constant(const_id) => {
@@ -842,7 +845,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                             };
 
                         if let Some(nested_const_id) = self.process_global_compound_initializer(
-                            &designated_init.initializer,
+                            designated_init.initializer,
                             var_name,
                             field_type_id,
                             span,
@@ -885,27 +888,6 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     fn lower_var_declaration(&mut self, var_decl: &VarDeclData, span: SourceSpan) {
         debug!("Lowering semantic var declaration for '{}'", var_decl.name);
 
-        // Check for redeclaration
-        if let Some((existing_entry, scope_id)) = self.symbol_table.lookup_symbol(var_decl.name)
-            && scope_id == self.symbol_table.current_scope()
-        {
-            // If we've already handled this in THIS pass (it has a MIR local or is a global we've seen),
-            // it might be a real redefinition.
-            // For locals, we check local_map.
-            if self.local_map.contains_key(&existing_entry) {
-                let existing = self.symbol_table.get_symbol_entry(existing_entry);
-                self.report_error(SemanticError::Redefinition {
-                    name: var_decl.name,
-                    first_def: existing.def_span,
-                    second_def: span,
-                });
-                return;
-            }
-
-            // If it's a global, we can check if it already has a MIR global.
-            // ... (global redefinition check could be here, but let's focus on fixing the bug first)
-        }
-
         // Canonicalize the variable's type (like Clang does)
         let canonical_type_id = self.canonicalize_type(var_decl.ty);
         debug!(
@@ -919,9 +901,12 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         let mir_type_id = self.lower_type_to_mir(canonical_type_id);
 
         let is_global = self.current_function.is_none();
-        let initializer_node_ref = var_decl.init.as_ref().and_then(|init| match init {
-            Initializer::Expression(expr_ref) => Some(*expr_ref),
-            _ => None,
+        let initializer_node_ref = var_decl.init.as_ref().and_then(|init| {
+            let init = self.ast.get_node(*init).clone_initializer_kind();
+            match init {
+                Initializer::Expression(expr_ref) => Some(expr_ref),
+                _ => None,
+            }
         });
 
         if is_global {
@@ -945,10 +930,11 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 // Process initializer to get constant value
                 let mut initial_value_id = None;
                 if let Some(init) = &var_decl.init {
-                    match init {
+                    let node = self.ast.get_node(*init).clone_initializer_kind();
+                    match node {
                         Initializer::Expression(expr_ref) => {
                             // Try to evaluate the initializer as a constant
-                            let init_operand = self.lower_expression(*expr_ref);
+                            let init_operand = self.lower_expression(expr_ref);
                             if let Operand::Constant(const_id) = init_operand {
                                 initial_value_id = Some(const_id);
                             }
@@ -956,7 +942,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                         _ => {
                             // For compound initializers in global variables, we need to process them properly
                             if let Some(struct_const_id) =
-                                self.process_global_compound_initializer(init, var_decl.name, mir_type_id, span)
+                                self.process_global_compound_initializer(*init, var_decl.name, mir_type_id, span)
                             {
                                 initial_value_id = Some(struct_const_id);
                             }
@@ -997,42 +983,20 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             };
 
             // Use merge_global_symbol to handle C11 6.9.2 merging rules and detect redefinitions
-            match self.symbol_table.merge_global_symbol(var_decl.name, symbol_entry) {
+            // Redefinition errors are now handled in resolver.rs during symbol resolution
+            let entry_ref = match self.symbol_table.merge_global_symbol(var_decl.name, symbol_entry.clone()) {
                 Ok(entry_ref) => {
-                    // Symbol was successfully added or merged
                     debug!("Global variable '{}' processed successfully", var_decl.name);
-
-                    // If this is a new symbol (not merged), we may need to add it to MIR globals
-                    // Check if this symbol already exists in the symbol table
-                    if let Some((existing_entry, _)) = self.symbol_table.lookup_symbol(var_decl.name)
-                        && existing_entry != entry_ref
-                    {
-                        // This is a new symbol, ensure it's in MIR globals
-                        // (This case shouldn't happen with merge_global_symbol, but keeping for safety)
-                    }
+                    entry_ref
                 }
                 Err(_error) => {
-                    // merge_global_symbol detected a redefinition error
-                    // The error already contains the symbol name, but we need source spans for proper error reporting
-                    // Find the existing symbol to get its definition span for error reporting
-                    if let Some((existing_entry, _)) = self.symbol_table.lookup_symbol(var_decl.name) {
-                        let existing = self.symbol_table.get_symbol_entry(existing_entry);
-                        self.report_error(SemanticError::Redefinition {
-                            name: var_decl.name,
-                            first_def: existing.def_span,
-                            second_def: span,
-                        });
-                    } else {
-                        // This shouldn't happen, but provide a fallback error
-                        self.report_error(SemanticError::Redefinition {
-                            name: var_decl.name,
-                            first_def: span,
-                            second_def: span,
-                        });
-                    }
-                    return;
+                    // merge_global_symbol detected a redefinition error, but this should have been
+                    // handled by resolver.rs during symbol resolution. Continue processing anyway.
+                    debug!("Global variable '{}' merge failed, but continuing processing", var_decl.name);
+                    // Return a dummy entry ref to avoid panicking
+                    self.symbol_table.add_symbol(var_decl.name, symbol_entry)
                 }
-            }
+            };
             debug!("Created semantic global '{}' with id {:?}", var_decl.name, global_id);
         } else {
             // Check if symbol entry already exists from previous pass
@@ -1082,7 +1046,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
             // Process initializer if present
             if let Some(initializer) = &var_decl.init {
-                self.process_initializer(initializer, local_id, &var_decl.name.to_string(), span);
+                self.process_initializer(*initializer, local_id, &var_decl.name.to_string(), span);
             }
 
             debug!("Created semantic local '{}' with id {:?}", var_decl.name, local_id);
@@ -1092,6 +1056,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     /// Lower a typedef declaration
     fn lower_typedef_declaration(&mut self, typedef_decl: &TypedefDeclData, span: SourceSpan) {
         // Check if typedef is already in symbol table (added during semantic lowering)
+        // Typedef redefinition errors are now handled in resolver.rs during symbol resolution
         if let Some((existing_entry, _)) = self.symbol_table.lookup_symbol(typedef_decl.name) {
             let existing = self.symbol_table.get_symbol_entry(existing_entry);
             // If it's already a typedef with the same type, skip the redefinition error
@@ -1102,12 +1067,11 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 );
                 return;
             } else {
-                // Different symbol with same name - this is a real redefinition error
-                self.report_error(SemanticError::Redefinition {
-                    name: typedef_decl.name,
-                    first_def: existing.def_span,
-                    second_def: span,
-                });
+                // Different symbol with same name - this should have been caught by resolver.rs
+                debug!(
+                    "Typedef '{}' conflicts with different symbol type, but error should have been reported by resolver",
+                    typedef_decl.name
+                );
                 return;
             }
         }
@@ -1152,7 +1116,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
     /// Lower an expression to an operand
     fn lower_expression(&mut self, expr_ref: NodeRef) -> Operand {
-        match self.ast.get_node(expr_ref).kind.clone() {
+        let node = self.ast.get_node(expr_ref);
+        match node.kind.clone() {
             NodeKind::LiteralInt(val) => {
                 let const_id = self.create_constant(ConstValue::Int(val));
                 Operand::Constant(const_id)
@@ -1175,104 +1140,44 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 Operand::Constant(const_id)
             }
 
-            NodeKind::Ident(name, symbol_ref) => {
+            NodeKind::Ident(name) => {
                 debug!("Resolving identifier '{}'", name);
-                // First try to resolve through semantic analysis
-                if let Some(resolved_ref) = symbol_ref.get() {
-                    let entry = self.symbol_table.get_symbol_entry(resolved_ref);
+                let resolved_ref = node.resolved_symbol.get().unwrap();
 
-                    match &entry.kind {
-                        SymbolKind::Variable { is_global, .. } => {
-                            if *is_global {
-                                // This is a global variable - find its MIR global ID
-                                for (global_id, global) in self.mir_builder.get_globals() {
-                                    if global.name == entry.name {
-                                        let current_node = self.ast.get_node(expr_ref);
-                                        current_node.resolved_type.set(Some(entry.type_info));
-                                        return Operand::Copy(Box::new(Place::Global(*global_id)));
-                                    }
-                                }
-                            } else {
-                                // This is a local variable - look up the local in our local map
-                                if let Some(local_id) = self.local_map.get(&resolved_ref) {
+                // First try to resolve through semantic analysis
+                let entry = self.symbol_table.get_symbol_entry(resolved_ref);
+
+                match &entry.kind {
+                    SymbolKind::Variable { is_global, .. } => {
+                        if *is_global {
+                            // This is a global variable - find its MIR global ID
+                            for (global_id, global) in self.mir_builder.get_globals() {
+                                if global.name == entry.name {
                                     let current_node = self.ast.get_node(expr_ref);
                                     current_node.resolved_type.set(Some(entry.type_info));
-                                    return Operand::Copy(Box::new(Place::Local(*local_id)));
+                                    return Operand::Copy(Box::new(Place::Global(*global_id)));
                                 }
                             }
-                        }
-                        SymbolKind::EnumConstant { value } => {
-                            let val = *value;
-                            let type_info = entry.type_info;
-                            let const_id = self.create_constant(ConstValue::Int(val));
-                            let current_node = self.ast.get_node(expr_ref);
-                            current_node.resolved_type.set(Some(type_info));
-                            return Operand::Constant(const_id);
-                        }
-                        SymbolKind::Function { .. } => {
-                            // Function identifier - resolve to function address
-                            debug!("Resolving function identifier '{}' to function address", name);
-
-                            // Look up the function in MIR functions by name
-                            if let Some(func_id) = self.find_mir_function_by_name(name) {
+                        } else {
+                            // This is a local variable - look up the local in our local map
+                            if let Some(local_id) = self.local_map.get(&resolved_ref) {
                                 let current_node = self.ast.get_node(expr_ref);
                                 current_node.resolved_type.set(Some(entry.type_info));
-                                // Create a function address constant
-                                let func_addr_const = ConstValue::FunctionAddress(func_id);
-                                let const_id = self.create_constant(func_addr_const);
-                                return Operand::Constant(const_id);
-                            } else {
-                                // Function not found in MIR, might be a forward declaration
-                                debug!("Function '{}' found in symbol table but not in MIR functions", name);
-                                // For now, return a dummy operand to allow compilation to continue
-                                let error_const = self.create_constant(ConstValue::Int(0));
-                                return Operand::Constant(error_const);
+                                return Operand::Copy(Box::new(Place::Local(*local_id)));
                             }
                         }
-                        _ => {}
                     }
-                }
-
-                // Fallback: Check if it's a global variable by name
-                for (global_id, global) in self.mir_builder.get_globals() {
-                    if global.name == name {
-                        // Try to find the type info from symbol table
-                        if let Some((entry_ref, _)) = self.symbol_table.lookup_symbol(name) {
-                            let entry = self.symbol_table.get_symbol_entry(entry_ref);
-                            let current_node = self.ast.get_node(expr_ref);
-                            current_node.resolved_type.set(Some(entry.type_info));
-                        }
-                        return Operand::Copy(Box::new(Place::Global(*global_id)));
-                    }
-                }
-
-                // Fallback to searching all symbol entries and local map if needed
-                debug!("Fallback lookup for identifier '{}'", name);
-                if let Some((entry_ref, scope_id)) = self.symbol_table.lookup_symbol(name) {
-                    let entry = self.symbol_table.get_symbol_entry(entry_ref);
-                    debug!(
-                        "Found identifier '{}' in scope {} with kind {:?}",
-                        name,
-                        scope_id.get(),
-                        entry.kind
-                    );
-                    if let Some(local_id) = self.local_map.get(&entry_ref) {
-                        let current_node = self.ast.get_node(expr_ref);
-                        current_node.resolved_type.set(Some(entry.type_info));
-                        return Operand::Copy(Box::new(Place::Local(*local_id)));
-                    } else if let SymbolKind::EnumConstant { value } = &entry.kind {
+                    SymbolKind::EnumConstant { value } => {
                         let val = *value;
                         let type_info = entry.type_info;
                         let const_id = self.create_constant(ConstValue::Int(val));
                         let current_node = self.ast.get_node(expr_ref);
                         current_node.resolved_type.set(Some(type_info));
                         return Operand::Constant(const_id);
-                    } else if let SymbolKind::Function { .. } = &entry.kind {
+                    }
+                    SymbolKind::Function { .. } => {
                         // Function identifier - resolve to function address
-                        debug!(
-                            "Resolving function identifier '{}' to function address (fallback case)",
-                            name
-                        );
+                        debug!("Resolving function identifier '{}' to function address", name);
 
                         // Look up the function in MIR functions by name
                         if let Some(func_id) = self.find_mir_function_by_name(name) {
@@ -1290,8 +1195,28 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                             return Operand::Constant(error_const);
                         }
                     }
+                    _ => {}
                 }
 
+                // Fallback: Check if it's a global variable by name
+                for (global_id, global) in self.mir_builder.get_globals() {
+                    if global.name == name {
+                        // Try to find the type info from symbol table
+                        if let Some((entry_ref, _)) = self.symbol_table.lookup_symbol(name) {
+                            let entry = self.symbol_table.get_symbol_entry(entry_ref);
+                            let current_node = self.ast.get_node(expr_ref);
+                            current_node.resolved_type.set(Some(entry.type_info));
+                        }
+                        return Operand::Copy(Box::new(Place::Global(*global_id)));
+                    }
+                }
+
+                // With symbol resolver and type checker phases in place,
+                // resolved_symbol should always be available. If not, it's an error.
+                debug!(
+                    "Identifier '{}' not resolved by symbol resolver - this indicates an error",
+                    name
+                );
                 self.report_error(SemanticError::UndeclaredIdentifier {
                     name,
                     span: self.ast.get_node(expr_ref).span,
@@ -1536,7 +1461,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 let func_node = self.ast.get_node(func_ref);
 
                 match &func_node.kind {
-                    NodeKind::Ident(name, _) => {
+                    NodeKind::Ident(name) => {
                         // Direct function call: foo()
                         debug!("Direct function call target: {}", name);
                         self.handle_direct_function_call(*name, arg_operands)
@@ -1673,7 +1598,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                     debug!("Type not pre-resolved for object, attempting to resolve from symbol table");
 
                     // For identifiers, look up the symbol in the symbol table
-                    if let NodeKind::Ident(name, _) = &object_node.kind {
+                    if let NodeKind::Ident(name) = &object_node.kind {
                         debug!("Looking up symbol '{}' in symbol table", name);
                         if let Some((entry_ref, scope_id)) = self.symbol_table.lookup_symbol(*name) {
                             let entry = self.symbol_table.get_symbol_entry(entry_ref);
@@ -1810,7 +1735,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         if let Some(current_func_id) = self.current_function
             && let Some(func) = self.mir_builder.get_functions().get(&current_func_id)
             && let Some(return_type_id) = self.get_types().get(&func.return_type)
-            && matches!(return_type_id, crate::mir::MirType::Void)
+            && matches!(return_type_id, MirType::Void)
         {
             // We're in a void function - return statement should not have any operand
             self.mir_builder.set_terminator(Terminator::Return(None));
@@ -2141,19 +2066,19 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
         match ast_type.kind {
             crate::ast::TypeKind::Int { is_signed } => {
-                let mir_type = crate::mir::MirType::Int { is_signed, width: 32 };
+                let mir_type = MirType::Int { is_signed, width: 32 };
                 self.add_type(mir_type)
             }
             crate::ast::TypeKind::Void => {
-                let mir_type = crate::mir::MirType::Void;
+                let mir_type = MirType::Void;
                 self.add_type(mir_type)
             }
             crate::ast::TypeKind::Char { is_signed } => {
-                let mir_type = crate::mir::MirType::Int { is_signed, width: 8 };
+                let mir_type = MirType::Int { is_signed, width: 8 };
                 self.add_type(mir_type)
             }
             crate::ast::TypeKind::Short { is_signed } => {
-                let mir_type = crate::mir::MirType::Int { is_signed, width: 16 };
+                let mir_type = MirType::Int { is_signed, width: 16 };
                 self.add_type(mir_type)
             }
             crate::ast::TypeKind::Long {
@@ -2162,23 +2087,23 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             } => {
                 // Handle both long and long long
                 let width = if is_long_long { 64 } else { 32 };
-                let mir_type = crate::mir::MirType::Int { is_signed, width };
+                let mir_type = MirType::Int { is_signed, width };
                 self.add_type(mir_type)
             }
             crate::ast::TypeKind::Float => {
-                let mir_type = crate::mir::MirType::Float { width: 32 };
+                let mir_type = MirType::Float { width: 32 };
                 self.add_type(mir_type)
             }
             crate::ast::TypeKind::Double { is_long_double } => {
                 // Handle both double and long double
                 let width = if is_long_double { 80 } else { 64 };
-                let mir_type = crate::mir::MirType::Float { width };
+                let mir_type = MirType::Float { width };
                 self.add_type(mir_type)
             }
             crate::ast::TypeKind::Pointer { pointee } => {
                 // Convert the pointee type first
                 let pointee_type_id = self.lower_type_to_mir(pointee);
-                let mir_type = crate::mir::MirType::Pointer {
+                let mir_type = MirType::Pointer {
                     pointee: pointee_type_id,
                 };
                 self.add_type(mir_type)
@@ -2196,7 +2121,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                         0 // For variable length arrays or incomplete arrays, use 0
                     }
                 };
-                let mir_type = crate::mir::MirType::Array {
+                let mir_type = MirType::Array {
                     element: element_type_id,
                     size,
                 };
@@ -2222,12 +2147,12 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 );
 
                 let mir_type = if is_union {
-                    crate::mir::MirType::Union {
+                    MirType::Union {
                         name: type_name,
                         fields: mir_fields,
                     }
                 } else {
-                    crate::mir::MirType::Struct {
+                    MirType::Struct {
                         name: type_name,
                         fields: mir_fields,
                     }
@@ -2248,13 +2173,13 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     }
 
     /// Add a type to the MIR module
-    fn add_type(&mut self, mir_type: crate::mir::MirType) -> TypeId {
+    fn add_type(&mut self, mir_type: MirType) -> TypeId {
         self.mir_builder.add_type(mir_type)
     }
 
     /// Get the default int type
     fn get_int_type(&mut self) -> TypeId {
-        let mir_type = crate::mir::MirType::Int {
+        let mir_type = MirType::Int {
             is_signed: true,
             width: 32,
         };
@@ -2267,7 +2192,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     }
 
     /// Get types for validation
-    pub fn get_types(&self) -> &HashMap<TypeId, crate::mir::MirType> {
+    pub fn get_types(&self) -> &HashMap<TypeId, MirType> {
         self.mir_builder.get_types()
     }
 
@@ -2327,7 +2252,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         debug!("Looking for field '{}' in type {:?}", field_name, mir_type);
 
         match mir_type {
-            crate::mir::MirType::Struct { fields, .. } | crate::mir::MirType::Union { fields, .. } => {
+            MirType::Struct { fields, .. } | MirType::Union { fields, .. } => {
                 let field_index = fields.iter().position(|(name, _)| *name == field_name);
                 debug!("Field '{}' found at index {:?}", field_name, field_index);
                 field_index
@@ -2344,7 +2269,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         let mir_type = self.get_types().get(&type_id)?;
 
         match mir_type {
-            crate::mir::MirType::Struct { fields, .. } | crate::mir::MirType::Union { fields, .. } => {
+            MirType::Struct { fields, .. } | MirType::Union { fields, .. } => {
                 fields.get(field_index).map(|(_, field_type)| *field_type)
             }
             _ => None,
@@ -2356,7 +2281,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         let mir_type = self.get_types().get(&type_id)?;
 
         match mir_type {
-            crate::mir::MirType::Array { element, .. } => Some(*element),
+            MirType::Array { element, .. } => Some(*element),
             _ => None,
         }
     }
@@ -2451,7 +2376,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         if let Some(mir_type) = self.get_types().get(&type_id) {
             matches!(
                 mir_type,
-                crate::mir::MirType::Int { .. } | crate::mir::MirType::Float { .. }
+                MirType::Int { .. } | MirType::Float { .. }
             )
         } else {
             false
@@ -2461,7 +2386,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     /// Check if a type is integer
     fn is_integer_type(&self, type_id: TypeId) -> bool {
         if let Some(mir_type) = self.get_types().get(&type_id) {
-            matches!(mir_type, crate::mir::MirType::Int { .. })
+            matches!(mir_type, MirType::Int { .. })
         } else {
             false
         }
@@ -2499,13 +2424,13 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
         // Input validation
         if let Some(left_mir_type) = self.get_types().get(&left_type)
-            && matches!(left_mir_type, crate::mir::MirType::Void)
+            && matches!(left_mir_type, MirType::Void)
         {
             return Err(SemanticError::InvalidUseOfVoid { span });
         }
 
         if let Some(right_mir_type) = self.get_types().get(&right_type)
-            && matches!(right_mir_type, crate::mir::MirType::Void)
+            && matches!(right_mir_type, MirType::Void)
         {
             return Err(SemanticError::InvalidUseOfVoid { span });
         }
@@ -2590,7 +2515,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     /// Helper function to check if a type is a pointer type
     fn is_pointer_type(&self, type_id: TypeId) -> bool {
         if let Some(mir_type) = self.get_types().get(&type_id) {
-            matches!(mir_type, crate::mir::MirType::Pointer { .. })
+            matches!(mir_type, MirType::Pointer { .. })
         } else {
             false
         }
@@ -2603,8 +2528,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         left_type: TypeId,
         right: Operand,
         right_type: TypeId,
-        left_mir_type: &crate::mir::MirType,
-        right_mir_type: &crate::mir::MirType,
+        left_mir_type: &MirType,
+        right_mir_type: &MirType,
         span: SourceSpan,
     ) -> Result<(Operand, Operand, TypeId), SemanticError> {
         debug!(
@@ -2664,7 +2589,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         let mir_type = self.get_types().get(&operand_type).cloned();
         if let Some(mir_type) = mir_type {
             match mir_type {
-                crate::mir::MirType::Int { is_signed, width } => {
+                MirType::Int { is_signed, width } => {
                     // Integer promotions: if int can represent all values of the original type,
                     // convert to int; otherwise convert to unsigned int
                     if width < 32 {
@@ -2703,8 +2628,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     /// Find common arithmetic type using C11 usual arithmetic conversions
     fn find_common_arithmetic_type(
         &mut self,
-        left_type: &crate::mir::MirType,
-        right_type: &crate::mir::MirType,
+        left_type: &MirType,
+        right_type: &MirType,
         span: SourceSpan,
     ) -> Result<TypeId, SemanticError> {
         debug!(
@@ -2714,11 +2639,11 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
         // Handle floating point types
         match (left_type, right_type) {
-            (crate::mir::MirType::Float { .. }, crate::mir::MirType::Float { .. }) => {
+            (MirType::Float { .. }, MirType::Float { .. }) => {
                 // Both float -> result is float
                 Ok(self.get_float_type(32))
             }
-            (crate::mir::MirType::Float { .. }, _) | (_, crate::mir::MirType::Float { .. }) => {
+            (MirType::Float { .. }, _) | (_, MirType::Float { .. }) => {
                 // Any float with other type -> result is double
                 Ok(self.get_float_type(64))
             }
@@ -2732,17 +2657,17 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     /// Find common integer type for integer conversion rules
     fn find_common_integer_type(
         &mut self,
-        left_type: &crate::mir::MirType,
-        right_type: &crate::mir::MirType,
+        left_type: &MirType,
+        right_type: &MirType,
         span: SourceSpan,
     ) -> Result<TypeId, SemanticError> {
         let (left_is_signed, left_width) = match left_type {
-            crate::mir::MirType::Int { is_signed, width } => (*is_signed, *width),
+            MirType::Int { is_signed, width } => (*is_signed, *width),
             _ => unreachable!(), // Should only be called with integer types
         };
 
         let (right_is_signed, right_width) = match right_type {
-            crate::mir::MirType::Int { is_signed, width } => (*is_signed, *width),
+            MirType::Int { is_signed, width } => (*is_signed, *width),
             _ => unreachable!(),
         };
 
@@ -2809,8 +2734,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         left_type: TypeId,
         right: Operand,
         right_type: TypeId,
-        _left_mir_type: &crate::mir::MirType,
-        _right_mir_type: &crate::mir::MirType,
+        _left_mir_type: &MirType,
+        _right_mir_type: &MirType,
         _span: SourceSpan,
     ) -> Result<(Operand, Operand, TypeId), SemanticError> {
         // For pointer equality comparisons, we can use either type
@@ -2839,8 +2764,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         left_type: TypeId,
         right: Operand,
         right_type: TypeId,
-        _left_mir_type: &crate::mir::MirType,
-        _right_mir_type: &crate::mir::MirType,
+        _left_mir_type: &MirType,
+        _right_mir_type: &MirType,
         _span: SourceSpan,
     ) -> Result<(Operand, Operand, TypeId), SemanticError> {
         // Pointer + integer -> pointer type (with integer promoted if needed)
@@ -2856,8 +2781,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         left_type: TypeId,
         right: Operand,
         right_type: TypeId,
-        _left_mir_type: &crate::mir::MirType,
-        _right_mir_type: &crate::mir::MirType,
+        _left_mir_type: &MirType,
+        _right_mir_type: &MirType,
         _span: SourceSpan,
     ) -> Result<(Operand, Operand, TypeId), SemanticError> {
         // Integer + pointer -> pointer type (with integer promoted if needed)
@@ -2868,22 +2793,22 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
     /// Get integer type with specific width and signedness
     fn get_int_type_with_width(&mut self, width: u8, is_signed: bool) -> TypeId {
-        let mir_type = crate::mir::MirType::Int { is_signed, width };
+        let mir_type = MirType::Int { is_signed, width };
         self.add_type(mir_type)
     }
 
     /// Get float type with specific width
     fn get_float_type(&mut self, width: u8) -> TypeId {
-        let mir_type = crate::mir::MirType::Float { width };
+        let mir_type = MirType::Float { width };
         self.add_type(mir_type)
     }
 
     /// Get void pointer type
     fn get_void_pointer_type(&mut self) -> TypeId {
         // Create void type first
-        let void_type = self.add_type(crate::mir::MirType::Void);
+        let void_type = self.add_type(MirType::Void);
         // Create pointer to void
-        let mir_type = crate::mir::MirType::Pointer { pointee: void_type };
+        let mir_type = MirType::Pointer { pointee: void_type };
         self.add_type(mir_type)
     }
 
@@ -2934,15 +2859,11 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                     None
                 }
             }
-            NodeKind::Ident(name, symbol_ref) => {
-                // For simple identifiers, use the existing symbol table lookup
-                if let Some(resolved_ref) = symbol_ref.get() {
-                    let entry = self.symbol_table.get_symbol_entry(resolved_ref);
-                    debug!("Resolved identifier '{}' to type {:?}", name, entry.type_info);
-                    Some(entry.type_info)
-                } else {
-                    None
-                }
+            NodeKind::Ident(name) => {
+                let resolved_ref = node.resolved_symbol.get().unwrap();
+                let entry = self.symbol_table.get_symbol_entry(resolved_ref);
+                debug!("Resolved identifier '{}' to type {:?}", name, entry.type_info);
+                Some(entry.type_info)
             }
             _ => {
                 debug!("Cannot resolve type for expression: {:?}", node.kind);
@@ -3026,7 +2947,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
             // Check if function returns void
             let return_type = self.get_types().get(&func.return_type);
-            let is_void_function = return_type.is_some_and(|t| matches!(t, crate::mir::MirType::Void));
+            let is_void_function = return_type.is_some_and(|t| matches!(t, MirType::Void));
 
             if is_void_function {
                 // For void functions, just emit the call without creating a local
@@ -3124,7 +3045,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             debug!("Type not pre-resolved for object, attempting to resolve from symbol table");
 
             // For identifiers, look up the symbol in the symbol table
-            if let NodeKind::Ident(name, _) = &object_node.kind {
+            if let NodeKind::Ident(name) = &object_node.kind {
                 debug!("Looking up symbol '{}' in symbol table", name);
                 if let Some((entry_ref, scope_id)) = self.symbol_table.lookup_symbol(*name) {
                     let entry = self.symbol_table.get_symbol_entry(entry_ref);

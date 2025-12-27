@@ -813,8 +813,9 @@ pub fn run_symbol_resolver(ast: &mut Ast, diag: &mut DiagnosticEngine, symbol_ta
     // Phase 1: Process declarations and create symbol table entries
     lower_node_recursive_phase1(&mut lower_ctx, root_node_ref);
 
-    // Reset symbol table traversal to re-enter scopes in the same order for Phase 2
+    // Reset symbol table traversal and current scope for Phase 2
     lower_ctx.symbol_table.reset_traversal();
+    lower_ctx.symbol_table.set_current_scope(crate::semantic::ScopeId::GLOBAL);
 
     // Phase 2: Process expressions and resolve identifiers
     lower_node_recursive_phase2(&mut lower_ctx, root_node_ref);

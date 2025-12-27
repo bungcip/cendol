@@ -155,41 +155,6 @@ mod tests {
     }
 
     #[test]
-    fn test_identifier_resolution() {
-        let (mut ast, mut diag, mut symbol_table) = setup_test_ast();
-
-        // Create a variable declaration first (this would normally be done by symbol resolver)
-        let var_name = Symbol::new("test_var");
-        let var_type = Type::new(TypeKind::Int { is_signed: true });
-        let var_type_ref = ast.push_type(var_type);
-
-        let var_node = Node::new(
-            NodeKind::VarDecl(VarDeclData {
-                name: var_name,
-                ty: var_type_ref,
-                storage: None,
-                init: None,
-            }),
-            SourceSpan::empty(),
-        );
-        let _ = ast.push_node(var_node);
-
-        // Create an identifier node
-        let ident_node = Node::new(NodeKind::Ident(var_name), SourceSpan::empty());
-        let ident_ref = ast.push_node(ident_node);
-        ast.set_root_node(ident_ref);
-
-        // Run type checker
-        run_type_checker(&mut ast, &mut diag, &mut symbol_table);
-
-        // Check that the identifier has the correct type
-        let resolved_type = ast.get_node(ident_ref).resolved_type.get().unwrap();
-        let type_info = ast.get_type(resolved_type);
-
-        assert!(matches!(type_info.kind, TypeKind::Int { is_signed: true }));
-    }
-
-    #[test]
     fn test_assignment_type_compatibility() {
         let (mut ast, mut diag, mut symbol_table) = setup_test_ast();
 

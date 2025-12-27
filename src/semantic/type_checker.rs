@@ -283,7 +283,7 @@ fn type_check_identifier(
     node_ref: NodeRef,
     name: Symbol,
     symbol_ref: Option<SymbolEntryRef>,
-    _span: SourceSpan,
+    span: SourceSpan,
 ) {
     if let Some(resolved_ref) = symbol_ref {
         let entry = ctx.symbol_table.get_symbol_entry(resolved_ref);
@@ -294,11 +294,10 @@ fn type_check_identifier(
             let entry = ctx.symbol_table.get_symbol_entry(entry_ref);
             ctx.set_resolved_type(node_ref, entry.type_info);
         } else {
-            // For now, skip reporting undeclared identifier errors
-            // This allows the type checker to work with the existing symbol resolution
-            let int_type = Type::new(TypeKind::Int { is_signed: true });
-            let int_type_ref = ctx.ast.push_type(int_type);
-            ctx.set_resolved_type(node_ref, int_type_ref);
+            ctx.report_error(SemanticError::UndeclaredIdentifier { name, span });
+            let error_type = Type::new(TypeKind::Error);
+            let error_type_ref = ctx.ast.push_type(error_type);
+            ctx.set_resolved_type(node_ref, error_type_ref);
         }
     }
 }

@@ -1335,19 +1335,39 @@ fn lower_node_recursive_phase2(ctx: &mut LowerCtx, node_ref: NodeRef) {
             ctx.symbol_table.pop_scope();
         }
         NodeKind::If(if_stmt) => {
+            lower_node_recursive_phase2(ctx, if_stmt.condition);
             lower_node_recursive_phase2(ctx, if_stmt.then_branch);
             if let Some(else_branch) = if_stmt.else_branch {
                 lower_node_recursive_phase2(ctx, else_branch);
             }
         }
         NodeKind::While(while_stmt) => {
+            lower_node_recursive_phase2(ctx, while_stmt.condition);
             lower_node_recursive_phase2(ctx, while_stmt.body);
         }
-        NodeKind::DoWhile(body, _) => {
+        NodeKind::DoWhile(body, condition) => {
+            lower_node_recursive_phase2(ctx, body);
+            lower_node_recursive_phase2(ctx, condition);
+        }
+        NodeKind::Switch(condition, body) => {
+            lower_node_recursive_phase2(ctx, condition);
             lower_node_recursive_phase2(ctx, body);
         }
-        NodeKind::Switch(_, body) => {
+        NodeKind::Case(expr, body) => {
+            lower_node_recursive_phase2(ctx, expr);
             lower_node_recursive_phase2(ctx, body);
+        }
+        NodeKind::Default(body) => {
+            lower_node_recursive_phase2(ctx, body);
+        }
+        NodeKind::Goto(_) => {
+            // No expressions to resolve
+        }
+        NodeKind::Continue => {
+            // No expressions to resolve
+        }
+        NodeKind::Break => {
+            // No expressions to resolve
         }
         NodeKind::Label(_, stmt) => {
             lower_node_recursive_phase2(ctx, stmt);
@@ -1385,6 +1405,38 @@ fn lower_node_recursive_phase2(ctx: &mut LowerCtx, node_ref: NodeRef) {
             lower_node_recursive_phase2(ctx, cond_ref);
             lower_node_recursive_phase2(ctx, then_ref);
             lower_node_recursive_phase2(ctx, else_ref);
+        }
+        NodeKind::Assignment(_, lhs, rhs) => {
+            lower_node_recursive_phase2(ctx, lhs);
+            lower_node_recursive_phase2(ctx, rhs);
+        }
+        NodeKind::Declaration(_) => {
+            // This should have been handled in phase 1, but we might encounter it in `for` loops
+            let semantic_nodes = lower_declaration_phase1(ctx, node_ref);
+            if !semantic_nodes.is_empty() {
+                // In case of multi-declarator, replace with DeclarationList
+                if semantic_nodes.len() > 1 {
+                    let original_node = ctx.ast.get_node(node_ref);
+                    let compound_node = Node::new(NodeKind::DeclarationList(semantic_nodes.clone()), original_node.span);
+                    ctx.ast.replace_node(node_ref, compound_node);
+                } else {
+                    let semantic_node_data = ctx.ast.get_node(semantic_nodes[0]).clone();
+                    ctx.ast.replace_node(node_ref, semantic_node_data);
+                }
+
+                // Process the new semantic nodes in phase 2
+                for sn in semantic_nodes {
+                    lower_node_recursive_phase2(ctx, sn);
+                }
+            }
+        }
+        NodeKind::FunctionDecl(_) => {
+            // No expressions to resolve in a function declaration
+        }
+        NodeKind::EnumConstant(_, value_expr) => {
+            if let Some(expr) = value_expr {
+                lower_node_recursive_phase2(ctx, expr);
+            }
         }
         _ => {}
     }
@@ -1678,11 +1730,11 @@ fn lower_init_declarator_phase1(
         func_node
     } else {
         // Extract initializer for symbol entry before moving it
-        let initializer_node_ref = init.initializer.map(|init| {
-            let init = ctx.ast.get_node(init).clone_initializer_kind();
-            match init {
-                Initializer::Expression(expr_ref) => expr_ref,
-                _ => panic!("Complex initializers not supported yet"),
+        let initializer_node_ref = init.initializer.and_then(|init_node_ref| {
+            let init_kind = ctx.ast.get_node(init_node_ref).clone_initializer_kind();
+            match init_kind {
+                Initializer::Expression(expr_ref) => Some(expr_ref),
+                Initializer::List(_) => None, // Initializer list is handled separately
             }
         });
 
@@ -1861,7 +1913,18 @@ fn lower_type_definition_phase1(ctx: &mut LowerCtx, specifiers: &[DeclSpecifier]
 }
 
 /// Process initializer for Phase 2
-fn lower_initializer_phase2(_ctx: &mut LowerCtx, _init: &Initializer) {
-    // For now, we don't need to do anything special for initializers in Phase 2
-    // The expressions within initializers will be processed when we encounter them
+fn lower_initializer_phase2(ctx: &mut LowerCtx, init: &Initializer) {
+    match init {
+        Initializer::Expression(expr_ref) => {
+            lower_node_recursive_phase2(ctx, *expr_ref);
+        }
+        Initializer::List(items) => {
+            for item in items {
+                // InitializerListItem has an optional designation and an initializer.
+                // We only care about the initializer for now.
+                let item_init = ctx.ast.get_node(item.initializer).clone_initializer_kind();
+                lower_initializer_phase2(ctx, &item_init);
+            }
+        }
+    }
 }

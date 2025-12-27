@@ -1141,88 +1141,45 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             }
 
             NodeKind::Ident(name) => {
-                debug!("Resolving identifier '{}'", name);
-                let resolved_ref = node.resolved_symbol.get().unwrap();
-
-                // First try to resolve through semantic analysis
-                let entry = self.symbol_table.get_symbol_entry(resolved_ref);
-
-                match &entry.kind {
-                    SymbolKind::Variable { is_global, .. } => {
-                        if *is_global {
-                            // This is a global variable - find its MIR global ID
-                            for (global_id, global) in self.mir_builder.get_globals() {
-                                if global.name == entry.name {
-                                    let current_node = self.ast.get_node(expr_ref);
-                                    current_node.resolved_type.set(Some(entry.type_info));
-                                    return Operand::Copy(Box::new(Place::Global(*global_id)));
+                // Rely on the symbol resolver to have set the resolved_symbol
+                if let Some(resolved_ref) = node.resolved_symbol.get() {
+                    let entry = self.symbol_table.get_symbol_entry(resolved_ref);
+                    match &entry.kind {
+                        SymbolKind::Variable { is_global, .. } => {
+                            if *is_global {
+                                // Global variable
+                                for (global_id, global) in self.mir_builder.get_globals() {
+                                    if global.name == entry.name {
+                                        return Operand::Copy(Box::new(Place::Global(*global_id)));
+                                    }
+                                }
+                            } else {
+                                // Local variable
+                                if let Some(local_id) = self.local_map.get(&resolved_ref) {
+                                    return Operand::Copy(Box::new(Place::Local(*local_id)));
                                 }
                             }
-                        } else {
-                            // This is a local variable - look up the local in our local map
-                            if let Some(local_id) = self.local_map.get(&resolved_ref) {
-                                let current_node = self.ast.get_node(expr_ref);
-                                current_node.resolved_type.set(Some(entry.type_info));
-                                return Operand::Copy(Box::new(Place::Local(*local_id)));
+                        }
+                        SymbolKind::EnumConstant { value } => {
+                            let const_id = self.create_constant(ConstValue::Int(*value));
+                            return Operand::Constant(const_id);
+                        }
+                        SymbolKind::Function { .. } => {
+                            if let Some(func_id) = self.find_mir_function_by_name(name) {
+                                let func_addr_const = ConstValue::FunctionAddress(func_id);
+                                let const_id = self.create_constant(func_addr_const);
+                                return Operand::Constant(const_id);
                             }
                         }
-                    }
-                    SymbolKind::EnumConstant { value } => {
-                        let val = *value;
-                        let type_info = entry.type_info;
-                        let const_id = self.create_constant(ConstValue::Int(val));
-                        let current_node = self.ast.get_node(expr_ref);
-                        current_node.resolved_type.set(Some(type_info));
-                        return Operand::Constant(const_id);
-                    }
-                    SymbolKind::Function { .. } => {
-                        // Function identifier - resolve to function address
-                        debug!("Resolving function identifier '{}' to function address", name);
-
-                        // Look up the function in MIR functions by name
-                        if let Some(func_id) = self.find_mir_function_by_name(name) {
-                            let current_node = self.ast.get_node(expr_ref);
-                            current_node.resolved_type.set(Some(entry.type_info));
-                            // Create a function address constant
-                            let func_addr_const = ConstValue::FunctionAddress(func_id);
-                            let const_id = self.create_constant(func_addr_const);
-                            return Operand::Constant(const_id);
-                        } else {
-                            // Function not found in MIR, might be a forward declaration
-                            debug!("Function '{}' found in symbol table but not in MIR functions", name);
-                            // For now, return a dummy operand to allow compilation to continue
-                            let error_const = self.create_constant(ConstValue::Int(0));
-                            return Operand::Constant(error_const);
-                        }
-                    }
-                    _ => {}
-                }
-
-                // Fallback: Check if it's a global variable by name
-                for (global_id, global) in self.mir_builder.get_globals() {
-                    if global.name == name {
-                        // Try to find the type info from symbol table
-                        if let Some((entry_ref, _)) = self.symbol_table.lookup_symbol(name) {
-                            let entry = self.symbol_table.get_symbol_entry(entry_ref);
-                            let current_node = self.ast.get_node(expr_ref);
-                            current_node.resolved_type.set(Some(entry.type_info));
-                        }
-                        return Operand::Copy(Box::new(Place::Global(*global_id)));
+                        _ => {}
                     }
                 }
 
-                // With symbol resolver and type checker phases in place,
-                // resolved_symbol should always be available. If not, it's an error.
-                debug!(
-                    "Identifier '{}' not resolved by symbol resolver - this indicates an error",
-                    name
-                );
+                // If we reach here, the symbol was not resolved or not found in MIR
                 self.report_error(SemanticError::UndeclaredIdentifier {
                     name,
-                    span: self.ast.get_node(expr_ref).span,
+                    span: node.span,
                 });
-
-                // Return a dummy operand to allow compilation to continue
                 let error_const = self.create_constant(ConstValue::Int(0));
                 Operand::Constant(error_const)
             }

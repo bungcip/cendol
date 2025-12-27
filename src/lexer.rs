@@ -602,14 +602,18 @@ impl<'src> Lexer<'src> {
         // or [digits][e|E[+|-]digits][f|F|l|L]
         // or 0[xX][hexdigits][.hexdigits][p|P[+|-]digits][f|F|l|L]
 
-        // Strip suffix (f, F, l, L) for parsing
-        let text_without_suffix =
-            if text_str.ends_with('f') || text_str.ends_with('F') || text_str.ends_with('l') || text_str.ends_with('L')
-            {
-                &text_str[..text_str.len() - 1]
-            } else {
-                text_str
-            };
+        // ⚡ Bolt: Optimized suffix stripping.
+        // This is faster than chaining `ends_with` calls. By checking the last byte
+        // directly, we avoid multiple string traversals and improve performance for
+        // parsing floating-point literals.
+        let text_without_suffix = if !text_str.is_empty() {
+            match text_str.as_bytes()[text_str.len() - 1] {
+                b'f' | b'F' | b'l' | b'L' => &text_str[..text_str.len() - 1],
+                _ => text_str,
+            }
+        } else {
+            text_str
+        };
 
         // Handle hexadecimal floating-point literals (C99/C11)
         if text_str.starts_with("0x") || text_str.starts_with("0X") {

@@ -829,6 +829,32 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
     }
 }
 
+fn lower_function_parameters(params: &[ParamData], ctx: &mut LowerCtx) -> Vec<FunctionParameter> {
+    params
+        .iter()
+        .map(|param| {
+            let span = SourceSpan::empty(); // FIXME: Get a proper span for parameter declarations
+            let spec_info = lower_decl_specifiers(&param.specifiers, ctx, span);
+
+            // C standard: if type specifier is missing in a parameter, it defaults to int.
+            let base_ty = spec_info.base_type.unwrap_or_else(|| {
+                ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true }))
+            });
+
+            let final_ty = if let Some(declarator) = &param.declarator {
+                let ty = apply_declarator(base_ty, declarator, ctx);
+                ctx.ast.push_type(ty)
+            } else {
+                base_ty
+            };
+            FunctionParameter {
+                param_type: final_ty,
+                name: param.declarator.as_ref().and_then(extract_identifier),
+            }
+        })
+        .collect()
+}
+
 /// Apply declarator transformations to a base type
 fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut LowerCtx) -> Type {
     match declarator {
@@ -876,28 +902,33 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
             })
         }
         Declarator::Function(base, params) => {
+            // Check for function pointer: a pointer declarator inside the function base
+            if let Declarator::Pointer(qualifiers, Some(inner_base)) = &**base {
+                // This is a pointer to a function.
+                // The `base_type` applies to the return type of the function.
+                let return_type = apply_declarator(base_type, inner_base, ctx);
+
+                let parameters = lower_function_parameters(params, ctx);
+
+                // Build the function type first
+                let function_type = Type::new(TypeKind::Function {
+                    return_type: ctx.ast.push_type(return_type),
+                    parameters,
+                    is_variadic: false, // TODO
+                });
+                let function_type_ref = ctx.ast.push_type(function_type);
+
+                // Then wrap it in a pointer
+                let mut pointer_type = Type::new(TypeKind::Pointer {
+                    pointee: function_type_ref,
+                });
+                pointer_type.qualifiers = *qualifiers;
+                return pointer_type;
+            }
+
+            // This is a regular function declaration.
             let return_type = apply_declarator(base_type, base, ctx);
-
-            // Convert parameters to function parameter types
-            let parameters = params
-                .iter()
-                .map(|param| {
-                    let param_type = if let Some(param_decl) = &param.declarator {
-                        // Create a temporary base type for parameters
-                        let temp_base = ctx.ast.push_type(Type::new(TypeKind::Int { is_signed: true }));
-                        let param_ty = apply_declarator(temp_base, param_decl, ctx);
-                        ctx.ast.push_type(param_ty)
-                    } else {
-                        // Abstract declarator - use base type
-                        base_type
-                    };
-
-                    FunctionParameter {
-                        param_type,
-                        name: extract_identifier(param.declarator.as_ref().unwrap_or(&Declarator::Abstract)),
-                    }
-                })
-                .collect();
+            let parameters = lower_function_parameters(params, ctx);
 
             Type::new(TypeKind::Function {
                 return_type: ctx.ast.push_type(return_type),

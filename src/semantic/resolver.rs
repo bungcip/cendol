@@ -7,7 +7,8 @@
 
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
-use crate::semantic::{Namespace, SymbolTable};
+use crate::semantic::symbol_table::DefinitionState;
+use crate::semantic::{Namespace, ScopeId, SymbolEntry, SymbolKind, SymbolTable};
 use crate::source_manager::SourceSpan;
 
 /// Context for the semantic lowering phase
@@ -812,9 +813,9 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
         let typedef_node = ctx.ast.push_node(Node::new(NodeKind::TypedefDecl(typedef_decl), span));
 
         // Add typedef to symbol table to resolve forward references
-        let symbol_entry = crate::ast::SymbolEntry {
+        let symbol_entry = SymbolEntry {
             name: name.as_str().into(),
-            kind: crate::ast::SymbolKind::Typedef { aliased_type: final_ty },
+            kind: SymbolKind::Typedef { aliased_type: final_ty },
             type_info: final_ty,
             storage_class: Some(StorageClass::Typedef),
             scope_id: ctx.symbol_table.current_scope().get(),
@@ -1026,15 +1027,15 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             };
 
             // Add function to GLOBAL scope (not function scope)
-            let global_scope_id = crate::semantic::ScopeId::new(1).unwrap(); // Global scope is typically 1
+            let global_scope_id = ScopeId::new(1).unwrap(); // Global scope is typically 1
 
             // Switch to global scope to add the function
             let original_scope = ctx.symbol_table.current_scope();
             ctx.symbol_table.set_current_scope(global_scope_id);
 
-            let symbol_entry = crate::ast::SymbolEntry {
+            let symbol_entry = SymbolEntry {
                 name: func_name,
-                kind: crate::ast::SymbolKind::Function {
+                kind: SymbolKind::Function {
                     is_definition: true,
                     is_inline: false,
                     is_variadic: false,
@@ -1066,9 +1067,9 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                 .into_iter()
                 .map(|param| {
                     // Create a symbol entry for the parameter
-                    let param_symbol_entry = crate::ast::SymbolEntry {
+                    let param_symbol_entry = SymbolEntry {
                         name: param.name.unwrap_or_else(|| NameId::new("unnamed_param")),
-                        kind: crate::ast::SymbolKind::Variable {
+                        kind: SymbolKind::Variable {
                             is_global: false,
                             is_static: false,
                             initializer: None,

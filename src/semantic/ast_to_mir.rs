@@ -8,7 +8,10 @@ use crate::mir::{
     MirFunctionId, MirStmt, Operand, Place, Rvalue, Terminator, TypeId,
 };
 use crate::semantic::ScopeId;
+use crate::semantic::SymbolEntry;
+use crate::semantic::SymbolKind;
 use crate::semantic::SymbolTable;
+use crate::semantic::symbol_table::DefinitionState;
 use crate::source_manager::SourceSpan;
 use hashbrown::HashMap;
 use log::debug;

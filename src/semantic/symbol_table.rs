@@ -12,6 +12,70 @@ use thiserror::Error;
 
 use crate::ast::*;
 
+
+/// Represents the definition state of a symbol entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DefinitionState {
+    Tentative,    // int x;
+    Defined,      // int x = ...;
+    DeclaredOnly, // extern int x;
+}
+
+/// Represents a resolved symbol entry from the symbol table.
+/// This structure is typically populated during the semantic analysis phase.
+/// Symbol entries are stored in a separate Vec<SymbolEntry> with SymbolEntryRef references.
+#[derive(Debug, Clone)]
+pub struct SymbolEntry {
+    pub name: NameId,
+    pub kind: SymbolKind, // e.g., Variable, Function, Typedef
+    pub type_info: TypeRef,
+    pub storage_class: Option<StorageClass>,
+    pub scope_id: u32, // Reference to the scope where it's defined
+    pub def_span: SourceSpan,
+    pub def_state: DefinitionState,
+    pub is_referenced: bool,
+    pub is_completed: bool,
+    // Add other relevant symbol information here (e.g., value for constants, linkage)
+}
+
+/// Defines the kind of symbol.
+#[derive(Debug, Clone)]
+pub enum SymbolKind {
+    Variable {
+        is_global: bool,
+        is_static: bool,
+        // Initializer might be an AST node or a constant value
+        initializer: Option<NodeRef>,
+    },
+    Function {
+        is_definition: bool,
+        is_inline: bool,
+        is_variadic: bool,
+        parameters: Vec<FunctionParameter>,
+    },
+    Typedef {
+        aliased_type: TypeRef,
+    },
+    EnumConstant {
+        value: i64, // Resolved constant value
+    },
+    Label {
+        is_defined: bool,
+        is_used: bool,
+    },
+    Record {
+        is_complete: bool,
+        members: Vec<StructMember>,
+        size: Option<usize>,
+        alignment: Option<usize>,
+    },
+    EnumTag {
+        is_complete: bool,
+    },
+    // Add other symbol kinds as needed (e.g., Macro, BlockScope)
+}
+
+
 /// Symbol table error types
 #[derive(Debug, Error)]
 pub enum SymbolTableError {

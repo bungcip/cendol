@@ -138,8 +138,6 @@ pub struct Node {
     // Uses Cell for Interior Mutability: allows type checking to annotate the AST
     // without requiring mutable access to the entire tree structure.
     pub resolved_type: Cell<Option<TypeRef>>, // Hot data, now ref-based
-    // After semantic analysis, for Ident nodes, this will point to the resolved symbol entry.
-    pub resolved_symbol: Cell<Option<SymbolEntryRef>>, // Hot data, now ref-based
 }
 
 impl Node {
@@ -148,7 +146,6 @@ impl Node {
         Node {
             kind,
             span,
-            resolved_symbol: Cell::new(None),
             resolved_type: Cell::new(None),
         }
     }

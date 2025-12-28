@@ -1159,7 +1159,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
         NodeKind::Switch(_, body) => {
             lower_node_recursive(ctx, body);
         }
-        NodeKind::Label(_, stmt) => {
+        NodeKind::Label(_, stmt, _) => {
             lower_node_recursive(ctx, stmt);
         }
         _ => {}

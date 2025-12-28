@@ -38,9 +38,10 @@ pub enum NodeKind {
     Assignment(BinaryOp, NodeRef /* lhs */, NodeRef /* rhs */),
     FunctionCall(NodeRef /* func */, Vec<NodeRef> /* args */),
     MemberAccess(
-        NodeRef, /* object */
-        NameId,  /* field */
-        bool,    /* is_arrow */
+        NodeRef,                      /* object */
+        NameId,                       /* field */
+        bool,                         /* is_arrow */
+        Cell<Option<SymbolEntryRef>>, /* resolved symbol after semantic analysis */
     ),
     IndexAccess(NodeRef /* array */, NodeRef /* index */),
 
@@ -63,8 +64,8 @@ pub enum NodeKind {
     Return(Option<NodeRef>),
     Break,
     Continue,
-    Goto(NameId),
-    Label(NameId, NodeRef /* statement */),
+    Goto(NameId, Cell<Option<SymbolEntryRef>>), // resolved symbol after semantic analysis
+    Label(NameId, NodeRef /* statement */, Cell<Option<SymbolEntryRef>>), // resolved symbol after semantic analysis
 
     Switch(NodeRef /* condition */, NodeRef /* body statement */),
     Case(NodeRef /* const_expr */, NodeRef /* statement */),

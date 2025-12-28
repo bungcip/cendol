@@ -249,7 +249,7 @@ impl OutputHandler {
                 func.get(),
                 args.iter().map(|&r| r.get().to_string()).join(", ")
             ),
-            NodeKind::MemberAccess(obj, field, is_arrow) => println!(
+            NodeKind::MemberAccess(obj, field, is_arrow, _) => println!(
                 "MemberAccess({}, {}, {})",
                 obj.get(),
                 field,
@@ -312,8 +312,8 @@ impl OutputHandler {
             ),
             NodeKind::Break => println!("Break"),
             NodeKind::Continue => println!("Continue"),
-            NodeKind::Goto(label) => println!("Goto({})", label),
-            NodeKind::Label(label, stmt) => println!("Label({}, {})", label, stmt.get()),
+            NodeKind::Goto(label, _) => println!("Goto({})", label),
+            NodeKind::Label(label, stmt, _) => println!("Label({}, {})", label, stmt.get()),
             NodeKind::Switch(cond, body) => {
                 println!("Switch(condition={}, body={})", cond.get(), body.get())
             }

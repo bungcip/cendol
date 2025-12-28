@@ -450,7 +450,7 @@ fn parse_index_access(parser: &mut Parser, array: NodeRef) -> Result<NodeRef, Pa
 fn parse_member_access(parser: &mut Parser, object: NodeRef, is_arrow: bool) -> Result<NodeRef, ParseError> {
     let (symbol, span) = parser.expect_name()?;
     let span = SourceSpan::new(parser.ast.get_node(object).span.start, span.end);
-    let node = parser.push_node(NodeKind::MemberAccess(object, symbol, is_arrow), span);
+    let node = parser.push_node(NodeKind::MemberAccess(object, symbol, is_arrow, Cell::new(None)), span);
     Ok(node)
 }
 

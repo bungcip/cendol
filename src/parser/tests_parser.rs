@@ -112,7 +112,7 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
             Box::new(resolve_node(ast, *func)),
             args.iter().map(|&arg| resolve_node(ast, arg)).collect(),
         ),
-        NodeKind::MemberAccess(object, field, is_arrow) => {
+        NodeKind::MemberAccess(object, field, is_arrow, _) => {
             ResolvedNodeKind::MemberAccess(Box::new(resolve_node(ast, *object)), field.to_string(), *is_arrow)
         }
         NodeKind::IndexAccess(array, index) => {
@@ -243,10 +243,10 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
                 .collect();
             ResolvedNodeKind::GenericSelection(resolved_controlling, resolved_associations)
         }
-        NodeKind::Label(label, statement) => {
+        NodeKind::Label(label, statement, _) => {
             ResolvedNodeKind::Label(label.to_string(), Box::new(resolve_node(ast, *statement)))
         }
-        NodeKind::Goto(label) => ResolvedNodeKind::Goto(label.to_string()),
+        NodeKind::Goto(label, _) => ResolvedNodeKind::Goto(label.to_string()),
         NodeKind::Return(expr) => ResolvedNodeKind::Return(expr.map(|e| Box::new(resolve_node(ast, e)))),
         NodeKind::Break => ResolvedNodeKind::Break,
         NodeKind::Continue => ResolvedNodeKind::Continue,

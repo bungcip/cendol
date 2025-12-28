@@ -3,6 +3,8 @@
 //! This module handles all statement parsing logic, including control flow
 //! statements, compound statements, and expression statements.
 
+use std::cell::Cell;
+
 use super::Parser;
 use crate::ast::*;
 use crate::diagnostic::ParseError;
@@ -321,7 +323,7 @@ fn parse_goto_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let end_loc = semicolon_token.span.end;
 
     let span = SourceSpan::new(start_loc, end_loc);
-    let node = parser.push_node(NodeKind::Goto(label), span);
+    let node = parser.push_node(NodeKind::Goto(label, Cell::new(None)), span);
     Ok(node)
 }
 
@@ -441,7 +443,7 @@ fn parse_label_statement(parser: &mut Parser, label_symbol: NameId) -> Result<No
 
     let span = SourceSpan::new(start_loc, end_loc);
 
-    let node = parser.push_node(NodeKind::Label(label_symbol, statement), span);
+    let node = parser.push_node(NodeKind::Label(label_symbol, statement, Cell::new(None)), span);
     Ok(node)
 }
 

@@ -264,10 +264,10 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             NodeKind::Return(expr) => {
                 self.lower_return_statement(&expr, node.span);
             }
-            NodeKind::Goto(label) => {
+            NodeKind::Goto(label, _) => {
                 self.lower_goto_statement(label, node.span);
             }
-            NodeKind::Label(label, statement) => {
+            NodeKind::Label(label, statement, _) => {
                 self.lower_label_statement(label, statement, node.span);
             }
             NodeKind::If(if_stmt) => {
@@ -311,7 +311,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         let node_kind = self.ast.get_node(stmt_ref).kind.clone();
 
         match node_kind {
-            NodeKind::Label(label, _) => {
+            NodeKind::Label(label, _, _) => {
                 // If the label is already mapped, it means we've processed it as part of a
                 // preceding chain of labels. We can skip it to avoid redundant work and errors.
                 if self.label_map.contains_key(&label) {
@@ -323,7 +323,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 let mut current_stmt = stmt_ref;
 
                 // Traverse the chain of consecutive labels, mapping each to the same block.
-                while let NodeKind::Label(current_label, next_stmt) = self.ast.get_node(current_stmt).kind.clone() {
+                while let NodeKind::Label(current_label, next_stmt, _) = self.ast.get_node(current_stmt).kind.clone() {
                     if self.label_map.contains_key(&current_label) {
                         let node_span = self.ast.get_node(current_stmt).span;
                         self.report_error(SemanticError::Redefinition {
@@ -1496,7 +1496,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                         debug!("Direct function call target: {}", name);
                         self.handle_direct_function_call(*name, arg_operands)
                     }
-                    NodeKind::MemberAccess(object_ref, field_name, is_arrow) => {
+                    NodeKind::MemberAccess(object_ref, field_name, is_arrow, _) => {
                         // Function pointer call through member access: v.fptr() or v->fptr()
                         debug!(
                             "Function pointer call through member access: {}.{}() (is_arrow: {})",
@@ -1568,7 +1568,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 Operand::Copy(Box::new(place))
             }
 
-            NodeKind::MemberAccess(object_ref, field_name, is_arrow) => {
+            NodeKind::MemberAccess(object_ref, field_name, is_arrow, _) => {
                 debug!(
                     "Lowering member access expression for field: {} (is_arrow: {})",
                     field_name, is_arrow
@@ -2852,7 +2852,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         let node = self.ast.get_node(expr_ref);
 
         match &node.kind {
-            NodeKind::MemberAccess(object_ref, field_name, is_arrow) => {
+            NodeKind::MemberAccess(object_ref, field_name, is_arrow, _) => {
                 debug!(
                     "Resolving type for MemberAccess expression: {} (is_arrow: {})",
                     field_name, is_arrow

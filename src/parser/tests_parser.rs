@@ -492,6 +492,24 @@ fn test_simple_addition() {
 }
 
 #[test]
+fn test_generic_selection_with_assignment() {
+    let resolved = setup_expr("_Generic(x = 10, int: 1, default: 0)");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    GenericSelection:
+      - BinaryOp:
+          - Assign
+          - Ident: x
+          - LiteralInt: 10
+      - - type_name: type_1
+          result_expr:
+            LiteralInt: 1
+        - type_name: ~
+          result_expr:
+            LiteralInt: 0
+    ");
+}
+
+#[test]
 fn test_unary_operators() {
     let resolved = setup_expr("-1");
     insta::assert_yaml_snapshot!(&resolved, @r"

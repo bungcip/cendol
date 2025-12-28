@@ -483,8 +483,8 @@ pub(crate) fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, Pa
 
     parser.expect(TokenKind::LeftParen)?;
 
-    // Parse controlling expression, but stop before comma to avoid treating it as comma operator
-    let controlling_expr = parser.parse_expr_bp(BindingPower::CONDITIONAL)?;
+    // The controlling expression is an assignment-expression, so we parse with ASSIGNMENT binding power.
+    let controlling_expr = parser.parse_expr_bp(BindingPower::ASSIGNMENT)?;
 
     parser.expect(TokenKind::Comma)?;
 

@@ -10,36 +10,21 @@
 //!
 //! - [`nodes`]: Node definitions, constructors, and builder patterns for AST nodes
 //! - [`types`]: Type system representation and utilities for semantic analysis
-//! - [`visitor`]: Visitor pattern implementation for AST traversal and transformation
 //!
 //! ## Key Features
 //!
 //! - **Flattened Storage**: All AST nodes are stored in contiguous vectors with index-based references
 //! - **Interior Mutability**: Uses `Cell` for type annotations without requiring mutable AST access
 //! - **Builder Patterns**: Ergonomic constructors for complex AST nodes
-//! - **Visitor Pattern**: Clean separation of algorithms from AST structure
 //! - **Type System**: Canonical types distinct from syntactic type specifiers
 //!
-//! ## Usage
-//!
-//! ```rust,ignore
-//! use cendol::ast::{Ast, NodeKind};
-//!
-//! let mut ast = Ast::new();
-//! let int_node = ast.push_node(Node::new(NodeKind::literal_int(42), span));
-//! ```
-//!
-//! ## Compatibility
-//!
-//! This refactoring maintains full backward compatibility with existing code
-//! while improving the internal organization and adding new ergonomic features.
 
 use std::cell::Cell;
 use std::num::NonZeroU32;
 
 /// Represents an interned string using symbol_table crate.
 /// Alias for GlobalSymbol from symbol_table crate with global feature.
-pub type Symbol = symbol_table::GlobalSymbol;
+pub type NameId = symbol_table::GlobalSymbol;
 
 pub use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
 
@@ -176,7 +161,7 @@ pub enum DefinitionState {
 /// Symbol entries are stored in a separate Vec<SymbolEntry> with SymbolEntryRef references.
 #[derive(Debug, Clone)]
 pub struct SymbolEntry {
-    pub name: Symbol,
+    pub name: NameId,
     pub kind: SymbolKind, // e.g., Variable, Function, Typedef
     pub type_info: TypeRef,
     pub storage_class: Option<StorageClass>,
@@ -229,13 +214,13 @@ pub enum SymbolKind {
 #[derive(Debug, Clone)]
 pub struct FunctionParameter {
     pub param_type: TypeRef,
-    pub name: Option<Symbol>,
+    pub name: Option<NameId>,
 }
 
 /// Struct/union member information
 #[derive(Debug, Clone)]
 pub struct StructMember {
-    pub name: Symbol,
+    pub name: NameId,
     pub member_type: TypeRef,
     pub bit_field_size: Option<usize>,
     pub span: SourceSpan,
@@ -244,7 +229,7 @@ pub struct StructMember {
 /// Enum constant information
 #[derive(Debug, Clone)]
 pub struct EnumConstant {
-    pub name: Symbol,
+    pub name: NameId,
     pub value: i64, // Resolved value
     pub span: SourceSpan,
 }

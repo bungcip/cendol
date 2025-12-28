@@ -27,7 +27,7 @@ pub struct AstToMirLowerer<'a, 'src> {
     /// Using SymbolEntryRef instead of name ensures scope awareness and handles shadowing correctly.
     local_map: HashMap<SymbolEntryRef, LocalId>,
     /// Maps label names to their MIR Block IDs
-    label_map: HashMap<Symbol, MirBlockId>,
+    label_map: HashMap<NameId, MirBlockId>,
     /// Track errors during analysis for early termination
     has_errors: bool,
 }
@@ -124,7 +124,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         let global_scope = self.symbol_table.get_scope(global_scope_id);
 
         // First pass: collect tentative global variable names and their entry refs
-        let tentative_entries: Vec<(Symbol, SymbolEntryRef)> = global_scope
+        let tentative_entries: Vec<(NameId, SymbolEntryRef)> = global_scope
             .symbols
             .values()
             .filter_map(|entry_ref| {
@@ -161,7 +161,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Add zero initialization to a MIR global variable
-    fn add_zero_initialization_to_global(&mut self, var_name: Symbol) {
+    fn add_zero_initialization_to_global(&mut self, var_name: NameId) {
         debug!("Adding zero initialization to global variable '{}'", var_name);
 
         // Get immutable access to globals to find the target
@@ -734,7 +734,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     fn process_global_compound_initializer(
         &mut self,
         initializer: NodeRef, // &Initializer
-        var_name: Symbol,
+        var_name: NameId,
         _var_type_id: TypeId,
         span: SourceSpan,
     ) -> Option<ConstValueId> {
@@ -2170,7 +2170,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 }
 
                 let type_name =
-                    tag.unwrap_or_else(|| Symbol::new(format!("anon_{}", if is_union { "union" } else { "struct" })));
+                    tag.unwrap_or_else(|| NameId::new(format!("anon_{}", if is_union { "union" } else { "struct" })));
                 debug!(
                     "Created MIR type for struct '{}' with {} fields",
                     type_name,
@@ -2256,7 +2256,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Lower a goto statement
-    fn lower_goto_statement(&mut self, label: Symbol, span: SourceSpan) {
+    fn lower_goto_statement(&mut self, label: NameId, span: SourceSpan) {
         debug!("Lowering goto statement to label: {}", label);
 
         // For goto statements, we need to set up a jump to the target label
@@ -2287,7 +2287,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Lower a label statement
-    fn lower_label_statement(&mut self, label: Symbol, statement: NodeRef, _span: SourceSpan) {
+    fn lower_label_statement(&mut self, label: NameId, statement: NodeRef, _span: SourceSpan) {
         // Get the existing block for this label (created in first pass)
         if let Some(&target_block_id) = self.label_map.get(&label) {
             // Switch to the existing block for the label's statement
@@ -2305,7 +2305,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Find a struct/union field by name and return its index
-    fn find_struct_field(&self, type_id: TypeId, field_name: Symbol) -> Option<usize> {
+    fn find_struct_field(&self, type_id: TypeId, field_name: NameId) -> Option<usize> {
         let mir_type = self.get_types().get(&type_id)?;
 
         debug!("Looking for field '{}' in type {:?}", field_name, mir_type);
@@ -2987,7 +2987,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Handle direct function calls (e.g., foo())
-    fn handle_direct_function_call(&mut self, func_name: Symbol, arg_operands: Vec<Operand>) -> Operand {
+    fn handle_direct_function_call(&mut self, func_name: NameId, arg_operands: Vec<Operand>) -> Operand {
         debug!("Handling direct function call: {}", func_name);
 
         // Look up the function in the MIR functions
@@ -3047,7 +3047,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     fn handle_function_pointer_call(
         &mut self,
         object_ref: NodeRef,
-        field_name: Symbol,
+        field_name: NameId,
         is_arrow: bool,
         arg_operands: Vec<Operand>,
     ) -> Operand {
@@ -3195,7 +3195,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Find a MIR function by name
-    fn find_mir_function_by_name(&self, func_name: Symbol) -> Option<MirFunctionId> {
+    fn find_mir_function_by_name(&self, func_name: NameId) -> Option<MirFunctionId> {
         for (func_id, func) in self.mir_builder.get_functions() {
             if func.name == func_name {
                 return Some(*func_id);

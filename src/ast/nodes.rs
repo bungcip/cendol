@@ -8,7 +8,7 @@ use serde::Serialize;
 use std::cell::Cell;
 use thin_vec::ThinVec;
 
-use crate::ast::{NodeRef, Symbol, SymbolEntryRef, TypeRef};
+use crate::ast::{NameId, NodeRef, SymbolEntryRef, TypeRef};
 
 /// The core enum defining all possible AST node types for C11.
 /// Variants use NodeIndex for child references, enabling flattened storage.
@@ -18,12 +18,12 @@ pub enum NodeKind {
     // --- Literals (Inline storage for common types) ---
     LiteralInt(i64), // Parsed integer literal value
     LiteralFloat(f64),
-    LiteralString(Symbol),
+    LiteralString(NameId),
     LiteralChar(u8),
 
     // --- Expressions ---
     // Ident now includes a Cell for resolved SymbolEntry after semantic analysis
-    Ident(Symbol, Cell<Option<SymbolEntryRef>>),
+    Ident(NameId, Cell<Option<SymbolEntryRef>>),
     UnaryOp(UnaryOp, NodeRef),
     BinaryOp(BinaryOp, NodeRef, NodeRef),
     TernaryOp(NodeRef, NodeRef, NodeRef),
@@ -39,7 +39,7 @@ pub enum NodeKind {
     FunctionCall(NodeRef /* func */, Vec<NodeRef> /* args */),
     MemberAccess(
         NodeRef, /* object */
-        Symbol,  /* field */
+        NameId,  /* field */
         bool,    /* is_arrow */
     ),
     IndexAccess(NodeRef /* array */, NodeRef /* index */),
@@ -63,8 +63,8 @@ pub enum NodeKind {
     Return(Option<NodeRef>),
     Break,
     Continue,
-    Goto(Symbol),
-    Label(Symbol, NodeRef /* statement */),
+    Goto(NameId),
+    Label(NameId, NodeRef /* statement */),
 
     Switch(NodeRef /* condition */, NodeRef /* body statement */),
     Case(NodeRef /* const_expr */, NodeRef /* statement */),
@@ -81,8 +81,8 @@ pub enum NodeKind {
     // --- Declarations & Definitions ---
     Declaration(DeclarationData),
     FunctionDef(FunctionDefData),
-    EnumConstant(Symbol, Option<NodeRef> /* value expr */),
-    StaticAssert(NodeRef /* condition */, Symbol /* message */),
+    EnumConstant(NameId, Option<NodeRef> /* value expr */),
+    StaticAssert(NodeRef /* condition */, NameId /* message */),
 
     // --- Semantic Nodes (Type-Resolved) ---
     // declarations of VarDecl/FunctionDecl/TypedefDecl/RecordDecl
@@ -167,7 +167,7 @@ pub struct ParamDecl {
 // Semantic node data structures (type-resolved)
 #[derive(Debug, Clone, Serialize)]
 pub struct VarDeclData {
-    pub name: Symbol,
+    pub name: NameId,
     pub ty: TypeRef,
     pub storage: Option<StorageClass>,
     pub init: Option<NodeRef>, // InitializerList or Expression
@@ -175,7 +175,7 @@ pub struct VarDeclData {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct FunctionDeclData {
-    pub name: Symbol,
+    pub name: NameId,
     pub ty: TypeRef,
     pub storage: Option<StorageClass>,
     pub body: Option<NodeRef>,
@@ -183,13 +183,13 @@ pub struct FunctionDeclData {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct TypedefDeclData {
-    pub name: Symbol,
+    pub name: NameId,
     pub ty: TypeRef,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RecordDeclData {
-    pub name: Option<Symbol>,
+    pub name: Option<NameId>,
     pub ty: TypeRef,
     pub members: Vec<VarDeclData>,
     pub is_union: bool,
@@ -225,14 +225,14 @@ pub enum TypeSpecifier {
     Atomic(TypeRef), // _Bool, _Complex, _Atomic
     Record(
         bool,                  /* is_union */
-        Option<Symbol>,        /* tag */
+        Option<NameId>,        /* tag */
         Option<RecordDefData>, /* definition */
     ),
     Enum(
-        Option<Symbol>,       /* tag */
+        Option<NameId>,       /* tag */
         Option<Vec<NodeRef>>, /* enumerators */
     ),
-    TypedefName(Symbol),
+    TypedefName(NameId),
 }
 
 // Storage classes
@@ -319,7 +319,7 @@ pub enum AlignmentSpecifier {
 // Declarators
 #[derive(Debug, Clone, Serialize)]
 pub enum Declarator {
-    Identifier(Symbol, TypeQualifiers, Option<Box<Declarator>>), // Base case: name (e.g., `x`)
+    Identifier(NameId, TypeQualifiers, Option<Box<Declarator>>), // Base case: name (e.g., `x`)
     Abstract,                                                    // for abstract declarator
     Pointer(TypeQualifiers, Option<Box<Declarator>>),            // e.g., `*`
     Array(Box<Declarator>, ArraySize),                           // e.g., `[10]`
@@ -355,7 +355,7 @@ pub enum ArraySize {
 // Record definitions
 #[derive(Debug, Clone, Serialize)]
 pub struct RecordDefData {
-    pub tag: Option<Symbol>,                   // None if anonymous
+    pub tag: Option<NameId>,                   // None if anonymous
     pub members: Option<Vec<DeclarationData>>, // Field declarations
     pub is_union: bool,
 }
@@ -384,7 +384,7 @@ pub struct DesignatedInitializer {
 
 #[derive(Debug, Clone, Serialize)]
 pub enum Designator {
-    FieldName(Symbol),
+    FieldName(NameId),
     ArrayIndex(NodeRef),             // Index expression
     GnuArrayRange(NodeRef, NodeRef), // GCC extension: Range expression [start ... end]
 }

@@ -16,7 +16,7 @@ use crate::ast::*;
 #[derive(Debug, Error)]
 pub enum SymbolTableError {
     #[error("Invalid redefinition: symbol '{name}' cannot be redefined")]
-    InvalidRedefinition { name: Symbol },
+    InvalidRedefinition { name: NameId },
 }
 
 /// Scope ID for efficient scope references
@@ -58,9 +58,9 @@ pub enum Namespace {
 #[derive(Debug)]
 pub struct Scope {
     pub parent: Option<ScopeId>,
-    pub symbols: HashMap<Symbol, SymbolEntryRef>, // Ordinary identifiers
-    pub tags: HashMap<Symbol, SymbolEntryRef>,    // Struct/union/enum tags
-    pub labels: HashMap<Symbol, SymbolEntryRef>,  // Goto labels
+    pub symbols: HashMap<NameId, SymbolEntryRef>, // Ordinary identifiers
+    pub tags: HashMap<NameId, SymbolEntryRef>,    // Struct/union/enum tags
+    pub labels: HashMap<NameId, SymbolEntryRef>,  // Goto labels
     // pub kind: ScopeKind,
     pub level: u32,
 }
@@ -178,14 +178,14 @@ impl SymbolTable {
         &mut self.scopes[scope_id.get() as usize - 1]
     }
 
-    pub fn add_symbol(&mut self, name: Symbol, entry: SymbolEntry) -> SymbolEntryRef {
+    pub fn add_symbol(&mut self, name: NameId, entry: SymbolEntry) -> SymbolEntryRef {
         let entry_ref = self.push_symbol_entry(entry);
         let current_scope = self.get_scope_mut(self.current_scope_id);
         current_scope.symbols.insert(name, entry_ref);
         entry_ref
     }
 
-    pub fn add_symbol_in_namespace(&mut self, name: Symbol, entry: SymbolEntry, ns: Namespace) -> SymbolEntryRef {
+    pub fn add_symbol_in_namespace(&mut self, name: NameId, entry: SymbolEntry, ns: Namespace) -> SymbolEntryRef {
         let entry_ref = self.push_symbol_entry(entry);
         let current_scope = self.get_scope_mut(self.current_scope_id);
         match ns {
@@ -196,17 +196,17 @@ impl SymbolTable {
         entry_ref
     }
 
-    pub fn lookup_symbol(&self, name: Symbol) -> Option<(SymbolEntryRef, ScopeId)> {
+    pub fn lookup_symbol(&self, name: NameId) -> Option<(SymbolEntryRef, ScopeId)> {
         self.lookup_symbol_from_ns(name, self.current_scope_id, Namespace::Ordinary)
     }
 
-    pub fn lookup_tag(&self, name: Symbol) -> Option<(SymbolEntryRef, ScopeId)> {
+    pub fn lookup_tag(&self, name: NameId) -> Option<(SymbolEntryRef, ScopeId)> {
         self.lookup_symbol_from_ns(name, self.current_scope_id, Namespace::Tag)
     }
 
     pub fn lookup_symbol_from_ns(
         &self,
-        name: Symbol,
+        name: NameId,
         start_scope: ScopeId,
         ns: Namespace,
     ) -> Option<(SymbolEntryRef, ScopeId)> {
@@ -230,11 +230,11 @@ impl SymbolTable {
         None
     }
 
-    pub fn lookup_symbol_in_scope(&self, name: Symbol, scope_id: ScopeId) -> Option<SymbolEntryRef> {
+    pub fn lookup_symbol_in_scope(&self, name: NameId, scope_id: ScopeId) -> Option<SymbolEntryRef> {
         self.lookup_symbol_in_scope_ns(name, scope_id, Namespace::Ordinary)
     }
 
-    pub fn lookup_symbol_in_scope_ns(&self, name: Symbol, scope_id: ScopeId, ns: Namespace) -> Option<SymbolEntryRef> {
+    pub fn lookup_symbol_in_scope_ns(&self, name: NameId, scope_id: ScopeId, ns: Namespace) -> Option<SymbolEntryRef> {
         let scope = self.get_scope(scope_id);
         match ns {
             Namespace::Ordinary => scope.symbols.get(&name).copied(),
@@ -261,7 +261,7 @@ impl SymbolTable {
     /// This implements C11 6.9.2 for handling tentative definitions, extern declarations, and actual definitions.
     pub fn merge_global_symbol(
         &mut self,
-        name: Symbol,
+        name: NameId,
         mut new_entry: SymbolEntry,
     ) -> Result<SymbolEntryRef, SymbolTableError> {
         let global_scope = ScopeId::GLOBAL;

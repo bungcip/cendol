@@ -6,7 +6,7 @@
 use bitflags::bitflags;
 use serde::Serialize;
 
-use crate::ast::{EnumConstant, FunctionParameter, StructMember, Symbol, TypeRef};
+use crate::ast::{EnumConstant, FunctionParameter, NameId, StructMember, TypeRef};
 
 /// Type representation (for semantic analysis)
 /// This is a canonical type, distinct from TypeSpecifier which is a syntax construct.
@@ -150,19 +150,19 @@ pub enum TypeKind {
     },
     Record {
         // Represents both struct and union
-        tag: Option<Symbol>,
+        tag: Option<NameId>,
         members: Vec<StructMember>,
         is_complete: bool,
         is_union: bool, // Differentiate between struct and union
     },
     Enum {
-        tag: Option<Symbol>,
+        tag: Option<NameId>,
         base_type: TypeRef, // Underlying integer type
         enumerators: Vec<EnumConstant>,
         is_complete: bool,
     },
     Typedef {
-        name: Symbol,
+        name: NameId,
         aliased_type: TypeRef,
     },
     // Placeholder for incomplete types during semantic analysis

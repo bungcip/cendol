@@ -176,7 +176,7 @@ fn specifiers_to_type_kind(
 
                                     let name = parser
                                         .get_declarator_name(&init_decl.declarator)
-                                        .unwrap_or_else(|| Symbol::from("<anon>")); // Should have name or handle bitfields/anon
+                                        .unwrap_or_else(|| NameId::from("<anon>")); // Should have name or handle bitfields/anon
 
                                     // TODO: Handle bitfields
 

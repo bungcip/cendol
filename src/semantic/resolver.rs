@@ -1011,7 +1011,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
         NodeKind::FunctionDef(func_def) => {
             // Extract function name from the declarator
             let func_name =
-                extract_identifier(&func_def.declarator).unwrap_or_else(|| Symbol::new("anonymous_function"));
+                extract_identifier(&func_def.declarator).unwrap_or_else(|| NameId::new("anonymous_function"));
 
             // Extract the return type from the function definition's specifiers
             let return_type_ref =
@@ -1071,7 +1071,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                 .map(|param| {
                     // Create a symbol entry for the parameter
                     let param_symbol_entry = crate::ast::SymbolEntry {
-                        name: param.name.unwrap_or_else(|| Symbol::new("unnamed_param")),
+                        name: param.name.unwrap_or_else(|| NameId::new("unnamed_param")),
                         kind: crate::ast::SymbolKind::Variable {
                             is_global: false,
                             is_static: false,

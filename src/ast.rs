@@ -26,7 +26,7 @@ use std::num::NonZeroU32;
 /// Alias for GlobalSymbol from symbol_table crate with global feature.
 pub type NameId = symbol_table::GlobalSymbol;
 
-use crate::semantic::{ScopeId, SymbolEntryRef};
+use crate::semantic::{ScopeId, SymbolRef};
 pub use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
 
 // Submodules

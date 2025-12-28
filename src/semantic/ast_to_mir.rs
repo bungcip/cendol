@@ -7,8 +7,8 @@ use crate::mir::{
     MirFunctionId, MirStmt, Operand, Place, Rvalue, Terminator, TypeId,
 };
 use crate::semantic::DefinitionState;
-use crate::semantic::SymbolEntryRef;
 use crate::semantic::SymbolKind;
+use crate::semantic::SymbolRef;
 use crate::semantic::SymbolTable;
 use crate::semantic::{Namespace, ScopeId};
 use crate::source_manager::SourceSpan;
@@ -26,7 +26,7 @@ pub struct AstToMirLowerer<'a, 'src> {
     /// Maps variable names to their MIR Local IDs
     /// Maps symbol entry references to their MIR Local IDs.
     /// Using SymbolEntryRef instead of name ensures scope awareness and handles shadowing correctly.
-    local_map: HashMap<SymbolEntryRef, LocalId>,
+    local_map: HashMap<SymbolRef, LocalId>,
     /// Maps label names to their MIR Block IDs
     label_map: HashMap<NameId, MirBlockId>,
     /// Track errors during analysis for early termination
@@ -101,11 +101,11 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         let global_scope = self.symbol_table.get_scope(global_scope_id);
 
         // First pass: collect tentative global variable names and their entry refs
-        let tentative_entries: Vec<(NameId, SymbolEntryRef)> = global_scope
+        let tentative_entries: Vec<(NameId, SymbolRef)> = global_scope
             .symbols
             .values()
             .filter_map(|entry_ref| {
-                let entry = self.symbol_table.get_symbol_entry(*entry_ref);
+                let entry = self.symbol_table.get_symbol(*entry_ref);
                 if matches!(entry.kind, SymbolKind::Variable { .. }) && entry.def_state == DefinitionState::Tentative {
                     Some((entry.name, *entry_ref))
                 } else {
@@ -116,7 +116,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
 
         // Second pass: update symbol table entries
         for (_, entry_ref) in &tentative_entries {
-            let entry = self.symbol_table.get_symbol_entry_mut(*entry_ref);
+            let entry = self.symbol_table.get_symbol_mut(*entry_ref);
 
             if let SymbolKind::Variable { .. } = &mut entry.kind
                 && entry.def_state == DefinitionState::Tentative
@@ -387,7 +387,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         debug!("Lowering function semantic node");
 
         // Get function name from symbol table entry
-        let symbol_entry = self.symbol_table.get_symbol_entry(function_data.symbol);
+        let symbol_entry = self.symbol_table.get_symbol(function_data.symbol);
         let func_name = symbol_entry.name;
 
         debug!("Processing function '{}'", func_name);
@@ -459,13 +459,13 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         debug!("Lowering semantic function parameter");
 
         // Get parameter information from the semantic data
-        let param_name = self.symbol_table.get_symbol_entry(param.symbol).name;
+        let param_name = self.symbol_table.get_symbol(param.symbol).name;
         let param_type = param.ty;
 
         // Check for redeclaration in current scope
         let (existing_entry, _) = self
             .symbol_table
-            .lookup_symbol_from_ns(param_name, scope_id, Namespace::Ordinary)
+            .lookup(param_name, scope_id, Namespace::Ordinary)
             .unwrap();
 
         // Symbol already exists from previous pass (lowering). Re-use it and create MIR local.
@@ -905,7 +905,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             // Check if symbol entry already exists from previous pass
             let (entry_ref, _) = self
                 .symbol_table
-                .lookup_symbol_from_ns(var_decl.name, scope_id, Namespace::Ordinary)
+                .lookup(var_decl.name, scope_id, Namespace::Ordinary)
                 .unwrap();
 
             // Create MIR local variable (inside function)
@@ -976,7 +976,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             NodeKind::Ident(name, symbol_ref) => {
                 debug!("Resolving identifier '{}'", name);
                 let resolved_ref = symbol_ref.get().unwrap();
-                let entry = self.symbol_table.get_symbol_entry(resolved_ref);
+                let entry = self.symbol_table.get_symbol(resolved_ref);
                 // First try to resolve through semantic analysis
                 // if let Some(resolved_ref) = symbol_ref.get() {
                 // let entry = self.symbol_table.get_symbol_entry(resolved_ref);
@@ -1378,10 +1378,9 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                     if let NodeKind::Ident(name, _) = &object_node.kind {
                         debug!("Looking up symbol '{}' in symbol table", name);
                         if let Some((entry_ref, scope_id)) =
-                            self.symbol_table
-                                .lookup_symbol_from_ns(*name, scope_id, Namespace::Ordinary)
+                            self.symbol_table.lookup(*name, scope_id, Namespace::Ordinary)
                         {
-                            let entry = self.symbol_table.get_symbol_entry(entry_ref);
+                            let entry = self.symbol_table.get_symbol(entry_ref);
                             debug!(
                                 "Found symbol '{}' in scope {} with type {:?}",
                                 name,
@@ -2107,7 +2106,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 if let Some(tag_name) = tag
                     && let Some((entry_ref, _)) = self.symbol_table.lookup_tag(tag_name)
                 {
-                    let entry = self.symbol_table.get_symbol_entry(entry_ref);
+                    let entry = self.symbol_table.get_symbol(entry_ref);
                     if entry.is_completed {
                         debug!(
                             "Found complete definition for {:?} via symbol table, canonicalizing {} to {}",
@@ -2661,7 +2660,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             NodeKind::Ident(name, resolved_symbol) => {
                 // For simple identifiers, use the existing symbol table lookup
                 if let Some(resolved_ref) = resolved_symbol.get() {
-                    let entry = self.symbol_table.get_symbol_entry(resolved_ref);
+                    let entry = self.symbol_table.get_symbol(resolved_ref);
                     debug!("Resolved identifier '{}' to type {:?}", name, entry.type_info);
                     Some(entry.type_info)
                 } else {
@@ -2828,11 +2827,8 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             // For identifiers, look up the symbol in the symbol table
             if let NodeKind::Ident(name, _) = &object_node.kind {
                 debug!("Looking up symbol '{}' in symbol table", name);
-                if let Some((entry_ref, scope_id)) =
-                    self.symbol_table
-                        .lookup_symbol_from_ns(*name, scope_id, Namespace::Ordinary)
-                {
-                    let entry = self.symbol_table.get_symbol_entry(entry_ref);
+                if let Some((entry_ref, scope_id)) = self.symbol_table.lookup(*name, scope_id, Namespace::Ordinary) {
+                    let entry = self.symbol_table.get_symbol(entry_ref);
                     debug!(
                         "Found symbol '{}' in scope {} with type {:?}",
                         name,

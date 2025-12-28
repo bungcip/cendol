@@ -22,4 +22,4 @@ pub mod tests_mir;
 
 // Re-export key types for public API
 pub use ast_to_mir::AstToMirLowerer;
-pub use symbol_table::{DefinitionState, Namespace, ScopeId, SymbolEntry, SymbolEntryRef, SymbolKind, SymbolTable};
+pub use symbol_table::{DefinitionState, Namespace, ScopeId, Symbol, SymbolKind, SymbolRef, SymbolTable};

@@ -7,7 +7,7 @@
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
-use crate::semantic::{Namespace, ScopeId, SymbolEntry, SymbolKind, SymbolTable};
+use crate::semantic::{Namespace, ScopeId, Symbol, SymbolKind, SymbolTable};
 use crate::source_manager::SourceSpan;
 
 /// Context for the semantic lowering phase
@@ -238,7 +238,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
 
                     if in_current_scope {
                         let (entry_ref, _) = existing_entry.unwrap();
-                        let entry = ctx.symbol_table.get_symbol_entry(entry_ref);
+                        let entry = ctx.symbol_table.get_symbol(entry_ref);
 
                         if entry.is_completed {
                             // Redeclaration error - for now just return it
@@ -259,7 +259,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                         let new_type_ref = ctx.ast.push_type(new_type);
 
                         // Add it to the symbol table in the current scope
-                        let symbol_entry = SymbolEntry {
+                        let symbol_entry = Symbol {
                             name: *tag_name,
                             kind: SymbolKind::Record {
                                 is_complete: false,
@@ -283,7 +283,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     // This is a USAGE or FORWARD DECL: struct T; or struct T s;
                     if let Some((entry_ref, _)) = existing_entry {
                         // Found existing (either in current or outer scope)
-                        let entry = ctx.symbol_table.get_symbol_entry(entry_ref);
+                        let entry = ctx.symbol_table.get_symbol(entry_ref);
                         entry.type_info
                     } else {
                         // Not found anywhere, create an implicit forward declaration in current scope
@@ -295,7 +295,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                         });
                         let forward_ref = ctx.ast.push_type(forward_type);
 
-                        let symbol_entry = SymbolEntry {
+                        let symbol_entry = Symbol {
                             name: *tag_name,
                             kind: SymbolKind::Record {
                                 is_complete: false,
@@ -396,7 +396,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                 if let Some(tag_name) = tag
                     && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(*tag_name)
                 {
-                    let entry = ctx.symbol_table.get_symbol_entry_mut(entry_ref);
+                    let entry = ctx.symbol_table.get_symbol_mut(entry_ref);
                     entry.is_completed = true;
                     if let SymbolKind::Record {
                         is_complete,
@@ -423,7 +423,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     {
                         // Found in current scope, check if completed
                         let (is_completed, first_def, type_info) = {
-                            let entry = ctx.symbol_table.get_symbol_entry(entry_ref);
+                            let entry = ctx.symbol_table.get_symbol(entry_ref);
                             (entry.is_completed, entry.def_span, entry.type_info)
                         };
                         if is_completed {
@@ -443,7 +443,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                             is_complete: false,
                         });
                         let new_type_ref = ctx.ast.push_type(new_type);
-                        let symbol_entry = SymbolEntry {
+                        let symbol_entry = Symbol {
                             name: *tag_name,
                             kind: SymbolKind::EnumTag { is_complete: false },
                             type_info: new_type_ref,
@@ -461,7 +461,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                 } else {
                     // This is a USAGE or FORWARD DECL: enum T; or enum T e;
                     if let Some((entry_ref, _)) = existing_entry {
-                        let entry = ctx.symbol_table.get_symbol_entry(entry_ref);
+                        let entry = ctx.symbol_table.get_symbol(entry_ref);
                         entry.type_info
                     } else {
                         // Implicit forward declaration
@@ -472,7 +472,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                             is_complete: false,
                         });
                         let forward_ref = ctx.ast.push_type(forward_type);
-                        let symbol_entry = SymbolEntry {
+                        let symbol = Symbol {
                             name: *tag_name,
                             kind: SymbolKind::EnumTag { is_complete: false },
                             type_info: forward_ref,
@@ -484,7 +484,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                             is_completed: false,
                         };
                         ctx.symbol_table
-                            .add_symbol_in_namespace(*tag_name, symbol_entry, Namespace::Tag);
+                            .add_symbol_in_namespace(*tag_name, symbol, Namespace::Tag);
                         forward_ref
                     }
                 }
@@ -527,7 +527,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                         enumerators_list.push(enum_constant);
 
                         // Register constant in symbol table
-                        let entry = SymbolEntry {
+                        let entry = Symbol {
                             name: *name,
                             kind: SymbolKind::EnumConstant { value },
                             type_info: type_ref_to_use,
@@ -559,7 +559,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                 if let Some(tag_name) = tag
                     && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(*tag_name)
                 {
-                    let entry = ctx.symbol_table.get_symbol_entry_mut(entry_ref);
+                    let entry = ctx.symbol_table.get_symbol_mut(entry_ref);
                     entry.is_completed = true;
                     if let SymbolKind::EnumTag { is_complete } = &mut entry.kind {
                         *is_complete = true;
@@ -572,7 +572,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
         TypeSpecifier::TypedefName(name) => {
             // Lookup typedef in symbol table
             if let Some((entry_ref, _scope_id)) = ctx.symbol_table.lookup_symbol(*name) {
-                let entry = ctx.symbol_table.get_symbol_entry(entry_ref);
+                let entry = ctx.symbol_table.get_symbol(entry_ref);
                 if let SymbolKind::Typedef { aliased_type } = entry.kind {
                     Ok(aliased_type)
                 } else {
@@ -818,7 +818,7 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
         let typedef_node = ctx.ast.push_node(Node::new(NodeKind::TypedefDecl(typedef_decl), span));
 
         // Add typedef to symbol table to resolve forward references
-        let symbol_entry = SymbolEntry {
+        let symbol_entry = Symbol {
             name: name.as_str().into(),
             kind: SymbolKind::Typedef { aliased_type: final_ty },
             type_info: final_ty,
@@ -846,7 +846,7 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
         };
         let node = ctx.ast.push_node(Node::new(NodeKind::FunctionDecl(func_decl), span));
 
-        let symbol_entry = SymbolEntry {
+        let symbol_entry = Symbol {
             name: name.as_str().into(),
             kind: SymbolKind::Function {
                 is_inline: false,
@@ -880,7 +880,7 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
 
         let node = ctx.ast.push_node(Node::new(NodeKind::VarDecl(var_decl), span));
 
-        let symbol_entry = SymbolEntry {
+        let symbol_entry = Symbol {
             name: name.as_str().into(),
             kind: SymbolKind::Variable {
                 is_global: ctx.symbol_table.current_scope() == ScopeId::GLOBAL,
@@ -900,7 +900,7 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
                 Ok(_) => {}
                 Err(e) => {
                     let SymbolTableError::InvalidRedefinition { name, existing } = e;
-                    let existing = ctx.symbol_table.get_symbol_entry(existing);
+                    let existing = ctx.symbol_table.get_symbol(existing);
                     ctx.diag.report(SemanticError::Redefinition {
                         name,
                         first_def: existing.def_span,
@@ -1103,7 +1103,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                 Vec::new()
             };
 
-            let symbol_entry = SymbolEntry {
+            let symbol_entry = Symbol {
                 name: func_name,
                 kind: SymbolKind::Function {
                     is_inline: false,
@@ -1129,7 +1129,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                 .into_iter()
                 .map(|param| {
                     // Create a symbol entry for the parameter
-                    let param_symbol_entry = SymbolEntry {
+                    let param_symbol_entry = Symbol {
                         name: param.name.unwrap_or_else(|| NameId::new("unnamed_param")),
                         kind: SymbolKind::Variable {
                             is_global: false,
@@ -1228,7 +1228,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
         }
         NodeKind::Label(name, stmt, _) => {
             let label_ty = ctx.ast.push_type(Type::new(TypeKind::Void)); // void for now
-            let entry = SymbolEntry {
+            let entry = Symbol {
                 name,
                 kind: SymbolKind::Label {
                     is_defined: true,

@@ -110,10 +110,7 @@ fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
         }
 
         NodeKind::Ident(name, resolved) => {
-            if let Some(sym) = ctx
-                .symbol_table
-                .lookup_symbol_from_ns(*name, ctx.scope_id, Namespace::Ordinary)
-            {
+            if let Some(sym) = ctx.symbol_table.lookup(*name, ctx.scope_id, Namespace::Ordinary) {
                 resolved.set(Some(sym.0));
             } else {
                 debug!("ndak nemu {}!", name);
@@ -124,10 +121,7 @@ fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
             }
         }
         NodeKind::Goto(name, resolved) => {
-            if let Some(sym) = ctx
-                .symbol_table
-                .lookup_symbol_from_ns(*name, ctx.scope_id, Namespace::Label)
-            {
+            if let Some(sym) = ctx.symbol_table.lookup(*name, ctx.scope_id, Namespace::Label) {
                 resolved.set(Some(sym.0));
             } else {
                 ctx.diag.report(SemanticError::UndeclaredIdentifier {
@@ -137,10 +131,7 @@ fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
             }
         }
         NodeKind::Label(name, stmt, resolved) => {
-            if let Some(sym) = ctx
-                .symbol_table
-                .lookup_symbol_from_ns(*name, ctx.scope_id, Namespace::Label)
-            {
+            if let Some(sym) = ctx.symbol_table.lookup(*name, ctx.scope_id, Namespace::Label) {
                 resolved.set(Some(sym.0));
             } else {
                 ctx.diag.report(SemanticError::UndeclaredIdentifier {

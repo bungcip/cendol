@@ -8,7 +8,7 @@ use serde::Serialize;
 use std::cell::Cell;
 use thin_vec::ThinVec;
 
-use crate::ast::{NameId, NodeRef, SymbolEntryRef, TypeRef};
+use crate::ast::{NameId, NodeRef, SymbolRef, TypeRef};
 
 /// The core enum defining all possible AST node types for C11.
 /// Variants use NodeIndex for child references, enabling flattened storage.
@@ -23,7 +23,7 @@ pub enum NodeKind {
 
     // --- Expressions ---
     // Ident now includes a Cell for resolved SymbolEntry after semantic analysis
-    Ident(NameId, Cell<Option<SymbolEntryRef>>),
+    Ident(NameId, Cell<Option<SymbolRef>>),
     UnaryOp(UnaryOp, NodeRef),
     BinaryOp(BinaryOp, NodeRef, NodeRef),
     TernaryOp(NodeRef, NodeRef, NodeRef),
@@ -38,10 +38,10 @@ pub enum NodeKind {
     Assignment(BinaryOp, NodeRef /* lhs */, NodeRef /* rhs */),
     FunctionCall(NodeRef /* func */, Vec<NodeRef> /* args */),
     MemberAccess(
-        NodeRef,                      /* object */
-        NameId,                       /* field */
-        bool,                         /* is_arrow */
-        Cell<Option<SymbolEntryRef>>, /* resolved symbol after semantic analysis */
+        NodeRef,                 /* object */
+        NameId,                  /* field */
+        bool,                    /* is_arrow */
+        Cell<Option<SymbolRef>>, /* resolved symbol after semantic analysis */
     ),
     IndexAccess(NodeRef /* array */, NodeRef /* index */),
 
@@ -64,8 +64,8 @@ pub enum NodeKind {
     Return(Option<NodeRef>),
     Break,
     Continue,
-    Goto(NameId, Cell<Option<SymbolEntryRef>>), // resolved symbol after semantic analysis
-    Label(NameId, NodeRef /* statement */, Cell<Option<SymbolEntryRef>>), // resolved symbol after semantic analysis
+    Goto(NameId, Cell<Option<SymbolRef>>), // resolved symbol after semantic analysis
+    Label(NameId, NodeRef /* statement */, Cell<Option<SymbolRef>>), // resolved symbol after semantic analysis
 
     Switch(NodeRef /* condition */, NodeRef /* body statement */),
     Case(NodeRef /* const_expr */, NodeRef /* statement */),
@@ -153,7 +153,7 @@ pub struct FunctionDefData {
 // Semantic node data structures (type-resolved)
 #[derive(Debug, Clone, Serialize)]
 pub struct FunctionData {
-    pub symbol: SymbolEntryRef,
+    pub symbol: SymbolRef,
     pub ty: TypeRef,            // function type
     pub params: Vec<ParamDecl>, // normalized params
     pub body: NodeRef,          // compound statement
@@ -161,7 +161,7 @@ pub struct FunctionData {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ParamDecl {
-    pub symbol: SymbolEntryRef,
+    pub symbol: SymbolRef,
     pub ty: TypeRef,
 }
 

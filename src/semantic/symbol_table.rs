@@ -12,7 +12,7 @@ use thiserror::Error;
 
 use crate::ast::*;
 
-pub type SymbolEntryRef = NonZeroU32;
+pub type SymbolRef = NonZeroU32;
 
 /// Represents the definition state of a symbol entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,7 +26,7 @@ pub enum DefinitionState {
 /// This structure is typically populated during the semantic analysis phase.
 /// Symbol entries are stored in a separate Vec<SymbolEntry> with SymbolEntryRef references.
 #[derive(Debug, Clone)]
-pub struct SymbolEntry {
+pub struct Symbol {
     pub name: NameId,
     pub kind: SymbolKind, // e.g., Variable, Function, Typedef
     pub type_info: TypeRef,
@@ -87,7 +87,7 @@ pub enum SymbolKind {
 #[derive(Debug, Error)]
 pub enum SymbolTableError {
     #[error("Invalid redefinition: symbol '{name}' cannot be redefined")]
-    InvalidRedefinition { name: NameId, existing: SymbolEntryRef },
+    InvalidRedefinition { name: NameId, existing: SymbolRef },
 }
 
 /// Scope ID for efficient scope references
@@ -121,16 +121,16 @@ pub enum Namespace {
 #[derive(Debug)]
 pub struct Scope {
     pub parent: Option<ScopeId>,
-    pub symbols: HashMap<NameId, SymbolEntryRef>, // Ordinary identifiers
-    pub tags: HashMap<NameId, SymbolEntryRef>,    // Struct/union/enum tags
-    pub labels: HashMap<NameId, SymbolEntryRef>,  // Goto labels
+    pub symbols: HashMap<NameId, SymbolRef>, // Ordinary identifiers
+    pub tags: HashMap<NameId, SymbolRef>,    // Struct/union/enum tags
+    pub labels: HashMap<NameId, SymbolRef>,  // Goto labels
     pub level: u32,
 }
 
 /// Symbol table using flattened storage
 #[derive(Debug)]
 pub struct SymbolTable {
-    pub entries: Vec<SymbolEntry>,
+    pub entries: Vec<Symbol>,
     pub scopes: Vec<Scope>,
     current_scope_id: ScopeId,
     next_scope_id: u32,
@@ -218,15 +218,15 @@ impl SymbolTable {
         &mut self.scopes[scope_id.get() as usize - 1]
     }
 
-    pub fn add_symbol(&mut self, name: NameId, entry: SymbolEntry) -> SymbolEntryRef {
-        let entry_ref = self.push_symbol_entry(entry);
+    pub fn add_symbol(&mut self, name: NameId, entry: Symbol) -> SymbolRef {
+        let entry_ref = self.push_symbol(entry);
         let current_scope = self.get_scope_mut(self.current_scope_id);
         current_scope.symbols.insert(name, entry_ref);
         entry_ref
     }
 
-    pub fn add_symbol_in_namespace(&mut self, name: NameId, entry: SymbolEntry, ns: Namespace) -> SymbolEntryRef {
-        let entry_ref = self.push_symbol_entry(entry);
+    pub fn add_symbol_in_namespace(&mut self, name: NameId, entry: Symbol, ns: Namespace) -> SymbolRef {
+        let entry_ref = self.push_symbol(entry);
         let current_scope = self.get_scope_mut(self.current_scope_id);
         match ns {
             Namespace::Ordinary => current_scope.symbols.insert(name, entry_ref),
@@ -236,29 +236,24 @@ impl SymbolTable {
         entry_ref
     }
 
-    pub fn lookup_symbol(&self, name: NameId) -> Option<(SymbolEntryRef, ScopeId)> {
-        self.lookup_symbol_from_ns(name, self.current_scope_id, Namespace::Ordinary)
+    pub fn lookup_symbol(&self, name: NameId) -> Option<(SymbolRef, ScopeId)> {
+        self.lookup(name, self.current_scope_id, Namespace::Ordinary)
     }
 
-    pub fn lookup_tag(&self, name: NameId) -> Option<(SymbolEntryRef, ScopeId)> {
-        self.lookup_symbol_from_ns(name, self.current_scope_id, Namespace::Tag)
+    pub fn lookup_tag(&self, name: NameId) -> Option<(SymbolRef, ScopeId)> {
+        self.lookup(name, self.current_scope_id, Namespace::Tag)
     }
 
-    pub fn lookup_symbol_from_ns(
-        &self,
-        name: NameId,
-        start_scope: ScopeId,
-        ns: Namespace,
-    ) -> Option<(SymbolEntryRef, ScopeId)> {
+    pub fn lookup(&self, name: NameId, start_scope: ScopeId, ns: Namespace) -> Option<(SymbolRef, ScopeId)> {
         let mut scope_id = start_scope;
         loop {
             let scope = self.get_scope(scope_id);
-            let maybe_entry = match ns {
+            let result = match ns {
                 Namespace::Ordinary => scope.symbols.get(&name),
                 Namespace::Tag => scope.tags.get(&name),
                 Namespace::Label => scope.labels.get(&name),
             };
-            if let Some(&entry_ref) = maybe_entry {
+            if let Some(&entry_ref) = result {
                 return Some((entry_ref, scope_id));
             }
             if let Some(parent) = scope.parent {
@@ -270,11 +265,8 @@ impl SymbolTable {
         None
     }
 
-    pub fn lookup_symbol_in_scope(&self, name: NameId, scope_id: ScopeId) -> Option<SymbolEntryRef> {
-        self.lookup_symbol_in_scope_ns(name, scope_id, Namespace::Ordinary)
-    }
-
-    pub fn lookup_symbol_in_scope_ns(&self, name: NameId, scope_id: ScopeId, ns: Namespace) -> Option<SymbolEntryRef> {
+    /// find a symbol in exact scope without looking to parent scope if not exist
+    pub fn fetch(&self, name: NameId, scope_id: ScopeId, ns: Namespace) -> Option<SymbolRef> {
         let scope = self.get_scope(scope_id);
         match ns {
             Namespace::Ordinary => scope.symbols.get(&name).copied(),
@@ -283,32 +275,28 @@ impl SymbolTable {
         }
     }
 
-    fn push_symbol_entry(&mut self, entry: SymbolEntry) -> SymbolEntryRef {
+    fn push_symbol(&mut self, entry: Symbol) -> SymbolRef {
         let index = self.entries.len() as u32 + 1;
         self.entries.push(entry);
-        SymbolEntryRef::new(index).expect("SymbolEntryRef overflow")
+        SymbolRef::new(index).expect("SymbolEntryRef overflow")
     }
 
-    pub fn get_symbol_entry(&self, index: SymbolEntryRef) -> &SymbolEntry {
+    pub fn get_symbol(&self, index: SymbolRef) -> &Symbol {
         &self.entries[(index.get() - 1) as usize]
     }
 
-    pub fn get_symbol_entry_mut(&mut self, index: SymbolEntryRef) -> &mut SymbolEntry {
+    pub fn get_symbol_mut(&mut self, index: SymbolRef) -> &mut Symbol {
         &mut self.entries[(index.get() - 1) as usize]
     }
 
     /// Merge a new symbol entry with an existing one in the global scope.
     /// This implements C11 6.9.2 for handling tentative definitions, extern declarations, and actual definitions.
-    pub fn merge_global_symbol(
-        &mut self,
-        name: NameId,
-        mut new_entry: SymbolEntry,
-    ) -> Result<SymbolEntryRef, SymbolTableError> {
+    pub fn merge_global_symbol(&mut self, name: NameId, mut new_entry: Symbol) -> Result<SymbolRef, SymbolTableError> {
         let global_scope = ScopeId::GLOBAL;
 
         // Check if symbol already exists in global scope
-        if let Some(existing_ref) = self.lookup_symbol_in_scope(name, global_scope) {
-            let existing = self.get_symbol_entry_mut(existing_ref);
+        if let Some(existing_ref) = self.fetch(name, global_scope, Namespace::Ordinary) {
+            let existing = self.get_symbol_mut(existing_ref);
 
             // Both must be variables to merge
             let (existing_var, new_var) = match (&mut existing.kind, &mut new_entry.kind) {

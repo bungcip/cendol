@@ -1,9 +1,3 @@
-//! Semantic Analysis Phase - Complete semantic checking and MIR construction.
-//!
-//! This module implements the full semantic analysis phase that bridges the gap
-//! between parser AST and MIR, with comprehensive validation and proper multi-declarator
-//! handling through a two-pass approach.
-
 use crate::ast::BinaryOp;
 use crate::ast::SymbolEntryRef;
 use crate::ast::*;
@@ -21,7 +15,7 @@ use hashbrown::HashMap;
 use log::debug;
 
 /// Main entry point for semantic analysis that produces MIR
-pub struct SemanticAnalyzer<'a, 'src> {
+pub struct AstToMirLowerer<'a, 'src> {
     ast: &'a mut Ast,
     diag: &'src mut DiagnosticEngine,
     symbol_table: &'a mut SymbolTable,
@@ -38,7 +32,7 @@ pub struct SemanticAnalyzer<'a, 'src> {
     has_errors: bool,
 }
 
-impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
+impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     /// Create a new semantic analyzer
     pub fn new(ast: &'a mut Ast, diag: &'src mut DiagnosticEngine, symbol_table: &'a mut SymbolTable) -> Self {
         let mir_builder = MirBuilder::new(mir::MirModuleId::new(1).unwrap());

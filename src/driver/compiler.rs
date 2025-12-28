@@ -20,7 +20,7 @@ use crate::mir::{
 use crate::mir_dumper::{MirDumpConfig, MirDumper};
 use crate::parser::Parser;
 use crate::pp::{PPToken, Preprocessor};
-use crate::semantic::{SemanticAnalyzer, SymbolTable};
+use crate::semantic::{AstToMirLowerer, SymbolTable};
 use crate::source_manager::SourceManager;
 
 use super::cli::CompileConfig;
@@ -220,13 +220,13 @@ impl CompilerDriver {
     fn run_mir(&mut self, mut ast: Ast) -> Result<SemaOutput, PipelineError> {
         let mut symbol_table = SymbolTable::new();
 
-        use crate::semantic::lower::run_semantic_lowering;
-        run_semantic_lowering(&mut ast, &mut self.diagnostics, &mut symbol_table);
+        use crate::semantic::resolver::run_symbol_resolver;
+        run_symbol_resolver(&mut ast, &mut self.diagnostics, &mut symbol_table);
 
         // Check for semantic lowering errors and stop if any
         self.check_diagnostics_and_return_if_error()?;
 
-        let mut sema = SemanticAnalyzer::new(&mut ast, &mut self.diagnostics, &mut symbol_table);
+        let mut sema = AstToMirLowerer::new(&mut ast, &mut self.diagnostics, &mut symbol_table);
         let sema_output = sema.lower_module_complete();
 
         // Check for semantic analysis errors and stop if any

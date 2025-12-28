@@ -6,11 +6,10 @@ use crate::mir::{
     self, BinaryOp as MirBinaryOp, CallTarget, ConstValue, ConstValueId, Local, LocalId, MirBlockId, MirBuilder,
     MirFunctionId, MirStmt, Operand, Place, Rvalue, Terminator, TypeId,
 };
-use crate::semantic::SymbolEntry;
+use crate::semantic::DefinitionState;
 use crate::semantic::SymbolEntryRef;
 use crate::semantic::SymbolKind;
 use crate::semantic::SymbolTable;
-use crate::semantic::symbol_table::DefinitionState;
 use crate::semantic::{Namespace, ScopeId};
 use crate::source_manager::SourceSpan;
 use hashbrown::HashMap;
@@ -264,10 +263,10 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 self.lower_return_statement(scope_id, &expr, node.span);
             }
             NodeKind::Goto(label, _) => {
-                self.lower_goto_statement(label, node.span);
+                self.lower_goto_statement(label);
             }
             NodeKind::Label(label, statement, _) => {
-                self.lower_label_statement(scope_id, label, statement, node.span);
+                self.lower_label_statement(scope_id, label, statement);
             }
             NodeKind::If(if_stmt) => {
                 self.lower_if_statement(scope_id, &if_stmt, node.span);
@@ -848,7 +847,6 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         let mir_type_id = self.lower_type_to_mir(canonical_type_id);
 
         let is_global = self.current_function.is_none();
-        let initializer_node_ref = var_decl.init;
 
         if is_global {
             // Check if a global with this name already exists
@@ -905,43 +903,13 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             debug!("Created semantic global '{}' with id {:?}", var_decl.name, global_id);
         } else {
             // Check if symbol entry already exists from previous pass
-            let existing_entry = self
+            let (entry_ref, _) = self
                 .symbol_table
                 .lookup_symbol_from_ns(var_decl.name, scope_id, Namespace::Ordinary)
-                .and_then(|(e, s)| if s == scope_id { Some(e) } else { None });
+                .unwrap();
 
             // Create MIR local variable (inside function)
             let local_id = self.mir_builder.create_local(Some(var_decl.name), mir_type_id, false);
-
-            let entry_ref = if let Some(e) = existing_entry {
-                e
-            } else {
-                // // Add to symbol table as local
-                let def_state = if initializer_node_ref.is_some() {
-                    DefinitionState::Defined
-                } else if var_decl.storage == Some(StorageClass::Extern) {
-                    DefinitionState::DeclaredOnly
-                } else {
-                    DefinitionState::Tentative
-                };
-
-                let symbol_entry = SymbolEntry {
-                    name: var_decl.name,
-                    kind: SymbolKind::Variable {
-                        is_global: false,
-                        initializer: initializer_node_ref,
-                    },
-                    type_info: var_decl.ty,
-                    storage_class: var_decl.storage,
-                    scope_id,
-                    def_span: span,
-                    def_state,
-                    is_referenced: false,
-                    is_completed: true,
-                };
-                // FIXME: move this to resolver, ast_to_mir don't handling symbol resolver
-                self.symbol_table.add_symbol(var_decl.name, symbol_entry)
-            };
 
             // Store in local map
             self.local_map.insert(entry_ref, local_id);
@@ -1007,108 +975,43 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
 
             NodeKind::Ident(name, symbol_ref) => {
                 debug!("Resolving identifier '{}'", name);
+                let resolved_ref = symbol_ref.get().unwrap();
+                let entry = self.symbol_table.get_symbol_entry(resolved_ref);
                 // First try to resolve through semantic analysis
-                if let Some(resolved_ref) = symbol_ref.get() {
-                    let entry = self.symbol_table.get_symbol_entry(resolved_ref);
+                // if let Some(resolved_ref) = symbol_ref.get() {
+                // let entry = self.symbol_table.get_symbol_entry(resolved_ref);
 
-                    match &entry.kind {
-                        SymbolKind::Variable { is_global, .. } => {
-                            if *is_global {
-                                // This is a global variable - find its MIR global ID
-                                for (global_id, global) in self.mir_builder.get_globals() {
-                                    if global.name == entry.name {
-                                        let current_node = self.ast.get_node(expr_ref);
-                                        current_node.resolved_type.set(Some(entry.type_info));
-                                        return Operand::Copy(Box::new(Place::Global(*global_id)));
-                                    }
-                                }
-                            } else {
-                                // This is a local variable - look up the local in our local map
-                                if let Some(local_id) = self.local_map.get(&resolved_ref) {
+                match &entry.kind {
+                    SymbolKind::Variable { is_global, .. } => {
+                        if *is_global {
+                            // This is a global variable - find its MIR global ID
+                            for (global_id, global) in self.mir_builder.get_globals() {
+                                if global.name == entry.name {
                                     let current_node = self.ast.get_node(expr_ref);
                                     current_node.resolved_type.set(Some(entry.type_info));
-                                    return Operand::Copy(Box::new(Place::Local(*local_id)));
+                                    return Operand::Copy(Box::new(Place::Global(*global_id)));
                                 }
                             }
-                        }
-                        SymbolKind::EnumConstant { value } => {
-                            let val = *value;
-                            let type_info = entry.type_info;
-                            let const_id = self.create_constant(ConstValue::Int(val));
-                            let current_node = self.ast.get_node(expr_ref);
-                            current_node.resolved_type.set(Some(type_info));
-                            return Operand::Constant(const_id);
-                        }
-                        SymbolKind::Function { .. } => {
-                            // Function identifier - resolve to function address
-                            debug!("Resolving function identifier '{}' to function address", name);
-
-                            // Look up the function in MIR functions by name
-                            if let Some(func_id) = self.find_mir_function_by_name(name) {
+                        } else {
+                            // This is a local variable - look up the local in our local map
+                            if let Some(local_id) = self.local_map.get(&resolved_ref) {
                                 let current_node = self.ast.get_node(expr_ref);
                                 current_node.resolved_type.set(Some(entry.type_info));
-                                // Create a function address constant
-                                let func_addr_const = ConstValue::FunctionAddress(func_id);
-                                let const_id = self.create_constant(func_addr_const);
-                                return Operand::Constant(const_id);
-                            } else {
-                                // Function not found in MIR, might be a forward declaration
-                                debug!("Function '{}' found in symbol table but not in MIR functions", name);
-                                // For now, return a dummy operand to allow compilation to continue
-                                let error_const = self.create_constant(ConstValue::Int(0));
-                                return Operand::Constant(error_const);
+                                return Operand::Copy(Box::new(Place::Local(*local_id)));
                             }
                         }
-                        _ => {}
                     }
-                }
-
-                // Fallback: Check if it's a global variable by name
-                for (global_id, global) in self.mir_builder.get_globals() {
-                    if global.name == name {
-                        // Try to find the type info from symbol table
-                        if let Some((entry_ref, _)) =
-                            self.symbol_table
-                                .lookup_symbol_from_ns(name, scope_id, Namespace::Ordinary)
-                        {
-                            let entry = self.symbol_table.get_symbol_entry(entry_ref);
-                            let current_node = self.ast.get_node(expr_ref);
-                            current_node.resolved_type.set(Some(entry.type_info));
-                        }
-                        return Operand::Copy(Box::new(Place::Global(*global_id)));
-                    }
-                }
-
-                // Fallback to searching all symbol entries and local map if needed
-                debug!("Fallback lookup for identifier '{}'", name);
-                if let Some((entry_ref, scope_id)) =
-                    self.symbol_table
-                        .lookup_symbol_from_ns(name, scope_id, Namespace::Ordinary)
-                {
-                    let entry = self.symbol_table.get_symbol_entry(entry_ref);
-                    debug!(
-                        "Found identifier '{}' in scope {} with kind {:?}",
-                        name,
-                        scope_id.get(),
-                        entry.kind
-                    );
-                    if let Some(local_id) = self.local_map.get(&entry_ref) {
-                        let current_node = self.ast.get_node(expr_ref);
-                        current_node.resolved_type.set(Some(entry.type_info));
-                        return Operand::Copy(Box::new(Place::Local(*local_id)));
-                    } else if let SymbolKind::EnumConstant { value } = &entry.kind {
+                    SymbolKind::EnumConstant { value } => {
                         let val = *value;
                         let type_info = entry.type_info;
                         let const_id = self.create_constant(ConstValue::Int(val));
                         let current_node = self.ast.get_node(expr_ref);
                         current_node.resolved_type.set(Some(type_info));
                         return Operand::Constant(const_id);
-                    } else if let SymbolKind::Function { .. } = &entry.kind {
+                    }
+                    SymbolKind::Function { .. } => {
                         // Function identifier - resolve to function address
-                        debug!(
-                            "Resolving function identifier '{}' to function address (fallback case)",
-                            name
-                        );
+                        debug!("Resolving function identifier '{}' to function address", name);
 
                         // Look up the function in MIR functions by name
                         if let Some(func_id) = self.find_mir_function_by_name(name) {
@@ -1126,12 +1029,16 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                             return Operand::Constant(error_const);
                         }
                     }
+                    _ => {
+                        unreachable!("imposible SymbolKind")
+                    }
                 }
+                // }
 
-                self.report_error(SemanticError::UndeclaredIdentifier {
-                    name,
-                    span: self.ast.get_node(expr_ref).span,
-                });
+                // self.report_error(SemanticError::UndeclaredIdentifier {
+                //     name,
+                //     span: self.ast.get_node(expr_ref).span,
+                // });
 
                 // Return a dummy operand to allow compilation to continue
                 let error_const = self.create_constant(ConstValue::Int(0));
@@ -2101,7 +2008,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Lower a goto statement
-    fn lower_goto_statement(&mut self, label: NameId, span: SourceSpan) {
+    fn lower_goto_statement(&mut self, label: NameId) {
         debug!("Lowering goto statement to label: {}", label);
 
         // For goto statements, we need to set up a jump to the target label
@@ -2109,44 +2016,32 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         // For now, create a temporary placeholder and resolve later
 
         // Look up the label in our label map
-        if let Some(target_block_id) = self.label_map.get(&label) {
-            // Check if current block is already terminated
-            if self.mir_builder.current_block_has_terminator() {
-                // Current block is already terminated, create a new block for this goto
-                debug!("Current block already terminated, creating new block for goto");
-                let new_block_id = self.mir_builder.create_block();
-                self.mir_builder.set_current_block(new_block_id);
-                self.current_block = Some(new_block_id);
-            }
-
-            // Set terminator to jump to the target block
-            self.mir_builder.set_terminator(Terminator::Goto(*target_block_id));
-            debug!("Goto resolved to block {:?}", target_block_id);
-        } else {
-            // Label not found - this is an error
-            debug!("Label '{}' not found in label map during goto resolution", label);
-            self.report_error(SemanticError::UndeclaredIdentifier { name: label, span });
-            // Set a dummy terminator to allow compilation to continue
-            self.mir_builder.set_terminator(Terminator::Unreachable);
+        let target_block_id = self.label_map.get(&label).unwrap();
+        // Check if current block is already terminated
+        if self.mir_builder.current_block_has_terminator() {
+            // Current block is already terminated, create a new block for this goto
+            debug!("Current block already terminated, creating new block for goto");
+            let new_block_id = self.mir_builder.create_block();
+            self.mir_builder.set_current_block(new_block_id);
+            self.current_block = Some(new_block_id);
         }
+
+        // Set terminator to jump to the target block
+        self.mir_builder.set_terminator(Terminator::Goto(*target_block_id));
+        debug!("Goto resolved to block {:?}", target_block_id);
     }
 
     /// Lower a label statement
-    fn lower_label_statement(&mut self, scope_id: ScopeId, label: NameId, statement: NodeRef, _span: SourceSpan) {
+    fn lower_label_statement(&mut self, scope_id: ScopeId, label: NameId, statement: NodeRef) {
         // Get the existing block for this label (created in first pass)
-        if let Some(&target_block_id) = self.label_map.get(&label) {
-            // Switch to the existing block for the label's statement
-            self.mir_builder.set_current_block(target_block_id);
-            self.current_block = Some(target_block_id);
+        let target_block_id = *self.label_map.get(&label).unwrap();
 
-            // Process the statement that follows the label
-            self.lower_node_ref(statement, scope_id);
-        } else {
-            // This path should be unreachable. After the refactoring of `collect_labels_recursive`,
-            // all labels, including consecutive ones, are mapped to a block in the first pass.
-            // If we hit this else, it indicates a bug in the label collection logic.
-            panic!("Unmapped label '{}' found during lowering", label);
-        }
+        // Switch to the existing block for the label's statement
+        self.mir_builder.set_current_block(target_block_id);
+        self.current_block = Some(target_block_id);
+
+        // Process the statement that follows the label
+        self.lower_node_ref(statement, scope_id);
     }
 
     /// Find a struct/union field by name and return its index

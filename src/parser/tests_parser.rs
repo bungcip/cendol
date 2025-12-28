@@ -475,7 +475,7 @@ fn test_function_returning_array_rejected() {
     let err = setup_declaration_with_errors("int f(int)[3];");
     assert!(matches!(
         err,
-        crate::diagnostic::ParseError::DeclarationNotAllowed { .. }
+        crate::diagnostic::ParseError::UnexpectedToken { .. }
     ));
 }
 

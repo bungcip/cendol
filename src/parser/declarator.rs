@@ -21,24 +21,36 @@ enum DeclaratorComponent {
 }
 
 /// Validate declarator combinations
-fn validate_declarator_combination(base: &Declarator, new_kind: &str, span: SourceSpan) -> Result<(), ParseError> {
-    match base {
-        Declarator::Function(..) => {
-            if new_kind == "array" {
-                return Err(ParseError::DeclarationNotAllowed { span });
-            }
-            if new_kind == "function" {
-                return Err(ParseError::DeclarationNotAllowed { span });
-            }
-        }
-        Declarator::Array(..) => {
-            if new_kind == "function" {
-                return Err(ParseError::DeclarationNotAllowed { span });
-            }
-        }
-        _ => {}
+fn validate_declarator_combination(
+    parser: &Parser,
+    base: &Declarator,
+    new_kind: &str,
+    span: SourceSpan,
+) -> Result<(), ParseError> {
+    let current_token = parser.try_current_token();
+    let found_token = current_token.map_or(TokenKind::EndOfFile, |t| t.kind);
+
+    let is_invalid = match base {
+        Declarator::Function(..) => new_kind == "array" || new_kind == "function",
+        Declarator::Array(..) => new_kind == "function",
+        _ => false,
+    };
+
+    if is_invalid {
+        let expected = match base {
+            Declarator::Function(..) => "identifier or '('",
+            Declarator::Array(..) => "identifier or '['",
+            _ => "valid declarator",
+        };
+
+        Err(ParseError::UnexpectedToken {
+            expected_tokens: expected.to_string(),
+            found: found_token,
+            span,
+        })
+    } else {
+        Ok(())
     }
-    Ok(())
 }
 
 /// Parse declarator
@@ -186,13 +198,13 @@ fn parse_trailing_declarators_for_type_names(
         let current_token_span = parser.try_current_token().map_or(SourceSpan::empty(), |t| t.span);
         if parser.accept(TokenKind::LeftBracket).is_some() {
             // Array declarator
-            validate_declarator_combination(&current_base, "array", current_token_span)?;
+            validate_declarator_combination(parser, &current_base, "array", current_token_span)?;
             let array_size = parse_array_size(parser)?;
             parser.expect(TokenKind::RightBracket)?; // Consume ']'
             current_base = Declarator::Array(Box::new(current_base), array_size);
         } else if parser.accept(TokenKind::LeftParen).is_some() {
             // Function declarator
-            validate_declarator_combination(&current_base, "function", current_token_span)?;
+            validate_declarator_combination(parser, &current_base, "function", current_token_span)?;
             let parameters = parse_function_parameters(parser)?;
             parser.expect(TokenKind::RightParen)?; // Consume ')'
             current_base = Declarator::Function(Box::new(current_base), parameters);
@@ -210,13 +222,13 @@ fn parse_trailing_declarators(parser: &mut Parser, mut current_base: Declarator)
         let current_token_span = parser.try_current_token().map_or(SourceSpan::empty(), |t| t.span);
         if parser.accept(TokenKind::LeftBracket).is_some() {
             // Array declarator
-            validate_declarator_combination(&current_base, "array", current_token_span)?;
+            validate_declarator_combination(parser, &current_base, "array", current_token_span)?;
             let array_size = parse_array_size(parser)?;
             parser.expect(TokenKind::RightBracket)?; // Consume ']'
             current_base = Declarator::Array(Box::new(current_base), array_size);
         } else if parser.accept(TokenKind::LeftParen).is_some() {
             // Function declarator
-            validate_declarator_combination(&current_base, "function", current_token_span)?;
+            validate_declarator_combination(parser, &current_base, "function", current_token_span)?;
             let parameters = parse_function_parameters(parser)?;
             parser.expect(TokenKind::RightParen)?; // Consume ')'
             current_base = Declarator::Function(Box::new(current_base), parameters);

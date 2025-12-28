@@ -37,17 +37,8 @@ pub enum ParseError {
     #[error("Unexpected End of File")]
     UnexpectedEof { span: SourceSpan },
 
-    #[error("Invalid unary operator")]
-    InvalidUnaryOperator { span: SourceSpan },
-
-    #[error("Declaration not allowed in this context")]
-    DeclarationNotAllowed { span: SourceSpan },
-
     #[error("Parser exceeded maximum iteration limit - possible infinite loop")]
     InfiniteLoop { span: SourceSpan },
-
-    #[error("Invalid numeric constant: {text}")]
-    InvalidNumericConstant { text: String, span: SourceSpan },
 }
 
 impl ParseError {
@@ -55,9 +46,6 @@ impl ParseError {
         match self {
             ParseError::UnexpectedToken { span, .. } => *span,
             ParseError::UnexpectedEof { span } => *span,
-            ParseError::InvalidNumericConstant { span, .. } => *span,
-            ParseError::InvalidUnaryOperator { span } => *span,
-            ParseError::DeclarationNotAllowed { span } => *span,
             ParseError::InfiniteLoop { span } => *span,
         }
     }
@@ -111,10 +99,6 @@ impl DiagnosticEngine {
             span,
             ..Default::default()
         });
-    }
-
-    pub(crate) fn report_note(&mut self, message: String, span: SourceSpan) {
-        self._report(DiagnosticLevel::Note, message, span);
     }
 
     pub fn report_diagnostic(&mut self, diagnostic: Diagnostic) {
@@ -176,19 +160,6 @@ impl IntoDiagnostic for SemanticError {
     }
 }
 
-impl IntoDiagnostic for SemanticWarning {
-    fn into_diagnostic(self) -> Vec<Diagnostic> {
-        let diagnostics = vec![Diagnostic {
-            level: DiagnosticLevel::Warning,
-            message: self.to_string(),
-            span: self.span(),
-            ..Default::default()
-        }];
-
-        diagnostics
-    }
-}
-
 /// Semantic errors
 #[derive(Debug, thiserror::Error)]
 pub enum SemanticError {
@@ -241,30 +212,6 @@ impl SemanticError {
     }
 }
 
-/// Semantic warnings
-#[derive(Debug, thiserror::Error)]
-pub enum SemanticWarning {
-    #[error("Unused declaration '{name}'")]
-    UnusedDeclaration { name: Symbol, span: SourceSpan },
-    #[error("Implicit conversion from {from_type} to {to_type}")]
-    ImplicitConversion {
-        from_type: String,
-        to_type: String,
-        span: SourceSpan,
-    },
-    #[error("Unreachable code")]
-    UnreachableCode { span: SourceSpan },
-}
-
-impl SemanticWarning {
-    pub fn span(&self) -> SourceSpan {
-        match self {
-            SemanticWarning::UnusedDeclaration { span, .. } => *span,
-            SemanticWarning::ImplicitConversion { span, .. } => *span,
-            SemanticWarning::UnreachableCode { span } => *span,
-        }
-    }
-}
 
 /// Configurable error formatter using annotate_snippets
 pub struct ErrorFormatter {

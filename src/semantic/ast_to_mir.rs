@@ -59,9 +59,6 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         // Check if we have a root node to start traversal from
         let root_node_ref = self.ast.get_root();
 
-        // Reset symbol table traversal to re-enter scopes in the same order
-        self.symbol_table.reset_traversal();
-
         // Process the entire AST starting from root
         self.lower_node_ref(root_node_ref);
 

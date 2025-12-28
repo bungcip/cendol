@@ -1,9 +1,8 @@
-//! Semantic lowering phase - transforms parser AST declarations into type-resolved semantic nodes.
+//! Declaration Lowering + Scope Construction + Symbol Insertion
 //!
 //! This module implements the semantic lowering phase that bridges the gap between the
 //! grammar-oriented parser AST and the type-resolved semantic AST (HIR). The lowering
-//! phase handles all C-style declaration forms while maintaining strict error reporting
-//! and symbol table integration.
+//! phase handles all C-style declaration forms
 
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};

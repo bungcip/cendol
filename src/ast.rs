@@ -26,7 +26,7 @@ use std::num::NonZeroU32;
 /// Alias for GlobalSymbol from symbol_table crate with global feature.
 pub type NameId = symbol_table::GlobalSymbol;
 
-use crate::semantic::SymbolEntryRef;
+use crate::semantic::{ScopeId, SymbolEntryRef};
 pub use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
 
 // Submodules
@@ -47,6 +47,7 @@ pub use utils::extract_identifier;
 pub struct Ast {
     pub nodes: Vec<Node>,
     pub types: Vec<Type>,
+    scope_map: Vec<Option<ScopeId>>, // index = NodeRef
 }
 
 /// Node reference type for referencing child nodes.
@@ -66,6 +67,7 @@ impl Ast {
         Ast {
             nodes: Vec::new(),
             types: Vec::new(),
+            scope_map: Vec::new(),
         }
     }
 
@@ -114,6 +116,15 @@ impl Ast {
             );
         }
         &self.types[idx]
+    }
+
+    pub fn scope_of(&self, node: NodeRef) -> ScopeId {
+        self.scope_map[(node.get() - 1) as usize].expect("ICE: AST Node scope is not set")
+    }
+
+    /// attach new scope map for AST
+    pub fn attach_scope_map(&mut self, scope_map: Vec<Option<ScopeId>>) {
+        self.scope_map = scope_map;
     }
 }
 

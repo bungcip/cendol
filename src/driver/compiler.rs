@@ -221,7 +221,8 @@ impl CompilerDriver {
         let mut symbol_table = SymbolTable::new();
 
         use crate::semantic::resolver::run_symbol_resolver;
-        run_symbol_resolver(&mut ast, &mut self.diagnostics, &mut symbol_table);
+        let scope_map = run_symbol_resolver(&mut ast, &mut self.diagnostics, &mut symbol_table);
+        ast.attach_scope_map(scope_map);
 
         // Check for semantic lowering errors and stop if any
         self.check_diagnostics_and_return_if_error()?;

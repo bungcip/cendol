@@ -15,6 +15,7 @@ pub struct LowerCtx<'a, 'src> {
     pub ast: &'a mut Ast,
     pub diag: &'src mut DiagnosticEngine,
     pub symbol_table: &'a mut SymbolTable,
+    pub scope_map: Vec<Option<ScopeId>>,
     // Track errors during lowering for early termination
     pub has_errors: bool,
 }
@@ -47,6 +48,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ast,
             diag,
             symbol_table,
+            scope_map: Vec::new(),
             has_errors: false,
         }
     }
@@ -60,6 +62,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     /// Check if the context has any errors
     pub fn has_errors(&self) -> bool {
         self.has_errors
+    }
+
+    fn set_scope(&mut self, node_ref: NodeRef, scope_id: ScopeId) {
+        self.scope_map[(node_ref.get() - 1) as usize] = Some(scope_id);
     }
 }
 
@@ -981,15 +987,24 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
 }
 
 /// Main entry point for running semantic lowering on an entire AST
-pub fn run_symbol_resolver(ast: &mut Ast, diag: &mut DiagnosticEngine, symbol_table: &mut SymbolTable) {
+pub fn run_symbol_resolver(
+    ast: &mut Ast,
+    diag: &mut DiagnosticEngine,
+    symbol_table: &mut SymbolTable,
+) -> Vec<Option<ScopeId>> {
     // Check if we have a root node to start traversal from
+    let node_length = ast.nodes.len();
     let root_node_ref = ast.get_root();
 
     // Create lowering context
     let mut lower_ctx = LowerCtx::new(ast, diag, symbol_table);
 
+    // initial size of scope map
+    lower_ctx.scope_map.resize(node_length, None);
+
     // Perform recursive scope-aware lowering
     lower_node_recursive(&mut lower_ctx, root_node_ref);
+    lower_ctx.scope_map
 }
 
 fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
@@ -1000,6 +1015,9 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
 
     match node_kind {
         NodeKind::TranslationUnit(nodes) => {
+            ctx.symbol_table.set_current_scope(ScopeId::GLOBAL);
+            ctx.set_scope(node_ref, ScopeId::GLOBAL);
+
             for node in nodes {
                 lower_node_recursive(ctx, node);
             }
@@ -1025,10 +1043,6 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                 Vec::new()
             };
 
-            // Switch to global scope to add the function
-            let original_scope = ctx.symbol_table.current_scope();
-            ctx.symbol_table.set_current_scope(ScopeId::GLOBAL);
-
             let symbol_entry = SymbolEntry {
                 name: func_name,
                 kind: SymbolKind::Function {
@@ -1045,17 +1059,10 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                 is_completed: true,
             };
 
-            ctx.symbol_table.add_symbol(func_name, symbol_entry);
+            let symbol_entry_ref = ctx.symbol_table.add_symbol(func_name, symbol_entry);
 
-            // Restore original scope
-            ctx.symbol_table.set_current_scope(original_scope);
-
-            // Convert FunctionDef to Function semantic node
-            // First, we need to get the symbol entry ref for the function we just added
-            let (symbol_entry_ref, _) = ctx
-                .symbol_table
-                .lookup_symbol(func_name)
-                .expect("Function should be in symbol table");
+            let param_scope_id = ctx.symbol_table.push_scope();
+            ctx.set_scope(node_ref, param_scope_id);
 
             // Create normalized parameters for the FunctionData
             let normalized_params = parameters
@@ -1094,20 +1101,18 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                 body: func_def.body,
             };
 
-            let function_node = Node::new(NodeKind::Function(function_data), ctx.ast.get_node(node_ref).span);
-            let function_node_ref = ctx.ast.push_node(function_node);
-
             // Replace the FunctionDef node with the Function node
-            ctx.ast
-                .replace_node(node_ref, ctx.ast.get_node(function_node_ref).clone());
+            let function_node = Node::new(NodeKind::Function(function_data), ctx.ast.get_node(node_ref).span);
+            ctx.ast.replace_node(node_ref, function_node);
 
             // Now process the function body with proper scope management
-            ctx.symbol_table.push_scope();
             lower_node_recursive(ctx, func_def.body);
             ctx.symbol_table.pop_scope();
         }
         NodeKind::CompoundStatement(nodes) => {
-            ctx.symbol_table.push_scope();
+            let scope_id = ctx.symbol_table.push_scope();
+            ctx.set_scope(node_ref, scope_id);
+
             for node in nodes {
                 lower_node_recursive(ctx, node);
             }
@@ -1130,7 +1135,9 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             }
         }
         NodeKind::For(for_stmt) => {
-            ctx.symbol_table.push_scope();
+            let scope_id = ctx.symbol_table.push_scope();
+            ctx.set_scope(node_ref, scope_id);
+
             if let Some(init) = for_stmt.init {
                 lower_node_recursive(ctx, init);
             }

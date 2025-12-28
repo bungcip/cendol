@@ -171,16 +171,6 @@ impl LineMap {
             (logical_line, entry.logical_file.as_deref())
         }
     }
-
-    /// Check if the LineMap is empty (no #line directives)
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
-    /// Get the number of entries
-    pub fn len(&self) -> usize {
-        self.entries.len()
-    }
 }
 
 /// File information for tracking source files
@@ -302,12 +292,12 @@ impl SourceManager {
     }
 
     /// Get mutable access to the LineMap for a given source ID
-    pub fn get_line_map_mut(&mut self, source_id: SourceId) -> Option<&mut LineMap> {
+    pub(crate) fn get_line_map_mut(&mut self, source_id: SourceId) -> Option<&mut LineMap> {
         self.file_infos.get_mut(&source_id).map(|fi| &mut fi.line_map)
     }
 
     /// Set line starts for a given source ID
-    pub fn set_line_starts(&mut self, source_id: SourceId, line_starts: Vec<u32>) {
+    pub(crate) fn set_line_starts(&mut self, source_id: SourceId, line_starts: Vec<u32>) {
         if let Some(file_info) = self.file_infos.get_mut(&source_id) {
             file_info.line_starts = line_starts;
         }
@@ -379,7 +369,7 @@ impl SourceManager {
     }
 
     /// Get the presumed location (logical line and file) for a source location
-    pub fn get_presumed_location(&self, loc: SourceLoc) -> Option<(u32, u32, Option<&str>)> {
+    pub(crate) fn get_presumed_location(&self, loc: SourceLoc) -> Option<(u32, u32, Option<&str>)> {
         let file_info = self.get_file_info(loc.source_id())?;
         let physical_line = self.get_line_column(loc)?.0;
 

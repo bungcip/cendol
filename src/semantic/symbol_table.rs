@@ -35,14 +35,6 @@ impl ScopeId {
     }
 }
 
-/// Scope types
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScopeKind {
-    // Global,
-    Function,
-    Block,
-}
-
 /// Symbol namespaces in C
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Namespace {
@@ -61,7 +53,6 @@ pub struct Scope {
     pub symbols: HashMap<NameId, SymbolEntryRef>, // Ordinary identifiers
     pub tags: HashMap<NameId, SymbolEntryRef>,    // Struct/union/enum tags
     pub labels: HashMap<NameId, SymbolEntryRef>,  // Goto labels
-    // pub kind: ScopeKind,
     pub level: u32,
 }
 
@@ -102,7 +93,7 @@ impl SymbolTable {
         table
     }
 
-    pub fn push_scope(&mut self, _kind: ScopeKind) -> ScopeId {
+    pub fn push_scope(&mut self) -> ScopeId {
         let new_scope_id = ScopeId::new(self.next_scope_id).unwrap();
         self.next_scope_id += 1;
 

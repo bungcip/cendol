@@ -8,7 +8,6 @@ use crate::mir::{
     MirFunctionId, MirStmt, Operand, Place, Rvalue, Terminator, TypeId,
 };
 use crate::semantic::ScopeId;
-use crate::semantic::ScopeKind;
 use crate::semantic::SymbolTable;
 use crate::source_manager::SourceSpan;
 use hashbrown::HashMap;
@@ -317,7 +316,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         }
 
         // Second pass: process all statements with proper scope management
-        self.symbol_table.push_scope(ScopeKind::Block);
+        self.symbol_table.push_scope();
 
         for &stmt_ref in nodes {
             self.lower_node_ref(stmt_ref);
@@ -446,7 +445,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         self.current_block = Some(entry_block_id);
 
         // Push function scope for parameters and locals
-        let func_scope = self.symbol_table.push_scope(ScopeKind::Function);
+        let func_scope = self.symbol_table.push_scope();
         debug!("Pushed function scope: {:?}", func_scope);
 
         // Process function parameters and create locals for them

@@ -7,7 +7,7 @@
 
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
-use crate::semantic::{Namespace, ScopeKind, SymbolTable};
+use crate::semantic::{Namespace, SymbolTable};
 use crate::source_manager::SourceSpan;
 
 /// Context for the semantic lowering phase
@@ -1111,12 +1111,12 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                 .replace_node(node_ref, ctx.ast.get_node(function_node_ref).clone());
 
             // Now process the function body with proper scope management
-            ctx.symbol_table.push_scope(ScopeKind::Function);
+            ctx.symbol_table.push_scope();
             lower_node_recursive(ctx, func_def.body);
             ctx.symbol_table.pop_scope();
         }
         NodeKind::CompoundStatement(nodes) => {
-            ctx.symbol_table.push_scope(ScopeKind::Block);
+            ctx.symbol_table.push_scope();
             for node in nodes {
                 lower_node_recursive(ctx, node);
             }
@@ -1139,7 +1139,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             }
         }
         NodeKind::For(for_stmt) => {
-            ctx.symbol_table.push_scope(ScopeKind::Block);
+            ctx.symbol_table.push_scope();
             if let Some(init) = for_stmt.init {
                 lower_node_recursive(ctx, init);
             }

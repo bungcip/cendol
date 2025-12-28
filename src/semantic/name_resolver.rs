@@ -53,6 +53,7 @@ fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
             if let Some(incr) = stmt.increment {
                 visit_node(ctx, incr);
             }
+            visit_node(ctx, stmt.body);
         }
         // Other nodes that might contain statements/declarations
         NodeKind::If(if_stmt) => {
@@ -63,10 +64,12 @@ fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
             }
         }
         NodeKind::While(while_stmt) => {
+            visit_node(ctx, while_stmt.condition);
             visit_node(ctx, while_stmt.body);
         }
-        NodeKind::DoWhile(body, _) => {
+        NodeKind::DoWhile(body, condition) => {
             visit_node(ctx, *body);
+            visit_node(ctx, *condition);
         }
         NodeKind::Switch(_, body) => {
             visit_node(ctx, *body);
@@ -75,6 +78,14 @@ fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
             if let Some(expr) = expr {
                 visit_node(ctx, *expr)
             }
+        }
+        NodeKind::Assignment(_, left, right) => {
+            visit_node(ctx, *left);
+            visit_node(ctx, *right);
+        }
+        NodeKind::IndexAccess(array, index) => {
+            visit_node(ctx, *array);
+            visit_node(ctx, *index);
         }
         NodeKind::MemberAccess(calle, ..) => {
             visit_node(ctx, *calle);

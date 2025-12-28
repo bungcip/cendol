@@ -231,6 +231,7 @@ fn parse_do_while_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> 
 fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.expect(TokenKind::For)?;
     let start_loc = token.span.start;
+    let dummy = parser.push_dummy();
 
     parser.expect(TokenKind::LeftParen)?;
 
@@ -308,7 +309,7 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         body,
     };
 
-    let node = parser.push_node(NodeKind::For(for_stmt), span);
+    let node = parser.replace_node(dummy, NodeKind::For(for_stmt), span);
     Ok(node)
 }
 
@@ -450,6 +451,7 @@ fn parse_label_statement(parser: &mut Parser, label_symbol: NameId) -> Result<No
 /// Parse expression statement
 fn parse_expression_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let start_loc = parser.current_token_span()?.start;
+    let dummy = parser.push_dummy();
 
     let (semi, expr) = if let Some(token) = parser.accept(TokenKind::Semicolon) {
         (token, None)
@@ -461,6 +463,6 @@ fn parse_expression_statement(parser: &mut Parser) -> Result<NodeRef, ParseError
     let end_loc = semi.span.end;
     let span = SourceSpan::new(start_loc, end_loc);
 
-    let node = parser.push_node(NodeKind::ExpressionStatement(expr), span);
+    let node = parser.replace_node(dummy, NodeKind::ExpressionStatement(expr), span);
     Ok(node)
 }

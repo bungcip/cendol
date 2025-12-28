@@ -650,8 +650,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 self.report_error(SemanticError::NonConstantInitializer { span });
             }
             _ => {
-                // For simple positional initializers, we can use the existing logic
-                // but we need to handle struct/array member access
+                // For simple positional initializers, we need to handle array/struct member access
                 let init_operand = self.lower_expression(scope_id, initializer);
 
                 // Get the type for the temporary local
@@ -663,10 +662,16 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 // Emit assignment to temporary: temp = initializer
                 self.emit_assignment(Place::Local(temp_local_id), init_operand, span);
 
-                // TODO: Emit assignment to the appropriate struct member or array element
-                // For now, just assign to the main local
+                // Create an operand for the array index
+                let index_const_id = self.create_constant(ConstValue::Int(index as i64));
+                let index_operand = Operand::Constant(index_const_id);
+
+                // Create a place representing the array element: array[index]
+                let array_element_place = Place::ArrayIndex(Box::new(Place::Local(local_id)), Box::new(index_operand));
+
+                // Emit assignment to the array element: array[index] = temp
                 self.emit_assignment(
-                    Place::Local(local_id),
+                    array_element_place,
                     Operand::Copy(Box::new(Place::Local(temp_local_id))),
                     span,
                 );

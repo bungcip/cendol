@@ -102,6 +102,78 @@ mod tests {
     }
 
     #[test]
+    fn test_while_statement() {
+        let source = r#"
+          int main() {
+            int steins = 99;
+            while (steins)
+              steins = steins - 1;
+            return steins;
+          }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = i32
+
+        fn main() -> i32
+        {
+          locals {
+            %steins: i32
+            %2: i32
+          }
+
+          bb1:
+            %steins = const 99
+            br bb2
+
+          bb2:
+            cond_br %steins, bb3, bb4
+
+          bb3:
+            %2 = %steins - const 1
+            %steins = %2
+            br bb2
+
+          bb4:
+            return %steins
+        }
+        ");
+    }
+
+    #[test]
+    fn test_for_stmt() {
+        let source = r#"
+          int main() {
+            int steins = 44;
+            int gate = 1;
+
+            for (; steins;)
+              steins = steins - gate;
+            return steins;
+          }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = i32
+
+        fn main() -> i32
+        {
+          locals {
+            %steins: i32
+            %gate: i32
+          }
+
+          bb1:
+            %steins = const 44
+            %gate = const 1
+            return %steins
+        }
+        ");
+    }
+
+    #[test]
     fn test_simple_variable_return() {
         let source = r#"
             int main() {

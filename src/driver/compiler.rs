@@ -239,7 +239,11 @@ impl CompilerDriver {
         for node in &ast.nodes {
             match &node.kind {
                 crate::ast::NodeKind::Ident(name, resolved_symbol) if resolved_symbol.get().is_none() => {
-                    panic!("ICE: ident '{}' still not resolved", name);
+                    panic!(
+                        "ICE: ident '{}' still not resolved: {:?}",
+                        name,
+                        self.source_manager.get_line_column(node.span.start)
+                    );
                 }
                 crate::ast::NodeKind::Goto(name, resolved_symbol) if resolved_symbol.get().is_none() => {
                     panic!("ICE: goto '{}' still not resolved", name);

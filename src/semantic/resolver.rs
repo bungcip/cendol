@@ -830,7 +830,7 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
             is_completed: true,
         };
 
-        let _entry_ref = ctx.symbol_table.add_symbol(name, symbol_entry);
+        ctx.symbol_table.add_symbol(name, symbol_entry);
 
         return typedef_node;
     }

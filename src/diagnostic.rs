@@ -113,7 +113,7 @@ impl DiagnosticEngine {
         });
     }
 
-    pub fn report_note(&mut self, message: String, span: SourceSpan) {
+    pub(crate) fn report_note(&mut self, message: String, span: SourceSpan) {
         self._report(DiagnosticLevel::Note, message, span);
     }
 

@@ -386,5 +386,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     pub(crate) fn push_node(&mut self, kind: NodeKind, span: SourceSpan) -> NodeRef {
         self.ast.push_node(Node::new(kind, span))
     }
+
+    /// Push a node to the AST and return its reference
+    pub(crate) fn replace_node(&mut self, old_ref: NodeRef, kind: NodeKind, span: SourceSpan) -> NodeRef {
+        self.ast.replace_node(old_ref, Node::new(kind, span))
+    }
 }
 mod tests_parser;

@@ -286,6 +286,9 @@ pub fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError
     let mut iteration_count = 0;
     const MAX_ITERATIONS: usize = 1000; // Prevent infinite loops
 
+    // TU must be placed as first node so reserve it place with dummy node before placing it last
+    let dummy = parser.push_node(NodeKind::Dummy, SourceSpan::empty());
+
     while let Some(token) = parser.try_current_token() {
         if token.kind == TokenKind::EndOfFile {
             end_loc = token.span.end;
@@ -327,9 +330,7 @@ pub fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError
     }
 
     let span = SourceSpan::new(start_loc, end_loc);
-    let node = parser.push_node(NodeKind::TranslationUnit(top_level_declarations), span);
-
-    parser.ast.set_root_node(node);
+    let node = parser.replace_node(dummy, NodeKind::TranslationUnit(top_level_declarations), span);
 
     Ok(node)
 }

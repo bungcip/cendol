@@ -54,27 +54,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         debug!("Starting semantic analysis and MIR construction (complete)");
 
         // Check if we have a root node to start traversal from
-        let Some(root_node_ref) = self.ast.root else {
-            debug!("No root node found, skipping semantic analysis");
-            let module = self.mir_builder.finalize_module();
-            let functions = self.mir_builder.get_functions().clone();
-            let blocks = self.mir_builder.get_blocks().clone();
-            let locals = self.mir_builder.get_locals().clone();
-            let globals = self.mir_builder.get_globals().clone();
-            let types = self.mir_builder.get_types().clone();
-            let constants = self.mir_builder.get_constants().clone();
-            let statements = self.mir_builder.get_statements().clone();
-            return SemaOutput {
-                module,
-                functions,
-                blocks,
-                locals,
-                globals,
-                types,
-                constants,
-                statements,
-            };
-        };
+        let root_node_ref = self.ast.get_root();
 
         // Reset symbol table traversal to re-enter scopes in the same order
         self.symbol_table.reset_traversal();

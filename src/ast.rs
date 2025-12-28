@@ -46,8 +46,6 @@ pub use utils::extract_identifier;
 pub struct Ast {
     pub nodes: Vec<Node>,
     pub types: Vec<Type>,
-    pub symbol_entries: Vec<SymbolEntry>,
-    pub root: Option<NodeRef>,
 }
 
 /// Node reference type for referencing child nodes.
@@ -68,14 +66,7 @@ impl Ast {
         Ast {
             nodes: Vec::new(),
             types: Vec::new(),
-            symbol_entries: Vec::new(),
-            root: None,
         }
-    }
-
-    /// Set the root node of the AST
-    pub(crate) fn set_root_node(&mut self, node_ref: NodeRef) {
-        self.root = Some(node_ref);
     }
 
     /// Replace a node in the AST and update parent references
@@ -99,6 +90,11 @@ impl Ast {
     /// Get a node by its reference
     pub fn get_node(&self, index: NodeRef) -> &Node {
         &self.nodes[(index.get() - 1) as usize]
+    }
+
+    /// get root node ref, by default its first node
+    pub fn get_root(&self) -> NodeRef {
+        NonZeroU32::new(1).unwrap()
     }
 
     /// Add a type to the AST and return its reference

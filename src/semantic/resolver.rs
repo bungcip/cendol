@@ -983,11 +983,7 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
 /// Main entry point for running semantic lowering on an entire AST
 pub fn run_symbol_resolver(ast: &mut Ast, diag: &mut DiagnosticEngine, symbol_table: &mut SymbolTable) {
     // Check if we have a root node to start traversal from
-    let root_node_ref = if let Some(root) = ast.root {
-        root
-    } else {
-        return;
-    };
+    let root_node_ref = ast.get_root();
 
     // Create lowering context
     let mut lower_ctx = LowerCtx::new(ast, diag, symbol_table);

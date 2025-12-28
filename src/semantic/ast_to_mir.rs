@@ -456,68 +456,23 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Lower a single semantic function parameter
-    fn lower_semantic_function_parameter(&mut self, scope_id: ScopeId, param: &ParamDecl, span: SourceSpan) {
+    fn lower_semantic_function_parameter(&mut self, scope_id: ScopeId, param: &ParamDecl, _span: SourceSpan) {
         debug!("Lowering semantic function parameter");
 
         // Get parameter information from the semantic data
         let param_name = self.symbol_table.get_symbol_entry(param.symbol).name;
         let param_type = param.ty;
 
-        debug!(
-            "Processing semantic parameter: {} with type {:?}",
-            param_name, param_type
-        );
-
         // Check for redeclaration in current scope
-        if let Some((existing_entry, from_scope_id)) =
-            self.symbol_table
-                .lookup_symbol_from_ns(param_name, scope_id, Namespace::Ordinary)
-            && from_scope_id == scope_id
-        {
-            // If we've already created a MIR local for this entry in this pass, it's a real redefinition
-            if self.local_map.contains_key(&existing_entry) {
-                let existing = self.symbol_table.get_symbol_entry(existing_entry);
-                self.report_error(SemanticError::Redefinition {
-                    name: param_name,
-                    first_def: existing.def_span,
-                    second_def: span,
-                });
-                return;
-            }
+        let (existing_entry, _) = self
+            .symbol_table
+            .lookup_symbol_from_ns(param_name, scope_id, Namespace::Ordinary)
+            .unwrap();
 
-            // Symbol already exists from previous pass (lowering). Re-use it and create MIR local.
-            let mir_type_id = self.lower_type_to_mir(param_type);
-            let local_id = self.mir_builder.create_local(Some(param_name), mir_type_id, true);
-            self.local_map.insert(existing_entry, local_id);
-            debug!(
-                "Re-using symbol entry from lowering pass for semantic parameter '{}'",
-                param_name
-            );
-            return;
-        }
-
-        // Create MIR local for the parameter
+        // Symbol already exists from previous pass (lowering). Re-use it and create MIR local.
         let mir_type_id = self.lower_type_to_mir(param_type);
         let local_id = self.mir_builder.create_local(Some(param_name), mir_type_id, true);
-
-        // Add to symbol table and store in local map
-        let symbol_entry = SymbolEntry {
-            name: param_name,
-            kind: SymbolKind::Variable {
-                is_global: false,
-                initializer: None,
-            },
-            type_info: param_type,
-            storage_class: None,
-            scope_id,
-            def_span: span,
-            def_state: DefinitionState::Defined,
-            is_referenced: false,
-            is_completed: true,
-        };
-
-        let entry_ref = self.symbol_table.add_symbol(param_name, symbol_entry);
-        self.local_map.insert(entry_ref, local_id);
+        self.local_map.insert(existing_entry, local_id);
     }
 
     /// Second pass: Process an initializer and emit assignment
@@ -880,30 +835,6 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     fn lower_var_declaration(&mut self, scope_id: ScopeId, var_decl: &VarDeclData, span: SourceSpan) {
         debug!("Lowering semantic var declaration for '{}'", var_decl.name);
 
-        // Check for redeclaration
-        let sym = self
-            .symbol_table
-            .lookup_symbol_from_ns(var_decl.name, scope_id, Namespace::Ordinary);
-        if let Some((existing_entry, from_scope_id)) = sym
-            && from_scope_id == scope_id
-        {
-            // If we've already handled this in THIS pass (it has a MIR local or is a global we've seen),
-            // it might be a real redefinition.
-            // For locals, we check local_map.
-            if self.local_map.contains_key(&existing_entry) {
-                let existing = self.symbol_table.get_symbol_entry(existing_entry);
-                self.report_error(SemanticError::Redefinition {
-                    name: var_decl.name,
-                    first_def: existing.def_span,
-                    second_def: span,
-                });
-                return;
-            }
-
-            // If it's a global, we can check if it already has a MIR global.
-            // ... (global redefinition check could be here, but let's focus on fixing the bug first)
-        }
-
         // Canonicalize the variable's type (like Clang does)
         let canonical_type_id = self.canonicalize_type(var_decl.ty);
         debug!(
@@ -1090,47 +1021,8 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Lower a typedef declaration
-    fn lower_typedef_declaration(&mut self, scope_id: ScopeId, typedef_decl: &TypedefDeclData, span: SourceSpan) {
-        // Check if typedef is already in symbol table (added during semantic lowering)
-        if let Some((existing_entry, _)) =
-            self.symbol_table
-                .lookup_symbol_from_ns(typedef_decl.name, scope_id, Namespace::Ordinary)
-        {
-            let existing = self.symbol_table.get_symbol_entry(existing_entry);
-            // If it's already a typedef with the same type, skip the redefinition error
-            if matches!(existing.kind, SymbolKind::Typedef { .. }) {
-                debug!(
-                    "Typedef '{}' already exists in symbol table, skipping duplicate",
-                    typedef_decl.name
-                );
-                return;
-            } else {
-                // Different symbol with same name - this is a real redefinition error
-                self.report_error(SemanticError::Redefinition {
-                    name: typedef_decl.name,
-                    first_def: existing.def_span,
-                    second_def: span,
-                });
-                return;
-            }
-        }
-
-        // Add typedef to symbol table (only if not already present)
-        let symbol_entry = SymbolEntry {
-            name: typedef_decl.name,
-            kind: SymbolKind::Typedef {
-                aliased_type: typedef_decl.ty,
-            },
-            type_info: typedef_decl.ty, // Typedef points to the aliased type
-            storage_class: Some(StorageClass::Typedef),
-            scope_id,
-            def_span: span,
-            def_state: DefinitionState::Defined,
-            is_referenced: false,
-            is_completed: true,
-        };
-
-        self.symbol_table.add_symbol(typedef_decl.name, symbol_entry);
+    fn lower_typedef_declaration(&mut self, _scope_id: ScopeId, _typedef_decl: &TypedefDeclData, _span: SourceSpan) {
+        todo!("write this implementation");
     }
 
     /// Lower a record declaration (struct/union)

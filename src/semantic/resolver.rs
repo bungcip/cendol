@@ -264,7 +264,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                             },
                             type_info: new_type_ref,
                             storage_class: None,
-                            scope_id: ctx.symbol_table.current_scope().get(),
+                            scope_id: ctx.symbol_table.current_scope(),
                             def_span: span,
                             def_state: DefinitionState::Defined,
                             is_referenced: false,
@@ -300,7 +300,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                             },
                             type_info: forward_ref,
                             storage_class: None,
-                            scope_id: ctx.symbol_table.current_scope().get(),
+                            scope_id: ctx.symbol_table.current_scope(),
                             def_span: span,
                             def_state: DefinitionState::Defined,
                             is_referenced: false,
@@ -443,7 +443,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                             kind: SymbolKind::EnumTag { is_complete: false },
                             type_info: new_type_ref,
                             storage_class: None,
-                            scope_id: ctx.symbol_table.current_scope().get(),
+                            scope_id: ctx.symbol_table.current_scope(),
                             def_span: span,
                             def_state: DefinitionState::Defined,
                             is_referenced: false,
@@ -472,7 +472,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                             kind: SymbolKind::EnumTag { is_complete: false },
                             type_info: forward_ref,
                             storage_class: None,
-                            scope_id: ctx.symbol_table.current_scope().get(),
+                            scope_id: ctx.symbol_table.current_scope(),
                             def_span: span,
                             def_state: DefinitionState::Defined,
                             is_referenced: false,
@@ -527,7 +527,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                             kind: SymbolKind::EnumConstant { value },
                             type_info: type_ref_to_use,
                             storage_class: None,
-                            scope_id: ctx.symbol_table.current_scope().get(),
+                            scope_id: ctx.symbol_table.current_scope(),
                             def_span: enum_node.span,
                             def_state: DefinitionState::Defined,
                             is_referenced: false,
@@ -818,7 +818,7 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
             kind: SymbolKind::Typedef { aliased_type: final_ty },
             type_info: final_ty,
             storage_class: Some(StorageClass::Typedef),
-            scope_id: ctx.symbol_table.current_scope().get(),
+            scope_id: ctx.symbol_table.current_scope(),
             def_span: span,
             def_state: DefinitionState::Defined,
             is_referenced: false,
@@ -1026,24 +1026,20 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                 Vec::new()
             };
 
-            // Add function to GLOBAL scope (not function scope)
-            let global_scope_id = ScopeId::new(1).unwrap(); // Global scope is typically 1
-
             // Switch to global scope to add the function
             let original_scope = ctx.symbol_table.current_scope();
-            ctx.symbol_table.set_current_scope(global_scope_id);
+            ctx.symbol_table.set_current_scope(ScopeId::GLOBAL);
 
             let symbol_entry = SymbolEntry {
                 name: func_name,
                 kind: SymbolKind::Function {
-                    is_definition: true,
                     is_inline: false,
                     is_variadic: false,
                     parameters: parameters.clone(),
                 },
                 type_info: function_type_ref,
                 storage_class: None,
-                scope_id: global_scope_id.get(),
+                scope_id: ScopeId::GLOBAL,
                 def_span: ctx.ast.get_node(node_ref).span,
                 def_state: DefinitionState::Defined,
                 is_referenced: false,
@@ -1071,12 +1067,11 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                         name: param.name.unwrap_or_else(|| NameId::new("unnamed_param")),
                         kind: SymbolKind::Variable {
                             is_global: false,
-                            is_static: false,
                             initializer: None,
                         },
                         type_info: param.param_type,
                         storage_class: None,
-                        scope_id: ctx.symbol_table.current_scope().get(),
+                        scope_id: ctx.symbol_table.current_scope(),
                         def_span: ctx.ast.get_node(node_ref).span,
                         def_state: DefinitionState::Defined,
                         is_referenced: false,

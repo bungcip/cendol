@@ -1,5 +1,4 @@
 use crate::ast::BinaryOp;
-use crate::ast::SymbolEntryRef;
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::driver::compiler::SemaOutput;
@@ -9,6 +8,7 @@ use crate::mir::{
 };
 use crate::semantic::ScopeId;
 use crate::semantic::SymbolEntry;
+use crate::semantic::SymbolEntryRef;
 use crate::semantic::SymbolKind;
 use crate::semantic::SymbolTable;
 use crate::semantic::symbol_table::DefinitionState;
@@ -507,12 +507,11 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             name: param_name,
             kind: SymbolKind::Variable {
                 is_global: false,
-                is_static: false,
                 initializer: None,
             },
             type_info: param_type,
             storage_class: None,
-            scope_id: self.symbol_table.current_scope().get(),
+            scope_id: self.symbol_table.current_scope(),
             def_span: span,
             def_state: DefinitionState::Defined,
             is_referenced: false,
@@ -967,12 +966,11 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 name: var_decl.name,
                 kind: SymbolKind::Variable {
                     is_global: true,
-                    is_static: var_decl.storage == Some(StorageClass::Static),
                     initializer: initializer_node_ref,
                 },
                 type_info: var_decl.ty,
                 storage_class: var_decl.storage,
-                scope_id: self.symbol_table.current_scope().get(),
+                scope_id: self.symbol_table.current_scope(),
                 def_span: span,
                 def_state,
                 is_referenced: false,
@@ -1046,12 +1044,11 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                     name: var_decl.name,
                     kind: SymbolKind::Variable {
                         is_global: false,
-                        is_static: var_decl.storage == Some(StorageClass::Static),
                         initializer: initializer_node_ref,
                     },
                     type_info: var_decl.ty,
                     storage_class: var_decl.storage,
-                    scope_id: self.symbol_table.current_scope().get(),
+                    scope_id: self.symbol_table.current_scope(),
                     def_span: span,
                     def_state,
                     is_referenced: false,
@@ -1103,7 +1100,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             },
             type_info: typedef_decl.ty, // Typedef points to the aliased type
             storage_class: Some(StorageClass::Typedef),
-            scope_id: self.symbol_table.current_scope().get(),
+            scope_id: self.symbol_table.current_scope(),
             def_span: span,
             def_state: DefinitionState::Defined,
             is_referenced: false,

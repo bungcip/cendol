@@ -7,6 +7,7 @@ use itertools::Itertools;
 
 use crate::ast::{Ast, NodeKind};
 use crate::pp::PPToken;
+use crate::semantic::SymbolEntryRef;
 use crate::source_manager::SourceManager;
 
 use super::compiler::DriverError;
@@ -131,7 +132,7 @@ impl OutputHandler {
     }
 
     /// Get function name from symbol entry reference
-    fn get_function_name(&self, symbol_ref: crate::ast::SymbolEntryRef) -> String {
+    fn get_function_name(&self, symbol_ref: SymbolEntryRef) -> String {
         // For now, return a placeholder since we don't have access to the symbol table here
         // In a real implementation, we would need access to the symbol table
         format!("func_{}", symbol_ref.get())

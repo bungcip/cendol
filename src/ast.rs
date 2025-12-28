@@ -26,6 +26,7 @@ use std::num::NonZeroU32;
 /// Alias for GlobalSymbol from symbol_table crate with global feature.
 pub type NameId = symbol_table::GlobalSymbol;
 
+use crate::semantic::SymbolEntryRef;
 pub use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
 
 // Submodules
@@ -51,7 +52,6 @@ pub struct Ast {
 /// Node reference type for referencing child nodes.
 pub type NodeRef = NonZeroU32;
 pub type TypeRef = NonZeroU32;
-pub type SymbolEntryRef = NonZeroU32;
 
 /// Helper methods for Ast.
 impl Default for Ast {

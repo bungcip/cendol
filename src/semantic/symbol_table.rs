@@ -12,6 +12,7 @@ use thiserror::Error;
 
 use crate::ast::*;
 
+pub type SymbolEntryRef = NonZeroU32;
 
 /// Represents the definition state of a symbol entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,13 +30,15 @@ pub struct SymbolEntry {
     pub name: NameId,
     pub kind: SymbolKind, // e.g., Variable, Function, Typedef
     pub type_info: TypeRef,
+    #[allow(unused)]
     pub storage_class: Option<StorageClass>,
-    pub scope_id: u32, // Reference to the scope where it's defined
+    #[allow(unused)]
+    pub scope_id: ScopeId, // Reference to the scope where it's defined
     pub def_span: SourceSpan,
     pub def_state: DefinitionState,
+    #[allow(unused)]
     pub is_referenced: bool,
     pub is_completed: bool,
-    // Add other relevant symbol information here (e.g., value for constants, linkage)
 }
 
 /// Defines the kind of symbol.
@@ -43,14 +46,15 @@ pub struct SymbolEntry {
 pub enum SymbolKind {
     Variable {
         is_global: bool,
-        is_static: bool,
         // Initializer might be an AST node or a constant value
         initializer: Option<NodeRef>,
     },
     Function {
-        is_definition: bool,
+        #[allow(unused)]
         is_inline: bool,
+        #[allow(unused)]
         is_variadic: bool,
+        #[allow(unused)]
         parameters: Vec<FunctionParameter>,
     },
     Typedef {
@@ -59,6 +63,7 @@ pub enum SymbolKind {
     EnumConstant {
         value: i64, // Resolved constant value
     },
+    #[allow(unused)]
     Label {
         is_defined: bool,
         is_used: bool,
@@ -66,7 +71,9 @@ pub enum SymbolKind {
     Record {
         is_complete: bool,
         members: Vec<StructMember>,
+        #[allow(unused)]
         size: Option<usize>,
+        #[allow(unused)]
         alignment: Option<usize>,
     },
     EnumTag {
@@ -74,7 +81,6 @@ pub enum SymbolKind {
     },
     // Add other symbol kinds as needed (e.g., Macro, BlockScope)
 }
-
 
 /// Symbol table error types
 #[derive(Debug, Error)]

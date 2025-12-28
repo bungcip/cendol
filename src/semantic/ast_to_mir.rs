@@ -6,12 +6,12 @@ use crate::mir::{
     self, BinaryOp as MirBinaryOp, CallTarget, ConstValue, ConstValueId, Local, LocalId, MirBlockId, MirBuilder,
     MirFunctionId, MirStmt, Operand, Place, Rvalue, Terminator, TypeId,
 };
-use crate::semantic::ScopeId;
 use crate::semantic::SymbolEntry;
 use crate::semantic::SymbolEntryRef;
 use crate::semantic::SymbolKind;
 use crate::semantic::SymbolTable;
 use crate::semantic::symbol_table::DefinitionState;
+use crate::semantic::{Namespace, ScopeId};
 use crate::source_manager::SourceSpan;
 use hashbrown::HashMap;
 use log::debug;
@@ -56,11 +56,10 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     pub fn lower_module_complete(&mut self) -> SemaOutput {
         debug!("Starting semantic analysis and MIR construction (complete)");
 
-        // Check if we have a root node to start traversal from
-        let root_node_ref = self.ast.get_root();
-
         // Process the entire AST starting from root
-        self.lower_node_ref(root_node_ref);
+        let root = self.ast.get_root();
+        let scope_id = self.ast.scope_of(root);
+        self.lower_node_ref(root, scope_id);
 
         debug!("Semantic analysis complete");
 
@@ -190,7 +189,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Lower a single AST node reference
-    fn lower_node_ref(&mut self, node_ref: NodeRef) {
+    fn lower_node_ref(&mut self, node_ref: NodeRef, scope_id: ScopeId) {
         // Get the node data first to avoid borrowing issues
         let node_kind = self.ast.get_node(node_ref).kind.clone();
         let node_span = self.ast.get_node(node_ref).span;
@@ -198,12 +197,12 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         match node_kind {
             NodeKind::TranslationUnit(nodes) => {
                 for child_ref in nodes {
-                    self.lower_node_ref(child_ref);
+                    self.lower_node_ref(child_ref, ScopeId::GLOBAL);
                 }
             }
 
             NodeKind::Function(function_data) => {
-                self.lower_function(&function_data, node_span);
+                self.lower_function(node_ref, &function_data, node_span);
             }
 
             NodeKind::FunctionDef(_) => {
@@ -217,7 +216,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             }
 
             NodeKind::TypedefDecl(typedef_decl) => {
-                self.lower_typedef_declaration(&typedef_decl, node_span);
+                self.lower_typedef_declaration(scope_id, &typedef_decl, node_span);
             }
 
             NodeKind::RecordDecl(record_decl) => {
@@ -225,56 +224,56 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             }
 
             NodeKind::VarDecl(var_decl) => {
-                self.lower_var_declaration(&var_decl, node_span);
+                self.lower_var_declaration(scope_id, &var_decl, node_span);
             }
 
             NodeKind::While(while_stmt) => {
-                self.lower_while_statement(&while_stmt, node_span);
+                self.lower_while_statement(scope_id, &while_stmt, node_span);
             }
 
             NodeKind::DoWhile(body_ref, condition_ref) => {
-                self.lower_do_while_statement(body_ref, condition_ref, node_span);
+                self.lower_do_while_statement(scope_id, body_ref, condition_ref, node_span);
             }
 
             // Handle compound statements by processing their statements
             NodeKind::CompoundStatement(nodes) => {
-                self.lower_compound_statement(&nodes);
+                self.lower_compound_statement(node_ref, &nodes);
             }
 
             // Handle declaration lists by processing each declaration
             NodeKind::DeclarationList(nodes) => {
                 for child_ref in nodes {
-                    self.lower_node_ref(child_ref);
+                    self.lower_node_ref(child_ref, scope_id);
                 }
             }
 
             // For other node types, try to lower as statement
             _ => {
-                self.try_lower_as_statement(node_ref);
+                self.try_lower_as_statement(scope_id, node_ref);
             }
         }
     }
 
     /// Try to lower a node as a statement
-    fn try_lower_as_statement(&mut self, node_ref: NodeRef) {
+    fn try_lower_as_statement(&mut self, scope_id: ScopeId, node_ref: NodeRef) {
         // Get the node data first to avoid borrowing issues
         let node = self.ast.get_node(node_ref);
 
         match node.kind {
             NodeKind::Return(expr) => {
-                self.lower_return_statement(&expr, node.span);
+                self.lower_return_statement(scope_id, &expr, node.span);
             }
             NodeKind::Goto(label, _) => {
                 self.lower_goto_statement(label, node.span);
             }
             NodeKind::Label(label, statement, _) => {
-                self.lower_label_statement(label, statement, node.span);
+                self.lower_label_statement(scope_id, label, statement, node.span);
             }
             NodeKind::If(if_stmt) => {
-                self.lower_if_statement(&if_stmt, node.span);
+                self.lower_if_statement(scope_id, &if_stmt, node.span);
             }
             NodeKind::ExpressionStatement(Some(expr_ref)) => {
-                self.lower_expression(expr_ref);
+                self.lower_expression(scope_id, expr_ref);
             }
             _ => {
                 // For unsupported statement types, just continue
@@ -283,7 +282,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Two-pass approach for compound statements to handle goto/label resolution
-    fn lower_compound_statement(&mut self, nodes: &[NodeRef]) {
+    fn lower_compound_statement(&mut self, node_ref: NodeRef, nodes: &[NodeRef]) {
         debug!(
             "Processing compound statement with {} items using two-pass approach",
             nodes.len()
@@ -296,13 +295,11 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         }
 
         // Second pass: process all statements with proper scope management
-        self.symbol_table.push_scope();
+        let scope_id = self.ast.scope_of(node_ref);
 
         for &stmt_ref in nodes {
-            self.lower_node_ref(stmt_ref);
+            self.lower_node_ref(stmt_ref, scope_id);
         }
-
-        self.symbol_table.pop_scope();
     }
 
     /// Recursively collect all labels from a statement and its nested statements
@@ -387,7 +384,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Lower a function semantic node
-    fn lower_function(&mut self, function_data: &FunctionData, span: SourceSpan) {
+    fn lower_function(&mut self, node_ref: NodeRef, function_data: &FunctionData, span: SourceSpan) {
         debug!("Lowering function semantic node");
 
         // Get function name from symbol table entry
@@ -425,39 +422,41 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         self.current_block = Some(entry_block_id);
 
         // Push function scope for parameters and locals
-        let func_scope = self.symbol_table.push_scope();
-        debug!("Pushed function scope: {:?}", func_scope);
+        let scope_id = self.ast.scope_of(node_ref);
+        debug!("Pushed function scope: {:?}", scope_id);
 
         // Process function parameters and create locals for them
         // Skip parameters for main function
         if func_name.as_str() != "main" {
-            self.lower_semantic_function_parameters(function_data, span);
+            self.lower_semantic_function_parameters(scope_id, function_data, span);
         } else {
             debug!("Skipping parameters for main function");
         }
 
         // Process function body
-        self.lower_node_ref(function_data.body);
-
-        // Pop function scope
-        self.symbol_table.pop_scope();
+        self.lower_node_ref(function_data.body, scope_id);
 
         debug!("Completed function semantic node: {}", func_name);
     }
 
     /// Lower semantic function parameters from FunctionData
-    fn lower_semantic_function_parameters(&mut self, function_data: &FunctionData, span: SourceSpan) {
+    fn lower_semantic_function_parameters(
+        &mut self,
+        scope_id: ScopeId,
+        function_data: &FunctionData,
+        span: SourceSpan,
+    ) {
         debug!("Lowering semantic function parameters");
 
         debug!("Found {} semantic function parameters", function_data.params.len());
 
         for param in &function_data.params {
-            self.lower_semantic_function_parameter(param, span);
+            self.lower_semantic_function_parameter(scope_id, param, span);
         }
     }
 
     /// Lower a single semantic function parameter
-    fn lower_semantic_function_parameter(&mut self, param: &ParamDecl, span: SourceSpan) {
+    fn lower_semantic_function_parameter(&mut self, scope_id: ScopeId, param: &ParamDecl, span: SourceSpan) {
         debug!("Lowering semantic function parameter");
 
         // Get parameter information from the semantic data
@@ -470,8 +469,10 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         );
 
         // Check for redeclaration in current scope
-        if let Some((existing_entry, scope_id)) = self.symbol_table.lookup_symbol(param_name)
-            && scope_id == self.symbol_table.current_scope()
+        if let Some((existing_entry, from_scope_id)) =
+            self.symbol_table
+                .lookup_symbol_from_ns(param_name, scope_id, Namespace::Ordinary)
+            && from_scope_id == scope_id
         {
             // If we've already created a MIR local for this entry in this pass, it's a real redefinition
             if self.local_map.contains_key(&existing_entry) {
@@ -508,7 +509,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             },
             type_info: param_type,
             storage_class: None,
-            scope_id: self.symbol_table.current_scope(),
+            scope_id,
             def_span: span,
             def_state: DefinitionState::Defined,
             is_referenced: false,
@@ -520,18 +521,25 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Second pass: Process an initializer and emit assignment
-    fn process_initializer(&mut self, initializer: NodeRef, local_id: LocalId, var_name: &str, span: SourceSpan) {
+    fn process_initializer(
+        &mut self,
+        scope_id: ScopeId,
+        initializer: NodeRef,
+        local_id: LocalId,
+        var_name: &str,
+        span: SourceSpan,
+    ) {
         debug!("Processing initializer for variable '{}'", var_name);
 
         let init_node = self.ast.get_node(initializer);
         match init_node.kind.clone() {
             NodeKind::ListInitializer(designated_initializers) => {
                 // Process designated initializers (both positional and named)
-                self.process_designated_initializers(&designated_initializers, local_id, var_name, span);
+                self.process_designated_initializers(scope_id, &designated_initializers, local_id, var_name, span);
             }
             _ => {
                 // Lower the initializer expression to an operand
-                let init_operand = self.lower_expression(initializer);
+                let init_operand = self.lower_expression(scope_id, initializer);
 
                 // Emit assignment: local = initializer
                 self.emit_assignment(Place::Local(local_id), init_operand, span);
@@ -542,6 +550,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     /// Process designated initializers for struct/array initialization
     fn process_designated_initializers(
         &mut self,
+        scope_id: ScopeId,
         designated_initializers: &[DesignatedInitializer],
         local_id: LocalId,
         var_name: &str,
@@ -562,6 +571,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             if designated_init.designation.is_empty() {
                 // This is a positional initializer
                 self.process_positional_initializer(
+                    scope_id,
                     designated_init.initializer,
                     local_id,
                     var_name,
@@ -572,7 +582,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             } else {
                 // This is a designated initializer with explicit field/index
                 // Process named designated initializer
-                self.process_named_designated_initializer(designated_init, local_id, var_name, span);
+                self.process_named_designated_initializer(scope_id, designated_init, local_id, var_name, span);
             }
         }
     }
@@ -580,6 +590,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     /// Process a named designated initializer (with field names or array indices)
     fn process_named_designated_initializer(
         &mut self,
+        scope_id: ScopeId,
         designated_init: &DesignatedInitializer,
         local_id: LocalId,
         var_name: &str,
@@ -627,7 +638,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 }
                 Designator::ArrayIndex(index_expr) => {
                     // Handle array index designator
-                    let index_operand = self.lower_expression(*index_expr);
+                    let index_operand = self.lower_expression(scope_id, *index_expr);
                     current_place = Place::ArrayIndex(Box::new(current_place), Box::new(index_operand));
 
                     // Update current type to the element type
@@ -655,7 +666,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             }
             _ => {
                 // Lower the initializer expression to an operand
-                let init_operand = self.lower_expression(designated_init.initializer);
+                let init_operand = self.lower_expression(scope_id, designated_init.initializer);
 
                 // Emit assignment to the designated field: field = initializer
                 self.emit_assignment(current_place, init_operand, span);
@@ -666,6 +677,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     /// Process a positional initializer (no designation)
     fn process_positional_initializer(
         &mut self,
+        scope_id: ScopeId,
         initializer: NodeRef, // Initializer
         local_id: LocalId,
         var_name: &str,
@@ -686,7 +698,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             _ => {
                 // For simple positional initializers, we can use the existing logic
                 // but we need to handle struct/array member access
-                let init_operand = self.lower_expression(initializer);
+                let init_operand = self.lower_expression(scope_id, initializer);
 
                 // Get the type for the temporary local
                 let temp_type_id = self.get_int_type(); // For now, assume int type
@@ -711,6 +723,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     /// Process compound initializers for global variables
     fn process_global_compound_initializer(
         &mut self,
+        scope_id: ScopeId,
         initializer: NodeRef, // &Initializer
         var_name: NameId,
         _var_type_id: TypeId,
@@ -789,6 +802,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                                 };
 
                             if let Some(nested_const_id) = self.process_global_compound_initializer(
+                                scope_id,
                                 designated_init.initializer,
                                 var_name,
                                 field_type_id,
@@ -805,7 +819,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                         }
                         _ => {
                             // Lower the initializer expression to get the constant value
-                            let init_operand = self.lower_expression(designated_init.initializer);
+                            let init_operand = self.lower_expression(scope_id, designated_init.initializer);
 
                             match init_operand {
                                 Operand::Constant(const_id) => {
@@ -863,12 +877,15 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Lower a variable declaration (from semantic AST)
-    fn lower_var_declaration(&mut self, var_decl: &VarDeclData, span: SourceSpan) {
+    fn lower_var_declaration(&mut self, scope_id: ScopeId, var_decl: &VarDeclData, span: SourceSpan) {
         debug!("Lowering semantic var declaration for '{}'", var_decl.name);
 
         // Check for redeclaration
-        if let Some((existing_entry, scope_id)) = self.symbol_table.lookup_symbol(var_decl.name)
-            && scope_id == self.symbol_table.current_scope()
+        let sym = self
+            .symbol_table
+            .lookup_symbol_from_ns(var_decl.name, scope_id, Namespace::Ordinary);
+        if let Some((existing_entry, from_scope_id)) = sym
+            && from_scope_id == scope_id
         {
             // If we've already handled this in THIS pass (it has a MIR local or is a global we've seen),
             // it might be a real redefinition.
@@ -927,15 +944,19 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                     match init_node.kind.clone() {
                         NodeKind::ListInitializer(_) => {
                             // For compound initializers in global variables, we need to process them properly
-                            if let Some(struct_const_id) =
-                                self.process_global_compound_initializer(init, var_decl.name, mir_type_id, span)
-                            {
+                            if let Some(struct_const_id) = self.process_global_compound_initializer(
+                                scope_id,
+                                init,
+                                var_decl.name,
+                                mir_type_id,
+                                span,
+                            ) {
                                 initial_value_id = Some(struct_const_id);
                             }
                         }
                         _ => {
                             // Try to evaluate the initializer as a constant
-                            let init_operand = self.lower_expression(init);
+                            let init_operand = self.lower_expression(scope_id, init);
                             if let Operand::Constant(const_id) = init_operand {
                                 initial_value_id = Some(const_id);
                             }
@@ -967,7 +988,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 },
                 type_info: var_decl.ty,
                 storage_class: var_decl.storage,
-                scope_id: self.symbol_table.current_scope(),
+                scope_id,
                 def_span: span,
                 def_state,
                 is_referenced: false,
@@ -982,7 +1003,9 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
 
                     // If this is a new symbol (not merged), we may need to add it to MIR globals
                     // Check if this symbol already exists in the symbol table
-                    if let Some((existing_entry, _)) = self.symbol_table.lookup_symbol(var_decl.name)
+                    if let Some((existing_entry, _)) =
+                        self.symbol_table
+                            .lookup_symbol_from_ns(var_decl.name, scope_id, Namespace::Ordinary)
                         && existing_entry != entry_ref
                     {
                         // This is a new symbol, ensure it's in MIR globals
@@ -993,7 +1016,10 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                     // merge_global_symbol detected a redefinition error
                     // The error already contains the symbol name, but we need source spans for proper error reporting
                     // Find the existing symbol to get its definition span for error reporting
-                    if let Some((existing_entry, _)) = self.symbol_table.lookup_symbol(var_decl.name) {
+                    if let Some((existing_entry, _)) =
+                        self.symbol_table
+                            .lookup_symbol_from_ns(var_decl.name, scope_id, Namespace::Ordinary)
+                    {
                         let existing = self.symbol_table.get_symbol_entry(existing_entry);
                         self.report_error(SemanticError::Redefinition {
                             name: var_decl.name,
@@ -1014,13 +1040,10 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             debug!("Created semantic global '{}' with id {:?}", var_decl.name, global_id);
         } else {
             // Check if symbol entry already exists from previous pass
-            let existing_entry = self.symbol_table.lookup_symbol(var_decl.name).and_then(|(e, s)| {
-                if s == self.symbol_table.current_scope() {
-                    Some(e)
-                } else {
-                    None
-                }
-            });
+            let existing_entry = self
+                .symbol_table
+                .lookup_symbol_from_ns(var_decl.name, scope_id, Namespace::Ordinary)
+                .and_then(|(e, s)| if s == scope_id { Some(e) } else { None });
 
             // Create MIR local variable (inside function)
             let local_id = self.mir_builder.create_local(Some(var_decl.name), mir_type_id, false);
@@ -1045,7 +1068,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                     },
                     type_info: var_decl.ty,
                     storage_class: var_decl.storage,
-                    scope_id: self.symbol_table.current_scope(),
+                    scope_id,
                     def_span: span,
                     def_state,
                     is_referenced: false,
@@ -1059,7 +1082,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
 
             // Process initializer if present
             if let Some(initializer) = var_decl.init {
-                self.process_initializer(initializer, local_id, &var_decl.name.to_string(), span);
+                self.process_initializer(scope_id, initializer, local_id, &var_decl.name.to_string(), span);
             }
 
             debug!("Created semantic local '{}' with id {:?}", var_decl.name, local_id);
@@ -1067,9 +1090,12 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Lower a typedef declaration
-    fn lower_typedef_declaration(&mut self, typedef_decl: &TypedefDeclData, span: SourceSpan) {
+    fn lower_typedef_declaration(&mut self, scope_id: ScopeId, typedef_decl: &TypedefDeclData, span: SourceSpan) {
         // Check if typedef is already in symbol table (added during semantic lowering)
-        if let Some((existing_entry, _)) = self.symbol_table.lookup_symbol(typedef_decl.name) {
+        if let Some((existing_entry, _)) =
+            self.symbol_table
+                .lookup_symbol_from_ns(typedef_decl.name, scope_id, Namespace::Ordinary)
+        {
             let existing = self.symbol_table.get_symbol_entry(existing_entry);
             // If it's already a typedef with the same type, skip the redefinition error
             if matches!(existing.kind, SymbolKind::Typedef { .. }) {
@@ -1097,7 +1123,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             },
             type_info: typedef_decl.ty, // Typedef points to the aliased type
             storage_class: Some(StorageClass::Typedef),
-            scope_id: self.symbol_table.current_scope(),
+            scope_id,
             def_span: span,
             def_state: DefinitionState::Defined,
             is_referenced: false,
@@ -1128,7 +1154,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Lower an expression to an operand
-    fn lower_expression(&mut self, expr_ref: NodeRef) -> Operand {
+    fn lower_expression(&mut self, scope_id: ScopeId, expr_ref: NodeRef) -> Operand {
         match self.ast.get_node(expr_ref).kind.clone() {
             NodeKind::LiteralInt(val) => {
                 let const_id = self.create_constant(ConstValue::Int(val));
@@ -1214,7 +1240,10 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 for (global_id, global) in self.mir_builder.get_globals() {
                     if global.name == name {
                         // Try to find the type info from symbol table
-                        if let Some((entry_ref, _)) = self.symbol_table.lookup_symbol(name) {
+                        if let Some((entry_ref, _)) =
+                            self.symbol_table
+                                .lookup_symbol_from_ns(name, scope_id, Namespace::Ordinary)
+                        {
                             let entry = self.symbol_table.get_symbol_entry(entry_ref);
                             let current_node = self.ast.get_node(expr_ref);
                             current_node.resolved_type.set(Some(entry.type_info));
@@ -1225,7 +1254,10 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
 
                 // Fallback to searching all symbol entries and local map if needed
                 debug!("Fallback lookup for identifier '{}'", name);
-                if let Some((entry_ref, scope_id)) = self.symbol_table.lookup_symbol(name) {
+                if let Some((entry_ref, scope_id)) =
+                    self.symbol_table
+                        .lookup_symbol_from_ns(name, scope_id, Namespace::Ordinary)
+                {
                     let entry = self.symbol_table.get_symbol_entry(entry_ref);
                     debug!(
                         "Found identifier '{}' in scope {} with kind {:?}",
@@ -1298,12 +1330,12 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                         | BinaryOp::AssignRShift
                 ) {
                     // This is an assignment operation, handle it specially
-                    return self.lower_assignment_operation(op, left_ref, right_ref, expr_ref);
+                    return self.lower_assignment_operation(scope_id, op, left_ref, right_ref, expr_ref);
                 }
 
                 // Lower left and right operands
-                let left_operand = self.lower_expression(left_ref);
-                let right_operand = self.lower_expression(right_ref);
+                let left_operand = self.lower_expression(scope_id, left_ref);
+                let right_operand = self.lower_expression(scope_id, right_ref);
 
                 // Get the source location for error reporting
                 let node_span = self.ast.get_node(expr_ref).span;
@@ -1360,7 +1392,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 debug!("Lowering unary operation: {:?}", op);
 
                 // Lower the operand first
-                let operand = self.lower_expression(operand_ref);
+                let operand = self.lower_expression(scope_id, operand_ref);
                 let node_span = self.ast.get_node(expr_ref).span;
 
                 match op {
@@ -1483,7 +1515,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 // Evaluate function arguments first
                 let mut arg_operands = Vec::new();
                 for arg_ref in args {
-                    let arg_operand = self.lower_expression(arg_ref);
+                    let arg_operand = self.lower_expression(scope_id, arg_ref);
                     arg_operands.push(arg_operand);
                 }
 
@@ -1502,7 +1534,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                             "Function pointer call through member access: {}.{}() (is_arrow: {})",
                             field_name, field_name, is_arrow
                         );
-                        self.handle_function_pointer_call(*object_ref, *field_name, *is_arrow, arg_operands)
+                        self.handle_function_pointer_call(scope_id, *object_ref, *field_name, *is_arrow, arg_operands)
                     }
                     _ => {
                         debug!("Unsupported function call target: {:?}", func_node.kind);
@@ -1516,10 +1548,10 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 debug!("Lowering array index access expression");
 
                 // Lower the array expression
-                let array_operand = self.lower_expression(array_ref);
+                let array_operand = self.lower_expression(scope_id, array_ref);
 
                 // Lower the index expression
-                let index_operand = self.lower_expression(index_ref);
+                let index_operand = self.lower_expression(scope_id, index_ref);
 
                 // For array subscripting (a[b]), this is semantically equivalent to *(a + b)
                 // We need to create a proper Place that represents the array element access
@@ -1554,7 +1586,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 debug!("Lowering cast expression to type {:?}", type_ref);
 
                 // Lower the expression being cast
-                let expr_operand = self.lower_expression(expr_ref);
+                let expr_operand = self.lower_expression(scope_id, expr_ref);
 
                 // Convert the target type to MIR type
                 let target_type_id = self.lower_type_to_mir(type_ref);
@@ -1575,7 +1607,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 );
 
                 // Lower the object expression to get the base place
-                let object_operand = self.lower_expression(object_ref);
+                let object_operand = self.lower_expression(scope_id, object_ref);
 
                 // For member access (object.field or object->field), we need to create a proper Place
                 // that represents the struct field access. The result should be a Place that can be used as an lvalue.
@@ -1611,7 +1643,10 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                     // For identifiers, look up the symbol in the symbol table
                     if let NodeKind::Ident(name, _) = &object_node.kind {
                         debug!("Looking up symbol '{}' in symbol table", name);
-                        if let Some((entry_ref, scope_id)) = self.symbol_table.lookup_symbol(*name) {
+                        if let Some((entry_ref, scope_id)) =
+                            self.symbol_table
+                                .lookup_symbol_from_ns(*name, scope_id, Namespace::Ordinary)
+                        {
                             let entry = self.symbol_table.get_symbol_entry(entry_ref);
                             debug!(
                                 "Found symbol '{}' in scope {} with type {:?}",
@@ -1623,9 +1658,9 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                             Some(entry.type_info)
                         } else {
                             debug!("Symbol '{}' not found in symbol table", name);
-                            debug!("Current scope: {}", self.symbol_table.current_scope().get());
+                            debug!("Current scope: {}", scope_id.get());
                             // List all symbols in current scope for debugging
-                            let current_scope = self.symbol_table.get_scope(self.symbol_table.current_scope());
+                            let current_scope = self.symbol_table.get_scope(scope_id);
                             debug!(
                                 "Symbols in current scope: {:?}",
                                 current_scope.symbols.keys().collect::<Vec<_>>()
@@ -1741,7 +1776,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Lower a return statement
-    fn lower_return_statement(&mut self, expr: &Option<NodeRef>, _span: SourceSpan) {
+    fn lower_return_statement(&mut self, scope_id: ScopeId, expr: &Option<NodeRef>, _span: SourceSpan) {
         // Check if we're in a void function
         if let Some(current_func_id) = self.current_function
             && let Some(func) = self.mir_builder.get_functions().get(&current_func_id)
@@ -1755,7 +1790,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
 
         // For non-void functions, handle the return expression normally
         if let Some(expr_ref) = expr {
-            let operand = self.lower_expression(*expr_ref);
+            let operand = self.lower_expression(scope_id, *expr_ref);
             self.mir_builder.set_terminator(Terminator::Return(Some(operand)));
         } else {
             self.mir_builder.set_terminator(Terminator::Return(None));
@@ -1763,7 +1798,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Lower an if statement
-    fn lower_if_statement(&mut self, if_stmt: &IfStmt, _span: SourceSpan) {
+    fn lower_if_statement(&mut self, scope_id: ScopeId, if_stmt: &IfStmt, _span: SourceSpan) {
         debug!("Lowering if statement");
 
         // Create blocks for then and else branches
@@ -1775,7 +1810,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         };
 
         // Lower the condition expression to an operand
-        let cond_operand = self.lower_expression(if_stmt.condition);
+        let cond_operand = self.lower_expression(scope_id, if_stmt.condition);
 
         // Determine the block for the false case
         let false_block = if let Some(else_id) = else_block_id {
@@ -1790,14 +1825,14 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
 
         // Process the then branch
         self.mir_builder.set_current_block(then_block);
-        self.lower_node_ref(if_stmt.then_branch);
+        self.lower_node_ref(if_stmt.then_branch, scope_id);
         let then_block_has_terminator = self.mir_builder.current_block_has_terminator();
 
         // Process the else branch if it exists
         let else_block_has_terminator = if let Some(else_id) = else_block_id {
             self.mir_builder.set_current_block(else_id);
             if let Some(else_branch) = &if_stmt.else_branch {
-                self.lower_node_ref(*else_branch);
+                self.lower_node_ref(*else_branch, scope_id);
             }
             self.mir_builder.current_block_has_terminator()
         } else {
@@ -1844,7 +1879,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Lower a while statement
-    fn lower_while_statement(&mut self, while_stmt: &WhileStmt, _span: SourceSpan) {
+    fn lower_while_statement(&mut self, scope_id: ScopeId, while_stmt: &WhileStmt, _span: SourceSpan) {
         debug!("Lowering while statement");
 
         // Create blocks for condition check, body, and continuation
@@ -1860,7 +1895,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         self.current_block = Some(condition_block);
 
         // Lower the condition expression to an operand
-        let cond_operand = self.lower_expression(while_stmt.condition);
+        let cond_operand = self.lower_expression(scope_id, while_stmt.condition);
 
         // Set terminator for condition block: if condition is true, go to body; else go to continue
         self.mir_builder
@@ -1871,7 +1906,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         self.current_block = Some(body_block);
 
         // Process the body of the while loop
-        self.lower_node_ref(while_stmt.body);
+        self.lower_node_ref(while_stmt.body, scope_id);
 
         // After body execution, jump back to condition check
         if !self.mir_builder.current_block_has_terminator() {
@@ -1884,7 +1919,13 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Lower a do-while statement
-    fn lower_do_while_statement(&mut self, body_ref: NodeRef, condition_ref: NodeRef, _span: SourceSpan) {
+    fn lower_do_while_statement(
+        &mut self,
+        scope_id: ScopeId,
+        body_ref: NodeRef,
+        condition_ref: NodeRef,
+        _span: SourceSpan,
+    ) {
         debug!("Lowering do-while statement");
 
         // Create blocks for body, condition check, and continuation
@@ -1900,7 +1941,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         self.current_block = Some(body_block);
 
         // Process the body of the do-while loop
-        self.lower_node_ref(body_ref);
+        self.lower_node_ref(body_ref, scope_id);
 
         // After body execution, jump to condition check
         if !self.mir_builder.current_block_has_terminator() {
@@ -1912,7 +1953,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         self.current_block = Some(condition_block);
 
         // Lower the condition expression to an operand
-        let cond_operand = self.lower_expression(condition_ref);
+        let cond_operand = self.lower_expression(scope_id, condition_ref);
 
         // Set terminator for condition block: if condition is true, go back to body; else go to continue
         self.mir_builder
@@ -1926,6 +1967,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     /// Lower an assignment operation
     fn lower_assignment_operation(
         &mut self,
+        scope_id: ScopeId,
         op: BinaryOp,
         left_ref: NodeRef,
         right_ref: NodeRef,
@@ -1934,7 +1976,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         debug!("Lowering assignment operation: {:?}", op);
 
         // Lower the left-hand side to get the place to assign to
-        let left_operand = self.lower_expression(left_ref);
+        let left_operand = self.lower_expression(scope_id, left_ref);
 
         // For assignment operations, the left operand should be a place (variable, field access, etc.)
         // that we can assign to. We need to extract the Place from the Operand.
@@ -1951,7 +1993,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         };
 
         // Lower the right-hand side
-        let right_operand = self.lower_expression(right_ref);
+        let right_operand = self.lower_expression(scope_id, right_ref);
 
         // Get the source location for error reporting
         let node_span = self.ast.get_node(expr_ref).span;
@@ -2263,7 +2305,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Lower a label statement
-    fn lower_label_statement(&mut self, label: NameId, statement: NodeRef, _span: SourceSpan) {
+    fn lower_label_statement(&mut self, scope_id: ScopeId, label: NameId, statement: NodeRef, _span: SourceSpan) {
         // Get the existing block for this label (created in first pass)
         if let Some(&target_block_id) = self.label_map.get(&label) {
             // Switch to the existing block for the label's statement
@@ -2271,7 +2313,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             self.current_block = Some(target_block_id);
 
             // Process the statement that follows the label
-            self.lower_node_ref(statement);
+            self.lower_node_ref(statement, scope_id);
         } else {
             // This path should be unreachable. After the refactoring of `collect_labels_recursive`,
             // all labels, including consecutive ones, are mapped to a block in the first pass.
@@ -3022,6 +3064,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     /// Handle function pointer calls (e.g., v.fptr() or v->fptr())
     fn handle_function_pointer_call(
         &mut self,
+        scope_id: ScopeId,
         object_ref: NodeRef,
         field_name: NameId,
         is_arrow: bool,
@@ -3033,7 +3076,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         );
 
         // Lower the object expression to get the base place
-        let object_operand = self.lower_expression(object_ref);
+        let object_operand = self.lower_expression(scope_id, object_ref);
 
         // Create a place representing the function pointer field access
         let mut object_place = self.ensure_operand_is_place(object_operand);
@@ -3063,7 +3106,10 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             // For identifiers, look up the symbol in the symbol table
             if let NodeKind::Ident(name, _) = &object_node.kind {
                 debug!("Looking up symbol '{}' in symbol table", name);
-                if let Some((entry_ref, scope_id)) = self.symbol_table.lookup_symbol(*name) {
+                if let Some((entry_ref, scope_id)) =
+                    self.symbol_table
+                        .lookup_symbol_from_ns(*name, scope_id, Namespace::Ordinary)
+                {
                     let entry = self.symbol_table.get_symbol_entry(entry_ref);
                     debug!(
                         "Found symbol '{}' in scope {} with type {:?}",

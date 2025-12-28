@@ -198,8 +198,8 @@ fn test_source_manager_add_buffer() {
 #[test]
 fn test_line_map_empty() {
     let line_map = LineMap::new();
-    assert!(line_map.is_empty());
-    assert_eq!(line_map.len(), 0);
+    assert!(line_map.entries.is_empty());
+    assert_eq!(line_map.entries.len(), 0);
 }
 
 #[test]
@@ -208,8 +208,8 @@ fn test_line_map_add_entry() {
     let entry = LineDirective::new(10, 100, Some("test.c".to_string()));
     line_map.add_entry(entry);
 
-    assert!(!line_map.is_empty());
-    assert_eq!(line_map.len(), 1);
+    assert!(!line_map.entries.is_empty());
+    assert_eq!(line_map.entries.len(), 1);
 }
 
 #[test]
@@ -335,5 +335,5 @@ fn test_line_map_performance_many_lookups() {
     }
 
     // Test should complete quickly (binary search is O(log n))
-    assert!(line_map.len() == 100);
+    assert!(line_map.entries.len() == 100);
 }

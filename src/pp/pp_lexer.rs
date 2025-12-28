@@ -1,5 +1,7 @@
-use crate::source_manager::{SourceId, SourceLoc};
-use symbol_table::GlobalSymbol as Symbol;
+use crate::{
+    intern::StringId,
+    source_manager::{SourceId, SourceLoc},
+};
 
 // Packed token flags for preprocessor tokens
 bitflags::bitflags! {
@@ -65,10 +67,10 @@ pub enum PPTokenKind {
     Hash,
     HashHash, // # ##
     // Literals and identifiers
-    Identifier(Symbol),      // Interned identifier
-    StringLiteral(Symbol),   // Interned string literal
-    CharLiteral(u8, Symbol), // byte char value and raw text
-    Number(Symbol),          // Raw numeric literal text for parser
+    Identifier(StringId),      // Interned identifier
+    StringLiteral(StringId),   // Interned string literal
+    CharLiteral(u8, StringId), // byte char value and raw text
+    Number(StringId),          // Raw numeric literal text for parser
     // Special
     Eof,
     Eod,
@@ -964,7 +966,7 @@ impl PPLexer {
 
         let text = String::from_utf8(chars).unwrap();
 
-        let symbol = Symbol::new(&text);
+        let symbol = StringId::new(&text);
         let kind = PPTokenKind::Identifier(symbol);
 
         PPToken::text(kind, flags, SourceLoc::new(self.source_id, start_pos), &text)
@@ -990,7 +992,7 @@ impl PPLexer {
         }
 
         let text = String::from_utf8(chars).unwrap();
-        let symbol = Symbol::new(&text);
+        let symbol = StringId::new(&text);
 
         PPToken::text(
             PPTokenKind::Number(symbol),
@@ -1044,7 +1046,7 @@ impl PPLexer {
         }
 
         let text = String::from_utf8(chars).unwrap();
-        let symbol = Symbol::new(&text);
+        let symbol = StringId::new(&text);
 
         PPToken::text(
             PPTokenKind::StringLiteral(symbol),
@@ -1126,7 +1128,7 @@ impl PPLexer {
         };
 
         let text = String::from_utf8(chars).unwrap();
-        let symbol = Symbol::new(&text);
+        let symbol = StringId::new(&text);
 
         PPToken::new(
             PPTokenKind::CharLiteral(codepoint, symbol),

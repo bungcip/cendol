@@ -1,7 +1,7 @@
 use super::*;
 use crate::diagnostic::DiagnosticEngine;
+use crate::intern::StringId;
 use crate::source_manager::SourceManager;
-use symbol_table::GlobalSymbol as Symbol;
 
 /// Helper function to set up preprocessor testing
 fn setup_preprocessor_test(src: &str) -> Vec<PPToken> {
@@ -59,10 +59,10 @@ int x = TEN;
     // Expected kinds: Identifier("int"), Identifier("x"), Assign, Number("10"), Semicolon
     assert_token_kinds!(
         significant_tokens,
-        PPTokenKind::Identifier(Symbol::new("int")),
-        PPTokenKind::Identifier(Symbol::new("x")),
+        PPTokenKind::Identifier(StringId::new("int")),
+        PPTokenKind::Identifier(StringId::new("x")),
         PPTokenKind::Assign,
-        PPTokenKind::Number(Symbol::new("10")),
+        PPTokenKind::Number(StringId::new("10")),
         PPTokenKind::Semicolon
     );
 
@@ -86,16 +86,16 @@ int x = ADD(3, 4);
     // Expected: int, x, =, (, (, 3, ), +, (, 4, ), ), ;
     assert_token_kinds!(
         significant_tokens,
-        PPTokenKind::Identifier(Symbol::new("int")),
-        PPTokenKind::Identifier(Symbol::new("x")),
+        PPTokenKind::Identifier(StringId::new("int")),
+        PPTokenKind::Identifier(StringId::new("x")),
         PPTokenKind::Assign,
         PPTokenKind::LeftParen,
         PPTokenKind::LeftParen,
-        PPTokenKind::Number(Symbol::new("3")),
+        PPTokenKind::Number(StringId::new("3")),
         PPTokenKind::RightParen,
         PPTokenKind::Plus,
         PPTokenKind::LeftParen,
-        PPTokenKind::Number(Symbol::new("4")),
+        PPTokenKind::Number(StringId::new("4")),
         PPTokenKind::RightParen,
         PPTokenKind::RightParen,
         PPTokenKind::Semicolon
@@ -123,18 +123,18 @@ LOG("value=%d\n", 5);
     // Expected: const, char*, s, =, "hello_world", ;, printf, (, "value=%d\n", ,, 5, ), ;
     assert_token_kinds!(
         significant_tokens,
-        PPTokenKind::Identifier(Symbol::new("const")),
-        PPTokenKind::Identifier(Symbol::new("char")),
+        PPTokenKind::Identifier(StringId::new("const")),
+        PPTokenKind::Identifier(StringId::new("char")),
         PPTokenKind::Star,
-        PPTokenKind::Identifier(Symbol::new("s")),
+        PPTokenKind::Identifier(StringId::new("s")),
         PPTokenKind::Assign,
-        PPTokenKind::StringLiteral(Symbol::new("\"hello_world\"")),
+        PPTokenKind::StringLiteral(StringId::new("\"hello_world\"")),
         PPTokenKind::Semicolon,
-        PPTokenKind::Identifier(Symbol::new("printf")),
+        PPTokenKind::Identifier(StringId::new("printf")),
         PPTokenKind::LeftParen,
-        PPTokenKind::StringLiteral(Symbol::new("\"value=%d\\n\"")),
+        PPTokenKind::StringLiteral(StringId::new("\"value=%d\\n\"")),
         PPTokenKind::Comma,
-        PPTokenKind::Number(Symbol::new("5")),
+        PPTokenKind::Number(StringId::new("5")),
         PPTokenKind::RightParen,
         PPTokenKind::Semicolon
     );
@@ -171,10 +171,10 @@ int x = 0;
     // Since A is defined and B is not defined, it should take the #else branch
     assert_token_kinds!(
         significant_tokens,
-        PPTokenKind::Identifier(Symbol::new("int")),
-        PPTokenKind::Identifier(Symbol::new("x")),
+        PPTokenKind::Identifier(StringId::new("int")),
+        PPTokenKind::Identifier(StringId::new("x")),
         PPTokenKind::Assign,
-        PPTokenKind::Number(Symbol::new("1")),
+        PPTokenKind::Number(StringId::new("1")),
         PPTokenKind::Semicolon
     );
 
@@ -205,10 +205,10 @@ fn test_arithmetic_in_if_expression_and_elif() {
     // Since VAL is 8, VAL > 10 is false, VAL >= 8 is true
     assert_token_kinds!(
         significant_tokens,
-        PPTokenKind::Identifier(Symbol::new("int")),
-        PPTokenKind::Identifier(Symbol::new("x")),
+        PPTokenKind::Identifier(StringId::new("int")),
+        PPTokenKind::Identifier(StringId::new("x")),
         PPTokenKind::Assign,
-        PPTokenKind::Number(Symbol::new("8")),
+        PPTokenKind::Number(StringId::new("8")),
         PPTokenKind::Semicolon
     );
 
@@ -234,10 +234,10 @@ int x = X;
     // Since X is redefined from 1 to 2, the final value should be 2
     assert_token_kinds!(
         significant_tokens,
-        PPTokenKind::Identifier(Symbol::new("int")),
-        PPTokenKind::Identifier(Symbol::new("x")),
+        PPTokenKind::Identifier(StringId::new("int")),
+        PPTokenKind::Identifier(StringId::new("x")),
         PPTokenKind::Assign,
-        PPTokenKind::Number(Symbol::new("2")),
+        PPTokenKind::Number(StringId::new("2")),
         PPTokenKind::Semicolon
     );
 
@@ -266,11 +266,11 @@ const int a = __STDC__;
     // Expected: const, int, a, =, 1, ;
     assert_token_kinds!(
         significant_tokens,
-        PPTokenKind::Identifier(Symbol::new("const")),
-        PPTokenKind::Identifier(Symbol::new("int")),
-        PPTokenKind::Identifier(Symbol::new("a")),
+        PPTokenKind::Identifier(StringId::new("const")),
+        PPTokenKind::Identifier(StringId::new("int")),
+        PPTokenKind::Identifier(StringId::new("a")),
         PPTokenKind::Assign,
-        PPTokenKind::Number(Symbol::new("1")),
+        PPTokenKind::Number(StringId::new("1")),
         PPTokenKind::Semicolon
     );
 
@@ -316,10 +316,10 @@ int x = A;
     // A should expand to ID(ID(ID(1))) -> ID(ID(1)) -> ID(1) -> 1
     assert_token_kinds!(
         significant_tokens,
-        PPTokenKind::Identifier(Symbol::new("int")),
-        PPTokenKind::Identifier(Symbol::new("x")),
+        PPTokenKind::Identifier(StringId::new("int")),
+        PPTokenKind::Identifier(StringId::new("x")),
         PPTokenKind::Assign,
-        PPTokenKind::Number(Symbol::new("1")),
+        PPTokenKind::Number(StringId::new("1")),
         PPTokenKind::Semicolon
     );
 
@@ -346,15 +346,15 @@ int x = PASTE(foo, bar);
     // Expected: int, foobar, =, 1, ;, int, x, =, foobar, ;
     assert_token_kinds!(
         significant_tokens,
-        PPTokenKind::Identifier(Symbol::new("int")),
-        PPTokenKind::Identifier(Symbol::new("foobar")),
+        PPTokenKind::Identifier(StringId::new("int")),
+        PPTokenKind::Identifier(StringId::new("foobar")),
         PPTokenKind::Assign,
-        PPTokenKind::Number(Symbol::new("1")),
+        PPTokenKind::Number(StringId::new("1")),
         PPTokenKind::Semicolon,
-        PPTokenKind::Identifier(Symbol::new("int")),
-        PPTokenKind::Identifier(Symbol::new("x")),
+        PPTokenKind::Identifier(StringId::new("int")),
+        PPTokenKind::Identifier(StringId::new("x")),
         PPTokenKind::Assign,
-        PPTokenKind::Identifier(Symbol::new("foobar")),
+        PPTokenKind::Identifier(StringId::new("foobar")),
         PPTokenKind::Semicolon
     );
 
@@ -385,10 +385,10 @@ X;
     // Expected: int, x, =, 0, ;
     assert_token_kinds!(
         significant_tokens,
-        PPTokenKind::Identifier(Symbol::new("int")),
-        PPTokenKind::Identifier(Symbol::new("x")),
+        PPTokenKind::Identifier(StringId::new("int")),
+        PPTokenKind::Identifier(StringId::new("x")),
         PPTokenKind::Assign,
-        PPTokenKind::Number(Symbol::new("0")),
+        PPTokenKind::Number(StringId::new("0")),
         PPTokenKind::Semicolon
     );
 
@@ -445,10 +445,10 @@ int result = 42;
     // All conditionals should evaluate to false, so no #error should trigger
     assert_token_kinds!(
         significant_tokens,
-        PPTokenKind::Identifier(Symbol::new("int")),
-        PPTokenKind::Identifier(Symbol::new("result")),
+        PPTokenKind::Identifier(StringId::new("int")),
+        PPTokenKind::Identifier(StringId::new("result")),
         PPTokenKind::Assign,
-        PPTokenKind::Number(Symbol::new("42")),
+        PPTokenKind::Number(StringId::new("42")),
         PPTokenKind::Semicolon
     );
 }
@@ -508,15 +508,15 @@ int x = x(0);
     // Expected: int, x, =, (, (, 0, ), +, 1, ), ;
     assert_token_kinds!(
         significant_tokens,
-        PPTokenKind::Identifier(Symbol::new("int")),
-        PPTokenKind::Identifier(Symbol::new("x")),
+        PPTokenKind::Identifier(StringId::new("int")),
+        PPTokenKind::Identifier(StringId::new("x")),
         PPTokenKind::Assign,
         PPTokenKind::LeftParen,
         PPTokenKind::LeftParen,
-        PPTokenKind::Number(Symbol::new("0")),
+        PPTokenKind::Number(StringId::new("0")),
         PPTokenKind::RightParen,
         PPTokenKind::Plus,
-        PPTokenKind::Number(Symbol::new("1")),
+        PPTokenKind::Number(StringId::new("1")),
         PPTokenKind::RightParen,
         PPTokenKind::Semicolon
     );
@@ -534,14 +534,14 @@ int x = NULL;
     // Expected: int, x, =, (, void, *, ), 0, ), ;
     assert_token_kinds!(
         significant_tokens,
-        PPTokenKind::Identifier(Symbol::new("int")),
-        PPTokenKind::Identifier(Symbol::new("x")),
+        PPTokenKind::Identifier(StringId::new("int")),
+        PPTokenKind::Identifier(StringId::new("x")),
         PPTokenKind::Assign,
         PPTokenKind::LeftParen,
-        PPTokenKind::Identifier(Symbol::new("void")),
+        PPTokenKind::Identifier(StringId::new("void")),
         PPTokenKind::Star,
         PPTokenKind::RightParen,
-        PPTokenKind::Number(Symbol::new("0")),
+        PPTokenKind::Number(StringId::new("0")),
         PPTokenKind::RightParen,
         PPTokenKind::Semicolon
     );
@@ -570,15 +570,15 @@ int y = 2;
     // Expected tokens: int, x, =, 1, ;, int, y, =, 2, ;
     assert_token_kinds!(
         significant_tokens,
-        PPTokenKind::Identifier(Symbol::new("int")),
-        PPTokenKind::Identifier(Symbol::new("x")),
+        PPTokenKind::Identifier(StringId::new("int")),
+        PPTokenKind::Identifier(StringId::new("x")),
         PPTokenKind::Assign,
-        PPTokenKind::Number(Symbol::new("1")),
+        PPTokenKind::Number(StringId::new("1")),
         PPTokenKind::Semicolon,
-        PPTokenKind::Identifier(Symbol::new("int")),
-        PPTokenKind::Identifier(Symbol::new("y")),
+        PPTokenKind::Identifier(StringId::new("int")),
+        PPTokenKind::Identifier(StringId::new("y")),
         PPTokenKind::Assign,
-        PPTokenKind::Number(Symbol::new("2")),
+        PPTokenKind::Number(StringId::new("2")),
         PPTokenKind::Semicolon
     );
 
@@ -676,10 +676,10 @@ int x = P(foo,);
 
     assert_token_kinds!(
         significant_tokens,
-        PPTokenKind::Identifier(Symbol::new("int")),
-        PPTokenKind::Identifier(Symbol::new("x")),
+        PPTokenKind::Identifier(StringId::new("int")),
+        PPTokenKind::Identifier(StringId::new("x")),
         PPTokenKind::Assign,
-        PPTokenKind::Identifier(Symbol::new("foo")),
+        PPTokenKind::Identifier(StringId::new("foo")),
         PPTokenKind::Semicolon
     );
 }

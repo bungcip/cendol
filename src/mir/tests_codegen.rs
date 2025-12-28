@@ -1,6 +1,7 @@
 //! Tests for MIR to Cranelift IR lowering
 //!
 //! This module contains tests for the `MirToCraneliftLowerer` implementation.
+use crate::ast::NameId;
 use crate::driver::compiler::SemaOutput;
 use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer};
 use crate::mir::{
@@ -8,7 +9,6 @@ use crate::mir::{
     MirStmt, MirStmtId, MirType, Operand, Place, Terminator, TypeId,
 };
 use hashbrown::HashMap;
-use symbol_table::GlobalSymbol as Symbol;
 
 #[test]
 fn test_mir_to_cranelift_basic() {
@@ -36,7 +36,7 @@ fn test_store_statement_lowering() {
 
     let mut locals = HashMap::new();
     let local_id = LocalId::new(1).unwrap();
-    let local_x = Local::new(local_id, Some(Symbol::new("x")), int_type_id, false);
+    let local_x = Local::new(local_id, Some(NameId::new("x")), int_type_id, false);
     locals.insert(local_id, local_x);
 
     let mut statements = HashMap::new();
@@ -54,7 +54,7 @@ fn test_store_statement_lowering() {
 
     let mut functions = HashMap::new();
     let func_id = MirFunctionId::new(1).unwrap();
-    let mut main_func = MirFunction::new(func_id, Symbol::new("main"), void_type_id);
+    let mut main_func = MirFunction::new(func_id, NameId::new("main"), void_type_id);
     main_func.locals.push(local_id);
     main_func.entry_block = entry_block_id;
     main_func.blocks.push(entry_block_id);
@@ -125,11 +125,11 @@ fn test_store_deref_pointer() {
     let local_p_id = LocalId::new(2).unwrap();
     locals.insert(
         local_x_id,
-        Local::new(local_x_id, Some(Symbol::new("x")), int_type_id, false),
+        Local::new(local_x_id, Some(NameId::new("x")), int_type_id, false),
     );
     locals.insert(
         local_p_id,
-        Local::new(local_p_id, Some(Symbol::new("p")), ptr_type_id, false),
+        Local::new(local_p_id, Some(NameId::new("p")), ptr_type_id, false),
     );
 
     let mut statements = HashMap::new();
@@ -170,7 +170,7 @@ fn test_store_deref_pointer() {
 
     let mut functions = HashMap::new();
     let func_id = MirFunctionId::new(1).unwrap();
-    let mut main_func = MirFunction::new(func_id, Symbol::new("main"), void_type_id);
+    let mut main_func = MirFunction::new(func_id, NameId::new("main"), void_type_id);
     main_func.locals.extend(vec![local_x_id, local_p_id]);
     main_func.entry_block = entry_block_id;
     main_func.blocks.push(entry_block_id);

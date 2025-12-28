@@ -9,7 +9,6 @@ use crate::diagnostic::ParseError;
 use crate::lexer::TokenKind;
 use crate::parser::declaration_core::parse_declaration_specifiers;
 use log::debug;
-use symbol_table::GlobalSymbol as Symbol;
 use thin_vec::{ThinVec, thin_vec};
 
 use super::Parser;
@@ -42,7 +41,7 @@ fn validate_declarator_combination(base: &Declarator, new_kind: &str, span: Sour
 }
 
 /// Parse declarator
-pub fn parse_declarator(parser: &mut Parser, initial_declarator: Option<Symbol>) -> Result<Declarator, ParseError> {
+pub fn parse_declarator(parser: &mut Parser, initial_declarator: Option<NameId>) -> Result<Declarator, ParseError> {
     debug!(
         "parse_declarator: starting at position {}, token: {:?}, initial_declarator: {:?}",
         parser.current_idx,
@@ -413,7 +412,7 @@ pub fn is_abstract_declarator_start(parser: &Parser) -> bool {
 }
 
 /// Extract the declared name from a declarator, if any
-pub fn get_declarator_name(declarator: &Declarator) -> Option<Symbol> {
+pub fn get_declarator_name(declarator: &Declarator) -> Option<NameId> {
     match declarator {
         Declarator::Identifier(name, _, _) => Some(*name),
         Declarator::Pointer(_, Some(inner)) => get_declarator_name(inner),

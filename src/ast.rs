@@ -69,8 +69,7 @@ impl Ast {
         }
     }
 
-    /// Replace a node in the AST and update parent references
-    /// Returns the reference to the new node
+    /// Replace a node content in the AST without changing reference
     pub(crate) fn replace_node(&mut self, old_node_ref: NodeRef, new_node: Node) -> NodeRef {
         // Replace the old node in the vector
         let old_index = (old_node_ref.get() - 1) as usize;

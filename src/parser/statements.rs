@@ -12,7 +12,6 @@ use crate::parser::declarator::parse_declarator;
 use crate::parser::utils::expr_patterns::parse_parenthesized_expr;
 use crate::source_manager::{SourceLoc, SourceSpan};
 use log::debug;
-use symbol_table::GlobalSymbol as Symbol;
 use thin_vec::thin_vec;
 
 /// Parse a statement
@@ -61,6 +60,7 @@ pub fn parse_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 pub fn parse_compound_statement(parser: &mut Parser) -> Result<(NodeRef, SourceLoc), ParseError> {
     let token = parser.expect(TokenKind::LeftBrace)?;
     let start_loc = token.span.start;
+    let dummy = parser.push_dummy();
 
     let mut block_items = Vec::new();
 
@@ -135,7 +135,7 @@ pub fn parse_compound_statement(parser: &mut Parser) -> Result<(NodeRef, SourceL
 
     let span = SourceSpan::new(start_loc, end_loc);
 
-    let node = parser.push_node(NodeKind::CompoundStatement(block_items), span);
+    let node = parser.replace_node(dummy, NodeKind::CompoundStatement(block_items), span);
     Ok((node, end_loc))
 }
 
@@ -430,7 +430,7 @@ fn parse_default_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 }
 
 /// Parse label statement
-fn parse_label_statement(parser: &mut Parser, label_symbol: Symbol) -> Result<NodeRef, ParseError> {
+fn parse_label_statement(parser: &mut Parser, label_symbol: NameId) -> Result<NodeRef, ParseError> {
     let token = parser.advance().unwrap(); // consume the identifier
     let start_loc = token.span.start;
 

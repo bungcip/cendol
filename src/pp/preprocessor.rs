@@ -1,4 +1,5 @@
 use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
+use crate::intern::StringId;
 use crate::lang_options::LangOptions;
 use crate::source_manager::{SourceId, SourceLoc, SourceManager, SourceSpan};
 use chrono::{DateTime, Datelike, Timelike, Utc};
@@ -8,7 +9,6 @@ use std::collections::HashSet;
 use crate::pp::interpreter::Interpreter;
 use crate::pp::{PPLexer, PPToken, PPTokenFlags, PPTokenKind};
 use std::path::{Path, PathBuf};
-use symbol_table::GlobalSymbol as Symbol;
 
 /// Preprocessor directive kinds
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,20 +31,20 @@ pub enum DirectiveKind {
 /// Table of pre-interned preprocessor directive names for O(1) keyword recognition
 #[derive(Clone)]
 pub struct DirectiveKeywordTable {
-    define: Symbol,
-    undef: Symbol,
-    include: Symbol,
-    if_: Symbol,
-    ifdef: Symbol,
-    ifndef: Symbol,
-    elif: Symbol,
-    else_: Symbol,
-    endif: Symbol,
-    line: Symbol,
-    pragma: Symbol,
-    error: Symbol,
-    warning: Symbol,
-    defined: Symbol, // For the defined operator in expressions
+    define: StringId,
+    undef: StringId,
+    include: StringId,
+    if_: StringId,
+    ifdef: StringId,
+    ifndef: StringId,
+    elif: StringId,
+    else_: StringId,
+    endif: StringId,
+    line: StringId,
+    pragma: StringId,
+    error: StringId,
+    warning: StringId,
+    defined: StringId, // For the defined operator in expressions
 }
 
 impl Default for DirectiveKeywordTable {
@@ -56,24 +56,24 @@ impl Default for DirectiveKeywordTable {
 impl DirectiveKeywordTable {
     pub fn new() -> Self {
         DirectiveKeywordTable {
-            define: Symbol::new("define"),
-            undef: Symbol::new("undef"),
-            include: Symbol::new("include"),
-            if_: Symbol::new("if"),
-            ifdef: Symbol::new("ifdef"),
-            ifndef: Symbol::new("ifndef"),
-            elif: Symbol::new("elif"),
-            else_: Symbol::new("else"),
-            endif: Symbol::new("endif"),
-            line: Symbol::new("line"),
-            pragma: Symbol::new("pragma"),
-            error: Symbol::new("error"),
-            warning: Symbol::new("warning"),
-            defined: Symbol::new("defined"),
+            define: StringId::new("define"),
+            undef: StringId::new("undef"),
+            include: StringId::new("include"),
+            if_: StringId::new("if"),
+            ifdef: StringId::new("ifdef"),
+            ifndef: StringId::new("ifndef"),
+            elif: StringId::new("elif"),
+            else_: StringId::new("else"),
+            endif: StringId::new("endif"),
+            line: StringId::new("line"),
+            pragma: StringId::new("pragma"),
+            error: StringId::new("error"),
+            warning: StringId::new("warning"),
+            defined: StringId::new("defined"),
         }
     }
 
-    pub fn is_directive(&self, symbol: Symbol) -> Option<DirectiveKind> {
+    pub fn is_directive(&self, symbol: StringId) -> Option<DirectiveKind> {
         if symbol == self.define {
             Some(DirectiveKind::Define)
         } else if symbol == self.undef {
@@ -106,7 +106,7 @@ impl DirectiveKeywordTable {
     }
 
     /// Get the interned symbol for the "defined" operator
-    pub fn defined_symbol(&self) -> Symbol {
+    pub fn defined_symbol(&self) -> StringId {
         self.defined
     }
 }
@@ -130,8 +130,8 @@ pub struct MacroInfo {
     pub location: SourceLoc,
     pub flags: MacroFlags, // Packed boolean flags
     pub tokens: Vec<PPToken>,
-    pub parameter_list: Vec<Symbol>,
-    pub variadic_arg: Option<Symbol>,
+    pub parameter_list: Vec<StringId>,
+    pub variadic_arg: Option<StringId>,
 }
 
 /// Represents conditional compilation state
@@ -269,7 +269,7 @@ pub struct Preprocessor<'src> {
     directive_keywords: DirectiveKeywordTable,
 
     // Macro management
-    macros: HashMap<Symbol, MacroInfo>,
+    macros: HashMap<StringId, MacroInfo>,
 
     // Include management
     once_included: HashSet<SourceId>,
@@ -438,7 +438,7 @@ impl<'src> Preprocessor<'src> {
         self.define_builtin_macro(
             "__STDC__",
             vec![PPToken::new(
-                PPTokenKind::Number(Symbol::new("1")),
+                PPTokenKind::Number(StringId::new("1")),
                 PPTokenFlags::empty(),
                 SourceLoc::builtin(),
                 1,
@@ -449,7 +449,7 @@ impl<'src> Preprocessor<'src> {
             self.define_builtin_macro(
                 "__STDC_VERSION__",
                 vec![PPToken::new(
-                    PPTokenKind::Number(Symbol::new("201112")),
+                    PPTokenKind::Number(StringId::new("201112")),
                     PPTokenFlags::empty(),
                     SourceLoc::builtin(),
                     6,
@@ -458,7 +458,7 @@ impl<'src> Preprocessor<'src> {
             self.define_builtin_macro(
                 "__STDC_HOSTED__",
                 vec![PPToken::new(
-                    PPTokenKind::Number(Symbol::new("1")),
+                    PPTokenKind::Number(StringId::new("1")),
                     PPTokenFlags::empty(),
                     SourceLoc::builtin(),
                     1,
@@ -467,7 +467,7 @@ impl<'src> Preprocessor<'src> {
             self.define_builtin_macro(
                 "__STDC_MB_MIGHT_NEQ_WC__",
                 vec![PPToken::new(
-                    PPTokenKind::Number(Symbol::new("1")),
+                    PPTokenKind::Number(StringId::new("1")),
                     PPTokenFlags::empty(),
                     SourceLoc::builtin(),
                     1,
@@ -476,7 +476,7 @@ impl<'src> Preprocessor<'src> {
             self.define_builtin_macro(
                 "__STDC_IEC_559__",
                 vec![PPToken::new(
-                    PPTokenKind::Number(Symbol::new("1")),
+                    PPTokenKind::Number(StringId::new("1")),
                     PPTokenFlags::empty(),
                     SourceLoc::builtin(),
                     1,
@@ -485,7 +485,7 @@ impl<'src> Preprocessor<'src> {
             self.define_builtin_macro(
                 "__STDC_IEC_559_COMPLEX__",
                 vec![PPToken::new(
-                    PPTokenKind::Number(Symbol::new("1")),
+                    PPTokenKind::Number(StringId::new("1")),
                     PPTokenFlags::empty(),
                     SourceLoc::builtin(),
                     1,
@@ -494,7 +494,7 @@ impl<'src> Preprocessor<'src> {
             self.define_builtin_macro(
                 "__STDC_ISO_10646__",
                 vec![PPToken::new(
-                    PPTokenKind::Number(Symbol::new("201103L")),
+                    PPTokenKind::Number(StringId::new("201103L")),
                     PPTokenFlags::empty(),
                     SourceLoc::builtin(),
                     7,
@@ -506,9 +506,9 @@ impl<'src> Preprocessor<'src> {
         // Define va_start as function-like macro expanding to va_start
         self.define_builtin_function_macro(
             "va_start",
-            vec![Symbol::new("ap"), Symbol::new("param")],
+            vec![StringId::new("ap"), StringId::new("param")],
             vec![PPToken::new(
-                PPTokenKind::Identifier(Symbol::new("va_start")),
+                PPTokenKind::Identifier(StringId::new("va_start")),
                 PPTokenFlags::empty(),
                 SourceLoc::builtin(),
                 7,
@@ -517,9 +517,9 @@ impl<'src> Preprocessor<'src> {
         // Define va_end as function-like macro expanding to va_end
         self.define_builtin_function_macro(
             "va_end",
-            vec![Symbol::new("ap")],
+            vec![StringId::new("ap")],
             vec![PPToken::new(
-                PPTokenKind::Identifier(Symbol::new("va_end")),
+                PPTokenKind::Identifier(StringId::new("va_end")),
                 PPTokenFlags::empty(),
                 SourceLoc::builtin(),
                 6,
@@ -528,9 +528,9 @@ impl<'src> Preprocessor<'src> {
         // Define va_arg as function-like macro expanding to va_arg so the parser can detect it
         self.define_builtin_function_macro(
             "va_arg",
-            vec![Symbol::new("ap"), Symbol::new("type")],
+            vec![StringId::new("ap"), StringId::new("type")],
             vec![PPToken::new(
-                PPTokenKind::Identifier(Symbol::new("va_arg")),
+                PPTokenKind::Identifier(StringId::new("va_arg")),
                 PPTokenFlags::empty(),
                 SourceLoc::builtin(),
                 6,
@@ -540,7 +540,7 @@ impl<'src> Preprocessor<'src> {
 
     /// Define a built-in macro
     fn define_builtin_macro(&mut self, name: &str, tokens: Vec<PPToken>) {
-        let symbol = Symbol::new(name);
+        let symbol = StringId::new(name);
         let macro_info = MacroInfo {
             location: SourceLoc::builtin(),
             flags: MacroFlags::BUILTIN,
@@ -552,8 +552,8 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Define a built-in function-like macro
-    fn define_builtin_function_macro(&mut self, name: &str, params: Vec<Symbol>, tokens: Vec<PPToken>) {
-        let symbol = Symbol::new(name);
+    fn define_builtin_function_macro(&mut self, name: &str, params: Vec<StringId>, tokens: Vec<PPToken>) {
+        let symbol = StringId::new(name);
         let macro_info = MacroInfo {
             location: SourceLoc::builtin(),
             flags: MacroFlags::BUILTIN | MacroFlags::FUNCTION_LIKE,
@@ -567,7 +567,7 @@ impl<'src> Preprocessor<'src> {
     /// Tokenize a string into PP tokens (simplified)
     fn tokenize_string(&self, s: &str) -> Vec<PPToken> {
         vec![PPToken::new(
-            PPTokenKind::StringLiteral(Symbol::new(s)),
+            PPTokenKind::StringLiteral(StringId::new(s)),
             PPTokenFlags::empty(),
             SourceLoc::builtin(),
             s.len() as u16,
@@ -575,12 +575,12 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Check if a macro is defined
-    pub fn is_macro_defined(&self, symbol: &Symbol) -> bool {
+    pub fn is_macro_defined(&self, symbol: &StringId) -> bool {
         self.macros.contains_key(symbol)
     }
 
     /// Get the interned symbol for the "defined" operator
-    pub fn defined_symbol(&self) -> Symbol {
+    pub fn defined_symbol(&self) -> StringId {
         self.directive_keywords.defined_symbol()
     }
 
@@ -636,7 +636,7 @@ impl<'src> Preprocessor<'src> {
                                 1
                             };
                             let line_str = line.to_string();
-                            let line_symbol = Symbol::new(&line_str);
+                            let line_symbol = StringId::new(&line_str);
                             result_tokens.push(PPToken::new(
                                 PPTokenKind::Number(line_symbol),
                                 PPTokenFlags::empty(),
@@ -1006,7 +1006,7 @@ impl<'src> Preprocessor<'src> {
                                 }
                                 PPTokenKind::Ellipsis => {
                                     flags |= MacroFlags::GNU_VARARGS;
-                                    variadic = Some(Symbol::new("__VA_ARGS__"));
+                                    variadic = Some(StringId::new("__VA_ARGS__"));
                                     let rparen = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
                                     if rparen.kind != PPTokenKind::RightParen {
                                         return Err(PPError::InvalidMacroParameter {
@@ -1635,7 +1635,7 @@ impl<'src> Preprocessor<'src> {
     fn expand_object_macro(
         &mut self,
         macro_info: &MacroInfo,
-        symbol: &Symbol,
+        symbol: &StringId,
         _token: &PPToken,
     ) -> Result<Vec<PPToken>, PPError> {
         // For Level B: Create a virtual buffer containing the replacement text
@@ -1674,7 +1674,7 @@ impl<'src> Preprocessor<'src> {
     fn expand_function_macro(
         &mut self,
         macro_info: &MacroInfo,
-        symbol: &Symbol,
+        symbol: &StringId,
         _token: &PPToken,
     ) -> Result<Vec<PPToken>, PPError> {
         // Parse arguments from lexer
@@ -1961,7 +1961,7 @@ impl<'src> Preprocessor<'src> {
         result.push('"');
 
         Ok(PPToken::new(
-            PPTokenKind::StringLiteral(Symbol::new(&result)),
+            PPTokenKind::StringLiteral(StringId::new(&result)),
             PPTokenFlags::empty(),
             location,
             result.len() as u16,
@@ -1994,7 +1994,7 @@ impl<'src> Preprocessor<'src> {
         // Try to lex the pasted text as a single token
         // For simplicity, we'll create an identifier token
         // In a full implementation, this would need proper lexing
-        let symbol = Symbol::new(&pasted_text);
+        let symbol = StringId::new(&pasted_text);
 
         Ok(vec![PPToken::new(
             PPTokenKind::Identifier(symbol),
@@ -2020,7 +2020,7 @@ impl<'src> Preprocessor<'src> {
                     1
                 };
                 let line_str = line.to_string();
-                let line_symbol = Symbol::new(&line_str);
+                let line_symbol = StringId::new(&line_str);
                 let number_token = PPToken::new(
                     PPTokenKind::Number(line_symbol),
                     PPTokenFlags::empty(),

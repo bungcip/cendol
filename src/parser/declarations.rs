@@ -19,6 +19,8 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let trx = parser.start_transaction();
     let start_loc = trx.parser.current_token_span()?.start;
 
+    let dummy = trx.parser.push_dummy();
+
     debug!(
         "parse_declaration: starting at position {}, token {:?}",
         trx.parser.current_idx,
@@ -243,7 +245,9 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         init_declarators,
     };
 
-    let node = trx.parser.push_node(NodeKind::Declaration(declaration_data), span);
+    let node = trx
+        .parser
+        .replace_node(dummy, NodeKind::Declaration(declaration_data), span);
     debug!(
         "parse_declaration: successfully parsed declaration, node_id={}",
         node.get()
@@ -255,6 +259,7 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 /// Parse function definition
 pub fn parse_function_definition(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let start_loc = parser.current_token()?.span.start;
+    let dummy = parser.push_dummy();
 
     // Parse declaration specifiers
     let specifiers = parse_declaration_specifiers(parser)?;
@@ -273,7 +278,7 @@ pub fn parse_function_definition(parser: &mut Parser) -> Result<NodeRef, ParseEr
         body,
     };
 
-    let node = parser.push_node(NodeKind::FunctionDef(function_def), span);
+    let node = parser.replace_node(dummy, NodeKind::FunctionDef(function_def), span);
     Ok(node)
 }
 
@@ -287,7 +292,7 @@ pub fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError
     const MAX_ITERATIONS: usize = 1000; // Prevent infinite loops
 
     // TU must be placed as first node so reserve it place with dummy node before placing it last
-    let dummy = parser.push_node(NodeKind::Dummy, SourceSpan::empty());
+    let dummy = parser.push_dummy();
 
     while let Some(token) = parser.try_current_token() {
         if token.kind == TokenKind::EndOfFile {

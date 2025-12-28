@@ -2,7 +2,6 @@ use super::*;
 use crate::driver::CompilerDriver;
 use crate::driver::cli::CompileConfig;
 use crate::driver::compiler::CompilePhase;
-use symbol_table::GlobalSymbol as Symbol;
 
 /// Helper function to test lexing from string to TokenKind
 /// This tests the full pipeline: string -> PPToken -> TokenKind
@@ -51,7 +50,7 @@ mod tests {
         ];
 
         for keyword in keywords {
-            let symbol = Symbol::new(keyword);
+            let symbol = StringId::new(keyword);
             let expected_kind = super::is_keyword(symbol).unwrap_or_else(|| panic!("{} should be a keyword", keyword));
 
             let token_kinds = setup_lexer(keyword);
@@ -190,8 +189,8 @@ mod tests {
 
         // String literals
         let string_literals = vec![
-            ("\"hello\"", TokenKind::StringLiteral(Symbol::new("\"hello\""))),
-            ("\"world\\n\"", TokenKind::StringLiteral(Symbol::new("\"world\\n\""))),
+            ("\"hello\"", TokenKind::StringLiteral(StringId::new("\"hello\""))),
+            ("\"world\\n\"", TokenKind::StringLiteral(StringId::new("\"world\\n\""))),
         ];
 
         for (text, expected_kind) in string_literals {
@@ -206,7 +205,7 @@ mod tests {
         let identifiers = vec!["variable", "my_var", "_private", "var123", "a", "_"];
 
         for ident in identifiers {
-            let symbol = Symbol::new(ident);
+            let symbol = StringId::new(ident);
             let token_kinds = setup_lexer(ident);
             assert_eq!(token_kinds.len(), 1, "Expected 1 token for identifier: {}", ident);
             assert_eq!(

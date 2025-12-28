@@ -11,7 +11,8 @@ use hashbrown::HashMap;
 use serde::Serialize;
 use std::fmt;
 use std::num::NonZeroU32;
-use symbol_table::GlobalSymbol as Symbol;
+
+use crate::ast::NameId;
 
 pub mod codegen;
 pub mod validation;
@@ -69,7 +70,7 @@ impl MirModule {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MirFunction {
     pub id: MirFunctionId,
-    pub name: Symbol,
+    pub name: NameId,
     pub return_type: TypeId,
     pub params: Vec<LocalId>,
     pub locals: Vec<LocalId>,
@@ -78,7 +79,7 @@ pub struct MirFunction {
 }
 
 impl MirFunction {
-    pub fn new(id: MirFunctionId, name: Symbol, return_type: TypeId) -> Self {
+    pub fn new(id: MirFunctionId, name: NameId, return_type: TypeId) -> Self {
         Self {
             id,
             name,
@@ -239,16 +240,16 @@ pub enum MirType {
         params: Vec<TypeId>,
     },
     Struct {
-        name: Symbol,
-        fields: Vec<(Symbol, TypeId)>,
+        name: NameId,
+        fields: Vec<(NameId, TypeId)>,
     },
     Union {
-        name: Symbol,
-        fields: Vec<(Symbol, TypeId)>,
+        name: NameId,
+        fields: Vec<(NameId, TypeId)>,
     },
     Enum {
-        name: Symbol,
-        variants: Vec<(Symbol, i64)>,
+        name: NameId,
+        variants: Vec<(NameId, i64)>,
     },
 }
 
@@ -273,13 +274,13 @@ pub enum ConstValue {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Local {
     pub id: LocalId,
-    pub name: Option<Symbol>,
+    pub name: Option<NameId>,
     pub type_id: TypeId,
     pub is_param: bool,
 }
 
 impl Local {
-    pub fn new(id: LocalId, name: Option<Symbol>, type_id: TypeId, is_param: bool) -> Self {
+    pub fn new(id: LocalId, name: Option<NameId>, type_id: TypeId, is_param: bool) -> Self {
         Self {
             id,
             name,
@@ -293,14 +294,14 @@ impl Local {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Global {
     pub id: GlobalId,
-    pub name: Symbol,
+    pub name: NameId,
     pub type_id: TypeId,
     pub is_constant: bool,
     pub initial_value: Option<ConstValueId>,
 }
 
 impl Global {
-    pub fn new(id: GlobalId, name: Symbol, type_id: TypeId, is_constant: bool) -> Self {
+    pub fn new(id: GlobalId, name: NameId, type_id: TypeId, is_constant: bool) -> Self {
         Self {
             id,
             name,
@@ -356,7 +357,7 @@ impl MirBuilder {
     }
 
     /// Create a new local variable
-    pub fn create_local(&mut self, name: Option<Symbol>, type_id: TypeId, is_param: bool) -> LocalId {
+    pub fn create_local(&mut self, name: Option<NameId>, type_id: TypeId, is_param: bool) -> LocalId {
         let local_id = LocalId::new(self.next_local_id).unwrap();
         self.next_local_id += 1;
 
@@ -437,7 +438,7 @@ impl MirBuilder {
     }
 
     /// Create a new function
-    pub fn create_function(&mut self, name: Symbol, return_type: TypeId) -> MirFunctionId {
+    pub fn create_function(&mut self, name: NameId, return_type: TypeId) -> MirFunctionId {
         let func_id = MirFunctionId::new(self.module.functions.len() as u32 + 1).unwrap();
         let func = MirFunction::new(func_id, name, return_type);
 
@@ -458,7 +459,7 @@ impl MirBuilder {
     }
 
     /// Create a new global variable
-    pub fn create_global(&mut self, name: Symbol, type_id: TypeId, is_constant: bool) -> GlobalId {
+    pub fn create_global(&mut self, name: NameId, type_id: TypeId, is_constant: bool) -> GlobalId {
         let global_id = GlobalId::new(self.next_global_id).unwrap();
         self.next_global_id += 1;
 
@@ -472,7 +473,7 @@ impl MirBuilder {
     /// Create a new global variable with initial value
     pub fn create_global_with_init(
         &mut self,
-        name: Symbol,
+        name: NameId,
         type_id: TypeId,
         is_constant: bool,
         initial_value: Option<ConstValueId>,

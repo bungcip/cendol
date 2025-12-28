@@ -10,7 +10,6 @@ use crate::lexer::{Token, TokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
 use log::debug;
 use std::collections::HashSet;
-use symbol_table::GlobalSymbol as Symbol;
 
 pub mod declaration_core;
 pub mod declarations;
@@ -32,7 +31,7 @@ use expressions::parse_expression;
 #[derive(Debug)]
 pub struct TypeContext {
     /// Set of typedef names for disambiguation
-    typedef_names: HashSet<Symbol>,
+    typedef_names: HashSet<NameId>,
 }
 
 impl Default for TypeContext {
@@ -46,32 +45,32 @@ impl TypeContext {
     pub fn new() -> Self {
         let mut typedef_names = HashSet::new();
         // Add builtin typedefs
-        typedef_names.insert(Symbol::new("va_list"));
-        typedef_names.insert(Symbol::new("size_t"));
-        typedef_names.insert(Symbol::new("ptrdiff_t"));
-        typedef_names.insert(Symbol::new("int8_t"));
-        typedef_names.insert(Symbol::new("int16_t"));
-        typedef_names.insert(Symbol::new("int32_t"));
-        typedef_names.insert(Symbol::new("int64_t"));
-        typedef_names.insert(Symbol::new("uint8_t"));
-        typedef_names.insert(Symbol::new("uint16_t"));
-        typedef_names.insert(Symbol::new("uint32_t"));
-        typedef_names.insert(Symbol::new("uint64_t"));
-        typedef_names.insert(Symbol::new("intptr_t"));
-        typedef_names.insert(Symbol::new("uintptr_t"));
+        typedef_names.insert(NameId::new("va_list"));
+        typedef_names.insert(NameId::new("size_t"));
+        typedef_names.insert(NameId::new("ptrdiff_t"));
+        typedef_names.insert(NameId::new("int8_t"));
+        typedef_names.insert(NameId::new("int16_t"));
+        typedef_names.insert(NameId::new("int32_t"));
+        typedef_names.insert(NameId::new("int64_t"));
+        typedef_names.insert(NameId::new("uint8_t"));
+        typedef_names.insert(NameId::new("uint16_t"));
+        typedef_names.insert(NameId::new("uint32_t"));
+        typedef_names.insert(NameId::new("uint64_t"));
+        typedef_names.insert(NameId::new("intptr_t"));
+        typedef_names.insert(NameId::new("uintptr_t"));
 
         TypeContext { typedef_names }
     }
 
     /// Check if a symbol is a typedef name
-    pub fn is_type_name(&self, symbol: Symbol) -> bool {
+    pub fn is_type_name(&self, symbol: NameId) -> bool {
         let result = self.typedef_names.contains(&symbol);
         debug!("is_type_name({:?}) = {}", symbol, result);
         result
     }
 
     /// Add a typedef name
-    pub fn add_typedef(&mut self, symbol: Symbol) {
+    pub fn add_typedef(&mut self, symbol: NameId) {
         self.typedef_names.insert(symbol);
     }
 }
@@ -283,13 +282,13 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Extract the declared name from a declarator, if any
-    fn get_declarator_name(&self, declarator: &crate::ast::Declarator) -> Option<Symbol> {
+    fn get_declarator_name(&self, declarator: &crate::ast::Declarator) -> Option<NameId> {
         declarator::get_declarator_name(declarator)
     }
 
     /// Disambiguates between a type name and an identifier in ambiguous contexts.
     /// This is crucial for parsing C's "declaration-specifier-list" vs "expression" ambiguity.
-    fn is_type_name(&self, symbol: Symbol) -> bool {
+    fn is_type_name(&self, symbol: NameId) -> bool {
         self.type_context.is_type_name(symbol)
     }
 
@@ -317,8 +316,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         expressions::parse_compound_literal_from_type_and_start(self, type_ref, start_loc)
     }
 
-    /// parse and accept an identifier name, returning the symbol
-    fn accept_name(&mut self) -> Option<Symbol> {
+    /// parse and accept an identifier name
+    fn accept_name(&mut self) -> Option<NameId> {
         if let Some(token) = self.try_current_token()
             && let TokenKind::Identifier(symbol) = token.kind
         {
@@ -329,7 +328,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// expect and accept an identifier name, returning the symbol or error
-    fn expect_name(&mut self) -> Result<(Symbol, SourceSpan), ParseError> {
+    fn expect_name(&mut self) -> Result<(NameId, SourceSpan), ParseError> {
         let token = self.current_token()?;
         if let TokenKind::Identifier(symbol) = token.kind {
             self.advance();
@@ -344,7 +343,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Add a typedef name to the type context
-    pub fn add_typedef(&mut self, symbol: Symbol) {
+    pub fn add_typedef(&mut self, symbol: NameId) {
         debug!("add_typedef: adding {:?} to typedef_names", symbol);
         self.type_context.add_typedef(symbol);
     }
@@ -385,6 +384,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     /// Push a node to the AST and return its reference
     pub(crate) fn push_node(&mut self, kind: NodeKind, span: SourceSpan) -> NodeRef {
         self.ast.push_node(Node::new(kind, span))
+    }
+
+    pub(crate) fn push_dummy(&mut self) -> NodeRef {
+        self.push_node(NodeKind::Dummy, SourceSpan::empty())
     }
 
     /// Push a node to the AST and return its reference

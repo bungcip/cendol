@@ -1,18 +1,18 @@
+use crate::intern::StringId;
 use crate::pp::{PPToken, PPTokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
-use symbol_table::GlobalSymbol as Symbol;
 
 /// C11 token kinds for the lexical analyzer
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenKind {
     // === LITERALS ===
-    IntegerConstant(i64),  // Parsed integer literal value
-    FloatConstant(f64),    // Parsed float literal value
-    CharacterConstant(u8), // Byte value of character constant
-    StringLiteral(Symbol), // Interned string literal
+    IntegerConstant(i64),    // Parsed integer literal value
+    FloatConstant(f64),      // Parsed float literal value
+    CharacterConstant(u8),   // Byte value of character constant
+    StringLiteral(StringId), // Interned string literal
 
     // === IDENTIFIERS ===
-    Identifier(Symbol), // Interned identifier
+    Identifier(StringId), // Interned identifier
 
     // === KEYWORDS ===
     // Storage class specifiers
@@ -313,7 +313,7 @@ fn classify_punctuation(pp_token_kind: PPTokenKind) -> TokenKind {
 /// This is significantly faster than the previous `HashMap` implementation because
 /// the Rust compiler can optimize it into a perfect hash table or a more direct
 /// jump table, avoiding the overhead of runtime hashing and lookups.
-pub fn is_keyword(symbol: Symbol) -> Option<TokenKind> {
+pub fn is_keyword(symbol: StringId) -> Option<TokenKind> {
     match symbol.as_str() {
         // C11 keywords
         "auto" => Some(TokenKind::Auto),
@@ -396,7 +396,7 @@ impl<'src> Lexer<'src> {
     /// general-purpose parsing functions) with a single, direct parsing loop.
     /// This avoids intermediate allocations and improves performance by using
     /// checked arithmetic directly on the string's characters.
-    fn parse_c11_integer_literal(&self, text: Symbol) -> Result<i64, ()> {
+    fn parse_c11_integer_literal(&self, text: StringId) -> Result<i64, ()> {
         let text_str = text.as_str();
 
         // Use the existing, optimized suffix stripper to get the numeric part.
@@ -576,7 +576,7 @@ impl<'src> Lexer<'src> {
                     }
 
                     // Create a new symbol with the concatenated content and update the token.
-                    token.kind = TokenKind::StringLiteral(Symbol::new(format!("\"{}\"", content)));
+                    token.kind = TokenKind::StringLiteral(StringId::new(format!("\"{}\"", content)));
                     token.span.end = end_location;
                 }
                 // If the next token is not a string literal, we do nothing. The original,
@@ -594,7 +594,7 @@ impl<'src> Lexer<'src> {
     }
 
     /// Parse C11 floating-point literal syntax
-    fn parse_c11_float_literal(&self, text: Symbol) -> Result<f64, ()> {
+    fn parse_c11_float_literal(&self, text: StringId) -> Result<f64, ()> {
         let text_str = text.as_str();
 
         // C11 floating-point literal format:
@@ -733,7 +733,7 @@ impl<'src> Lexer<'src> {
     }
 
     /// Extract content from a string literal symbol, removing quotes
-    fn extract_string_content(symbol: &Symbol) -> Option<&str> {
+    fn extract_string_content(symbol: &StringId) -> Option<&str> {
         let s = symbol.as_str();
         if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
             Some(&s[1..s.len() - 1])

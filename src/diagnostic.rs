@@ -1,8 +1,8 @@
+use crate::ast::NameId;
 use crate::lexer::TokenKind;
 use crate::source_manager::{SourceManager, SourceSpan};
 use annotate_snippets::renderer::DecorStyle;
 use annotate_snippets::{AnnotationKind, Level, Renderer, Snippet};
-use symbol_table::GlobalSymbol as Symbol;
 
 /// Diagnostic severity levels
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -193,10 +193,10 @@ impl IntoDiagnostic for SemanticWarning {
 #[derive(Debug, thiserror::Error)]
 pub enum SemanticError {
     #[error("Undeclared identifier '{name}'")]
-    UndeclaredIdentifier { name: Symbol, span: SourceSpan },
+    UndeclaredIdentifier { name: NameId, span: SourceSpan },
     #[error("redefinition of '{name}'")]
     Redefinition {
-        name: Symbol,
+        name: NameId,
         first_def: SourceSpan,
         second_def: SourceSpan,
     },
@@ -245,7 +245,7 @@ impl SemanticError {
 #[derive(Debug, thiserror::Error)]
 pub enum SemanticWarning {
     #[error("Unused declaration '{name}'")]
-    UnusedDeclaration { name: Symbol, span: SourceSpan },
+    UnusedDeclaration { name: NameId, span: SourceSpan },
     #[error("Implicit conversion from {from_type} to {to_type}")]
     ImplicitConversion {
         from_type: String,

@@ -7,6 +7,7 @@
 //! - Assume MIR is valid
 //! - 1:1 mapping from MIR to Cranelift
 
+use crate::ast::NameId;
 use crate::driver::compiler::SemaOutput;
 use crate::mir::{
     BinaryOp, CallTarget, ConstValue, ConstValueId, Global, GlobalId, Local, LocalId, MirBlock, MirBlockId,
@@ -21,7 +22,6 @@ use cranelift_module::{DataDescription, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use hashbrown::HashMap;
 use hashbrown::HashSet;
-use symbol_table::GlobalSymbol as Symbol;
 use target_lexicon::Triple;
 
 /// emitted from codegen
@@ -717,7 +717,7 @@ impl MirToCraneliftLowerer {
         // If no functions were found, create a default main function
         if self.functions.is_empty() {
             let func_id = MirFunctionId::new(1).unwrap();
-            let mut func = MirFunction::new(func_id, Symbol::new("main"), TypeId::new(1).unwrap());
+            let mut func = MirFunction::new(func_id, NameId::new("main"), TypeId::new(1).unwrap());
 
             let entry_block_id = MirBlockId::new(1).unwrap();
             let mut entry_block = MirBlock::new(entry_block_id);

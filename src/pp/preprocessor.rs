@@ -1626,7 +1626,7 @@ impl<'src> Preprocessor<'src> {
     fn tokens_to_string(&self, tokens: &[PPToken]) -> String {
         let mut result = String::new();
         for token in tokens {
-            result.push_str(&token.get_text());
+            result.push_str(token.get_text());
         }
         result
     }

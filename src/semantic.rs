@@ -11,8 +11,10 @@
 //! for clean separation of concerns and maintainable code.
 
 pub mod ast_to_mir;
+pub mod name_resolver;
 pub mod resolver;
 pub mod symbol_table;
+
 #[cfg(test)]
 pub mod tests_lowering;
 #[cfg(test)]

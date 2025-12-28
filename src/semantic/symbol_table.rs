@@ -46,6 +46,7 @@ pub struct SymbolEntry {
 pub enum SymbolKind {
     Variable {
         is_global: bool,
+        #[allow(unused)]
         // Initializer might be an AST node or a constant value
         initializer: Option<NodeRef>,
     },
@@ -86,7 +87,7 @@ pub enum SymbolKind {
 #[derive(Debug, Error)]
 pub enum SymbolTableError {
     #[error("Invalid redefinition: symbol '{name}' cannot be redefined")]
-    InvalidRedefinition { name: NameId },
+    InvalidRedefinition { name: NameId, existing: SymbolEntryRef },
 }
 
 /// Scope ID for efficient scope references
@@ -315,7 +316,10 @@ impl SymbolTable {
                 _ => {
                     // Not both variables, this is a real redefinition
                     debug!("Symbol '{}' redefinition: different kinds", name);
-                    return Err(SymbolTableError::InvalidRedefinition { name });
+                    return Err(SymbolTableError::InvalidRedefinition {
+                        name,
+                        existing: existing_ref,
+                    });
                 }
             };
 
@@ -363,7 +367,10 @@ impl SymbolTable {
                 (DefinitionState::Defined, DefinitionState::Defined) => {
                     // Multiple actual definitions - error
                     debug!("Multiple definitions of '{}'", name);
-                    return Err(SymbolTableError::InvalidRedefinition { name });
+                    return Err(SymbolTableError::InvalidRedefinition {
+                        name,
+                        existing: existing_ref,
+                    });
                 }
 
                 (DefinitionState::Defined, _) => {

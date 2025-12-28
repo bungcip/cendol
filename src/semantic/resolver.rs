@@ -6,7 +6,7 @@
 
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
-use crate::semantic::symbol_table::DefinitionState;
+use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
 use crate::semantic::{Namespace, ScopeId, SymbolEntry, SymbolKind, SymbolTable};
 use crate::source_manager::SourceSpan;
 
@@ -844,7 +844,26 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
             storage: spec.storage,
             body: None,
         };
-        ctx.ast.push_node(Node::new(NodeKind::FunctionDecl(func_decl), span))
+        let node = ctx.ast.push_node(Node::new(NodeKind::FunctionDecl(func_decl), span));
+
+        let symbol_entry = SymbolEntry {
+            name: name.as_str().into(),
+            kind: SymbolKind::Function {
+                is_inline: false,
+                is_variadic: false,
+                parameters: Vec::new(), // FIXME: fill this...
+            },
+            type_info: final_ty,
+            storage_class: spec.storage,
+            scope_id: ctx.symbol_table.current_scope(),
+            def_span: span,
+            def_state: DefinitionState::DeclaredOnly,
+            is_referenced: false,
+            is_completed: true,
+        };
+        ctx.symbol_table.add_symbol(name, symbol_entry);
+
+        node
     } else {
         let var_decl = VarDeclData {
             name,
@@ -852,7 +871,48 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
             storage: spec.storage,
             init: init.initializer,
         };
-        ctx.ast.push_node(Node::new(NodeKind::VarDecl(var_decl), span))
+
+        let def_state = if var_decl.init.is_some() {
+            DefinitionState::Defined
+        } else {
+            DefinitionState::Tentative
+        };
+
+        let node = ctx.ast.push_node(Node::new(NodeKind::VarDecl(var_decl), span));
+
+        let symbol_entry = SymbolEntry {
+            name: name.as_str().into(),
+            kind: SymbolKind::Variable {
+                is_global: ctx.symbol_table.current_scope() == ScopeId::GLOBAL,
+                initializer: init.initializer,
+            },
+            type_info: final_ty,
+            storage_class: spec.storage,
+            scope_id: ctx.symbol_table.current_scope(),
+            def_span: span,
+            def_state,
+            is_referenced: false,
+            is_completed: true,
+        };
+
+        if ctx.symbol_table.current_scope() == ScopeId::GLOBAL {
+            match ctx.symbol_table.merge_global_symbol(name, symbol_entry) {
+                Ok(_) => {}
+                Err(e) => {
+                    let SymbolTableError::InvalidRedefinition { name, existing } = e;
+                    let existing = ctx.symbol_table.get_symbol_entry(existing);
+                    ctx.diag.report(SemanticError::Redefinition {
+                        name,
+                        first_def: existing.def_span,
+                        second_def: span,
+                    });
+                }
+            }
+        } else {
+            ctx.symbol_table.add_symbol(name, symbol_entry);
+        }
+
+        node
     }
 }
 
@@ -1166,7 +1226,23 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
         NodeKind::Switch(_, body) => {
             lower_node_recursive(ctx, body);
         }
-        NodeKind::Label(_, stmt, _) => {
+        NodeKind::Label(name, stmt, _) => {
+            let label_ty = ctx.ast.push_type(Type::new(TypeKind::Void)); // void for now
+            let entry = SymbolEntry {
+                name,
+                kind: SymbolKind::Label {
+                    is_defined: true,
+                    is_used: true,
+                },
+                type_info: label_ty,
+                storage_class: None,
+                scope_id: ctx.symbol_table.current_scope(),
+                def_span: ctx.ast.get_node(node_ref).span,
+                def_state: DefinitionState::Defined,
+                is_referenced: false,
+                is_completed: true,
+            };
+            ctx.symbol_table.add_symbol_in_namespace(name, entry, Namespace::Label);
             lower_node_recursive(ctx, stmt);
         }
         _ => {}

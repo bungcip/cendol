@@ -6,6 +6,7 @@
 
 use hashbrown::HashMap;
 use indexmap::IndexMap;
+use log::debug;
 
 use crate::ast::{Ast, SourceId};
 use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
@@ -223,14 +224,35 @@ impl CompilerDriver {
         use crate::semantic::resolver::run_symbol_resolver;
         let scope_map = run_symbol_resolver(&mut ast, &mut self.diagnostics, &mut symbol_table);
         ast.attach_scope_map(scope_map);
-
-        // Check for semantic lowering errors and stop if any
         self.check_diagnostics_and_return_if_error()?;
+
+        // validation
+        for (i, entry) in symbol_table.entries.iter().enumerate() {
+            debug!("symbol[{}]: {:?}", i, entry.name);
+        }
+
+        use crate::semantic::name_resolver::run_name_resolver;
+        run_name_resolver(&ast, &mut self.diagnostics, &symbol_table);
+        self.check_diagnostics_and_return_if_error()?;
+
+        // validations
+        for node in &ast.nodes {
+            match &node.kind {
+                crate::ast::NodeKind::Ident(name, resolved_symbol) if resolved_symbol.get().is_none() => {
+                    panic!("ICE: ident '{}' still not resolved", name);
+                }
+                crate::ast::NodeKind::Goto(name, resolved_symbol) if resolved_symbol.get().is_none() => {
+                    panic!("ICE: goto '{}' still not resolved", name);
+                }
+                crate::ast::NodeKind::Label(name, _, resolved_symbol) if resolved_symbol.get().is_none() => {
+                    panic!("ICE: label '{}' still not resolved", name);
+                }
+                _ => {}
+            }
+        }
 
         let mut sema = AstToMirLowerer::new(&mut ast, &mut self.diagnostics, &mut symbol_table);
         let sema_output = sema.lower_module_complete();
-
-        // Check for semantic analysis errors and stop if any
         self.check_diagnostics_and_return_if_error()?;
 
         Ok(sema_output)

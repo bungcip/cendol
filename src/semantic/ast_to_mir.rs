@@ -902,72 +902,6 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 new_global_id
             };
 
-            // Handle global variable symbol table entry with proper redefinition checking
-            let def_state = if initializer_node_ref.is_some() {
-                DefinitionState::Defined
-            } else if var_decl.storage == Some(StorageClass::Extern) {
-                DefinitionState::DeclaredOnly
-            } else {
-                DefinitionState::Tentative
-            };
-
-            let symbol_entry = SymbolEntry {
-                name: var_decl.name,
-                kind: SymbolKind::Variable {
-                    is_global: true,
-                    initializer: initializer_node_ref,
-                },
-                type_info: var_decl.ty,
-                storage_class: var_decl.storage,
-                scope_id,
-                def_span: span,
-                def_state,
-                is_referenced: false,
-                is_completed: true,
-            };
-
-            // Use merge_global_symbol to handle C11 6.9.2 merging rules and detect redefinitions
-            match self.symbol_table.merge_global_symbol(var_decl.name, symbol_entry) {
-                Ok(entry_ref) => {
-                    // Symbol was successfully added or merged
-                    debug!("Global variable '{}' processed successfully", var_decl.name);
-
-                    // If this is a new symbol (not merged), we may need to add it to MIR globals
-                    // Check if this symbol already exists in the symbol table
-                    if let Some((existing_entry, _)) =
-                        self.symbol_table
-                            .lookup_symbol_from_ns(var_decl.name, scope_id, Namespace::Ordinary)
-                        && existing_entry != entry_ref
-                    {
-                        // This is a new symbol, ensure it's in MIR globals
-                        // (This case shouldn't happen with merge_global_symbol, but keeping for safety)
-                    }
-                }
-                Err(_error) => {
-                    // merge_global_symbol detected a redefinition error
-                    // The error already contains the symbol name, but we need source spans for proper error reporting
-                    // Find the existing symbol to get its definition span for error reporting
-                    if let Some((existing_entry, _)) =
-                        self.symbol_table
-                            .lookup_symbol_from_ns(var_decl.name, scope_id, Namespace::Ordinary)
-                    {
-                        let existing = self.symbol_table.get_symbol_entry(existing_entry);
-                        self.report_error(SemanticError::Redefinition {
-                            name: var_decl.name,
-                            first_def: existing.def_span,
-                            second_def: span,
-                        });
-                    } else {
-                        // This shouldn't happen, but provide a fallback error
-                        self.report_error(SemanticError::Redefinition {
-                            name: var_decl.name,
-                            first_def: span,
-                            second_def: span,
-                        });
-                    }
-                    return;
-                }
-            }
             debug!("Created semantic global '{}' with id {:?}", var_decl.name, global_id);
         } else {
             // Check if symbol entry already exists from previous pass
@@ -982,7 +916,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             let entry_ref = if let Some(e) = existing_entry {
                 e
             } else {
-                // Add to symbol table as local
+                // // Add to symbol table as local
                 let def_state = if initializer_node_ref.is_some() {
                     DefinitionState::Defined
                 } else if var_decl.storage == Some(StorageClass::Extern) {
@@ -1005,6 +939,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                     is_referenced: false,
                     is_completed: true,
                 };
+                // FIXME: move this to resolver, ast_to_mir don't handling symbol resolver
                 self.symbol_table.add_symbol(var_decl.name, symbol_entry)
             };
 
@@ -2828,9 +2763,9 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                     None
                 }
             }
-            NodeKind::Ident(name, symbol_ref) => {
+            NodeKind::Ident(name, resolved_symbol) => {
                 // For simple identifiers, use the existing symbol table lookup
-                if let Some(resolved_ref) = symbol_ref.get() {
+                if let Some(resolved_ref) = resolved_symbol.get() {
                     let entry = self.symbol_table.get_symbol_entry(resolved_ref);
                     debug!("Resolved identifier '{}' to type {:?}", name, entry.type_info);
                     Some(entry.type_info)

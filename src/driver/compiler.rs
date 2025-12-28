@@ -199,9 +199,7 @@ impl CompilerDriver {
         };
 
         // Check for lexing errors and stop if any
-        if self.diagnostics.has_errors() {
-            return Err(PipelineError::Fatal);
-        }
+        self.check_diagnostics_and_return_if_error()?;
 
         Ok(tokens)
     }
@@ -226,17 +224,13 @@ impl CompilerDriver {
         run_semantic_lowering(&mut ast, &mut self.diagnostics, &mut symbol_table);
 
         // Check for semantic lowering errors and stop if any
-        if self.diagnostics.has_errors() {
-            return Err(PipelineError::Fatal);
-        }
+        self.check_diagnostics_and_return_if_error()?;
 
         let mut sema = SemanticAnalyzer::new(&mut ast, &mut self.diagnostics, &mut symbol_table);
         let sema_output = sema.lower_module_complete();
 
         // Check for semantic analysis errors and stop if any
-        if self.diagnostics.has_errors() {
-            return Err(PipelineError::Fatal);
-        }
+        self.check_diagnostics_and_return_if_error()?;
 
         Ok(sema_output)
     }
@@ -261,6 +255,15 @@ impl CompilerDriver {
                 });
                 Err(PipelineError::Fatal)
             }
+        }
+    }
+
+    /// Check if there are any diagnostics errors and return PipelineError::Fatal if there are
+    fn check_diagnostics_and_return_if_error(&self) -> Result<(), PipelineError> {
+        if self.diagnostics.has_errors() {
+            Err(PipelineError::Fatal)
+        } else {
+            Ok(())
         }
     }
 

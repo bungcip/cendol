@@ -1360,16 +1360,12 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                         // Map AST BinaryOp to MIR BinaryOp
                         match self.map_ast_binary_op_to_mir(&op, node_span) {
                             Ok(mir_binary_op) => {
-                                // Create a temporary local to store the result
-                                let temp_local_id = self.mir_builder.create_local(None, common_type, false);
-
                                 // Generate proper binary operation using Rvalue
                                 let binary_rvalue = Rvalue::BinaryOp(mir_binary_op, converted_left, converted_right);
-                                let assign_stmt = MirStmt::Assign(Place::Local(temp_local_id), binary_rvalue);
-                                self.mir_builder.add_statement(assign_stmt);
+                                let (_, place) = self.create_temp_local_with_assignment(binary_rvalue, common_type);
 
                                 // Return the local that contains the result
-                                Operand::Copy(Box::new(Place::Local(temp_local_id)))
+                                Operand::Copy(Box::new(place))
                             }
                             Err(error) => {
                                 debug!("Binary operation mapping failed: {:?}", error);
@@ -1403,18 +1399,15 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                         // The operand should be a pointer type, and we want to return
                         // a place that represents the dereferenced location
 
-                        // Create a temporary local to store the result
-                        let temp_type_id = self.get_int_type(); // For now, assume int type
-                        let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
-                        let temp_place = Place::Local(temp_local_id);
-
                         // Create a dereference operation: temp = *operand
-                        let deref_rvalue = Rvalue::UnaryOp(crate::mir::UnaryOp::Deref, operand);
-                        let assign_stmt = MirStmt::Assign(temp_place.clone(), deref_rvalue);
-                        self.mir_builder.add_statement(assign_stmt);
+                        let temp_type_id = self.get_int_type(); // For now, assume int type
+                        let (_, place) = self.create_temp_local_with_assignment(
+                            Rvalue::UnaryOp(crate::mir::UnaryOp::Deref, operand),
+                            temp_type_id,
+                        );
 
                         // Return the local that contains the dereferenced value
-                        Operand::Copy(Box::new(temp_place))
+                        Operand::Copy(Box::new(place))
                     }
                     crate::ast::UnaryOp::AddrOf => {
                         // Address-of operation: &operand
@@ -1440,18 +1433,13 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                             _ => unreachable!(),
                         };
 
-                        // Create a temporary local to store the result
-                        let temp_type_id = self.get_int_type();
-                        let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
-                        let temp_place = Place::Local(temp_local_id);
-
                         // Create the unary operation: temp = op operand
-                        let unary_rvalue = Rvalue::UnaryOp(unary_op, operand);
-                        let assign_stmt = MirStmt::Assign(temp_place.clone(), unary_rvalue);
-                        self.mir_builder.add_statement(assign_stmt);
+                        let temp_type_id = self.get_int_type();
+                        let (_, place) =
+                            self.create_temp_local_with_assignment(Rvalue::UnaryOp(unary_op, operand), temp_type_id);
 
                         // Return the local that contains the result
-                        Operand::Copy(Box::new(temp_place))
+                        Operand::Copy(Box::new(place))
                     }
                     crate::ast::UnaryOp::BitNot | crate::ast::UnaryOp::LogicNot => {
                         // Bitwise and logical NOT operations
@@ -1461,18 +1449,13 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                             _ => unreachable!(),
                         };
 
-                        // Create a temporary local to store the result
-                        let temp_type_id = self.get_int_type();
-                        let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
-                        let temp_place = Place::Local(temp_local_id);
-
                         // Create the unary operation: temp = op operand
-                        let unary_rvalue = Rvalue::UnaryOp(unary_op, operand);
-                        let assign_stmt = MirStmt::Assign(temp_place.clone(), unary_rvalue);
-                        self.mir_builder.add_statement(assign_stmt);
+                        let temp_type_id = self.get_int_type();
+                        let (_, place) =
+                            self.create_temp_local_with_assignment(Rvalue::UnaryOp(unary_op, operand), temp_type_id);
 
                         // Return the local that contains the result
-                        Operand::Copy(Box::new(temp_place))
+                        Operand::Copy(Box::new(place))
                     }
                     crate::ast::UnaryOp::PreIncrement | crate::ast::UnaryOp::PreDecrement => {
                         // Pre-increment and pre-decrement operations
@@ -1493,15 +1476,10 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                             }
                         };
 
-                        // Create a temporary local to store the result
-                        let temp_type_id = self.get_int_type(); // For now, assume int type
-                        let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
-                        let temp_place = Place::Local(temp_local_id);
-
                         // Step 1: Load current value into temp: temp = operand
-                        let load_rvalue = Rvalue::Use(operand.clone());
-                        let load_stmt = MirStmt::Assign(temp_place.clone(), load_rvalue);
-                        self.mir_builder.add_statement(load_stmt);
+                        let temp_type_id = self.get_int_type(); // For now, assume int type
+                        let (_, temp_place) =
+                            self.create_temp_local_with_assignment(Rvalue::Use(operand.clone()), temp_type_id);
 
                         // Step 2: Perform increment/decrement on temp
                         let binary_op = match op {
@@ -1612,17 +1590,12 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 let target_type_id = self.lower_type_to_mir(type_ref);
 
                 // Create a cast operation
-                // For now, we'll create a temporary local and assign the cast result to it
-                let temp_local_id = self.mir_builder.create_local(None, target_type_id, false);
-                let temp_place = Place::Local(temp_local_id);
-
-                // Create the cast rvalue
-                let cast_rvalue = Rvalue::Cast(target_type_id, expr_operand);
-                let assign_stmt = MirStmt::Assign(temp_place.clone(), cast_rvalue);
-                self.mir_builder.add_statement(assign_stmt);
+                // Create the cast rvalue and assign it to a temporary local
+                let (_, place) =
+                    self.create_temp_local_with_assignment(Rvalue::Cast(target_type_id, expr_operand), target_type_id);
 
                 // Return the local that contains the cast result
-                Operand::Copy(Box::new(temp_place))
+                Operand::Copy(Box::new(place))
             }
 
             NodeKind::MemberAccess(object_ref, field_name, is_arrow) => {
@@ -1637,21 +1610,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 // For member access (object.field or object->field), we need to create a proper Place
                 // that represents the struct field access. The result should be a Place that can be used as an lvalue.
 
-                let mut object_place = match object_operand {
-                    Operand::Copy(place_box) => *place_box,
-                    _ => {
-                        // If object is not a place, create a temporary to hold the computed address
-                        let temp_type_id = self.get_int_type();
-                        let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
-                        let temp_place = Place::Local(temp_local_id);
-
-                        // Store the object value in the temporary
-                        let assign_stmt = MirStmt::Assign(temp_place.clone(), Rvalue::Use(object_operand));
-                        self.mir_builder.add_statement(assign_stmt);
-
-                        temp_place
-                    }
-                };
+                let mut object_place = self.ensure_operand_is_place(object_operand);
 
                 // Handle arrow access (object->field) by dereferencing the pointer first
                 if is_arrow {
@@ -2107,14 +2066,10 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         let current_value = Operand::Copy(Box::new(place.clone()));
 
         // Create a temporary local to store the result
-        let temp_type_id = self.get_int_type(); // For now, assume int type
-        let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
-        let temp_place = Place::Local(temp_local_id);
-
         // Perform the binary operation: temp = current_value OP right_operand
-        let binary_rvalue = Rvalue::BinaryOp(binary_op, current_value, right_operand);
-        let assign_stmt = MirStmt::Assign(temp_place.clone(), binary_rvalue);
-        self.mir_builder.add_statement(assign_stmt);
+        let temp_type_id = self.get_int_type(); // For now, assume int type
+        let (_, temp_place) = self
+            .create_temp_local_with_assignment(Rvalue::BinaryOp(binary_op, current_value, right_operand), temp_type_id);
 
         // Assign the result back to the original place: left = temp
         self.emit_assignment(place, Operand::Copy(Box::new(temp_place.clone())), span);
@@ -2266,6 +2221,34 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             width: 32,
         };
         self.add_type(mir_type)
+    }
+
+    /// Create a temporary local with the given type
+    fn create_temp_local(&mut self, type_id: TypeId) -> (LocalId, Place) {
+        let local_id = self.mir_builder.create_local(None, type_id, false);
+        let place = Place::Local(local_id);
+        (local_id, place)
+    }
+
+    /// Create a temporary local and emit an assignment to it
+    fn create_temp_local_with_assignment(&mut self, rvalue: Rvalue, type_id: TypeId) -> (LocalId, Place) {
+        let (local_id, place) = self.create_temp_local(type_id);
+        let assign_stmt = MirStmt::Assign(place.clone(), rvalue);
+        self.mir_builder.add_statement(assign_stmt);
+        (local_id, place)
+    }
+
+    /// Create a temporary local and store an operand in it if the operand is not already a place
+    fn ensure_operand_is_place(&mut self, operand: Operand) -> Place {
+        match operand {
+            Operand::Copy(place_box) => *place_box,
+            _ => {
+                // If operand is not a place, create a temporary to hold the computed address
+                let temp_type_id = self.get_int_type();
+                let (_, place) = self.create_temp_local_with_assignment(Rvalue::Use(operand), temp_type_id);
+                place
+            }
+        }
     }
 
     /// Get locals for validation
@@ -3050,18 +3033,13 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                 Operand::Constant(dummy_const)
             } else {
                 // For non-void functions, create a temporary local to store the return value
-                // Use the function's actual return type instead of defaulting to int
-                let temp_type_id = func.return_type;
-                let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
-
                 // Generate a proper call using Rvalue
                 let call_target = CallTarget::Direct(func_id);
                 let call_rvalue = Rvalue::Call(call_target, arg_operands);
-                let assign_stmt = MirStmt::Assign(Place::Local(temp_local_id), call_rvalue);
-                self.mir_builder.add_statement(assign_stmt);
+                let (_, place) = self.create_temp_local_with_assignment(call_rvalue, func.return_type);
 
                 // Return the local that will contain the call result
-                Operand::Copy(Box::new(Place::Local(temp_local_id)))
+                Operand::Copy(Box::new(place))
             }
         } else {
             debug!("Function {} not found in MIR functions", func_name);
@@ -3088,37 +3066,19 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         let object_operand = self.lower_expression(object_ref);
 
         // Create a place representing the function pointer field access
-        let mut object_place = match object_operand {
-            Operand::Copy(place_box) => *place_box,
-            _ => {
-                // If object is not a place, create a temporary to hold the computed address
-                let temp_type_id = self.get_int_type();
-                let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
-                let temp_place = Place::Local(temp_local_id);
-
-                // Store the object value in the temporary
-                let assign_stmt = MirStmt::Assign(temp_place.clone(), Rvalue::Use(object_operand));
-                self.mir_builder.add_statement(assign_stmt);
-
-                temp_place
-            }
-        };
+        let mut object_place = self.ensure_operand_is_place(object_operand);
 
         // Handle arrow access (object->field) by dereferencing the pointer first
         if is_arrow {
             debug!("Handling arrow access, dereferencing pointer first");
 
             // For arrow access, we need to dereference the pointer to get the struct
-            // Create a temporary to hold the dereferenced struct
-            let temp_type_id = self.get_int_type(); // For now, assume int type
-            let temp_local_id = self.mir_builder.create_local(None, temp_type_id, false);
-            let temp_place = Place::Local(temp_local_id);
-
             // Dereference the pointer: temp = *object_place
-            let deref_operand = Operand::Copy(Box::new(object_place));
-            let deref_rvalue = Rvalue::UnaryOp(crate::mir::UnaryOp::Deref, deref_operand);
-            let assign_stmt = MirStmt::Assign(temp_place.clone(), deref_rvalue);
-            self.mir_builder.add_statement(assign_stmt);
+            let temp_type_id = self.get_int_type(); // For now, assume int type
+            let (_, temp_place) = self.create_temp_local_with_assignment(
+                Rvalue::UnaryOp(crate::mir::UnaryOp::Deref, Operand::Copy(Box::new(object_place))),
+                temp_type_id,
+            );
 
             // Update object_place to be the dereferenced struct
             object_place = temp_place;
@@ -3227,12 +3187,8 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             let call_rvalue = Rvalue::Call(call_target, arg_operands);
 
             // Create a temporary local for the call result
-            let result_type_id = self.get_int_type(); // For now, assume int return type
-            let result_local_id = self.mir_builder.create_local(None, result_type_id, false);
-            let result_place = Place::Local(result_local_id);
-
-            let call_assign_stmt = MirStmt::Assign(result_place.clone(), call_rvalue);
-            self.mir_builder.add_statement(call_assign_stmt);
+            let temp_type_id = self.get_int_type();
+            let (_, result_place) = self.create_temp_local_with_assignment(call_rvalue, temp_type_id);
 
             // Return the local that will contain the call result
             Operand::Copy(Box::new(result_place))

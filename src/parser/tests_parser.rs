@@ -200,7 +200,7 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
                     let initializer = init_decl
                         .initializer
                         .as_ref()
-                        .map(|init| resolve_initializer(ast, init));
+                        .map(|init| resolve_initializer(ast, *init));
                     ResolvedInitDeclarator {
                         name,
                         kind,
@@ -387,18 +387,19 @@ fn extract_declarator_kind(declarator: &Declarator) -> String {
     }
 }
 
-fn resolve_initializer(ast: &Ast, initializer: &crate::ast::Initializer) -> ResolvedNodeKind {
-    match initializer {
-        crate::ast::Initializer::Expression(expr) => resolve_node(ast, *expr),
-        crate::ast::Initializer::List(designated_inits) => {
+fn resolve_initializer(ast: &Ast, initializer: NodeRef) -> ResolvedNodeKind {
+    let node = ast.get_node(initializer);
+    match &node.kind {
+        NodeKind::ListInitializer(designated_inits) => {
             let mut elements = Vec::new();
             for designated in designated_inits {
                 // For now, ignore designations and just collect the initializer values
                 // In a full implementation, we'd handle [index] and .field designators
-                elements.push(resolve_initializer(ast, &designated.initializer));
+                elements.push(resolve_initializer(ast, designated.initializer));
             }
             ResolvedNodeKind::InitializerList(elements)
         }
+        _ => resolve_node(ast, *&initializer),
     }
 }
 

@@ -548,20 +548,21 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     }
 
     /// Second pass: Process an initializer and emit assignment
-    fn process_initializer(&mut self, initializer: &Initializer, local_id: LocalId, var_name: &str, span: SourceSpan) {
+    fn process_initializer(&mut self, initializer: NodeRef, local_id: LocalId, var_name: &str, span: SourceSpan) {
         debug!("Processing initializer for variable '{}'", var_name);
 
-        match initializer {
-            Initializer::Expression(expr_ref) => {
+        let init_node = self.ast.get_node(initializer);
+        match init_node.kind.clone() {
+            NodeKind::ListInitializer(designated_initializers) => {
+                // Process designated initializers (both positional and named)
+                self.process_designated_initializers(&designated_initializers, local_id, var_name, span);
+            }
+            _ => {
                 // Lower the initializer expression to an operand
-                let init_operand = self.lower_expression(*expr_ref);
+                let init_operand = self.lower_expression(initializer);
 
                 // Emit assignment: local = initializer
                 self.emit_assignment(Place::Local(local_id), init_operand, span);
-            }
-            Initializer::List(designated_initializers) => {
-                // Process designated initializers (both positional and named)
-                self.process_designated_initializers(designated_initializers, local_id, var_name, span);
             }
         }
     }
@@ -589,7 +590,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             if designated_init.designation.is_empty() {
                 // This is a positional initializer
                 self.process_positional_initializer(
-                    &designated_init.initializer,
+                    designated_init.initializer,
                     local_id,
                     var_name,
                     current_index,
@@ -674,17 +675,18 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         }
 
         // Process the initializer for this designated field
-        match &designated_init.initializer {
-            Initializer::Expression(expr_ref) => {
+        let init_node = self.ast.get_node(designated_init.initializer);
+        match &init_node.kind {
+            NodeKind::ListInitializer(_nested_inits) => {
+                // Nested compound initializer - for now, just report as unsupported
+                self.report_error(SemanticError::NonConstantInitializer { span });
+            }
+            _ => {
                 // Lower the initializer expression to an operand
-                let init_operand = self.lower_expression(*expr_ref);
+                let init_operand = self.lower_expression(designated_init.initializer);
 
                 // Emit assignment to the designated field: field = initializer
                 self.emit_assignment(current_place, init_operand, span);
-            }
-            Initializer::List(_nested_inits) => {
-                // Nested compound initializer - for now, just report as unsupported
-                self.report_error(SemanticError::NonConstantInitializer { span });
             }
         }
     }
@@ -692,7 +694,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
     /// Process a positional initializer (no designation)
     fn process_positional_initializer(
         &mut self,
-        initializer: &Initializer,
+        initializer: NodeRef, // Initializer
         local_id: LocalId,
         var_name: &str,
         index: usize,
@@ -703,11 +705,16 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             index, var_name
         );
 
-        match initializer {
-            Initializer::Expression(expr_ref) => {
+        let node = self.ast.get_node(initializer);
+        match node.kind {
+            NodeKind::ListInitializer(_) => {
+                // Nested compound initializer - for now, just report as unsupported
+                self.report_error(SemanticError::NonConstantInitializer { span });
+            }
+            _ => {
                 // For simple positional initializers, we can use the existing logic
                 // but we need to handle struct/array member access
-                let init_operand = self.lower_expression(*expr_ref);
+                let init_operand = self.lower_expression(initializer);
 
                 // Get the type for the temporary local
                 let temp_type_id = self.get_int_type(); // For now, assume int type
@@ -726,25 +733,23 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                     span,
                 );
             }
-            Initializer::List(_) => {
-                // Nested compound initializer - for now, just report as unsupported
-                self.report_error(SemanticError::NonConstantInitializer { span });
-            }
         }
     }
 
     /// Process compound initializers for global variables
     fn process_global_compound_initializer(
         &mut self,
-        initializer: &Initializer,
+        initializer: NodeRef, // &Initializer
         var_name: Symbol,
         _var_type_id: TypeId,
         span: SourceSpan,
     ) -> Option<ConstValueId> {
         debug!("Processing global compound initializer for variable '{}'", var_name);
 
-        match initializer {
-            Initializer::List(designated_initializers) => {
+        let init_node = self.ast.get_node(initializer);
+
+        match init_node.kind.clone() {
+            NodeKind::ListInitializer(designated_initializers) => {
                 // Collect constant values for fields
                 // We use a map to handle out-of-order and designated initializers
                 // Key is the field index
@@ -794,66 +799,70 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
                     };
 
                     // Process the initializer value
-                    if let Initializer::Expression(expr_ref) = &designated_init.initializer {
-                        // Lower the initializer expression to get the constant value
-                        let init_operand = self.lower_expression(*expr_ref);
-
-                        match init_operand {
-                            Operand::Constant(const_id) => {
-                                debug!(
-                                    "Global compound initializer: field {} = constant {:?}",
-                                    target_index, const_id
-                                );
-                                field_values_map.insert(target_index, const_id);
-                            }
-                            Operand::AddressOf(place_box) => {
-                                if let Place::Global(global_id) = *place_box {
-                                    debug!(
-                                        "Global compound initializer: field {} = address of global {:?}",
-                                        target_index, global_id
-                                    );
-                                    let const_val = ConstValue::GlobalAddress(global_id);
-                                    let const_id = self.create_constant(const_val);
-                                    field_values_map.insert(target_index, const_id);
+                    let init_node = self.ast.get_node(designated_init.initializer);
+                    match &init_node.kind {
+                        NodeKind::ListInitializer(_) => {
+                            // Nested compound literal
+                            // Get the type of the field we are initializing
+                            // Try to get struct field type first
+                            let field_type_id =
+                                if let Some(type_id) = self.get_struct_field_type(_var_type_id, target_index) {
+                                    type_id
+                                } else if let Some(element_type_id) = self.get_array_element_type(_var_type_id) {
+                                    // If it's an array, use the element type
+                                    element_type_id
                                 } else {
+                                    self.report_error(SemanticError::NonConstantInitializer { span });
+                                    return None;
+                                };
+
+                            if let Some(nested_const_id) = self.process_global_compound_initializer(
+                                designated_init.initializer,
+                                var_name,
+                                field_type_id,
+                                span,
+                            ) {
+                                debug!(
+                                    "Global compound initializer: field {} = nested constant {:?}",
+                                    target_index, nested_const_id
+                                );
+                                field_values_map.insert(target_index, nested_const_id);
+                            } else {
+                                return None;
+                            }
+                        }
+                        _ => {
+                            // Lower the initializer expression to get the constant value
+                            let init_operand = self.lower_expression(designated_init.initializer);
+
+                            match init_operand {
+                                Operand::Constant(const_id) => {
+                                    debug!(
+                                        "Global compound initializer: field {} = constant {:?}",
+                                        target_index, const_id
+                                    );
+                                    field_values_map.insert(target_index, const_id);
+                                }
+                                Operand::AddressOf(place_box) => {
+                                    if let Place::Global(global_id) = *place_box {
+                                        debug!(
+                                            "Global compound initializer: field {} = address of global {:?}",
+                                            target_index, global_id
+                                        );
+                                        let const_val = ConstValue::GlobalAddress(global_id);
+                                        let const_id = self.create_constant(const_val);
+                                        field_values_map.insert(target_index, const_id);
+                                    } else {
+                                        self.report_error(SemanticError::NonConstantInitializer { span });
+                                        return None;
+                                    }
+                                }
+                                _ => {
+                                    // Non-constant expression in global initializer - report error
                                     self.report_error(SemanticError::NonConstantInitializer { span });
                                     return None;
                                 }
                             }
-                            _ => {
-                                // Non-constant expression in global initializer - report error
-                                self.report_error(SemanticError::NonConstantInitializer { span });
-                                return None;
-                            }
-                        }
-                    } else {
-                        // Nested compound literal
-                        // Get the type of the field we are initializing
-                        // Try to get struct field type first
-                        let field_type_id =
-                            if let Some(type_id) = self.get_struct_field_type(_var_type_id, target_index) {
-                                type_id
-                            } else if let Some(element_type_id) = self.get_array_element_type(_var_type_id) {
-                                // If it's an array, use the element type
-                                element_type_id
-                            } else {
-                                self.report_error(SemanticError::NonConstantInitializer { span });
-                                return None;
-                            };
-
-                        if let Some(nested_const_id) = self.process_global_compound_initializer(
-                            &designated_init.initializer,
-                            var_name,
-                            field_type_id,
-                            span,
-                        ) {
-                            debug!(
-                                "Global compound initializer: field {} = nested constant {:?}",
-                                target_index, nested_const_id
-                            );
-                            field_values_map.insert(target_index, nested_const_id);
-                        } else {
-                            return None;
                         }
                     }
                 }
@@ -919,10 +928,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
         let mir_type_id = self.lower_type_to_mir(canonical_type_id);
 
         let is_global = self.current_function.is_none();
-        let initializer_node_ref = var_decl.init.as_ref().and_then(|init| match init {
-            Initializer::Expression(expr_ref) => Some(*expr_ref),
-            _ => None,
-        });
+        let initializer_node_ref = var_decl.init;
 
         if is_global {
             // Check if a global with this name already exists
@@ -944,21 +950,22 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
 
                 // Process initializer to get constant value
                 let mut initial_value_id = None;
-                if let Some(init) = &var_decl.init {
-                    match init {
-                        Initializer::Expression(expr_ref) => {
-                            // Try to evaluate the initializer as a constant
-                            let init_operand = self.lower_expression(*expr_ref);
-                            if let Operand::Constant(const_id) = init_operand {
-                                initial_value_id = Some(const_id);
-                            }
-                        }
-                        _ => {
+                if let Some(init) = var_decl.init {
+                    let init_node = self.ast.get_node(init);
+                    match init_node.kind.clone() {
+                        NodeKind::ListInitializer(_) => {
                             // For compound initializers in global variables, we need to process them properly
                             if let Some(struct_const_id) =
                                 self.process_global_compound_initializer(init, var_decl.name, mir_type_id, span)
                             {
                                 initial_value_id = Some(struct_const_id);
+                            }
+                        }
+                        _ => {
+                            // Try to evaluate the initializer as a constant
+                            let init_operand = self.lower_expression(init);
+                            if let Operand::Constant(const_id) = init_operand {
+                                initial_value_id = Some(const_id);
                             }
                         }
                     }
@@ -1081,7 +1088,7 @@ impl<'a, 'src> SemanticAnalyzer<'a, 'src> {
             self.local_map.insert(entry_ref, local_id);
 
             // Process initializer if present
-            if let Some(initializer) = &var_decl.init {
+            if let Some(initializer) = var_decl.init {
                 self.process_initializer(initializer, local_id, &var_decl.name.to_string(), span);
             }
 

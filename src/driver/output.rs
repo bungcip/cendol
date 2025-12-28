@@ -398,6 +398,11 @@ impl OutputHandler {
                 "DeclarationList([{}])",
                 stmts.iter().map(|&r| r.get().to_string()).join(", ")
             ),
+            // TODO: make it more good
+            NodeKind::ListInitializer(list) => println!(
+                "ListInitializer([{}])",
+                list.iter().map(|r| { r.initializer.to_string() }).join(", ")
+            ),
             NodeKind::Dummy => println!("DUMMY"),
         }
     }

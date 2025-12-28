@@ -204,12 +204,14 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
 }
 
 /// Parse initializer
-pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<Initializer, ParseError> {
+pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     debug!(
         "parse_initializer: called at position {}, current token: {:?}",
         parser.current_idx,
         parser.current_token_kind()
     );
+    let span = parser.current_token_span()?;
+
     if parser.accept(TokenKind::LeftBrace).is_some() {
         debug!("parse_initializer: found LeftBrace, parsing compound initializer");
         // Compound initializer
@@ -229,8 +231,7 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<Initializer, Pars
                     parse_initializer(parser)?
                 } else {
                     // Expression initializer - parse until comma or closing brace
-                    let expr_result = parse_initializer_expression(parser)?;
-                    Initializer::Expression(expr_result)
+                    parse_initializer_expression(parser)?
                 };
 
                 // Wrap in DesignatedInitializer with empty designation
@@ -247,8 +248,10 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<Initializer, Pars
             }
         }
 
-        parser.expect(TokenKind::RightBrace)?;
-        Ok(Initializer::List(initializers))
+        let end_token = parser.expect(TokenKind::RightBrace)?;
+        let span = SourceSpan::new(span.start, end_token.span.end);
+        let initializer = parser.push_node(NodeKind::ListInitializer(initializers), span);
+        Ok(initializer)
     } else {
         debug!(
             "parse_initializer: no LeftBrace found, current token: {:?}, trying expression initializer",
@@ -256,7 +259,7 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<Initializer, Pars
         );
         // Expression initializer - use simple parsing to avoid comma operators
         let node = parse_initializer_expression(parser)?;
-        Ok(Initializer::Expression(node))
+        Ok(node)
     }
 }
 

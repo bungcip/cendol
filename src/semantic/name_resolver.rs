@@ -2,7 +2,10 @@ use log::debug;
 
 use crate::ast::{Ast, FunctionData, NodeKind, NodeRef, VarDeclData};
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
-use crate::semantic::{Namespace, ScopeId, SymbolTable};
+use crate::semantic::{
+    symbol_table::{Namespace, SymbolTable},
+    ScopeId,
+};
 
 struct NameResolverCtx<'ast, 'diag> {
     diag: &'diag mut DiagnosticEngine,
@@ -121,8 +124,8 @@ fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
         }
 
         NodeKind::Ident(name, resolved) => {
-            if let Some(sym) = ctx.symbol_table.lookup(*name, ctx.scope_id, Namespace::Ordinary) {
-                resolved.set(Some(sym.0));
+            if let Some((sym_ref, _)) = ctx.symbol_table.lookup(*name, ctx.scope_id, Namespace::Ordinary) {
+                resolved.set(Some(sym_ref));
             } else {
                 debug!("ndak nemu {}!", name);
                 ctx.diag.report(SemanticError::UndeclaredIdentifier {
@@ -132,8 +135,8 @@ fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
             }
         }
         NodeKind::Goto(name, resolved) => {
-            if let Some(sym) = ctx.symbol_table.lookup(*name, ctx.scope_id, Namespace::Label) {
-                resolved.set(Some(sym.0));
+            if let Some((sym_ref, _)) = ctx.symbol_table.lookup(*name, ctx.scope_id, Namespace::Label) {
+                resolved.set(Some(sym_ref));
             } else {
                 ctx.diag.report(SemanticError::UndeclaredIdentifier {
                     name: *name,
@@ -142,8 +145,8 @@ fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
             }
         }
         NodeKind::Label(name, stmt, resolved) => {
-            if let Some(sym) = ctx.symbol_table.lookup(*name, ctx.scope_id, Namespace::Label) {
-                resolved.set(Some(sym.0));
+            if let Some((sym_ref, _)) = ctx.symbol_table.lookup(*name, ctx.scope_id, Namespace::Label) {
+                resolved.set(Some(sym_ref));
             } else {
                 ctx.diag.report(SemanticError::UndeclaredIdentifier {
                     name: *name,

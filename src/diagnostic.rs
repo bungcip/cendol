@@ -220,7 +220,8 @@ pub enum SemanticError {
     InvalidUseOfVoid { span: SourceSpan },
     #[error("Unsupported feature: {feature}")]
     UnsupportedFeature { feature: String, span: SourceSpan },
-
+    #[error("Invalid indirection")]
+    InvalidIndirection { span: SourceSpan },
     #[error("size of array has non-positive value")]
     InvalidArraySize { span: SourceSpan },
 }
@@ -236,6 +237,7 @@ impl SemanticError {
             SemanticError::NonConstantInitializer { span } => *span,
             SemanticError::InvalidUseOfVoid { span } => *span,
             SemanticError::UnsupportedFeature { span, .. } => *span,
+            SemanticError::InvalidIndirection { span } => *span,
             SemanticError::InvalidArraySize { span } => *span,
         }
     }

@@ -5,14 +5,12 @@
 //! scope structure and provides efficient symbol lookup and storage.
 
 use hashbrown::HashMap;
-use std::num::NonZeroU32;
 
 use log::debug;
 use thiserror::Error;
 
 use crate::ast::*;
-
-pub type SymbolRef = NonZeroU32;
+use crate::semantic::{Scope, ScopeId, SymbolRef};
 
 /// Represents the definition state of a symbol entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,41 +88,12 @@ pub enum SymbolTableError {
     InvalidRedefinition { name: NameId, existing: SymbolRef },
 }
 
-/// Scope ID for efficient scope references
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ScopeId(NonZeroU32);
-
-impl ScopeId {
-    pub const GLOBAL: Self = Self(NonZeroU32::new(1).unwrap());
-
-    pub fn new(id: u32) -> Option<Self> {
-        NonZeroU32::new(id).map(Self)
-    }
-
-    pub fn get(self) -> u32 {
-        self.0.get()
-    }
-}
-
 /// Symbol namespaces in C
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Namespace {
     Ordinary, // Variables, functions, typedefs, enum constants
     Tag,      // Struct, union, and enum tags
-
-    // TODO: currently, no code write Namespace::Label, need to fix
-    #[allow(unused)]
-    Label, // Goto labels
-}
-
-/// Scope information
-#[derive(Debug)]
-pub struct Scope {
-    pub parent: Option<ScopeId>,
-    pub symbols: HashMap<NameId, SymbolRef>, // Ordinary identifiers
-    pub tags: HashMap<NameId, SymbolRef>,    // Struct/union/enum tags
-    pub labels: HashMap<NameId, SymbolRef>,  // Goto labels
-    pub level: u32,
+    Label,    // Goto labels
 }
 
 /// Symbol table using flattened storage
@@ -133,7 +102,6 @@ pub struct SymbolTable {
     pub entries: Vec<Symbol>,
     pub scopes: Vec<Scope>,
     current_scope_id: ScopeId,
-    next_scope_id: u32,
 }
 
 impl Default for SymbolTable {
@@ -148,7 +116,6 @@ impl SymbolTable {
             entries: Vec::new(),
             scopes: Vec::new(),
             current_scope_id: ScopeId::GLOBAL,
-            next_scope_id: 2, // Start after GLOBAL
         };
 
         // Initialize global scope
@@ -157,22 +124,22 @@ impl SymbolTable {
             symbols: HashMap::new(),
             tags: HashMap::new(),
             labels: HashMap::new(),
-            level: 0,
+            kind: crate::semantic::ScopeKind::File,
         });
 
         table
     }
 
     pub fn push_scope(&mut self) -> ScopeId {
-        let new_scope_id = ScopeId::new(self.next_scope_id).unwrap();
-        self.next_scope_id += 1;
+        let new_scope_index = self.scopes.len();
+        let new_scope_id = ScopeId::from_index(new_scope_index);
 
         let new_scope = Scope {
             parent: Some(self.current_scope_id),
             symbols: HashMap::new(),
             tags: HashMap::new(),
             labels: HashMap::new(),
-            level: self.scopes[self.current_scope_id.get() as usize - 1].level + 1,
+            kind: crate::semantic::ScopeKind::Block,
         };
 
         self.scopes.push(new_scope);
@@ -186,7 +153,7 @@ impl SymbolTable {
 
     pub fn pop_scope(&mut self) -> Option<ScopeId> {
         let current_scope_id_before_pop = self.current_scope_id;
-        let current_scope = &self.scopes[current_scope_id_before_pop.get() as usize - 1];
+        let current_scope = &self.scopes[current_scope_id_before_pop.get() as usize];
         if let Some(parent) = current_scope.parent {
             self.current_scope_id = parent;
             debug!(
@@ -211,11 +178,11 @@ impl SymbolTable {
     }
 
     pub fn get_scope(&self, scope_id: ScopeId) -> &Scope {
-        &self.scopes[scope_id.get() as usize - 1]
+        &self.scopes[scope_id.get() as usize]
     }
 
     pub fn get_scope_mut(&mut self, scope_id: ScopeId) -> &mut Scope {
-        &mut self.scopes[scope_id.get() as usize - 1]
+        &mut self.scopes[scope_id.get() as usize]
     }
 
     pub fn add_symbol(&mut self, name: NameId, entry: Symbol) -> SymbolRef {
@@ -276,17 +243,30 @@ impl SymbolTable {
     }
 
     fn push_symbol(&mut self, entry: Symbol) -> SymbolRef {
-        let index = self.entries.len() as u32 + 1;
+        let index = self.entries.len();
         self.entries.push(entry);
-        SymbolRef::new(index).expect("SymbolEntryRef overflow")
+        SymbolRef::from_index(index)
     }
 
     pub fn get_symbol(&self, index: SymbolRef) -> &Symbol {
-        &self.entries[(index.get() - 1) as usize]
+        &self.entries[index.get() as usize]
     }
 
     pub fn get_symbol_mut(&mut self, index: SymbolRef) -> &mut Symbol {
-        &mut self.entries[(index.get() - 1) as usize]
+        &mut self.entries[index.get() as usize]
+    }
+
+    pub fn find_scope_for_record(&self, type_ref: TypeRef) -> Option<ScopeId> {
+        self.scopes
+            .iter()
+            .position(|scope| match &scope.kind {
+                crate::semantic::ScopeKind::Record(record_sym_ref) => {
+                    let symbol = self.get_symbol(*record_sym_ref);
+                    symbol.type_info == type_ref
+                }
+                _ => false,
+            })
+            .map(ScopeId::from_index)
     }
 
     /// Merge a new symbol entry with an existing one in the global scope.

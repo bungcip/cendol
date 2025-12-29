@@ -1,12 +1,3 @@
-//! Mid-level Intermediate Representation (MIR) for C11 compiler.
-//!
-//! This module provides the MIR data structures and APIs for representing
-//! C11 programs after semantic analysis. The MIR is designed to be:
-//! - Typed: All entities have explicit types
-//! - Explicit: All C semantics are made explicit
-//! - Cranelift-friendly: Easy to lower to Cranelift IR
-//! - Non-SSA: Uses basic blocks with explicit control flow
-
 use hashbrown::HashMap;
 use serde::Serialize;
 use std::fmt;
@@ -131,7 +122,7 @@ pub enum Terminator {
 }
 
 /// Place - Represents a storage location (local variable or memory)
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub enum Place {
     Local(LocalId),
     Deref(Box<Operand>),
@@ -552,51 +543,17 @@ impl MirBuilder {
     }
 
     /// Finalize the module by updating all references
-    pub fn finalize_module(&mut self) -> MirModule {
-        // Return the accumulated module directly
-        // This preserves the insertion order of types and constants,
-        // which is crucial for maintaining correct ID-to-index mapping
-        self.module.clone()
-    }
-
-    /// Get all functions for validation
-    pub fn get_functions(&self) -> &HashMap<MirFunctionId, MirFunction> {
-        &self.functions
-    }
-
-    /// Get all blocks for validation
-    pub fn get_blocks(&self) -> &HashMap<MirBlockId, MirBlock> {
-        &self.blocks
-    }
-
-    /// Get all locals for validation
-    pub fn get_locals(&self) -> &HashMap<LocalId, Local> {
-        &self.locals
-    }
-
-    /// Get all globals for validation
-    pub fn get_globals(&self) -> &HashMap<GlobalId, Global> {
-        &self.globals
-    }
-
-    /// Get all globals for validation (mutable)
-    pub fn get_globals_mut(&mut self) -> &mut HashMap<GlobalId, Global> {
-        &mut self.globals
-    }
-
-    /// Get all types for validation
-    pub fn get_types(&self) -> &HashMap<TypeId, MirType> {
-        &self.types
-    }
-
-    /// Get all constants for validation
-    pub fn get_constants(&self) -> &HashMap<ConstValueId, ConstValue> {
-        &self.constants
-    }
-
-    /// Get all statements for validation
-    pub fn get_statements(&self) -> &HashMap<MirStmtId, MirStmt> {
-        &self.statements
+    pub fn finalize_module(&mut self) -> crate::driver::compiler::SemaOutput {
+        crate::driver::compiler::SemaOutput {
+            module: self.module.clone(),
+            functions: self.functions.clone(),
+            blocks: self.blocks.clone(),
+            locals: self.locals.clone(),
+            globals: self.globals.clone(),
+            types: self.types.clone(),
+            constants: self.constants.clone(),
+            statements: self.statements.clone(),
+        }
     }
 
     /// Set the entry block for a function

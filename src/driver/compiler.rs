@@ -21,7 +21,7 @@ use crate::mir::{
 use crate::mir_dumper::{MirDumpConfig, MirDumper};
 use crate::parser::Parser;
 use crate::pp::{PPToken, Preprocessor};
-use crate::semantic::{AstToMirLowerer, SymbolTable};
+use crate::semantic::{ast_to_mir::AstToMirLowerer, symbol_table::SymbolTable};
 use crate::source_manager::SourceManager;
 
 use super::cli::CompileConfig;
@@ -149,8 +149,9 @@ impl CompilerDriver {
         }
 
         // semantic lowering and MIR generation phase
-        let sema_output = self.run_mir(ast)?;
+        let (sema_output, ast) = self.run_mir(ast)?;
         if stop_after == CompilePhase::Mir {
+            out.ast = Some(ast);
             out.mir = Some(sema_output.module.clone());
             out.sema_output = Some(sema_output);
             return Ok(out);
@@ -218,7 +219,7 @@ impl CompilerDriver {
         }
     }
 
-    fn run_mir(&mut self, mut ast: Ast) -> Result<SemaOutput, PipelineError> {
+    fn run_mir(&mut self, mut ast: Ast) -> Result<(SemaOutput, Ast), PipelineError> {
         let mut symbol_table = SymbolTable::new();
 
         use crate::semantic::symbol_resolver::run_symbol_resolver;
@@ -255,15 +256,19 @@ impl CompilerDriver {
             }
         }
 
-        use crate::semantic::type_resolver::run_type_resolver;
-        run_type_resolver(&ast, &mut self.diagnostics, &symbol_table);
+        use crate::semantic::type_resolver::TypeResolver;
+        let scope_map = ast.scope_map().to_vec();
+        let root_node = ast.get_root();
+        let mut type_resolver =
+            TypeResolver::new(&mut self.diagnostics, &mut ast, &symbol_table, scope_map);
+        type_resolver.run(root_node);
         self.check_diagnostics_and_return_if_error()?;
 
         let mut sema = AstToMirLowerer::new(&mut ast, &mut self.diagnostics, &mut symbol_table);
         let sema_output = sema.lower_module_complete();
         self.check_diagnostics_and_return_if_error()?;
 
-        Ok(sema_output)
+        Ok((sema_output, ast))
     }
 
     fn run_codegen(&mut self, sema_output: SemaOutput, emit_kind: EmitKind) -> Result<ClifOutput, PipelineError> {

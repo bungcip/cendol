@@ -1,4 +1,5 @@
 use hashbrown::HashMap;
+use serde::{Deserialize, Serialize};
 use std::{cmp::Ordering, num::NonZeroU32, path::PathBuf};
 
 /// Source ID for identifying source files
@@ -25,7 +26,7 @@ impl SourceId {
 /// Packed file ID and byte offset in a single u32.
 /// - Bits 0-21: Byte Offset (max 4 MiB file size)
 /// - Bits 22-31: Source ID Index (max 1023 unique source files)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub struct SourceLoc(u32);
 
 impl SourceLoc {
@@ -64,7 +65,7 @@ impl std::fmt::Display for SourceLoc {
 }
 
 /// Represents a range in the source file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct SourceSpan {
     pub start: SourceLoc,
     pub end: SourceLoc,

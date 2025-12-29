@@ -126,6 +126,10 @@ impl Ast {
     pub fn attach_scope_map(&mut self, scope_map: Vec<Option<ScopeId>>) {
         self.scope_map = scope_map;
     }
+
+    pub fn scope_map(&self) -> &[Option<ScopeId>] {
+        &self.scope_map
+    }
 }
 
 /// The primary AST node structure.

@@ -324,7 +324,11 @@ pub enum Declarator {
     Abstract,                                                    // for abstract declarator
     Pointer(TypeQualifiers, Option<Box<Declarator>>),            // e.g., `*`
     Array(Box<Declarator>, ArraySize),                           // e.g., `[10]`
-    Function(Box<Declarator>, ThinVec<ParamData> /* parameters */), // e.g., `(int x)`
+    Function {
+        inner: Box<Declarator>,
+        params: ThinVec<ParamData>,
+        is_variadic: bool,
+    }, // e.g., `(int x)`
     AnonymousRecord(bool /* is_union */, ThinVec<DeclarationData> /* members */), // C11 anonymous struct/union
     BitField(Box<Declarator>, NodeRef /* bit width expression */), // e.g., `x : 8`
 }

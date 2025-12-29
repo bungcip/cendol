@@ -289,7 +289,7 @@ fn extract_declarator_name(declarator: &Declarator) -> Option<String> {
         Declarator::Identifier(name, _, _) => Some(name.to_string()),
         Declarator::Pointer(_, next) => next.as_ref().and_then(|d| extract_declarator_name(d)),
         Declarator::Array(next, _) => extract_declarator_name(next),
-        Declarator::Function(next, _) => extract_declarator_name(next),
+        Declarator::Function { inner, .. } => extract_declarator_name(inner),
         Declarator::BitField(next, _) => extract_declarator_name(next),
         Declarator::Abstract => None,
         _ => None,
@@ -316,9 +316,13 @@ fn extract_declarator_kind(declarator: &Declarator) -> String {
                 format!("array of {}", inner_kind)
             }
         }
-        Declarator::Function(inner, params) => {
+        Declarator::Function {
+            inner,
+            params,
+            is_variadic,
+        } => {
             let return_type = extract_declarator_kind(inner);
-            let param_str = if params.is_empty() {
+            let mut param_str = if params.is_empty() {
                 "void".to_string()
             } else {
                 params
@@ -364,6 +368,14 @@ fn extract_declarator_kind(declarator: &Declarator) -> String {
                     .collect::<Vec<_>>()
                     .join(", ")
             };
+
+            if *is_variadic {
+                if params.is_empty() {
+                    param_str = "...".to_string();
+                } else {
+                    param_str.push_str(", ...");
+                }
+            }
 
             let return_type_str = if return_type == "abstract" || return_type == "identifier" {
                 "int".to_string()
@@ -1005,6 +1017,19 @@ fn test_function_returning_function_rejected() {
 #[test]
 fn test_ellipsis_not_last_parameter_rejected() {
     let _ = setup_declaration_with_errors("int f(int ..., int);");
+}
+
+#[test]
+fn test_variadic_function_declaration() {
+    let resolved = setup_declaration("int printf(const char * restrict format, ...);");
+    insta::assert_yaml_snapshot!(&resolved, @r#"
+    Declaration:
+      specifiers:
+        - int
+      init_declarators:
+        - name: printf
+          kind: "function(char pointer, ...) -> int"
+    "#);
 }
 
 #[test]

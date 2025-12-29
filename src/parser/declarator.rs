@@ -22,7 +22,7 @@ enum DeclaratorComponent {
 /// Validate declarator combinations
 fn validate_declarator_combination(base: &Declarator, new_kind: &str, span: SourceSpan) -> Result<(), ParseError> {
     match base {
-        Declarator::Function(..) => {
+        Declarator::Function { .. } => {
             if new_kind == "array" {
                 return Err(ParseError::DeclarationNotAllowed { span });
             }
@@ -192,9 +192,13 @@ fn parse_trailing_declarators_for_type_names(
         } else if parser.accept(TokenKind::LeftParen).is_some() {
             // Function declarator
             validate_declarator_combination(&current_base, "function", current_token_span)?;
-            let parameters = parse_function_parameters(parser)?;
+            let (parameters, is_variadic) = parse_function_parameters(parser)?;
             parser.expect(TokenKind::RightParen)?; // Consume ')'
-            current_base = Declarator::Function(Box::new(current_base), parameters);
+            current_base = Declarator::Function {
+                inner: Box::new(current_base),
+                params: parameters,
+                is_variadic,
+            };
         } else {
             break;
         }
@@ -216,9 +220,13 @@ fn parse_trailing_declarators(parser: &mut Parser, mut current_base: Declarator)
         } else if parser.accept(TokenKind::LeftParen).is_some() {
             // Function declarator
             validate_declarator_combination(&current_base, "function", current_token_span)?;
-            let parameters = parse_function_parameters(parser)?;
+            let (parameters, is_variadic) = parse_function_parameters(parser)?;
             parser.expect(TokenKind::RightParen)?; // Consume ')'
-            current_base = Declarator::Function(Box::new(current_base), parameters);
+            current_base = Declarator::Function {
+                inner: Box::new(current_base),
+                params: parameters,
+                is_variadic,
+            };
         } else if parser.accept(TokenKind::Colon).is_some() {
             // Bit-field declarator: name : width
             let bit_width_expr = parser.parse_expr_min()?;
@@ -245,8 +253,9 @@ fn reconstruct_declarator_chain(declarator_chain: Vec<DeclaratorComponent>, base
 }
 
 /// Helper to parse function parameters
-fn parse_function_parameters(parser: &mut Parser) -> Result<ThinVec<ParamData>, ParseError> {
+fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParamData>, bool), ParseError> {
     let mut params = ThinVec::new();
+    let mut is_variadic = false;
 
     if !parser.is_token(TokenKind::RightParen) {
         if parser.accept(TokenKind::Void).is_some() {
@@ -254,7 +263,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<ThinVec<ParamData>, 
         } else {
             loop {
                 if parser.accept(TokenKind::Ellipsis).is_some() {
-                    // Variadic function
+                    is_variadic = true;
                     break;
                 }
 
@@ -394,7 +403,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<ThinVec<ParamData>, 
         }
     }
 
-    Ok(params)
+    Ok((params, is_variadic))
 }
 
 /// Check if current token starts an abstract declarator
@@ -417,7 +426,7 @@ pub fn get_declarator_name(declarator: &Declarator) -> Option<NameId> {
         Declarator::Identifier(name, _, _) => Some(*name),
         Declarator::Pointer(_, Some(inner)) => get_declarator_name(inner),
         Declarator::Array(inner, _) => get_declarator_name(inner),
-        Declarator::Function(inner, _) => get_declarator_name(inner),
+        Declarator::Function { inner, .. } => get_declarator_name(inner),
         Declarator::BitField(inner, _) => get_declarator_name(inner),
         Declarator::AnonymousRecord(_, _) => None,
         Declarator::Abstract => None,
@@ -484,7 +493,11 @@ pub fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarator, Pars
                 parser.advance(); // Consume '('
                 if parser.accept(TokenKind::RightParen).is_some() {
                     // Empty parameter list: ()
-                    Declarator::Function(Box::new(Declarator::Abstract), ThinVec::new())
+                    Declarator::Function {
+                        inner: Box::new(Declarator::Abstract),
+                        params: ThinVec::new(),
+                        is_variadic: false,
+                    }
                 } else {
                     let start_idx = parser.current_idx;
                     let inner_declarator = parse_abstract_declarator(parser)?;
@@ -507,9 +520,13 @@ pub fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarator, Pars
                             debug!(
                                 "parse_abstract_declarator: found another LeftParen, treating as function declarator"
                             );
-                            let parameters = parse_function_parameters(parser)?;
+                            let (parameters, is_variadic) = parse_function_parameters(parser)?;
                             parser.expect(TokenKind::RightParen)?; // Consume ')'
-                            Declarator::Function(Box::new(inner_declarator), parameters)
+                            Declarator::Function {
+                                inner: Box::new(inner_declarator),
+                                params: parameters,
+                                is_variadic,
+                            }
                         } else {
                             // Roll back and try a different approach
                             parser.current_idx = start_idx;

@@ -21,7 +21,7 @@ pub struct Type {
 
 impl Type {
     /// Create a new type with default qualifiers
-    pub fn new(kind: TypeKind) -> Self {
+    pub(crate) fn new(kind: TypeKind) -> Self {
         Type {
             kind,
             qualifiers: TypeQualifiers::empty(),
@@ -30,82 +30,6 @@ impl Type {
         }
     }
 
-    /// Create a type with specific qualifiers
-    pub fn with_qualifiers(kind: TypeKind, qualifiers: TypeQualifiers) -> Self {
-        Type {
-            kind,
-            qualifiers,
-            size: None,
-            alignment: None,
-        }
-    }
-
-    /// Check if this is a void type
-    pub fn is_void(&self) -> bool {
-        matches!(self.kind, TypeKind::Void)
-    }
-
-    /// Check if this is an arithmetic type
-    pub fn is_arithmetic(&self) -> bool {
-        matches!(
-            self.kind,
-            TypeKind::Bool
-                | TypeKind::Char { .. }
-                | TypeKind::Short { .. }
-                | TypeKind::Int { .. }
-                | TypeKind::Long { .. }
-                | TypeKind::Float
-                | TypeKind::Double { .. }
-                | TypeKind::Complex { .. }
-        )
-    }
-
-    /// Check if this is an integer type
-    pub fn is_integer(&self) -> bool {
-        matches!(
-            self.kind,
-            TypeKind::Bool
-                | TypeKind::Char { .. }
-                | TypeKind::Short { .. }
-                | TypeKind::Int { .. }
-                | TypeKind::Long { .. }
-        )
-    }
-
-    /// Check if this is a floating point type
-    pub fn is_floating(&self) -> bool {
-        matches!(
-            self.kind,
-            TypeKind::Float | TypeKind::Double { .. } | TypeKind::Complex { .. }
-        )
-    }
-
-    /// Check if this is a scalar type
-    pub fn is_scalar(&self) -> bool {
-        self.is_arithmetic() || self.is_pointer() || matches!(self.kind, TypeKind::Enum { .. })
-    }
-
-    /// Check if this is a pointer type
-    pub fn is_pointer(&self) -> bool {
-        matches!(self.kind, TypeKind::Pointer { .. })
-    }
-
-    /// Check if this is a complete type
-    pub fn is_complete(&self) -> bool {
-        match &self.kind {
-            TypeKind::Void => false,
-            TypeKind::Array { size, .. } => matches!(size, ArraySizeType::Constant(_)),
-            TypeKind::Record { is_complete, .. } => *is_complete,
-            TypeKind::Enum { is_complete, .. } => *is_complete,
-            TypeKind::Incomplete => false,
-            _ => true,
-        }
-    }
-
-    /// Check if this is an array type
-    pub fn is_array(&self) -> bool {
-        matches!(self.kind, TypeKind::Array { .. })
-    }
 }
 
 /// The kind of type
@@ -190,48 +114,7 @@ bitflags! {
     }
 }
 
-impl TypeQualifiers {
-    /// Check if qualifiers are compatible (for type compatibility)
-    pub fn is_compatible(&self, other: &TypeQualifiers) -> bool {
-        // In C, qualifiers can be added but not removed
-        // self should be a subset of other or vice versa in some contexts
-        // For now, simple equality check
-        self == other
-    }
-}
+impl TypeQualifiers {}
 
 // FunctionParameter, StructMember, EnumConstant are defined in the main ast module
 
-/// Type utilities and helper functions
-pub mod utils {
-    use super::*;
-
-    /// Get the size of a type in bytes (if known)
-    pub fn type_size(ty: &Type) -> Option<u16> {
-        ty.size
-    }
-
-    /// Get the alignment of a type in bytes (if known)
-    pub fn type_alignment(ty: &Type) -> Option<u16> {
-        ty.alignment
-    }
-
-    /// Create a pointer type to the given type
-    pub fn make_pointer_type(pointee: TypeRef, qualifiers: TypeQualifiers) -> Type {
-        Type::with_qualifiers(TypeKind::Pointer { pointee }, qualifiers)
-    }
-
-    /// Create an array type
-    pub fn make_array_type(element_type: TypeRef, size: ArraySizeType, qualifiers: TypeQualifiers) -> Type {
-        Type::with_qualifiers(TypeKind::Array { element_type, size }, qualifiers)
-    }
-
-    /// Create a function type
-    pub fn make_function_type(return_type: TypeRef, parameters: Vec<FunctionParameter>, is_variadic: bool) -> Type {
-        Type::new(TypeKind::Function {
-            return_type,
-            parameters,
-            is_variadic,
-        })
-    }
-}

@@ -152,14 +152,14 @@ impl Node {
 }
 
 /// Function parameter information
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FunctionParameter {
     pub param_type: TypeRef,
     pub name: Option<NameId>,
 }
 
 /// Struct/union member information
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct StructMember {
     pub name: NameId,
     pub member_type: TypeRef,
@@ -168,7 +168,7 @@ pub struct StructMember {
 }
 
 /// Enum constant information
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct EnumConstant {
     pub name: NameId,
     pub value: i64, // Resolved value

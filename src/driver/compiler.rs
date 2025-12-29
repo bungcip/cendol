@@ -221,7 +221,7 @@ impl CompilerDriver {
     fn run_mir(&mut self, mut ast: Ast) -> Result<SemaOutput, PipelineError> {
         let mut symbol_table = SymbolTable::new();
 
-        use crate::semantic::resolver::run_symbol_resolver;
+        use crate::semantic::symbol_resolver::run_symbol_resolver;
         let scope_map = run_symbol_resolver(&mut ast, &mut self.diagnostics, &mut symbol_table);
         ast.attach_scope_map(scope_map);
         self.check_diagnostics_and_return_if_error()?;
@@ -254,6 +254,10 @@ impl CompilerDriver {
                 _ => {}
             }
         }
+
+        use crate::semantic::type_resolver::run_type_resolver;
+        run_type_resolver(&ast, &mut self.diagnostics, &symbol_table);
+        self.check_diagnostics_and_return_if_error()?;
 
         let mut sema = AstToMirLowerer::new(&mut ast, &mut self.diagnostics, &mut symbol_table);
         let sema_output = sema.lower_module_complete();

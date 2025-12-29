@@ -32,7 +32,7 @@ impl Type {
 }
 
 /// The kind of type
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TypeKind {
     Void,
     Bool,
@@ -94,7 +94,7 @@ pub enum TypeKind {
 }
 
 /// Array size types
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ArraySizeType {
     Constant(usize),
     Variable(TypeRef), // VLA with size expression type

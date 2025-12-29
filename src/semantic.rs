@@ -12,8 +12,9 @@
 
 pub mod ast_to_mir;
 pub mod name_resolver;
-pub mod resolver;
+pub mod symbol_resolver;
 pub mod symbol_table;
+pub mod type_resolver;
 
 #[cfg(test)]
 pub mod tests_lowering;

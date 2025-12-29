@@ -993,7 +993,11 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
                 size: array_size,
             })
         }
-        Declarator::Function(base, params) => {
+        Declarator::Function {
+            inner: base,
+            params,
+            is_variadic,
+        } => {
             // Check for function pointer: a pointer declarator inside the function base
             if let Declarator::Pointer(qualifiers, Some(inner_base)) = &**base {
                 // This is a pointer to a function.
@@ -1006,7 +1010,7 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
                 let function_type = Type::new(TypeKind::Function {
                     return_type: ctx.ast.push_type(return_type),
                     parameters,
-                    is_variadic: false, // TODO
+                    is_variadic: *is_variadic,
                 });
                 let function_type_ref = ctx.ast.push_type(function_type);
 
@@ -1025,7 +1029,7 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
             Type::new(TypeKind::Function {
                 return_type: ctx.ast.push_type(return_type),
                 parameters,
-                is_variadic: false, // TODO: Detect variadic
+                is_variadic: *is_variadic,
             })
         }
         Declarator::AnonymousRecord(_, _) => {

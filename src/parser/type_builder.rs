@@ -67,7 +67,11 @@ fn apply_declarator_to_type(
                 size: resolve_array_size(parser, size),
             })
         }
-        Declarator::Function(inner, params) => {
+        Declarator::Function {
+            inner,
+            params,
+            is_variadic,
+        } => {
             let return_kind = apply_declarator_to_type(parser, base_kind, inner)?;
             let return_type_ref = parser.ast.push_type(Type::new(return_kind));
             let param_types = params
@@ -84,7 +88,7 @@ fn apply_declarator_to_type(
             Ok(TypeKind::Function {
                 return_type: return_type_ref,
                 parameters: param_types,
-                is_variadic: false, // TODO: Handle variadic functions
+                is_variadic: *is_variadic,
             })
         }
         Declarator::Abstract => Ok(base_kind),
@@ -291,7 +295,7 @@ fn get_declarator_qualifiers(declarator: &Declarator) -> TypeQualifiers {
         Declarator::Pointer(qualifiers, None) => *qualifiers,
         Declarator::Identifier(_, qualifiers, _) => *qualifiers,
         Declarator::Array(inner, _) => get_declarator_qualifiers(inner),
-        Declarator::Function(inner, _) => get_declarator_qualifiers(inner),
+        Declarator::Function { inner, .. } => get_declarator_qualifiers(inner),
         _ => TypeQualifiers::empty(),
     }
 }

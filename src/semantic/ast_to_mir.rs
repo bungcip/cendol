@@ -325,7 +325,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                         self.report_error(SemanticError::Redefinition {
                             name: current_label,
                             first_def: node_span, // Note: This is not the ideal span for first_def
-                            second_def: node_span,
+                            span: node_span,
                         });
                     } else {
                         self.label_map.insert(current_label, target_block_id);

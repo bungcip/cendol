@@ -45,9 +45,6 @@ pub enum ParseError {
 
     #[error("Parser exceeded maximum iteration limit - possible infinite loop")]
     InfiniteLoop { span: SourceSpan },
-
-    #[error("Invalid numeric constant: {text}")]
-    InvalidNumericConstant { text: String, span: SourceSpan },
 }
 
 impl ParseError {
@@ -55,7 +52,6 @@ impl ParseError {
         match self {
             ParseError::UnexpectedToken { span, .. } => *span,
             ParseError::UnexpectedEof { span } => *span,
-            ParseError::InvalidNumericConstant { span, .. } => *span,
             ParseError::InvalidUnaryOperator { span } => *span,
             ParseError::DeclarationNotAllowed { span } => *span,
             ParseError::InfiniteLoop { span } => *span,
@@ -153,42 +149,24 @@ impl IntoDiagnostic for ParseError {
 
 impl IntoDiagnostic for SemanticError {
     fn into_diagnostic(self) -> Vec<Diagnostic> {
-        let main_diagnostic = Diagnostic {
+        let mut diagnostics = vec![Diagnostic {
             level: DiagnosticLevel::Error,
-            message: self.to_string(),
-            span: self.span(),
-            ..Default::default()
-        };
-
-        if let SemanticError::Redefinition { first_def, .. } = &self {
-            vec![
-                main_diagnostic,
-                Diagnostic {
-                    level: DiagnosticLevel::Note,
-                    message: "previous definition is here".to_string(),
-                    span: *first_def,
-                    ..Default::default()
-                },
-            ]
-        } else {
-            vec![main_diagnostic]
-        }
-    }
-}
-
-impl IntoDiagnostic for SemanticWarning {
-    fn into_diagnostic(self) -> Vec<Diagnostic> {
-        let diagnostics = vec![Diagnostic {
-            level: DiagnosticLevel::Warning,
             message: self.to_string(),
             span: self.span(),
             ..Default::default()
         }];
 
+        if let SemanticError::Redefinition { first_def, .. } = &self {
+            diagnostics.push(Diagnostic {
+                level: DiagnosticLevel::Note,
+                message: "previous definition is here".to_string(),
+                span: *first_def,
+                ..Default::default()
+            });
+        }
         diagnostics
     }
 }
-
 /// Semantic errors
 #[derive(Debug, thiserror::Error)]
 pub enum SemanticError {
@@ -198,7 +176,7 @@ pub enum SemanticError {
     Redefinition {
         name: NameId,
         first_def: SourceSpan,
-        second_def: SourceSpan,
+        span: SourceSpan,
     },
     #[error("Type mismatch: expected {expected}, found {found}")]
     TypeMismatch {
@@ -229,7 +207,7 @@ impl SemanticError {
     pub fn span(&self) -> SourceSpan {
         match self {
             SemanticError::UndeclaredIdentifier { span, .. } => *span,
-            SemanticError::Redefinition { second_def, .. } => *second_def,
+            SemanticError::Redefinition { span, .. } => *span,
             SemanticError::TypeMismatch { span, .. } => *span,
             SemanticError::NotAnLvalue { span } => *span,
             SemanticError::InvalidBinaryOperands { span, .. } => *span,
@@ -237,31 +215,6 @@ impl SemanticError {
             SemanticError::InvalidUseOfVoid { span } => *span,
             SemanticError::UnsupportedFeature { span, .. } => *span,
             SemanticError::InvalidArraySize { span } => *span,
-        }
-    }
-}
-
-/// Semantic warnings
-#[derive(Debug, thiserror::Error)]
-pub enum SemanticWarning {
-    #[error("Unused declaration '{name}'")]
-    UnusedDeclaration { name: NameId, span: SourceSpan },
-    #[error("Implicit conversion from {from_type} to {to_type}")]
-    ImplicitConversion {
-        from_type: String,
-        to_type: String,
-        span: SourceSpan,
-    },
-    #[error("Unreachable code")]
-    UnreachableCode { span: SourceSpan },
-}
-
-impl SemanticWarning {
-    pub fn span(&self) -> SourceSpan {
-        match self {
-            SemanticWarning::UnusedDeclaration { span, .. } => *span,
-            SemanticWarning::ImplicitConversion { span, .. } => *span,
-            SemanticWarning::UnreachableCode { span } => *span,
         }
     }
 }

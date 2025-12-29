@@ -1,8 +1,8 @@
 //! SymbolResolver
-//! 
+//!
 //! Responsibility
 //! - Declaration Lowering (Declaration -> VarDecl/RecordDecl/EnumDecl/TypedefDecl, FunctionDef -> Function)
-//! - Scope Construction 
+//! - Scope Construction
 //! - Symbol Insertion to Symbol Table
 //! - Making Sure Struct with body is is_complete = true
 //!
@@ -431,7 +431,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                             ctx.report_error(SemanticError::Redefinition {
                                 name: *tag_name,
                                 first_def,
-                                second_def: span,
+                                span,
                             });
                         }
                         type_info
@@ -898,7 +898,7 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
                     ctx.diag.report(SemanticError::Redefinition {
                         name,
                         first_def: existing.def_span,
-                        second_def: span,
+                        span,
                     });
                 }
             }

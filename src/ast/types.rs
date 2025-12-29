@@ -29,7 +29,6 @@ impl Type {
             alignment: None,
         }
     }
-
 }
 
 /// The kind of type
@@ -117,4 +116,3 @@ bitflags! {
 impl TypeQualifiers {}
 
 // FunctionParameter, StructMember, EnumConstant are defined in the main ast module
-

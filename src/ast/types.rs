@@ -123,5 +123,4 @@ pub struct FunctionParameter {
     pub name: Option<NameId>,
 }
 
-
 // StructMember, EnumConstant are defined in the main ast module

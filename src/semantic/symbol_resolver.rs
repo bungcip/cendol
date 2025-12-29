@@ -1,8 +1,8 @@
 //! SymbolResolver
-//! 
+//!
 //! Responsibility
 //! - Declaration Lowering (Declaration -> VarDecl/RecordDecl/EnumDecl/TypedefDecl, FunctionDef -> Function)
-//! - Scope Construction 
+//! - Scope Construction
 //! - Symbol Insertion to Symbol Table
 //! - Making Sure Struct with body is is_complete = true
 //!

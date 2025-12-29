@@ -32,8 +32,7 @@ pub(crate) fn build_type_from_specifiers(
     Ok(parser.ast.push_type(Type {
         kind: final_kind,
         qualifiers,
-        size: None,
-        alignment: None,
+        ..Default::default()
     }))
 }
 
@@ -53,8 +52,7 @@ fn apply_declarator_to_type(
             let pointee_type_ref = parser.ast.push_type(Type {
                 kind: pointee_kind,
                 qualifiers: *qualifiers,
-                size: None,
-                alignment: None,
+                ..Default::default()
             });
             Ok(TypeKind::Pointer {
                 pointee: pointee_type_ref,

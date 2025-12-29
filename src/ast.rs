@@ -151,13 +151,6 @@ impl Node {
     }
 }
 
-/// Function parameter information
-#[derive(Debug, Clone, PartialEq)]
-pub struct FunctionParameter {
-    pub param_type: TypeRef,
-    pub name: Option<NameId>,
-}
-
 /// Struct/union member information
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructMember {

@@ -1,3 +1,9 @@
+//! NameResolver
+//! 
+//! Responsibility
+//! - binding identifier name to symbol
+//! - binding label name to symbol
+//! - binding goto name to symbol
 use log::debug;
 
 use crate::ast::{Ast, FunctionData, NodeKind, NodeRef, VarDeclData};

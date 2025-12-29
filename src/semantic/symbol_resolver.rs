@@ -1,4 +1,10 @@
-//! Declaration Lowering + Scope Construction + Symbol Insertion
+//! SymbolResolver
+//! 
+//! Responsibility
+//! - Declaration Lowering (Declaration -> VarDecl/RecordDecl/EnumDecl/TypedefDecl, FunctionDef -> Function)
+//! - Scope Construction 
+//! - Symbol Insertion to Symbol Table
+//! - Making Sure Struct with body is is_complete = true
 //!
 //! This module implements the semantic lowering phase that bridges the gap between the
 //! grammar-oriented parser AST and the type-resolved semantic AST (HIR). The lowering
@@ -152,12 +158,7 @@ fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: Sour
                 let ty = resolve_type_specifier(ts, ctx, span).unwrap_or_else(|e| {
                     ctx.report_error(e);
                     // Create an error type
-                    let error_type = Type {
-                        kind: TypeKind::Error,
-                        qualifiers: TypeQualifiers::empty(),
-                        size: None,
-                        alignment: None,
-                    };
+                    let error_type = Type::default();
                     ctx.ast.push_type(error_type)
                 });
                 info.base_type = merge_base_type(info.base_type, ty, ctx);
@@ -599,9 +600,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                         is_complete: false,  // Mark as incomplete
                         is_union: false,
                     },
-                    qualifiers: TypeQualifiers::empty(),
-                    size: None,
-                    alignment: None,
+                    ..Default::default()
                 };
                 Ok(ctx.ast.push_type(forward_ref_type))
             }
@@ -785,12 +784,7 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
             span,
         });
         // Create an error type
-        let error_type = Type {
-            kind: TypeKind::Error,
-            qualifiers: TypeQualifiers::empty(),
-            size: None,
-            alignment: None,
-        };
+        let error_type = Type::default();
         ctx.ast.push_type(error_type)
     });
 

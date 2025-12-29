@@ -6,17 +6,24 @@
 use bitflags::bitflags;
 use serde::Serialize;
 
-use crate::ast::{EnumConstant, FunctionParameter, NameId, StructMember, TypeRef};
+use crate::ast::{EnumConstant, NameId, StructMember, TypeRef};
 
 /// Type representation (for semantic analysis)
 /// This is a canonical type, distinct from TypeSpecifier which is a syntax construct.
 /// Types are stored in a separate Vec<Type> with TypeRef references.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Type {
     pub kind: TypeKind,
     pub qualifiers: TypeQualifiers,
-    pub size: Option<u16>,      // Computed during semantic analysis
-    pub alignment: Option<u16>, // Computed during semantic analysis
+    pub layout: Option<TypeLayout>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct TypeLayout {
+    #[allow(unused)]
+    size: u16,
+    #[allow(unused)]
+    alignment: u16,
 }
 
 impl Type {
@@ -25,14 +32,13 @@ impl Type {
         Type {
             kind,
             qualifiers: TypeQualifiers::empty(),
-            size: None,
-            alignment: None,
+            layout: None,
         }
     }
 }
 
 /// The kind of type
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum TypeKind {
     Void,
     Bool,
@@ -84,12 +90,7 @@ pub enum TypeKind {
         enumerators: Vec<EnumConstant>,
         is_complete: bool,
     },
-    Typedef {
-        name: NameId,
-        aliased_type: TypeRef,
-    },
-    // Placeholder for incomplete types during semantic analysis
-    Incomplete,
+    #[default]
     Error, // For error recovery
 }
 
@@ -115,4 +116,12 @@ bitflags! {
 
 impl TypeQualifiers {}
 
-// FunctionParameter, StructMember, EnumConstant are defined in the main ast module
+/// Function parameter information
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunctionParameter {
+    pub param_type: TypeRef,
+    pub name: Option<NameId>,
+}
+
+
+// StructMember, EnumConstant are defined in the main ast module

@@ -226,10 +226,26 @@ impl CompilerDriver {
         ast.attach_scope_map(scope_map);
         self.check_diagnostics_and_return_if_error()?;
 
-        // validation
+        // invariant validation after symbol resolver
         for (i, entry) in symbol_table.entries.iter().enumerate() {
             debug!("symbol[{}]: {:?}", i, entry.name);
         }
+        for node in &ast.nodes {
+            match &node.kind {
+                crate::ast::NodeKind::Declaration(..) | crate::ast::NodeKind::FunctionDef(..) => {
+                    panic!("AST still has declaration/function_def");
+                }
+                _ => {}
+            }
+        }
+        // for ty in &ast.types {
+        //     match &ty.kind {
+        //         crate::ast::TypeKind::Record { is_complete, .. } if *is_complete == false => {
+        //             panic!("AST Type still has is_complete == false");
+        //         }
+        //         _ => {}
+        //     }
+        // }
 
         use crate::semantic::name_resolver::run_name_resolver;
         run_name_resolver(&ast, &mut self.diagnostics, &symbol_table);

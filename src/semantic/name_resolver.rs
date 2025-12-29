@@ -114,7 +114,7 @@ fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
                 visit_node(ctx, *arg);
             }
         }
-        NodeKind::ListInitializer(inits) => {
+        NodeKind::InitializerList(inits) => {
             for init in inits {
                 visit_node(ctx, init.initializer);
             }

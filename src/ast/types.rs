@@ -3,10 +3,12 @@
 //! This module defines the semantic type system used during analysis,
 //! distinct from the syntactic TypeSpecifier constructs used in parsing.
 
+use std::num::NonZeroU16;
+
 use bitflags::bitflags;
 use serde::Serialize;
 
-use crate::ast::{EnumConstant, NameId, StructMember, TypeRef};
+use crate::ast::{NameId, SourceSpan, TypeRef};
 
 /// Type representation (for semantic analysis)
 /// This is a canonical type, distinct from TypeSpecifier which is a syntax construct.
@@ -123,4 +125,21 @@ pub struct FunctionParameter {
     pub name: Option<NameId>,
 }
 
-// StructMember, EnumConstant are defined in the main ast module
+
+/// Struct/union member information
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructMember {
+    pub name: NameId,
+    pub member_type: TypeRef,
+    pub bit_field_size: Option<NonZeroU16>,
+    pub span: SourceSpan, // for diagnostic
+}
+
+
+/// Enum constant information
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumConstant {
+    pub name: NameId,
+    pub value: i64, // Resolved value
+    pub span: SourceSpan,
+}

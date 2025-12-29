@@ -487,7 +487,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
 
         let init_node = self.ast.get_node(initializer);
         match init_node.kind.clone() {
-            NodeKind::ListInitializer(designated_initializers) => {
+            NodeKind::InitializerList(designated_initializers) => {
                 // Process designated initializers (both positional and named)
                 self.process_designated_initializers(scope_id, &designated_initializers, local_id, var_name, span);
             }
@@ -614,7 +614,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         // Process the initializer for this designated field
         let init_node = self.ast.get_node(designated_init.initializer);
         match &init_node.kind {
-            NodeKind::ListInitializer(_nested_inits) => {
+            NodeKind::InitializerList(_nested_inits) => {
                 // Nested compound initializer - for now, just report as unsupported
                 self.report_error(SemanticError::NonConstantInitializer { span });
             }
@@ -645,7 +645,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
 
         let node = self.ast.get_node(initializer);
         match node.kind {
-            NodeKind::ListInitializer(_) => {
+            NodeKind::InitializerList(_) => {
                 // Nested compound initializer - for now, just report as unsupported
                 self.report_error(SemanticError::NonConstantInitializer { span });
             }
@@ -693,7 +693,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         let init_node = self.ast.get_node(initializer);
 
         match init_node.kind.clone() {
-            NodeKind::ListInitializer(designated_initializers) => {
+            NodeKind::InitializerList(designated_initializers) => {
                 // Collect constant values for fields
                 // We use a map to handle out-of-order and designated initializers
                 // Key is the field index
@@ -745,7 +745,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                     // Process the initializer value
                     let init_node = self.ast.get_node(designated_init.initializer);
                     match &init_node.kind {
-                        NodeKind::ListInitializer(_) => {
+                        NodeKind::InitializerList(_) => {
                             // Nested compound literal
                             // Get the type of the field we are initializing
                             // Try to get struct field type first
@@ -876,7 +876,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 if let Some(init) = var_decl.init {
                     let init_node = self.ast.get_node(init);
                     match init_node.kind.clone() {
-                        NodeKind::ListInitializer(_) => {
+                        NodeKind::InitializerList(_) => {
                             // For compound initializers in global variables, we need to process them properly
                             if let Some(struct_const_id) = self.process_global_compound_initializer(
                                 scope_id,
@@ -1267,7 +1267,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                         debug!("Direct function call target: {}", name);
                         self.handle_direct_function_call(*name, arg_operands)
                     }
-                    NodeKind::MemberAccess(object_ref, field_name, is_arrow, _) => {
+                    NodeKind::MemberAccess(object_ref, field_name, is_arrow) => {
                         // Function pointer call through member access: v.fptr() or v->fptr()
                         debug!(
                             "Function pointer call through member access: {}.{}() (is_arrow: {})",
@@ -1339,7 +1339,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 Operand::Copy(Box::new(place))
             }
 
-            NodeKind::MemberAccess(object_ref, field_name, is_arrow, _) => {
+            NodeKind::MemberAccess(object_ref, field_name, is_arrow) => {
                 debug!(
                     "Lowering member access expression for field: {} (is_arrow: {})",
                     field_name, is_arrow
@@ -2620,7 +2620,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         let node = self.ast.get_node(expr_ref);
 
         match &node.kind {
-            NodeKind::MemberAccess(object_ref, field_name, is_arrow, _) => {
+            NodeKind::MemberAccess(object_ref, field_name, is_arrow) => {
                 debug!(
                     "Resolving type for MemberAccess expression: {} (is_arrow: {})",
                     field_name, is_arrow

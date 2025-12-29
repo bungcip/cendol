@@ -41,7 +41,6 @@ pub enum NodeKind {
         NodeRef,                 /* object */
         NameId,                  /* field */
         bool,                    /* is_arrow */
-        Cell<Option<SymbolRef>>, /* resolved symbol after semantic analysis */
     ),
     IndexAccess(NodeRef /* array */, NodeRef /* index */),
 
@@ -99,7 +98,7 @@ pub enum NodeKind {
     TranslationUnit(Vec<NodeRef> /* top-level declarations */),
 
     // --- InitializerList ---
-    ListInitializer(Vec<DesignatedInitializer>), // TODO: rename to InitializerList
+    InitializerList(Vec<DesignatedInitializer>),
 
     // --- Dummy Node ---
     Dummy,

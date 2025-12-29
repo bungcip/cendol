@@ -112,7 +112,7 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
             Box::new(resolve_node(ast, *func)),
             args.iter().map(|&arg| resolve_node(ast, arg)).collect(),
         ),
-        NodeKind::MemberAccess(object, field, is_arrow, _) => {
+        NodeKind::MemberAccess(object, field, is_arrow) => {
             ResolvedNodeKind::MemberAccess(Box::new(resolve_node(ast, *object)), field.to_string(), *is_arrow)
         }
         NodeKind::IndexAccess(array, index) => {
@@ -402,7 +402,7 @@ fn extract_declarator_kind(declarator: &Declarator) -> String {
 fn resolve_initializer(ast: &Ast, initializer: NodeRef) -> ResolvedNodeKind {
     let node = ast.get_node(initializer);
     match &node.kind {
-        NodeKind::ListInitializer(designated_inits) => {
+        NodeKind::InitializerList(designated_inits) => {
             let mut elements = Vec::new();
             for designated in designated_inits {
                 // For now, ignore designations and just collect the initializer values

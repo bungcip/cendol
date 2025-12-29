@@ -150,20 +150,3 @@ impl Node {
         }
     }
 }
-
-/// Struct/union member information
-#[derive(Debug, Clone, PartialEq)]
-pub struct StructMember {
-    pub name: NameId,
-    pub member_type: TypeRef,
-    pub bit_field_size: Option<usize>,
-    pub span: SourceSpan,
-}
-
-/// Enum constant information
-#[derive(Debug, Clone, PartialEq)]
-pub struct EnumConstant {
-    pub name: NameId,
-    pub value: i64, // Resolved value
-    pub span: SourceSpan,
-}

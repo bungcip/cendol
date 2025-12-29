@@ -249,7 +249,7 @@ impl OutputHandler {
                 func.get(),
                 args.iter().map(|&r| r.get().to_string()).join(", ")
             ),
-            NodeKind::MemberAccess(obj, field, is_arrow, _) => println!(
+            NodeKind::MemberAccess(obj, field, is_arrow) => println!(
                 "MemberAccess({}, {}, {})",
                 obj.get(),
                 field,
@@ -400,8 +400,8 @@ impl OutputHandler {
                 stmts.iter().map(|&r| r.get().to_string()).join(", ")
             ),
             // TODO: make it more good
-            NodeKind::ListInitializer(list) => println!(
-                "ListInitializer([{}])",
+            NodeKind::InitializerList(list) => println!(
+                "InitializerList([{}])",
                 list.iter().map(|r| { r.initializer.to_string() }).join(", ")
             ),
             NodeKind::Dummy => println!("DUMMY"),

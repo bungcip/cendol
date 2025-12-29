@@ -250,7 +250,7 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<NodeRef, ParseErr
 
         let end_token = parser.expect(TokenKind::RightBrace)?;
         let span = SourceSpan::new(span.start, end_token.span.end);
-        let initializer = parser.push_node(NodeKind::ListInitializer(initializers), span);
+        let initializer = parser.push_node(NodeKind::InitializerList(initializers), span);
         Ok(initializer)
     } else {
         debug!(

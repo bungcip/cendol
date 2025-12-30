@@ -31,7 +31,7 @@ use super::output::OutputHandler;
 pub struct CompilerDriver {
     config: CompileConfig,
     diagnostics: DiagnosticEngine,
-    source_manager: SourceManager,
+    pub(crate) source_manager: SourceManager,
     output_handler: OutputHandler,
 }
 

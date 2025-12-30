@@ -125,10 +125,7 @@ mod tests {
         assert_eq!(error.message, "Expression is not assignable (not an lvalue)");
 
         // Check that the error span is correct
-        let (line, col) = driver
-            .source_manager
-            .get_line_column(error.span.start)
-            .unwrap();
+        let (line, col) = driver.source_manager.get_line_column(error.span.start).unwrap();
         assert_eq!(line, 3, "Error should be on line 3");
         assert_eq!(col, 17, "Error should be at column 17");
     }

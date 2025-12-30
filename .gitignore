@@ -2,3 +2,5 @@ target
 ast_dump.html
 c-testsuite
 coverage_report/
+a.out
+*.o

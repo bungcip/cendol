@@ -428,3 +428,60 @@ pub enum PipelineError {
     Fatal,
     IoError(std::io::Error),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run_test_with_c_code(c_code: &str) -> Result<i32, String> {
+        let config = CompileConfig::from_virtual_file(c_code.to_string(), CompilePhase::EmitObject);
+        let mut driver = CompilerDriver::from_config(config);
+
+        let pipeline_result = driver.run_pipeline(CompilePhase::EmitObject);
+        if driver.diagnostics.has_errors() {
+            driver.print_diagnostics();
+            return Err("Compilation failed".to_string());
+        }
+
+        let outputs = pipeline_result.map_err(|e| format!("Pipeline failed: {:?}", e))?;
+        let artifact = outputs.units.values().next().unwrap();
+        let object_file = artifact.object_file.as_ref().unwrap();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let obj_path = temp_dir.path().join("test.o");
+        let exe_path = temp_dir.path().join("test");
+        std::fs::write(&obj_path, object_file).unwrap();
+
+        let status = std::process::Command::new("clang")
+            .arg(&obj_path)
+            .arg("-o")
+            .arg(&exe_path)
+            .status()
+            .expect("Failed to execute clang for linking");
+
+        if !status.success() {
+            return Err("Linking failed".to_string());
+        }
+
+        let output = std::process::Command::new(&exe_path)
+            .output()
+            .expect("Failed to execute compiled program");
+
+        Ok(output.status.code().unwrap_or(-1))
+    }
+
+    #[test]
+    fn test_compile_struct_pointer_access() {
+        let c_code = r#"
+            int main() {
+                struct S { int x; int y; } s;
+                struct S *p;
+                p = &s;
+                s.x = 1;
+                p->y = 2;
+                return p->y + p->x - 3;
+            }
+        "#;
+        assert_eq!(run_test_with_c_code(c_code), Ok(0));
+    }
+}

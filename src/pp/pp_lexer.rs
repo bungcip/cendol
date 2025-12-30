@@ -297,41 +297,112 @@ impl PPLexer {
         }
 
         match ch {
-            b'+' => if consume_if!(b'+') { token!(PPTokenKind::Increment, 2) }
-                    else if consume_if!(b'=') { token!(PPTokenKind::PlusAssign, 2) }
-                    else { token!(PPTokenKind::Plus, 1) },
-            b'-' => if consume_if!(b'-') { token!(PPTokenKind::Decrement, 2) }
-                    else if consume_if!(b'=') { token!(PPTokenKind::MinusAssign, 2) }
-                    else if consume_if!(b'>') { token!(PPTokenKind::Arrow, 2) }
-                    else { token!(PPTokenKind::Minus, 1) },
-            b'*' => if consume_if!(b'=') { token!(PPTokenKind::StarAssign, 2) }
-                    else { token!(PPTokenKind::Star, 1) },
-            b'/' => if consume_if!(b'=') { token!(PPTokenKind::DivAssign, 2) }
-                    else { token!(PPTokenKind::Slash, 1) },
-            b'%' => if consume_if!(b'=') { token!(PPTokenKind::ModAssign, 2) }
-                    else { token!(PPTokenKind::Percent, 1) },
-            b'=' => if consume_if!(b'=') { token!(PPTokenKind::Equal, 2) }
-                    else { token!(PPTokenKind::Assign, 1) },
-            b'!' => if consume_if!(b'=') { token!(PPTokenKind::NotEqual, 2) }
-                    else { token!(PPTokenKind::Not, 1) },
-            b'<' => if consume_if!(b'<') {
-                        if consume_if!(b'=') { token!(PPTokenKind::LeftShiftAssign, 3) }
-                        else { token!(PPTokenKind::LeftShift, 2) }
-                    } else if consume_if!(b'=') { token!(PPTokenKind::LessEqual, 2) }
-                    else { token!(PPTokenKind::Less, 1) },
-            b'>' => if consume_if!(b'>') {
-                        if consume_if!(b'=') { token!(PPTokenKind::RightShiftAssign, 3) }
-                        else { token!(PPTokenKind::RightShift, 2) }
-                    } else if consume_if!(b'=') { token!(PPTokenKind::GreaterEqual, 2) }
-                    else { token!(PPTokenKind::Greater, 1) },
-            b'&' => if consume_if!(b'&') { token!(PPTokenKind::LogicAnd, 2) }
-                    else if consume_if!(b'=') { token!(PPTokenKind::AndAssign, 2) }
-                    else { token!(PPTokenKind::And, 1) },
-            b'|' => if consume_if!(b'|') { token!(PPTokenKind::LogicOr, 2) }
-                    else if consume_if!(b'=') { token!(PPTokenKind::OrAssign, 2) }
-                    else { token!(PPTokenKind::Or, 1) },
-            b'^' => if consume_if!(b'=') { token!(PPTokenKind::XorAssign, 2) }
-                    else { token!(PPTokenKind::Xor, 1) },
+            b'+' => {
+                if consume_if!(b'+') {
+                    token!(PPTokenKind::Increment, 2)
+                } else if consume_if!(b'=') {
+                    token!(PPTokenKind::PlusAssign, 2)
+                } else {
+                    token!(PPTokenKind::Plus, 1)
+                }
+            }
+            b'-' => {
+                if consume_if!(b'-') {
+                    token!(PPTokenKind::Decrement, 2)
+                } else if consume_if!(b'=') {
+                    token!(PPTokenKind::MinusAssign, 2)
+                } else if consume_if!(b'>') {
+                    token!(PPTokenKind::Arrow, 2)
+                } else {
+                    token!(PPTokenKind::Minus, 1)
+                }
+            }
+            b'*' => {
+                if consume_if!(b'=') {
+                    token!(PPTokenKind::StarAssign, 2)
+                } else {
+                    token!(PPTokenKind::Star, 1)
+                }
+            }
+            b'/' => {
+                if consume_if!(b'=') {
+                    token!(PPTokenKind::DivAssign, 2)
+                } else {
+                    token!(PPTokenKind::Slash, 1)
+                }
+            }
+            b'%' => {
+                if consume_if!(b'=') {
+                    token!(PPTokenKind::ModAssign, 2)
+                } else {
+                    token!(PPTokenKind::Percent, 1)
+                }
+            }
+            b'=' => {
+                if consume_if!(b'=') {
+                    token!(PPTokenKind::Equal, 2)
+                } else {
+                    token!(PPTokenKind::Assign, 1)
+                }
+            }
+            b'!' => {
+                if consume_if!(b'=') {
+                    token!(PPTokenKind::NotEqual, 2)
+                } else {
+                    token!(PPTokenKind::Not, 1)
+                }
+            }
+            b'<' => {
+                if consume_if!(b'<') {
+                    if consume_if!(b'=') {
+                        token!(PPTokenKind::LeftShiftAssign, 3)
+                    } else {
+                        token!(PPTokenKind::LeftShift, 2)
+                    }
+                } else if consume_if!(b'=') {
+                    token!(PPTokenKind::LessEqual, 2)
+                } else {
+                    token!(PPTokenKind::Less, 1)
+                }
+            }
+            b'>' => {
+                if consume_if!(b'>') {
+                    if consume_if!(b'=') {
+                        token!(PPTokenKind::RightShiftAssign, 3)
+                    } else {
+                        token!(PPTokenKind::RightShift, 2)
+                    }
+                } else if consume_if!(b'=') {
+                    token!(PPTokenKind::GreaterEqual, 2)
+                } else {
+                    token!(PPTokenKind::Greater, 1)
+                }
+            }
+            b'&' => {
+                if consume_if!(b'&') {
+                    token!(PPTokenKind::LogicAnd, 2)
+                } else if consume_if!(b'=') {
+                    token!(PPTokenKind::AndAssign, 2)
+                } else {
+                    token!(PPTokenKind::And, 1)
+                }
+            }
+            b'|' => {
+                if consume_if!(b'|') {
+                    token!(PPTokenKind::LogicOr, 2)
+                } else if consume_if!(b'=') {
+                    token!(PPTokenKind::OrAssign, 2)
+                } else {
+                    token!(PPTokenKind::Or, 1)
+                }
+            }
+            b'^' => {
+                if consume_if!(b'=') {
+                    token!(PPTokenKind::XorAssign, 2)
+                } else {
+                    token!(PPTokenKind::Xor, 1)
+                }
+            }
             b'~' => token!(PPTokenKind::Tilde, 1),
             b'.' => 'ellipsis: {
                 let pos_after_first = self.position;
@@ -345,7 +416,7 @@ impl PPLexer {
                     self.position = pos_after_first;
                 }
                 token!(PPTokenKind::Dot, 1)
-            },
+            }
             b'?' => token!(PPTokenKind::Question, 1),
             b':' => token!(PPTokenKind::Colon, 1),
             b',' => token!(PPTokenKind::Comma, 1),
@@ -444,8 +515,8 @@ impl PPLexer {
                 }
             }
             // All operators and punctuation are handled by the optimized helper function.
-            b'+' | b'-' | b'*' | b'/' | b'%' | b'=' | b'!' | b'<' | b'>' | b'&' | b'|' | b'^'
-            | b'~' | b'.' | b'?' | b':' | b',' | b';' | b'(' | b')' | b'[' | b']' | b'{' | b'}' => {
+            b'+' | b'-' | b'*' | b'/' | b'%' | b'=' | b'!' | b'<' | b'>' | b'&' | b'|' | b'^' | b'~' | b'.' | b'?'
+            | b':' | b',' | b';' | b'(' | b')' | b'[' | b']' | b'{' | b'}' => {
                 Some(self.lex_operator(start_pos, ch, flags))
             }
             _ => Some(PPToken::new(

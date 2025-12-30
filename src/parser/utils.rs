@@ -12,22 +12,12 @@ use super::expressions::BindingPower;
 use super::{Parser, ParserState};
 
 /// Extension trait for Parser to add utility methods
-pub trait ParserExt {
-    /// Unwrap a ParseExprOutput to get the NodeRef, returning an error if it's not an expression
-    fn unwrap_expr_result(&self, result: Result<NodeRef, ParseError>, context: &str) -> Result<NodeRef, ParseError>;
-
+pub(crate) trait ParserExt {
     /// Check if current token starts a type name
     fn is_type_name_start(&self) -> bool;
 }
 
 impl<'arena, 'src> ParserExt for Parser<'arena, 'src> {
-    fn unwrap_expr_result(&self, result: Result<NodeRef, ParseError>, _context: &str) -> Result<NodeRef, ParseError> {
-        match result {
-            Ok(node) => Ok(node),
-            Err(e) => Err(e),
-        }
-    }
-
     fn is_type_name_start(&self) -> bool {
         debug!(
             "is_type_name_start: checking token {:?} at position {}",
@@ -58,11 +48,11 @@ impl<'arena, 'src> ParserExt for Parser<'arena, 'src> {
 }
 
 /// Common expression parsing patterns
-pub mod expr_patterns {
+pub(crate) mod expr_patterns {
     use super::*;
 
     /// Parse a parenthesized expression: (expression)
-    pub fn parse_parenthesized_expr(parser: &mut Parser) -> Result<NodeRef, ParseError> {
+    pub(crate) fn parse_parenthesized_expr(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         debug!("parse_parenthesized_expr: parsing parenthesized expression");
         parser.expect(crate::lexer::TokenKind::LeftParen)?;
         let expr = parser.parse_expr_min()?;
@@ -71,7 +61,10 @@ pub mod expr_patterns {
     }
 
     /// Parse a comma-separated list of expressions with specified binding power
-    pub fn parse_expr_list(parser: &mut Parser, binding_power: BindingPower) -> Result<Vec<NodeRef>, ParseError> {
+    pub(crate) fn parse_expr_list(
+        parser: &mut Parser,
+        binding_power: BindingPower,
+    ) -> Result<Vec<NodeRef>, ParseError> {
         debug!("parse_expr_list: parsing expression list");
         let mut args = Vec::new();
 
@@ -80,8 +73,7 @@ pub mod expr_patterns {
         }
 
         loop {
-            let expr_result = parser.parse_expression(binding_power)?;
-            let arg = parser.unwrap_expr_result(Ok(expr_result), "expression in list")?;
+            let arg = parser.parse_expression(binding_power)?;
             args.push(arg);
 
             if !parser.is_token(crate::lexer::TokenKind::Comma) {
@@ -94,14 +86,14 @@ pub mod expr_patterns {
     }
 }
 
-pub struct ParserTransaction<'a, 'arena, 'src> {
-    pub parser: &'a mut Parser<'arena, 'src>,
+pub(crate) struct ParserTransaction<'a, 'arena, 'src> {
+    pub(crate) parser: &'a mut Parser<'arena, 'src>,
     state: ParserState,
     committed: bool,
 }
 
 impl<'a, 'arena, 'src> ParserTransaction<'a, 'arena, 'src> {
-    pub fn new(parser: &'a mut Parser<'arena, 'src>) -> Self {
+    pub(crate) fn new(parser: &'a mut Parser<'arena, 'src>) -> Self {
         let state = parser.save_state();
         Self {
             parser,
@@ -110,7 +102,7 @@ impl<'a, 'arena, 'src> ParserTransaction<'a, 'arena, 'src> {
         }
     }
 
-    pub fn commit(mut self) {
+    pub(crate) fn commit(mut self) {
         self.committed = true;
     }
 }

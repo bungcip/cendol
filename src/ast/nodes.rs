@@ -38,9 +38,9 @@ pub enum NodeKind {
     Assignment(BinaryOp, NodeRef /* lhs */, NodeRef /* rhs */),
     FunctionCall(NodeRef /* func */, Vec<NodeRef> /* args */),
     MemberAccess(
-        NodeRef,                 /* object */
-        NameId,                  /* field */
-        bool,                    /* is_arrow */
+        NodeRef, /* object */
+        NameId,  /* field */
+        bool,    /* is_arrow */
     ),
     IndexAccess(NodeRef /* array */, NodeRef /* index */),
 

@@ -221,8 +221,10 @@ impl CompilerDriver {
     fn run_mir(&mut self, mut ast: Ast) -> Result<SemaOutput, PipelineError> {
         let mut symbol_table = SymbolTable::new();
         let mut type_ctx = TypeContext::new();
+        type_ctx.create_builtin();
 
         use crate::semantic::symbol_resolver::run_symbol_resolver;
+
         let scope_map = run_symbol_resolver(&mut ast, &mut self.diagnostics, &mut symbol_table, &mut type_ctx);
         ast.attach_scope_map(scope_map);
         self.check_diagnostics_and_return_if_error()?;
@@ -271,8 +273,6 @@ impl CompilerDriver {
                 _ => {}
             }
         }
-
-        type_ctx.create_builtin();
 
         use crate::semantic::type_resolver::run_type_resolver;
         run_type_resolver(&ast, &mut self.diagnostics, &symbol_table);

@@ -4,11 +4,12 @@ use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::driver::compiler::SemaOutput;
 use crate::mir::{
     self, BinaryOp as MirBinaryOp, CallTarget, ConstValue, ConstValueId, Local, LocalId, MirBlockId, MirBuilder,
-    MirFunctionId, MirStmt, Operand, Place, Rvalue, Terminator, TypeId,
+    MirFunctionId, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
 };
 use crate::semantic::SymbolKind;
 use crate::semantic::SymbolRef;
 use crate::semantic::SymbolTable;
+use crate::semantic::type_context::QualType;
 use crate::semantic::{DefinitionState, TypeContext, TypeRef};
 use crate::semantic::{Namespace, ScopeId};
 use crate::source_manager::SourceSpan;
@@ -400,7 +401,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         debug!("Processing function '{}'", func_name);
 
         // Extract return type from the function type
-        let func_type = self.type_ctx.get_type(function_data.ty);
+        let func_type = self.type_ctx.get(function_data.ty);
         let return_type = if let TypeKind::Function { return_type, .. } = &func_type.kind {
             self.lower_type_to_mir(*return_type)
         } else {
@@ -476,7 +477,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             .unwrap();
 
         // Symbol already exists from previous pass (lowering). Re-use it and create MIR local.
-        let mir_type_id = self.lower_type_to_mir(param_type);
+        let mir_type_id = self.lower_type_to_mir(param_type.ty);
         let local_id = self.mir_builder.create_local(Some(param_name), mir_type_id, true);
         self.local_map.insert(existing_entry, local_id);
     }
@@ -847,11 +848,11 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         debug!("Lowering semantic var declaration for '{}'", var_decl.name);
 
         // Canonicalize the variable's type (like Clang does)
-        let canonical_type_id = self.canonicalize_type(var_decl.ty);
+        let canonical_type_id = self.canonicalize_type(var_decl.ty.ty);
         debug!(
             "Canonicalized type for variable '{}': {} -> {}",
             var_decl.name,
-            var_decl.ty.get(),
+            var_decl.ty,
             canonical_type_id.get()
         );
 
@@ -1000,7 +1001,9 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                             for (global_id, global) in self.mir_builder.get_globals() {
                                 if global.name == entry.name {
                                     let current_node = self.ast.get_node(expr_ref);
-                                    current_node.resolved_type.set(Some(entry.type_info));
+                                    current_node
+                                        .resolved_type
+                                        .set(Some(QualType::unqualified(entry.type_info)));
                                     return Operand::Copy(Box::new(Place::Global(*global_id)));
                                 }
                             }
@@ -1008,7 +1011,9 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                             // This is a local variable - look up the local in our local map
                             if let Some(local_id) = self.local_map.get(&resolved_ref) {
                                 let current_node = self.ast.get_node(expr_ref);
-                                current_node.resolved_type.set(Some(entry.type_info));
+                                current_node
+                                    .resolved_type
+                                    .set(Some(QualType::unqualified(entry.type_info)));
                                 return Operand::Copy(Box::new(Place::Local(*local_id)));
                             }
                         }
@@ -1018,7 +1023,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                         let type_info = entry.type_info;
                         let const_id = self.create_constant(ConstValue::Int(val));
                         let current_node = self.ast.get_node(expr_ref);
-                        current_node.resolved_type.set(Some(type_info));
+                        current_node.resolved_type.set(Some(QualType::unqualified(type_info)));
                         return Operand::Constant(const_id);
                     }
                     SymbolKind::Function { .. } => {
@@ -1028,7 +1033,9 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                         // Look up the function in MIR functions by name
                         if let Some(func_id) = self.find_mir_function_by_name(name) {
                             let current_node = self.ast.get_node(expr_ref);
-                            current_node.resolved_type.set(Some(entry.type_info));
+                            current_node
+                                .resolved_type
+                                .set(Some(QualType::unqualified(entry.type_info)));
                             // Create a function address constant
                             let func_addr_const = ConstValue::FunctionAddress(func_id);
                             let const_id = self.create_constant(func_addr_const);
@@ -1335,7 +1342,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 let expr_operand = self.lower_expression(scope_id, expr_ref);
 
                 // Convert the target type to MIR type
-                let target_type_id = self.lower_type_to_mir(type_ref);
+                let target_type_id = self.lower_type_to_mir(type_ref.ty);
 
                 // Create a cast operation
                 // Create the cast rvalue and assign it to a temporary local
@@ -1400,7 +1407,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                                 entry.type_info
                             );
                             debug!("Symbol kind: {:?}", entry.kind);
-                            Some(entry.type_info)
+                            Some(QualType::unqualified(entry.type_info))
                         } else {
                             debug!("Symbol '{}' not found in symbol table", name);
                             debug!("Current scope: {}", scope_id.get());
@@ -1423,11 +1430,11 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 // For arrow access, if the object type is a pointer, we need to dereference it
                 // to get the actual struct type for field lookup
                 if is_arrow && let Some(type_ref) = object_type_ref {
-                    let object_ast_type = self.type_ctx.get_type(type_ref);
-                    if let crate::ast::TypeKind::Pointer { pointee } = &object_ast_type.kind {
+                    let object_ast_type = self.type_ctx.get(type_ref.ty);
+                    if let TypeKind::Pointer { pointee } = &object_ast_type.kind {
                         // Canonicalize the pointee type to ensure it points to the complete struct definition
                         let canonical_pointee = self.canonicalize_type(*pointee);
-                        object_type_ref = Some(canonical_pointee);
+                        object_type_ref = Some(QualType::unqualified(canonical_pointee));
                     }
                 }
 
@@ -1450,11 +1457,11 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
 
                 // Look for the field in the specific object type
                 let field_index = {
-                    let object_ast_type = self.type_ctx.get_type(object_type_ref);
+                    let object_ast_type = self.type_ctx.get(object_type_ref.ty);
 
                     // Handle both struct and union types
                     match &object_ast_type.kind {
-                        crate::ast::TypeKind::Record { members, is_union, .. } => {
+                        TypeKind::Record { members, is_union, .. } => {
                             debug!(
                                 "Searching for field '{}' in {} with {} members",
                                 field_name,
@@ -1483,9 +1490,9 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
 
                     // Set the resolved type for this MemberAccess node
                     let field_type = {
-                        let object_ast_type = self.type_ctx.get_type(object_type_ref);
-                        if let crate::ast::TypeKind::Record { members, .. } = &object_ast_type.kind {
-                            members[field_idx].member_type
+                        let object_ast_type = self.type_ctx.get(object_type_ref.ty);
+                        if let TypeKind::Record { members, .. } = &object_ast_type.kind {
+                            members[field_idx].member_type.ty
                         } else {
                             self.type_ctx.type_int
                         }
@@ -1493,7 +1500,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
 
                     // Update the resolved_type field of the current node
                     let current_node = self.ast.get_node(expr_ref);
-                    current_node.resolved_type.set(Some(field_type));
+                    current_node.resolved_type.set(Some(QualType::unqualified(field_type)));
 
                     // Return this as an operand that can be used as an lvalue
                     Operand::Copy(Box::new(field_place))
@@ -1854,7 +1861,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     /// Lower a type reference to MIR type
     fn lower_type_to_mir(&mut self, type_ref: TypeRef) -> TypeId {
         // Clone the AST type to avoid borrow conflicts
-        let ast_type = self.type_ctx.get_type(type_ref).clone();
+        let ast_type = self.type_ctx.get(type_ref).clone();
 
         debug!("Converting AST type to MIR: {:?}", ast_type.kind);
 
@@ -1897,7 +1904,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             crate::ast::TypeKind::Pointer { pointee } => {
                 // Convert the pointee type first
                 let pointee_type_id = self.lower_type_to_mir(pointee);
-                let mir_type = crate::mir::MirType::Pointer {
+                let mir_type = MirType::Pointer {
                     pointee: pointee_type_id,
                 };
                 self.add_type(mir_type)
@@ -1928,7 +1935,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 // Convert struct/union members to MIR format
                 let mut mir_fields = Vec::new();
                 for member in members {
-                    let field_type_id = self.lower_type_to_mir(member.member_type);
+                    let field_type_id = self.lower_type_to_mir(member.member_type.ty);
                     mir_fields.push((member.name, field_type_id));
                 }
 
@@ -2100,10 +2107,10 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     /// This is similar to how Clang handles type canonicalization
     fn canonicalize_type(&mut self, type_ref: TypeRef) -> TypeRef {
         // Clone the type to avoid borrow issues
-        let ast_type = self.type_ctx.get_type(type_ref).clone();
+        let ast_type = self.type_ctx.get(type_ref).clone();
 
         match ast_type.kind {
-            crate::ast::TypeKind::Record {
+            TypeKind::Record {
                 tag,
                 members: _,
                 is_complete,
@@ -2139,18 +2146,16 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 let canonical_pointee = self.canonicalize_type(pointee);
                 if canonical_pointee != pointee {
                     // Create a new pointer type with the canonical pointee
-                    let canonical_pointer_type = crate::ast::Type::new(crate::ast::TypeKind::Pointer {
-                        pointee: canonical_pointee,
-                    });
-                    self.type_ctx.push_type(canonical_pointer_type)
+                    self.type_ctx.pointer_to(canonical_pointee)
                 } else {
                     // Even if pointee didn't change, we need to check if this pointer type
                     // should be updated to point to a complete struct definition
-                    let pointee_ast_type = self.type_ctx.get_type(pointee);
-                    if let crate::ast::TypeKind::Record { tag, .. } = &pointee_ast_type.kind
+                    let pointee_ast_type = self.type_ctx.get(pointee).clone();
+                    if let crate::ast::TypeKind::Record { tag, .. } = pointee_ast_type.kind
                         && let Some(tag_name) = tag
                     {
                         // Look for a complete struct with the same tag
+                        let mut need_add = None;
                         for (i, complete_type_candidate) in self.type_ctx.types.iter().enumerate() {
                             if let crate::ast::TypeKind::Record {
                                 tag: candidate_tag,
@@ -2158,17 +2163,16 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                                 is_complete: candidate_is_complete,
                                 ..
                             } = &complete_type_candidate.kind
-                                && Some(*tag_name) == *candidate_tag
+                                && Some(tag_name) == *candidate_tag
                                 && *candidate_is_complete
                                 && !candidate_members.is_empty()
                                 && pointee.get() != (i + 1) as u32
                             {
-                                let complete_struct_ref = TypeRef::new((i + 1) as u32).unwrap();
-                                let updated_pointer_type = crate::ast::Type::new(crate::ast::TypeKind::Pointer {
-                                    pointee: complete_struct_ref,
-                                });
-                                return self.type_ctx.push_type(updated_pointer_type);
+                                need_add = Some(TypeRef::new((i + 1) as u32).unwrap());
                             }
+                        }
+                        if let Some(base) = need_add {
+                            self.type_ctx.pointer_to(base);
                         }
                     }
                     type_ref
@@ -2623,7 +2627,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     /// Resolve the type of a complex expression by examining its structure
-    fn resolve_type_from_expression(&self, expr_ref: NodeRef) -> Option<TypeRef> {
+    fn resolve_type_from_expression(&self, expr_ref: NodeRef) -> Option<QualType> {
         let node = self.ast.get_node(expr_ref);
 
         match &node.kind {
@@ -2638,7 +2642,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
 
                 // For arrow access, we need to dereference the pointer to get the struct type
                 let dereferenced_type_ref = if *is_arrow {
-                    let object_ast_type = self.type_ctx.get_type(object_type_ref);
+                    let object_ast_type = self.type_ctx.get(object_type_ref.ty);
                     if let crate::ast::TypeKind::Pointer { pointee } = &object_ast_type.kind {
                         debug!("Dereferencing pointer type to get struct type");
                         *pointee
@@ -2647,12 +2651,12 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                         return None;
                     }
                 } else {
-                    object_type_ref
+                    object_type_ref.ty
                 };
 
                 // Look for the field in the struct/union type
-                let struct_ast_type = self.type_ctx.get_type(dereferenced_type_ref);
-                if let crate::ast::TypeKind::Record { members, .. } = &struct_ast_type.kind {
+                let struct_ast_type = self.type_ctx.get(dereferenced_type_ref);
+                if let TypeKind::Record { members, .. } = &struct_ast_type.kind {
                     if let Some(field_index) = members.iter().position(|member| member.name == *field_name) {
                         debug!("Found field '{}' at index {}", field_name, field_index);
                         let field_type = members[field_index].member_type;
@@ -2674,7 +2678,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 if let Some(resolved_ref) = resolved_symbol.get() {
                     let entry = self.symbol_table.get_symbol(resolved_ref);
                     debug!("Resolved identifier '{}' to type {:?}", name, entry.type_info);
-                    Some(entry.type_info)
+                    Some(QualType::unqualified(entry.type_info))
                 } else {
                     None
                 }
@@ -2848,7 +2852,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                         entry.type_info
                     );
                     debug!("Symbol kind: {:?}", entry.kind);
-                    Some(entry.type_info)
+                    Some(QualType::unqualified(entry.type_info))
                 } else {
                     debug!("Symbol '{}' not found in symbol table", name);
                     None
@@ -2864,11 +2868,11 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         // For arrow access, if the object type is a pointer, we need to dereference it
         // to get the actual struct type for field lookup
         if is_arrow && let Some(type_ref) = object_type_ref {
-            let object_ast_type = self.type_ctx.get_type(type_ref);
+            let object_ast_type = self.type_ctx.get(type_ref.ty);
             if let crate::ast::TypeKind::Pointer { pointee } = &object_ast_type.kind {
                 // Canonicalize the pointee type to ensure it points to the complete struct definition
                 let canonical_pointee = self.canonicalize_type(*pointee);
-                object_type_ref = Some(canonical_pointee);
+                object_type_ref = Some(QualType::unqualified(canonical_pointee));
             }
         }
 
@@ -2886,11 +2890,11 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
 
         // Look for the field in the struct and get its index
         let field_index = {
-            let object_ast_type = self.type_ctx.get_type(object_type_ref);
+            let object_ast_type = self.type_ctx.get(object_type_ref.ty);
 
             // Handle both struct and union types
             match &object_ast_type.kind {
-                crate::ast::TypeKind::Record { members, is_union, .. } => {
+                TypeKind::Record { members, is_union, .. } => {
                     debug!(
                         "Searching for field '{}' in {} with {} members",
                         field_name,

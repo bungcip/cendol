@@ -5,9 +5,11 @@
 
 use hashbrown::HashMap;
 use serde::Serialize;
-use std::num::NonZeroU32;
+use std::{fmt::Display, num::NonZeroU32};
 
-use crate::ast::{ArraySizeType, EnumConstant, FunctionParameter, NameId, StructMember, Type, TypeKind, TypeLayout};
+use crate::ast::{
+    ArraySizeType, EnumConstant, FunctionParameter, NameId, StructMember, Type, TypeKind, TypeLayout, TypeQualifiers,
+};
 
 /// Opaque reference to a canonical type.
 /// Internally index + 1 (NonZeroU32 for niche optimization).
@@ -31,6 +33,40 @@ impl TypeRef {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize)]
+pub struct QualType {
+    pub ty: TypeRef,
+    pub qualifiers: TypeQualifiers,
+}
+
+impl QualType {
+    #[inline]
+    pub fn new(ty: TypeRef, qualifiers: TypeQualifiers) -> Self {
+        Self { ty, qualifiers }
+    }
+
+    #[inline]
+    pub fn unqualified(ty: TypeRef) -> Self {
+        Self {
+            ty,
+            qualifiers: TypeQualifiers::empty(),
+        }
+    }
+}
+
+impl Display for QualType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Format qualifiers
+        if !self.qualifiers.is_empty() {
+            write!(f, "{} ", self.qualifiers)?;
+        }
+
+        // Note: For complete type formatting, this would need access to a TypeContext
+        // to resolve the TypeRef to the actual Type. For now, just show the type ref.
+        write!(f, "TypeRef({})", self.ty.get())
+    }
+}
+
 /// Central arena & factory for semantic types.
 ///
 /// Invariants:
@@ -49,7 +85,11 @@ pub struct TypeContext {
     // --- Common builtin types ---
     pub type_void: TypeRef,
     pub type_bool: TypeRef,
+    pub type_short: TypeRef,
     pub type_int: TypeRef,
+    pub type_uint: TypeRef,
+    pub type_long: TypeRef,
+    pub type_long_long: TypeRef,
     pub type_char: TypeRef,
     pub type_double: TypeRef,
     pub type_error: TypeRef,
@@ -68,6 +108,10 @@ impl TypeContext {
             type_void: dummy(),
             type_bool: dummy(),
             type_int: dummy(),
+            type_uint: dummy(),
+            type_short: dummy(),
+            type_long: dummy(),
+            type_long_long: dummy(),
             type_char: dummy(),
             type_double: dummy(),
             type_error: dummy(),
@@ -78,33 +122,23 @@ impl TypeContext {
         self.type_void = self.alloc(Type::new(TypeKind::Void));
         self.type_bool = self.alloc(Type::new(TypeKind::Bool));
         self.type_int = self.alloc(Type::new(TypeKind::Int { is_signed: true }));
+        self.type_uint = self.alloc(Type::new(TypeKind::Int { is_signed: false }));
+        self.type_short = self.alloc(Type::new(TypeKind::Short { is_signed: true }));
+        self.type_long = self.alloc(Type::new(TypeKind::Long {
+            is_signed: true,
+            is_long_long: false,
+        }));
+        self.type_long_long = self.alloc(Type::new(TypeKind::Long {
+            is_signed: true,
+            is_long_long: true,
+        }));
         self.type_char = self.alloc(Type::new(TypeKind::Char { is_signed: true }));
         self.type_double = self.alloc(Type::new(TypeKind::Double { is_long_double: false }));
         self.type_error = self.alloc(Type::new(TypeKind::Error));
     }
 
-    /// DEPRECATED: Add a type to the AST and return its reference
-    pub(crate) fn push_type(&mut self, ty: Type) -> TypeRef {
-        let index = self.types.len() as u32 + 1;
-        self.types.push(ty);
-        TypeRef::new(index).expect("TypeRef overflow")
-    }
-
-    /// DEPRECATED: Get a type by its reference
-    pub fn get_type(&self, index: TypeRef) -> &Type {
-        let idx = (index.get() - 1) as usize;
-        if idx >= self.types.len() {
-            panic!(
-                "Type index {} out of bounds: types vector has {} elements",
-                index.get(),
-                self.types.len()
-            );
-        }
-        &self.types[idx]
-    }
-
     /// Allocate a new canonical type and return its TypeRef.
-    fn alloc(&mut self, ty: Type) -> TypeRef {
+    pub fn alloc(&mut self, ty: Type) -> TypeRef {
         let idx = self.types.len() as u32 + 1;
         let nz = NonZeroU32::new(idx).unwrap();
         self.types.push(ty);
@@ -128,7 +162,6 @@ impl TypeContext {
     // ============================================================
     // Canonical type constructors
     // ============================================================
-    #[allow(unused)]
     pub fn pointer_to(&mut self, base: TypeRef) -> TypeRef {
         if let Some(&ptr) = self.pointer_cache.get(&base) {
             return ptr;
@@ -139,19 +172,19 @@ impl TypeContext {
         ptr
     }
 
-    // pub fn array_of(&mut self, elem: TypeRef, size: ArraySizeType) -> TypeRef {
-    //     let key = (elem, size.clone());
-    //     if let Some(&arr) = self.array_cache.get(&key) {
-    //         return arr;
-    //     }
+    pub fn array_of(&mut self, elem: TypeRef, size: ArraySizeType) -> TypeRef {
+        let key = (elem, size.clone());
+        if let Some(&arr) = self.array_cache.get(&key) {
+            return arr;
+        }
 
-    //     let arr = self.alloc(Type::new(TypeKind::Array {
-    //         element_type: elem,
-    //         size,
-    //     }));
-    //     self.array_cache.insert(key, arr);
-    //     arr
-    // }
+        let arr = self.alloc(Type::new(TypeKind::Array {
+            element_type: elem,
+            size,
+        }));
+        self.array_cache.insert(key, arr);
+        arr
+    }
 
     #[allow(unused)]
     pub fn function_type(
@@ -162,7 +195,7 @@ impl TypeContext {
     ) -> TypeRef {
         let key = FnSigKey {
             return_type,
-            params: params.iter().map(|p| p.param_type).collect(),
+            params: params.iter().map(|p| p.param_type.ty).collect(), // canonical type only
             is_variadic,
         };
 
@@ -234,6 +267,34 @@ impl TypeContext {
                 ty.layout = layout;
             }
             _ => unreachable!("complete_enum on non-enum"),
+        }
+    }
+
+    #[allow(unused)]
+    pub fn decay(&mut self, qt: QualType) -> QualType {
+        match &self.get(qt.ty).kind {
+            TypeKind::Array { element_type, .. } => {
+                let ptr = self.pointer_to(*element_type);
+                QualType::new(ptr, qt.qualifiers)
+            }
+            TypeKind::Function { .. } => {
+                let ptr = self.pointer_to(qt.ty); // TypeRef canonical
+                QualType::new(ptr, qt.qualifiers)
+            }
+            _ => qt,
+        }
+    }
+
+    #[allow(unused)]
+    pub fn strip_all(&self, qt: QualType) -> QualType {
+        QualType::unqualified(qt.ty)
+    }
+
+    #[allow(unused)]
+    pub fn merge_qualifiers(&self, base: QualType, add: TypeQualifiers) -> QualType {
+        QualType {
+            ty: base.ty,
+            qualifiers: base.qualifiers | add,
         }
     }
 }

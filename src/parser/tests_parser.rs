@@ -121,7 +121,7 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
         NodeKind::Cast(type_ref, expr) => {
             // For simplicity, just show a placeholder type name
             // In a full implementation, we'd resolve the actual type
-            ResolvedNodeKind::Cast(format!("type_{}", type_ref.get()), Box::new(resolve_node(ast, *expr)))
+            ResolvedNodeKind::Cast(format!("type_{}", type_ref), Box::new(resolve_node(ast, *expr)))
         }
         NodeKind::ParsedCast(parsed_type, expr) => {
             // For simplicity, just show a placeholder type name
@@ -136,8 +136,8 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
             )
         }
         NodeKind::SizeOfExpr(expr) => ResolvedNodeKind::SizeOfExpr(Box::new(resolve_node(ast, *expr))),
-        NodeKind::SizeOfType(type_ref) => ResolvedNodeKind::SizeOfType(format!("type_{}", type_ref.get())),
-        NodeKind::AlignOf(type_ref) => ResolvedNodeKind::AlignOf(format!("type_{}", type_ref.get())),
+        NodeKind::SizeOfType(type_ref) => ResolvedNodeKind::SizeOfType(format!("type_{}", type_ref)),
+        NodeKind::AlignOf(type_ref) => ResolvedNodeKind::AlignOf(format!("type_{}", type_ref)),
         NodeKind::Declaration(decl) => {
             let specifiers = decl
                 .specifiers

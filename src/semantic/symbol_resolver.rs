@@ -13,6 +13,7 @@
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
+use crate::semantic::type_context::QualType;
 use crate::semantic::{Namespace, ScopeId, Symbol, SymbolKind, SymbolTable, TypeContext, TypeRef};
 use crate::source_manager::SourceSpan;
 
@@ -47,21 +48,25 @@ fn extract_identifier_from_parsed_declarator_recursive(
 }
 
 /// Apply ParsedType declarator to create a semantic Type
-fn apply_parsed_declarator(base_type: TypeRef, parsed_type: &ParsedType, ctx: &mut LowerCtx) -> Type {
+fn apply_parsed_declarator(base_type: TypeRef, parsed_type: &ParsedType, ctx: &mut LowerCtx) -> QualType {
     // Start with the base type and apply declarator transformations
-    let mut result_type = apply_parsed_declarator_recursive(base_type, parsed_type.declarator, ctx);
-    // Apply the qualifiers from the ParsedType
-    result_type.qualifiers = parsed_type.qualifiers;
-    result_type
+    let result_type = apply_parsed_declarator_recursive(base_type, parsed_type.declarator, ctx);
+    // Combine the declarator result qualifiers with the parsed type qualifiers
+    let combined_qualifiers = result_type.qualifiers | parsed_type.qualifiers;
+    QualType::new(result_type.ty, combined_qualifiers)
 }
 
 /// Recursively apply parsed declarator to base type
-fn apply_parsed_declarator_recursive(base_type: TypeRef, declarator_ref: ParsedDeclRef, ctx: &mut LowerCtx) -> Type {
+fn apply_parsed_declarator_recursive(
+    base_type: TypeRef,
+    declarator_ref: ParsedDeclRef,
+    ctx: &mut LowerCtx,
+) -> QualType {
     // Get all the data we need upfront to avoid borrowing conflicts
     let (decl_type, qualifiers, inner, size, params, flags) = {
         match ctx.ast.parsed_types.get_decl(declarator_ref) {
             ParsedDeclaratorNode::Identifier { .. } => {
-                return ctx.type_ctx.get_type(base_type).clone();
+                return QualType::unqualified(base_type);
             }
             ParsedDeclaratorNode::Pointer { qualifiers, inner } => (0, Some(qualifiers), Some(inner), None, None, None),
             ParsedDeclaratorNode::Array { size, inner } => (1, None, Some(inner), Some(size.clone()), None, None),
@@ -75,51 +80,44 @@ fn apply_parsed_declarator_recursive(base_type: TypeRef, declarator_ref: ParsedD
         0 => {
             // Pointer
             let inner_type = apply_parsed_declarator_recursive(base_type, inner.unwrap(), ctx);
-            let inner_type_ref = ctx.type_ctx.push_type(inner_type);
-            let mut pointer_type = Type::new(TypeKind::Pointer {
-                pointee: inner_type_ref,
-            });
-            pointer_type.qualifiers = qualifiers.unwrap();
-            pointer_type
+            let pointer_type = ctx.type_ctx.pointer_to(inner_type.ty);
+            QualType::new(pointer_type, qualifiers.unwrap())
         }
         1 => {
             // Array
             let element_type = apply_parsed_declarator_recursive(base_type, inner.unwrap(), ctx);
             let array_size = convert_parsed_array_size(&size.unwrap(), ctx);
-            let element_type_ref = ctx.type_ctx.push_type(element_type);
-            Type::new(TypeKind::Array {
-                element_type: element_type_ref,
-                size: array_size,
-            })
+            let array_type_ref = ctx.type_ctx.array_of(element_type.ty, array_size);
+            QualType::unqualified(array_type_ref)
         }
         2 => {
             // Function
             let return_type = apply_parsed_declarator_recursive(base_type, inner.unwrap(), ctx);
-            let return_type_ref = ctx.type_ctx.push_type(return_type);
+            let return_type_ref = return_type.ty;
 
             // Process parameters separately to avoid borrowing conflicts in the closure
             let parsed_params: Vec<_> = ctx.ast.parsed_types.get_params(params.unwrap()).to_vec();
             let mut processed_params = Vec::new();
             for param in parsed_params {
-                let param_type = convert_parsed_type_to_type_ref(ctx, param.ty, param.span).unwrap_or_else(|_| {
+                let param_type = convert_parsed_type_to_qual_type(ctx, param.ty, param.span).unwrap_or_else(|_|
                     // Create an error type if conversion fails
-                    ctx.type_ctx.push_type(Type::new(TypeKind::Int { is_signed: true }))
-                });
+                    QualType::unqualified(ctx.type_ctx.type_int));
                 processed_params.push(FunctionParameter {
                     param_type,
                     name: param.name,
                 });
             }
 
-            Type::new(TypeKind::Function {
+            let function_type_ref = ctx.type_ctx.alloc(Type::new(TypeKind::Function {
                 return_type: return_type_ref,
                 parameters: processed_params,
                 is_variadic: flags.unwrap().is_variadic,
-            })
+            }));
+            QualType::unqualified(function_type_ref)
         }
         _ => {
             // This should never happen
-            ctx.type_ctx.get_type(base_type).clone()
+            QualType::unqualified(base_type)
         }
     }
 }
@@ -207,7 +205,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 pub struct DeclSpecInfo {
     pub storage: Option<StorageClass>,
     pub qualifiers: TypeQualifiers,
-    pub base_type: Option<TypeRef>,
+    pub base_type: Option<QualType>,
     pub is_typedef: bool,
     pub is_inline: bool,
     pub is_noreturn: bool,
@@ -280,9 +278,7 @@ fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: Sour
             DeclSpecifier::TypeSpecifier(ts) => {
                 let ty = resolve_type_specifier(ts, ctx, span).unwrap_or_else(|e| {
                     ctx.report_error(e);
-                    // Create an error type
-                    let error_type = Type::default();
-                    ctx.type_ctx.push_type(error_type)
+                    QualType::unqualified(ctx.type_ctx.type_error)
                 });
                 info.base_type = merge_base_type(info.base_type, ty, ctx);
             }
@@ -312,12 +308,12 @@ fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: Sour
     info
 }
 
-/// Convert a ParsedBaseTypeNode to a TypeRef
-fn convert_parsed_base_type_to_type_ref(
+/// Convert a ParsedBaseTypeNode to a QualType
+fn convert_parsed_base_type_to_qual_type(
     ctx: &mut LowerCtx,
     parsed_base: &ParsedBaseTypeNode,
     span: SourceSpan,
-) -> Result<TypeRef, SemanticError> {
+) -> Result<QualType, SemanticError> {
     match parsed_base {
         ParsedBaseTypeNode::Builtin(ts) => resolve_type_specifier(ts, ctx, span),
         ParsedBaseTypeNode::Struct { tag, members, is_union } => {
@@ -351,7 +347,7 @@ fn convert_parsed_base_type_to_type_ref(
                             is_complete: false,
                             is_union: *is_union,
                         });
-                        let new_type_ref = ctx.type_ctx.push_type(new_type);
+                        let new_type_ref = ctx.type_ctx.alloc(new_type);
 
                         // Add it to the symbol table in the current scope
                         let symbol_entry = Symbol {
@@ -388,7 +384,7 @@ fn convert_parsed_base_type_to_type_ref(
                             is_complete: false,
                             is_union: *is_union,
                         });
-                        let forward_ref = ctx.type_ctx.push_type(forward_type);
+                        let forward_ref = ctx.type_ctx.alloc(forward_type);
 
                         let symbol_entry = Symbol {
                             name: *tag_name,
@@ -419,7 +415,7 @@ fn convert_parsed_base_type_to_type_ref(
                     is_complete: false,
                     is_union: *is_union,
                 });
-                ctx.type_ctx.push_type(new_type)
+                ctx.type_ctx.alloc(new_type)
             };
 
             // Now handle members if it's a definition
@@ -430,7 +426,7 @@ fn convert_parsed_base_type_to_type_ref(
                 // Process member types separately to avoid borrowing conflicts
                 let mut member_types = Vec::new();
                 for parsed_member in &parsed_members {
-                    let member_type_ref = convert_parsed_type_to_type_ref(ctx, parsed_member.ty, span)?;
+                    let member_type_ref = convert_parsed_type_to_qual_type(ctx, parsed_member.ty, span)?;
                     member_types.push(member_type_ref);
                 }
 
@@ -476,7 +472,7 @@ fn convert_parsed_base_type_to_type_ref(
                 }
             }
 
-            Ok(type_ref_to_use)
+            Ok(QualType::unqualified(type_ref_to_use))
         }
         ParsedBaseTypeNode::Enum { tag, enumerators } => {
             // Handle enum from parsed types
@@ -504,11 +500,11 @@ fn convert_parsed_base_type_to_type_ref(
                         // Not found in current scope, create new entry
                         let new_type = Type::new(TypeKind::Enum {
                             tag: Some(*tag_name),
-                            base_type: ctx.type_ctx.push_type(Type::new(TypeKind::Int { is_signed: true })),
+                            base_type: ctx.type_ctx.alloc(Type::new(TypeKind::Int { is_signed: true })),
                             enumerators: Vec::new(),
                             is_complete: false,
                         });
-                        let new_type_ref = ctx.type_ctx.push_type(new_type);
+                        let new_type_ref = ctx.type_ctx.alloc(new_type);
                         let symbol_entry = Symbol {
                             name: *tag_name,
                             kind: SymbolKind::EnumTag { is_complete: false },
@@ -533,11 +529,11 @@ fn convert_parsed_base_type_to_type_ref(
                         // Implicit forward declaration
                         let forward_type = Type::new(TypeKind::Enum {
                             tag: Some(*tag_name),
-                            base_type: ctx.type_ctx.push_type(Type::new(TypeKind::Int { is_signed: true })),
+                            base_type: ctx.type_ctx.type_int,
                             enumerators: Vec::new(),
                             is_complete: false,
                         });
-                        let forward_ref = ctx.type_ctx.push_type(forward_type);
+                        let forward_ref = ctx.type_ctx.alloc(forward_type);
                         let symbol = Symbol {
                             name: *tag_name,
                             kind: SymbolKind::EnumTag { is_complete: false },
@@ -558,11 +554,11 @@ fn convert_parsed_base_type_to_type_ref(
                 // Anonymous enum definition
                 let new_type = Type::new(TypeKind::Enum {
                     tag: None,
-                    base_type: ctx.type_ctx.push_type(Type::new(TypeKind::Int { is_signed: true })),
+                    base_type: ctx.type_ctx.type_int,
                     enumerators: Vec::new(),
                     is_complete: false,
                 });
-                ctx.type_ctx.push_type(new_type)
+                ctx.type_ctx.alloc(new_type)
             };
 
             // Process enumerators if it's a definition
@@ -622,14 +618,14 @@ fn convert_parsed_base_type_to_type_ref(
                 }
             }
 
-            Ok(type_ref_to_use)
+            Ok(QualType::unqualified(type_ref_to_use))
         }
         ParsedBaseTypeNode::Typedef(name) => {
             // Lookup typedef in symbol table
             if let Some((entry_ref, _scope_id)) = ctx.symbol_table.lookup_symbol(*name) {
                 let entry = ctx.symbol_table.get_symbol(entry_ref);
                 if let SymbolKind::Typedef { aliased_type } = entry.kind {
-                    Ok(aliased_type)
+                    Ok(QualType::unqualified(aliased_type))
                 } else {
                     // Get the kind of the symbol as a string for the error message
                     let kind_string = format!("{:?}", entry.kind);
@@ -652,23 +648,22 @@ fn convert_parsed_base_type_to_type_ref(
                     },
                     ..Default::default()
                 };
-                Ok(ctx.type_ctx.push_type(forward_ref_type))
+                Ok(QualType::unqualified(ctx.type_ctx.alloc(forward_ref_type)))
             }
         }
         ParsedBaseTypeNode::Error => {
             // Create an error type
-            let error_type = Type::default();
-            Ok(ctx.type_ctx.push_type(error_type))
+            Ok(QualType::unqualified(ctx.type_ctx.type_error))
         }
     }
 }
 
 /// Convert a ParsedType to a TypeRef
-fn convert_parsed_type_to_type_ref(
+fn convert_parsed_type_to_qual_type(
     ctx: &mut LowerCtx,
     parsed_type: ParsedType,
     span: SourceSpan,
-) -> Result<TypeRef, SemanticError> {
+) -> Result<QualType, SemanticError> {
     let base_type_node = {
         // borrow immutable hanya di dalam block ini
         let parsed_types = &ctx.ast.parsed_types;
@@ -678,58 +673,61 @@ fn convert_parsed_type_to_type_ref(
     let declarator_ref = parsed_type.declarator;
     let qualifiers = parsed_type.qualifiers;
 
-    let base_type_ref = convert_parsed_base_type_to_type_ref(ctx, &base_type_node, span)?;
+    let base_type_ref = convert_parsed_base_type_to_qual_type(ctx, &base_type_node, span)?;
 
-    let mut final_type = apply_parsed_declarator_recursive(base_type_ref, declarator_ref, ctx);
+    let mut final_type = apply_parsed_declarator_recursive(base_type_ref.ty, declarator_ref, ctx);
+    final_type.qualifiers |= qualifiers;
 
-    final_type.qualifiers = qualifiers;
-
-    Ok(ctx.type_ctx.push_type(final_type))
+    Ok(final_type)
 }
 
-/// Resolve a type specifier to a TypeRef
-fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSpan) -> Result<TypeRef, SemanticError> {
+/// Resolve a type specifier to a QualType
+fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSpan) -> Result<QualType, SemanticError> {
     match ts {
-        TypeSpecifier::Void => Ok(ctx.type_ctx.push_type(Type::new(TypeKind::Void))),
-        TypeSpecifier::Char => Ok(ctx.type_ctx.push_type(Type::new(TypeKind::Char { is_signed: true }))),
-        TypeSpecifier::Short => Ok(ctx.type_ctx.push_type(Type::new(TypeKind::Short { is_signed: true }))),
-        TypeSpecifier::Int => Ok(ctx.type_ctx.push_type(Type::new(TypeKind::Int { is_signed: true }))),
-        TypeSpecifier::Long => Ok(ctx.type_ctx.push_type(Type::new(TypeKind::Long {
-            is_signed: true,
-            is_long_long: false,
-        }))),
-        TypeSpecifier::LongLong => Ok(ctx.type_ctx.push_type(Type::new(TypeKind::Long {
+        TypeSpecifier::Void => Ok(QualType::unqualified(ctx.type_ctx.type_void)),
+        TypeSpecifier::Char => Ok(QualType::unqualified(ctx.type_ctx.type_char)),
+        TypeSpecifier::Short => Ok(QualType::unqualified(ctx.type_ctx.type_short)),
+        TypeSpecifier::Int => Ok(QualType::unqualified(ctx.type_ctx.type_int)),
+        TypeSpecifier::Long => Ok(QualType::unqualified(ctx.type_ctx.type_long)),
+        TypeSpecifier::LongLong => Ok(QualType::unqualified(ctx.type_ctx.alloc(Type::new(TypeKind::Long {
             is_signed: true,
             is_long_long: true,
-        }))),
-        TypeSpecifier::Float => Ok(ctx.type_ctx.push_type(Type::new(TypeKind::Float))),
-        TypeSpecifier::Double => Ok(ctx
-            .type_ctx
-            .push_type(Type::new(TypeKind::Double { is_long_double: false }))),
-        TypeSpecifier::LongDouble => Ok(ctx
-            .type_ctx
-            .push_type(Type::new(TypeKind::Double { is_long_double: true }))),
+        })))),
+        TypeSpecifier::Float => Ok(QualType::unqualified(ctx.type_ctx.alloc(Type::new(TypeKind::Float)))),
+        TypeSpecifier::Double => Ok(QualType::unqualified(
+            ctx.type_ctx
+                .alloc(Type::new(TypeKind::Double { is_long_double: false })),
+        )),
+        TypeSpecifier::LongDouble => Ok(QualType::unqualified(
+            ctx.type_ctx.alloc(Type::new(TypeKind::Double { is_long_double: true })),
+        )),
         TypeSpecifier::Signed => {
             // Signed modifier - for now, default to signed int
-            Ok(ctx.type_ctx.push_type(Type::new(TypeKind::Int { is_signed: true })))
+            Ok(QualType::unqualified(
+                ctx.type_ctx.alloc(Type::new(TypeKind::Int { is_signed: true })),
+            ))
         }
         TypeSpecifier::Unsigned => {
             // Unsigned modifier - return a special marker type that will be handled in merge_base_type
-            Ok(ctx.type_ctx.push_type(Type::new(TypeKind::Int { is_signed: false })))
+            Ok(QualType::unqualified(
+                ctx.type_ctx.alloc(Type::new(TypeKind::Int { is_signed: false })),
+            ))
         }
-        TypeSpecifier::Bool => Ok(ctx.type_ctx.push_type(Type::new(TypeKind::Bool))),
+        TypeSpecifier::Bool => Ok(QualType::unqualified(ctx.type_ctx.type_bool)),
         TypeSpecifier::Complex => {
             // Complex types need a base type
             // For now, default to complex double
             let base_type = ctx
                 .type_ctx
-                .push_type(Type::new(TypeKind::Double { is_long_double: false }));
-            Ok(ctx.type_ctx.push_type(Type::new(TypeKind::Complex { base_type })))
+                .alloc(Type::new(TypeKind::Double { is_long_double: false }));
+            Ok(QualType::unqualified(
+                ctx.type_ctx.alloc(Type::new(TypeKind::Complex { base_type })),
+            ))
         }
         TypeSpecifier::Atomic(parsed_type) => {
             // Convert the ParsedType to a TypeRef by applying the declarator to the base type
             // Use the convert_parsed_type_to_type_ref function to handle this properly
-            convert_parsed_type_to_type_ref(ctx, *parsed_type, span)
+            convert_parsed_type_to_qual_type(ctx, *parsed_type, span)
         }
         TypeSpecifier::Record(is_union, tag, definition) => {
             // Properly handle struct/union types with their member declarations
@@ -763,7 +761,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                             is_complete: false,
                             is_union: *is_union,
                         });
-                        let new_type_ref = ctx.type_ctx.push_type(new_type);
+                        let new_type_ref = ctx.type_ctx.alloc(new_type);
 
                         // Add it to the symbol table in the current scope
                         let symbol_entry = Symbol {
@@ -800,7 +798,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                             is_complete: false,
                             is_union: *is_union,
                         });
-                        let forward_ref = ctx.type_ctx.push_type(forward_type);
+                        let forward_ref = ctx.type_ctx.alloc(forward_type);
 
                         let symbol_entry = Symbol {
                             name: *tag_name,
@@ -831,7 +829,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     is_complete: false,
                     is_union: *is_union,
                 });
-                ctx.type_ctx.push_type(new_type)
+                ctx.type_ctx.alloc(new_type)
             };
 
             // Now handle members if it's a definition
@@ -868,18 +866,18 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                                         lower_decl_specifiers_for_member(&decl.specifiers, ctx, span)
                                     {
                                         let ty = apply_declarator_for_member(
-                                            base_type_ref,
+                                            base_type_ref.ty,
                                             &init_declarator.declarator,
                                             ctx,
                                         );
-                                        ctx.type_ctx.push_type(ty)
+                                        ty.ty
                                     } else {
-                                        ctx.type_ctx.push_type(Type::new(TypeKind::Int { is_signed: true }))
+                                        ctx.type_ctx.alloc(Type::new(TypeKind::Int { is_signed: true }))
                                     };
 
                                     struct_members.push(StructMember {
                                         name: member_name,
-                                        member_type,
+                                        member_type: QualType::unqualified(member_type),
                                         bit_field_size: None,
                                         span,
                                     });
@@ -917,7 +915,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                 }
             }
 
-            Ok(type_ref_to_use)
+            Ok(QualType::unqualified(type_ref_to_use))
         }
         TypeSpecifier::Enum(tag, enumerators) => {
             // 1. Resolve or create the enum type (and its tag)
@@ -945,11 +943,11 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                         // Not found in current scope, create new entry
                         let new_type = Type::new(TypeKind::Enum {
                             tag: Some(*tag_name),
-                            base_type: ctx.type_ctx.push_type(Type::new(TypeKind::Int { is_signed: true })),
+                            base_type: ctx.type_ctx.alloc(Type::new(TypeKind::Int { is_signed: true })),
                             enumerators: Vec::new(),
                             is_complete: false,
                         });
-                        let new_type_ref = ctx.type_ctx.push_type(new_type);
+                        let new_type_ref = ctx.type_ctx.alloc(new_type);
                         let symbol_entry = Symbol {
                             name: *tag_name,
                             kind: SymbolKind::EnumTag { is_complete: false },
@@ -974,11 +972,11 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                         // Implicit forward declaration
                         let forward_type = Type::new(TypeKind::Enum {
                             tag: Some(*tag_name),
-                            base_type: ctx.type_ctx.push_type(Type::new(TypeKind::Int { is_signed: true })),
+                            base_type: ctx.type_ctx.alloc(Type::new(TypeKind::Int { is_signed: true })),
                             enumerators: Vec::new(),
                             is_complete: false,
                         });
-                        let forward_ref = ctx.type_ctx.push_type(forward_type);
+                        let forward_ref = ctx.type_ctx.alloc(forward_type);
                         let symbol = Symbol {
                             name: *tag_name,
                             kind: SymbolKind::EnumTag { is_complete: false },
@@ -999,11 +997,11 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                 // Anonymous enum definition
                 let new_type = Type::new(TypeKind::Enum {
                     tag: None,
-                    base_type: ctx.type_ctx.push_type(Type::new(TypeKind::Int { is_signed: true })),
+                    base_type: ctx.type_ctx.alloc(Type::new(TypeKind::Int { is_signed: true })),
                     enumerators: Vec::new(),
                     is_complete: false,
                 });
-                ctx.type_ctx.push_type(new_type)
+                ctx.type_ctx.alloc(new_type)
             };
 
             // 2. Process enumerators if it's a definition
@@ -1074,14 +1072,14 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                 }
             }
 
-            Ok(type_ref_to_use)
+            Ok(QualType::unqualified(type_ref_to_use))
         }
         TypeSpecifier::TypedefName(name) => {
             // Lookup typedef in symbol table
             if let Some((entry_ref, _scope_id)) = ctx.symbol_table.lookup_symbol(*name) {
                 let entry = ctx.symbol_table.get_symbol(entry_ref);
                 if let SymbolKind::Typedef { aliased_type } = entry.kind {
-                    Ok(aliased_type)
+                    Ok(QualType::unqualified(aliased_type))
                 } else {
                     // Get the kind of the symbol as a string for the error message
                     let kind_string = format!("{:?}", entry.kind);
@@ -1107,19 +1105,19 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     },
                     ..Default::default()
                 };
-                Ok(ctx.type_ctx.push_type(forward_ref_type))
+                Ok(QualType::unqualified(ctx.type_ctx.alloc(forward_ref_type)))
             }
         }
     }
 }
 
 /// Merge base types according to C type combination rules
-fn merge_base_type(existing: Option<TypeRef>, new_type: TypeRef, ctx: &mut LowerCtx) -> Option<TypeRef> {
+fn merge_base_type(existing: Option<QualType>, new_type: QualType, ctx: &mut LowerCtx) -> Option<QualType> {
     match existing {
         None => Some(new_type),
         Some(existing_ref) => {
-            let existing_type = ctx.type_ctx.get_type(existing_ref);
-            let new_type_info = ctx.type_ctx.get_type(new_type);
+            let existing_type = ctx.type_ctx.get(existing_ref.ty);
+            let new_type_info = ctx.type_ctx.get(new_type.ty);
 
             // Handle signed/unsigned merging
             match (&existing_type.kind, &new_type_info.kind) {
@@ -1132,7 +1130,9 @@ fn merge_base_type(existing: Option<TypeRef>, new_type: TypeRef, ctx: &mut Lower
                 // Handle char type merging
                 (TypeKind::Char { is_signed: true }, TypeKind::Int { is_signed: false }) => {
                     // unsigned char = char + unsigned
-                    Some(ctx.type_ctx.push_type(Type::new(TypeKind::Char { is_signed: false })))
+                    Some(QualType::unqualified(
+                        ctx.type_ctx.alloc(Type::new(TypeKind::Char { is_signed: false })),
+                    ))
                 }
                 (TypeKind::Char { is_signed: false }, TypeKind::Int { is_signed: true }) => {
                     Some(existing_ref) // Keep unsigned char
@@ -1141,7 +1141,9 @@ fn merge_base_type(existing: Option<TypeRef>, new_type: TypeRef, ctx: &mut Lower
                 // Handle short type merging
                 (TypeKind::Short { is_signed: true }, TypeKind::Int { is_signed: false }) => {
                     // unsigned short = short + unsigned
-                    Some(ctx.type_ctx.push_type(Type::new(TypeKind::Short { is_signed: false })))
+                    Some(QualType::unqualified(
+                        ctx.type_ctx.alloc(Type::new(TypeKind::Short { is_signed: false })),
+                    ))
                 }
                 (TypeKind::Short { is_signed: false }, TypeKind::Int { is_signed: true }) => {
                     Some(existing_ref) // Keep unsigned short
@@ -1150,11 +1152,15 @@ fn merge_base_type(existing: Option<TypeRef>, new_type: TypeRef, ctx: &mut Lower
                 // Handle unsigned + char/short order
                 (TypeKind::Int { is_signed: false }, TypeKind::Char { is_signed: true }) => {
                     // unsigned char = unsigned + char
-                    Some(ctx.type_ctx.push_type(Type::new(TypeKind::Char { is_signed: false })))
+                    Some(QualType::unqualified(
+                        ctx.type_ctx.alloc(Type::new(TypeKind::Char { is_signed: false })),
+                    ))
                 }
                 (TypeKind::Int { is_signed: false }, TypeKind::Short { is_signed: true }) => {
                     // unsigned short = unsigned + short
-                    Some(ctx.type_ctx.push_type(Type::new(TypeKind::Short { is_signed: false })))
+                    Some(QualType::unqualified(
+                        ctx.type_ctx.alloc(Type::new(TypeKind::Short { is_signed: false })),
+                    ))
                 }
 
                 // Handle unsigned + long/long long order
@@ -1165,17 +1171,17 @@ fn merge_base_type(existing: Option<TypeRef>, new_type: TypeRef, ctx: &mut Lower
                     },
                 ) => {
                     // unsigned long = unsigned + long
-                    Some(ctx.type_ctx.push_type(Type::new(TypeKind::Long {
+                    Some(QualType::unqualified(ctx.type_ctx.alloc(Type::new(TypeKind::Long {
                         is_signed: false,
                         is_long_long: false,
-                    })))
+                    }))))
                 }
                 (TypeKind::Int { is_signed: false }, TypeKind::Long { is_long_long: true, .. }) => {
                     // unsigned long long = unsigned + long long
-                    Some(ctx.type_ctx.push_type(Type::new(TypeKind::Long {
+                    Some(QualType::unqualified(ctx.type_ctx.alloc(Type::new(TypeKind::Long {
                         is_signed: false,
                         is_long_long: true,
-                    })))
+                    }))))
                 }
 
                 // Long long overrides long
@@ -1242,7 +1248,7 @@ fn lower_type_definition(specifiers: &[DeclSpecifier], ctx: &mut LowerCtx, span:
             // Create RecordDecl semantic node
             let record_decl = RecordDeclData {
                 name: *tag,
-                ty: record_type,
+                ty: record_type.ty,
                 members: Vec::new(), // TODO: Extract members from definition
                 is_union: *is_union,
             };
@@ -1263,7 +1269,7 @@ fn lower_type_definition(specifiers: &[DeclSpecifier], ctx: &mut LowerCtx, span:
             // Create RecordDecl semantic node (reuse for enums)
             let record_decl = RecordDeclData {
                 name: *tag,
-                ty: enum_type,
+                ty: enum_type.ty,
                 members: Vec::new(), // TODO: Extract enumerators
                 is_union: false,     // enums are not unions
             };
@@ -1280,9 +1286,7 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
     // 1. Resolve final type (base + declarator)
     let base_ty = spec.base_type.unwrap_or_else(|| {
         ctx.report_error(SemanticError::MissingTypeSpecifier { span });
-        // Create an error type
-        let error_type = Type::default();
-        ctx.type_ctx.push_type(error_type)
+        QualType::unqualified(ctx.type_ctx.type_error)
     });
 
     let name = extract_identifier(&init.declarator).expect("Anonymous declarations unsupported");
@@ -1294,13 +1298,11 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
             base_ty
         } else {
             // Has qualifiers, need to apply declarator
-            let ty = apply_declarator(base_ty, &init.declarator, ctx);
-            ctx.type_ctx.push_type(ty)
+            apply_declarator(base_ty.ty, &init.declarator, ctx)
         }
     } else {
         // Complex case: apply declarator transformations and create new type
-        let ty = apply_declarator(base_ty, &init.declarator, ctx);
-        ctx.type_ctx.push_type(ty)
+        apply_declarator(base_ty.ty, &init.declarator, ctx)
     };
 
     // 2. Handle typedefs
@@ -1311,8 +1313,10 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
         // Add typedef to symbol table to resolve forward references
         let symbol_entry = Symbol {
             name: name.as_str().into(),
-            kind: SymbolKind::Typedef { aliased_type: final_ty },
-            type_info: final_ty,
+            kind: SymbolKind::Typedef {
+                aliased_type: final_ty.ty,
+            },
+            type_info: final_ty.ty,
             storage_class: Some(StorageClass::Typedef),
             scope_id: ctx.symbol_table.current_scope(),
             def_span: span,
@@ -1327,11 +1331,11 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
     }
 
     // 3. Distinguish between functions and variables
-    let type_info = ctx.type_ctx.get_type(final_ty);
+    let type_info = ctx.type_ctx.get(final_ty.ty);
     if matches!(type_info.kind, TypeKind::Function { .. }) {
         let func_decl = FunctionDeclData {
             name,
-            ty: final_ty,
+            ty: final_ty.ty,
             storage: spec.storage,
             body: None,
         };
@@ -1344,7 +1348,7 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
                 is_variadic: false,
                 parameters: Vec::new(), // FIXME: fill this...
             },
-            type_info: final_ty,
+            type_info: final_ty.ty,
             storage_class: spec.storage,
             scope_id: ctx.symbol_table.current_scope(),
             def_span: span,
@@ -1377,7 +1381,7 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
                 is_global: ctx.symbol_table.current_scope() == ScopeId::GLOBAL,
                 initializer: init.initializer,
             },
-            type_info: final_ty,
+            type_info: final_ty.ty,
             storage_class: spec.storage,
             scope_id: ctx.symbol_table.current_scope(),
             def_span: span,
@@ -1417,11 +1421,10 @@ fn lower_function_parameters(params: &[ParamData], ctx: &mut LowerCtx) -> Vec<Fu
             // C standard: if type specifier is missing in a parameter, it defaults to int.
             let base_ty = spec_info
                 .base_type
-                .unwrap_or_else(|| ctx.type_ctx.push_type(Type::new(TypeKind::Int { is_signed: true })));
+                .unwrap_or_else(|| QualType::unqualified(ctx.type_ctx.type_int));
 
             let final_ty = if let Some(declarator) = &param.declarator {
-                let ty = apply_declarator(base_ty, declarator, ctx);
-                ctx.type_ctx.push_type(ty)
+                apply_declarator(base_ty.ty, declarator, ctx)
             } else {
                 base_ty
             };
@@ -1434,26 +1437,21 @@ fn lower_function_parameters(params: &[ParamData], ctx: &mut LowerCtx) -> Vec<Fu
 }
 
 /// Apply declarator transformations to a base type
-fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut LowerCtx) -> Type {
+fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut LowerCtx) -> QualType {
     match declarator {
         Declarator::Pointer(qualifiers, next) => {
             let pointee_type = if let Some(next_decl) = next {
                 apply_declarator(base_type, next_decl, ctx)
             } else {
-                ctx.type_ctx.get_type(base_type).clone()
+                QualType::unqualified(base_type)
             };
 
-            let pointee_type_ref = ctx.type_ctx.push_type(pointee_type);
-            let mut pointer_type = Type::new(TypeKind::Pointer {
-                pointee: pointee_type_ref,
-            });
-            pointer_type.qualifiers = *qualifiers;
-            pointer_type
+            let pointer_type_ref = ctx.type_ctx.pointer_to(pointee_type.ty);
+            QualType::new(pointer_type_ref, *qualifiers)
         }
         Declarator::Identifier(_, qualifiers, _) => {
-            let mut ty = ctx.type_ctx.get_type(base_type).clone();
-            ty.qualifiers |= *qualifiers;
-            ty
+            let base_type_ref = base_type;
+            QualType::new(base_type_ref, *qualifiers)
         }
         Declarator::Array(base, size) => {
             let element_type = apply_declarator(base_type, base, ctx);
@@ -1485,10 +1483,11 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
                 }
             };
 
-            Type::new(TypeKind::Array {
-                element_type: ctx.type_ctx.push_type(element_type),
+            let array_type_ref = ctx.type_ctx.alloc(Type::new(TypeKind::Array {
+                element_type: element_type.ty,
                 size: array_size,
-            })
+            }));
+            QualType::unqualified(array_type_ref)
         }
         Declarator::Function {
             inner: base,
@@ -1505,39 +1504,36 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
 
                 // Build the function type first
                 let function_type = Type::new(TypeKind::Function {
-                    return_type: ctx.type_ctx.push_type(return_type),
+                    return_type: return_type.ty,
                     parameters,
                     is_variadic: *is_variadic,
                 });
-                let function_type_ref = ctx.type_ctx.push_type(function_type);
+                let function_type_ref = ctx.type_ctx.alloc(function_type);
 
-                // Then wrap it in a pointer
-                let mut pointer_type = Type::new(TypeKind::Pointer {
-                    pointee: function_type_ref,
-                });
-                pointer_type.qualifiers = *qualifiers;
-                return pointer_type;
+                let pointer_type_ref = ctx.type_ctx.pointer_to(function_type_ref);
+                return QualType::new(pointer_type_ref, *qualifiers);
             }
 
             // This is a regular function declaration.
             let return_type = apply_declarator(base_type, base, ctx);
             let parameters = lower_function_parameters(params, ctx);
 
-            Type::new(TypeKind::Function {
-                return_type: ctx.type_ctx.push_type(return_type),
+            let function_type_ref = ctx.type_ctx.alloc(Type::new(TypeKind::Function {
+                return_type: return_type.ty,
                 parameters,
                 is_variadic: *is_variadic,
-            })
+            }));
+            QualType::unqualified(function_type_ref)
         }
         Declarator::AnonymousRecord(_, _) => {
             // TODO: Handle anonymous struct/union
-            ctx.type_ctx.get_type(base_type).clone()
+            QualType::unqualified(base_type)
         }
         Declarator::BitField(base, _) => {
             // TODO: Handle bit fields
             apply_declarator(base_type, base, ctx)
         }
-        Declarator::Abstract => ctx.type_ctx.get_type(base_type).clone(),
+        Declarator::Abstract => QualType::unqualified(base_type),
     }
 }
 
@@ -1586,19 +1582,20 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             // Extract the return type from the function definition's specifiers
             let return_type_ref =
                 lower_decl_specifiers_for_function_return(&func_def.specifiers, ctx, ctx.ast.get_node(node_ref).span)
-                    .unwrap_or_else(|| ctx.type_ctx.push_type(Type::new(TypeKind::Int { is_signed: true })));
+                    .unwrap_or_else(|| {
+                        QualType::unqualified(ctx.type_ctx.alloc(Type::new(TypeKind::Int { is_signed: true })))
+                    });
 
             // Create the function type with the correct return type by applying the declarator
-            let declarator_type = apply_parsed_declarator(return_type_ref, &func_def.declarator, ctx);
-            let function_type_ref = ctx.type_ctx.push_type(declarator_type);
+            let declarator_type = apply_parsed_declarator(return_type_ref.ty, &func_def.declarator, ctx);
+            let function_type_ref = declarator_type.ty;
 
             // Extract parameters from the function type for the symbol entry
-            let parameters =
-                if let TypeKind::Function { parameters, .. } = &ctx.type_ctx.get_type(function_type_ref).kind {
-                    parameters.clone()
-                } else {
-                    Vec::new()
-                };
+            let parameters = if let TypeKind::Function { parameters, .. } = &ctx.type_ctx.get(function_type_ref).kind {
+                parameters.clone()
+            } else {
+                Vec::new()
+            };
 
             let symbol_entry = Symbol {
                 name: func_name,
@@ -1632,7 +1629,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                             is_global: false,
                             initializer: None,
                         },
-                        type_info: param.param_type,
+                        type_info: param.param_type.ty,
                         storage_class: None,
                         scope_id: ctx.symbol_table.current_scope(),
                         def_span: ctx.ast.get_node(node_ref).span,
@@ -1724,7 +1721,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             lower_node_recursive(ctx, body);
         }
         NodeKind::Label(name, stmt, _) => {
-            let label_ty = ctx.type_ctx.push_type(Type::new(TypeKind::Void)); // void for now
+            let label_ty = ctx.type_ctx.alloc(Type::new(TypeKind::Void)); // void for now
             let entry = Symbol {
                 name,
                 kind: SymbolKind::Label {
@@ -1744,10 +1741,10 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
         }
         NodeKind::ParsedCast(parsed_type, expr_node) => {
             // Convert ParsedType to TypeRef
-            let type_ref = convert_parsed_type_to_type_ref(ctx, parsed_type, ctx.ast.get_node(node_ref).span)
+            let type_ref = convert_parsed_type_to_qual_type(ctx, parsed_type, ctx.ast.get_node(node_ref).span)
                 .unwrap_or_else(|_| {
                     // Create an error type if conversion fails
-                    ctx.type_ctx.push_type(Type::new(TypeKind::Error))
+                    QualType::unqualified(ctx.type_ctx.alloc(Type::new(TypeKind::Error)))
                 });
             // Replace the ParsedCast node with a Cast node
             let cast_node = Node::new(NodeKind::Cast(type_ref, expr_node), ctx.ast.get_node(node_ref).span);
@@ -1756,10 +1753,10 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
         }
         NodeKind::ParsedSizeOfType(parsed_type) => {
             // Convert ParsedType to TypeRef
-            let type_ref = convert_parsed_type_to_type_ref(ctx, parsed_type, ctx.ast.get_node(node_ref).span)
+            let type_ref = convert_parsed_type_to_qual_type(ctx, parsed_type, ctx.ast.get_node(node_ref).span)
                 .unwrap_or_else(|_| {
                     // Create an error type if conversion fails
-                    ctx.type_ctx.push_type(Type::new(TypeKind::Error))
+                    QualType::unqualified(ctx.type_ctx.alloc(Type::new(TypeKind::Error)))
                 });
             // Replace the ParsedSizeOfType node with a SizeOfType node
             let size_of_node = Node::new(NodeKind::SizeOfType(type_ref), ctx.ast.get_node(node_ref).span);
@@ -1767,10 +1764,10 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
         }
         NodeKind::ParsedCompoundLiteral(parsed_type, initializer_node) => {
             // Convert ParsedType to TypeRef
-            let type_ref = convert_parsed_type_to_type_ref(ctx, parsed_type, ctx.ast.get_node(node_ref).span)
+            let type_ref = convert_parsed_type_to_qual_type(ctx, parsed_type, ctx.ast.get_node(node_ref).span)
                 .unwrap_or_else(|_| {
                     // Create an error type if conversion fails
-                    ctx.type_ctx.push_type(Type::new(TypeKind::Error))
+                    QualType::unqualified(ctx.type_ctx.alloc(Type::new(TypeKind::Error)))
                 });
             // Replace the ParsedCompoundLiteral node with a CompoundLiteral node
             let compound_literal_node = Node::new(
@@ -1782,10 +1779,10 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
         }
         NodeKind::ParsedAlignOf(parsed_type) => {
             // Convert ParsedType to TypeRef
-            let type_ref = convert_parsed_type_to_type_ref(ctx, parsed_type, ctx.ast.get_node(node_ref).span)
+            let type_ref = convert_parsed_type_to_qual_type(ctx, parsed_type, ctx.ast.get_node(node_ref).span)
                 .unwrap_or_else(|_| {
                     // Create an error type if conversion fails
-                    ctx.type_ctx.push_type(Type::new(TypeKind::Error))
+                    QualType::unqualified(ctx.type_ctx.alloc(Type::new(TypeKind::Error)))
                 });
             // Replace the ParsedAlignOf node with an AlignOf node
             let align_of_node = Node::new(NodeKind::AlignOf(type_ref), ctx.ast.get_node(node_ref).span);
@@ -1800,7 +1797,7 @@ fn lower_decl_specifiers_for_function_return(
     specs: &[DeclSpecifier],
     ctx: &mut LowerCtx,
     span: SourceSpan,
-) -> Option<TypeRef> {
+) -> Option<QualType> {
     let mut merged_type = None;
 
     for spec in specs {
@@ -1818,7 +1815,7 @@ fn lower_decl_specifiers_for_function_return(
 }
 
 /// Lower declaration specifiers for struct members (simplified version)
-fn lower_decl_specifiers_for_member(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: SourceSpan) -> Option<TypeRef> {
+fn lower_decl_specifiers_for_member(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: SourceSpan) -> Option<QualType> {
     for spec in specs {
         if let DeclSpecifier::TypeSpecifier(ts) = spec {
             match resolve_type_specifier(ts, ctx, span) {
@@ -1831,25 +1828,25 @@ fn lower_decl_specifiers_for_member(specs: &[DeclSpecifier], ctx: &mut LowerCtx,
 }
 
 /// Apply declarator for struct members (simplified version)
-fn apply_declarator_for_member(base_type: TypeRef, declarator: &Declarator, ctx: &mut LowerCtx) -> Type {
+fn apply_declarator_for_member(base_type: TypeRef, declarator: &Declarator, ctx: &mut LowerCtx) -> QualType {
     match declarator {
         Declarator::Identifier(_, qualifiers, _) => {
-            let mut ty = ctx.type_ctx.get_type(base_type).clone();
-            ty.qualifiers |= *qualifiers;
-            ty
+            let base_type_ref = base_type;
+            QualType::new(base_type_ref, *qualifiers)
         }
         Declarator::Pointer(qualifiers, next) => {
             let pointee_type = if let Some(next_decl) = next {
                 apply_declarator_for_member(base_type, next_decl, ctx)
             } else {
-                ctx.type_ctx.get_type(base_type).clone()
+                QualType::unqualified(base_type)
             };
 
-            let mut pointer_type = Type::new(TypeKind::Pointer {
-                pointee: ctx.type_ctx.push_type(pointee_type),
+            let pointee_type_ref = ctx.type_ctx.alloc(ctx.type_ctx.get(pointee_type.ty).clone());
+            let pointer_type = Type::new(TypeKind::Pointer {
+                pointee: pointee_type_ref,
             });
-            pointer_type.qualifiers = *qualifiers;
-            pointer_type
+            let pointer_type_ref = ctx.type_ctx.alloc(pointer_type);
+            QualType::new(pointer_type_ref, *qualifiers)
         }
         Declarator::Array(base, size) => {
             let element_type = apply_declarator_for_member(base_type, base, ctx);
@@ -1881,13 +1878,14 @@ fn apply_declarator_for_member(base_type: TypeRef, declarator: &Declarator, ctx:
                 }
             };
 
-            Type::new(TypeKind::Array {
-                element_type: ctx.type_ctx.push_type(element_type),
+            let array_type_ref = ctx.type_ctx.alloc(Type::new(TypeKind::Array {
+                element_type: element_type.ty,
                 size: array_size,
-            })
+            }));
+            QualType::unqualified(array_type_ref)
         }
         // For other declarator types, just return the base type
-        _ => ctx.type_ctx.get_type(base_type).clone(),
+        _ => QualType::unqualified(base_type),
     }
 }
 
@@ -1932,15 +1930,15 @@ fn process_anonymous_struct_members(
                         if let Some(base_type_ref) = lower_decl_specifiers_for_member(&decl.specifiers, ctx, span) {
                             // Apply the declarator to get the final member type
                             let member_type_with_declarator =
-                                apply_declarator_for_member(base_type_ref, &init_declarator.declarator, ctx);
-                            ctx.type_ctx.push_type(member_type_with_declarator)
+                                apply_declarator_for_member(base_type_ref.ty, &init_declarator.declarator, ctx);
+                            member_type_with_declarator.ty
                         } else {
-                            ctx.type_ctx.push_type(Type::new(TypeKind::Int { is_signed: true }))
+                            ctx.type_ctx.alloc(Type::new(TypeKind::Int { is_signed: true }))
                         };
 
                     flattened_members.push(StructMember {
                         name: member_name,
-                        member_type,
+                        member_type: QualType::unqualified(member_type),
                         bit_field_size: None,
                         span,
                     });

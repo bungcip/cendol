@@ -258,12 +258,12 @@ impl OutputHandler {
             NodeKind::IndexAccess(array, index) => {
                 println!("IndexAccess({}, {})", array.get(), index.get())
             }
-            NodeKind::Cast(ty, expr) => println!("Cast({}, {})", ty.get(), expr.get()),
+            NodeKind::Cast(ty, expr) => println!("Cast({}, {})", ty, expr.get()),
             NodeKind::SizeOfExpr(expr) => println!("SizeOfExpr({})", expr.get()),
-            NodeKind::SizeOfType(ty) => println!("SizeOfType({})", ty.get()),
-            NodeKind::AlignOf(ty) => println!("AlignOf({})", ty.get()),
+            NodeKind::SizeOfType(ty) => println!("SizeOfType({})", ty),
+            NodeKind::AlignOf(ty) => println!("AlignOf({})", ty),
             NodeKind::CompoundLiteral(ty, init) => {
-                println!("CompoundLiteral({}, {})", ty.get(), init.get())
+                println!("CompoundLiteral({}, {})", ty, init.get())
             }
             // Parser variants with ParsedType
             NodeKind::ParsedCast(_, expr) => println!("ParsedCast(PARSED_TYPE, {})", expr.get()),
@@ -376,9 +376,7 @@ impl OutputHandler {
             NodeKind::VarDecl(var_decl) => {
                 println!(
                     "VarDecl(name={}, ty={}, storage={:?})",
-                    var_decl.name,
-                    var_decl.ty.get(),
-                    var_decl.storage
+                    var_decl.name, var_decl.ty, var_decl.storage
                 )
             }
             NodeKind::FunctionDecl(func_decl) => {
@@ -390,7 +388,7 @@ impl OutputHandler {
                 )
             }
             NodeKind::TypedefDecl(typedef_decl) => {
-                println!("TypedefDecl(name={}, ty={})", typedef_decl.name, typedef_decl.ty.get())
+                println!("TypedefDecl(name={}, ty={})", typedef_decl.name, typedef_decl.ty)
             }
             NodeKind::RecordDecl(record_decl) => {
                 println!(

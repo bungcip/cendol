@@ -8,7 +8,10 @@ use serde::Serialize;
 use std::cell::Cell;
 use thin_vec::ThinVec;
 
-use crate::ast::{NameId, NodeRef, ParsedType, SymbolRef, TypeRef};
+use crate::{
+    ast::{NameId, NodeRef, ParsedType, SymbolRef, TypeRef},
+    semantic::type_context::QualType,
+};
 
 /// The core enum defining all possible AST node types for C11.
 /// Variants use NodeIndex for child references, enabling flattened storage.
@@ -44,12 +47,12 @@ pub enum NodeKind {
     ),
     IndexAccess(NodeRef /* array */, NodeRef /* index */),
 
-    Cast(TypeRef, NodeRef),
+    Cast(QualType, NodeRef),
     SizeOfExpr(NodeRef),
-    SizeOfType(TypeRef),
-    AlignOf(TypeRef), // C11 _Alignof
+    SizeOfType(QualType),
+    AlignOf(QualType), // C11 _Alignof
 
-    CompoundLiteral(TypeRef, NodeRef),
+    CompoundLiteral(QualType, NodeRef),
     GenericSelection(NodeRef /* controlling_expr */, Vec<GenericAssociation>),
     VaArg(NodeRef /* va_list_expr */, TypeRef), // va_arg macro expansion
 
@@ -160,7 +163,7 @@ pub struct FunctionDefData {
 #[derive(Debug, Clone, Serialize)]
 pub struct FunctionData {
     pub symbol: SymbolRef,
-    pub ty: TypeRef,            // function type
+    pub ty: TypeRef,            // function type, not the return type
     pub params: Vec<ParamDecl>, // normalized params
     pub body: NodeRef,          // compound statement
 }
@@ -168,14 +171,14 @@ pub struct FunctionData {
 #[derive(Debug, Clone, Serialize)]
 pub struct ParamDecl {
     pub symbol: SymbolRef,
-    pub ty: TypeRef,
+    pub ty: QualType,
 }
 
 // Semantic node data structures (type-resolved)
 #[derive(Debug, Clone, Serialize)]
 pub struct VarDeclData {
     pub name: NameId,
-    pub ty: TypeRef,
+    pub ty: QualType,
     pub storage: Option<StorageClass>,
     pub init: Option<NodeRef>, // InitializerList or Expression
 }
@@ -191,15 +194,21 @@ pub struct FunctionDeclData {
 #[derive(Debug, Clone, Serialize)]
 pub struct TypedefDeclData {
     pub name: NameId,
-    pub ty: TypeRef,
+    pub ty: QualType,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RecordDeclData {
     pub name: Option<NameId>,
     pub ty: TypeRef,
-    pub members: Vec<VarDeclData>,
+    pub members: Vec<FieldDeclData>,
     pub is_union: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FieldDeclData {
+    pub name: Option<NameId>,
+    pub ty: QualType, // object type
 }
 
 // Declaration specifiers and related types

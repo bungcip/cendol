@@ -3,12 +3,16 @@
 //! This module defines the semantic type system used during analysis,
 //! distinct from the syntactic TypeSpecifier constructs used in parsing.
 
+use std::fmt::Display;
 use std::num::NonZeroU16;
 
 use bitflags::bitflags;
 use serde::Serialize;
 
-use crate::ast::{NameId, SourceSpan, TypeRef};
+use crate::{
+    ast::{NameId, NodeRef, SourceSpan, TypeRef},
+    semantic::type_context::QualType,
+};
 
 /// Type representation (for semantic analysis)
 /// This is a canonical type, distinct from TypeSpecifier which is a syntax construct.
@@ -16,7 +20,6 @@ use crate::ast::{NameId, SourceSpan, TypeRef};
 #[derive(Debug, Clone, Default)]
 pub struct Type {
     pub kind: TypeKind,
-    pub qualifiers: TypeQualifiers,
     pub layout: Option<TypeLayout>,
 }
 
@@ -31,11 +34,7 @@ pub struct TypeLayout {
 impl Type {
     /// Create a new type with default qualifiers
     pub(crate) fn new(kind: TypeKind) -> Self {
-        Type {
-            kind,
-            qualifiers: TypeQualifiers::empty(),
-            layout: None,
-        }
+        Type { kind, layout: None }
     }
 }
 
@@ -64,9 +63,6 @@ pub enum TypeKind {
     Complex {
         base_type: TypeRef,
     }, // C11 _Complex
-    Atomic {
-        base_type: TypeRef,
-    }, // C11 _Atomic
     Pointer {
         pointee: TypeRef,
     },
@@ -97,10 +93,10 @@ pub enum TypeKind {
 }
 
 /// Array size types
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ArraySizeType {
     Constant(usize),
-    Variable(TypeRef), // VLA with size expression type
+    Variable(NodeRef), // VLA with size expression type
     Incomplete,
     Star, // [*] for function parameters
 }
@@ -116,12 +112,111 @@ bitflags! {
     }
 }
 
-impl TypeQualifiers {}
+impl Display for TypeQualifiers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.contains(TypeQualifiers::CONST) {
+            write!(f, "const")?;
+        }
+        if self.contains(TypeQualifiers::VOLATILE) {
+            write!(f, "volatile")?;
+        }
+        if self.contains(TypeQualifiers::RESTRICT) {
+            write!(f, "restrict")?;
+        }
+        if self.contains(TypeQualifiers::ATOMIC) {
+            write!(f, "_Atomic")?;
+        }
+
+        Ok(())
+    }
+}
+
+impl TypeKind {
+    /// Convert this type kind to a basic string representation (C-like syntax)
+    /// Note: This doesn't format complex nested types to avoid circular dependencies
+    pub fn dump(&self) -> String {
+        match self {
+            TypeKind::Void => "void".to_string(),
+            TypeKind::Bool => "_Bool".to_string(),
+            TypeKind::Char { is_signed } => {
+                if *is_signed {
+                    "char".to_string()
+                } else {
+                    "unsigned char".to_string()
+                }
+            }
+            TypeKind::Short { is_signed } => {
+                if *is_signed {
+                    "short".to_string()
+                } else {
+                    "unsigned short".to_string()
+                }
+            }
+            TypeKind::Int { is_signed } => {
+                if *is_signed {
+                    "int".to_string()
+                } else {
+                    "unsigned int".to_string()
+                }
+            }
+            TypeKind::Long {
+                is_signed,
+                is_long_long,
+            } => {
+                if *is_long_long {
+                    if *is_signed {
+                        "long long".to_string()
+                    } else {
+                        "unsigned long long".to_string()
+                    }
+                } else if *is_signed {
+                    "long".to_string()
+                } else {
+                    "unsigned long".to_string()
+                }
+            }
+            TypeKind::Float => "float".to_string(),
+            TypeKind::Double { is_long_double } => {
+                if *is_long_double {
+                    "long double".to_string()
+                } else {
+                    "double".to_string()
+                }
+            }
+            TypeKind::Complex { .. } => "_Complex".to_string(),
+            TypeKind::Pointer { .. } => "<pointer>".to_string(),
+            TypeKind::Array { .. } => "<array>".to_string(),
+            TypeKind::Function { .. } => "<function>".to_string(),
+            TypeKind::Record { tag, is_union, .. } => {
+                let kind_str = if *is_union { "union" } else { "struct" };
+                if let Some(tag_name) = tag {
+                    format!("{} {}", kind_str, tag_name)
+                } else {
+                    format!("{} (anonymous)", kind_str)
+                }
+            }
+            TypeKind::Enum { tag, .. } => {
+                if let Some(tag_name) = tag {
+                    format!("enum {}", tag_name)
+                } else {
+                    "enum (anonymous)".to_string()
+                }
+            }
+            TypeKind::Error => "<error>".to_string(),
+        }
+    }
+}
+
+impl Display for TypeKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.dump())
+    }
+}
 
 /// Function parameter information
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionParameter {
-    pub param_type: TypeRef,
+    pub param_type: QualType,
     pub name: Option<NameId>,
 }
 
@@ -129,7 +224,7 @@ pub struct FunctionParameter {
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructMember {
     pub name: NameId,
-    pub member_type: TypeRef,
+    pub member_type: QualType,
     pub bit_field_size: Option<NonZeroU16>,
     pub span: SourceSpan, // for diagnostic
 }

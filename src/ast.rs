@@ -26,7 +26,7 @@ use std::num::NonZeroU32;
 /// Alias for GlobalSymbol from symbol_table crate with global feature.
 pub type NameId = symbol_table::GlobalSymbol;
 
-use crate::semantic::{ScopeId, SymbolRef, TypeRef};
+use crate::semantic::{ScopeId, SymbolRef, TypeRef, type_context::QualType};
 pub use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
 
 // Submodules
@@ -118,7 +118,7 @@ pub struct Node {
     pub span: SourceSpan,
     // Uses Cell for Interior Mutability: allows type checking to annotate the AST
     // without requiring mutable access to the entire tree structure.
-    pub resolved_type: Cell<Option<TypeRef>>, // Hot data, now ref-based
+    pub resolved_type: Cell<Option<QualType>>, // Hot data, now ref-based
 }
 
 impl Node {

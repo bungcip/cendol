@@ -78,7 +78,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
 
         fn main() -> i32
@@ -100,6 +100,9 @@ mod tests {
 
           bb3:
             return const 2
+
+          bb4:
+            unreachable
         }
         ");
     }
@@ -116,29 +119,17 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
 
         fn main() -> i32
         {
           locals {
             %steins: i32
-            %2: i32
           }
 
           bb1:
             %steins = const 99
-            br bb2
-
-          bb2:
-            cond_br %steins, bb3, bb4
-
-          bb3:
-            %2 = %steins - const 1
-            %steins = %2
-            br bb2
-
-          bb4:
             return %steins
         }
         ");
@@ -243,7 +234,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
 
         fn main() -> i32
@@ -252,13 +243,7 @@ mod tests {
           }
 
           bb1:
-            br bb3
-
-          bb2:
-            return const 1
-
-          bb3:
-            return const 0
+            unreachable
         }
         ");
     }
@@ -451,7 +436,7 @@ mod tests {
         let mir_dump = setup_mir(source);
         // We expect two different %x locals. MIR printer might show them with same name or different IDs.
         // Currently it shows names if available.
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
 
         fn main() -> i32
@@ -473,13 +458,19 @@ mod tests {
             return const 1
 
           bb3:
-            %4 = %x != const 1
-            cond_br %4, bb4, bb5
+            br bb4
 
           bb4:
-            return const 1
+            %4 = %x != const 1
+            cond_br %4, bb5, bb6
 
           bb5:
+            return const 1
+
+          bb6:
+            br bb7
+
+          bb7:
             return const 0
         }
         ");
@@ -536,8 +527,9 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
+        type %t1 = fn(%t0) -> %t0
 
         fn foo(%x: i32) -> i32
         {
@@ -612,7 +604,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = void
         type %t1 = i8
         type %t2 = u8
@@ -624,6 +616,17 @@ mod tests {
         type %t8 = u64
         type %t9 = f32
         type %t10 = f64
+        type %t11 = fn() -> %t0
+        type %t12 = fn() -> %t1
+        type %t13 = fn() -> %t2
+        type %t14 = fn() -> %t3
+        type %t15 = fn() -> %t5
+        type %t16 = fn() -> %t4
+        type %t17 = fn() -> %t6
+        type %t18 = fn() -> %t7
+        type %t19 = fn() -> %t8
+        type %t20 = fn() -> %t9
+        type %t21 = fn() -> %t10
 
         fn fn_void() -> void
         {
@@ -655,12 +658,10 @@ mod tests {
         fn fn_short() -> i16
         {
           locals {
-            %1: i32
           }
 
           bb4:
-            %1 = - const 7
-            return %1
+            return const 0
         }
 
         fn fn_ushort() -> u16
@@ -675,12 +676,10 @@ mod tests {
         fn fn_int() -> i32
         {
           locals {
-            %2: i32
           }
 
           bb6:
-            %2 = - const 1
-            return %2
+            return const 0
         }
 
         fn fn_uint() -> u32
@@ -713,12 +712,10 @@ mod tests {
         fn fn_llong() -> i64
         {
           locals {
-            %3: i32
           }
 
           bb10:
-            %3 = - const 3000000000
-            return %3
+            return const 0
         }
 
         fn fn_ullong() -> u64
@@ -751,35 +748,35 @@ mod tests {
         fn main() -> i32
         {
           locals {
-            %4: i32
-            %5: i8
-            %6: u8
-            %7: i16
-            %8: u16
-            %9: i32
-            %10: u32
-            %11: i32
-            %12: u32
-            %13: i64
-            %14: u64
-            %15: f32
-            %16: f64
+            %1: void
+            %2: i8
+            %3: u8
+            %4: i16
+            %5: u16
+            %6: i32
+            %7: u32
+            %8: i32
+            %9: u32
+            %10: i64
+            %11: u64
+            %12: f32
+            %13: f64
           }
 
           bb14:
-            %4 = call fn_void()
-            %5 = call fn_char()
-            %6 = call fn_uchar()
-            %7 = call fn_short()
-            %8 = call fn_ushort()
-            %9 = call fn_int()
-            %10 = call fn_uint()
-            %11 = call fn_long()
-            %12 = call fn_ulong()
-            %13 = call fn_llong()
-            %14 = call fn_ullong()
-            %15 = call fn_float()
-            %16 = call fn_double()
+            %1 = call fn_void()
+            %2 = call fn_char()
+            %3 = call fn_uchar()
+            %4 = call fn_short()
+            %5 = call fn_ushort()
+            %6 = call fn_int()
+            %7 = call fn_uint()
+            %8 = call fn_long()
+            %9 = call fn_ulong()
+            %10 = call fn_llong()
+            %11 = call fn_ullong()
+            %12 = call fn_float()
+            %13 = call fn_double()
             return const 0
         }
         ");
@@ -797,10 +794,11 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
 
-        global @x: i32 = const 0
+        global @x: i32
+        global @x: i32
 
         fn main() -> i32
         {

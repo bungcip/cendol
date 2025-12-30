@@ -13,7 +13,7 @@ use crate::source_manager::SourceManager;
 use super::compiler::DriverError;
 
 /// Handler for various output formats
-pub struct OutputHandler;
+pub(crate) struct OutputHandler;
 
 impl Default for OutputHandler {
     fn default() -> Self {
@@ -23,12 +23,12 @@ impl Default for OutputHandler {
 
 impl OutputHandler {
     /// Create a new output handler
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         OutputHandler
     }
 
     /// Dump preprocessed output to stdout
-    pub fn dump_preprocessed_output(
+    pub(crate) fn dump_preprocessed_output(
         &self,
         pp_tokens: &[PPToken],
         suppress_line_markers: bool,
@@ -121,7 +121,7 @@ impl OutputHandler {
     }
 
     /// Dump parser AST to stdout
-    pub fn dump_parser(&self, ast: &Ast) {
+    pub(crate) fn dump_parser(&self, ast: &Ast) {
         for (i, node) in ast.nodes.iter().enumerate() {
             if matches!(node.kind, NodeKind::Dummy) {
                 continue;

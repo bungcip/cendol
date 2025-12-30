@@ -123,6 +123,18 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
             // In a full implementation, we'd resolve the actual type
             ResolvedNodeKind::Cast(format!("type_{}", type_ref.get()), Box::new(resolve_node(ast, *expr)))
         }
+        NodeKind::ParsedCast(parsed_type, expr) => {
+            // For simplicity, just show a placeholder type name
+            // In a full implementation, we'd resolve the actual parsed type
+            ResolvedNodeKind::Cast(
+                format!(
+                    "parsed_type_{}_{}",
+                    parsed_type.base.get(),
+                    parsed_type.declarator.get()
+                ),
+                Box::new(resolve_node(ast, *expr)),
+            )
+        }
         NodeKind::SizeOfExpr(expr) => ResolvedNodeKind::SizeOfExpr(Box::new(resolve_node(ast, *expr))),
         NodeKind::SizeOfType(type_ref) => ResolvedNodeKind::SizeOfType(format!("type_{}", type_ref.get())),
         NodeKind::AlignOf(type_ref) => ResolvedNodeKind::AlignOf(format!("type_{}", type_ref.get())),
@@ -235,7 +247,7 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
                     let type_name = assoc.type_name.map(|type_ref| {
                         // For simplicity, just show a placeholder type name
                         // In a full implementation, we'd resolve the actual type
-                        format!("type_{}", type_ref.get())
+                        format!("type_{}", type_ref.base.get())
                     });
                     let result_expr = resolve_node(ast, assoc.result_expr);
                     ResolvedGenericAssociation { type_name, result_expr }
@@ -706,13 +718,13 @@ fn test_simple_declaration() {
 #[test]
 fn test_atomic_type_specifier() {
     let resolved = setup_declaration("_Atomic(int) x;");
-    insta::assert_yaml_snapshot!(&resolved, @"
+    insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
-        - Atomic(1)
+        - "Atomic(ParsedType { base: 1, declarator: 1, qualifiers: TypeQualifiers(0x0) })"
       init_declarators:
         - name: x
-    ");
+    "#);
 }
 
 #[test]
@@ -891,7 +903,7 @@ fn test_function_pointer_with_cast_initializer() {
           kind: function(int) -> pointer
           initializer:
             Cast:
-              - type_4
+              - parsed_type_1_4
               - LiteralInt: 0
     ");
 }
@@ -1074,7 +1086,7 @@ fn test_attribute_in_cast() {
     let resolved = setup_expr("(__attribute__((__noinline__)) int) 1");
     insta::assert_yaml_snapshot!(&resolved, @r"
     Cast:
-      - type_1
+      - parsed_type_1_1
       - LiteralInt: 1
     ");
 }
@@ -1330,10 +1342,10 @@ fn test_generic_selection_with_pointer_types() {
     insta::assert_yaml_snapshot!(&resolved, @r"
     GenericSelection:
       - Ident: ptr
-      - - type_name: type_2
+      - - type_name: type_1
           result_expr:
             LiteralInt: 1
-        - type_name: type_4
+        - type_name: type_2
           result_expr:
             LiteralInt: 2
         - type_name: ~

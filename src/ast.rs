@@ -26,16 +26,18 @@ use std::num::NonZeroU32;
 /// Alias for GlobalSymbol from symbol_table crate with global feature.
 pub type NameId = symbol_table::GlobalSymbol;
 
-use crate::semantic::{ScopeId, SymbolRef};
+use crate::semantic::{ScopeId, SymbolRef, TypeRef};
 pub use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
 
 // Submodules
 pub mod nodes;
+pub mod parsed_types;
 pub mod types;
 pub mod utils;
 
 // Re-export commonly used items for convenience
 pub use nodes::*;
+pub use parsed_types::*;
 pub use types::*;
 
 // Re-export operators that are used throughout the codebase
@@ -46,13 +48,12 @@ pub use utils::extract_identifier;
 /// Contains all AST nodes, types, symbol entries in contiguous vectors.
 pub struct Ast {
     pub nodes: Vec<Node>,
-    pub types: Vec<Type>,
-    scope_map: Vec<Option<ScopeId>>, // index = NodeRef
+    pub parsed_types: ParsedTypeArena, // syntax type
+    scope_map: Vec<Option<ScopeId>>,   // index = NodeRef
 }
 
 /// Node reference type for referencing child nodes.
 pub type NodeRef = NonZeroU32;
-pub type TypeRef = NonZeroU32;
 
 /// Helper methods for Ast.
 impl Default for Ast {
@@ -66,7 +67,7 @@ impl Ast {
     pub fn new() -> Self {
         Ast {
             nodes: Vec::new(),
-            types: Vec::new(),
+            parsed_types: ParsedTypeArena::new(),
             scope_map: Vec::new(),
         }
     }
@@ -96,26 +97,6 @@ impl Ast {
     /// get root node ref, by default its first node
     pub fn get_root(&self) -> NodeRef {
         NonZeroU32::new(1).unwrap()
-    }
-
-    /// Add a type to the AST and return its reference
-    pub(crate) fn push_type(&mut self, ty: Type) -> TypeRef {
-        let index = self.types.len() as u32 + 1;
-        self.types.push(ty);
-        TypeRef::new(index).expect("TypeRef overflow")
-    }
-
-    /// Get a type by its reference
-    pub fn get_type(&self, index: TypeRef) -> &Type {
-        let idx = (index.get() - 1) as usize;
-        if idx >= self.types.len() {
-            panic!(
-                "Type index {} out of bounds: types vector has {} elements",
-                index.get(),
-                self.types.len()
-            );
-        }
-        &self.types[idx]
     }
 
     pub fn scope_of(&self, node: NodeRef) -> ScopeId {

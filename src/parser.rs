@@ -16,9 +16,9 @@ pub mod declarations;
 pub mod declarator;
 pub mod enum_parsing;
 pub mod expressions;
+pub mod parsed_type_builder;
 pub mod statements;
 pub mod struct_parsing;
-pub mod type_builder;
 pub mod type_specifiers;
 pub mod utils;
 
@@ -301,19 +301,19 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     /// Parse cast expression given the already parsed type and right paren token
     fn parse_cast_expression_from_type_and_paren(
         &mut self,
-        type_ref: TypeRef,
+        parsed_type: ParsedType,
         right_paren_token: Token,
     ) -> Result<NodeRef, ParseError> {
-        expressions::parse_cast_expression_from_type_and_paren(self, type_ref, right_paren_token)
+        expressions::parse_cast_expression_from_type_and_paren(self, parsed_type, right_paren_token)
     }
 
     /// Parse compound literal given the type and start location
     fn parse_compound_literal_from_type_and_start(
         &mut self,
-        type_ref: TypeRef,
+        parsed_type: ParsedType,
         start_loc: SourceLoc,
     ) -> Result<NodeRef, ParseError> {
-        expressions::parse_compound_literal_from_type_and_start(self, type_ref, start_loc)
+        expressions::parse_compound_literal_from_type_and_start(self, parsed_type, start_loc)
     }
 
     /// parse and accept an identifier name

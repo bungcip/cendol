@@ -221,21 +221,21 @@ pub(crate) fn parse_prefix(parser: &mut Parser) -> Result<NodeRef, ParseError> {
             // Check if this is a cast expression or compound literal by looking ahead for a type name
             if parser.is_cast_expression_start() {
                 // Parse the type name
-                let type_ref = super::declaration_core::parse_type_name(parser)?;
+                let parsed_type = super::parsed_type_builder::parse_parsed_type_name(parser)?;
                 // Expect closing parenthesis
                 parser.expect(TokenKind::RightParen)?;
 
                 // Check if this is a compound literal (next token is '{')
                 if parser.is_token(TokenKind::LeftBrace) {
                     // This is a compound literal: (type-name){initializer}
-                    parser.parse_compound_literal_from_type_and_start(type_ref, left_paren_token.span.start)
+                    parser.parse_compound_literal_from_type_and_start(parsed_type, left_paren_token.span.start)
                 } else {
                     // This is a cast expression: (type-name)expression
                     let dummy_right_paren = Token {
                         kind: TokenKind::RightParen,
                         span: SourceSpan::new(left_paren_token.span.end, left_paren_token.span.end),
                     };
-                    parser.parse_cast_expression_from_type_and_paren(type_ref, dummy_right_paren)
+                    parser.parse_cast_expression_from_type_and_paren(parsed_type, dummy_right_paren)
                 }
             } else if parser.is_token(TokenKind::LeftBrace) {
                 // This is a GNU statement expression: ({ ... })
@@ -494,7 +494,8 @@ pub(crate) fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, Pa
         let type_name = if parser.accept(TokenKind::Default).is_some() {
             None
         } else {
-            Some(super::declaration_core::parse_type_name(parser)?)
+            let parsed_type = super::parsed_type_builder::parse_parsed_type_name(parser)?;
+            Some(parsed_type)
         };
 
         parser.expect(TokenKind::Colon)?;
@@ -519,14 +520,14 @@ pub(crate) fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, Pa
 /// Parse compound literal given the type and start location
 pub(crate) fn parse_compound_literal_from_type_and_start(
     parser: &mut Parser,
-    type_ref: TypeRef,
+    parsed_type: ParsedType,
     start_loc: SourceLoc,
 ) -> Result<NodeRef, ParseError> {
     let initializer_ref = super::declaration_core::parse_initializer(parser)?;
 
     let end_loc = parser.current_token_span()?.end;
     let span = SourceSpan::new(start_loc, end_loc);
-    let node = parser.push_node(NodeKind::CompoundLiteral(type_ref, initializer_ref), span);
+    let node = parser.push_node(NodeKind::ParsedCompoundLiteral(parsed_type, initializer_ref), span);
     Ok(node)
 }
 
@@ -545,7 +546,7 @@ pub(crate) fn parse_sizeof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         // Check if it's a type name or expression
         if parser.is_type_name_start() {
             debug!("parse_sizeof: detected type name start, parsing type name");
-            let type_ref = super::declaration_core::parse_type_name(parser)?;
+            let parsed_type = super::parsed_type_builder::parse_parsed_type_name(parser)?;
             debug!(
                 "parse_sizeof: parsed type name, now at position {}, token {:?}",
                 parser.current_idx,
@@ -558,7 +559,7 @@ pub(crate) fn parse_sizeof(parser: &mut Parser) -> Result<NodeRef, ParseError> {
             let span = SourceSpan::new(start_loc, end_loc);
 
             debug!("parse_sizeof: successfully parsed sizeof(type)");
-            parser.push_node(NodeKind::SizeOfType(type_ref), span)
+            parser.push_node(NodeKind::ParsedSizeOfType(parsed_type), span)
         } else {
             debug!("parse_sizeof: detected expression, parsing expression");
             let expr = parser.parse_expr_min()?;
@@ -591,14 +592,15 @@ pub(crate) fn parse_alignof(parser: &mut Parser) -> Result<NodeRef, ParseError> 
 
     parser.expect(TokenKind::LeftParen)?;
 
-    let type_ref = super::declaration_core::parse_type_name(parser)?;
+    let parsed_type = super::parsed_type_builder::parse_parsed_type_name(parser)?;
     let right_paren_token = parser.expect(TokenKind::RightParen)?;
 
     let end_loc = right_paren_token.span.end;
 
     let span = SourceSpan::new(start_loc, end_loc);
 
-    let node = parser.push_node(NodeKind::AlignOf(type_ref), span);
+    // Use ParsedAlignOf for the parser phase
+    let node = parser.push_node(NodeKind::ParsedAlignOf(parsed_type), span);
     Ok(node)
 }
 
@@ -646,7 +648,7 @@ pub(crate) fn is_cast_expression_start(parser: &Parser) -> bool {
 /// Parse cast expression given the already parsed type and right paren token
 pub(crate) fn parse_cast_expression_from_type_and_paren(
     parser: &mut Parser,
-    type_ref: TypeRef,
+    parsed_type: ParsedType,
     right_paren_token: Token,
 ) -> Result<NodeRef, ParseError> {
     // Parse the expression being cast
@@ -657,7 +659,7 @@ pub(crate) fn parse_cast_expression_from_type_and_paren(
         parser.ast.get_node(expr_node).span.end,
     );
 
-    let node = parser.push_node(NodeKind::Cast(type_ref, expr_node), span);
+    let node = parser.push_node(NodeKind::ParsedCast(parsed_type, expr_node), span);
 
     debug!("parse_cast_expression: successfully parsed cast expression");
     Ok(node)

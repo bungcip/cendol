@@ -265,6 +265,11 @@ impl OutputHandler {
             NodeKind::CompoundLiteral(ty, init) => {
                 println!("CompoundLiteral({}, {})", ty.get(), init.get())
             }
+            // Parser variants with ParsedType
+            NodeKind::ParsedCast(_, expr) => println!("ParsedCast(PARSED_TYPE, {})", expr.get()),
+            NodeKind::ParsedSizeOfType(_) => println!("ParsedSizeOfType(PARSED_TYPE)"),
+            NodeKind::ParsedAlignOf(_) => println!("ParsedAlignOf(PARSED_TYPE)"),
+            NodeKind::ParsedCompoundLiteral(_, init) => println!("ParsedCompoundLiteral(PARSED_TYPE, {})", init.get()),
             NodeKind::GenericSelection(ctrl, assocs) => {
                 println!("GenericSelection({}, {} associations)", ctrl.get(), assocs.len())
             }

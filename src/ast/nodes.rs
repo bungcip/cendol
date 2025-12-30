@@ -8,7 +8,7 @@ use serde::Serialize;
 use std::cell::Cell;
 use thin_vec::ThinVec;
 
-use crate::ast::{NameId, NodeRef, SymbolRef, TypeRef};
+use crate::ast::{NameId, NodeRef, ParsedType, SymbolRef, TypeRef};
 
 /// The core enum defining all possible AST node types for C11.
 /// Variants use NodeIndex for child references, enabling flattened storage.
@@ -52,6 +52,13 @@ pub enum NodeKind {
     CompoundLiteral(TypeRef, NodeRef),
     GenericSelection(NodeRef /* controlling_expr */, Vec<GenericAssociation>),
     VaArg(NodeRef /* va_list_expr */, TypeRef), // va_arg macro expansion
+
+    // --- Parser Nodes (using ParsedType) ---
+    /// parser node
+    ParsedCast(ParsedType, NodeRef),
+    ParsedSizeOfType(ParsedType),
+    ParsedCompoundLiteral(ParsedType, NodeRef),
+    ParsedAlignOf(ParsedType),
 
     // --- Statements (Complex statements are separate structs) ---
     CompoundStatement(Vec<NodeRef> /* block items */),
@@ -145,7 +152,7 @@ pub struct InitDeclarator {
 #[derive(Debug, Clone, Serialize)]
 pub struct FunctionDefData {
     pub specifiers: ThinVec<DeclSpecifier>,
-    pub declarator: Declarator,
+    pub declarator: ParsedType,
     pub body: NodeRef, // A CompoundStatement
 }
 
@@ -222,7 +229,7 @@ pub enum TypeSpecifier {
     Unsigned,
     Bool,
     Complex,
-    Atomic(TypeRef), // _Bool, _Complex, _Atomic
+    Atomic(ParsedType), // _Bool, _Complex, _Atomic
     Record(
         bool,                  /* is_union */
         Option<NameId>,        /* tag */
@@ -312,8 +319,8 @@ bitflags::bitflags! {
 // Alignment specifiers
 #[derive(Debug, Clone, Serialize)]
 pub enum AlignmentSpecifier {
-    Type(TypeRef), // _Alignas(type-name)
-    Expr(NodeRef), // _Alignas(constant-expression)
+    Type(ParsedType), // _Alignas(type-name)
+    Expr(NodeRef),    // _Alignas(constant-expression)
 }
 
 // Declarators
@@ -396,6 +403,6 @@ pub enum Designator {
 // Generic selection
 #[derive(Debug, Clone, Serialize)]
 pub struct GenericAssociation {
-    pub type_name: Option<TypeRef>, // None for 'default:'
+    pub type_name: Option<ParsedType>, // None for 'default:'
     pub result_expr: NodeRef,
 }

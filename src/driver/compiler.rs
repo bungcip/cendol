@@ -21,7 +21,7 @@ use crate::mir::{
 use crate::mir_dumper::{MirDumpConfig, MirDumper};
 use crate::parser::Parser;
 use crate::pp::{PPToken, Preprocessor};
-use crate::semantic::{AstToMirLowerer, SymbolTable};
+use crate::semantic::{AstToMirLowerer, SymbolTable, TypeContext};
 use crate::source_manager::SourceManager;
 
 use super::cli::CompileConfig;
@@ -220,9 +220,10 @@ impl CompilerDriver {
 
     fn run_mir(&mut self, mut ast: Ast) -> Result<SemaOutput, PipelineError> {
         let mut symbol_table = SymbolTable::new();
+        let mut type_ctx = TypeContext::new();
 
         use crate::semantic::symbol_resolver::run_symbol_resolver;
-        let scope_map = run_symbol_resolver(&mut ast, &mut self.diagnostics, &mut symbol_table);
+        let scope_map = run_symbol_resolver(&mut ast, &mut self.diagnostics, &mut symbol_table, &mut type_ctx);
         ast.attach_scope_map(scope_map);
         self.check_diagnostics_and_return_if_error()?;
 
@@ -271,11 +272,13 @@ impl CompilerDriver {
             }
         }
 
+        type_ctx.create_builtin();
+
         use crate::semantic::type_resolver::run_type_resolver;
         run_type_resolver(&ast, &mut self.diagnostics, &symbol_table);
         self.check_diagnostics_and_return_if_error()?;
 
-        let mut sema = AstToMirLowerer::new(&mut ast, &mut self.diagnostics, &mut symbol_table);
+        let mut sema = AstToMirLowerer::new(&mut ast, &mut self.diagnostics, &mut symbol_table, &mut type_ctx);
         let sema_output = sema.lower_module_complete();
         self.check_diagnostics_and_return_if_error()?;
 

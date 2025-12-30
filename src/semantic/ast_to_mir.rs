@@ -6,10 +6,10 @@ use crate::mir::{
     self, BinaryOp as MirBinaryOp, CallTarget, ConstValue, ConstValueId, Local, LocalId, MirBlockId, MirBuilder,
     MirFunctionId, MirStmt, Operand, Place, Rvalue, Terminator, TypeId,
 };
-use crate::semantic::DefinitionState;
 use crate::semantic::SymbolKind;
 use crate::semantic::SymbolRef;
 use crate::semantic::SymbolTable;
+use crate::semantic::{DefinitionState, TypeContext, TypeRef};
 use crate::semantic::{Namespace, ScopeId};
 use crate::source_manager::SourceSpan;
 use hashbrown::HashMap;
@@ -23,6 +23,7 @@ pub struct AstToMirLowerer<'a, 'src> {
     mir_builder: MirBuilder,
     current_function: Option<MirFunctionId>,
     current_block: Option<MirBlockId>,
+    type_ctx: &'a mut TypeContext,
     /// Maps variable names to their MIR Local IDs
     /// Maps symbol entry references to their MIR Local IDs.
     /// Using SymbolEntryRef instead of name ensures scope awareness and handles shadowing correctly.
@@ -35,7 +36,12 @@ pub struct AstToMirLowerer<'a, 'src> {
 
 impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     /// Create a new semantic analyzer
-    pub fn new(ast: &'a mut Ast, diag: &'src mut DiagnosticEngine, symbol_table: &'a mut SymbolTable) -> Self {
+    pub fn new(
+        ast: &'a mut Ast,
+        diag: &'src mut DiagnosticEngine,
+        symbol_table: &'a mut SymbolTable,
+        type_ctx: &'a mut TypeContext,
+    ) -> Self {
         let mir_builder = MirBuilder::new(mir::MirModuleId::new(1).unwrap());
 
         Self {
@@ -48,6 +54,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             local_map: HashMap::new(),
             label_map: HashMap::new(),
             has_errors: false,
+            type_ctx,
         }
     }
 
@@ -393,7 +400,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         debug!("Processing function '{}'", func_name);
 
         // Extract return type from the function type
-        let func_type = self.ast.get_type(function_data.ty);
+        let func_type = self.type_ctx.get_type(function_data.ty);
         let return_type = if let TypeKind::Function { return_type, .. } = &func_type.kind {
             self.lower_type_to_mir(*return_type)
         } else {
@@ -1416,7 +1423,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 // For arrow access, if the object type is a pointer, we need to dereference it
                 // to get the actual struct type for field lookup
                 if is_arrow && let Some(type_ref) = object_type_ref {
-                    let object_ast_type = self.ast.get_type(type_ref);
+                    let object_ast_type = self.type_ctx.get_type(type_ref);
                     if let crate::ast::TypeKind::Pointer { pointee } = &object_ast_type.kind {
                         // Canonicalize the pointee type to ensure it points to the complete struct definition
                         let canonical_pointee = self.canonicalize_type(*pointee);
@@ -1443,7 +1450,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
 
                 // Look for the field in the specific object type
                 let field_index = {
-                    let object_ast_type = self.ast.get_type(object_type_ref);
+                    let object_ast_type = self.type_ctx.get_type(object_type_ref);
 
                     // Handle both struct and union types
                     match &object_ast_type.kind {
@@ -1476,11 +1483,11 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
 
                     // Set the resolved type for this MemberAccess node
                     let field_type = {
-                        let object_ast_type = self.ast.get_type(object_type_ref);
+                        let object_ast_type = self.type_ctx.get_type(object_type_ref);
                         if let crate::ast::TypeKind::Record { members, .. } = &object_ast_type.kind {
                             members[field_idx].member_type
                         } else {
-                            self.get_int_type() // fallback
+                            self.type_ctx.type_int
                         }
                     };
 
@@ -1847,7 +1854,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     /// Lower a type reference to MIR type
     fn lower_type_to_mir(&mut self, type_ref: TypeRef) -> TypeId {
         // Clone the AST type to avoid borrow conflicts
-        let ast_type = self.ast.get_type(type_ref).clone();
+        let ast_type = self.type_ctx.get_type(type_ref).clone();
 
         debug!("Converting AST type to MIR: {:?}", ast_type.kind);
 
@@ -2093,7 +2100,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     /// This is similar to how Clang handles type canonicalization
     fn canonicalize_type(&mut self, type_ref: TypeRef) -> TypeRef {
         // Clone the type to avoid borrow issues
-        let ast_type = self.ast.get_type(type_ref).clone();
+        let ast_type = self.type_ctx.get_type(type_ref).clone();
 
         match ast_type.kind {
             crate::ast::TypeKind::Record {
@@ -2135,16 +2142,16 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                     let canonical_pointer_type = crate::ast::Type::new(crate::ast::TypeKind::Pointer {
                         pointee: canonical_pointee,
                     });
-                    self.ast.push_type(canonical_pointer_type)
+                    self.type_ctx.push_type(canonical_pointer_type)
                 } else {
                     // Even if pointee didn't change, we need to check if this pointer type
                     // should be updated to point to a complete struct definition
-                    let pointee_ast_type = self.ast.get_type(pointee);
+                    let pointee_ast_type = self.type_ctx.get_type(pointee);
                     if let crate::ast::TypeKind::Record { tag, .. } = &pointee_ast_type.kind
                         && let Some(tag_name) = tag
                     {
                         // Look for a complete struct with the same tag
-                        for (i, complete_type_candidate) in self.ast.types.iter().enumerate() {
+                        for (i, complete_type_candidate) in self.type_ctx.types.iter().enumerate() {
                             if let crate::ast::TypeKind::Record {
                                 tag: candidate_tag,
                                 members: candidate_members,
@@ -2156,11 +2163,11 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                                 && !candidate_members.is_empty()
                                 && pointee.get() != (i + 1) as u32
                             {
-                                let complete_struct_ref = crate::ast::TypeRef::new((i + 1) as u32).unwrap();
+                                let complete_struct_ref = TypeRef::new((i + 1) as u32).unwrap();
                                 let updated_pointer_type = crate::ast::Type::new(crate::ast::TypeKind::Pointer {
                                     pointee: complete_struct_ref,
                                 });
-                                return self.ast.push_type(updated_pointer_type);
+                                return self.type_ctx.push_type(updated_pointer_type);
                             }
                         }
                     }
@@ -2631,7 +2638,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
 
                 // For arrow access, we need to dereference the pointer to get the struct type
                 let dereferenced_type_ref = if *is_arrow {
-                    let object_ast_type = self.ast.get_type(object_type_ref);
+                    let object_ast_type = self.type_ctx.get_type(object_type_ref);
                     if let crate::ast::TypeKind::Pointer { pointee } = &object_ast_type.kind {
                         debug!("Dereferencing pointer type to get struct type");
                         *pointee
@@ -2644,7 +2651,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 };
 
                 // Look for the field in the struct/union type
-                let struct_ast_type = self.ast.get_type(dereferenced_type_ref);
+                let struct_ast_type = self.type_ctx.get_type(dereferenced_type_ref);
                 if let crate::ast::TypeKind::Record { members, .. } = &struct_ast_type.kind {
                     if let Some(field_index) = members.iter().position(|member| member.name == *field_name) {
                         debug!("Found field '{}' at index {}", field_name, field_index);
@@ -2857,7 +2864,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         // For arrow access, if the object type is a pointer, we need to dereference it
         // to get the actual struct type for field lookup
         if is_arrow && let Some(type_ref) = object_type_ref {
-            let object_ast_type = self.ast.get_type(type_ref);
+            let object_ast_type = self.type_ctx.get_type(type_ref);
             if let crate::ast::TypeKind::Pointer { pointee } = &object_ast_type.kind {
                 // Canonicalize the pointee type to ensure it points to the complete struct definition
                 let canonical_pointee = self.canonicalize_type(*pointee);
@@ -2879,7 +2886,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
 
         // Look for the field in the struct and get its index
         let field_index = {
-            let object_ast_type = self.ast.get_type(object_type_ref);
+            let object_ast_type = self.type_ctx.get_type(object_type_ref);
 
             // Handle both struct and union types
             match &object_ast_type.kind {

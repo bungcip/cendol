@@ -267,6 +267,10 @@ pub fn parse_function_definition(parser: &mut Parser) -> Result<NodeRef, ParseEr
     // Parse declarator (should be a function declarator)
     let declarator = super::declarator::parse_declarator(parser, None)?;
 
+    // Convert declarator to ParsedType
+    let parsed_declarator =
+        super::parsed_type_builder::build_parsed_type_from_specifiers(parser, &specifiers, Some(&declarator))?;
+
     // Parse function body
     let (body, body_end_loc) = super::statements::parse_compound_statement(parser)?;
 
@@ -274,7 +278,7 @@ pub fn parse_function_definition(parser: &mut Parser) -> Result<NodeRef, ParseEr
 
     let function_def = FunctionDefData {
         specifiers,
-        declarator,
+        declarator: parsed_declarator,
         body,
     };
 

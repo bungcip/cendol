@@ -10,7 +10,7 @@ use std::num::NonZeroU32;
 use log::debug;
 use thiserror::Error;
 
-use crate::ast::*;
+use crate::{ast::*, semantic::TypeRef};
 
 pub type SymbolRef = NonZeroU32;
 

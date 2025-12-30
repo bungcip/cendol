@@ -64,9 +64,9 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                     // This is the `_Atomic(type-name)` form.
                     parser.advance(); // consume `_Atomic`
                     parser.expect(TokenKind::LeftParen)?;
-                    let type_ref = parse_type_name(parser)?;
+                    let parsed_type = super::parsed_type_builder::parse_parsed_type_name(parser)?;
                     parser.expect(TokenKind::RightParen)?;
-                    let type_specifier = TypeSpecifier::Atomic(type_ref);
+                    let type_specifier = TypeSpecifier::Atomic(parsed_type);
                     specifiers.push(DeclSpecifier::TypeSpecifier(type_specifier));
                     has_type_specifier = true;
                 } else {
@@ -151,9 +151,11 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                 let alignment = if parser.accept(TokenKind::LeftParen).is_some() {
                     if parser.is_token(TokenKind::Identifier(symbol_table::GlobalSymbol::new(""))) {
                         // _Alignas(type-name)
-                        let type_ref = parse_type_name(parser)?;
+                        let parsed_type = super::parsed_type_builder::parse_parsed_type_name(parser)?;
                         parser.expect(TokenKind::RightParen)?;
-                        AlignmentSpecifier::Type(type_ref)
+                        // TODO: Consider creating a ParsedAlignmentSpecifier variant
+                        // For now, store the parsed type and let the symbol resolver handle it
+                        AlignmentSpecifier::Type(parsed_type)
                     } else {
                         // _Alignas(constant-expression)
                         let expr = parser.parse_expr_min()?;
@@ -351,24 +353,6 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<(), ParseError> {
 
     debug!("parse_attribute: successfully parsed __attribute__ construct");
     Ok(())
-}
-
-use super::type_builder;
-
-/// Parse type name (for casts, sizeof, etc.)
-pub(crate) fn parse_type_name(parser: &mut Parser) -> Result<TypeRef, ParseError> {
-    // Parse declaration specifiers
-    let specifiers = parse_declaration_specifiers(parser)?;
-
-    // Parse abstract declarator (optional)
-    let declarator = if parser.is_abstract_declarator_start() {
-        Some(super::declarator::parse_abstract_declarator(parser)?)
-    } else {
-        None
-    };
-
-    // Build the type from specifiers and declarator
-    type_builder::build_type_from_specifiers(parser, &specifiers, declarator.as_ref())
 }
 
 fn parse_type_qualifiers(parser: &mut Parser) -> TypeQualifiers {

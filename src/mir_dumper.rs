@@ -408,6 +408,7 @@ impl<'a> MirDumper<'a> {
                 ConstValue::Float(val) => format!("const {}", val),
                 ConstValue::Bool(val) => format!("const {}", val),
                 ConstValue::Null => "const null".to_string(),
+                ConstValue::Zero => "const zero".to_string(),
                 ConstValue::String(s) => format!("const \"{}\"", s),
                 ConstValue::StructLiteral(fields) => {
                     // Expand struct literal to show field contents

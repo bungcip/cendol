@@ -359,7 +359,11 @@ fn parse_infix(
         parser.ast.get_node(right_node).span.end,
     );
 
-    let node = parser.push_node(NodeKind::BinaryOp(op, left, right_node), span);
+    let node = if op.is_assignment() {
+        parser.push_node(NodeKind::Assignment(op, left, right_node), span)
+    } else {
+        parser.push_node(NodeKind::BinaryOp(op, left, right_node), span)
+    };
     Ok(node)
 }
 

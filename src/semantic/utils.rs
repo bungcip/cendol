@@ -1,6 +1,6 @@
 use crate::{
     ast::TypeKind,
-    semantic::{TypeContext, type_context::QualType},
+    semantic::{type_context::QualType, TypeContext},
 };
 
 pub fn is_scalar_type(ty: QualType, ctx: &TypeContext) -> bool {

@@ -126,10 +126,22 @@ mod tests {
         {
           locals {
             %steins: i32
+            %2: i32
           }
 
           bb1:
             %steins = const 99
+            br bb2
+
+          bb2:
+            cond_br %steins, bb3, bb4
+
+          bb3:
+            %2 = %steins - const 1
+            %steins = %2
+            br bb2
+
+          bb4:
             return %steins
         }
         ");
@@ -149,7 +161,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
 
         fn main() -> i32
@@ -157,11 +169,26 @@ mod tests {
           locals {
             %steins: i32
             %gate: i32
+            %3: i32
           }
 
           bb1:
             %steins = const 44
             %gate = const 1
+            br bb2
+
+          bb2:
+            cond_br %steins, bb3, bb5
+
+          bb3:
+            %3 = %steins - %gate
+            %steins = %3
+            br bb4
+
+          bb4:
+            br bb2
+
+          bb5:
             return %steins
         }
         ");
@@ -261,9 +288,9 @@ mod tests {
         let mir_dump = setup_mir(source);
         // We want to ensure %t0 is i32 and %t1 is struct using %t0
         // and NOT that %t0 is struct using %t0
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
-        type %t1 = struct anon_struct { a: %t0, b: %t0, c: %t0 }
+        type %t1 = struct anonymous { a: %t0, b: %t0, c: %t0 }
 
         global @s: %t1 = const struct_literal { 0: const 1, 1: const 2, 2: const 3 }
 
@@ -281,6 +308,9 @@ mod tests {
             return const 1
 
           bb3:
+            br bb4
+
+          bb4:
             return const 0
         }
         ");
@@ -297,11 +327,11 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
         type %t1 = struct S { a: %t0, b: %t0 }
 
-        global @s: %t1 = const struct_literal { 0: const 1, 1: const 2 }
+        global @s: %t1 = const struct_literal { 1: const 2, 0: const 1 }
 
         fn main() -> i32
         {
@@ -326,13 +356,13 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
         type %t1 = ptr<%t0>
         type %t2 = struct S { a: %t0, p: %t1 }
 
         global @x: i32 = const 10
-        global @s: %t2 = const struct_literal { 0: const 1, 1: const @x }
+        global @s: %t2 = const struct_literal { 1: const @x, 0: const 1 }
 
         fn main() -> i32
         {
@@ -399,12 +429,12 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
         type %t1 = struct T { x: %t0 }
         type %t2 = struct T { y: %t0 }
 
-        global @s1: %t1
+        global @s1: %t1 = const zero
 
         fn main() -> i32
         {
@@ -658,10 +688,12 @@ mod tests {
         fn fn_short() -> i16
         {
           locals {
+            %1: i32
           }
 
           bb4:
-            return const 0
+            %1 = - const 7
+            return %1
         }
 
         fn fn_ushort() -> u16
@@ -676,10 +708,12 @@ mod tests {
         fn fn_int() -> i32
         {
           locals {
+            %2: i32
           }
 
           bb6:
-            return const 0
+            %2 = - const 1
+            return %2
         }
 
         fn fn_uint() -> u32
@@ -712,10 +746,12 @@ mod tests {
         fn fn_llong() -> i64
         {
           locals {
+            %3: i32
           }
 
           bb10:
-            return const 0
+            %3 = - const 3000000000
+            return %3
         }
 
         fn fn_ullong() -> u64
@@ -748,35 +784,35 @@ mod tests {
         fn main() -> i32
         {
           locals {
-            %1: void
-            %2: i8
-            %3: u8
-            %4: i16
-            %5: u16
-            %6: i32
-            %7: u32
-            %8: i32
-            %9: u32
-            %10: i64
-            %11: u64
-            %12: f32
-            %13: f64
+            %4: void
+            %5: i8
+            %6: u8
+            %7: i16
+            %8: u16
+            %9: i32
+            %10: u32
+            %11: i32
+            %12: u32
+            %13: i64
+            %14: u64
+            %15: f32
+            %16: f64
           }
 
           bb14:
-            %1 = call fn_void()
-            %2 = call fn_char()
-            %3 = call fn_uchar()
-            %4 = call fn_short()
-            %5 = call fn_ushort()
-            %6 = call fn_int()
-            %7 = call fn_uint()
-            %8 = call fn_long()
-            %9 = call fn_ulong()
-            %10 = call fn_llong()
-            %11 = call fn_ullong()
-            %12 = call fn_float()
-            %13 = call fn_double()
+            %4 = call fn_void()
+            %5 = call fn_char()
+            %6 = call fn_uchar()
+            %7 = call fn_short()
+            %8 = call fn_ushort()
+            %9 = call fn_int()
+            %10 = call fn_uint()
+            %11 = call fn_long()
+            %12 = call fn_ulong()
+            %13 = call fn_llong()
+            %14 = call fn_ullong()
+            %15 = call fn_float()
+            %16 = call fn_double()
             return const 0
         }
         ");
@@ -797,8 +833,7 @@ mod tests {
         insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
 
-        global @x: i32
-        global @x: i32
+        global @x: i32 = const zero
 
         fn main() -> i32
         {

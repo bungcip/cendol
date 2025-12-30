@@ -518,9 +518,9 @@ fn test_simple_addition() {
 #[test]
 fn test_generic_selection_with_assignment() {
     let resolved = setup_expr("_Generic(x = 10, int: 1, default: 0)");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     GenericSelection:
-      - BinaryOp:
+      - Assignment:
           - Assign
           - Ident: x
           - LiteralInt: 10
@@ -632,8 +632,8 @@ fn test_parenthesized_expression() {
 #[test]
 fn test_assignment() {
     let resolved = setup_expr("a = 1");
-    insta::assert_yaml_snapshot!(&resolved, @r"
-    BinaryOp:
+    insta::assert_yaml_snapshot!(&resolved, @"
+    Assignment:
       - Assign
       - Ident: a
       - LiteralInt: 1
@@ -1357,11 +1357,11 @@ fn test_generic_selection_with_pointer_types() {
 #[test]
 fn test_chained_assignment() {
     let resolved = setup_expr("a = b = c");
-    insta::assert_yaml_snapshot!(&resolved, @r"
-    BinaryOp:
+    insta::assert_yaml_snapshot!(&resolved, @"
+    Assignment:
       - Assign
       - Ident: a
-      - BinaryOp:
+      - Assignment:
           - Assign
           - Ident: b
           - Ident: c
@@ -1371,8 +1371,8 @@ fn test_chained_assignment() {
 #[test]
 fn test_ternary_with_assignment() {
     let resolved = setup_expr("a ? b : c = 1");
-    insta::assert_yaml_snapshot!(&resolved, @r"
-    BinaryOp:
+    insta::assert_yaml_snapshot!(&resolved, @"
+    Assignment:
       - Assign
       - TernaryOp:
           - Ident: a
@@ -1385,10 +1385,10 @@ fn test_ternary_with_assignment() {
 #[test]
 fn test_ternary_with_assignment_in_middle_operand() {
     let resolved = setup_expr("a ? b = 1 : c");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     TernaryOp:
       - Ident: a
-      - BinaryOp:
+      - Assignment:
           - Assign
           - Ident: b
           - LiteralInt: 1
@@ -1428,11 +1428,11 @@ fn test_array_indexing_with_expression() {
 #[test]
 fn test_label_with_expression_statement() {
     let resolved = setup_statement("start: x = 1;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Label:
       - start
       - ExpressionStatement:
-          BinaryOp:
+          Assignment:
             - Assign
             - Ident: x
             - LiteralInt: 1
@@ -1459,13 +1459,13 @@ fn test_label_with_compound_statement() {
 #[test]
 fn test_label_with_if_statement() {
     let resolved = setup_statement("if_label: if (x) y = 1;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Label:
       - if_label
       - If:
           - Ident: x
           - ExpressionStatement:
-              BinaryOp:
+              Assignment:
                 - Assign
                 - Ident: y
                 - LiteralInt: 1

@@ -260,6 +260,7 @@ pub enum ConstValue {
     Float(f64),
     Bool(bool),
     Null,
+    Zero,
     // String literals
     String(String),
     // Aggregate constants
@@ -487,6 +488,12 @@ impl MirBuilder {
         self.module.globals.push(global_id);
 
         global_id
+    }
+
+    pub fn set_global_initializer(&mut self, global_id: GlobalId, init_id: ConstValueId) {
+        if let Some(global) = self.globals.get_mut(&global_id) {
+            global.initial_value = Some(init_id);
+        }
     }
 
     /// Add a type to the module with interning
@@ -728,6 +735,7 @@ impl fmt::Display for ConstValue {
             ConstValue::Float(val) => write!(f, "{}", val),
             ConstValue::Bool(val) => write!(f, "{}", val),
             ConstValue::Null => write!(f, "null"),
+            ConstValue::Zero => write!(f, "zeroinit"),
             ConstValue::String(val) => write!(f, "\"{}\"", val),
             ConstValue::StructLiteral(fields) => write!(f, "StructLiteral({:?})", fields),
             ConstValue::ArrayLiteral(elements) => write!(f, "ArrayLiteral({:?})", elements),

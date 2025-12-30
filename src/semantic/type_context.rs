@@ -91,7 +91,13 @@ pub struct TypeContext {
     pub type_long: TypeRef,
     pub type_long_long: TypeRef,
     pub type_char: TypeRef,
+    pub type_short_unsigned: TypeRef,
+    pub type_char_unsigned: TypeRef,
+    pub type_long_unsigned: TypeRef,
+    pub type_long_long_unsigned: TypeRef,
+    pub type_float: TypeRef,
     pub type_double: TypeRef,
+    pub type_long_double: TypeRef,
     pub type_error: TypeRef,
 }
 
@@ -113,7 +119,13 @@ impl TypeContext {
             type_long: dummy(),
             type_long_long: dummy(),
             type_char: dummy(),
+            type_short_unsigned: dummy(),
+            type_char_unsigned: dummy(),
+            type_long_unsigned: dummy(),
+            type_long_long_unsigned: dummy(),
+            type_float: dummy(),
             type_double: dummy(),
+            type_long_double: dummy(),
             type_error: dummy(),
         }
     }
@@ -124,21 +136,33 @@ impl TypeContext {
         self.type_int = self.alloc(Type::new(TypeKind::Int { is_signed: true }));
         self.type_uint = self.alloc(Type::new(TypeKind::Int { is_signed: false }));
         self.type_short = self.alloc(Type::new(TypeKind::Short { is_signed: true }));
+        self.type_short_unsigned = self.alloc(Type::new(TypeKind::Short { is_signed: false }));
         self.type_long = self.alloc(Type::new(TypeKind::Long {
             is_signed: true,
+            is_long_long: false,
+        }));
+        self.type_long_unsigned = self.alloc(Type::new(TypeKind::Long {
+            is_signed: false,
             is_long_long: false,
         }));
         self.type_long_long = self.alloc(Type::new(TypeKind::Long {
             is_signed: true,
             is_long_long: true,
         }));
+        self.type_long_long_unsigned = self.alloc(Type::new(TypeKind::Long {
+            is_signed: false,
+            is_long_long: true,
+        }));
         self.type_char = self.alloc(Type::new(TypeKind::Char { is_signed: true }));
+        self.type_char_unsigned = self.alloc(Type::new(TypeKind::Char { is_signed: false }));
+        self.type_float = self.alloc(Type::new(TypeKind::Float));
         self.type_double = self.alloc(Type::new(TypeKind::Double { is_long_double: false }));
+        self.type_long_double = self.alloc(Type::new(TypeKind::Double { is_long_double: true }));
         self.type_error = self.alloc(Type::new(TypeKind::Error));
     }
 
     /// Allocate a new canonical type and return its TypeRef.
-    pub fn alloc(&mut self, ty: Type) -> TypeRef {
+    fn alloc(&mut self, ty: Type) -> TypeRef {
         let idx = self.types.len() as u32 + 1;
         let nz = NonZeroU32::new(idx).unwrap();
         self.types.push(ty);
@@ -186,7 +210,6 @@ impl TypeContext {
         arr
     }
 
-    #[allow(unused)]
     pub fn function_type(
         &mut self,
         return_type: TypeRef,
@@ -213,6 +236,11 @@ impl TypeContext {
         f
     }
 
+    pub fn complex_type(&mut self, base_type: TypeRef) -> TypeRef {
+        let complex = self.alloc(Type::new(TypeKind::Complex { base_type }));
+        complex
+    }
+
     // ============================================================
     // Record / enum handling (two-phase)
     // ============================================================
@@ -226,7 +254,6 @@ impl TypeContext {
         }))
     }
 
-    #[allow(unused)]
     pub fn complete_record(&mut self, record: TypeRef, members: Vec<StructMember>, layout: Option<TypeLayout>) {
         let ty = self.get_mut(record);
         match &mut ty.kind {
@@ -245,12 +272,20 @@ impl TypeContext {
 
     #[allow(unused)]
     pub fn new_enum(&mut self, tag: Option<NameId>, base_type: TypeRef) -> TypeRef {
+        // This is a creation function - use create_enum() from other modules
         self.alloc(Type::new(TypeKind::Enum {
             tag,
             base_type,
             enumerators: Vec::new(),
             is_complete: false,
         }))
+    }
+
+    /// Create an enum type with forward reference as QualType.
+    #[allow(unused)]
+    pub fn create_enum(&mut self, tag: Option<NameId>, base_type: TypeRef) -> QualType {
+        let enum_type = self.new_enum(tag, base_type);
+        QualType::unqualified(enum_type)
     }
 
     #[allow(unused)]

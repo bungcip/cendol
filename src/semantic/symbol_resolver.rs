@@ -108,11 +108,9 @@ fn apply_parsed_declarator_recursive(
                 });
             }
 
-            let function_type_ref = ctx.type_ctx.alloc(Type::new(TypeKind::Function {
-                return_type: return_type_ref,
-                parameters: processed_params,
-                is_variadic: flags.unwrap().is_variadic,
-            }));
+            let function_type_ref =
+                ctx.type_ctx
+                    .function_type(return_type_ref, processed_params, flags.unwrap().is_variadic);
             QualType::unqualified(function_type_ref)
         }
         _ => {
@@ -341,13 +339,7 @@ fn convert_parsed_base_type_to_qual_type(
                     } else {
                         // Not in current scope (either not found or shadowing outer)
                         // Create a new record type
-                        let new_type = Type::new(TypeKind::Record {
-                            tag: Some(*tag_name),
-                            members: Vec::new(),
-                            is_complete: false,
-                            is_union: *is_union,
-                        });
-                        let new_type_ref = ctx.type_ctx.alloc(new_type);
+                        let new_type_ref = ctx.type_ctx.new_record(Some(*tag_name), *is_union);
 
                         // Add it to the symbol table in the current scope
                         let symbol_entry = Symbol {
@@ -378,13 +370,7 @@ fn convert_parsed_base_type_to_qual_type(
                         entry.type_info
                     } else {
                         // Not found anywhere, create an implicit forward declaration in current scope
-                        let forward_type = Type::new(TypeKind::Record {
-                            tag: Some(*tag_name),
-                            members: Vec::new(),
-                            is_complete: false,
-                            is_union: *is_union,
-                        });
-                        let forward_ref = ctx.type_ctx.alloc(forward_type);
+                        let forward_ref = ctx.type_ctx.new_record(Some(*tag_name), *is_union);
 
                         let symbol_entry = Symbol {
                             name: *tag_name,
@@ -409,13 +395,7 @@ fn convert_parsed_base_type_to_qual_type(
                 }
             } else {
                 // Anonymous struct/union definition
-                let new_type = Type::new(TypeKind::Record {
-                    tag: None,
-                    members: Vec::new(),
-                    is_complete: false,
-                    is_union: *is_union,
-                });
-                ctx.type_ctx.alloc(new_type)
+                ctx.type_ctx.new_record(None, *is_union)
             };
 
             // Now handle members if it's a definition
@@ -446,14 +426,8 @@ fn convert_parsed_base_type_to_qual_type(
                 }
 
                 // Update the type in AST and SymbolTable
-                let type_idx = (type_ref_to_use.get() - 1) as usize;
-                let completed_type = Type::new(TypeKind::Record {
-                    tag: *tag,
-                    members: struct_members.clone(), // Clone to avoid move issue
-                    is_complete: true,
-                    is_union: *is_union,
-                });
-                ctx.type_ctx.types[type_idx] = completed_type;
+                ctx.type_ctx
+                    .complete_record(type_ref_to_use, struct_members.clone(), None);
 
                 if let Some(tag_name) = *tag
                     && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(tag_name)
@@ -498,13 +472,7 @@ fn convert_parsed_base_type_to_qual_type(
                         type_info
                     } else {
                         // Not found in current scope, create new entry
-                        let new_type = Type::new(TypeKind::Enum {
-                            tag: Some(*tag_name),
-                            base_type: ctx.type_ctx.alloc(Type::new(TypeKind::Int { is_signed: true })),
-                            enumerators: Vec::new(),
-                            is_complete: false,
-                        });
-                        let new_type_ref = ctx.type_ctx.alloc(new_type);
+                        let new_type_ref = ctx.type_ctx.new_enum(Some(*tag_name), ctx.type_ctx.type_int);
                         let symbol_entry = Symbol {
                             name: *tag_name,
                             kind: SymbolKind::EnumTag { is_complete: false },
@@ -527,13 +495,8 @@ fn convert_parsed_base_type_to_qual_type(
                         entry.type_info
                     } else {
                         // Implicit forward declaration
-                        let forward_type = Type::new(TypeKind::Enum {
-                            tag: Some(*tag_name),
-                            base_type: ctx.type_ctx.type_int,
-                            enumerators: Vec::new(),
-                            is_complete: false,
-                        });
-                        let forward_ref = ctx.type_ctx.alloc(forward_type);
+                        let forward_ref = ctx.type_ctx.new_enum(Some(*tag_name), ctx.type_ctx.type_int);
+
                         let symbol = Symbol {
                             name: *tag_name,
                             kind: SymbolKind::EnumTag { is_complete: false },
@@ -552,13 +515,7 @@ fn convert_parsed_base_type_to_qual_type(
                 }
             } else {
                 // Anonymous enum definition
-                let new_type = Type::new(TypeKind::Enum {
-                    tag: None,
-                    base_type: ctx.type_ctx.type_int,
-                    enumerators: Vec::new(),
-                    is_complete: false,
-                });
-                ctx.type_ctx.alloc(new_type)
+                ctx.type_ctx.new_enum(None, ctx.type_ctx.type_int)
             };
 
             // Process enumerators if it's a definition
@@ -639,16 +596,7 @@ fn convert_parsed_base_type_to_qual_type(
             } else {
                 // Typedef not found during semantic lowering - this is expected
                 // when typedefs are defined later in the same scope.
-                let forward_ref_type = Type {
-                    kind: TypeKind::Record {
-                        tag: Some(*name),    // Use typedef name as tag for lookup
-                        members: Vec::new(), // Unknown at this point
-                        is_complete: false,  // Mark as incomplete
-                        is_union: false,
-                    },
-                    ..Default::default()
-                };
-                Ok(QualType::unqualified(ctx.type_ctx.alloc(forward_ref_type)))
+                Ok(QualType::unqualified(ctx.type_ctx.new_record(Some(*name), false)))
             }
         }
         ParsedBaseTypeNode::Error => {
@@ -689,40 +637,24 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
         TypeSpecifier::Short => Ok(QualType::unqualified(ctx.type_ctx.type_short)),
         TypeSpecifier::Int => Ok(QualType::unqualified(ctx.type_ctx.type_int)),
         TypeSpecifier::Long => Ok(QualType::unqualified(ctx.type_ctx.type_long)),
-        TypeSpecifier::LongLong => Ok(QualType::unqualified(ctx.type_ctx.alloc(Type::new(TypeKind::Long {
-            is_signed: true,
-            is_long_long: true,
-        })))),
-        TypeSpecifier::Float => Ok(QualType::unqualified(ctx.type_ctx.alloc(Type::new(TypeKind::Float)))),
-        TypeSpecifier::Double => Ok(QualType::unqualified(
-            ctx.type_ctx
-                .alloc(Type::new(TypeKind::Double { is_long_double: false })),
-        )),
-        TypeSpecifier::LongDouble => Ok(QualType::unqualified(
-            ctx.type_ctx.alloc(Type::new(TypeKind::Double { is_long_double: true })),
-        )),
+        TypeSpecifier::LongLong => Ok(QualType::unqualified(ctx.type_ctx.type_long_long)),
+        TypeSpecifier::Float => Ok(QualType::unqualified(ctx.type_ctx.type_float)),
+        TypeSpecifier::Double => Ok(QualType::unqualified(ctx.type_ctx.type_double)),
+        TypeSpecifier::LongDouble => Ok(QualType::unqualified(ctx.type_ctx.type_long_double)),
         TypeSpecifier::Signed => {
             // Signed modifier - for now, default to signed int
-            Ok(QualType::unqualified(
-                ctx.type_ctx.alloc(Type::new(TypeKind::Int { is_signed: true })),
-            ))
+            Ok(QualType::unqualified(ctx.type_ctx.type_int))
         }
         TypeSpecifier::Unsigned => {
             // Unsigned modifier - return a special marker type that will be handled in merge_base_type
-            Ok(QualType::unqualified(
-                ctx.type_ctx.alloc(Type::new(TypeKind::Int { is_signed: false })),
-            ))
+            Ok(QualType::unqualified(ctx.type_ctx.type_uint))
         }
         TypeSpecifier::Bool => Ok(QualType::unqualified(ctx.type_ctx.type_bool)),
         TypeSpecifier::Complex => {
             // Complex types need a base type
             // For now, default to complex double
-            let base_type = ctx
-                .type_ctx
-                .alloc(Type::new(TypeKind::Double { is_long_double: false }));
-            Ok(QualType::unqualified(
-                ctx.type_ctx.alloc(Type::new(TypeKind::Complex { base_type })),
-            ))
+            let complex_type = ctx.type_ctx.complex_type(ctx.type_ctx.type_double);
+            Ok(QualType::unqualified(complex_type))
         }
         TypeSpecifier::Atomic(parsed_type) => {
             // Convert the ParsedType to a TypeRef by applying the declarator to the base type
@@ -755,13 +687,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     } else {
                         // Not in current scope (either not found or shadowing outer)
                         // Create a new record type
-                        let new_type = Type::new(TypeKind::Record {
-                            tag: Some(*tag_name),
-                            members: Vec::new(),
-                            is_complete: false,
-                            is_union: *is_union,
-                        });
-                        let new_type_ref = ctx.type_ctx.alloc(new_type);
+                        let new_type_ref = ctx.type_ctx.new_record(Some(*tag_name), *is_union);
 
                         // Add it to the symbol table in the current scope
                         let symbol_entry = Symbol {
@@ -792,13 +718,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                         entry.type_info
                     } else {
                         // Not found anywhere, create an implicit forward declaration in current scope
-                        let forward_type = Type::new(TypeKind::Record {
-                            tag: Some(*tag_name),
-                            members: Vec::new(),
-                            is_complete: false,
-                            is_union: *is_union,
-                        });
-                        let forward_ref = ctx.type_ctx.alloc(forward_type);
+                        let forward_ref = ctx.type_ctx.new_record(Some(*tag_name), *is_union);
 
                         let symbol_entry = Symbol {
                             name: *tag_name,
@@ -823,13 +743,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                 }
             } else {
                 // Anonymous struct/union definition
-                let new_type = Type::new(TypeKind::Record {
-                    tag: None,
-                    members: Vec::new(),
-                    is_complete: false,
-                    is_union: *is_union,
-                });
-                ctx.type_ctx.alloc(new_type)
+                ctx.type_ctx.new_record(None, *is_union)
             };
 
             // Now handle members if it's a definition
@@ -872,7 +786,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                                         );
                                         ty.ty
                                     } else {
-                                        ctx.type_ctx.alloc(Type::new(TypeKind::Int { is_signed: true }))
+                                        ctx.type_ctx.type_int
                                     };
 
                                     struct_members.push(StructMember {
@@ -889,14 +803,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     .unwrap_or_default();
 
                 // Update the type in AST and SymbolTable
-                let type_idx = (type_ref_to_use.get() - 1) as usize;
-                let completed_type = Type::new(TypeKind::Record {
-                    tag: *tag,
-                    members: members.clone(),
-                    is_complete: true,
-                    is_union: *is_union,
-                });
-                ctx.type_ctx.types[type_idx] = completed_type;
+                ctx.type_ctx.complete_record(type_ref_to_use, members.clone(), None);
 
                 if let Some(tag_name) = tag
                     && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(*tag_name)
@@ -941,13 +848,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                         type_info
                     } else {
                         // Not found in current scope, create new entry
-                        let new_type = Type::new(TypeKind::Enum {
-                            tag: Some(*tag_name),
-                            base_type: ctx.type_ctx.alloc(Type::new(TypeKind::Int { is_signed: true })),
-                            enumerators: Vec::new(),
-                            is_complete: false,
-                        });
-                        let new_type_ref = ctx.type_ctx.alloc(new_type);
+                        let new_type_ref = ctx.type_ctx.new_enum(Some(*tag_name), ctx.type_ctx.type_int);
                         let symbol_entry = Symbol {
                             name: *tag_name,
                             kind: SymbolKind::EnumTag { is_complete: false },
@@ -970,13 +871,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                         entry.type_info
                     } else {
                         // Implicit forward declaration
-                        let forward_type = Type::new(TypeKind::Enum {
-                            tag: Some(*tag_name),
-                            base_type: ctx.type_ctx.alloc(Type::new(TypeKind::Int { is_signed: true })),
-                            enumerators: Vec::new(),
-                            is_complete: false,
-                        });
-                        let forward_ref = ctx.type_ctx.alloc(forward_type);
+                        let forward_ref = ctx.type_ctx.new_enum(Some(*tag_name), ctx.type_ctx.type_int);
                         let symbol = Symbol {
                             name: *tag_name,
                             kind: SymbolKind::EnumTag { is_complete: false },
@@ -995,13 +890,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                 }
             } else {
                 // Anonymous enum definition
-                let new_type = Type::new(TypeKind::Enum {
-                    tag: None,
-                    base_type: ctx.type_ctx.alloc(Type::new(TypeKind::Int { is_signed: true })),
-                    enumerators: Vec::new(),
-                    is_complete: false,
-                });
-                ctx.type_ctx.alloc(new_type)
+                ctx.type_ctx.new_enum(None, ctx.type_ctx.type_int)
             };
 
             // 2. Process enumerators if it's a definition
@@ -1096,16 +985,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                 // For now, create a placeholder record type with the expected structure.
                 // This is a temporary solution - in a full implementation, we'd have a proper
                 // forward reference mechanism.
-                let forward_ref_type = Type {
-                    kind: TypeKind::Record {
-                        tag: Some(*name),    // Use typedef name as tag for lookup
-                        members: Vec::new(), // Unknown at this point
-                        is_complete: false,  // Mark as incomplete
-                        is_union: false,
-                    },
-                    ..Default::default()
-                };
-                Ok(QualType::unqualified(ctx.type_ctx.alloc(forward_ref_type)))
+                Ok(QualType::unqualified(ctx.type_ctx.new_record(Some(*name), false)))
             }
         }
     }
@@ -1130,9 +1010,7 @@ fn merge_base_type(existing: Option<QualType>, new_type: QualType, ctx: &mut Low
                 // Handle char type merging
                 (TypeKind::Char { is_signed: true }, TypeKind::Int { is_signed: false }) => {
                     // unsigned char = char + unsigned
-                    Some(QualType::unqualified(
-                        ctx.type_ctx.alloc(Type::new(TypeKind::Char { is_signed: false })),
-                    ))
+                    Some(QualType::unqualified(ctx.type_ctx.type_char_unsigned))
                 }
                 (TypeKind::Char { is_signed: false }, TypeKind::Int { is_signed: true }) => {
                     Some(existing_ref) // Keep unsigned char
@@ -1141,9 +1019,7 @@ fn merge_base_type(existing: Option<QualType>, new_type: QualType, ctx: &mut Low
                 // Handle short type merging
                 (TypeKind::Short { is_signed: true }, TypeKind::Int { is_signed: false }) => {
                     // unsigned short = short + unsigned
-                    Some(QualType::unqualified(
-                        ctx.type_ctx.alloc(Type::new(TypeKind::Short { is_signed: false })),
-                    ))
+                    Some(QualType::unqualified(ctx.type_ctx.type_short_unsigned))
                 }
                 (TypeKind::Short { is_signed: false }, TypeKind::Int { is_signed: true }) => {
                     Some(existing_ref) // Keep unsigned short
@@ -1152,15 +1028,11 @@ fn merge_base_type(existing: Option<QualType>, new_type: QualType, ctx: &mut Low
                 // Handle unsigned + char/short order
                 (TypeKind::Int { is_signed: false }, TypeKind::Char { is_signed: true }) => {
                     // unsigned char = unsigned + char
-                    Some(QualType::unqualified(
-                        ctx.type_ctx.alloc(Type::new(TypeKind::Char { is_signed: false })),
-                    ))
+                    Some(QualType::unqualified(ctx.type_ctx.type_char_unsigned))
                 }
                 (TypeKind::Int { is_signed: false }, TypeKind::Short { is_signed: true }) => {
                     // unsigned short = unsigned + short
-                    Some(QualType::unqualified(
-                        ctx.type_ctx.alloc(Type::new(TypeKind::Short { is_signed: false })),
-                    ))
+                    Some(QualType::unqualified(ctx.type_ctx.type_short_unsigned))
                 }
 
                 // Handle unsigned + long/long long order
@@ -1171,17 +1043,11 @@ fn merge_base_type(existing: Option<QualType>, new_type: QualType, ctx: &mut Low
                     },
                 ) => {
                     // unsigned long = unsigned + long
-                    Some(QualType::unqualified(ctx.type_ctx.alloc(Type::new(TypeKind::Long {
-                        is_signed: false,
-                        is_long_long: false,
-                    }))))
+                    Some(QualType::unqualified(ctx.type_ctx.type_long_unsigned))
                 }
                 (TypeKind::Int { is_signed: false }, TypeKind::Long { is_long_long: true, .. }) => {
                     // unsigned long long = unsigned + long long
-                    Some(QualType::unqualified(ctx.type_ctx.alloc(Type::new(TypeKind::Long {
-                        is_signed: false,
-                        is_long_long: true,
-                    }))))
+                    Some(QualType::unqualified(ctx.type_ctx.type_long_long_unsigned))
                 }
 
                 // Long long overrides long
@@ -1483,10 +1349,7 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
                 }
             };
 
-            let array_type_ref = ctx.type_ctx.alloc(Type::new(TypeKind::Array {
-                element_type: element_type.ty,
-                size: array_size,
-            }));
+            let array_type_ref = ctx.type_ctx.array_of(element_type.ty, array_size);
             QualType::unqualified(array_type_ref)
         }
         Declarator::Function {
@@ -1503,13 +1366,7 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
                 let parameters = lower_function_parameters(params, ctx);
 
                 // Build the function type first
-                let function_type = Type::new(TypeKind::Function {
-                    return_type: return_type.ty,
-                    parameters,
-                    is_variadic: *is_variadic,
-                });
-                let function_type_ref = ctx.type_ctx.alloc(function_type);
-
+                let function_type_ref = ctx.type_ctx.function_type(return_type.ty, parameters, *is_variadic);
                 let pointer_type_ref = ctx.type_ctx.pointer_to(function_type_ref);
                 return QualType::new(pointer_type_ref, *qualifiers);
             }
@@ -1518,11 +1375,7 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
             let return_type = apply_declarator(base_type, base, ctx);
             let parameters = lower_function_parameters(params, ctx);
 
-            let function_type_ref = ctx.type_ctx.alloc(Type::new(TypeKind::Function {
-                return_type: return_type.ty,
-                parameters,
-                is_variadic: *is_variadic,
-            }));
+            let function_type_ref = ctx.type_ctx.function_type(return_type.ty, parameters, *is_variadic);
             QualType::unqualified(function_type_ref)
         }
         Declarator::AnonymousRecord(_, _) => {
@@ -1582,9 +1435,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             // Extract the return type from the function definition's specifiers
             let return_type_ref =
                 lower_decl_specifiers_for_function_return(&func_def.specifiers, ctx, ctx.ast.get_node(node_ref).span)
-                    .unwrap_or_else(|| {
-                        QualType::unqualified(ctx.type_ctx.alloc(Type::new(TypeKind::Int { is_signed: true })))
-                    });
+                    .unwrap_or_else(|| QualType::unqualified(ctx.type_ctx.type_int));
 
             // Create the function type with the correct return type by applying the declarator
             let declarator_type = apply_parsed_declarator(return_type_ref.ty, &func_def.declarator, ctx);
@@ -1721,7 +1572,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             lower_node_recursive(ctx, body);
         }
         NodeKind::Label(name, stmt, _) => {
-            let label_ty = ctx.type_ctx.alloc(Type::new(TypeKind::Void)); // void for now
+            let label_ty = ctx.type_ctx.type_void; // void for now
             let entry = Symbol {
                 name,
                 kind: SymbolKind::Label {
@@ -1744,7 +1595,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             let type_ref = convert_parsed_type_to_qual_type(ctx, parsed_type, ctx.ast.get_node(node_ref).span)
                 .unwrap_or_else(|_| {
                     // Create an error type if conversion fails
-                    QualType::unqualified(ctx.type_ctx.alloc(Type::new(TypeKind::Error)))
+                    QualType::unqualified(ctx.type_ctx.type_error)
                 });
             // Replace the ParsedCast node with a Cast node
             let cast_node = Node::new(NodeKind::Cast(type_ref, expr_node), ctx.ast.get_node(node_ref).span);
@@ -1756,7 +1607,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             let type_ref = convert_parsed_type_to_qual_type(ctx, parsed_type, ctx.ast.get_node(node_ref).span)
                 .unwrap_or_else(|_| {
                     // Create an error type if conversion fails
-                    QualType::unqualified(ctx.type_ctx.alloc(Type::new(TypeKind::Error)))
+                    QualType::unqualified(ctx.type_ctx.type_error)
                 });
             // Replace the ParsedSizeOfType node with a SizeOfType node
             let size_of_node = Node::new(NodeKind::SizeOfType(type_ref), ctx.ast.get_node(node_ref).span);
@@ -1767,7 +1618,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             let type_ref = convert_parsed_type_to_qual_type(ctx, parsed_type, ctx.ast.get_node(node_ref).span)
                 .unwrap_or_else(|_| {
                     // Create an error type if conversion fails
-                    QualType::unqualified(ctx.type_ctx.alloc(Type::new(TypeKind::Error)))
+                    QualType::unqualified(ctx.type_ctx.type_error)
                 });
             // Replace the ParsedCompoundLiteral node with a CompoundLiteral node
             let compound_literal_node = Node::new(
@@ -1782,7 +1633,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             let type_ref = convert_parsed_type_to_qual_type(ctx, parsed_type, ctx.ast.get_node(node_ref).span)
                 .unwrap_or_else(|_| {
                     // Create an error type if conversion fails
-                    QualType::unqualified(ctx.type_ctx.alloc(Type::new(TypeKind::Error)))
+                    QualType::unqualified(ctx.type_ctx.type_error)
                 });
             // Replace the ParsedAlignOf node with an AlignOf node
             let align_of_node = Node::new(NodeKind::AlignOf(type_ref), ctx.ast.get_node(node_ref).span);
@@ -1841,11 +1692,7 @@ fn apply_declarator_for_member(base_type: TypeRef, declarator: &Declarator, ctx:
                 QualType::unqualified(base_type)
             };
 
-            let pointee_type_ref = ctx.type_ctx.alloc(ctx.type_ctx.get(pointee_type.ty).clone());
-            let pointer_type = Type::new(TypeKind::Pointer {
-                pointee: pointee_type_ref,
-            });
-            let pointer_type_ref = ctx.type_ctx.alloc(pointer_type);
+            let pointer_type_ref = ctx.type_ctx.pointer_to(pointee_type.ty);
             QualType::new(pointer_type_ref, *qualifiers)
         }
         Declarator::Array(base, size) => {
@@ -1878,10 +1725,7 @@ fn apply_declarator_for_member(base_type: TypeRef, declarator: &Declarator, ctx:
                 }
             };
 
-            let array_type_ref = ctx.type_ctx.alloc(Type::new(TypeKind::Array {
-                element_type: element_type.ty,
-                size: array_size,
-            }));
+            let array_type_ref = ctx.type_ctx.array_of(element_type.ty, array_size);
             QualType::unqualified(array_type_ref)
         }
         // For other declarator types, just return the base type
@@ -1931,14 +1775,14 @@ fn process_anonymous_struct_members(
                             // Apply the declarator to get the final member type
                             let member_type_with_declarator =
                                 apply_declarator_for_member(base_type_ref.ty, &init_declarator.declarator, ctx);
-                            member_type_with_declarator.ty
+                            member_type_with_declarator
                         } else {
-                            ctx.type_ctx.alloc(Type::new(TypeKind::Int { is_signed: true }))
+                            QualType::unqualified(ctx.type_ctx.type_int)
                         };
 
                     flattened_members.push(StructMember {
                         name: member_name,
-                        member_type: QualType::unqualified(member_type),
+                        member_type: member_type,
                         bit_field_size: None,
                         span,
                     });

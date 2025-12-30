@@ -937,7 +937,9 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
 
     /// Lower a typedef declaration
     fn lower_typedef_declaration(&mut self, _scope_id: ScopeId, _typedef_decl: &TypedefDeclData, _span: SourceSpan) {
-        todo!("write this implementation");
+        // Typedefs are purely a semantic construct and do not generate any MIR code.
+        // The symbol table already contains the necessary type alias information from
+        // the symbol resolution phase. Therefore, this function is intentionally left empty.
     }
 
     /// Lower a record declaration (struct/union)

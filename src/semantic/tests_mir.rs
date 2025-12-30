@@ -834,4 +834,31 @@ mod tests {
         Span: SourceSpan(source_id=SourceId(2), start=13, end=23)
         ");
     }
+
+    #[test]
+    fn test_basic_typedef() {
+        let source = r#"
+            typedef int my_int;
+            int main() {
+                my_int x = 10;
+                return x;
+            }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = i32
+
+        fn main() -> i32
+        {
+          locals {
+            %x: i32
+          }
+
+          bb1:
+            %x = const 10
+            return %x
+        }
+        ");
+    }
 }

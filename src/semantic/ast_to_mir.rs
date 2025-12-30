@@ -3,8 +3,8 @@ use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::driver::compiler::SemaOutput;
 use crate::mir::{
-    self, BinaryOp as MirBinaryOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlockId, MirBuilder, MirFunctionId,
-    MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
+    self, BinaryOp as MirBinaryOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlockId, MirBuilder,
+    MirFunctionId, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
 };
 use crate::semantic::SymbolKind;
 use crate::semantic::SymbolRef;
@@ -86,8 +86,7 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             .values()
             .filter_map(|entry_ref| {
                 let entry = self.symbol_table.get_symbol(*entry_ref);
-                if matches!(entry.kind, SymbolKind::Variable { .. }) && entry.def_state == DefinitionState::Tentative
-                {
+                if matches!(entry.kind, SymbolKind::Variable { .. }) && entry.def_state == DefinitionState::Tentative {
                     Some((entry.name, *entry_ref))
                 } else {
                     None
@@ -215,7 +214,12 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     fn lower_expression(&mut self, scope_id: ScopeId, expr_ref: NodeRef) -> Operand {
-        let ty = self.ast.get_node(expr_ref).resolved_type.get().expect("Type not resolved");
+        let ty = self
+            .ast
+            .get_node(expr_ref)
+            .resolved_type
+            .get()
+            .expect("Type not resolved");
         let node_kind = self.ast.get_node(expr_ref).kind.clone();
 
         let mir_ty = self.lower_type_to_mir(ty.ty);
@@ -234,7 +238,13 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 match &entry.kind {
                     SymbolKind::Variable { is_global, .. } => {
                         if *is_global {
-                            let global_id = self.mir_builder.get_globals().iter().find(|(_, g)| g.name == entry.name).map(|(id, _)| *id).unwrap();
+                            let global_id = self
+                                .mir_builder
+                                .get_globals()
+                                .iter()
+                                .find(|(_, g)| g.name == entry.name)
+                                .map(|(id, _)| *id)
+                                .unwrap();
                             Operand::Copy(Box::new(Place::Global(global_id)))
                         } else {
                             let local_id = self.local_map.get(&resolved_ref).unwrap();
@@ -242,7 +252,13 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                         }
                     }
                     SymbolKind::Function { .. } => {
-                        let func_id = self.mir_builder.get_functions().iter().find(|(_, f)| f.name == entry.name).map(|(id, _)| *id).unwrap();
+                        let func_id = self
+                            .mir_builder
+                            .get_functions()
+                            .iter()
+                            .find(|(_, f)| f.name == entry.name)
+                            .map(|(id, _)| *id)
+                            .unwrap();
                         let const_val = ConstValue::FunctionAddress(func_id);
                         Operand::Constant(self.create_constant(const_val))
                     }
@@ -277,7 +293,9 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 }
 
                 let call_target = if let Operand::Constant(const_id) = callee {
-                     if let ConstValue::FunctionAddress(func_id) = self.mir_builder.get_constants().get(&const_id).unwrap() {
+                    if let ConstValue::FunctionAddress(func_id) =
+                        self.mir_builder.get_constants().get(&const_id).unwrap()
+                    {
                         CallTarget::Direct(*func_id)
                     } else {
                         panic!("Expected function address");
@@ -340,22 +358,42 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
         let mir_type = match &ast_type_kind {
             TypeKind::Void => MirType::Void,
             TypeKind::Bool => MirType::Bool,
-            TypeKind::Char { is_signed } => MirType::Int { is_signed: *is_signed, width: 8 },
-            TypeKind::Short { is_signed } => MirType::Int { is_signed: *is_signed, width: 16 },
-            TypeKind::Int { is_signed } => MirType::Int { is_signed: *is_signed, width: 32 },
-            TypeKind::Long { is_signed, is_long_long } => MirType::Int {
+            TypeKind::Char { is_signed } => MirType::Int {
+                is_signed: *is_signed,
+                width: 8,
+            },
+            TypeKind::Short { is_signed } => MirType::Int {
+                is_signed: *is_signed,
+                width: 16,
+            },
+            TypeKind::Int { is_signed } => MirType::Int {
+                is_signed: *is_signed,
+                width: 32,
+            },
+            TypeKind::Long {
+                is_signed,
+                is_long_long,
+            } => MirType::Int {
                 is_signed: *is_signed,
                 width: if *is_long_long { 64 } else { 32 },
             },
             TypeKind::Float => MirType::Float { width: 32 },
-            TypeKind::Double { is_long_double } => MirType::Float { width: if *is_long_double { 80 } else { 64 } },
-            TypeKind::Pointer { pointee } => MirType::Pointer { pointee: self.lower_type_to_mir(*pointee) },
+            TypeKind::Double { is_long_double } => MirType::Float {
+                width: if *is_long_double { 80 } else { 64 },
+            },
+            TypeKind::Pointer { pointee } => MirType::Pointer {
+                pointee: self.lower_type_to_mir(*pointee),
+            },
             TypeKind::Array { element_type, size } => {
                 let element = self.lower_type_to_mir(*element_type);
                 let size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
                 MirType::Array { element, size }
             }
-            TypeKind::Function { return_type, parameters, .. } => {
+            TypeKind::Function {
+                return_type,
+                parameters,
+                ..
+            } => {
                 let return_type = self.lower_type_to_mir(*return_type);
                 let mut params = Vec::new();
                 for p in parameters {
@@ -363,7 +401,9 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                 }
                 MirType::Function { return_type, params }
             }
-            TypeKind::Record { tag, members, is_union, .. } => {
+            TypeKind::Record {
+                tag, members, is_union, ..
+            } => {
                 let name = tag.unwrap_or_else(|| NameId::new("anonymous"));
                 let mut fields = Vec::new();
                 for m in members {
@@ -376,7 +416,10 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
                     MirType::Struct { name, fields }
                 }
             }
-            _ => MirType::Int { is_signed: true, width: 32 },
+            _ => MirType::Int {
+                is_signed: true,
+                width: 32,
+            },
         };
         self.mir_builder.add_type(mir_type)
     }
@@ -386,7 +429,10 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
     }
 
     fn get_int_type(&mut self) -> TypeId {
-        self.mir_builder.add_type(MirType::Int { is_signed: true, width: 32 })
+        self.mir_builder.add_type(MirType::Int {
+            is_signed: true,
+            width: 32,
+        })
     }
 
     fn create_temp_local(&mut self, type_id: TypeId) -> (LocalId, Place) {

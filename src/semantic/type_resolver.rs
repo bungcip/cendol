@@ -2,11 +2,8 @@ use crate::{
     ast::{nodes::*, *},
     diagnostic::SemanticError,
     semantic::{
-        conversions::usual_arithmetic_conversions,
-        type_context::QualType,
+        SymbolTable, TypeContext, conversions::usual_arithmetic_conversions, type_context::QualType,
         utils::is_scalar_type,
-        SymbolTable,
-        TypeContext,
     },
 };
 
@@ -86,8 +83,7 @@ trait SemanticVisitor {
 
     fn visit_return_statement(&mut self, expr: &Option<NodeRef>, _span: SourceSpan) {
         let ret_ty = self.get_current_function_ret_type();
-        let is_void_func =
-            ret_ty.map_or(false, |ty| self.get_type_ctx().get(ty.ty).kind == TypeKind::Void);
+        let is_void_func = ret_ty.map_or(false, |ty| self.get_type_ctx().get(ty.ty).kind == TypeKind::Void);
 
         if let Some(expr_ref) = expr {
             if is_void_func {
@@ -106,9 +102,7 @@ trait SemanticVisitor {
         let operand_kind = &self.get_type_ctx().get(operand_ty.ty).kind;
 
         match op {
-            UnaryOp::AddrOf => Some(QualType::unqualified(
-                self.get_type_ctx().pointer_to(operand_ty.ty),
-            )),
+            UnaryOp::AddrOf => Some(QualType::unqualified(self.get_type_ctx().pointer_to(operand_ty.ty))),
             UnaryOp::Deref => match operand_kind {
                 TypeKind::Pointer { pointee } => Some(QualType::unqualified(*pointee)),
                 _ => None,
@@ -124,12 +118,7 @@ trait SemanticVisitor {
         }
     }
 
-    fn visit_binary_op(
-        &mut self,
-        _op: BinaryOp,
-        lhs_ref: NodeRef,
-        rhs_ref: NodeRef,
-    ) -> Option<QualType> {
+    fn visit_binary_op(&mut self, _op: BinaryOp, lhs_ref: NodeRef, rhs_ref: NodeRef) -> Option<QualType> {
         let lhs_ty = self.visit_node(lhs_ref)?;
         let rhs_ty = self.visit_node(rhs_ref)?;
         usual_arithmetic_conversions(self.get_type_ctx(), lhs_ty, rhs_ty)

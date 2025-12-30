@@ -3,16 +3,11 @@
 
 use crate::{
     ast::TypeKind,
-    semantic::{type_context::QualType, TypeContext},
+    semantic::{TypeContext, type_context::QualType},
 };
 
-
 /// Performs the "usual arithmetic conversions" as specified in C11 6.3.1.8.
-pub fn usual_arithmetic_conversions(
-    ctx: &TypeContext,
-    lhs: QualType,
-    rhs: QualType,
-) -> Option<QualType> {
+pub fn usual_arithmetic_conversions(ctx: &TypeContext, lhs: QualType, rhs: QualType) -> Option<QualType> {
     let lhs_kind = &ctx.get(lhs.ty).kind;
     let rhs_kind = &ctx.get(rhs.ty).kind;
 
@@ -37,7 +32,13 @@ pub fn usual_arithmetic_conversions(
             let (rhs_signed, _) = get_int_type_details(rhs_promoted_kind);
 
             if lhs_signed == rhs_signed {
-                return Some(if get_integer_rank(lhs_promoted_kind) >= get_integer_rank(rhs_promoted_kind) { lhs_promoted } else { rhs_promoted });
+                return Some(
+                    if get_integer_rank(lhs_promoted_kind) >= get_integer_rank(rhs_promoted_kind) {
+                        lhs_promoted
+                    } else {
+                        rhs_promoted
+                    },
+                );
             }
 
             if !lhs_signed && get_integer_rank(lhs_promoted_kind) >= get_integer_rank(rhs_promoted_kind) {
@@ -56,9 +57,7 @@ pub fn usual_arithmetic_conversions(
 pub fn integer_promotion(ctx: &TypeContext, ty: QualType) -> QualType {
     let kind = &ctx.get(ty.ty).kind;
     match kind {
-        TypeKind::Bool | TypeKind::Char { .. } | TypeKind::Short { .. } => {
-            QualType::unqualified(ctx.type_int)
-        }
+        TypeKind::Bool | TypeKind::Char { .. } | TypeKind::Short { .. } => QualType::unqualified(ctx.type_int),
         _ => ty,
     }
 }
@@ -68,7 +67,10 @@ fn get_int_type_details(kind: &TypeKind) -> (bool, u8) {
         TypeKind::Char { is_signed } => (*is_signed, 8),
         TypeKind::Short { is_signed } => (*is_signed, 16),
         TypeKind::Int { is_signed } => (*is_signed, 32),
-        TypeKind::Long { is_signed, is_long_long } => (*is_signed, if *is_long_long { 64 } else { 32 }),
+        TypeKind::Long {
+            is_signed,
+            is_long_long,
+        } => (*is_signed, if *is_long_long { 64 } else { 32 }),
         _ => (false, 0),
     }
 }

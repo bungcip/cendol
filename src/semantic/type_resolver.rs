@@ -2,11 +2,8 @@ use crate::{
     ast::{nodes::*, *},
     diagnostic::SemanticError,
     semantic::{
-        conversions::usual_arithmetic_conversions,
-        type_context::QualType,
+        SymbolTable, TypeContext, conversions::usual_arithmetic_conversions, type_context::QualType,
         utils::is_scalar_type,
-        SymbolTable,
-        TypeContext,
     },
 };
 
@@ -122,9 +119,7 @@ impl<'a> TypeResolver<'a> {
                     self.report_error(SemanticError::NotAnLvalue { span: full_span });
                     return None;
                 }
-                Some(QualType::unqualified(
-                    self.type_ctx.pointer_to(operand_ty.ty),
-                ))
+                Some(QualType::unqualified(self.type_ctx.pointer_to(operand_ty.ty)))
             }
             UnaryOp::Deref => match operand_kind {
                 TypeKind::Pointer { pointee } => Some(QualType::unqualified(*pointee)),
@@ -151,12 +146,7 @@ impl<'a> TypeResolver<'a> {
         }
     }
 
-    fn visit_binary_op(
-        &mut self,
-        _op: BinaryOp,
-        lhs_ref: NodeRef,
-        rhs_ref: NodeRef,
-    ) -> Option<QualType> {
+    fn visit_binary_op(&mut self, _op: BinaryOp, lhs_ref: NodeRef, rhs_ref: NodeRef) -> Option<QualType> {
         let lhs_ty = self.visit_node(lhs_ref)?;
         let rhs_ty = self.visit_node(rhs_ref)?;
         usual_arithmetic_conversions(self.type_ctx, lhs_ty, rhs_ty)
@@ -346,7 +336,7 @@ impl<'a> TypeResolver<'a> {
                     self.visit_node(stmt);
                     if let Some(last_node) = nodes.last() {
                         if let NodeKind::ExpressionStatement(Some(expr)) = self.ast.get_node(*last_node).kind.clone() {
-                           return self.visit_node(expr);
+                            return self.visit_node(expr);
                         }
                     }
                 }
@@ -407,7 +397,11 @@ impl<'a> TypeResolver<'a> {
                 None
             }
             NodeKind::RecordDecl(_) | NodeKind::TypedefDecl(_) | NodeKind::FunctionDecl(_) => None,
-            NodeKind::Break | NodeKind::Continue | NodeKind::Goto(_, _) | NodeKind::Label(_, _, _) | NodeKind::EmptyStatement => None,
+            NodeKind::Break
+            | NodeKind::Continue
+            | NodeKind::Goto(_, _)
+            | NodeKind::Label(_, _, _)
+            | NodeKind::EmptyStatement => None,
             _ => {
                 // For any unhandled nodes, explicitly do nothing.
                 // This prevents panics for node types that don't need type resolution.

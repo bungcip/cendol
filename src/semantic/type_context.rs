@@ -237,8 +237,8 @@ impl TypeContext {
     }
 
     pub fn complex_type(&mut self, base_type: TypeRef) -> TypeRef {
-        let complex = self.alloc(Type::new(TypeKind::Complex { base_type }));
-        complex
+        // TODO: cache it
+        self.alloc(Type::new(TypeKind::Complex { base_type }))
     }
 
     // ============================================================

@@ -1773,16 +1773,14 @@ fn process_anonymous_struct_members(
                     let member_type =
                         if let Some(base_type_ref) = lower_decl_specifiers_for_member(&decl.specifiers, ctx, span) {
                             // Apply the declarator to get the final member type
-                            let member_type_with_declarator =
-                                apply_declarator_for_member(base_type_ref.ty, &init_declarator.declarator, ctx);
-                            member_type_with_declarator
+                            apply_declarator_for_member(base_type_ref.ty, &init_declarator.declarator, ctx)
                         } else {
                             QualType::unqualified(ctx.type_ctx.type_int)
                         };
 
                     flattened_members.push(StructMember {
                         name: member_name,
-                        member_type: member_type,
+                        member_type,
                         bit_field_size: None,
                         span,
                     });

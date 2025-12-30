@@ -316,6 +316,25 @@ pub enum BinaryOp {
     AssignRShift,
 }
 
+impl BinaryOp {
+    pub fn is_assignment(&self) -> bool {
+        matches!(
+            self,
+            BinaryOp::Assign
+                | BinaryOp::AssignAdd
+                | BinaryOp::AssignSub
+                | BinaryOp::AssignMul
+                | BinaryOp::AssignDiv
+                | BinaryOp::AssignMod
+                | BinaryOp::AssignBitAnd
+                | BinaryOp::AssignBitOr
+                | BinaryOp::AssignBitXor
+                | BinaryOp::AssignLShift
+                | BinaryOp::AssignRShift
+        )
+    }
+}
+
 // Function specifiers
 bitflags::bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]

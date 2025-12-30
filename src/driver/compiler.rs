@@ -275,7 +275,7 @@ impl CompilerDriver {
         }
 
         use crate::semantic::type_resolver::run_type_resolver;
-        run_type_resolver(&ast, &mut self.diagnostics, &symbol_table);
+        run_type_resolver(&ast, &mut self.diagnostics, &symbol_table, &mut type_ctx);
         self.check_diagnostics_and_return_if_error()?;
 
         let mut sema = AstToMirLowerer::new(&mut ast, &mut self.diagnostics, &mut symbol_table, &mut type_ctx);

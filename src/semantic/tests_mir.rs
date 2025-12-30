@@ -78,7 +78,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
 
         fn main() -> i32
@@ -100,6 +100,9 @@ mod tests {
 
           bb3:
             return const 2
+
+          bb4:
+            unreachable
         }
         ");
     }
@@ -116,7 +119,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
 
         fn main() -> i32
@@ -158,7 +161,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
 
         fn main() -> i32
@@ -166,11 +169,26 @@ mod tests {
           locals {
             %steins: i32
             %gate: i32
+            %3: i32
           }
 
           bb1:
             %steins = const 44
             %gate = const 1
+            br bb2
+
+          bb2:
+            cond_br %steins, bb3, bb5
+
+          bb3:
+            %3 = %steins - %gate
+            %steins = %3
+            br bb4
+
+          bb4:
+            br bb2
+
+          bb5:
             return %steins
         }
         ");
@@ -243,7 +261,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
 
         fn main() -> i32
@@ -252,13 +270,7 @@ mod tests {
           }
 
           bb1:
-            br bb3
-
-          bb2:
-            return const 1
-
-          bb3:
-            return const 0
+            unreachable
         }
         ");
     }
@@ -276,9 +288,9 @@ mod tests {
         let mir_dump = setup_mir(source);
         // We want to ensure %t0 is i32 and %t1 is struct using %t0
         // and NOT that %t0 is struct using %t0
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
-        type %t1 = struct anon_struct { a: %t0, b: %t0, c: %t0 }
+        type %t1 = struct anonymous { a: %t0, b: %t0, c: %t0 }
 
         global @s: %t1 = const struct_literal { 0: const 1, 1: const 2, 2: const 3 }
 
@@ -296,6 +308,9 @@ mod tests {
             return const 1
 
           bb3:
+            br bb4
+
+          bb4:
             return const 0
         }
         ");
@@ -312,11 +327,11 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
         type %t1 = struct S { a: %t0, b: %t0 }
 
-        global @s: %t1 = const struct_literal { 0: const 1, 1: const 2 }
+        global @s: %t1 = const struct_literal { 1: const 2, 0: const 1 }
 
         fn main() -> i32
         {
@@ -341,13 +356,13 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
         type %t1 = ptr<%t0>
         type %t2 = struct S { a: %t0, p: %t1 }
 
         global @x: i32 = const 10
-        global @s: %t2 = const struct_literal { 0: const 1, 1: const @x }
+        global @s: %t2 = const struct_literal { 1: const @x, 0: const 1 }
 
         fn main() -> i32
         {
@@ -414,12 +429,12 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
         type %t1 = struct T { x: %t0 }
         type %t2 = struct T { y: %t0 }
 
-        global @s1: %t1
+        global @s1: %t1 = const zero
 
         fn main() -> i32
         {
@@ -451,7 +466,7 @@ mod tests {
         let mir_dump = setup_mir(source);
         // We expect two different %x locals. MIR printer might show them with same name or different IDs.
         // Currently it shows names if available.
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
 
         fn main() -> i32
@@ -473,13 +488,19 @@ mod tests {
             return const 1
 
           bb3:
-            %4 = %x != const 1
-            cond_br %4, bb4, bb5
+            br bb4
 
           bb4:
-            return const 1
+            %4 = %x != const 1
+            cond_br %4, bb5, bb6
 
           bb5:
+            return const 1
+
+          bb6:
+            br bb7
+
+          bb7:
             return const 0
         }
         ");
@@ -536,8 +557,9 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
+        type %t1 = fn(%t0) -> %t0
 
         fn foo(%x: i32) -> i32
         {
@@ -612,7 +634,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = void
         type %t1 = i8
         type %t2 = u8
@@ -624,6 +646,17 @@ mod tests {
         type %t8 = u64
         type %t9 = f32
         type %t10 = f64
+        type %t11 = fn() -> %t0
+        type %t12 = fn() -> %t1
+        type %t13 = fn() -> %t2
+        type %t14 = fn() -> %t3
+        type %t15 = fn() -> %t5
+        type %t16 = fn() -> %t4
+        type %t17 = fn() -> %t6
+        type %t18 = fn() -> %t7
+        type %t19 = fn() -> %t8
+        type %t20 = fn() -> %t9
+        type %t21 = fn() -> %t10
 
         fn fn_void() -> void
         {
@@ -751,7 +784,7 @@ mod tests {
         fn main() -> i32
         {
           locals {
-            %4: i32
+            %4: void
             %5: i8
             %6: u8
             %7: i16
@@ -797,10 +830,10 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
 
-        global @x: i32 = const 0
+        global @x: i32 = const zero
 
         fn main() -> i32
         {

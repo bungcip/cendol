@@ -269,6 +269,168 @@ impl PPLexer {
         result
     }
 
+    /// ⚡ Bolt: Consolidated operator lexing.
+    /// This helper function centralizes the logic for lexing single and multi-character operators,
+    /// significantly reducing code duplication and branching in the main `next_token` function.
+    /// This improves performance by making the tokenization logic more direct and predictable
+    /// for the compiler to optimize. It also fixes a bug in the original `...` lexing logic.
+    fn lex_operator(&mut self, start_pos: u32, ch: u8, flags: PPTokenFlags) -> PPToken {
+        let loc = SourceLoc::new(self.source_id, start_pos);
+
+        // Helper macro to reduce boilerplate when creating a token.
+        macro_rules! token {
+            ($kind:expr, $len:expr) => {
+                PPToken::new($kind, flags, loc, $len)
+            };
+        }
+
+        // Helper macro to check the next character and consume it if it matches.
+        macro_rules! consume_if {
+            ($c:expr) => {{
+                if self.peek_char() == Some($c) {
+                    self.next_char();
+                    true
+                } else {
+                    false
+                }
+            }};
+        }
+
+        match ch {
+            b'+' => {
+                if consume_if!(b'+') {
+                    token!(PPTokenKind::Increment, 2)
+                } else if consume_if!(b'=') {
+                    token!(PPTokenKind::PlusAssign, 2)
+                } else {
+                    token!(PPTokenKind::Plus, 1)
+                }
+            }
+            b'-' => {
+                if consume_if!(b'-') {
+                    token!(PPTokenKind::Decrement, 2)
+                } else if consume_if!(b'=') {
+                    token!(PPTokenKind::MinusAssign, 2)
+                } else if consume_if!(b'>') {
+                    token!(PPTokenKind::Arrow, 2)
+                } else {
+                    token!(PPTokenKind::Minus, 1)
+                }
+            }
+            b'*' => {
+                if consume_if!(b'=') {
+                    token!(PPTokenKind::StarAssign, 2)
+                } else {
+                    token!(PPTokenKind::Star, 1)
+                }
+            }
+            b'/' => {
+                if consume_if!(b'=') {
+                    token!(PPTokenKind::DivAssign, 2)
+                } else {
+                    token!(PPTokenKind::Slash, 1)
+                }
+            }
+            b'%' => {
+                if consume_if!(b'=') {
+                    token!(PPTokenKind::ModAssign, 2)
+                } else {
+                    token!(PPTokenKind::Percent, 1)
+                }
+            }
+            b'=' => {
+                if consume_if!(b'=') {
+                    token!(PPTokenKind::Equal, 2)
+                } else {
+                    token!(PPTokenKind::Assign, 1)
+                }
+            }
+            b'!' => {
+                if consume_if!(b'=') {
+                    token!(PPTokenKind::NotEqual, 2)
+                } else {
+                    token!(PPTokenKind::Not, 1)
+                }
+            }
+            b'<' => {
+                if consume_if!(b'<') {
+                    if consume_if!(b'=') {
+                        token!(PPTokenKind::LeftShiftAssign, 3)
+                    } else {
+                        token!(PPTokenKind::LeftShift, 2)
+                    }
+                } else if consume_if!(b'=') {
+                    token!(PPTokenKind::LessEqual, 2)
+                } else {
+                    token!(PPTokenKind::Less, 1)
+                }
+            }
+            b'>' => {
+                if consume_if!(b'>') {
+                    if consume_if!(b'=') {
+                        token!(PPTokenKind::RightShiftAssign, 3)
+                    } else {
+                        token!(PPTokenKind::RightShift, 2)
+                    }
+                } else if consume_if!(b'=') {
+                    token!(PPTokenKind::GreaterEqual, 2)
+                } else {
+                    token!(PPTokenKind::Greater, 1)
+                }
+            }
+            b'&' => {
+                if consume_if!(b'&') {
+                    token!(PPTokenKind::LogicAnd, 2)
+                } else if consume_if!(b'=') {
+                    token!(PPTokenKind::AndAssign, 2)
+                } else {
+                    token!(PPTokenKind::And, 1)
+                }
+            }
+            b'|' => {
+                if consume_if!(b'|') {
+                    token!(PPTokenKind::LogicOr, 2)
+                } else if consume_if!(b'=') {
+                    token!(PPTokenKind::OrAssign, 2)
+                } else {
+                    token!(PPTokenKind::Or, 1)
+                }
+            }
+            b'^' => {
+                if consume_if!(b'=') {
+                    token!(PPTokenKind::XorAssign, 2)
+                } else {
+                    token!(PPTokenKind::Xor, 1)
+                }
+            }
+            b'~' => token!(PPTokenKind::Tilde, 1),
+            b'.' => 'ellipsis: {
+                let pos_after_first = self.position;
+                if self.peek_char() == Some(b'.') {
+                    self.next_char(); // Consume second '.'
+                    if self.peek_char() == Some(b'.') {
+                        self.next_char(); // Consume third '.'
+                        break 'ellipsis token!(PPTokenKind::Ellipsis, 3);
+                    }
+                    // It was '..', which is not a valid C token. Backtrack to handle it as a single '.'
+                    self.position = pos_after_first;
+                }
+                token!(PPTokenKind::Dot, 1)
+            }
+            b'?' => token!(PPTokenKind::Question, 1),
+            b':' => token!(PPTokenKind::Colon, 1),
+            b',' => token!(PPTokenKind::Comma, 1),
+            b';' => token!(PPTokenKind::Semicolon, 1),
+            b'(' => token!(PPTokenKind::LeftParen, 1),
+            b')' => token!(PPTokenKind::RightParen, 1),
+            b'[' => token!(PPTokenKind::LeftBracket, 1),
+            b']' => token!(PPTokenKind::RightBracket, 1),
+            b'{' => token!(PPTokenKind::LeftBrace, 1),
+            b'}' => token!(PPTokenKind::RightBrace, 1),
+            _ => token!(PPTokenKind::Unknown, 1),
+        }
+    }
+
     pub fn next_token(&mut self) -> Option<PPToken> {
         if let Some(token) = self.put_back_token.take() {
             return Some(token);
@@ -334,8 +496,7 @@ impl PPLexer {
             b'#' => {
                 let mut token_flags = flags;
                 token_flags |= PPTokenFlags::STARTS_PP_LINE;
-                let next_ch = self.peek_char();
-                if next_ch == Some(b'#') {
+                if self.peek_char() == Some(b'#') {
                     self.next_char(); // consume the second #
                     Some(PPToken::new(
                         PPTokenKind::HashHash,
@@ -353,554 +514,17 @@ impl PPLexer {
                     ))
                 }
             }
-            b'+' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                let next_ch = self.peek_char();
-                if next_ch == Some(b'+') {
-                    self.next_char();
-                    Some(PPToken::new(
-                        PPTokenKind::Increment,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        2,
-                    ))
-                } else if next_ch == Some(b'=') {
-                    self.next_char();
-                    Some(PPToken::new(
-                        PPTokenKind::PlusAssign,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        2,
-                    ))
-                } else {
-                    Some(PPToken::new(
-                        PPTokenKind::Plus,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        1,
-                    ))
-                }
+            // All operators and punctuation are handled by the optimized helper function.
+            b'+' | b'-' | b'*' | b'/' | b'%' | b'=' | b'!' | b'<' | b'>' | b'&' | b'|' | b'^' | b'~' | b'.' | b'?'
+            | b':' | b',' | b';' | b'(' | b')' | b'[' | b']' | b'{' | b'}' => {
+                Some(self.lex_operator(start_pos, ch, flags))
             }
-            b'-' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                let next_ch = self.peek_char();
-                if next_ch == Some(b'-') {
-                    self.next_char();
-                    Some(PPToken::new(
-                        PPTokenKind::Decrement,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        2,
-                    ))
-                } else if next_ch == Some(b'=') {
-                    self.next_char();
-                    Some(PPToken::new(
-                        PPTokenKind::MinusAssign,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        2,
-                    ))
-                } else if next_ch == Some(b'>') {
-                    self.next_char();
-                    Some(PPToken::new(
-                        PPTokenKind::Arrow,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        2,
-                    ))
-                } else {
-                    Some(PPToken::new(
-                        PPTokenKind::Minus,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        1,
-                    ))
-                }
-            }
-            b'*' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                let next_ch = self.peek_char();
-                if next_ch == Some(b'=') {
-                    self.next_char();
-                    Some(PPToken::new(
-                        PPTokenKind::StarAssign,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        2,
-                    ))
-                } else {
-                    Some(PPToken::new(
-                        PPTokenKind::Star,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        1,
-                    ))
-                }
-            }
-            b'/' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                let next_ch = self.peek_char();
-                if next_ch == Some(b'=') {
-                    self.next_char();
-                    Some(PPToken::new(
-                        PPTokenKind::DivAssign,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        2,
-                    ))
-                } else {
-                    Some(PPToken::new(
-                        PPTokenKind::Slash,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        1,
-                    ))
-                }
-            }
-            b'%' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                let next_ch = self.peek_char();
-                if next_ch == Some(b'=') {
-                    self.next_char();
-                    Some(PPToken::new(
-                        PPTokenKind::ModAssign,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        2,
-                    ))
-                } else {
-                    Some(PPToken::new(
-                        PPTokenKind::Percent,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        1,
-                    ))
-                }
-            }
-            b'=' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                let next_ch = self.peek_char();
-                if next_ch == Some(b'=') {
-                    self.next_char();
-                    Some(PPToken::new(
-                        PPTokenKind::Equal,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        2,
-                    ))
-                } else {
-                    Some(PPToken::new(
-                        PPTokenKind::Assign,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        1,
-                    ))
-                }
-            }
-            b'!' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                let next_ch = self.peek_char();
-                if next_ch == Some(b'=') {
-                    self.next_char();
-                    Some(PPToken::new(
-                        PPTokenKind::NotEqual,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        2,
-                    ))
-                } else {
-                    Some(PPToken::new(
-                        PPTokenKind::Not,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        1,
-                    ))
-                }
-            }
-            b'<' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                let next_ch = self.peek_char();
-                if next_ch == Some(b'<') {
-                    self.next_char();
-                    let next_next_ch = self.peek_char();
-                    if next_next_ch == Some(b'=') {
-                        self.next_char();
-                        Some(PPToken::new(
-                            PPTokenKind::LeftShiftAssign,
-                            flags,
-                            SourceLoc::new(self.source_id, start_pos),
-                            3,
-                        ))
-                    } else {
-                        Some(PPToken::new(
-                            PPTokenKind::LeftShift,
-                            flags,
-                            SourceLoc::new(self.source_id, start_pos),
-                            2,
-                        ))
-                    }
-                } else if next_ch == Some(b'=') {
-                    self.next_char();
-                    Some(PPToken::new(
-                        PPTokenKind::LessEqual,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        2,
-                    ))
-                } else {
-                    Some(PPToken::new(
-                        PPTokenKind::Less,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        1,
-                    ))
-                }
-            }
-            b'>' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                let next_ch = self.peek_char();
-                if next_ch == Some(b'>') {
-                    self.next_char();
-                    let next_next_ch = self.peek_char();
-                    if next_next_ch == Some(b'=') {
-                        self.next_char();
-                        Some(PPToken::new(
-                            PPTokenKind::RightShiftAssign,
-                            flags,
-                            SourceLoc::new(self.source_id, start_pos),
-                            3,
-                        ))
-                    } else {
-                        Some(PPToken::new(
-                            PPTokenKind::RightShift,
-                            flags,
-                            SourceLoc::new(self.source_id, start_pos),
-                            2,
-                        ))
-                    }
-                } else if next_ch == Some(b'=') {
-                    self.next_char();
-                    Some(PPToken::new(
-                        PPTokenKind::GreaterEqual,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        2,
-                    ))
-                } else {
-                    Some(PPToken::new(
-                        PPTokenKind::Greater,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        1,
-                    ))
-                }
-            }
-            b'&' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                let next_ch = self.peek_char();
-                if next_ch == Some(b'&') {
-                    self.next_char();
-                    Some(PPToken::new(
-                        PPTokenKind::LogicAnd,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        2,
-                    ))
-                } else if next_ch == Some(b'=') {
-                    self.next_char();
-                    Some(PPToken::new(
-                        PPTokenKind::AndAssign,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        2,
-                    ))
-                } else {
-                    Some(PPToken::new(
-                        PPTokenKind::And,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        1,
-                    ))
-                }
-            }
-            b'|' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                let next_ch = self.peek_char();
-                if next_ch == Some(b'|') {
-                    self.next_char();
-                    Some(PPToken::new(
-                        PPTokenKind::LogicOr,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        2,
-                    ))
-                } else if next_ch == Some(b'=') {
-                    self.next_char();
-                    Some(PPToken::new(
-                        PPTokenKind::OrAssign,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        2,
-                    ))
-                } else {
-                    Some(PPToken::new(
-                        PPTokenKind::Or,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        1,
-                    ))
-                }
-            }
-            b'^' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                let next_ch = self.peek_char();
-                if next_ch == Some(b'=') {
-                    self.next_char();
-                    Some(PPToken::new(
-                        PPTokenKind::XorAssign,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        2,
-                    ))
-                } else {
-                    Some(PPToken::new(
-                        PPTokenKind::Xor,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        1,
-                    ))
-                }
-            }
-            b'~' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                Some(PPToken::new(
-                    PPTokenKind::Tilde,
-                    flags,
-                    SourceLoc::new(self.source_id, start_pos),
-                    1,
-                ))
-            }
-            b'.' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                let next_ch = self.peek_char();
-                let next_next_ch = self.peek_char();
-                if next_ch == Some(b'.') && next_next_ch == Some(b'.') {
-                    self.next_char(); // consume first '.'
-                    self.next_char(); // consume second '.'
-                    Some(PPToken::new(
-                        PPTokenKind::Ellipsis,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        3,
-                    ))
-                } else {
-                    Some(PPToken::new(
-                        PPTokenKind::Dot,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        1,
-                    ))
-                }
-            }
-            b'?' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                Some(PPToken::new(
-                    PPTokenKind::Question,
-                    flags,
-                    SourceLoc::new(self.source_id, start_pos),
-                    1,
-                ))
-            }
-            b':' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                Some(PPToken::new(
-                    PPTokenKind::Colon,
-                    flags,
-                    SourceLoc::new(self.source_id, start_pos),
-                    1,
-                ))
-            }
-            b',' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                Some(PPToken::new(
-                    PPTokenKind::Comma,
-                    flags,
-                    SourceLoc::new(self.source_id, start_pos),
-                    1,
-                ))
-            }
-            b';' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                Some(PPToken::new(
-                    PPTokenKind::Semicolon,
-                    flags,
-                    SourceLoc::new(self.source_id, start_pos),
-                    1,
-                ))
-            }
-            b'(' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                Some(PPToken::new(
-                    PPTokenKind::LeftParen,
-                    flags,
-                    SourceLoc::new(self.source_id, start_pos),
-                    1,
-                ))
-            }
-            b')' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                Some(PPToken::new(
-                    PPTokenKind::RightParen,
-                    flags,
-                    SourceLoc::new(self.source_id, start_pos),
-                    1,
-                ))
-            }
-            b'[' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                Some(PPToken::new(
-                    PPTokenKind::LeftBracket,
-                    flags,
-                    SourceLoc::new(self.source_id, start_pos),
-                    1,
-                ))
-            }
-            b']' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                Some(PPToken::new(
-                    PPTokenKind::RightBracket,
-                    flags,
-                    SourceLoc::new(self.source_id, start_pos),
-                    1,
-                ))
-            }
-            b'{' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                Some(PPToken::new(
-                    PPTokenKind::LeftBrace,
-                    flags,
-                    SourceLoc::new(self.source_id, start_pos),
-                    1,
-                ))
-            }
-            b'}' => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                Some(PPToken::new(
-                    PPTokenKind::RightBrace,
-                    flags,
-                    SourceLoc::new(self.source_id, start_pos),
-                    1,
-                ))
-            }
-            _ => {
-                let flags = if had_leading_space {
-                    PPTokenFlags::LEADING_SPACE
-                } else {
-                    PPTokenFlags::empty()
-                };
-                Some(PPToken::new(
-                    PPTokenKind::Unknown,
-                    flags,
-                    SourceLoc::new(self.source_id, start_pos),
-                    1,
-                ))
-            }
+            _ => Some(PPToken::new(
+                PPTokenKind::Unknown,
+                flags,
+                SourceLoc::new(self.source_id, start_pos),
+                1,
+            )),
         }
     }
 

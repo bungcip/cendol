@@ -264,11 +264,7 @@ fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: Sour
             DeclSpecifier::StorageClass(sc) => {
                 // Check for duplicate storage class
                 if info.storage.replace(*sc).is_some() {
-                    ctx.report_error(SemanticError::TypeMismatch {
-                        expected: "at most one storage class".to_string(),
-                        found: "multiple storage classes".to_string(),
-                        span,
-                    });
+                    ctx.report_error(SemanticError::MultipleStorageClasses { span });
                 }
 
                 // Handle typedef storage class
@@ -1090,8 +1086,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     // Get the kind of the symbol as a string for the error message
                     let kind_string = format!("{:?}", entry.kind);
                     let found_kind_str = kind_string.split_whitespace().next().unwrap_or("symbol");
-                    Err(SemanticError::TypeMismatch {
-                        expected: "a typedef name".to_string(),
+                    Err(SemanticError::ExpectedTypedefName {
                         found: format!("a {}", found_kind_str.to_lowercase()),
                         span,
                     })
@@ -1211,11 +1206,7 @@ fn merge_base_type(existing: Option<TypeRef>, new_type: TypeRef, ctx: &mut Lower
 fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span: SourceSpan) {
     // Check typedef with other storage classes
     if info.is_typedef && info.storage.is_some_and(|s| s != StorageClass::Typedef) {
-        ctx.report_error(SemanticError::TypeMismatch {
-            expected: "at most one storage class".to_string(),
-            found: "a mix of typedef and other storage classes".to_string(),
-            span,
-        });
+        ctx.report_error(SemanticError::ConflictingStorageClasses { span });
     }
 
     // TODO: Add more validation rules
@@ -1288,11 +1279,7 @@ fn lower_type_definition(specifiers: &[DeclSpecifier], ctx: &mut LowerCtx, span:
 fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDeclarator, span: SourceSpan) -> NodeRef {
     // 1. Resolve final type (base + declarator)
     let base_ty = spec.base_type.unwrap_or_else(|| {
-        ctx.report_error(SemanticError::TypeMismatch {
-            expected: "a type specifier".to_string(),
-            found: "no type specifier".to_string(),
-            span,
-        });
+        ctx.report_error(SemanticError::MissingTypeSpecifier { span });
         // Create an error type
         let error_type = Type::default();
         ctx.type_ctx.push_type(error_type)

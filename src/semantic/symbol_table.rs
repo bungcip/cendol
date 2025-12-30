@@ -62,6 +62,7 @@ pub enum SymbolKind {
         aliased_type: TypeRef,
     },
     EnumConstant {
+        #[allow(unused)]
         value: i64, // Resolved constant value
     },
     #[allow(unused)]
@@ -111,10 +112,7 @@ impl ScopeId {
 pub enum Namespace {
     Ordinary, // Variables, functions, typedefs, enum constants
     Tag,      // Struct, union, and enum tags
-
-    // TODO: currently, no code write Namespace::Label, need to fix
-    #[allow(unused)]
-    Label, // Goto labels
+    Label,    // Goto labels
 }
 
 /// Scope information

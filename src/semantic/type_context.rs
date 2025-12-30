@@ -78,7 +78,6 @@ pub struct TypeContext {
 
     // --- Canonicalization caches ---
     pointer_cache: HashMap<TypeRef, TypeRef>,
-    #[allow(unused)]
     array_cache: HashMap<(TypeRef, ArraySizeType), TypeRef>,
     function_cache: HashMap<FnSigKey, TypeRef>,
 
@@ -171,14 +170,12 @@ impl TypeContext {
 
     /// Immutable access to a type.
     #[inline]
-    #[allow(unused)]
     pub fn get(&self, r: TypeRef) -> &Type {
         &self.types[r.index()]
     }
 
     /// Mutable access to a type (ONLY for completion).
     #[inline]
-    #[allow(unused)]
     pub fn get_mut(&mut self, r: TypeRef) -> &mut Type {
         &mut self.types[r.index()]
     }
@@ -244,7 +241,6 @@ impl TypeContext {
     // ============================================================
     // Record / enum handling (two-phase)
     // ============================================================
-    #[allow(unused)]
     pub fn new_record(&mut self, tag: Option<NameId>, is_union: bool) -> TypeRef {
         self.alloc(Type::new(TypeKind::Record {
             tag,
@@ -270,22 +266,13 @@ impl TypeContext {
         }
     }
 
-    #[allow(unused)]
     pub fn new_enum(&mut self, tag: Option<NameId>, base_type: TypeRef) -> TypeRef {
-        // This is a creation function - use create_enum() from other modules
         self.alloc(Type::new(TypeKind::Enum {
             tag,
             base_type,
             enumerators: Vec::new(),
             is_complete: false,
         }))
-    }
-
-    /// Create an enum type with forward reference as QualType.
-    #[allow(unused)]
-    pub fn create_enum(&mut self, tag: Option<NameId>, base_type: TypeRef) -> QualType {
-        let enum_type = self.new_enum(tag, base_type);
-        QualType::unqualified(enum_type)
     }
 
     #[allow(unused)]

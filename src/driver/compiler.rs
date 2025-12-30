@@ -278,7 +278,7 @@ impl CompilerDriver {
         run_type_resolver(&ast, &mut self.diagnostics, &symbol_table, &mut type_ctx);
         self.check_diagnostics_and_return_if_error()?;
 
-        let mut sema = AstToMirLowerer::new(&mut ast, &mut self.diagnostics, &mut symbol_table, &mut type_ctx);
+        let mut sema = AstToMirLowerer::new(&ast, &mut symbol_table, &type_ctx);
         let sema_output = sema.lower_module_complete();
         self.check_diagnostics_and_return_if_error()?;
 

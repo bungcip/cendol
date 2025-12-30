@@ -58,10 +58,10 @@ impl<'a> TypeResolver<'a> {
     }
 
     fn visit_if_statement(&mut self, stmt: &IfStmt) {
-        if let Some(cond_ty) = self.visit_node(stmt.condition) {
-            if !is_scalar_type(cond_ty, self.type_ctx) {
-                // report error
-            }
+        if let Some(cond_ty) = self.visit_node(stmt.condition)
+            && !is_scalar_type(cond_ty, self.type_ctx)
+        {
+            // report error
         }
         self.visit_node(stmt.then_branch);
         if let Some(else_branch) = stmt.else_branch {
@@ -70,10 +70,10 @@ impl<'a> TypeResolver<'a> {
     }
 
     fn visit_while_statement(&mut self, stmt: &WhileStmt) {
-        if let Some(cond_ty) = self.visit_node(stmt.condition) {
-            if !is_scalar_type(cond_ty, self.type_ctx) {
-                // report error
-            }
+        if let Some(cond_ty) = self.visit_node(stmt.condition)
+            && !is_scalar_type(cond_ty, self.type_ctx)
+        {
+            // report error
         }
         self.visit_node(stmt.body);
     }
@@ -82,12 +82,11 @@ impl<'a> TypeResolver<'a> {
         if let Some(init) = stmt.init {
             self.visit_node(init);
         }
-        if let Some(cond) = stmt.condition {
-            if let Some(cond_ty) = self.visit_node(cond) {
-                if !is_scalar_type(cond_ty, self.type_ctx) {
-                    // report error
-                }
-            }
+        if let Some(cond) = stmt.condition
+            && let Some(cond_ty) = self.visit_node(cond)
+            && !is_scalar_type(cond_ty, self.type_ctx)
+        {
+            // report error
         }
         if let Some(inc) = stmt.increment {
             self.visit_node(inc);
@@ -97,7 +96,7 @@ impl<'a> TypeResolver<'a> {
 
     fn visit_return_statement(&mut self, expr: &Option<NodeRef>, _span: SourceSpan) {
         let ret_ty = self.current_function_ret_type;
-        let is_void_func = ret_ty.map_or(false, |ty| self.type_ctx.get(ty.ty).kind == TypeKind::Void);
+        let is_void_func = ret_ty.is_some_and(|ty| self.type_ctx.get(ty.ty).kind == TypeKind::Void);
 
         if let Some(expr_ref) = expr {
             if is_void_func {
@@ -334,10 +333,10 @@ impl<'a> TypeResolver<'a> {
                 // The type of a statement expression is the type of the last expression.
                 if let NodeKind::CompoundStatement(nodes) = &self.ast.get_node(stmt).kind {
                     self.visit_node(stmt);
-                    if let Some(last_node) = nodes.last() {
-                        if let NodeKind::ExpressionStatement(Some(expr)) = self.ast.get_node(*last_node).kind.clone() {
-                            return self.visit_node(expr);
-                        }
+                    if let Some(last_node) = nodes.last()
+                        && let NodeKind::ExpressionStatement(Some(expr)) = self.ast.get_node(*last_node).kind.clone()
+                    {
+                        return self.visit_node(expr);
                     }
                 }
                 None

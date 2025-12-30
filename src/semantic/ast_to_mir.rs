@@ -1,7 +1,6 @@
 use crate::ast::BinaryOp;
 use crate::ast::nodes;
 use crate::ast::*;
-use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::driver::compiler::SemaOutput;
 use crate::mir::{
     self, BinaryOp as MirBinaryOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlockId, MirBuilder,
@@ -18,31 +17,24 @@ use log::debug;
 
 use crate::mir::GlobalId;
 
-pub struct AstToMirLowerer<'a, 'src> {
-    ast: &'a mut Ast,
-    diag: &'src mut DiagnosticEngine,
+pub struct AstToMirLowerer<'a> {
+    ast: &'a Ast,
     symbol_table: &'a mut SymbolTable,
     mir_builder: MirBuilder,
     current_function: Option<MirFunctionId>,
     current_block: Option<MirBlockId>,
-    type_ctx: &'a mut TypeContext,
+    type_ctx: &'a TypeContext,
     local_map: HashMap<SymbolRef, LocalId>,
     global_map: HashMap<SymbolRef, GlobalId>,
+    #[allow(unused)]
     label_map: HashMap<NameId, MirBlockId>,
-    has_errors: bool,
 }
 
-impl<'a, 'src> AstToMirLowerer<'a, 'src> {
-    pub fn new(
-        ast: &'a mut Ast,
-        diag: &'src mut DiagnosticEngine,
-        symbol_table: &'a mut SymbolTable,
-        type_ctx: &'a mut TypeContext,
-    ) -> Self {
+impl<'a> AstToMirLowerer<'a> {
+    pub fn new(ast: &'a Ast, symbol_table: &'a mut SymbolTable, type_ctx: &'a TypeContext) -> Self {
         let mir_builder = MirBuilder::new(mir::MirModuleId::new(1).unwrap());
         Self {
             ast,
-            diag,
             symbol_table,
             mir_builder,
             current_function: None,
@@ -50,7 +42,6 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
             local_map: HashMap::new(),
             global_map: HashMap::new(),
             label_map: HashMap::new(),
-            has_errors: false,
             type_ctx,
         }
     }
@@ -101,10 +92,10 @@ impl<'a, 'src> AstToMirLowerer<'a, 'src> {
 
         for (_, entry_ref) in &tentative_entries {
             let entry = self.symbol_table.get_symbol_mut(*entry_ref);
-            if let SymbolKind::Variable { .. } = &mut entry.kind {
-                if entry.def_state == DefinitionState::Tentative {
-                    entry.def_state = DefinitionState::Defined;
-                }
+            if let SymbolKind::Variable { .. } = &mut entry.kind
+                && entry.def_state == DefinitionState::Tentative
+            {
+                entry.def_state = DefinitionState::Defined;
             }
         }
     }

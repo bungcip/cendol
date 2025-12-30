@@ -178,7 +178,7 @@ pub enum SemanticError {
         first_def: SourceSpan,
         span: SourceSpan,
     },
-    #[error("Type mismatch: expected {expected}, found {found}")]
+    #[error("type mismatch: expected {expected}, found {found}")]
     TypeMismatch {
         expected: String,
         found: String,
@@ -201,6 +201,16 @@ pub enum SemanticError {
 
     #[error("size of array has non-positive value")]
     InvalidArraySize { span: SourceSpan },
+
+    // Errors related to declaration specifiers
+    #[error("multiple storage classes in declaration specifiers")]
+    MultipleStorageClasses { span: SourceSpan },
+    #[error("conflicting storage class specifiers")]
+    ConflictingStorageClasses { span: SourceSpan },
+    #[error("expected a typedef name, found {found}")]
+    ExpectedTypedefName { found: String, span: SourceSpan },
+    #[error("missing type specifier in declaration")]
+    MissingTypeSpecifier { span: SourceSpan },
 }
 
 impl SemanticError {
@@ -215,6 +225,10 @@ impl SemanticError {
             SemanticError::InvalidUseOfVoid { span } => *span,
             SemanticError::UnsupportedFeature { span, .. } => *span,
             SemanticError::InvalidArraySize { span } => *span,
+            SemanticError::MultipleStorageClasses { span } => *span,
+            SemanticError::ConflictingStorageClasses { span } => *span,
+            SemanticError::ExpectedTypedefName { span, .. } => *span,
+            SemanticError::MissingTypeSpecifier { span } => *span,
         }
     }
 }

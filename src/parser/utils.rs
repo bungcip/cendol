@@ -61,7 +61,10 @@ pub(crate) mod expr_patterns {
     }
 
     /// Parse a comma-separated list of expressions with specified binding power
-    pub(crate) fn parse_expr_list(parser: &mut Parser, binding_power: BindingPower) -> Result<Vec<NodeRef>, ParseError> {
+    pub(crate) fn parse_expr_list(
+        parser: &mut Parser,
+        binding_power: BindingPower,
+    ) -> Result<Vec<NodeRef>, ParseError> {
         debug!("parse_expr_list: parsing expression list");
         let mut args = Vec::new();
 

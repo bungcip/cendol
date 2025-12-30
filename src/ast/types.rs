@@ -125,7 +125,6 @@ pub struct FunctionParameter {
     pub name: Option<NameId>,
 }
 
-
 /// Struct/union member information
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructMember {
@@ -134,7 +133,6 @@ pub struct StructMember {
     pub bit_field_size: Option<NonZeroU16>,
     pub span: SourceSpan, // for diagnostic
 }
-
 
 /// Enum constant information
 #[derive(Debug, Clone, PartialEq)]

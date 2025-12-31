@@ -1,10 +1,7 @@
 //! Implements C11 semantic conversions, such as usual arithmetic conversions
 //! and integer promotions.
 
-use crate::{
-    ast::TypeKind,
-    semantic::{TypeRegistry, type_registry::QualType},
-};
+use crate::semantic::{QualType, TypeKind, TypeRegistry};
 
 /// Performs the "usual arithmetic conversions" as specified in C11 6.3.1.8.
 pub fn usual_arithmetic_conversions(ctx: &TypeRegistry, lhs: QualType, rhs: QualType) -> Option<QualType> {

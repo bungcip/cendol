@@ -13,8 +13,11 @@
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
-use crate::semantic::type_registry::QualType;
-use crate::semantic::{Namespace, ScopeId, Symbol, SymbolKind, SymbolTable, TypeRef, TypeRegistry};
+use crate::semantic::{
+    ArraySizeType, EnumConstant, Namespace, ScopeId, StructMember, Symbol, SymbolKind, SymbolTable, TypeKind,
+    TypeQualifiers, TypeRef, TypeRegistry,
+};
+use crate::semantic::{FunctionParameter, QualType};
 use crate::source_manager::SourceSpan;
 
 /// Extract identifier name from ParsedType declarator

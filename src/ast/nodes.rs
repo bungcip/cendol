@@ -10,7 +10,7 @@ use thin_vec::ThinVec;
 
 use crate::{
     ast::{NameId, NodeRef, ParsedType, SymbolRef, TypeRef},
-    semantic::type_registry::QualType,
+    semantic::QualType,
 };
 
 /// The core enum defining all possible AST node types for C11.
@@ -264,7 +264,7 @@ pub enum StorageClass {
 }
 
 // Type qualifiers (imported from types module)
-pub use super::types::TypeQualifiers;
+use crate::semantic::TypeQualifiers;
 
 // Unary Operators
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

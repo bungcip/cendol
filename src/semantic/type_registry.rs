@@ -3,69 +3,12 @@
 //! Arena + canonicalization layer for semantic types.
 //! All TypeRef creation and mutation MUST go through this context.
 
+use crate::{ast::NameId, semantic::QualType};
 use hashbrown::HashMap;
-use serde::Serialize;
-use std::{fmt::Display, num::NonZeroU32};
 
-use crate::ast::{
-    ArraySizeType, EnumConstant, FunctionParameter, NameId, StructMember, Type, TypeKind, TypeLayout, TypeQualifiers,
+use super::{
+    ArraySizeType, EnumConstant, FunctionParameter, StructMember, Type, TypeKind, TypeLayout, TypeQualifiers, TypeRef,
 };
-
-/// Opaque reference to a canonical type.
-/// Internally index + 1 (NonZeroU32 for niche optimization).
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize)]
-pub struct TypeRef(NonZeroU32);
-
-impl TypeRef {
-    #[inline]
-    pub fn new(n: u32) -> Option<Self> {
-        NonZeroU32::new(n).map(TypeRef)
-    }
-
-    #[inline]
-    pub fn index(self) -> usize {
-        (self.0.get() - 1) as usize
-    }
-
-    #[inline]
-    pub fn get(self) -> u32 {
-        self.0.get()
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize)]
-pub struct QualType {
-    pub ty: TypeRef,
-    pub qualifiers: TypeQualifiers,
-}
-
-impl QualType {
-    #[inline]
-    pub fn new(ty: TypeRef, qualifiers: TypeQualifiers) -> Self {
-        Self { ty, qualifiers }
-    }
-
-    #[inline]
-    pub fn unqualified(ty: TypeRef) -> Self {
-        Self {
-            ty,
-            qualifiers: TypeQualifiers::empty(),
-        }
-    }
-}
-
-impl Display for QualType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Format qualifiers
-        if !self.qualifiers.is_empty() {
-            write!(f, "{} ", self.qualifiers)?;
-        }
-
-        // Note: For complete type formatting, this would need access to a TypeRegistry
-        // to resolve the TypeRef to the actual Type. For now, just show the type ref.
-        write!(f, "TypeRef({})", self.ty.get())
-    }
-}
 
 /// Central arena & factory for semantic types.
 ///
@@ -163,9 +106,8 @@ impl TypeRegistry {
     /// Allocate a new canonical type and return its TypeRef.
     fn alloc(&mut self, ty: Type) -> TypeRef {
         let idx = self.types.len() as u32 + 1;
-        let nz = NonZeroU32::new(idx).unwrap();
         self.types.push(ty);
-        TypeRef(nz)
+        TypeRef::new(idx).unwrap()
     }
 
     /// Immutable access to a type.
@@ -334,5 +276,5 @@ struct FnSigKey {
 
 fn dummy() -> TypeRef {
     // Temporary placeholder before real initialization
-    TypeRef(NonZeroU32::new(1).unwrap())
+    TypeRef::new(1).unwrap()
 }

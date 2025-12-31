@@ -7,7 +7,7 @@ use itertools::Itertools;
 
 use crate::ast::{Ast, NodeKind};
 use crate::pp::PPToken;
-use crate::semantic::SymbolRef;
+use crate::semantic::{SymbolRef, TypeQualifiers};
 use crate::source_manager::SourceManager;
 
 use super::compiler::DriverError;
@@ -151,16 +151,16 @@ impl OutputHandler {
             },
             crate::ast::nodes::DeclSpecifier::TypeQualifiers(quals) => {
                 let mut parts = Vec::new();
-                if quals.contains(crate::ast::types::TypeQualifiers::CONST) {
+                if quals.contains(TypeQualifiers::CONST) {
                     parts.push("const");
                 }
-                if quals.contains(crate::ast::types::TypeQualifiers::VOLATILE) {
+                if quals.contains(TypeQualifiers::VOLATILE) {
                     parts.push("volatile");
                 }
-                if quals.contains(crate::ast::types::TypeQualifiers::RESTRICT) {
+                if quals.contains(TypeQualifiers::RESTRICT) {
                     parts.push("restrict");
                 }
-                if quals.contains(crate::ast::types::TypeQualifiers::ATOMIC) {
+                if quals.contains(TypeQualifiers::ATOMIC) {
                     parts.push("_Atomic");
                 }
                 if parts.is_empty() {

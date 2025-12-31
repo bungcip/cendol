@@ -7,6 +7,7 @@
 use crate::ast::*;
 use crate::diagnostic::ParseError;
 use crate::lexer::TokenKind;
+use crate::semantic::TypeQualifiers;
 use log::debug;
 use thin_vec::ThinVec;
 

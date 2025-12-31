@@ -1,7 +1,4 @@
-use crate::{
-    ast::TypeKind,
-    semantic::{TypeRegistry, type_registry::QualType},
-};
+use crate::semantic::{QualType, TypeKind, TypeRegistry};
 
 pub fn is_scalar_type(ty: QualType, ctx: &TypeRegistry) -> bool {
     matches!(

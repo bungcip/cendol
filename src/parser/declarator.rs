@@ -4,10 +4,10 @@
 //! part of C's declaration syntax. Declarators can be nested and include pointers,
 //! arrays, and functions.
 
-use crate::ast::*;
 use crate::diagnostic::ParseError;
 use crate::lexer::TokenKind;
 use crate::parser::declaration_core::parse_declaration_specifiers;
+use crate::{ast::*, semantic::TypeQualifiers};
 use log::debug;
 use thin_vec::{ThinVec, thin_vec};
 

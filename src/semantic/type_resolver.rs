@@ -2,7 +2,7 @@ use crate::{
     ast::{nodes::*, *},
     diagnostic::SemanticError,
     semantic::{
-        SymbolTable, TypeRegistry, conversions::usual_arithmetic_conversions, type_registry::QualType,
+        ArraySizeType, QualType, SymbolTable, TypeKind, TypeRegistry, conversions::usual_arithmetic_conversions,
         utils::is_scalar_type,
     },
 };

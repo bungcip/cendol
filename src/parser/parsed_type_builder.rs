@@ -7,6 +7,7 @@
 
 use crate::ast::*;
 use crate::diagnostic::ParseError;
+use crate::semantic::TypeQualifiers;
 use thin_vec::ThinVec;
 
 use super::Parser;

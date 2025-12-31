@@ -10,7 +10,8 @@ use std::num::NonZeroU32;
 use serde::Serialize;
 
 use crate::ast::nodes::TypeSpecifier;
-use crate::ast::{NameId, SourceSpan, TypeQualifiers};
+use crate::ast::{NameId, SourceSpan};
+use crate::semantic::TypeQualifiers;
 
 /// Type reference for parsed base types
 pub type ParsedBaseTypeRef = NonZeroU32;

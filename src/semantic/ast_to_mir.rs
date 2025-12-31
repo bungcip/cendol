@@ -6,9 +6,13 @@ use crate::mir::{
     self, BinaryOp as MirBinaryOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlockId, MirBuilder,
     MirFunctionId, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
 };
+use crate::semantic::ArraySizeType;
+use crate::semantic::QualType;
+use crate::semantic::StructMember;
 use crate::semantic::SymbolKind;
 use crate::semantic::SymbolRef;
 use crate::semantic::SymbolTable;
+use crate::semantic::TypeKind;
 use crate::semantic::{DefinitionState, TypeRef, TypeRegistry};
 use crate::semantic::{Namespace, ScopeId};
 use crate::source_manager::SourceSpan;
@@ -193,7 +197,7 @@ impl<'a> AstToMirLowerer<'a> {
         scope_id: ScopeId,
         inits: &[nodes::DesignatedInitializer],
         members: &[StructMember],
-        target_ty: crate::semantic::type_registry::QualType,
+        target_ty: QualType,
     ) -> Operand {
         let mut field_operands = Vec::new();
         let mut current_field_idx = 0;
@@ -244,12 +248,7 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn lower_initializer(
-        &mut self,
-        scope_id: ScopeId,
-        init_ref: NodeRef,
-        target_ty: crate::semantic::type_registry::QualType,
-    ) -> Operand {
+    fn lower_initializer(&mut self, scope_id: ScopeId, init_ref: NodeRef, target_ty: QualType) -> Operand {
         let init_node_kind = self.ast.get_node(init_ref).kind.clone();
         let target_ty_kind = &self.registry.get(target_ty.ty).kind.clone();
 

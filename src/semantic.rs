@@ -17,6 +17,7 @@ pub mod symbol_resolver;
 pub mod symbol_table;
 pub mod type_registry;
 pub mod type_resolver;
+pub mod types;
 pub mod utils;
 
 #[cfg(test)]
@@ -27,4 +28,8 @@ pub mod tests_mir;
 // Re-export key types for public API
 pub use ast_to_mir::AstToMirLowerer;
 pub use symbol_table::{DefinitionState, Namespace, ScopeId, Symbol, SymbolKind, SymbolRef, SymbolTable};
-pub use type_registry::{TypeRef, TypeRegistry};
+pub use type_registry::TypeRegistry;
+pub use types::{
+    ArraySizeType, EnumConstant, FunctionParameter, QualType, StructMember, Type, TypeKind, TypeLayout, TypeQualifiers,
+    TypeRef,
+};

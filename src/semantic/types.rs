@@ -3,16 +3,13 @@
 //! This module defines the semantic type system used during analysis,
 //! distinct from the syntactic TypeSpecifier constructs used in parsing.
 
-use std::fmt::Display;
 use std::num::NonZeroU16;
+use std::{fmt::Display, num::NonZeroU32};
 
 use bitflags::bitflags;
 use serde::Serialize;
 
-use crate::{
-    ast::{NameId, NodeRef, SourceSpan, TypeRef},
-    semantic::type_registry::QualType,
-};
+use crate::ast::{NameId, NodeRef, SourceSpan};
 
 /// Type representation (for semantic analysis)
 /// This is a canonical type, distinct from TypeSpecifier which is a syntax construct.
@@ -35,6 +32,62 @@ impl Type {
     /// Create a new type with default qualifiers
     pub(crate) fn new(kind: TypeKind) -> Self {
         Type { kind, layout: None }
+    }
+}
+
+/// Opaque reference to a canonical type.
+/// Internally index + 1 (NonZeroU32 for niche optimization).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize)]
+pub struct TypeRef(NonZeroU32);
+
+impl TypeRef {
+    #[inline]
+    pub fn new(n: u32) -> Option<Self> {
+        NonZeroU32::new(n).map(TypeRef)
+    }
+
+    #[inline]
+    pub fn index(self) -> usize {
+        (self.0.get() - 1) as usize
+    }
+
+    #[inline]
+    pub fn get(self) -> u32 {
+        self.0.get()
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize)]
+pub struct QualType {
+    pub ty: TypeRef,
+    pub qualifiers: TypeQualifiers,
+}
+
+impl QualType {
+    #[inline]
+    pub fn new(ty: TypeRef, qualifiers: TypeQualifiers) -> Self {
+        Self { ty, qualifiers }
+    }
+
+    #[inline]
+    pub fn unqualified(ty: TypeRef) -> Self {
+        Self {
+            ty,
+            qualifiers: TypeQualifiers::empty(),
+        }
+    }
+}
+
+impl Display for QualType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Format qualifiers
+        if !self.qualifiers.is_empty() {
+            write!(f, "{} ", self.qualifiers)?;
+        }
+
+        // Note: For complete type formatting, this would need access to a TypeRegistry
+        // to resolve the TypeRef to the actual Type. For now, just show the type ref.
+        write!(f, "TypeRef({})", self.ty.get())
     }
 }
 
@@ -96,6 +149,7 @@ pub enum TypeKind {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ArraySizeType {
     Constant(usize),
+    #[allow(unused)]
     Variable(NodeRef), // VLA with size expression type
     Incomplete,
     Star, // [*] for function parameters

@@ -26,19 +26,17 @@ use std::num::NonZeroU32;
 /// Alias for GlobalSymbol from symbol_table crate with global feature.
 pub type NameId = symbol_table::GlobalSymbol;
 
-use crate::semantic::{ScopeId, SymbolRef, TypeRef, type_registry::QualType};
+use crate::semantic::{QualType, ScopeId, SymbolRef, TypeRef};
 pub use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
 
 // Submodules
 pub mod nodes;
 pub mod parsed_types;
-pub mod types;
 pub mod utils;
 
 // Re-export commonly used items for convenience
 pub use nodes::*;
 pub use parsed_types::*;
-pub use types::*;
 
 // Re-export operators that are used throughout the codebase
 pub use nodes::{BinaryOp, UnaryOp};

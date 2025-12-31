@@ -25,8 +25,15 @@ impl SourceId {
 /// Packed file ID and byte offset in a single u32.
 /// - Bits 0-21: Byte Offset (max 4 MiB file size)
 /// - Bits 22-31: Source ID Index (max 1023 unique source files)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SourceLoc(u32);
+
+impl Default for SourceLoc {
+    fn default() -> Self {
+        // use builtin because SourceLoc is packed value, so zero invalid
+        Self::builtin()
+    }
+}
 
 impl SourceLoc {
     const OFFSET_MASK: u32 = (1 << 22) - 1; // 22 bits for offset

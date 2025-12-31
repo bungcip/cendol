@@ -967,4 +967,57 @@ mod tests {
         extern fn strlen(%param0: ptr<i8>) -> i32
         "#);
     }
+
+    #[test]
+    fn test_increment_decrement() {
+        let source = r#"
+            int main()
+            {
+                int okabe = 1;
+                int rintaro = okabe++;
+                int kyouma = ++rintaro;
+
+                int hohohin = kyouma--;
+                int kanggoru = --hohohin;
+
+                return kanggoru;
+            }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = i32
+
+        fn main() -> i32
+        {
+          locals {
+            %okabe: i32
+            %rintaro: i32
+            %3: i32
+            %kyouma: i32
+            %5: i32
+            %hohohin: i32
+            %7: i32
+            %kanggoru: i32
+            %9: i32
+          }
+
+          bb1:
+            %okabe = const 1
+            %3 = %okabe + const 1
+            %okabe = %3
+            %rintaro = %okabe
+            %5 = %rintaro + const 1
+            %rintaro = %5
+            %kyouma = %5
+            %7 = %kyouma - const 1
+            %kyouma = %7
+            %hohohin = %kyouma
+            %9 = %hohohin - const 1
+            %hohohin = %9
+            %kanggoru = %9
+            return %kanggoru
+        }
+        ");
+    }
 }

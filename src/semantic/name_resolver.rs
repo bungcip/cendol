@@ -121,6 +121,12 @@ fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
         NodeKind::UnaryOp(_, expr) => {
             visit_node(ctx, *expr);
         }
+        NodeKind::PostIncrement(expr) => {
+            visit_node(ctx, *expr);
+        }
+        NodeKind::PostDecrement(expr) => {
+            visit_node(ctx, *expr);
+        }
         NodeKind::ExpressionStatement(expr) => {
             if let Some(expr) = expr {
                 visit_node(ctx, *expr);

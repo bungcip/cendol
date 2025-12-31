@@ -442,6 +442,40 @@ impl<'a> AstToMirLowerer<'a> {
                     Operand::Copy(Box::new(place))
                 }
             },
+            NodeKind::PostIncrement(operand_ref) => {
+                let operand = self.lower_expression(scope_id, *operand_ref);
+                let result = operand.clone();
+
+                if let Operand::Copy(place) = operand.clone() {
+                    let rhs = Operand::Constant(self.create_constant(ConstValue::Int(1)));
+                    let rval = Rvalue::BinaryOp(MirBinaryOp::Add, operand, rhs);
+                    let mir_ty =
+                        self.lower_type_to_mir(self.ast.get_node(*operand_ref).resolved_type.get().unwrap().ty);
+                    let (_, temp_place) = self.create_temp_local_with_assignment(rval, mir_ty);
+                    self.emit_assignment(*place, Operand::Copy(Box::new(temp_place)));
+                } else {
+                    panic!("Post-increment operand is not a place");
+                }
+
+                result
+            }
+            NodeKind::PostDecrement(operand_ref) => {
+                let operand = self.lower_expression(scope_id, *operand_ref);
+                let result = operand.clone();
+
+                if let Operand::Copy(place) = operand.clone() {
+                    let rhs = Operand::Constant(self.create_constant(ConstValue::Int(1)));
+                    let rval = Rvalue::BinaryOp(MirBinaryOp::Sub, operand, rhs);
+                    let mir_ty =
+                        self.lower_type_to_mir(self.ast.get_node(*operand_ref).resolved_type.get().unwrap().ty);
+                    let (_, temp_place) = self.create_temp_local_with_assignment(rval, mir_ty);
+                    self.emit_assignment(*place, Operand::Copy(Box::new(temp_place)));
+                } else {
+                    panic!("Post-decrement operand is not a place");
+                }
+
+                result
+            }
             NodeKind::BinaryOp(op, left_ref, right_ref) => {
                 let lhs = self.lower_expression(scope_id, *left_ref);
                 let rhs = self.lower_expression(scope_id, *right_ref);

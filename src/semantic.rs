@@ -11,6 +11,7 @@
 //! for clean separation of concerns and maintainable code.
 
 pub mod ast_to_mir;
+pub mod const_eval;
 pub mod conversions;
 pub mod name_resolver;
 pub mod symbol_resolver;
@@ -24,6 +25,8 @@ pub mod utils;
 pub mod tests_lowering;
 #[cfg(test)]
 pub mod tests_mir;
+#[cfg(test)]
+pub mod tests_validation;
 
 // Re-export key types for public API
 pub use ast_to_mir::AstToMirLowerer;

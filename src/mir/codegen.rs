@@ -10,8 +10,8 @@
 use crate::ast::NameId;
 use crate::driver::compiler::SemaOutput;
 use crate::mir::{
-    BinaryOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlock, MirBlockId, MirFunction, MirFunctionId, MirStmt,
-    MirType, Operand, Place, Rvalue, Terminator, TypeId,
+    BinaryOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlock, MirBlockId, MirFunction, MirFunctionId,
+    MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
 };
 use cranelift::codegen::ir::{StackSlot, StackSlotData, StackSlotKind};
 use cranelift::prelude::{
@@ -135,8 +135,13 @@ fn emit_function_call_impl(
             }
 
             // Declare the function in the module if not already declared
+            let linkage = match func.kind {
+                MirFunctionKind::Extern => cranelift_module::Linkage::Import,
+                MirFunctionKind::Defined => cranelift_module::Linkage::Export,
+            };
+
             let func_decl = module
-                .declare_function(func.name.as_str(), cranelift_module::Linkage::Export, &sig)
+                .declare_function(func.name.as_str(), linkage, &sig)
                 .map_err(|e| format!("Failed to declare function {}: {:?}", func.name, e))?;
 
             // Get a local reference to the declared function
@@ -544,10 +549,14 @@ impl MirToCraneliftLowerer {
                 .map_err(|e| format!("Failed to define global data: {:?}", e))?;
         }
 
-        // Lower all functions
+        // Lower all functions that have definitions (not just declarations)
         for func_id in self.mir.module.functions.clone() {
-            self.lower_function(func_id)
-                .map_err(|e| format!("Error lowering function: {}", e))?;
+            // Only lower functions that are defined (have bodies)
+            if let Some(func) = self.mir.functions.get(&func_id)
+                && matches!(func.kind, MirFunctionKind::Defined) {
+                    self.lower_function(func_id)
+                        .map_err(|e| format!("Error lowering function: {}", e))?;
+                }
         }
 
         // Finalize and return the compiled code
@@ -593,7 +602,7 @@ impl MirToCraneliftLowerer {
         // If no functions were found, create a default main function
         if self.mir.functions.is_empty() {
             let func_id = MirFunctionId::new(1).unwrap();
-            let mut func = MirFunction::new(func_id, NameId::new("main"), TypeId::new(1).unwrap());
+            let mut func = MirFunction::new_defined(func_id, NameId::new("main"), TypeId::new(1).unwrap());
 
             let entry_block_id = MirBlockId::new(1).unwrap();
             let mut entry_block = MirBlock::new(entry_block_id);
@@ -604,7 +613,7 @@ impl MirToCraneliftLowerer {
             let return_operand = Operand::Constant(return_const_id);
             entry_block.terminator = Terminator::Return(Some(return_operand));
 
-            func.entry_block = entry_block_id;
+            func.entry_block = Some(entry_block_id);
             func.blocks.push(entry_block_id);
 
             self.mir.functions.insert(func_id, func);
@@ -672,7 +681,7 @@ impl MirToCraneliftLowerer {
         // PHASE 2️⃣ — Lower block content (without sealing)
 
         // Use worklist algorithm for proper traversal
-        let mut worklist = vec![func.entry_block];
+        let mut worklist = vec![func.entry_block.expect("Defined function must have entry block")];
         let mut visited = HashSet::new();
 
         while let Some(current_block_id) = worklist.pop() {
@@ -687,7 +696,7 @@ impl MirToCraneliftLowerer {
             builder.switch_to_block(*cl_block);
 
             // If this is the entry block, set up its parameters
-            if current_block_id == func.entry_block {
+            if Some(current_block_id) == func.entry_block {
                 // Add function parameters as block parameters
                 for &param_type in &param_types {
                     builder.append_block_param(*cl_block, param_type);
@@ -976,18 +985,22 @@ impl MirToCraneliftLowerer {
         builder.finalize();
 
         // Now declare and define the function
+        let linkage = match func.kind {
+            MirFunctionKind::Extern => cranelift_module::Linkage::Import,
+            MirFunctionKind::Defined => cranelift_module::Linkage::Export,
+        };
+
         let id = self
             .module
-            .declare_function(
-                func.name.as_str(),
-                cranelift_module::Linkage::Export,
-                &func_ctx.func.signature,
-            )
+            .declare_function(func.name.as_str(), linkage, &func_ctx.func.signature)
             .map_err(|e| format!("Failed to declare function {}: {:?}", func.name, e))?;
 
-        self.module
-            .define_function(id, &mut func_ctx)
-            .map_err(|e| format!("Failed to define function {}: {:?}", func.name, e))?;
+        // Only define the function body if it's a defined function (not extern)
+        if matches!(func.kind, MirFunctionKind::Defined) {
+            self.module
+                .define_function(id, &mut func_ctx)
+                .map_err(|e| format!("Failed to define function {}: {:?}", func.name, e))?;
+        }
 
         if self.emit_kind == EmitKind::Clif {
             // Store the function IR string for dumping

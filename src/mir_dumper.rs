@@ -14,7 +14,7 @@ use crate::{
     driver::compiler::SemaOutput,
     mir::{
         BinaryOp, CallTarget, ConstValue, ConstValueId, Global, GlobalId, LocalId, MirBlock, MirBlockId, MirFunction,
-        MirFunctionId, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryOp,
+        MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryOp,
     },
 };
 
@@ -83,7 +83,11 @@ impl<'a> MirDumper<'a> {
     fn dump_function(&self, output: &mut String, func: &MirFunction) -> Result<(), std::fmt::Error> {
         // Function signature
         let return_type = self.type_to_string(func.return_type);
-        write!(output, "fn {}(", func.name)?;
+        let fn_keyword = match func.kind {
+            MirFunctionKind::Extern => "extern fn",
+            MirFunctionKind::Defined => "fn",
+        };
+        write!(output, "{} {}(", fn_keyword, func.name)?;
 
         // Dump parameters
         for (i, &param_id) in func.params.iter().enumerate() {
@@ -100,21 +104,30 @@ impl<'a> MirDumper<'a> {
         }
 
         write!(output, ") -> {}", return_type)?;
+
+        // For extern functions, don't output any body
+        if matches!(func.kind, MirFunctionKind::Extern) {
+            writeln!(output)?;
+            return Ok(());
+        }
+
         writeln!(output)?;
 
         // Function body
         writeln!(output, "{{")?;
 
         // Dump locals section
-        writeln!(output, "  locals {{")?;
-        for &local_id in &func.locals {
-            if let Some(local) = self.sema_output.locals.get(&local_id) {
-                let local_type = self.type_to_string(local.type_id);
-                let local_name = self.local_to_string(local_id);
-                writeln!(output, "    {}: {}", local_name, local_type)?;
+        if func.locals.is_empty() == false {
+            writeln!(output, "  locals {{")?;
+            for &local_id in &func.locals {
+                if let Some(local) = self.sema_output.locals.get(&local_id) {
+                    let local_type = self.type_to_string(local.type_id);
+                    let local_name = self.local_to_string(local_id);
+                    writeln!(output, "    {}: {}", local_name, local_type)?;
+                }
             }
+            writeln!(output, "  }}")?;
         }
-        writeln!(output, "  }}")?;
 
         // Dump basic blocks
         for &block_id in &func.blocks {

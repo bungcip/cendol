@@ -54,9 +54,9 @@ fn test_store_statement_lowering() {
 
     let mut functions = HashMap::new();
     let func_id = MirFunctionId::new(1).unwrap();
-    let mut main_func = MirFunction::new(func_id, NameId::new("main"), void_type_id);
+    let mut main_func = MirFunction::new_defined(func_id, NameId::new("main"), void_type_id);
     main_func.locals.push(local_id);
-    main_func.entry_block = entry_block_id;
+    main_func.entry_block = Some(entry_block_id);
     main_func.blocks.push(entry_block_id);
     functions.insert(func_id, main_func);
 
@@ -170,9 +170,9 @@ fn test_store_deref_pointer() {
 
     let mut functions = HashMap::new();
     let func_id = MirFunctionId::new(1).unwrap();
-    let mut main_func = MirFunction::new(func_id, NameId::new("main"), void_type_id);
+    let mut main_func = MirFunction::new_defined(func_id, NameId::new("main"), void_type_id);
     main_func.locals.extend(vec![local_x_id, local_p_id]);
-    main_func.entry_block = entry_block_id;
+    main_func.entry_block = Some(entry_block_id);
     main_func.blocks.push(entry_block_id);
     functions.insert(func_id, main_func);
 

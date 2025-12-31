@@ -230,15 +230,13 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @"
+        insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
         global @result: i32 = const 99
 
         fn main() -> i32
         {
-          locals {
-          }
 
           bb1:
             return @result
@@ -261,13 +259,11 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @"
+        insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
         fn main() -> i32
         {
-          locals {
-          }
 
           bb1:
             unreachable
@@ -327,7 +323,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @"
+        insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = struct S { a: %t0, b: %t0 }
 
@@ -335,8 +331,6 @@ mod tests {
 
         fn main() -> i32
         {
-          locals {
-          }
 
           bb1:
             return const 0
@@ -356,7 +350,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @"
+        insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = struct S { a: %t0, p: %t2 }
         type %t2 = ptr<%t0>
@@ -366,8 +360,6 @@ mod tests {
 
         fn main() -> i32
         {
-          locals {
-          }
 
           bb1:
             return const 0
@@ -397,7 +389,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @"
+        insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = struct S2 { a: %t0, b: %t0, s: %t2 }
         type %t2 = struct S1 { a: %t0, b: %t0 }
@@ -406,8 +398,6 @@ mod tests {
 
         fn main() -> i32
         {
-          locals {
-          }
 
           bb1:
             return const 0
@@ -634,7 +624,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @"
+        insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = f64
         type %t2 = i8
@@ -695,8 +685,6 @@ mod tests {
 
         fn fn_double() -> f64
         {
-          locals {
-          }
 
           bb13:
             return const 2.71828
@@ -704,8 +692,6 @@ mod tests {
 
         fn fn_char() -> i8
         {
-          locals {
-          }
 
           bb2:
             return const 97
@@ -713,8 +699,6 @@ mod tests {
 
         fn fn_ulong() -> u32
         {
-          locals {
-          }
 
           bb9:
             return const 200000
@@ -722,8 +706,6 @@ mod tests {
 
         fn fn_void() -> void
         {
-          locals {
-          }
 
           bb1:
             return
@@ -731,8 +713,6 @@ mod tests {
 
         fn fn_uchar() -> u8
         {
-          locals {
-          }
 
           bb3:
             return const 98
@@ -740,8 +720,6 @@ mod tests {
 
         fn fn_uint() -> u32
         {
-          locals {
-          }
 
           bb7:
             return const 42
@@ -771,8 +749,6 @@ mod tests {
 
         fn fn_float() -> f32
         {
-          locals {
-          }
 
           bb12:
             return const 3.14
@@ -791,8 +767,6 @@ mod tests {
 
         fn fn_long() -> i32
         {
-          locals {
-          }
 
           bb8:
             return const 100000
@@ -800,8 +774,6 @@ mod tests {
 
         fn fn_ushort() -> u16
         {
-          locals {
-          }
 
           bb5:
             return const 14
@@ -809,8 +781,6 @@ mod tests {
 
         fn fn_ullong() -> u64
         {
-          locals {
-          }
 
           bb11:
             return const 4000000000
@@ -830,15 +800,13 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @"
+        insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
         global @x: i32 = const zero
 
         fn main() -> i32
         {
-          locals {
-          }
 
           bb1:
             return @x
@@ -965,10 +933,10 @@ mod tests {
 
             int main()
             {
-                char *p;
+                char *steins;
 
-                p = "hello";
-                return strlen(p) - 5;
+                steins = "gate";
+                return strlen(steins) - 4;
             }
         "#;
 
@@ -977,31 +945,27 @@ mod tests {
         type %t0 = i32
         type %t1 = i8
         type %t2 = ptr<%t1>
-        type %t3 = [8]%t1
+        type %t3 = [7]%t1
         type %t4 = fn(%t2) -> %t0
 
-        global @.L.str0: [8]i8 = const ""hello""
+        global @.L.str0: [7]i8 = const ""gate""
 
         fn main() -> i32
         {
           locals {
-            %p: ptr<i8>
+            %steins: ptr<i8>
             %3: i32
             %4: i32
           }
 
           bb1:
-            %p = const @.L.str0
-            %3 = call strlen(%p)
-            %4 = %3 - const 5
+            %steins = const @.L.str0
+            %3 = call strlen(%steins)
+            %4 = %3 - const 4
             return %4
         }
 
-        fn strlen(%param0: ptr<i8>) -> i32
-        {
-          locals {
-          }
-        }
+        extern fn strlen(%param0: ptr<i8>) -> i32
         "#);
     }
 }

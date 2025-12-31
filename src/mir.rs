@@ -44,6 +44,13 @@ pub type TypeId = NonZeroU32;
 /// Unique identifier for MIR constant values
 pub type ConstValueId = NonZeroU32;
 
+/// Function kind - distinguishes between defined and extern functions
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub enum MirFunctionKind {
+    Defined,
+    Extern,
+}
+
 /// MIR Module - Top-level container for MIR
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MirModule {
@@ -73,21 +80,39 @@ pub struct MirFunction {
     pub name: NameId,
     pub return_type: TypeId,
     pub params: Vec<LocalId>,
+
+    pub kind: MirFunctionKind,
+
+    // Only valid if kind is Defined
     pub locals: Vec<LocalId>,
     pub blocks: Vec<MirBlockId>,
-    pub entry_block: MirBlockId,
+    pub entry_block: Option<MirBlockId>,
 }
 
 impl MirFunction {
-    pub fn new(id: MirFunctionId, name: NameId, return_type: TypeId) -> Self {
+    pub fn new_defined(id: MirFunctionId, name: NameId, return_type: TypeId) -> Self {
         Self {
             id,
             name,
             return_type,
             params: Vec::new(),
+            kind: MirFunctionKind::Defined,
             locals: Vec::new(),
             blocks: Vec::new(),
-            entry_block: MirBlockId::new(1).unwrap(), // Will be set explicitly
+            entry_block: None,
+        }
+    }
+
+    pub fn new_extern(id: MirFunctionId, name: NameId, return_type: TypeId) -> Self {
+        Self {
+            id,
+            name,
+            return_type,
+            params: Vec::new(),
+            kind: MirFunctionKind::Extern,
+            locals: Vec::new(),
+            blocks: Vec::new(),
+            entry_block: None,
         }
     }
 }
@@ -382,15 +407,21 @@ impl MirBuilder {
 
     /// Create a new basic block
     pub fn create_block(&mut self) -> MirBlockId {
+        let func_id = self.current_function.expect("no current function");
+        let func = self.functions.get(&func_id).unwrap();
+
+        assert!(
+            matches!(func.kind, MirFunctionKind::Defined),
+            "cannot create blocks for extern function"
+        );
+
         let block_id = MirBlockId::new(self.next_block_id).unwrap();
         self.next_block_id += 1;
 
         let block = MirBlock::new(block_id);
         self.blocks.insert(block_id, block);
 
-        if let Some(func_id) = self.current_function
-            && let Some(func) = self.functions.get_mut(&func_id)
-        {
+        if let Some(func) = self.functions.get_mut(&func_id) {
             func.blocks.push(block_id);
         }
 
@@ -440,11 +471,28 @@ impl MirBuilder {
         false
     }
 
-    /// Create a new function
-    pub fn create_function(&mut self, name: NameId, param_types: Vec<TypeId>, return_type: TypeId) -> MirFunctionId {
+    /// Declare a function (extern - no body)
+    pub fn declare_function(&mut self, name: NameId, param_types: Vec<TypeId>, return_type: TypeId) -> MirFunctionId {
         let func_id = MirFunctionId::new(self.module.functions.len() as u32 + 1).unwrap();
+        let mut func = MirFunction::new_extern(func_id, name, return_type);
 
-        let mut func = MirFunction::new(func_id, name, return_type);
+        // Create locals for each parameter
+        for (i, &param_type) in param_types.iter().enumerate() {
+            let param_name = Some(NameId::new(format!("param{}", i)));
+            let local_id = self.create_local(param_name, param_type, true);
+            func.params.push(local_id);
+        }
+
+        self.functions.insert(func_id, func);
+        self.module.functions.push(func_id);
+
+        func_id
+    }
+
+    /// Define a function (has body)
+    pub fn define_function(&mut self, name: NameId, param_types: Vec<TypeId>, return_type: TypeId) -> MirFunctionId {
+        let func_id = MirFunctionId::new(self.module.functions.len() as u32 + 1).unwrap();
+        let mut func = MirFunction::new_defined(func_id, name, return_type);
 
         // Create locals for each parameter
         for (i, &param_type) in param_types.iter().enumerate() {
@@ -463,10 +511,9 @@ impl MirBuilder {
     pub fn set_current_function(&mut self, func_id: MirFunctionId) {
         self.current_function = Some(func_id);
         if let Some(func) = self.functions.get(&func_id)
-            && !func.blocks.is_empty()
-        {
-            self.current_block = Some(func.entry_block);
-        }
+            && let Some(entry_block) = func.entry_block {
+                self.current_block = Some(entry_block);
+            }
     }
 
     /// Create a new global variable
@@ -619,7 +666,8 @@ impl MirBuilder {
     /// Set the entry block for a function
     pub fn set_function_entry_block(&mut self, func_id: MirFunctionId, block_id: MirBlockId) {
         if let Some(func) = self.functions.get_mut(&func_id) {
-            func.entry_block = block_id;
+            assert!(matches!(func.kind, MirFunctionKind::Defined));
+            func.entry_block = Some(block_id);
         }
     }
 
@@ -672,12 +720,22 @@ impl fmt::Display for MirModule {
 
 impl fmt::Display for MirFunction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "MirFunction(id: {}, name: {})", self.id.get(), self.name)?;
+        writeln!(
+            f,
+            "MirFunction(id: {}, name: {}, kind: {:?})",
+            self.id.get(),
+            self.name,
+            self.kind
+        )?;
         writeln!(f, "  Return type: {:?}", self.return_type)?;
         writeln!(f, "  Params: {:?}", self.params)?;
         writeln!(f, "  Locals: {:?}", self.locals)?;
         writeln!(f, "  Blocks: {:?}", self.blocks)?;
-        writeln!(f, "  Entry block: {:?}", self.entry_block)?;
+        if let Some(entry_block) = self.entry_block {
+            writeln!(f, "  Entry block: {:?}", entry_block)?;
+        } else {
+            writeln!(f, "  Entry block: None")?;
+        }
         Ok(())
     }
 }

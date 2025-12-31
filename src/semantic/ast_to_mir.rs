@@ -122,12 +122,13 @@ impl<'a> AstToMirLowerer<'a> {
                 global_symbols.sort_by_key(|s| self.symbol_table.get_symbol(*s).name);
 
                 for sym_ref in global_symbols {
-                    let (symbol_name, symbol_type_info, is_function) = {
+                    let (symbol_name, symbol_type_info, is_function, has_definition) = {
                         let symbol = self.symbol_table.get_symbol(sym_ref);
                         (
                             symbol.name,
                             symbol.type_info,
                             matches!(symbol.kind, SymbolKind::Function { .. }),
+                            symbol.def_state == DefinitionState::Defined,
                         )
                     };
 
@@ -153,12 +154,23 @@ impl<'a> AstToMirLowerer<'a> {
                                 .iter()
                                 .map(|p| self.lower_type_to_mir(p.param_type.ty))
                                 .collect();
-                            self.mir_builder
-                                .create_function(symbol_name, param_mir_types, return_mir_type);
+
+                            // Use declare_function for declarations, define_function for definitions
+                            if has_definition {
+                                self.mir_builder
+                                    .define_function(symbol_name, param_mir_types, return_mir_type);
+                            } else {
+                                self.mir_builder
+                                    .declare_function(symbol_name, param_mir_types, return_mir_type);
+                            }
                         } else {
                             // This case should ideally not be reached for a SymbolKind::Function
                             let return_mir_type = self.get_int_type();
-                            self.mir_builder.create_function(symbol_name, vec![], return_mir_type);
+                            if has_definition {
+                                self.mir_builder.define_function(symbol_name, vec![], return_mir_type);
+                            } else {
+                                self.mir_builder.declare_function(symbol_name, vec![], return_mir_type);
+                            }
                         }
                     }
                 }
@@ -286,25 +298,21 @@ impl<'a> AstToMirLowerer<'a> {
         self.current_function = Some(func_id);
         self.mir_builder.set_current_function(func_id);
 
-        // Only create blocks and lower body if there is a body.
-        // Declarations without bodies are handled by the pre-pass.
-        if !matches!(&self.ast.get_node(function_data.body).kind, NodeKind::CompoundStatement(nodes) if nodes.is_empty())
-        {
-            let entry_block_id = self.mir_builder.create_block();
-            self.mir_builder.set_function_entry_block(func_id, entry_block_id);
-            self.current_block = Some(entry_block_id);
-            self.mir_builder.set_current_block(entry_block_id);
+        // Since we use define_function for functions with bodies, we should always have a body here
+        let entry_block_id = self.mir_builder.create_block();
+        self.mir_builder.set_function_entry_block(func_id, entry_block_id);
+        self.current_block = Some(entry_block_id);
+        self.mir_builder.set_current_block(entry_block_id);
 
-            // Parameter locals are now created in `create_function`. We just need to
-            // map the SymbolRef to the LocalId.
-            let scope_id = self.ast.scope_of(node_ref);
-            let mir_function = self.mir_builder.get_functions().get(&func_id).unwrap().clone();
-            for (param_decl, local_id) in function_data.params.iter().zip(mir_function.params.iter()) {
-                self.local_map.insert(param_decl.symbol, *local_id);
-            }
-
-            self.lower_node_ref(function_data.body, scope_id);
+        // Parameter locals are now created in `define_function`. We just need to
+        // map the SymbolRef to the LocalId.
+        let scope_id = self.ast.scope_of(node_ref);
+        let mir_function = self.mir_builder.get_functions().get(&func_id).unwrap().clone();
+        for (param_decl, local_id) in function_data.params.iter().zip(mir_function.params.iter()) {
+            self.local_map.insert(param_decl.symbol, *local_id);
         }
+
+        self.lower_node_ref(function_data.body, scope_id);
     }
 
     fn lower_var_declaration(&mut self, scope_id: ScopeId, var_decl: &VarDeclData, _span: SourceSpan) {

@@ -9,7 +9,7 @@ use crate::mir::{
 use crate::semantic::SymbolKind;
 use crate::semantic::SymbolRef;
 use crate::semantic::SymbolTable;
-use crate::semantic::{DefinitionState, TypeContext, TypeRef};
+use crate::semantic::{DefinitionState, TypeRef, TypeRegistry};
 use crate::semantic::{Namespace, ScopeId};
 use crate::source_manager::SourceSpan;
 use hashbrown::HashMap;
@@ -23,7 +23,7 @@ pub struct AstToMirLowerer<'a> {
     mir_builder: MirBuilder,
     current_function: Option<MirFunctionId>,
     current_block: Option<MirBlockId>,
-    type_ctx: &'a TypeContext,
+    registry: &'a TypeRegistry,
     local_map: HashMap<SymbolRef, LocalId>,
     global_map: HashMap<SymbolRef, GlobalId>,
     #[allow(unused)]
@@ -32,7 +32,7 @@ pub struct AstToMirLowerer<'a> {
 }
 
 impl<'a> AstToMirLowerer<'a> {
-    pub fn new(ast: &'a Ast, symbol_table: &'a mut SymbolTable, type_ctx: &'a TypeContext) -> Self {
+    pub fn new(ast: &'a Ast, symbol_table: &'a mut SymbolTable, registry: &'a TypeRegistry) -> Self {
         let mir_builder = MirBuilder::new(mir::MirModuleId::new(1).unwrap());
         Self {
             ast,
@@ -43,7 +43,7 @@ impl<'a> AstToMirLowerer<'a> {
             local_map: HashMap::new(),
             global_map: HashMap::new(),
             label_map: HashMap::new(),
-            type_ctx,
+            registry,
             type_cache: HashMap::new(),
         }
     }
@@ -137,7 +137,7 @@ impl<'a> AstToMirLowerer<'a> {
                             continue;
                         }
 
-                        let func_type = self.type_ctx.get(symbol_type_info).clone();
+                        let func_type = self.registry.get(symbol_type_info).clone();
                         if let TypeKind::Function {
                             return_type,
                             parameters,
@@ -193,7 +193,7 @@ impl<'a> AstToMirLowerer<'a> {
         scope_id: ScopeId,
         inits: &[nodes::DesignatedInitializer],
         members: &[StructMember],
-        target_ty: crate::semantic::type_context::QualType,
+        target_ty: crate::semantic::type_registry::QualType,
     ) -> Operand {
         let mut field_operands = Vec::new();
         let mut current_field_idx = 0;
@@ -248,10 +248,10 @@ impl<'a> AstToMirLowerer<'a> {
         &mut self,
         scope_id: ScopeId,
         init_ref: NodeRef,
-        target_ty: crate::semantic::type_context::QualType,
+        target_ty: crate::semantic::type_registry::QualType,
     ) -> Operand {
         let init_node_kind = self.ast.get_node(init_ref).kind.clone();
-        let target_ty_kind = &self.type_ctx.get(target_ty.ty).kind.clone();
+        let target_ty_kind = &self.registry.get(target_ty.ty).kind.clone();
 
         match (init_node_kind, target_ty_kind) {
             (NodeKind::InitializerList(inits), TypeKind::Record { members, .. }) => {
@@ -306,18 +306,6 @@ impl<'a> AstToMirLowerer<'a> {
 
             self.lower_node_ref(function_data.body, scope_id);
         }
-    }
-
-    fn lower_function_parameter(&mut self, scope_id: ScopeId, param: &ParamDecl) {
-        let param_name = self.symbol_table.get_symbol(param.symbol).name;
-        let mir_type_id = self.lower_type_to_mir(param.ty.ty);
-        let local_id = self.mir_builder.create_local(Some(param_name), mir_type_id, true);
-
-        let (existing_entry, _) = self
-            .symbol_table
-            .lookup(param_name, scope_id, Namespace::Ordinary)
-            .unwrap();
-        self.local_map.insert(existing_entry, local_id);
     }
 
     fn lower_var_declaration(&mut self, scope_id: ScopeId, var_decl: &VarDeclData, _span: SourceSpan) {
@@ -482,7 +470,7 @@ impl<'a> AstToMirLowerer<'a> {
                 let obj_operand = self.lower_expression(scope_id, *obj_ref);
                 let obj_ty = self.ast.get_node(*obj_ref).resolved_type.get().unwrap();
                 let record_ty = if *is_arrow {
-                    if let TypeKind::Pointer { pointee } = &self.type_ctx.get(obj_ty.ty).kind {
+                    if let TypeKind::Pointer { pointee } = &self.registry.get(obj_ty.ty).kind {
                         *pointee
                     } else {
                         panic!("Arrow access on non-pointer type");
@@ -491,7 +479,7 @@ impl<'a> AstToMirLowerer<'a> {
                     obj_ty.ty
                 };
 
-                let record_kind = &self.type_ctx.get(record_ty).kind;
+                let record_kind = &self.registry.get(record_ty).kind;
                 if let TypeKind::Record { members, .. } = record_kind {
                     let field_idx = members.iter().position(|m| m.name == *field_name).unwrap();
                     let place = if let Operand::Copy(place) = obj_operand {
@@ -630,7 +618,7 @@ impl<'a> AstToMirLowerer<'a> {
             return *type_id;
         }
 
-        let ast_type_kind = self.type_ctx.get(type_ref).kind.clone();
+        let ast_type_kind = self.registry.get(type_ref).kind.clone();
         let mir_type = match &ast_type_kind {
             TypeKind::Void => MirType::Void,
             TypeKind::Bool => MirType::Bool,

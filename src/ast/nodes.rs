@@ -10,7 +10,7 @@ use thin_vec::ThinVec;
 
 use crate::{
     ast::{NameId, NodeRef, ParsedType, SymbolRef, TypeRef},
-    semantic::type_context::QualType,
+    semantic::type_registry::QualType,
 };
 
 /// The core enum defining all possible AST node types for C11.

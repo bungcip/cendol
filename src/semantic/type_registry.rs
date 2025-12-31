@@ -1,4 +1,4 @@
-//! TypeContext
+//! Type Registry
 //!
 //! Arena + canonicalization layer for semantic types.
 //! All TypeRef creation and mutation MUST go through this context.
@@ -61,7 +61,7 @@ impl Display for QualType {
             write!(f, "{} ", self.qualifiers)?;
         }
 
-        // Note: For complete type formatting, this would need access to a TypeContext
+        // Note: For complete type formatting, this would need access to a TypeRegistry
         // to resolve the TypeRef to the actual Type. For now, just show the type ref.
         write!(f, "TypeRef({})", self.ty.get())
     }
@@ -73,7 +73,7 @@ impl Display for QualType {
 /// - All TypeRef come from this context
 /// - Types are never removed
 /// - Canonical types are reused when possible
-pub struct TypeContext {
+pub struct TypeRegistry {
     pub types: Vec<Type>,
 
     // --- Canonicalization caches ---
@@ -100,10 +100,10 @@ pub struct TypeContext {
     pub type_error: TypeRef,
 }
 
-impl TypeContext {
-    /// Create a new TypeContext with builtin types initialized.
+impl TypeRegistry {
+    /// Create a new TypeRegistry with builtin types initialized.
     pub fn new() -> Self {
-        TypeContext {
+        TypeRegistry {
             types: Vec::new(),
             pointer_cache: HashMap::new(),
             array_cache: HashMap::new(),

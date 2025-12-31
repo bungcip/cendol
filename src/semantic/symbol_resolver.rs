@@ -13,8 +13,8 @@
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
-use crate::semantic::type_context::QualType;
-use crate::semantic::{Namespace, ScopeId, Symbol, SymbolKind, SymbolTable, TypeContext, TypeRef};
+use crate::semantic::type_registry::QualType;
+use crate::semantic::{Namespace, ScopeId, Symbol, SymbolKind, SymbolTable, TypeRef, TypeRegistry};
 use crate::source_manager::SourceSpan;
 
 /// Extract identifier name from ParsedType declarator
@@ -80,14 +80,14 @@ fn apply_parsed_declarator_recursive(
         0 => {
             // Pointer
             let inner_type = apply_parsed_declarator_recursive(base_type, inner.unwrap(), ctx);
-            let pointer_type = ctx.type_ctx.pointer_to(inner_type.ty);
+            let pointer_type = ctx.registry.pointer_to(inner_type.ty);
             QualType::new(pointer_type, qualifiers.unwrap())
         }
         1 => {
             // Array
             let element_type = apply_parsed_declarator_recursive(base_type, inner.unwrap(), ctx);
             let array_size = convert_parsed_array_size(&size.unwrap(), ctx);
-            let array_type_ref = ctx.type_ctx.array_of(element_type.ty, array_size);
+            let array_type_ref = ctx.registry.array_of(element_type.ty, array_size);
             QualType::unqualified(array_type_ref)
         }
         2 => {
@@ -101,7 +101,7 @@ fn apply_parsed_declarator_recursive(
             for param in parsed_params {
                 let param_type = convert_parsed_type_to_qual_type(ctx, param.ty, param.span).unwrap_or_else(|_|
                     // Create an error type if conversion fails
-                    QualType::unqualified(ctx.type_ctx.type_int));
+                    QualType::unqualified(ctx.registry.type_int));
                 processed_params.push(FunctionParameter {
                     param_type,
                     name: param.name,
@@ -109,7 +109,7 @@ fn apply_parsed_declarator_recursive(
             }
 
             let function_type_ref =
-                ctx.type_ctx
+                ctx.registry
                     .function_type(return_type_ref, processed_params, flags.unwrap().is_variadic);
             QualType::unqualified(function_type_ref)
         }
@@ -140,7 +140,7 @@ pub struct LowerCtx<'a, 'src> {
     pub scope_map: Vec<Option<ScopeId>>,
     // Track errors during lowering for early termination
     pub has_errors: bool,
-    pub type_ctx: &'a mut TypeContext,
+    pub registry: &'a mut TypeRegistry,
 }
 
 /// Evaluate a constant expression node to an i64 value
@@ -170,7 +170,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         ast: &'a mut Ast,
         diag: &'src mut DiagnosticEngine,
         symbol_table: &'a mut SymbolTable,
-        type_ctx: &'a mut TypeContext,
+        registry: &'a mut TypeRegistry,
     ) -> Self {
         Self {
             ast,
@@ -178,7 +178,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             symbol_table,
             scope_map: Vec::new(),
             has_errors: false,
-            type_ctx,
+            registry,
         }
     }
 
@@ -276,7 +276,7 @@ fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: Sour
             DeclSpecifier::TypeSpecifier(ts) => {
                 let ty = resolve_type_specifier(ts, ctx, span).unwrap_or_else(|e| {
                     ctx.report_error(e);
-                    QualType::unqualified(ctx.type_ctx.type_error)
+                    QualType::unqualified(ctx.registry.type_error)
                 });
                 info.base_type = merge_base_type(info.base_type, ty, ctx);
             }
@@ -339,7 +339,7 @@ fn convert_parsed_base_type_to_qual_type(
                     } else {
                         // Not in current scope (either not found or shadowing outer)
                         // Create a new record type
-                        let new_type_ref = ctx.type_ctx.new_record(Some(*tag_name), *is_union);
+                        let new_type_ref = ctx.registry.new_record(Some(*tag_name), *is_union);
 
                         // Add it to the symbol table in the current scope
                         let symbol_entry = Symbol {
@@ -370,7 +370,7 @@ fn convert_parsed_base_type_to_qual_type(
                         entry.type_info
                     } else {
                         // Not found anywhere, create an implicit forward declaration in current scope
-                        let forward_ref = ctx.type_ctx.new_record(Some(*tag_name), *is_union);
+                        let forward_ref = ctx.registry.new_record(Some(*tag_name), *is_union);
 
                         let symbol_entry = Symbol {
                             name: *tag_name,
@@ -395,7 +395,7 @@ fn convert_parsed_base_type_to_qual_type(
                 }
             } else {
                 // Anonymous struct/union definition
-                ctx.type_ctx.new_record(None, *is_union)
+                ctx.registry.new_record(None, *is_union)
             };
 
             // Now handle members if it's a definition
@@ -426,7 +426,7 @@ fn convert_parsed_base_type_to_qual_type(
                 }
 
                 // Update the type in AST and SymbolTable
-                ctx.type_ctx
+                ctx.registry
                     .complete_record(type_ref_to_use, struct_members.clone(), None);
 
                 if let Some(tag_name) = *tag
@@ -472,7 +472,7 @@ fn convert_parsed_base_type_to_qual_type(
                         type_info
                     } else {
                         // Not found in current scope, create new entry
-                        let new_type_ref = ctx.type_ctx.new_enum(Some(*tag_name), ctx.type_ctx.type_int);
+                        let new_type_ref = ctx.registry.new_enum(Some(*tag_name), ctx.registry.type_int);
                         let symbol_entry = Symbol {
                             name: *tag_name,
                             kind: SymbolKind::EnumTag { is_complete: false },
@@ -495,7 +495,7 @@ fn convert_parsed_base_type_to_qual_type(
                         entry.type_info
                     } else {
                         // Implicit forward declaration
-                        let forward_ref = ctx.type_ctx.new_enum(Some(*tag_name), ctx.type_ctx.type_int);
+                        let forward_ref = ctx.registry.new_enum(Some(*tag_name), ctx.registry.type_int);
 
                         let symbol = Symbol {
                             name: *tag_name,
@@ -515,7 +515,7 @@ fn convert_parsed_base_type_to_qual_type(
                 }
             } else {
                 // Anonymous enum definition
-                ctx.type_ctx.new_enum(None, ctx.type_ctx.type_int)
+                ctx.registry.new_enum(None, ctx.registry.type_int)
             };
 
             // Process enumerators if it's a definition
@@ -552,7 +552,7 @@ fn convert_parsed_base_type_to_qual_type(
 
                 // Update the type in AST and SymbolTable
                 let type_idx = (type_ref_to_use.get() - 1) as usize;
-                let mut updated_type_kind = ctx.type_ctx.types[type_idx].kind.clone();
+                let mut updated_type_kind = ctx.registry.types[type_idx].kind.clone();
                 if let TypeKind::Enum {
                     enumerators,
                     is_complete,
@@ -562,7 +562,7 @@ fn convert_parsed_base_type_to_qual_type(
                     *enumerators = enumerators_list;
                     *is_complete = true;
                 }
-                ctx.type_ctx.types[type_idx].kind = updated_type_kind;
+                ctx.registry.types[type_idx].kind = updated_type_kind;
 
                 if let Some(tag_name) = tag
                     && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(*tag_name)
@@ -596,12 +596,12 @@ fn convert_parsed_base_type_to_qual_type(
             } else {
                 // Typedef not found during semantic lowering - this is expected
                 // when typedefs are defined later in the same scope.
-                Ok(QualType::unqualified(ctx.type_ctx.new_record(Some(*name), false)))
+                Ok(QualType::unqualified(ctx.registry.new_record(Some(*name), false)))
             }
         }
         ParsedBaseTypeNode::Error => {
             // Create an error type
-            Ok(QualType::unqualified(ctx.type_ctx.type_error))
+            Ok(QualType::unqualified(ctx.registry.type_error))
         }
     }
 }
@@ -632,28 +632,28 @@ fn convert_parsed_type_to_qual_type(
 /// Resolve a type specifier to a QualType
 fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSpan) -> Result<QualType, SemanticError> {
     match ts {
-        TypeSpecifier::Void => Ok(QualType::unqualified(ctx.type_ctx.type_void)),
-        TypeSpecifier::Char => Ok(QualType::unqualified(ctx.type_ctx.type_char)),
-        TypeSpecifier::Short => Ok(QualType::unqualified(ctx.type_ctx.type_short)),
-        TypeSpecifier::Int => Ok(QualType::unqualified(ctx.type_ctx.type_int)),
-        TypeSpecifier::Long => Ok(QualType::unqualified(ctx.type_ctx.type_long)),
-        TypeSpecifier::LongLong => Ok(QualType::unqualified(ctx.type_ctx.type_long_long)),
-        TypeSpecifier::Float => Ok(QualType::unqualified(ctx.type_ctx.type_float)),
-        TypeSpecifier::Double => Ok(QualType::unqualified(ctx.type_ctx.type_double)),
-        TypeSpecifier::LongDouble => Ok(QualType::unqualified(ctx.type_ctx.type_long_double)),
+        TypeSpecifier::Void => Ok(QualType::unqualified(ctx.registry.type_void)),
+        TypeSpecifier::Char => Ok(QualType::unqualified(ctx.registry.type_char)),
+        TypeSpecifier::Short => Ok(QualType::unqualified(ctx.registry.type_short)),
+        TypeSpecifier::Int => Ok(QualType::unqualified(ctx.registry.type_int)),
+        TypeSpecifier::Long => Ok(QualType::unqualified(ctx.registry.type_long)),
+        TypeSpecifier::LongLong => Ok(QualType::unqualified(ctx.registry.type_long_long)),
+        TypeSpecifier::Float => Ok(QualType::unqualified(ctx.registry.type_float)),
+        TypeSpecifier::Double => Ok(QualType::unqualified(ctx.registry.type_double)),
+        TypeSpecifier::LongDouble => Ok(QualType::unqualified(ctx.registry.type_long_double)),
         TypeSpecifier::Signed => {
             // Signed modifier - for now, default to signed int
-            Ok(QualType::unqualified(ctx.type_ctx.type_int))
+            Ok(QualType::unqualified(ctx.registry.type_int))
         }
         TypeSpecifier::Unsigned => {
             // Unsigned modifier - return a special marker type that will be handled in merge_base_type
-            Ok(QualType::unqualified(ctx.type_ctx.type_uint))
+            Ok(QualType::unqualified(ctx.registry.type_uint))
         }
-        TypeSpecifier::Bool => Ok(QualType::unqualified(ctx.type_ctx.type_bool)),
+        TypeSpecifier::Bool => Ok(QualType::unqualified(ctx.registry.type_bool)),
         TypeSpecifier::Complex => {
             // Complex types need a base type
             // For now, default to complex double
-            let complex_type = ctx.type_ctx.complex_type(ctx.type_ctx.type_double);
+            let complex_type = ctx.registry.complex_type(ctx.registry.type_double);
             Ok(QualType::unqualified(complex_type))
         }
         TypeSpecifier::Atomic(parsed_type) => {
@@ -687,7 +687,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     } else {
                         // Not in current scope (either not found or shadowing outer)
                         // Create a new record type
-                        let new_type_ref = ctx.type_ctx.new_record(Some(*tag_name), *is_union);
+                        let new_type_ref = ctx.registry.new_record(Some(*tag_name), *is_union);
 
                         // Add it to the symbol table in the current scope
                         let symbol_entry = Symbol {
@@ -718,7 +718,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                         entry.type_info
                     } else {
                         // Not found anywhere, create an implicit forward declaration in current scope
-                        let forward_ref = ctx.type_ctx.new_record(Some(*tag_name), *is_union);
+                        let forward_ref = ctx.registry.new_record(Some(*tag_name), *is_union);
 
                         let symbol_entry = Symbol {
                             name: *tag_name,
@@ -743,7 +743,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                 }
             } else {
                 // Anonymous struct/union definition
-                ctx.type_ctx.new_record(None, *is_union)
+                ctx.registry.new_record(None, *is_union)
             };
 
             // Now handle members if it's a definition
@@ -786,7 +786,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                                         );
                                         ty.ty
                                     } else {
-                                        ctx.type_ctx.type_int
+                                        ctx.registry.type_int
                                     };
 
                                     struct_members.push(StructMember {
@@ -803,7 +803,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     .unwrap_or_default();
 
                 // Update the type in AST and SymbolTable
-                ctx.type_ctx.complete_record(type_ref_to_use, members.clone(), None);
+                ctx.registry.complete_record(type_ref_to_use, members.clone(), None);
 
                 if let Some(tag_name) = tag
                     && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(*tag_name)
@@ -848,7 +848,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                         type_info
                     } else {
                         // Not found in current scope, create new entry
-                        let new_type_ref = ctx.type_ctx.new_enum(Some(*tag_name), ctx.type_ctx.type_int);
+                        let new_type_ref = ctx.registry.new_enum(Some(*tag_name), ctx.registry.type_int);
                         let symbol_entry = Symbol {
                             name: *tag_name,
                             kind: SymbolKind::EnumTag { is_complete: false },
@@ -871,7 +871,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                         entry.type_info
                     } else {
                         // Implicit forward declaration
-                        let forward_ref = ctx.type_ctx.new_enum(Some(*tag_name), ctx.type_ctx.type_int);
+                        let forward_ref = ctx.registry.new_enum(Some(*tag_name), ctx.registry.type_int);
                         let symbol = Symbol {
                             name: *tag_name,
                             kind: SymbolKind::EnumTag { is_complete: false },
@@ -890,7 +890,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                 }
             } else {
                 // Anonymous enum definition
-                ctx.type_ctx.new_enum(None, ctx.type_ctx.type_int)
+                ctx.registry.new_enum(None, ctx.registry.type_int)
             };
 
             // 2. Process enumerators if it's a definition
@@ -938,7 +938,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
 
                 // Update the type in AST and SymbolTable
                 let type_idx = (type_ref_to_use.get() - 1) as usize;
-                let mut updated_type_kind = ctx.type_ctx.types[type_idx].kind.clone();
+                let mut updated_type_kind = ctx.registry.types[type_idx].kind.clone();
                 if let TypeKind::Enum {
                     enumerators,
                     is_complete,
@@ -948,7 +948,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     *enumerators = enumerators_list;
                     *is_complete = true;
                 }
-                ctx.type_ctx.types[type_idx].kind = updated_type_kind;
+                ctx.registry.types[type_idx].kind = updated_type_kind;
 
                 if let Some(tag_name) = tag
                     && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(*tag_name)
@@ -985,7 +985,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                 // For now, create a placeholder record type with the expected structure.
                 // This is a temporary solution - in a full implementation, we'd have a proper
                 // forward reference mechanism.
-                Ok(QualType::unqualified(ctx.type_ctx.new_record(Some(*name), false)))
+                Ok(QualType::unqualified(ctx.registry.new_record(Some(*name), false)))
             }
         }
     }
@@ -996,8 +996,8 @@ fn merge_base_type(existing: Option<QualType>, new_type: QualType, ctx: &mut Low
     match existing {
         None => Some(new_type),
         Some(existing_ref) => {
-            let existing_type = ctx.type_ctx.get(existing_ref.ty);
-            let new_type_info = ctx.type_ctx.get(new_type.ty);
+            let existing_type = ctx.registry.get(existing_ref.ty);
+            let new_type_info = ctx.registry.get(new_type.ty);
 
             // Handle signed/unsigned merging
             match (&existing_type.kind, &new_type_info.kind) {
@@ -1010,7 +1010,7 @@ fn merge_base_type(existing: Option<QualType>, new_type: QualType, ctx: &mut Low
                 // Handle char type merging
                 (TypeKind::Char { is_signed: true }, TypeKind::Int { is_signed: false }) => {
                     // unsigned char = char + unsigned
-                    Some(QualType::unqualified(ctx.type_ctx.type_char_unsigned))
+                    Some(QualType::unqualified(ctx.registry.type_char_unsigned))
                 }
                 (TypeKind::Char { is_signed: false }, TypeKind::Int { is_signed: true }) => {
                     Some(existing_ref) // Keep unsigned char
@@ -1019,7 +1019,7 @@ fn merge_base_type(existing: Option<QualType>, new_type: QualType, ctx: &mut Low
                 // Handle short type merging
                 (TypeKind::Short { is_signed: true }, TypeKind::Int { is_signed: false }) => {
                     // unsigned short = short + unsigned
-                    Some(QualType::unqualified(ctx.type_ctx.type_short_unsigned))
+                    Some(QualType::unqualified(ctx.registry.type_short_unsigned))
                 }
                 (TypeKind::Short { is_signed: false }, TypeKind::Int { is_signed: true }) => {
                     Some(existing_ref) // Keep unsigned short
@@ -1028,11 +1028,11 @@ fn merge_base_type(existing: Option<QualType>, new_type: QualType, ctx: &mut Low
                 // Handle unsigned + char/short order
                 (TypeKind::Int { is_signed: false }, TypeKind::Char { is_signed: true }) => {
                     // unsigned char = unsigned + char
-                    Some(QualType::unqualified(ctx.type_ctx.type_char_unsigned))
+                    Some(QualType::unqualified(ctx.registry.type_char_unsigned))
                 }
                 (TypeKind::Int { is_signed: false }, TypeKind::Short { is_signed: true }) => {
                     // unsigned short = unsigned + short
-                    Some(QualType::unqualified(ctx.type_ctx.type_short_unsigned))
+                    Some(QualType::unqualified(ctx.registry.type_short_unsigned))
                 }
 
                 // Handle unsigned + long/long long order
@@ -1043,11 +1043,11 @@ fn merge_base_type(existing: Option<QualType>, new_type: QualType, ctx: &mut Low
                     },
                 ) => {
                     // unsigned long = unsigned + long
-                    Some(QualType::unqualified(ctx.type_ctx.type_long_unsigned))
+                    Some(QualType::unqualified(ctx.registry.type_long_unsigned))
                 }
                 (TypeKind::Int { is_signed: false }, TypeKind::Long { is_long_long: true, .. }) => {
                     // unsigned long long = unsigned + long long
-                    Some(QualType::unqualified(ctx.type_ctx.type_long_long_unsigned))
+                    Some(QualType::unqualified(ctx.registry.type_long_long_unsigned))
                 }
 
                 // Long long overrides long
@@ -1152,7 +1152,7 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
     // 1. Resolve final type (base + declarator)
     let base_ty = spec.base_type.unwrap_or_else(|| {
         ctx.report_error(SemanticError::MissingTypeSpecifier { span });
-        QualType::unqualified(ctx.type_ctx.type_error)
+        QualType::unqualified(ctx.registry.type_error)
     });
 
     let name = extract_identifier(&init.declarator).expect("Anonymous declarations unsupported");
@@ -1211,7 +1211,7 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
     }
 
     // 3. Distinguish between functions and variables
-    let type_info = ctx.type_ctx.get(final_ty.ty).clone();
+    let type_info = ctx.registry.get(final_ty.ty).clone();
     if let TypeKind::Function {
         parameters,
         is_variadic,
@@ -1322,7 +1322,7 @@ fn lower_function_parameters(params: &[ParamData], ctx: &mut LowerCtx) -> Vec<Fu
             // C standard: if type specifier is missing in a parameter, it defaults to int.
             let base_ty = spec_info
                 .base_type
-                .unwrap_or_else(|| QualType::unqualified(ctx.type_ctx.type_int));
+                .unwrap_or_else(|| QualType::unqualified(ctx.registry.type_int));
 
             let final_ty = if let Some(declarator) = &param.declarator {
                 apply_declarator(base_ty.ty, declarator, ctx)
@@ -1347,7 +1347,7 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
                 QualType::unqualified(base_type)
             };
 
-            let pointer_type_ref = ctx.type_ctx.pointer_to(pointee_type.ty);
+            let pointer_type_ref = ctx.registry.pointer_to(pointee_type.ty);
             QualType::new(pointer_type_ref, *qualifiers)
         }
         Declarator::Identifier(_, qualifiers, _) => {
@@ -1384,7 +1384,7 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
                 }
             };
 
-            let array_type_ref = ctx.type_ctx.array_of(element_type.ty, array_size);
+            let array_type_ref = ctx.registry.array_of(element_type.ty, array_size);
             QualType::unqualified(array_type_ref)
         }
         Declarator::Function {
@@ -1401,8 +1401,8 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
                 let parameters = lower_function_parameters(params, ctx);
 
                 // Build the function type first
-                let function_type_ref = ctx.type_ctx.function_type(return_type.ty, parameters, *is_variadic);
-                let pointer_type_ref = ctx.type_ctx.pointer_to(function_type_ref);
+                let function_type_ref = ctx.registry.function_type(return_type.ty, parameters, *is_variadic);
+                let pointer_type_ref = ctx.registry.pointer_to(function_type_ref);
                 return QualType::new(pointer_type_ref, *qualifiers);
             }
 
@@ -1410,7 +1410,7 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
             let return_type = apply_declarator(base_type, base, ctx);
             let parameters = lower_function_parameters(params, ctx);
 
-            let function_type_ref = ctx.type_ctx.function_type(return_type.ty, parameters, *is_variadic);
+            let function_type_ref = ctx.registry.function_type(return_type.ty, parameters, *is_variadic);
             QualType::unqualified(function_type_ref)
         }
         Declarator::AnonymousRecord(_, _) => {
@@ -1430,14 +1430,14 @@ pub fn run_symbol_resolver(
     ast: &mut Ast,
     diag: &mut DiagnosticEngine,
     symbol_table: &mut SymbolTable,
-    type_ctx: &mut TypeContext,
+    registry: &mut TypeRegistry,
 ) -> Vec<Option<ScopeId>> {
     // Check if we have a root node to start traversal from
     let node_length = ast.nodes.len();
     let root_node_ref = ast.get_root();
 
     // Create lowering context
-    let mut lower_ctx = LowerCtx::new(ast, diag, symbol_table, type_ctx);
+    let mut lower_ctx = LowerCtx::new(ast, diag, symbol_table, registry);
 
     // initial size of scope map
     lower_ctx.scope_map.resize(node_length, None);
@@ -1470,14 +1470,14 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             // Extract the return type from the function definition's specifiers
             let return_type_ref =
                 lower_decl_specifiers_for_function_return(&func_def.specifiers, ctx, ctx.ast.get_node(node_ref).span)
-                    .unwrap_or_else(|| QualType::unqualified(ctx.type_ctx.type_int));
+                    .unwrap_or_else(|| QualType::unqualified(ctx.registry.type_int));
 
             // Create the function type with the correct return type by applying the declarator
             let declarator_type = apply_parsed_declarator(return_type_ref.ty, &func_def.declarator, ctx);
             let function_type_ref = declarator_type.ty;
 
             // Extract parameters from the function type for the symbol entry
-            let parameters = if let TypeKind::Function { parameters, .. } = &ctx.type_ctx.get(function_type_ref).kind {
+            let parameters = if let TypeKind::Function { parameters, .. } = &ctx.registry.get(function_type_ref).kind {
                 parameters.clone()
             } else {
                 Vec::new()
@@ -1607,7 +1607,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             lower_node_recursive(ctx, body);
         }
         NodeKind::Label(name, stmt, _) => {
-            let label_ty = ctx.type_ctx.type_void; // void for now
+            let label_ty = ctx.registry.type_void; // void for now
             let entry = Symbol {
                 name,
                 kind: SymbolKind::Label {
@@ -1630,7 +1630,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             let type_ref = convert_parsed_type_to_qual_type(ctx, parsed_type, ctx.ast.get_node(node_ref).span)
                 .unwrap_or_else(|_| {
                     // Create an error type if conversion fails
-                    QualType::unqualified(ctx.type_ctx.type_error)
+                    QualType::unqualified(ctx.registry.type_error)
                 });
             // Replace the ParsedCast node with a Cast node
             let cast_node = Node::new(NodeKind::Cast(type_ref, expr_node), ctx.ast.get_node(node_ref).span);
@@ -1642,7 +1642,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             let type_ref = convert_parsed_type_to_qual_type(ctx, parsed_type, ctx.ast.get_node(node_ref).span)
                 .unwrap_or_else(|_| {
                     // Create an error type if conversion fails
-                    QualType::unqualified(ctx.type_ctx.type_error)
+                    QualType::unqualified(ctx.registry.type_error)
                 });
             // Replace the ParsedSizeOfType node with a SizeOfType node
             let size_of_node = Node::new(NodeKind::SizeOfType(type_ref), ctx.ast.get_node(node_ref).span);
@@ -1653,7 +1653,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             let type_ref = convert_parsed_type_to_qual_type(ctx, parsed_type, ctx.ast.get_node(node_ref).span)
                 .unwrap_or_else(|_| {
                     // Create an error type if conversion fails
-                    QualType::unqualified(ctx.type_ctx.type_error)
+                    QualType::unqualified(ctx.registry.type_error)
                 });
             // Replace the ParsedCompoundLiteral node with a CompoundLiteral node
             let compound_literal_node = Node::new(
@@ -1668,7 +1668,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             let type_ref = convert_parsed_type_to_qual_type(ctx, parsed_type, ctx.ast.get_node(node_ref).span)
                 .unwrap_or_else(|_| {
                     // Create an error type if conversion fails
-                    QualType::unqualified(ctx.type_ctx.type_error)
+                    QualType::unqualified(ctx.registry.type_error)
                 });
             // Replace the ParsedAlignOf node with an AlignOf node
             let align_of_node = Node::new(NodeKind::AlignOf(type_ref), ctx.ast.get_node(node_ref).span);
@@ -1727,7 +1727,7 @@ fn apply_declarator_for_member(base_type: TypeRef, declarator: &Declarator, ctx:
                 QualType::unqualified(base_type)
             };
 
-            let pointer_type_ref = ctx.type_ctx.pointer_to(pointee_type.ty);
+            let pointer_type_ref = ctx.registry.pointer_to(pointee_type.ty);
             QualType::new(pointer_type_ref, *qualifiers)
         }
         Declarator::Array(base, size) => {
@@ -1760,7 +1760,7 @@ fn apply_declarator_for_member(base_type: TypeRef, declarator: &Declarator, ctx:
                 }
             };
 
-            let array_type_ref = ctx.type_ctx.array_of(element_type.ty, array_size);
+            let array_type_ref = ctx.registry.array_of(element_type.ty, array_size);
             QualType::unqualified(array_type_ref)
         }
         // For other declarator types, just return the base type
@@ -1810,7 +1810,7 @@ fn process_anonymous_struct_members(
                             // Apply the declarator to get the final member type
                             apply_declarator_for_member(base_type_ref.ty, &init_declarator.declarator, ctx)
                         } else {
-                            QualType::unqualified(ctx.type_ctx.type_int)
+                            QualType::unqualified(ctx.registry.type_int)
                         };
 
                     flattened_members.push(StructMember {

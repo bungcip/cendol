@@ -29,18 +29,18 @@ use expressions::parse_expression;
 
 /// Type context for tracking typedef names and other type-related state
 #[derive(Debug)]
-pub struct TypeContext {
+pub struct TypeDefContext {
     /// Set of typedef names for disambiguation
     typedef_names: HashSet<NameId>,
 }
 
-impl Default for TypeContext {
+impl Default for TypeDefContext {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl TypeContext {
+impl TypeDefContext {
     /// Create a new type context with builtin typedefs
     pub fn new() -> Self {
         let mut typedef_names = HashSet::new();
@@ -59,7 +59,7 @@ impl TypeContext {
         typedef_names.insert(NameId::new("intptr_t"));
         typedef_names.insert(NameId::new("uintptr_t"));
 
-        TypeContext { typedef_names }
+        TypeDefContext { typedef_names }
     }
 
     /// Check if a symbol is a typedef name
@@ -89,7 +89,7 @@ pub struct Parser<'arena, 'src> {
     diag: &'src mut DiagnosticEngine,
 
     // Type context for typedef tracking
-    type_context: TypeContext,
+    type_context: TypeDefContext,
 }
 
 impl<'arena, 'src> Parser<'arena, 'src> {
@@ -100,7 +100,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             current_idx: 0,
             ast,
             diag,
-            type_context: TypeContext::new(),
+            type_context: TypeDefContext::new(),
         }
     }
 

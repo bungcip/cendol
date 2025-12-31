@@ -446,7 +446,7 @@ impl MirBuilder {
 
         // Create locals for each parameter
         for (i, &param_type) in param_types.iter().enumerate() {
-            let param_name = Some(NameId::new(&format!("param{}", i)));
+            let param_name = Some(NameId::new(format!("param{}", i)));
             let local_id = self.create_local(param_name, param_type, true);
             func.params.push(local_id);
         }
@@ -623,29 +623,29 @@ impl MirBuilder {
 
     pub fn update_struct_fields(&mut self, type_id: TypeId, fields: Vec<(NameId, TypeId)>) {
         let type_index = (type_id.get() - 1) as usize;
-        if let Some(mir_type) = self.module.types.get_mut(type_index) {
-            if let MirType::Struct { fields: old_fields, .. } = mir_type {
-                *old_fields = fields.clone();
-            }
+        if let Some(mir_type) = self.module.types.get_mut(type_index)
+            && let MirType::Struct { fields: old_fields, .. } = mir_type
+        {
+            *old_fields = fields.clone();
         }
-        if let Some(mir_type) = self.types.get_mut(&type_id) {
-            if let MirType::Struct { fields: old_fields, .. } = mir_type {
-                *old_fields = fields;
-            }
+        if let Some(mir_type) = self.types.get_mut(&type_id)
+            && let MirType::Struct { fields: old_fields, .. } = mir_type
+        {
+            *old_fields = fields;
         }
     }
 
     pub fn update_union_fields(&mut self, type_id: TypeId, fields: Vec<(NameId, TypeId)>) {
         let type_index = (type_id.get() - 1) as usize;
-        if let Some(mir_type) = self.module.types.get_mut(type_index) {
-            if let MirType::Union { fields: old_fields, .. } = mir_type {
-                *old_fields = fields.clone();
-            }
+        if let Some(mir_type) = self.module.types.get_mut(type_index)
+            && let MirType::Union { fields: old_fields, .. } = mir_type
+        {
+            *old_fields = fields.clone();
         }
-        if let Some(mir_type) = self.types.get_mut(&type_id) {
-            if let MirType::Union { fields: old_fields, .. } = mir_type {
-                *old_fields = fields;
-            }
+        if let Some(mir_type) = self.types.get_mut(&type_id)
+            && let MirType::Union { fields: old_fields, .. } = mir_type
+        {
+            *old_fields = fields;
         }
     }
 }

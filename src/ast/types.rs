@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use crate::{
     ast::{NameId, NodeRef, SourceSpan, TypeRef},
-    semantic::type_context::QualType,
+    semantic::type_registry::QualType,
 };
 
 /// Type representation (for semantic analysis)

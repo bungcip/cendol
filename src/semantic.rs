@@ -15,7 +15,7 @@ pub mod conversions;
 pub mod name_resolver;
 pub mod symbol_resolver;
 pub mod symbol_table;
-pub mod type_context;
+pub mod type_registry;
 pub mod type_resolver;
 pub mod utils;
 
@@ -27,4 +27,4 @@ pub mod tests_mir;
 // Re-export key types for public API
 pub use ast_to_mir::AstToMirLowerer;
 pub use symbol_table::{DefinitionState, Namespace, ScopeId, Symbol, SymbolKind, SymbolRef, SymbolTable};
-pub use type_context::{TypeContext, TypeRef};
+pub use type_registry::{TypeRef, TypeRegistry};

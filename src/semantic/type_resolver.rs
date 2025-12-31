@@ -2,7 +2,7 @@ use crate::{
     ast::{nodes::*, *},
     diagnostic::SemanticError,
     semantic::{
-        SymbolTable, TypeContext, conversions::usual_arithmetic_conversions, type_context::QualType,
+        SymbolTable, TypeRegistry, conversions::usual_arithmetic_conversions, type_registry::QualType,
         utils::is_scalar_type,
     },
 };
@@ -11,13 +11,13 @@ pub fn run_type_resolver(
     ast: &Ast,
     diag: &mut crate::diagnostic::DiagnosticEngine,
     symbol_table: &SymbolTable,
-    type_ctx: &mut TypeContext,
+    registry: &mut TypeRegistry,
 ) {
     let mut resolver = TypeResolver {
         ast,
         diag,
         symbol_table,
-        type_ctx,
+        registry,
         current_function_ret_type: None,
     };
     let root = ast.get_root();
@@ -28,7 +28,7 @@ struct TypeResolver<'a> {
     ast: &'a Ast,
     diag: &'a mut crate::diagnostic::DiagnosticEngine,
     symbol_table: &'a SymbolTable,
-    type_ctx: &'a mut TypeContext,
+    registry: &'a mut TypeRegistry,
     current_function_ret_type: Option<QualType>,
 }
 
@@ -59,7 +59,7 @@ impl<'a> TypeResolver<'a> {
 
     fn visit_if_statement(&mut self, stmt: &IfStmt) {
         if let Some(cond_ty) = self.visit_node(stmt.condition)
-            && !is_scalar_type(cond_ty, self.type_ctx)
+            && !is_scalar_type(cond_ty, self.registry)
         {
             // report error
         }
@@ -71,7 +71,7 @@ impl<'a> TypeResolver<'a> {
 
     fn visit_while_statement(&mut self, stmt: &WhileStmt) {
         if let Some(cond_ty) = self.visit_node(stmt.condition)
-            && !is_scalar_type(cond_ty, self.type_ctx)
+            && !is_scalar_type(cond_ty, self.registry)
         {
             // report error
         }
@@ -84,7 +84,7 @@ impl<'a> TypeResolver<'a> {
         }
         if let Some(cond) = stmt.condition
             && let Some(cond_ty) = self.visit_node(cond)
-            && !is_scalar_type(cond_ty, self.type_ctx)
+            && !is_scalar_type(cond_ty, self.registry)
         {
             // report error
         }
@@ -96,7 +96,7 @@ impl<'a> TypeResolver<'a> {
 
     fn visit_return_statement(&mut self, expr: &Option<NodeRef>, _span: SourceSpan) {
         let ret_ty = self.current_function_ret_type;
-        let is_void_func = ret_ty.is_some_and(|ty| self.type_ctx.get(ty.ty).kind == TypeKind::Void);
+        let is_void_func = ret_ty.is_some_and(|ty| self.registry.get(ty.ty).kind == TypeKind::Void);
 
         if let Some(expr_ref) = expr {
             if is_void_func {
@@ -110,7 +110,7 @@ impl<'a> TypeResolver<'a> {
 
     fn visit_unary_op(&mut self, op: UnaryOp, operand_ref: NodeRef, full_span: SourceSpan) -> Option<QualType> {
         let operand_ty = self.visit_node(operand_ref)?;
-        let operand_kind = &self.type_ctx.get(operand_ty.ty).kind;
+        let operand_kind = &self.registry.get(operand_ty.ty).kind;
 
         match op {
             UnaryOp::AddrOf => {
@@ -118,7 +118,7 @@ impl<'a> TypeResolver<'a> {
                     self.report_error(SemanticError::NotAnLvalue { span: full_span });
                     return None;
                 }
-                Some(QualType::unqualified(self.type_ctx.pointer_to(operand_ty.ty)))
+                Some(QualType::unqualified(self.registry.pointer_to(operand_ty.ty)))
             }
             UnaryOp::Deref => match operand_kind {
                 TypeKind::Pointer { pointee } => Some(QualType::unqualified(*pointee)),
@@ -128,14 +128,14 @@ impl<'a> TypeResolver<'a> {
                 if !self.is_lvalue(operand_ref) {
                     self.report_error(SemanticError::NotAnLvalue { span: full_span });
                 }
-                if is_scalar_type(operand_ty, self.type_ctx) {
+                if is_scalar_type(operand_ty, self.registry) {
                     Some(operand_ty)
                 } else {
                     None
                 }
             }
             UnaryOp::Plus | UnaryOp::Minus => {
-                if is_scalar_type(operand_ty, self.type_ctx) {
+                if is_scalar_type(operand_ty, self.registry) {
                     Some(operand_ty)
                 } else {
                     None
@@ -148,7 +148,7 @@ impl<'a> TypeResolver<'a> {
     fn visit_binary_op(&mut self, _op: BinaryOp, lhs_ref: NodeRef, rhs_ref: NodeRef) -> Option<QualType> {
         let lhs_ty = self.visit_node(lhs_ref)?;
         let rhs_ty = self.visit_node(rhs_ref)?;
-        usual_arithmetic_conversions(self.type_ctx, lhs_ty, rhs_ty)
+        usual_arithmetic_conversions(self.registry, lhs_ty, rhs_ty)
     }
 
     fn visit_assignment(&mut self, lhs_ref: NodeRef, rhs_ref: NodeRef, full_span: SourceSpan) -> Option<QualType> {
@@ -167,12 +167,12 @@ impl<'a> TypeResolver<'a> {
         }
 
         let func_ty = self.visit_node(func_ref).unwrap();
-        let func_kind = self.type_ctx.get(func_ty.ty).kind.clone();
+        let func_kind = self.registry.get(func_ty.ty).kind.clone();
 
         match func_kind {
             TypeKind::Function { return_type, .. } => Some(QualType::unqualified(return_type)),
             TypeKind::Pointer { pointee } => {
-                let pointee_kind = &self.type_ctx.get(pointee).kind;
+                let pointee_kind = &self.registry.get(pointee).kind;
                 if let TypeKind::Function { return_type, .. } = pointee_kind {
                     Some(QualType::unqualified(*return_type))
                 } else {
@@ -185,7 +185,7 @@ impl<'a> TypeResolver<'a> {
 
     fn visit_member_access(&mut self, obj_ref: NodeRef, field_name: NameId, is_arrow: bool) -> Option<QualType> {
         let obj_ty = self.visit_node(obj_ref)?;
-        let obj_kind = &self.type_ctx.get(obj_ty.ty).kind;
+        let obj_kind = &self.registry.get(obj_ty.ty).kind;
 
         let record_ty_ref = if is_arrow {
             if let TypeKind::Pointer { pointee } = obj_kind {
@@ -197,7 +197,7 @@ impl<'a> TypeResolver<'a> {
             obj_ty.ty
         };
 
-        if let TypeKind::Record { members, .. } = &self.type_ctx.get(record_ty_ref).kind {
+        if let TypeKind::Record { members, .. } = &self.registry.get(record_ty_ref).kind {
             // Find the member
             if let Some(member) = members.iter().find(|m| m.name == field_name) {
                 return Some(member.member_type);
@@ -210,7 +210,7 @@ impl<'a> TypeResolver<'a> {
     fn visit_index_access(&mut self, arr_ref: NodeRef, idx_ref: NodeRef) -> Option<QualType> {
         self.visit_node(idx_ref);
         let arr_ty = self.visit_node(arr_ref)?;
-        let arr_kind = &self.type_ctx.get(arr_ty.ty).kind;
+        let arr_kind = &self.registry.get(arr_ty.ty).kind;
 
         match arr_kind {
             TypeKind::Array { element_type, .. } => Some(QualType::unqualified(*element_type)),
@@ -229,7 +229,7 @@ impl<'a> TypeResolver<'a> {
                 None
             }
             NodeKind::Function(data) => {
-                let func_ty = self.type_ctx.get(data.ty);
+                let func_ty = self.registry.get(data.ty);
                 if let TypeKind::Function { return_type, .. } = func_ty.kind.clone() {
                     self.current_function_ret_type = Some(QualType::unqualified(return_type));
                 }
@@ -304,16 +304,16 @@ impl<'a> TypeResolver<'a> {
                 if let Some(expr) = value_expr {
                     self.visit_node(expr);
                 }
-                Some(QualType::unqualified(self.type_ctx.type_int))
+                Some(QualType::unqualified(self.registry.type_int))
             }
             // Literals
-            NodeKind::LiteralInt(_) => Some(QualType::unqualified(self.type_ctx.type_int)),
-            NodeKind::LiteralFloat(_) => Some(QualType::unqualified(self.type_ctx.type_double)),
-            NodeKind::LiteralChar(_) => Some(QualType::unqualified(self.type_ctx.type_char)),
+            NodeKind::LiteralInt(_) => Some(QualType::unqualified(self.registry.type_int)),
+            NodeKind::LiteralFloat(_) => Some(QualType::unqualified(self.registry.type_double)),
+            NodeKind::LiteralChar(_) => Some(QualType::unqualified(self.registry.type_char)),
             NodeKind::LiteralString(name) => {
-                let char_type = self.type_ctx.type_char;
+                let char_type = self.registry.type_char;
                 let array_size = name.as_str().len() + 1;
-                let array_type = self.type_ctx.array_of(char_type, ArraySizeType::Constant(array_size));
+                let array_type = self.registry.array_of(char_type, ArraySizeType::Constant(array_size));
                 Some(QualType::unqualified(array_type))
             }
             // Expressions
@@ -358,10 +358,10 @@ impl<'a> TypeResolver<'a> {
             }
             NodeKind::SizeOfExpr(expr) => {
                 self.visit_node(expr);
-                Some(QualType::unqualified(self.type_ctx.type_long_unsigned))
+                Some(QualType::unqualified(self.registry.type_long_unsigned))
             }
-            NodeKind::SizeOfType(_) => Some(QualType::unqualified(self.type_ctx.type_long_unsigned)),
-            NodeKind::AlignOf(_) => Some(QualType::unqualified(self.type_ctx.type_long_unsigned)),
+            NodeKind::SizeOfType(_) => Some(QualType::unqualified(self.registry.type_long_unsigned)),
+            NodeKind::AlignOf(_) => Some(QualType::unqualified(self.registry.type_long_unsigned)),
             NodeKind::CompoundLiteral(ty, init) => {
                 self.visit_node(init);
                 Some(ty)

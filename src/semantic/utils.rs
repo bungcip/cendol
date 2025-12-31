@@ -1,9 +1,9 @@
 use crate::{
     ast::TypeKind,
-    semantic::{TypeContext, type_context::QualType},
+    semantic::{TypeRegistry, type_registry::QualType},
 };
 
-pub fn is_scalar_type(ty: QualType, ctx: &TypeContext) -> bool {
+pub fn is_scalar_type(ty: QualType, ctx: &TypeRegistry) -> bool {
     matches!(
         ctx.get(ty.ty).kind,
         TypeKind::Bool

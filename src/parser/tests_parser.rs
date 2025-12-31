@@ -298,7 +298,7 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
 
 fn extract_declarator_name(declarator: &Declarator) -> Option<String> {
     match declarator {
-        Declarator::Identifier(name, _, _) => Some(name.to_string()),
+        Declarator::Identifier(name, _) => Some(name.to_string()),
         Declarator::Pointer(_, next) => next.as_ref().and_then(|d| extract_declarator_name(d)),
         Declarator::Array(next, _) => extract_declarator_name(next),
         Declarator::Function { inner, .. } => extract_declarator_name(inner),
@@ -310,7 +310,7 @@ fn extract_declarator_name(declarator: &Declarator) -> Option<String> {
 
 fn extract_declarator_kind(declarator: &Declarator) -> String {
     match declarator {
-        Declarator::Identifier(_, _, _) => "identifier".to_string(),
+        Declarator::Identifier(_, _) => "identifier".to_string(),
         Declarator::Pointer(_, Some(inner)) => {
             let inner_kind = extract_declarator_kind(inner);
             if inner_kind == "identifier" || inner_kind == "abstract" {

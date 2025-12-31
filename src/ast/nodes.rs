@@ -354,10 +354,10 @@ pub enum AlignmentSpecifier {
 // Declarators
 #[derive(Debug, Clone, Serialize)]
 pub enum Declarator {
-    Identifier(NameId, TypeQualifiers, Option<Box<Declarator>>), // Base case: name (e.g., `x`)
-    Abstract,                                                    // for abstract declarator
-    Pointer(TypeQualifiers, Option<Box<Declarator>>),            // e.g., `*`
-    Array(Box<Declarator>, ArraySize),                           // e.g., `[10]`
+    Identifier(NameId, TypeQualifiers),               // Base case: name (e.g., `x`)
+    Abstract,                                         // for abstract declarator
+    Pointer(TypeQualifiers, Option<Box<Declarator>>), // e.g., `*`
+    Array(Box<Declarator>, ArraySize),                // e.g., `[10]`
     Function {
         inner: Box<Declarator>,
         params: ThinVec<ParamData>,

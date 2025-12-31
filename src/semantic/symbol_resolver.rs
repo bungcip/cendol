@@ -1161,7 +1161,7 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
     let name = extract_identifier(&init.declarator).expect("Anonymous declarations unsupported");
 
     // For simple identifiers without qualifiers, don't create a new type entry
-    let final_ty = if let Declarator::Identifier(_, qualifiers, None) = &init.declarator {
+    let final_ty = if let Declarator::Identifier(_, qualifiers) = &init.declarator {
         if qualifiers.is_empty() {
             // Simple case: just use the base type directly
             base_ty
@@ -1353,7 +1353,7 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
             let pointer_type_ref = ctx.registry.pointer_to(pointee_type.ty);
             QualType::new(pointer_type_ref, *qualifiers)
         }
-        Declarator::Identifier(_, qualifiers, _) => {
+        Declarator::Identifier(_, qualifiers) => {
             let base_type_ref = base_type;
             QualType::new(base_type_ref, *qualifiers)
         }
@@ -1719,7 +1719,7 @@ fn lower_decl_specifiers_for_member(specs: &[DeclSpecifier], ctx: &mut LowerCtx,
 /// Apply declarator for struct members (simplified version)
 fn apply_declarator_for_member(base_type: TypeRef, declarator: &Declarator, ctx: &mut LowerCtx) -> QualType {
     match declarator {
-        Declarator::Identifier(_, qualifiers, _) => {
+        Declarator::Identifier(_, qualifiers) => {
             let base_type_ref = base_type;
             QualType::new(base_type_ref, *qualifiers)
         }

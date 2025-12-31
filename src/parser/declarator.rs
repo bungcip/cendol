@@ -70,11 +70,11 @@ pub fn parse_declarator(parser: &mut Parser, initial_declarator: Option<NameId>)
         parser.expect(TokenKind::RightParen)?; // Consume ')'
         inner_declarator
     } else if let Some(ident_symbol) = initial_declarator {
-        Declarator::Identifier(ident_symbol, TypeQualifiers::empty(), None)
+        Declarator::Identifier(ident_symbol, TypeQualifiers::empty())
     } else if let Some(token) = parser.try_current_token() {
         if let TokenKind::Identifier(symbol) = token.kind {
             parser.advance(); // Consume identifier
-            Declarator::Identifier(symbol, TypeQualifiers::empty(), None)
+            Declarator::Identifier(symbol, TypeQualifiers::empty())
         } else if parser.is_abstract_declarator_start() {
             parse_abstract_declarator(parser)?
         } else {
@@ -418,7 +418,7 @@ pub fn is_abstract_declarator_start(parser: &Parser) -> bool {
 /// Extract the declared name from a declarator, if any
 pub fn get_declarator_name(declarator: &Declarator) -> Option<NameId> {
     match declarator {
-        Declarator::Identifier(name, _, _) => Some(*name),
+        Declarator::Identifier(name, _) => Some(*name),
         Declarator::Pointer(_, Some(inner)) => get_declarator_name(inner),
         Declarator::Array(inner, _) => get_declarator_name(inner),
         Declarator::Function { inner, .. } => get_declarator_name(inner),
@@ -457,7 +457,7 @@ pub fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarator, Pars
                     if let Some(next_token) = parser.try_current_token() {
                         if let TokenKind::Identifier(name) = next_token.kind {
                             parser.advance(); // consume identifier
-                            Declarator::Identifier(name, TypeQualifiers::empty(), None)
+                            Declarator::Identifier(name, TypeQualifiers::empty())
                         } else {
                             Declarator::Abstract
                         }
@@ -475,7 +475,7 @@ pub fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarator, Pars
                 if let Some(next_token) = parser.try_current_token() {
                     if let TokenKind::Identifier(name) = next_token.kind {
                         parser.advance(); // consume identifier
-                        Declarator::Identifier(name, TypeQualifiers::empty(), None)
+                        Declarator::Identifier(name, TypeQualifiers::empty())
                     } else {
                         Declarator::Abstract
                     }

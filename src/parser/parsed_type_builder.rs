@@ -213,7 +213,7 @@ fn parse_type_specifier_to_parsed_base(
 /// Build a ParsedDeclaratorNode from a Declarator
 fn build_parsed_declarator(parser: &mut Parser, declarator: &Declarator) -> Result<ParsedDeclRef, ParseError> {
     match declarator {
-        Declarator::Identifier(name, qualifiers, None) => {
+        Declarator::Identifier(name, qualifiers) => {
             // Simple identifier with optional qualifiers
             if qualifiers.is_empty() {
                 Ok(parser
@@ -345,7 +345,7 @@ pub(crate) fn parse_parsed_type_name(parser: &mut Parser) -> Result<ParsedType, 
 /// Helper function to extract identifier from declarator (needed for struct members)
 fn extract_identifier(declarator: &Declarator) -> Option<NameId> {
     match declarator {
-        Declarator::Identifier(name, _, None) => Some(*name),
+        Declarator::Identifier(name, _) => Some(*name),
         _ => None,
     }
 }

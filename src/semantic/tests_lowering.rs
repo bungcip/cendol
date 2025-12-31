@@ -129,4 +129,33 @@ mod tests {
         assert_eq!(line, 3, "Error should be on line 3");
         assert_eq!(col, 17, "Error should be at column 17");
     }
+
+    /// Test that semantic lowering rejects conflicting storage classes
+    #[test]
+    fn rejects_conflicting_storage_classes() {
+        let source = r#"
+            extern static int x;
+        "#;
+
+        let phase = CompilePhase::Mir;
+        let config = CompileConfig::from_virtual_file(source.to_string(), phase);
+        let mut driver = CompilerDriver::from_config(config);
+        let result = driver.run_pipeline(phase);
+
+        // Ensure the pipeline failed
+        assert!(result.is_err());
+
+        // Check for the specific semantic error
+        let diags = driver.get_diagnostics();
+        assert_eq!(diags.len(), 1);
+        let error = diags.get(0).unwrap();
+
+        // Check the error message is an exact match
+        assert_eq!(error.message, "conflicting storage class specifiers");
+
+        // Check that the error span is correct
+        let (line, col) = driver.source_manager.get_line_column(error.span.start).unwrap();
+        assert_eq!(line, 2, "Error should be on line 2");
+        assert_eq!(col, 13, "Error should be at column 13");
+    }
 }

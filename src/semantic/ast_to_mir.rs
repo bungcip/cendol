@@ -495,13 +495,14 @@ impl<'a> AstToMirLowerer<'a> {
                     let func_entry = self.symbol_table.get_symbol(resolved_symbol);
                     let func_type = self.registry.get(func_entry.type_info);
                     if let TypeKind::Function { return_type, .. } = &func_type.kind
-                        && self.registry.get(*return_type).kind == TypeKind::Void {
-                            // Void function call - use MirStmt::Call for side effects only
-                            let stmt = MirStmt::Call(call_target, arg_operands);
-                            self.mir_builder.add_statement(stmt);
-                            // Return a dummy operand for void functions
-                            return Operand::Constant(self.create_constant(ConstValue::Int(0)));
-                        }
+                        && self.registry.get(*return_type).kind == TypeKind::Void
+                    {
+                        // Void function call - use MirStmt::Call for side effects only
+                        let stmt = MirStmt::Call(call_target, arg_operands);
+                        self.mir_builder.add_statement(stmt);
+                        // Return a dummy operand for void functions
+                        return Operand::Constant(self.create_constant(ConstValue::Int(0)));
+                    }
                 }
 
                 // Non-void function call - use Rvalue::Call and store result

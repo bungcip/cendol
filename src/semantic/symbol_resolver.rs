@@ -243,7 +243,7 @@ fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: Sour
             DeclSpecifier::StorageClass(sc) => {
                 // Check for duplicate storage class
                 if info.storage.replace(*sc).is_some() {
-                    ctx.report_error(SemanticError::MultipleStorageClasses { span });
+                    ctx.report_error(SemanticError::ConflictingStorageClasses { span });
                 }
 
                 // Handle typedef storage class

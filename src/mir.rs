@@ -439,9 +439,17 @@ impl MirBuilder {
     }
 
     /// Create a new function
-    pub fn create_function(&mut self, name: NameId, return_type: TypeId) -> MirFunctionId {
+    pub fn create_function(&mut self, name: NameId, param_types: Vec<TypeId>, return_type: TypeId) -> MirFunctionId {
         let func_id = MirFunctionId::new(self.module.functions.len() as u32 + 1).unwrap();
-        let func = MirFunction::new(func_id, name, return_type);
+
+        let mut func = MirFunction::new(func_id, name, return_type);
+
+        // Create locals for each parameter
+        for (i, &param_type) in param_types.iter().enumerate() {
+            let param_name = Some(NameId::new(&format!("param{}", i)));
+            let local_id = self.create_local(param_name, param_type, true);
+            func.params.push(local_id);
+        }
 
         self.functions.insert(func_id, func);
         self.module.functions.push(func_id);

@@ -1197,8 +1197,13 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
     }
 
     // 3. Distinguish between functions and variables
-    let type_info = ctx.type_ctx.get(final_ty.ty);
-    if matches!(type_info.kind, TypeKind::Function { .. }) {
+    let type_info = ctx.type_ctx.get(final_ty.ty).clone();
+    if let TypeKind::Function {
+        parameters,
+        is_variadic,
+        ..
+    } = &type_info.kind
+    {
         let func_decl = FunctionDeclData {
             name,
             ty: final_ty.ty,
@@ -1210,9 +1215,9 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
         let symbol_entry = Symbol {
             name: name.as_str().into(),
             kind: SymbolKind::Function {
-                is_inline: false,
-                is_variadic: false,
-                parameters: Vec::new(), // FIXME: fill this...
+                is_inline: spec.is_inline,
+                is_variadic: *is_variadic,
+                parameters: parameters.clone(),
             },
             type_info: final_ty.ty,
             storage_class: spec.storage,
@@ -1220,9 +1225,25 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
             def_span: span,
             def_state: DefinitionState::DeclaredOnly,
             is_referenced: false,
-            is_completed: true,
+            is_completed: true, // A declaration is a "complete" concept here
         };
-        ctx.symbol_table.add_symbol(name, symbol_entry);
+
+        if ctx.symbol_table.current_scope() == ScopeId::GLOBAL {
+            match ctx.symbol_table.merge_global_symbol(name, symbol_entry) {
+                Ok(_) => {}
+                Err(e) => {
+                    let SymbolTableError::InvalidRedefinition { name, existing } = e;
+                    let existing = ctx.symbol_table.get_symbol(existing);
+                    ctx.diag.report(SemanticError::Redefinition {
+                        name,
+                        first_def: existing.def_span,
+                        span,
+                    });
+                }
+            }
+        } else {
+            ctx.symbol_table.add_symbol(name, symbol_entry);
+        }
 
         node
     } else {

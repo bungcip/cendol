@@ -980,6 +980,8 @@ mod tests {
         type %t3 = [8]%t1
         type %t4 = fn(%t2) -> %t0
 
+        global @.L.str0: [8]i8 = const ""hello""
+
         fn main() -> i32
         {
           locals {
@@ -989,7 +991,7 @@ mod tests {
           }
 
           bb1:
-            %p = const ""hello""
+            %p = const @.L.str0
             %3 = call strlen(%p)
             %4 = %3 - const 5
             return %4

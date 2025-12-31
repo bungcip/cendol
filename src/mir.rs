@@ -324,6 +324,7 @@ pub struct MirBuilder {
     next_global_id: u32,
     next_type_id: u32,
     next_const_id: u32,
+    anonymous_global_counter: u32,
     // State tracking
     functions: HashMap<MirFunctionId, MirFunction>,
     blocks: HashMap<MirBlockId, MirBlock>,
@@ -347,6 +348,7 @@ impl MirBuilder {
             next_global_id: 1,
             next_type_id: 1,
             next_const_id: 1,
+            anonymous_global_counter: 0,
             functions: HashMap::new(),
             blocks: HashMap::new(),
             locals: HashMap::new(),
@@ -621,6 +623,12 @@ impl MirBuilder {
         }
     }
 
+    pub fn get_next_anonymous_global_name(&mut self) -> NameId {
+        let name = format!(".L.str{}", self.anonymous_global_counter);
+        self.anonymous_global_counter += 1;
+        NameId::new(name)
+    }
+
     pub fn update_struct_fields(&mut self, type_id: TypeId, fields: Vec<(NameId, TypeId)>) {
         let type_index = (type_id.get() - 1) as usize;
         if let Some(mir_type) = self.module.types.get_mut(type_index)
@@ -772,7 +780,7 @@ impl fmt::Display for ConstValue {
             ConstValue::Bool(val) => write!(f, "{}", val),
             ConstValue::Null => write!(f, "null"),
             ConstValue::Zero => write!(f, "zeroinit"),
-            ConstValue::String(val) => write!(f, "\"{}\"", val),
+            ConstValue::String(val) => write!(f, "{}", val),
             ConstValue::StructLiteral(fields) => write!(f, "StructLiteral({:?})", fields),
             ConstValue::ArrayLiteral(elements) => write!(f, "ArrayLiteral({:?})", elements),
             ConstValue::GlobalAddress(global_id) => write!(f, "GlobalAddress({})", global_id.get()),

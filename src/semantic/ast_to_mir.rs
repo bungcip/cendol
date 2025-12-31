@@ -372,7 +372,16 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::LiteralFloat(val) => Operand::Constant(self.create_constant(ConstValue::Float(*val))),
             NodeKind::LiteralChar(val) => Operand::Constant(self.create_constant(ConstValue::Int(*val as i64))),
             NodeKind::LiteralString(val) => {
-                Operand::Constant(self.create_constant(ConstValue::String(val.to_string())))
+                let string_type = self.lower_type_to_mir(ty.ty);
+                let const_val = ConstValue::String(val.to_string());
+                let const_id = self.create_constant(const_val);
+                let global_name = self.mir_builder.get_next_anonymous_global_name();
+                let global_id =
+                    self.mir_builder
+                        .create_global_with_init(global_name, string_type, true, Some(const_id));
+
+                let addr_const_val = ConstValue::GlobalAddress(global_id);
+                Operand::Constant(self.create_constant(addr_const_val))
             }
             NodeKind::Ident(_, symbol_ref) => {
                 let resolved_ref = symbol_ref.get().unwrap();

@@ -207,3 +207,89 @@ fn test_store_deref_pointer() {
         Err(e) => panic!("MIR to Cranelift lowering failed: {}", e),
     }
 }
+
+use crate::driver::{CompilerDriver, cli::CompileConfig, compiler::CompilePhase};
+
+/// setup test with output is cranelift ir
+fn setup_cranelift(c_code: &str) -> String {
+    let config = CompileConfig::from_virtual_file(c_code.to_string(), CompilePhase::Cranelift);
+    let mut driver = CompilerDriver::from_config(config);
+
+    let pipeline_result = driver.run_pipeline(CompilePhase::Cranelift);
+    match pipeline_result {
+        Err(_) => {
+            driver.print_diagnostics();
+            panic!("Compilation failed");
+        }
+        Ok(outputs) => {
+            let artifact = outputs.units.values().next().unwrap();
+            let clif_dump = artifact.clif_dump.as_ref().unwrap();
+            clif_dump.to_string()
+        }
+    }
+}
+
+#[test]
+fn test_compile_struct_pointer_access() {
+    let source = r#"
+            int main() {
+                struct S { int x; int y; } s;
+                struct S *p;
+                p = &s;
+                s.x = 1;
+                p->y = 2;
+                return p->y + p->x - 3;
+            }
+        "#;
+    let clif_dump = setup_cranelift(source);
+    insta::assert_snapshot!(
+        clif_dump,
+        @r"
+    ; Function: main
+    function u0:0() -> i32 system_v {
+        ss0 = explicit_slot 8
+        ss1 = explicit_slot 8
+        ss2 = explicit_slot 4
+        ss3 = explicit_slot 4
+
+    block0:
+        v0 = stack_addr.i64 ss0
+        v29 = stack_addr.i64 ss1
+        store notrap v0, v29
+        v1 = iconst.i32 1
+        v2 = stack_addr.i64 ss0
+        v3 = iconst.i64 0
+        v4 = iadd v2, v3  ; v3 = 0
+        store v1, v4  ; v1 = 1
+        v5 = iconst.i32 2
+        v6 = stack_addr.i64 ss1
+        v7 = load.i64 v6
+        v8 = iconst.i64 4
+        v9 = iadd v7, v8  ; v8 = 4
+        store v5, v9  ; v5 = 2
+        v10 = stack_addr.i64 ss1
+        v11 = load.i64 v10
+        v12 = iconst.i64 4
+        v13 = iadd v11, v12  ; v12 = 4
+        v14 = load.i32 v13
+        v15 = stack_addr.i64 ss1
+        v16 = load.i64 v15
+        v17 = iconst.i64 0
+        v18 = iadd v16, v17  ; v17 = 0
+        v19 = load.i32 v18
+        v20 = iadd v14, v19
+        v28 = stack_addr.i64 ss2
+        store notrap v20, v28
+        v27 = stack_addr.i64 ss2
+        v21 = load.i32 notrap v27
+        v22 = iconst.i32 3
+        v23 = isub v21, v22  ; v22 = 3
+        v26 = stack_addr.i64 ss3
+        store notrap v23, v26
+        v25 = stack_addr.i64 ss3
+        v24 = load.i32 notrap v25
+        return v24
+    }
+    "
+    );
+}

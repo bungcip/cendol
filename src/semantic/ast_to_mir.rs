@@ -28,6 +28,7 @@ pub struct AstToMirLowerer<'a> {
     global_map: HashMap<SymbolRef, GlobalId>,
     #[allow(unused)]
     label_map: HashMap<NameId, MirBlockId>,
+    type_cache: HashMap<TypeRef, TypeId>,
 }
 
 impl<'a> AstToMirLowerer<'a> {
@@ -43,6 +44,7 @@ impl<'a> AstToMirLowerer<'a> {
             global_map: HashMap::new(),
             label_map: HashMap::new(),
             type_ctx,
+            type_cache: HashMap::new(),
         }
     }
 
@@ -564,6 +566,10 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn lower_type_to_mir(&mut self, type_ref: TypeRef) -> TypeId {
+        if let Some(type_id) = self.type_cache.get(&type_ref) {
+            return *type_id;
+        }
+
         let ast_type_kind = self.type_ctx.get(type_ref).kind.clone();
         let mir_type = match &ast_type_kind {
             TypeKind::Void => MirType::Void,
@@ -615,15 +621,36 @@ impl<'a> AstToMirLowerer<'a> {
                 tag, members, is_union, ..
             } => {
                 let name = tag.unwrap_or_else(|| NameId::new("anonymous"));
-                let mut fields = Vec::new();
-                for m in members {
-                    fields.push((m.name, self.lower_type_to_mir(m.member_type.ty)));
-                }
-
                 if *is_union {
-                    MirType::Union { name, fields }
+                    let placeholder = MirType::Union {
+                        name,
+                        fields: Vec::new(),
+                    };
+                    let type_id = self.mir_builder.add_type(placeholder);
+                    self.type_cache.insert(type_ref, type_id);
+
+                    let mut fields = Vec::new();
+                    for m in members {
+                        fields.push((m.name, self.lower_type_to_mir(m.member_type.ty)));
+                    }
+                    self.mir_builder.update_union_fields(type_id, fields);
+
+                    return type_id;
                 } else {
-                    MirType::Struct { name, fields }
+                    let placeholder = MirType::Struct {
+                        name,
+                        fields: Vec::new(),
+                    };
+                    let type_id = self.mir_builder.add_type(placeholder);
+                    self.type_cache.insert(type_ref, type_id);
+
+                    let mut fields = Vec::new();
+                    for m in members {
+                        fields.push((m.name, self.lower_type_to_mir(m.member_type.ty)));
+                    }
+                    self.mir_builder.update_struct_fields(type_id, fields);
+
+                    return type_id;
                 }
             }
             _ => MirType::Int {

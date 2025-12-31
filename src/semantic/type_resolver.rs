@@ -118,7 +118,7 @@ impl<'a> TypeResolver<'a> {
                     self.report_error(SemanticError::NotAnLvalue { span: full_span });
                     return None;
                 }
-                Some(QualType::unqualified(self.registry.pointer_to(operand_ty.ty)))
+                Some(self.registry.decay(operand_ty))
             }
             UnaryOp::Deref => match operand_kind {
                 TypeKind::Pointer { pointee } => Some(QualType::unqualified(*pointee)),
@@ -136,7 +136,8 @@ impl<'a> TypeResolver<'a> {
             }
             UnaryOp::Plus | UnaryOp::Minus => {
                 if is_scalar_type(operand_ty, self.registry) {
-                    Some(operand_ty)
+                    // Strip all qualifiers for unary plus/minus operations
+                    Some(self.registry.strip_all(operand_ty))
                 } else {
                     None
                 }

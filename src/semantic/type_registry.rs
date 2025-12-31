@@ -28,15 +28,15 @@ pub struct TypeRegistry {
     pub type_void: TypeRef,
     pub type_bool: TypeRef,
     pub type_short: TypeRef,
-    pub type_int: TypeRef,
-    pub type_uint: TypeRef,
-    pub type_long: TypeRef,
-    pub type_long_long: TypeRef,
-    pub type_char: TypeRef,
     pub type_short_unsigned: TypeRef,
-    pub type_char_unsigned: TypeRef,
+    pub type_int: TypeRef,
+    pub type_int_unsigned: TypeRef,
+    pub type_long: TypeRef,
     pub type_long_unsigned: TypeRef,
+    pub type_long_long: TypeRef,
     pub type_long_long_unsigned: TypeRef,
+    pub type_char: TypeRef,
+    pub type_char_unsigned: TypeRef,
     pub type_float: TypeRef,
     pub type_double: TypeRef,
     pub type_long_double: TypeRef,
@@ -56,7 +56,7 @@ impl TypeRegistry {
             type_void: dummy(),
             type_bool: dummy(),
             type_int: dummy(),
-            type_uint: dummy(),
+            type_int_unsigned: dummy(),
             type_short: dummy(),
             type_long: dummy(),
             type_long_long: dummy(),
@@ -76,7 +76,7 @@ impl TypeRegistry {
         self.type_void = self.alloc(Type::new(TypeKind::Void));
         self.type_bool = self.alloc(Type::new(TypeKind::Bool));
         self.type_int = self.alloc(Type::new(TypeKind::Int { is_signed: true }));
-        self.type_uint = self.alloc(Type::new(TypeKind::Int { is_signed: false }));
+        self.type_int_unsigned = self.alloc(Type::new(TypeKind::Int { is_signed: false }));
         self.type_short = self.alloc(Type::new(TypeKind::Short { is_signed: true }));
         self.type_short_unsigned = self.alloc(Type::new(TypeKind::Short { is_signed: false }));
         self.type_long = self.alloc(Type::new(TypeKind::Long {
@@ -234,7 +234,6 @@ impl TypeRegistry {
         }
     }
 
-    #[allow(unused)]
     pub fn decay(&mut self, qt: QualType) -> QualType {
         match &self.get(qt.ty).kind {
             TypeKind::Array { element_type, .. } => {
@@ -249,12 +248,10 @@ impl TypeRegistry {
         }
     }
 
-    #[allow(unused)]
     pub fn strip_all(&self, qt: QualType) -> QualType {
         QualType::unqualified(qt.ty)
     }
 
-    #[allow(unused)]
     pub fn merge_qualifiers(&self, base: QualType, add: TypeQualifiers) -> QualType {
         QualType {
             ty: base.ty,

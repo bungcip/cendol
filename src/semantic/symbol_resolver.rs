@@ -55,8 +55,8 @@ fn apply_parsed_declarator(base_type: TypeRef, parsed_type: &ParsedType, ctx: &m
     // Start with the base type and apply declarator transformations
     let result_type = apply_parsed_declarator_recursive(base_type, parsed_type.declarator, ctx);
     // Combine the declarator result qualifiers with the parsed type qualifiers
-    let combined_qualifiers = result_type.qualifiers | parsed_type.qualifiers;
-    QualType::new(result_type.ty, combined_qualifiers)
+    let combined_type = ctx.registry.merge_qualifiers(result_type, parsed_type.qualifiers);
+    QualType::new(combined_type.ty, combined_type.qualifiers)
 }
 
 /// Recursively apply parsed declarator to base type
@@ -650,7 +650,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
         }
         TypeSpecifier::Unsigned => {
             // Unsigned modifier - return a special marker type that will be handled in merge_base_type
-            Ok(QualType::unqualified(ctx.registry.type_uint))
+            Ok(QualType::unqualified(ctx.registry.type_int_unsigned))
         }
         TypeSpecifier::Bool => Ok(QualType::unqualified(ctx.registry.type_bool)),
         TypeSpecifier::Complex => {

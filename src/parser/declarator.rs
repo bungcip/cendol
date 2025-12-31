@@ -73,13 +73,8 @@ pub fn parse_declarator(parser: &mut Parser, initial_declarator: Option<NameId>)
         Declarator::Identifier(ident_symbol, TypeQualifiers::empty(), None)
     } else if let Some(token) = parser.try_current_token() {
         if let TokenKind::Identifier(symbol) = token.kind {
-            if parser.is_type_name(symbol) {
-                // Identifier that is a type name, treat as abstract
-                parse_abstract_declarator(parser)?
-            } else {
-                parser.advance(); // Consume identifier
-                Declarator::Identifier(symbol, TypeQualifiers::empty(), None)
-            }
+            parser.advance(); // Consume identifier
+            Declarator::Identifier(symbol, TypeQualifiers::empty(), None)
         } else if parser.is_abstract_declarator_start() {
             parse_abstract_declarator(parser)?
         } else {

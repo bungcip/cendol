@@ -50,7 +50,7 @@ pub struct ParsedEnumRange {
 
 /// Function parameter information
 #[derive(Debug, Clone)]
-pub struct FunctionParam {
+pub struct ParsedFunctionParam {
     pub name: Option<NameId>,
     pub ty: ParsedType,
     pub span: SourceSpan,
@@ -143,7 +143,7 @@ pub enum ParsedDeclaratorNode {
 pub struct ParsedTypeArena {
     base_types: Vec<ParsedBaseTypeNode>,
     declarators: Vec<ParsedDeclaratorNode>,
-    params: Vec<FunctionParam>,
+    params: Vec<ParsedFunctionParam>,
     struct_members: Vec<ParsedStructMember>,
     enum_constants: Vec<ParsedEnumConstant>,
 }
@@ -181,7 +181,7 @@ impl ParsedTypeArena {
     }
 
     /// Allocate function parameters and return the range
-    pub fn alloc_params(&mut self, params: Vec<FunctionParam>) -> ParsedParamRange {
+    pub fn alloc_params(&mut self, params: Vec<ParsedFunctionParam>) -> ParsedParamRange {
         let start = self.params.len() as u32;
         self.params.extend(params);
         let len = self.params.len() as u32 - start;
@@ -217,7 +217,7 @@ impl ParsedTypeArena {
     }
 
     /// Get function parameters by range
-    pub fn get_params(&self, range: ParsedParamRange) -> &[FunctionParam] {
+    pub fn get_params(&self, range: ParsedParamRange) -> &[ParsedFunctionParam] {
         let start = range.start as usize;
         let end = start + range.len as usize;
         &self.params[start..end]

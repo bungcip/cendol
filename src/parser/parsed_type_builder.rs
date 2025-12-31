@@ -269,7 +269,7 @@ fn build_parsed_declarator(parser: &mut Parser, declarator: &Declarator) -> Resu
                 let param_parsed_type =
                     build_parsed_type_from_specifiers(parser, &param.specifiers, param.declarator.as_ref())?;
 
-                parsed_params.push(FunctionParam {
+                parsed_params.push(ParsedFunctionParam {
                     name: param.declarator.as_ref().and_then(extract_identifier),
                     ty: param_parsed_type,
                     span: SourceSpan::empty(), // TODO: Get proper span

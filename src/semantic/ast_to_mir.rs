@@ -408,6 +408,9 @@ impl<'a> AstToMirLowerer<'a> {
                         let const_val = ConstValue::FunctionAddress(func_id);
                         Operand::Constant(self.create_constant(const_val))
                     }
+                    SymbolKind::EnumConstant { value } => {
+                        Operand::Constant(self.create_constant(ConstValue::Int(*value)))
+                    }
                     _ => panic!("Unexpected symbol kind"),
                 }
             }

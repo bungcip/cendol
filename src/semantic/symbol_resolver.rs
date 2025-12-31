@@ -553,19 +553,8 @@ fn convert_parsed_base_type_to_qual_type(
                     ctx.symbol_table.add_symbol(parsed_enum.name, entry);
                 }
 
-                // Update the type in AST and SymbolTable
-                let type_idx = (type_ref_to_use.get() - 1) as usize;
-                let mut updated_type_kind = ctx.registry.types[type_idx].kind.clone();
-                if let TypeKind::Enum {
-                    enumerators,
-                    is_complete,
-                    ..
-                } = &mut updated_type_kind
-                {
-                    *enumerators = enumerators_list;
-                    *is_complete = true;
-                }
-                ctx.registry.types[type_idx].kind = updated_type_kind;
+                // Update the type in AST and SymbolTable using the proper completion function
+                ctx.registry.complete_enum(type_ref_to_use, enumerators_list, None);
 
                 if let Some(tag_name) = tag
                     && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(*tag_name)
@@ -939,19 +928,8 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     }
                 }
 
-                // Update the type in AST and SymbolTable
-                let type_idx = (type_ref_to_use.get() - 1) as usize;
-                let mut updated_type_kind = ctx.registry.types[type_idx].kind.clone();
-                if let TypeKind::Enum {
-                    enumerators,
-                    is_complete,
-                    ..
-                } = &mut updated_type_kind
-                {
-                    *enumerators = enumerators_list;
-                    *is_complete = true;
-                }
-                ctx.registry.types[type_idx].kind = updated_type_kind;
+                // Update the type in AST and SymbolTable using the proper completion function
+                ctx.registry.complete_enum(type_ref_to_use, enumerators_list, None);
 
                 if let Some(tag_name) = tag
                     && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(*tag_name)

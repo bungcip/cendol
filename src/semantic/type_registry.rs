@@ -217,7 +217,6 @@ impl TypeRegistry {
         }))
     }
 
-    #[allow(unused)]
     pub fn complete_enum(&mut self, enum_ty: TypeRef, enumerators: Vec<EnumConstant>, layout: Option<TypeLayout>) {
         let ty = self.get_mut(enum_ty);
         match &mut ty.kind {

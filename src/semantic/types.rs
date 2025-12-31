@@ -30,6 +30,7 @@ pub struct TypeLayout {
 
 impl Type {
     /// Create a new type with default qualifiers
+    /// can only be called by TypeRegistry
     pub(crate) fn new(kind: TypeKind) -> Self {
         Type { kind, layout: None }
     }

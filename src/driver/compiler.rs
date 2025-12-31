@@ -8,7 +8,7 @@ use hashbrown::HashMap;
 use indexmap::IndexMap;
 use log::debug;
 
-use crate::ast::{Ast, SourceId};
+use crate::ast::{Ast, NodeKind, SourceId};
 use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
 use crate::driver::cli::PathOrBuffer;
 use crate::lexer::{Lexer, Token};
@@ -235,8 +235,13 @@ impl CompilerDriver {
         }
         for node in &ast.nodes {
             match &node.kind {
-                crate::ast::NodeKind::Declaration(..) | crate::ast::NodeKind::FunctionDef(..) => {
-                    panic!("AST still has declaration/function_def");
+                NodeKind::Declaration(..)
+                | NodeKind::FunctionDef(..)
+                | NodeKind::ParsedAlignOf(..)
+                | NodeKind::ParsedCast(..)
+                | NodeKind::ParsedCompoundLiteral(..)
+                | NodeKind::ParsedSizeOfType(..) => {
+                    panic!("AST still has exclusive node which only live in parsing stage");
                 }
                 _ => {}
             }
@@ -277,6 +282,21 @@ impl CompilerDriver {
         use crate::semantic::type_resolver::run_type_resolver;
         run_type_resolver(&ast, &mut self.diagnostics, &symbol_table, &mut registry);
         self.check_diagnostics_and_return_if_error()?;
+
+        // invariant validations
+        // all expression must have resolved_type set
+        for node in &ast.nodes {
+            match &node.kind {
+                NodeKind::Ident(name, ..) if node.resolved_type.get().is_none() => {
+                    panic!(
+                        "ICE: ident '{}' still not have resolved type: {:?}",
+                        name,
+                        self.source_manager.get_line_column(node.span.start)
+                    );
+                }
+                _ => {}
+            }
+        }
 
         let mut sema = AstToMirLowerer::new(&ast, &mut symbol_table, &registry);
         let sema_output = sema.lower_module_complete();

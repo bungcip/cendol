@@ -1191,7 +1191,21 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
             is_completed: true,
         };
 
-        ctx.symbol_table.add_symbol(name, symbol_entry);
+        // Check for redefinition
+        if let Some(existing_ref) =
+            ctx.symbol_table
+                .fetch(name, ctx.symbol_table.current_scope(), Namespace::Ordinary)
+        {
+            let existing_symbol = ctx.symbol_table.get_symbol(existing_ref);
+            ctx.report_error(SemanticError::Redefinition {
+                name,
+                first_def: existing_symbol.def_span,
+                span,
+            });
+        } else {
+            // Add typedef to symbol table if it's a new symbol
+            ctx.symbol_table.add_symbol(name, symbol_entry);
+        }
 
         return typedef_node;
     }

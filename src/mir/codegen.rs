@@ -553,10 +553,11 @@ impl MirToCraneliftLowerer {
         for func_id in self.mir.module.functions.clone() {
             // Only lower functions that are defined (have bodies)
             if let Some(func) = self.mir.functions.get(&func_id)
-                && matches!(func.kind, MirFunctionKind::Defined) {
-                    self.lower_function(func_id)
-                        .map_err(|e| format!("Error lowering function: {}", e))?;
-                }
+                && matches!(func.kind, MirFunctionKind::Defined)
+            {
+                self.lower_function(func_id)
+                    .map_err(|e| format!("Error lowering function: {}", e))?;
+            }
         }
 
         // Finalize and return the compiled code

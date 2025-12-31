@@ -511,9 +511,10 @@ impl MirBuilder {
     pub fn set_current_function(&mut self, func_id: MirFunctionId) {
         self.current_function = Some(func_id);
         if let Some(func) = self.functions.get(&func_id)
-            && let Some(entry_block) = func.entry_block {
-                self.current_block = Some(entry_block);
-            }
+            && let Some(entry_block) = func.entry_block
+        {
+            self.current_block = Some(entry_block);
+        }
     }
 
     /// Create a new global variable

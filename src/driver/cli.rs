@@ -112,7 +112,7 @@ pub struct CompileConfig {
 
 impl CompileConfig {
     /// Create a new CompileConfig from a string of source code
-    pub fn from_virtual_file(source: String, stop_after: CompilePhase) -> Self {
+    pub(crate) fn from_virtual_file(source: String, stop_after: CompilePhase) -> Self {
         let filename = "example.c";
         let source = source.into_bytes();
 

@@ -204,7 +204,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
 
         fn main() -> i32
@@ -230,7 +230,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
 
         global @result: i32 = const 99
@@ -289,10 +289,10 @@ mod tests {
         // We want to ensure %t0 is i32 and %t1 is struct using %t0
         // and NOT that %t0 is struct using %t0
         insta::assert_snapshot!(mir_dump, @"
-        type %t0 = struct anonymous { a: %t1, b: %t1, c: %t1 }
-        type %t1 = i32
+        type %t0 = i32
+        type %t1 = struct anonymous { a: %t0, b: %t0, c: %t0 }
 
-        global @s: %t0 = const struct_literal { 0: const 1, 1: const 2, 2: const 3 }
+        global @s: %t1 = const struct_literal { 0: const 1, 1: const 2, 2: const 3 }
 
         fn main() -> i32
         {
@@ -328,10 +328,10 @@ mod tests {
 
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @"
-        type %t0 = struct S { a: %t1, b: %t1 }
-        type %t1 = i32
+        type %t0 = i32
+        type %t1 = struct S { a: %t0, b: %t0 }
 
-        global @s: %t0 = const struct_literal { 1: const 2, 0: const 1 }
+        global @s: %t1 = const struct_literal { 1: const 2, 0: const 1 }
 
         fn main() -> i32
         {
@@ -398,11 +398,11 @@ mod tests {
 
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @"
-        type %t0 = struct S2 { a: %t1, b: %t1, s: %t2 }
-        type %t1 = i32
-        type %t2 = struct S1 { a: %t1, b: %t1 }
+        type %t0 = i32
+        type %t1 = struct S2 { a: %t0, b: %t0, s: %t2 }
+        type %t2 = struct S1 { a: %t0, b: %t0 }
 
-        global @v: %t0 = const struct_literal { 0: const 1, 1: const 2, 2: const struct_literal { 0: const 3, 1: const 4 } }
+        global @v: %t1 = const struct_literal { 0: const 1, 1: const 2, 2: const struct_literal { 0: const 3, 1: const 4 } }
 
         fn main() -> i32
         {
@@ -430,11 +430,11 @@ mod tests {
 
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @"
-        type %t0 = struct T { x: %t1 }
-        type %t1 = i32
-        type %t2 = struct T { y: %t1 }
+        type %t0 = i32
+        type %t1 = struct T { x: %t0 }
+        type %t2 = struct T { y: %t0 }
 
-        global @s1: %t0 = const zero
+        global @s1: %t1 = const zero
 
         fn main() -> i32
         {
@@ -561,17 +561,6 @@ mod tests {
         type %t0 = i32
         type %t1 = fn(%t0) -> %t0
 
-        fn foo(%x: i32) -> i32
-        {
-          locals {
-            %x: i32
-          }
-
-          bb1:
-            %x = const 10
-            return %x
-        }
-
         fn main() -> i32
         {
           locals {
@@ -581,6 +570,17 @@ mod tests {
           bb2:
             %3 = call foo(const 5)
             return %3
+        }
+
+        fn foo(%param0: i32) -> i32
+        {
+          locals {
+            %x: i32
+          }
+
+          bb1:
+            %x = const 10
+            return %x
         }
         ");
     }
@@ -635,151 +635,28 @@ mod tests {
 
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @"
-        type %t0 = void
-        type %t1 = i8
-        type %t2 = u8
-        type %t3 = i16
-        type %t4 = i32
-        type %t5 = u16
-        type %t6 = u32
-        type %t7 = i64
-        type %t8 = u64
-        type %t9 = f32
-        type %t10 = f64
-        type %t11 = fn() -> %t0
-        type %t12 = fn() -> %t1
-        type %t13 = fn() -> %t2
-        type %t14 = fn() -> %t3
-        type %t15 = fn() -> %t5
-        type %t16 = fn() -> %t4
-        type %t17 = fn() -> %t6
-        type %t18 = fn() -> %t7
-        type %t19 = fn() -> %t8
-        type %t20 = fn() -> %t9
-        type %t21 = fn() -> %t10
-
-        fn fn_void() -> void
-        {
-          locals {
-          }
-
-          bb1:
-            return
-        }
-
-        fn fn_char() -> i8
-        {
-          locals {
-          }
-
-          bb2:
-            return const 97
-        }
-
-        fn fn_uchar() -> u8
-        {
-          locals {
-          }
-
-          bb3:
-            return const 98
-        }
-
-        fn fn_short() -> i16
-        {
-          locals {
-            %1: i32
-          }
-
-          bb4:
-            %1 = - const 7
-            return %1
-        }
-
-        fn fn_ushort() -> u16
-        {
-          locals {
-          }
-
-          bb5:
-            return const 14
-        }
-
-        fn fn_int() -> i32
-        {
-          locals {
-            %2: i32
-          }
-
-          bb6:
-            %2 = - const 1
-            return %2
-        }
-
-        fn fn_uint() -> u32
-        {
-          locals {
-          }
-
-          bb7:
-            return const 42
-        }
-
-        fn fn_long() -> i32
-        {
-          locals {
-          }
-
-          bb8:
-            return const 100000
-        }
-
-        fn fn_ulong() -> u32
-        {
-          locals {
-          }
-
-          bb9:
-            return const 200000
-        }
-
-        fn fn_llong() -> i64
-        {
-          locals {
-            %3: i32
-          }
-
-          bb10:
-            %3 = - const 3000000000
-            return %3
-        }
-
-        fn fn_ullong() -> u64
-        {
-          locals {
-          }
-
-          bb11:
-            return const 4000000000
-        }
-
-        fn fn_float() -> f32
-        {
-          locals {
-          }
-
-          bb12:
-            return const 3.14
-        }
-
-        fn fn_double() -> f64
-        {
-          locals {
-          }
-
-          bb13:
-            return const 2.71828
-        }
+        type %t0 = i32
+        type %t1 = f64
+        type %t2 = i8
+        type %t3 = u32
+        type %t4 = void
+        type %t5 = u8
+        type %t6 = i16
+        type %t7 = f32
+        type %t8 = i64
+        type %t9 = u16
+        type %t10 = u64
+        type %t11 = fn() -> %t4
+        type %t12 = fn() -> %t2
+        type %t13 = fn() -> %t5
+        type %t14 = fn() -> %t6
+        type %t15 = fn() -> %t9
+        type %t16 = fn() -> %t0
+        type %t17 = fn() -> %t3
+        type %t18 = fn() -> %t8
+        type %t19 = fn() -> %t10
+        type %t20 = fn() -> %t7
+        type %t21 = fn() -> %t1
 
         fn main() -> i32
         {
@@ -814,6 +691,129 @@ mod tests {
             %15 = call fn_float()
             %16 = call fn_double()
             return const 0
+        }
+
+        fn fn_double() -> f64
+        {
+          locals {
+          }
+
+          bb13:
+            return const 2.71828
+        }
+
+        fn fn_char() -> i8
+        {
+          locals {
+          }
+
+          bb2:
+            return const 97
+        }
+
+        fn fn_ulong() -> u32
+        {
+          locals {
+          }
+
+          bb9:
+            return const 200000
+        }
+
+        fn fn_void() -> void
+        {
+          locals {
+          }
+
+          bb1:
+            return
+        }
+
+        fn fn_uchar() -> u8
+        {
+          locals {
+          }
+
+          bb3:
+            return const 98
+        }
+
+        fn fn_uint() -> u32
+        {
+          locals {
+          }
+
+          bb7:
+            return const 42
+        }
+
+        fn fn_short() -> i16
+        {
+          locals {
+            %1: i32
+          }
+
+          bb4:
+            %1 = - const 7
+            return %1
+        }
+
+        fn fn_int() -> i32
+        {
+          locals {
+            %2: i32
+          }
+
+          bb6:
+            %2 = - const 1
+            return %2
+        }
+
+        fn fn_float() -> f32
+        {
+          locals {
+          }
+
+          bb12:
+            return const 3.14
+        }
+
+        fn fn_llong() -> i64
+        {
+          locals {
+            %3: i32
+          }
+
+          bb10:
+            %3 = - const 3000000000
+            return %3
+        }
+
+        fn fn_long() -> i32
+        {
+          locals {
+          }
+
+          bb8:
+            return const 100000
+        }
+
+        fn fn_ushort() -> u16
+        {
+          locals {
+          }
+
+          bb5:
+            return const 14
+        }
+
+        fn fn_ullong() -> u64
+        {
+          locals {
+          }
+
+          bb11:
+            return const 4000000000
         }
         ");
     }
@@ -882,7 +882,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
 
         fn main() -> i32
@@ -956,5 +956,50 @@ mod tests {
             return %u.field_0.field_0.field_0.field_0.field_0.field_1
         }
         ");
+    }
+
+    #[test]
+    fn test_external_function_call() {
+        let source = r#"
+            int strlen(char *);
+
+            int main()
+            {
+                char *p;
+
+                p = "hello";
+                return strlen(p) - 5;
+            }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @r#"
+        type %t0 = i32
+        type %t1 = i8
+        type %t2 = ptr<%t1>
+        type %t3 = [8]%t1
+        type %t4 = fn(%t2) -> %t0
+
+        fn main() -> i32
+        {
+          locals {
+            %p: ptr<i8>
+            %3: i32
+            %4: i32
+          }
+
+          bb1:
+            %p = const ""hello""
+            %3 = call strlen(%p)
+            %4 = %3 - const 5
+            return %4
+        }
+
+        fn strlen(%param0: ptr<i8>) -> i32
+        {
+          locals {
+          }
+        }
+        "#);
     }
 }

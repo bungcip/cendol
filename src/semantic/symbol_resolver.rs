@@ -1192,9 +1192,9 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
         };
 
         // Check for redefinition
-        if let Some(existing_ref) =
-            ctx.symbol_table
-                .fetch(name, ctx.symbol_table.current_scope(), Namespace::Ordinary)
+        if let Some(existing_ref) = ctx
+            .symbol_table
+            .fetch(name, ctx.symbol_table.current_scope(), Namespace::Ordinary)
         {
             let existing_symbol = ctx.symbol_table.get_symbol(existing_ref);
             ctx.report_error(SemanticError::Redefinition {

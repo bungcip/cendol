@@ -1545,12 +1545,15 @@ fn test_duplicate_typedef_no_panic() {
     let diagnostics = driver.get_diagnostics();
 
     // We expect at least one diagnostic for the redefinition.
-    assert!(!diagnostics.is_empty(), "Expected at least one diagnostic for typedef redefinition.");
+    assert!(
+        !diagnostics.is_empty(),
+        "Expected at least one diagnostic for typedef redefinition."
+    );
 
     // Check if any of the diagnostics is the one we expect.
-    let found_error = diagnostics.iter().any(|diag| {
-        diag.message.contains("redefinition of 'my_int'")
-    });
+    let found_error = diagnostics
+        .iter()
+        .any(|diag| diag.message.contains("redefinition of 'my_int'"));
 
     assert!(found_error, "Did not find expected redefinition error diagnostic.");
 }

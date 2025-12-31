@@ -141,6 +141,8 @@ impl MirBlock {
 pub enum MirStmt {
     Assign(Place, Rvalue),
     Store(Operand, Place),
+    // Function calls with side effects only (void calls or calls where result is ignored)
+    Call(CallTarget, Vec<Operand>),
     // Memory operations
     Alloc(Place, TypeId),
     Dealloc(Operand),
@@ -191,7 +193,7 @@ pub enum Rvalue {
     ArrayLiteral(Vec<Operand>),
     // Memory operations
     Load(Operand),
-    // Function calls
+    // Function calls that return a value (NON-VOID ONLY)
     Call(CallTarget, Vec<Operand>),
 }
 
@@ -755,6 +757,7 @@ impl fmt::Display for MirStmt {
         match self {
             MirStmt::Assign(place, operand) => write!(f, "Assign({:?}, {:?})", place, operand),
             MirStmt::Store(operand, place) => write!(f, "Store({:?}, {:?})", operand, place),
+            MirStmt::Call(call_target, operands) => write!(f, "Call({:?}, {:?})", call_target, operands),
             MirStmt::Alloc(place, type_id) => write!(f, "Alloc({:?}, {})", place, type_id.get()),
             MirStmt::Dealloc(operand) => write!(f, "Dealloc({:?})", operand),
         }

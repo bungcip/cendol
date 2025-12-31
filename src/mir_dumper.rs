@@ -272,6 +272,16 @@ impl<'a> MirDumper<'a> {
                 self.dump_operand(output, operand)?;
                 write!(output, ", {}", self.place_to_string(place))?;
             }
+            MirStmt::Call(call_target, operands) => {
+                write!(output, "call {}(", self.call_target_to_string(call_target))?;
+                for (i, operand) in operands.iter().enumerate() {
+                    if i > 0 {
+                        write!(output, ", ")?;
+                    }
+                    self.dump_operand(output, operand)?;
+                }
+                write!(output, ")")?;
+            }
             MirStmt::Alloc(place, type_id) => {
                 write!(
                     output,

@@ -894,6 +894,19 @@ impl MirToCraneliftLowerer {
                         }
                     }
 
+                    MirStmt::Call(call_target, args) => {
+                        // Handle function calls that don't return values (side-effect only calls)
+                        // This is used for void function calls or calls where the result is ignored
+                        let _ = emit_function_call_impl(
+                            call_target,
+                            args,
+                            &mut builder,
+                            &self.mir,
+                            &self.cranelift_stack_slots,
+                            &mut self.module,
+                        )?; // Ignore return value as this is a side-effect only call
+                    }
+
                     MirStmt::Alloc(_place, _type_id) => {
                         // TODO: Implement allocation operations
                         // Alloc operations allocate memory for a place with a specific type

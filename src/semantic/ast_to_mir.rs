@@ -481,6 +481,30 @@ impl<'a> AstToMirLowerer<'a> {
                     CallTarget::Indirect(callee)
                 };
 
+                // Check if this is a void function call - if so, we use MirStmt::Call
+                // Otherwise, we use Rvalue::Call and create a temporary local
+                let func_node = self.ast.get_node(*func_ref);
+                if let Some(resolved_symbol) = func_node.resolved_type.get().and_then(|_qual_type| {
+                    // Get the function symbol reference from the identifier if it exists
+                    if let NodeKind::Ident(_, symbol_ref) = &func_node.kind {
+                        symbol_ref.get()
+                    } else {
+                        None
+                    }
+                }) {
+                    let func_entry = self.symbol_table.get_symbol(resolved_symbol);
+                    let func_type = self.registry.get(func_entry.type_info);
+                    if let TypeKind::Function { return_type, .. } = &func_type.kind
+                        && self.registry.get(*return_type).kind == TypeKind::Void {
+                            // Void function call - use MirStmt::Call for side effects only
+                            let stmt = MirStmt::Call(call_target, arg_operands);
+                            self.mir_builder.add_statement(stmt);
+                            // Return a dummy operand for void functions
+                            return Operand::Constant(self.create_constant(ConstValue::Int(0)));
+                        }
+                }
+
+                // Non-void function call - use Rvalue::Call and store result
                 let rval = Rvalue::Call(call_target, arg_operands);
                 let (_, place) = self.create_temp_local_with_assignment(rval, mir_ty);
                 Operand::Copy(Box::new(place))

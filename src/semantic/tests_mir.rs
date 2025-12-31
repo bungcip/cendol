@@ -289,10 +289,10 @@ mod tests {
         // We want to ensure %t0 is i32 and %t1 is struct using %t0
         // and NOT that %t0 is struct using %t0
         insta::assert_snapshot!(mir_dump, @"
-        type %t0 = i32
-        type %t1 = struct anonymous { a: %t0, b: %t0, c: %t0 }
+        type %t0 = struct anonymous { a: %t1, b: %t1, c: %t1 }
+        type %t1 = i32
 
-        global @s: %t1 = const struct_literal { 0: const 1, 1: const 2, 2: const 3 }
+        global @s: %t0 = const struct_literal { 0: const 1, 1: const 2, 2: const 3 }
 
         fn main() -> i32
         {
@@ -328,10 +328,10 @@ mod tests {
 
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @"
-        type %t0 = i32
-        type %t1 = struct S { a: %t0, b: %t0 }
+        type %t0 = struct S { a: %t1, b: %t1 }
+        type %t1 = i32
 
-        global @s: %t1 = const struct_literal { 1: const 2, 0: const 1 }
+        global @s: %t0 = const struct_literal { 1: const 2, 0: const 1 }
 
         fn main() -> i32
         {
@@ -358,11 +358,11 @@ mod tests {
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
-        type %t1 = ptr<%t0>
-        type %t2 = struct S { a: %t0, p: %t1 }
+        type %t1 = struct S { a: %t0, p: %t2 }
+        type %t2 = ptr<%t0>
 
         global @x: i32 = const 10
-        global @s: %t2 = const struct_literal { 1: const @x, 0: const 1 }
+        global @s: %t1 = const struct_literal { 1: const @x, 0: const 1 }
 
         fn main() -> i32
         {
@@ -397,12 +397,12 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
-        type %t1 = struct S1 { a: %t0, b: %t0 }
-        type %t2 = struct S2 { a: %t0, b: %t0, s: %t1 }
+        insta::assert_snapshot!(mir_dump, @"
+        type %t0 = struct S2 { a: %t1, b: %t1, s: %t2 }
+        type %t1 = i32
+        type %t2 = struct S1 { a: %t1, b: %t1 }
 
-        global @v: %t2 = const struct_literal { 0: const 1, 1: const 2, 2: const struct_literal { 0: const 3, 1: const 4 } }
+        global @v: %t0 = const struct_literal { 0: const 1, 1: const 2, 2: const struct_literal { 0: const 3, 1: const 4 } }
 
         fn main() -> i32
         {
@@ -430,11 +430,11 @@ mod tests {
 
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @"
-        type %t0 = i32
-        type %t1 = struct T { x: %t0 }
-        type %t2 = struct T { y: %t0 }
+        type %t0 = struct T { x: %t1 }
+        type %t1 = i32
+        type %t2 = struct T { y: %t1 }
 
-        global @s1: %t1 = const zero
+        global @s1: %t0 = const zero
 
         fn main() -> i32
         {
@@ -894,6 +894,66 @@ mod tests {
           bb1:
             %x = const 10
             return %x
+        }
+        ");
+    }
+
+    #[test]
+    fn test_mir_generation_for_self_referential_struct() {
+        let source = r#"
+            int main() {
+                struct S { struct S *p; int x; } s;
+                s.x = 0;
+                s.p = &s;
+                return s.p->p->p->p->p->x;
+            }
+        "#;
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @"
+        type %t0 = i32
+        type %t1 = struct S { p: %t2, x: %t0 }
+        type %t2 = ptr<%t1>
+
+        fn main() -> i32
+        {
+          locals {
+            %s: %t1
+          }
+
+          bb1:
+            %s.field_1 = const 0
+            %s.field_0 = addr_of(%s)
+            return %s.field_0.field_0.field_0.field_0.field_0.field_1
+        }
+        ");
+    }
+
+    #[test]
+    fn test_mir_generation_for_self_referential_union() {
+        let source = r#"
+            int main() {
+                union U { union U *p; int x; } u;
+                u.x = 0;
+                u.p = &u;
+                return u.p->p->p->p->p->x;
+            }
+        "#;
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @"
+        type %t0 = i32
+        type %t1 = union U { p: %t2, x: %t0 }
+        type %t2 = ptr<%t1>
+
+        fn main() -> i32
+        {
+          locals {
+            %u: %t1
+          }
+
+          bb1:
+            %u.field_1 = const 0
+            %u.field_0 = addr_of(%u)
+            return %u.field_0.field_0.field_0.field_0.field_0.field_1
         }
         ");
     }

@@ -612,6 +612,34 @@ impl MirBuilder {
             func.entry_block = block_id;
         }
     }
+
+    pub fn update_struct_fields(&mut self, type_id: TypeId, fields: Vec<(NameId, TypeId)>) {
+        let type_index = (type_id.get() - 1) as usize;
+        if let Some(mir_type) = self.module.types.get_mut(type_index) {
+            if let MirType::Struct { fields: old_fields, .. } = mir_type {
+                *old_fields = fields.clone();
+            }
+        }
+        if let Some(mir_type) = self.types.get_mut(&type_id) {
+            if let MirType::Struct { fields: old_fields, .. } = mir_type {
+                *old_fields = fields;
+            }
+        }
+    }
+
+    pub fn update_union_fields(&mut self, type_id: TypeId, fields: Vec<(NameId, TypeId)>) {
+        let type_index = (type_id.get() - 1) as usize;
+        if let Some(mir_type) = self.module.types.get_mut(type_index) {
+            if let MirType::Union { fields: old_fields, .. } = mir_type {
+                *old_fields = fields.clone();
+            }
+        }
+        if let Some(mir_type) = self.types.get_mut(&type_id) {
+            if let MirType::Union { fields: old_fields, .. } = mir_type {
+                *old_fields = fields;
+            }
+        }
+    }
 }
 
 /// Display implementations for debugging

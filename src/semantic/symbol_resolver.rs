@@ -260,7 +260,7 @@ fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: Sour
             DeclSpecifier::StorageClass(sc) => {
                 // Check for duplicate storage class
                 if info.storage.replace(*sc).is_some() {
-                    ctx.report_error(SemanticError::MultipleStorageClasses { span });
+                    ctx.report_error(SemanticError::InvalidStorageClass { span });
                 }
 
                 // Handle typedef storage class
@@ -973,7 +973,8 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     // Get the kind of the symbol as a string for the error message
                     let kind_string = format!("{:?}", entry.kind);
                     let found_kind_str = kind_string.split_whitespace().next().unwrap_or("symbol");
-                    Err(SemanticError::ExpectedTypedefName {
+                    Err(SemanticError::TypeMismatch {
+                        expected: "a typedef name".to_string(),
                         found: format!("a {}", found_kind_str.to_lowercase()),
                         span,
                     })
@@ -1078,7 +1079,7 @@ fn merge_base_type(existing: Option<QualType>, new_type: QualType, ctx: &mut Low
 fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span: SourceSpan) {
     // Check typedef with other storage classes
     if info.is_typedef && info.storage.is_some_and(|s| s != StorageClass::Typedef) {
-        ctx.report_error(SemanticError::ConflictingStorageClasses { span });
+        ctx.report_error(SemanticError::InvalidStorageClass { span });
     }
 
     // TODO: Add more validation rules

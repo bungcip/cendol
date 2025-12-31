@@ -37,9 +37,6 @@ pub enum ParseError {
     #[error("Unexpected End of File")]
     UnexpectedEof { span: SourceSpan },
 
-    #[error("Invalid unary operator")]
-    InvalidUnaryOperator { span: SourceSpan },
-
     #[error("Declaration not allowed in this context")]
     DeclarationNotAllowed { span: SourceSpan },
 
@@ -52,7 +49,6 @@ impl ParseError {
         match self {
             ParseError::UnexpectedToken { span, .. } => *span,
             ParseError::UnexpectedEof { span } => *span,
-            ParseError::InvalidUnaryOperator { span } => *span,
             ParseError::DeclarationNotAllowed { span } => *span,
             ParseError::InfiniteLoop { span } => *span,
         }
@@ -203,12 +199,8 @@ pub enum SemanticError {
     InvalidArraySize { span: SourceSpan },
 
     // Errors related to declaration specifiers
-    #[error("multiple storage classes in declaration specifiers")]
-    MultipleStorageClasses { span: SourceSpan },
-    #[error("conflicting storage class specifiers")]
-    ConflictingStorageClasses { span: SourceSpan },
-    #[error("expected a typedef name, found {found}")]
-    ExpectedTypedefName { found: String, span: SourceSpan },
+    #[error("invalid storage class specifiers")]
+    InvalidStorageClass { span: SourceSpan },
     #[error("missing type specifier in declaration")]
     MissingTypeSpecifier { span: SourceSpan },
 }
@@ -225,9 +217,7 @@ impl SemanticError {
             SemanticError::InvalidUseOfVoid { span } => *span,
             SemanticError::UnsupportedFeature { span, .. } => *span,
             SemanticError::InvalidArraySize { span } => *span,
-            SemanticError::MultipleStorageClasses { span } => *span,
-            SemanticError::ConflictingStorageClasses { span } => *span,
-            SemanticError::ExpectedTypedefName { span, .. } => *span,
+            SemanticError::InvalidStorageClass { span } => *span,
             SemanticError::MissingTypeSpecifier { span } => *span,
         }
     }

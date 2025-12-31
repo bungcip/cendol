@@ -287,7 +287,11 @@ fn parse_unary_operator(parser: &mut Parser, token: Token) -> Result<NodeRef, Pa
         TokenKind::Star => UnaryOp::Deref,
         TokenKind::And => UnaryOp::AddrOf,
         _ => {
-            return Err(ParseError::InvalidUnaryOperator { span: token.span });
+            return Err(ParseError::UnexpectedToken {
+                expected_tokens: "unary operator".to_string(),
+                found: token.kind,
+                span: token.span,
+            });
         }
     };
 

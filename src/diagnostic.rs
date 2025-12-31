@@ -203,8 +203,6 @@ pub enum SemanticError {
     InvalidArraySize { span: SourceSpan },
 
     // Errors related to declaration specifiers
-    #[error("multiple storage classes in declaration specifiers")]
-    MultipleStorageClasses { span: SourceSpan },
     #[error("conflicting storage class specifiers")]
     ConflictingStorageClasses { span: SourceSpan },
     #[error("expected a typedef name, found {found}")]
@@ -229,7 +227,6 @@ impl SemanticError {
             SemanticError::InvalidUseOfVoid { span } => *span,
             SemanticError::UnsupportedFeature { span, .. } => *span,
             SemanticError::InvalidArraySize { span } => *span,
-            SemanticError::MultipleStorageClasses { span } => *span,
             SemanticError::ConflictingStorageClasses { span } => *span,
             SemanticError::ExpectedTypedefName { span, .. } => *span,
             SemanticError::MissingTypeSpecifier { span } => *span,

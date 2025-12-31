@@ -12,6 +12,7 @@
 
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
+use crate::semantic::const_eval::{self, ConstEvalCtx};
 use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
 use crate::semantic::{
     ArraySizeType, EnumConstant, Namespace, ScopeId, StructMember, Symbol, SymbolKind, SymbolTable, TypeKind,
@@ -144,27 +145,6 @@ pub struct LowerCtx<'a, 'src> {
     // Track errors during lowering for early termination
     pub has_errors: bool,
     pub registry: &'a mut TypeRegistry,
-}
-
-/// Evaluate a constant expression node to an i64 value
-fn eval_const_expr(ctx: &LowerCtx, expr_node_ref: NodeRef) -> Option<i64> {
-    let node = ctx.ast.get_node(expr_node_ref);
-    match &node.kind {
-        NodeKind::LiteralInt(val) => Some(*val),
-        NodeKind::BinaryOp(op, left_ref, right_ref) => {
-            let left_val = eval_const_expr(ctx, *left_ref)?;
-            let right_val = eval_const_expr(ctx, *right_ref)?;
-            match op {
-                BinaryOp::Add => Some(left_val + right_val),
-                BinaryOp::Sub => Some(left_val - right_val),
-                BinaryOp::Mul => Some(left_val * right_val),
-                BinaryOp::Div => Some(left_val / right_val),
-                // TODO: Add other binary operations as needed
-                _ => None,
-            }
-        }
-        _ => None,
-    }
 }
 
 impl<'a, 'src> LowerCtx<'a, 'src> {
@@ -1339,7 +1319,8 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
             let element_type = apply_declarator(base_type, base, ctx);
             let array_size = match size {
                 ArraySize::Expression { expr, qualifiers: _ } => {
-                    if let Some(const_val) = eval_const_expr(ctx, *expr) {
+                    let const_eval_ctx = ConstEvalCtx { ast: ctx.ast };
+                    if let Some(const_val) = const_eval::eval_const_expr(&const_eval_ctx, *expr) {
                         if const_val > 0 {
                             ArraySizeType::Constant(const_val as usize)
                         } else {
@@ -1715,7 +1696,8 @@ fn apply_declarator_for_member(base_type: TypeRef, declarator: &Declarator, ctx:
             let element_type = apply_declarator_for_member(base_type, base, ctx);
             let array_size = match size {
                 ArraySize::Expression { expr, qualifiers: _ } => {
-                    if let Some(const_val) = eval_const_expr(ctx, *expr) {
+                    let const_eval_ctx = ConstEvalCtx { ast: ctx.ast };
+                    if let Some(const_val) = const_eval::eval_const_expr(&const_eval_ctx, *expr) {
                         if const_val > 0 {
                             ArraySizeType::Constant(const_val as usize)
                         } else {

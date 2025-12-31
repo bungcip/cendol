@@ -211,6 +211,10 @@ pub enum SemanticError {
     ExpectedTypedefName { found: String, span: SourceSpan },
     #[error("missing type specifier in declaration")]
     MissingTypeSpecifier { span: SourceSpan },
+    #[error("static assertion failed: {message}")]
+    StaticAssertFailed { message: String, span: SourceSpan },
+    #[error("expression in static assertion is not constant")]
+    StaticAssertNotConstant { span: SourceSpan },
 }
 
 impl SemanticError {
@@ -229,6 +233,8 @@ impl SemanticError {
             SemanticError::ConflictingStorageClasses { span } => *span,
             SemanticError::ExpectedTypedefName { span, .. } => *span,
             SemanticError::MissingTypeSpecifier { span } => *span,
+            SemanticError::StaticAssertFailed { span, .. } => *span,
+            SemanticError::StaticAssertNotConstant { span } => *span,
         }
     }
 }

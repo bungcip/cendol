@@ -208,7 +208,7 @@ impl TokenKind {
 
     /// Check if the token can start a declaration (including typedefs)
     pub fn is_declaration_start(&self, is_typedef: bool) -> bool {
-        if self.is_declaration_specifier_start() {
+        if self.is_declaration_specifier_start() || *self == TokenKind::StaticAssert {
             return true;
         }
 

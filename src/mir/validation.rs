@@ -162,9 +162,10 @@ impl MirValidator {
 
         // Entry block must exist for defined functions
         if let Some(entry_block) = func.entry_block
-            && !sema_output.blocks.contains_key(&entry_block) {
-                self.errors.push(ValidationError::BlockNotFound(entry_block));
-            }
+            && !sema_output.blocks.contains_key(&entry_block)
+        {
+            self.errors.push(ValidationError::BlockNotFound(entry_block));
+        }
         // Extern functions don't need entry blocks
     }
 

@@ -29,7 +29,12 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     // Check for _Static_assert (C11)
     if let Some(token) = trx.parser.accept(TokenKind::StaticAssert) {
-        return parse_static_assert(trx.parser, token);
+        let result = parse_static_assert(trx.parser, token);
+        if result.is_ok() {
+            trx.commit();
+        }
+        // The transaction will be rolled back on error automatically
+        return result;
     }
 
     // Try to parse declaration specifiers
@@ -350,7 +355,7 @@ pub fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<No
     let start_loc = start_token.span.start;
     parser.expect(TokenKind::LeftParen)?;
 
-    let condition = parser.parse_expr_min()?;
+    let condition = parser.parse_expr_assignment()?;
 
     parser.expect(TokenKind::Comma)?;
 

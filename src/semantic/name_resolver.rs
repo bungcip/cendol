@@ -15,6 +15,7 @@ struct NameResolverCtx<'ast, 'diag> {
     ast: &'ast Ast,
     symbol_table: &'ast SymbolTable,
     scope_id: ScopeId,
+    deferred_static_asserts: Vec<NodeRef>,
 }
 
 pub fn run_name_resolver(ast: &Ast, diag: &mut DiagnosticEngine, symbol_table: &SymbolTable) {
@@ -23,9 +24,17 @@ pub fn run_name_resolver(ast: &Ast, diag: &mut DiagnosticEngine, symbol_table: &
         ast,
         symbol_table,
         scope_id: ScopeId::GLOBAL,
+        deferred_static_asserts: Vec::new(),
     };
     let root = ast.get_root();
     visit_node(&mut ctx, root);
+
+    // Process any remaining deferred static asserts at file scope
+    for assert_ref in ctx.deferred_static_asserts.drain(..).collect::<Vec<_>>() {
+        if let NodeKind::StaticAssert(cond, _) = ctx.ast.get_node(assert_ref).kind.clone() {
+            visit_node(&mut ctx, cond);
+        }
+    }
 }
 
 fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
@@ -44,8 +53,17 @@ fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
         }
         NodeKind::CompoundStatement(stmts) => {
             ctx.scope_id = ctx.ast.scope_of(node_ref);
+            let deferred_count = ctx.deferred_static_asserts.len();
             for stmt in stmts {
                 visit_node(ctx, *stmt);
+            }
+
+            // Process asserts deferred in this scope
+            let asserts_in_scope: Vec<_> = ctx.deferred_static_asserts.drain(deferred_count..).collect();
+            for assert_ref in asserts_in_scope {
+                if let NodeKind::StaticAssert(cond, _) = ctx.ast.get_node(assert_ref).kind.clone() {
+                    visit_node(ctx, cond);
+                }
             }
         }
         NodeKind::For(stmt) => {
@@ -160,6 +178,9 @@ fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
             visit_node(ctx, *stmt);
         }
 
+        NodeKind::StaticAssert(..) => {
+            ctx.deferred_static_asserts.push(node_ref);
+        }
         n => {
             debug!("ignoring {} {:?}", node_ref, n);
         }

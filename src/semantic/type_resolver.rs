@@ -19,9 +19,15 @@ pub fn run_type_resolver(
         symbol_table,
         registry,
         current_function_ret_type: None,
+        deferred_checks: Vec::new(),
     };
     let root = ast.get_root();
     resolver.visit_node(root);
+    resolver.process_deferred_checks();
+}
+
+enum DeferredCheck {
+    StaticAssert(NodeRef),
 }
 
 struct TypeResolver<'a> {
@@ -30,6 +36,7 @@ struct TypeResolver<'a> {
     symbol_table: &'a SymbolTable,
     registry: &'a mut TypeRegistry,
     current_function_ret_type: Option<QualType>,
+    deferred_checks: Vec<DeferredCheck>,
 }
 
 impl<'a> TypeResolver<'a> {
@@ -227,6 +234,7 @@ impl<'a> TypeResolver<'a> {
                 for child in nodes {
                     self.visit_node(child);
                 }
+                self.process_deferred_checks();
                 None
             }
             NodeKind::Function(data) => {
@@ -242,12 +250,19 @@ impl<'a> TypeResolver<'a> {
                 if let Some(init) = data.init {
                     self.visit_node(init);
                 }
-                None
+                Some(data.ty)
             }
-            NodeKind::DeclarationList(nodes) | NodeKind::CompoundStatement(nodes) => {
+            NodeKind::DeclarationList(nodes) => {
                 for child in nodes {
                     self.visit_node(child);
                 }
+                None
+            }
+            NodeKind::CompoundStatement(nodes) => {
+                for child in nodes {
+                    self.visit_node(child);
+                }
+                self.process_deferred_checks();
                 None
             }
             NodeKind::If(stmt) => {
@@ -297,8 +312,8 @@ impl<'a> TypeResolver<'a> {
                 }
                 None
             }
-            NodeKind::StaticAssert(cond, _) => {
-                self.visit_node(cond);
+            NodeKind::StaticAssert(..) => {
+                self.deferred_checks.push(DeferredCheck::StaticAssert(node_ref));
                 None
             }
             NodeKind::EnumConstant(_, value_expr) => {
@@ -413,5 +428,33 @@ impl<'a> TypeResolver<'a> {
             node.resolved_type.set(Some(ty));
         }
         result_type
+    }
+
+    fn process_deferred_checks(&mut self) {
+        for check in self.deferred_checks.drain(..).collect::<Vec<_>>() {
+            match check {
+                DeferredCheck::StaticAssert(node_ref) => self.visit_static_assert(node_ref),
+            }
+        }
+    }
+
+    fn visit_static_assert(&mut self, node_ref: NodeRef) {
+        let node = self.ast.get_node(node_ref);
+        if let NodeKind::StaticAssert(cond, msg) = node.kind.clone() {
+            self.visit_node(cond);
+            let ctx = crate::semantic::const_eval::ConstEvalCtx { ast: self.ast };
+            match crate::semantic::const_eval::eval_const_expr(&ctx, cond) {
+                Some(0) => {
+                    self.report_error(SemanticError::StaticAssertFailed {
+                        message: msg.as_str().to_string(),
+                        span: node.span,
+                    });
+                }
+                None => {
+                    self.report_error(SemanticError::StaticAssertNotConstant { span: node.span });
+                }
+                _ => {}
+            }
+        }
     }
 }

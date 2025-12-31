@@ -372,13 +372,25 @@ fn get_place_type_id(
         Place::StructField(base_place, field_index) => {
             let base_type_id = get_place_type_id(base_place, locals, globals, types)?;
             let base_type = types.get(&base_type_id).ok_or("Base type not found for struct field")?;
-            if let MirType::Struct { fields, .. } = base_type {
-                fields
+            match base_type {
+                MirType::Struct { fields, .. } => fields
                     .get(*field_index)
                     .map(|(_, type_id)| *type_id)
-                    .ok_or_else(|| "Field index out of bounds".to_string())
-            } else {
-                Err("Base of StructField is not a struct type".to_string())
+                    .ok_or_else(|| "Field index out of bounds".to_string()),
+                MirType::Pointer { pointee } => {
+                    let pointee_type = types
+                        .get(pointee)
+                        .ok_or("Pointee type not found for struct field access")?;
+                    if let MirType::Struct { fields, .. } = pointee_type {
+                        fields
+                            .get(*field_index)
+                            .map(|(_, type_id)| *type_id)
+                            .ok_or_else(|| "Field index out of bounds".to_string())
+                    } else {
+                        Err("Base of StructField is not a struct type".to_string())
+                    }
+                }
+                _ => Err("Base of StructField is not a struct type".to_string()),
             }
         }
         Place::ArrayIndex(base_place, _) => {
@@ -461,19 +473,37 @@ fn resolve_place_to_addr(
                 .get(&base_place_type_id)
                 .ok_or("Base type not found for struct field access")?;
 
-            if let MirType::Struct { fields, .. } = base_type {
-                let mut offset = 0;
-                for i in 0..*field_index {
-                    let (_, field_type_id) = fields.get(i).ok_or("Field index out of bounds")?;
-                    let field_type = types.get(field_type_id).ok_or("Field type not found")?;
-                    offset += mir_type_size(field_type, types)?;
+            let (struct_fields, is_pointer) = match base_type {
+                MirType::Struct { fields, .. } => (fields, false),
+                MirType::Pointer { pointee } => {
+                    let pointee_type = types
+                        .get(pointee)
+                        .ok_or("Pointee type not found for struct field access")?;
+                    if let MirType::Struct { fields, .. } = pointee_type {
+                        (fields, true)
+                    } else {
+                        return Err("Base of StructField is not a struct type".to_string());
+                    }
                 }
+                _ => return Err("Base of StructField is not a struct type".to_string()),
+            };
 
-                let offset_val = builder.ins().iconst(types::I64, offset as i64);
-                Ok(builder.ins().iadd(base_addr, offset_val))
-            } else {
-                Err("Base of StructField is not a struct type".to_string())
+            let mut offset = 0;
+            for i in 0..*field_index {
+                let (_, field_type_id) = struct_fields.get(i).ok_or("Field index out of bounds")?;
+                let field_type = types.get(field_type_id).ok_or("Field type not found")?;
+                offset += mir_type_size(field_type, types)?;
             }
+
+            let final_addr = if is_pointer {
+                // If the base is a pointer, we need to load the address it points to first
+                builder.ins().load(types::I64, MemFlags::new(), base_addr, 0)
+            } else {
+                base_addr
+            };
+
+            let offset_val = builder.ins().iconst(types::I64, offset as i64);
+            Ok(builder.ins().iadd(final_addr, offset_val))
         }
         Place::ArrayIndex(base_place, index_operand) => {
             // Get the base address of the array/pointer

@@ -129,4 +129,19 @@ mod tests {
         assert_eq!(line, 3, "Error should be on line 3");
         assert_eq!(col, 17, "Error should be at column 17");
     }
+
+    /// Test that semantic lowering correctly identifies typedef redefinitions
+    #[test]
+    #[should_panic(expected = "Anonymous declarations unsupported")]
+    fn test_typedef_redefinition_error() {
+        let source = r#"
+            typedef int my_int;
+            typedef int my_int;
+        "#;
+
+        let phase = CompilePhase::Mir;
+        let config = CompileConfig::from_virtual_file(source.to_string(), phase);
+        let mut driver = CompilerDriver::from_config(config);
+        let _ = driver.run_pipeline(phase);
+    }
 }

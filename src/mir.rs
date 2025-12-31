@@ -439,12 +439,7 @@ impl MirBuilder {
     }
 
     /// Create a new function
-    pub fn create_function(
-        &mut self,
-        name: NameId,
-        param_types: Vec<TypeId>,
-        return_type: TypeId,
-    ) -> MirFunctionId {
+    pub fn create_function(&mut self, name: NameId, param_types: Vec<TypeId>, return_type: TypeId) -> MirFunctionId {
         let func_id = MirFunctionId::new(self.module.functions.len() as u32 + 1).unwrap();
 
         let mut func = MirFunction::new(func_id, name, return_type);

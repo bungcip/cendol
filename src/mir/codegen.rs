@@ -10,8 +10,8 @@
 use crate::ast::NameId;
 use crate::driver::compiler::SemaOutput;
 use crate::mir::{
-    BinaryOp, CallTarget, ConstValue, ConstValueId, Global, GlobalId, Local, LocalId, MirBlock, MirBlockId,
-    MirFunction, MirFunctionId, MirModule, MirStmt, MirStmtId, MirType, Operand, Place, Rvalue, Terminator, TypeId,
+    BinaryOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlock, MirBlockId, MirFunction, MirFunctionId, MirStmt,
+    MirType, Operand, Place, Rvalue, Terminator, TypeId,
 };
 use cranelift::codegen::ir::{StackSlot, StackSlotData, StackSlotKind};
 use cranelift::prelude::{
@@ -62,24 +62,20 @@ fn mir_type_to_cranelift_type(mir_type: &MirType) -> Option<Type> {
 }
 
 /// Helper function to get the size of a MIR type in bytes
-fn mir_type_size(mir_type: &MirType, types: &HashMap<TypeId, MirType>) -> Result<u32, String> {
+fn mir_type_size(mir_type: &MirType, mir: &SemaOutput) -> Result<u32, String> {
     match mir_type {
         MirType::Int { width, .. } => Ok((*width / 8) as u32),
         MirType::Float { width } => Ok((*width / 8) as u32),
         MirType::Pointer { .. } => Ok(8), // Assuming 64-bit pointers for now
         MirType::Array { element, size } => {
-            let element_type = types
-                .get(element)
-                .ok_or_else(|| format!("Type ID {} not found", element.get()))?;
-            Ok(mir_type_size(element_type, types)? * (*size as u32))
+            let element_type = mir.get_type(*element);
+            Ok(mir_type_size(element_type, mir)? * (*size as u32))
         }
         MirType::Struct { fields, .. } => {
             let mut total_size = 0;
             for (_, field_type_id) in fields {
-                let field_type = types
-                    .get(field_type_id)
-                    .ok_or_else(|| format!("Type ID {} not found", field_type_id.get()))?;
-                total_size += mir_type_size(field_type, types)?;
+                let field_type = mir.get_type(*field_type_id);
+                total_size += mir_type_size(field_type, mir)?;
             }
             Ok(total_size)
         }
@@ -91,26 +87,21 @@ fn mir_type_size(mir_type: &MirType, types: &HashMap<TypeId, MirType>) -> Result
 }
 
 /// Standalone function to emit a proper function call that actually invokes the function
-#[allow(clippy::too_many_arguments)]
 fn emit_function_call_impl(
     call_target: &CallTarget,
     args: &[Operand],
     builder: &mut FunctionBuilder,
-    functions: &HashMap<MirFunctionId, MirFunction>,
-    types: &HashMap<TypeId, MirType>,
-    locals: &HashMap<LocalId, Local>,
+    mir: &SemaOutput,
     cranelift_stack_slots: &HashMap<LocalId, StackSlot>,
-    constants: &HashMap<ConstValueId, ConstValue>,
-    globals: &HashMap<GlobalId, Global>,
     module: &mut ObjectModule,
 ) -> Result<Value, String> {
     match call_target {
         CallTarget::Direct(func_id) => {
             // Look up the function in our MIR functions
-            let func = functions.get(func_id).expect("function id not found");
+            let func = mir.get_function(*func_id);
 
             // Get the return type for this function
-            let return_type = types.get(&func.return_type).and_then(mir_type_to_cranelift_type);
+            let return_type = mir_type_to_cranelift_type(mir.get_type(func.return_type));
 
             // Resolve function arguments to Cranelift values
             let mut arg_values = Vec::new();
@@ -119,11 +110,8 @@ fn emit_function_call_impl(
                     arg,
                     builder,
                     types::I32, // Default to int for now
-                    constants,
                     cranelift_stack_slots,
-                    globals,
-                    types,
-                    locals,
+                    mir,
                     module,
                 ) {
                     Ok(value) => arg_values.push(value),
@@ -141,13 +129,9 @@ fn emit_function_call_impl(
 
             // Add parameter types to signature
             for &param_id in &func.params {
-                if let Some(param_local) = locals.get(&param_id) {
-                    let param_type = types
-                        .get(&param_local.type_id)
-                        .and_then(mir_type_to_cranelift_type)
-                        .unwrap_or(types::I32);
-                    sig.params.push(AbiParam::new(param_type));
-                }
+                let param_local = mir.get_local(param_id);
+                let param_type = mir_type_to_cranelift_type(mir.get_type(param_local.type_id)).unwrap();
+                sig.params.push(AbiParam::new(param_type));
             }
 
             // Declare the function in the module if not already declared
@@ -184,16 +168,13 @@ fn resolve_operand_to_value(
     operand: &Operand,
     builder: &mut FunctionBuilder,
     expected_type: Type,
-    constants: &HashMap<ConstValueId, ConstValue>,
     cranelift_stack_slots: &HashMap<LocalId, StackSlot>,
-    globals: &HashMap<GlobalId, Global>,
-    types: &HashMap<TypeId, MirType>,
-    locals: &HashMap<LocalId, Local>,
+    mir: &SemaOutput,
     module: &mut ObjectModule,
 ) -> Result<Value, String> {
     match operand {
         Operand::Constant(const_id) => {
-            let const_value = constants.get(const_id).expect("constant id not found");
+            let const_value = mir.constants.get(const_id).expect("constant id not found");
             match const_value {
                 ConstValue::Int(val) => Ok(builder.ins().iconst(expected_type, *val)),
                 ConstValue::Float(val) => {
@@ -216,44 +197,17 @@ fn resolve_operand_to_value(
                 _ => Ok(builder.ins().iconst(expected_type, 0)),
             }
         }
-        Operand::Copy(place) | Operand::Move(place) => resolve_place_to_value(
-            place,
-            builder,
-            expected_type,
-            cranelift_stack_slots,
-            globals,
-            constants,
-            types,
-            locals,
-            module,
-        ),
+        Operand::Copy(place) | Operand::Move(place) => {
+            resolve_place_to_value(place, builder, expected_type, cranelift_stack_slots, mir, module)
+        }
         Operand::Cast(_, operand) => {
             // For now, just resolve the inner operand
             // TODO: Handle actual type conversions
-            resolve_operand_to_value(
-                operand,
-                builder,
-                expected_type,
-                constants,
-                cranelift_stack_slots,
-                globals,
-                types,
-                locals,
-                module,
-            )
+            resolve_operand_to_value(operand, builder, expected_type, cranelift_stack_slots, mir, module)
         }
         Operand::AddressOf(place) => {
             // The value of an AddressOf operand is the address of the place.
-            resolve_place_to_addr(
-                place,
-                builder,
-                cranelift_stack_slots,
-                globals,
-                constants,
-                types,
-                locals,
-                module,
-            )
+            resolve_place_to_addr(place, builder, cranelift_stack_slots, mir, module)
         }
     }
 }
@@ -265,10 +219,7 @@ fn resolve_place_to_value(
     builder: &mut FunctionBuilder,
     expected_type: Type,
     cranelift_stack_slots: &HashMap<LocalId, StackSlot>,
-    globals: &HashMap<GlobalId, Global>,
-    constants: &HashMap<ConstValueId, ConstValue>,
-    types: &HashMap<TypeId, MirType>,
-    locals: &HashMap<LocalId, Local>,
+    mir: &SemaOutput,
     module: &mut ObjectModule,
 ) -> Result<Value, String> {
     match place {
@@ -286,10 +237,7 @@ fn resolve_place_to_value(
                 place, // Pass the current place
                 builder,
                 cranelift_stack_slots,
-                globals,
-                constants,
-                types,
-                locals,
+                mir,
                 module,
             )?;
 
@@ -302,11 +250,8 @@ fn resolve_place_to_value(
                 operand,
                 builder,
                 types::I64, // Assume pointer size
-                constants,
                 cranelift_stack_slots,
-                globals,
-                types,
-                locals,
+                mir,
                 module,
             )?;
             Ok(builder.ins().load(expected_type, MemFlags::new(), addr, 0))
@@ -317,10 +262,7 @@ fn resolve_place_to_value(
                 &Place::StructField(base_place.clone(), *field_index),
                 builder,
                 cranelift_stack_slots,
-                globals,
-                constants,
-                types,
-                locals,
+                mir,
                 module,
             )?;
             Ok(builder.ins().load(expected_type, MemFlags::new(), addr, 0))
@@ -331,10 +273,7 @@ fn resolve_place_to_value(
                 &Place::ArrayIndex(base_place.clone(), index_operand.clone()),
                 builder,
                 cranelift_stack_slots,
-                globals,
-                constants,
-                types,
-                locals,
+                mir,
                 module,
             )?;
             Ok(builder.ins().load(expected_type, MemFlags::new(), addr, 0))
@@ -343,44 +282,29 @@ fn resolve_place_to_value(
 }
 
 /// Helper function to get the TypeId of a place
-fn get_place_type_id(
-    place: &Place,
-    locals: &HashMap<LocalId, Local>,
-    globals: &HashMap<GlobalId, Global>,
-    types: &HashMap<TypeId, MirType>,
-) -> Result<TypeId, String> {
+fn get_place_type_id(place: &Place, mir: &SemaOutput) -> Result<TypeId, String> {
     match place {
-        Place::Local(local_id) => locals
-            .get(local_id)
-            .map(|l| l.type_id)
-            .ok_or_else(|| format!("Local {} not found", local_id.get())),
-        Place::Global(global_id) => globals
-            .get(global_id)
-            .map(|g| g.type_id)
-            .ok_or_else(|| format!("Global {} not found", global_id.get())),
+        Place::Local(local_id) => Ok(mir.get_local(*local_id).type_id),
+        Place::Global(global_id) => Ok(mir.get_global(*global_id).type_id),
         Place::Deref(operand) => {
             // To get the type of a dereference, we need the type of the operand,
             // which should be a pointer. The resulting type is the pointee.
             // For now, we'll try to extract the type from the operand if it's a place.
             match operand.as_ref() {
-                Operand::Copy(place_box) | Operand::Move(place_box) => {
-                    get_place_type_id(place_box, locals, globals, types)
-                }
+                Operand::Copy(place_box) | Operand::Move(place_box) => get_place_type_id(place_box, mir),
                 _ => Err("Cannot determine type for deref operand".to_string()),
             }
         }
         Place::StructField(base_place, field_index) => {
-            let base_type_id = get_place_type_id(base_place, locals, globals, types)?;
-            let base_type = types.get(&base_type_id).ok_or("Base type not found for struct field")?;
+            let base_type_id = get_place_type_id(base_place, mir)?;
+            let base_type = mir.get_type(base_type_id);
             match base_type {
                 MirType::Struct { fields, .. } => fields
                     .get(*field_index)
                     .map(|(_, type_id)| *type_id)
                     .ok_or_else(|| "Field index out of bounds".to_string()),
                 MirType::Pointer { pointee } => {
-                    let pointee_type = types
-                        .get(pointee)
-                        .ok_or("Pointee type not found for struct field access")?;
+                    let pointee_type = mir.get_type(*pointee);
                     if let MirType::Struct { fields, .. } = pointee_type {
                         fields
                             .get(*field_index)
@@ -394,8 +318,8 @@ fn get_place_type_id(
             }
         }
         Place::ArrayIndex(base_place, _) => {
-            let base_type_id = get_place_type_id(base_place, locals, globals, types)?;
-            let base_type = types.get(&base_type_id).ok_or("Base type not found for array index")?;
+            let base_type_id = get_place_type_id(base_place, mir)?;
+            let base_type = mir.get_type(base_type_id);
             match base_type {
                 MirType::Array { element, .. } => Ok(*element),
                 MirType::Pointer { pointee } => Ok(*pointee),
@@ -406,15 +330,11 @@ fn get_place_type_id(
 }
 
 /// Helper function to resolve a MIR place to a memory address
-#[allow(clippy::too_many_arguments)]
 fn resolve_place_to_addr(
     place: &Place,
     builder: &mut FunctionBuilder,
     cranelift_stack_slots: &HashMap<LocalId, StackSlot>,
-    globals: &HashMap<GlobalId, Global>,
-    constants: &HashMap<ConstValueId, ConstValue>,
-    types: &HashMap<TypeId, MirType>,
-    locals: &HashMap<LocalId, Local>,
+    mir: &SemaOutput,
     module: &mut ObjectModule,
 ) -> Result<Value, String> {
     match place {
@@ -426,16 +346,13 @@ fn resolve_place_to_addr(
             }
         }
         Place::Global(global_id) => {
-            if let Some(global) = globals.get(global_id) {
-                let global_val = module
-                    .declare_data(global.name.as_str(), cranelift_module::Linkage::Export, true, false)
-                    .map_err(|e| format!("Failed to declare global data: {:?}", e))?;
-                let local_id = module.declare_data_in_func(global_val, builder.func);
-                // Use I64 for addresses
-                Ok(builder.ins().global_value(types::I64, local_id))
-            } else {
-                Err(format!("Global variable {} not found", global_id.get()))
-            }
+            let global = mir.get_global(*global_id);
+            let global_val = module
+                .declare_data(global.name.as_str(), cranelift_module::Linkage::Export, true, false)
+                .map_err(|e| format!("Failed to declare global data: {:?}", e))?;
+            let local_id = module.declare_data_in_func(global_val, builder.func);
+            // Use I64 for addresses
+            Ok(builder.ins().global_value(types::I64, local_id))
         }
         Place::Deref(operand) => {
             // The address is the value of the operand itself (which should be a pointer).
@@ -443,42 +360,24 @@ fn resolve_place_to_addr(
                 operand,
                 builder,
                 types::I64, // Assume pointers are 64-bit
-                constants,
                 cranelift_stack_slots,
-                globals,
-                // These last two args are new
-                types,
-                locals,
+                mir,
                 module,
             )
         }
         Place::StructField(base_place, field_index) => {
             // Get the base address of the struct
-            let base_addr = resolve_place_to_addr(
-                base_place,
-                builder,
-                cranelift_stack_slots,
-                globals,
-                constants,
-                types,
-                locals,
-                module,
-            )?;
+            let base_addr = resolve_place_to_addr(base_place, builder, cranelift_stack_slots, mir, module)?;
 
             // We need to find the type of the base_place to calculate the offset
-            let base_place_type_id =
-                get_place_type_id(base_place, locals, globals, types).map_err(|e| e.to_string())?;
+            let base_place_type_id = get_place_type_id(base_place, mir).map_err(|e| e.to_string())?;
 
-            let base_type = types
-                .get(&base_place_type_id)
-                .ok_or("Base type not found for struct field access")?;
+            let base_type = mir.get_type(base_place_type_id);
 
             let (struct_fields, is_pointer) = match base_type {
                 MirType::Struct { fields, .. } => (fields, false),
                 MirType::Pointer { pointee } => {
-                    let pointee_type = types
-                        .get(pointee)
-                        .ok_or("Pointee type not found for struct field access")?;
+                    let pointee_type = mir.get_type(*pointee);
                     if let MirType::Struct { fields, .. } = pointee_type {
                         (fields, true)
                     } else {
@@ -491,8 +390,8 @@ fn resolve_place_to_addr(
             let mut offset = 0;
             for i in 0..*field_index {
                 let (_, field_type_id) = struct_fields.get(i).ok_or("Field index out of bounds")?;
-                let field_type = types.get(field_type_id).ok_or("Field type not found")?;
-                offset += mir_type_size(field_type, types)?;
+                let field_type = mir.get_type(*field_type_id);
+                offset += mir_type_size(field_type, mir)?;
             }
 
             let final_addr = if is_pointer {
@@ -507,46 +406,31 @@ fn resolve_place_to_addr(
         }
         Place::ArrayIndex(base_place, index_operand) => {
             // Get the base address of the array/pointer
-            let base_addr = resolve_place_to_addr(
-                base_place,
-                builder,
-                cranelift_stack_slots,
-                globals,
-                constants,
-                types,
-                locals,
-                module,
-            )?;
+            let base_addr = resolve_place_to_addr(base_place, builder, cranelift_stack_slots, mir, module)?;
 
             // Resolve the index operand to a value
             let index_val = resolve_operand_to_value(
                 index_operand,
                 builder,
                 types::I64, // Use I64 for index calculations
-                constants,
                 cranelift_stack_slots,
-                globals,
-                types,
-                locals,
+                mir,
                 module,
             )?;
 
             // Determine the size of the element by getting the type of the base place
-            let base_place_type_id =
-                get_place_type_id(base_place, locals, globals, types).map_err(|e| e.to_string())?;
+            let base_place_type_id = get_place_type_id(base_place, mir).map_err(|e| e.to_string())?;
 
-            let base_type = types
-                .get(&base_place_type_id)
-                .ok_or("Base type not found for array index")?;
+            let base_type = mir.get_type(base_place_type_id);
 
             let element_size = match base_type {
                 MirType::Array { element, .. } => {
-                    let element_type = types.get(element).ok_or("Array element type not found")?;
-                    mir_type_size(element_type, types)?
+                    let element_type = mir.get_type(*element);
+                    mir_type_size(element_type, mir)?
                 }
                 MirType::Pointer { pointee } => {
-                    let pointee_type = types.get(pointee).ok_or("Pointer pointee type not found")?;
-                    mir_type_size(pointee_type, types)?
+                    let pointee_type = mir.get_type(*pointee);
+                    mir_type_size(pointee_type, mir)?
                 }
                 _ => return Err("Base of ArrayIndex is not an array or pointer".to_string()),
             };
@@ -561,17 +445,8 @@ fn resolve_place_to_addr(
 /// MIR to Cranelift IR Lowerer
 pub struct MirToCraneliftLowerer {
     builder_context: FunctionBuilderContext,
-    // ctx: cranelift::codegen::Context,
     module: ObjectModule,
-    mir_module: MirModule,
-    // State tracking
-    functions: HashMap<MirFunctionId, MirFunction>,
-    blocks: HashMap<MirBlockId, MirBlock>,
-    locals: HashMap<LocalId, Local>,
-    globals: HashMap<GlobalId, Global>,
-    types: HashMap<TypeId, MirType>,
-    constants: HashMap<ConstValueId, ConstValue>,
-    statements: HashMap<MirStmtId, MirStmt>,
+    mir: SemaOutput, // NOTE: need better nama
     cranelift_stack_slots: HashMap<LocalId, StackSlot>,
     // Store compiled functions for dumping
     compiled_functions: HashMap<String, String>,
@@ -579,8 +454,9 @@ pub struct MirToCraneliftLowerer {
     emit_kind: EmitKind,
 }
 
+/// NOTE: we use panic!() to ICE because codegen rely on correct MIR, so if we give invalid MIR, then problem is in previous phase
 impl MirToCraneliftLowerer {
-    pub fn new(sema_output: SemaOutput) -> Self {
+    pub fn new(mir: SemaOutput) -> Self {
         let triple = Triple::host();
         let builder = ObjectBuilder::new(
             cranelift::prelude::isa::lookup(triple)
@@ -599,14 +475,7 @@ impl MirToCraneliftLowerer {
             builder_context: FunctionBuilderContext::new(),
             // ctx: module.make_context(),
             module,
-            mir_module: sema_output.module,
-            functions: sema_output.functions,
-            blocks: sema_output.blocks,
-            locals: sema_output.locals,
-            globals: sema_output.globals,
-            types: sema_output.types,
-            constants: sema_output.constants,
-            statements: sema_output.statements,
+            mir,
             cranelift_stack_slots: HashMap::new(),
             compiled_functions: HashMap::new(),
             emit_kind: EmitKind::Object,
@@ -617,92 +486,69 @@ impl MirToCraneliftLowerer {
         self.emit_kind = emit_kind;
         self.populate_state();
 
-        let result: Result<(), String> = (|| {
-            // Define all global variables in the module
-            for (_global_id, global) in &self.globals {
-                let data_id = self
-                    .module
-                    .declare_data(global.name.as_str(), Linkage::Export, true, false)
-                    .map_err(|e| format!("Failed to declare global data: {:?}", e))?;
+        // Define all global variables in the module
+        for (_global_id, global) in &self.mir.globals {
+            let data_id = self
+                .module
+                .declare_data(global.name.as_str(), Linkage::Export, true, false)
+                .map_err(|e| format!("Failed to declare global data: {:?}", e))?;
 
-                let mut data_description = DataDescription::new();
+            let mut data_description = DataDescription::new();
 
-                if let Some(const_id) = global.initial_value {
-                    if let Some(const_val) = self.constants.get(&const_id) {
-                        let initial_value_bytes = match const_val {
-                            ConstValue::Int(val) => val.to_le_bytes().to_vec(),
-                            ConstValue::Float(val) => {
-                                let global_type = self
-                                    .types
-                                    .get(&global.type_id)
-                                    .ok_or_else(|| format!("Type ID {} not found", global.type_id.get()))?;
-                                if let MirType::Float { width } = global_type {
-                                    if *width == 64 {
-                                        val.to_le_bytes().to_vec()
-                                    } else {
-                                        (*val as f32).to_le_bytes().to_vec()
-                                    }
+            if let Some(const_id) = global.initial_value {
+                if let Some(const_val) = self.mir.constants.get(&const_id) {
+                    let initial_value_bytes = match const_val {
+                        ConstValue::Int(val) => val.to_le_bytes().to_vec(),
+                        ConstValue::Float(val) => {
+                            let global_type = self.mir.get_type(global.type_id);
+                            if let MirType::Float { width } = global_type {
+                                if *width == 64 {
+                                    val.to_le_bytes().to_vec()
                                 } else {
                                     (*val as f32).to_le_bytes().to_vec()
                                 }
+                            } else {
+                                (*val as f32).to_le_bytes().to_vec()
                             }
-                            ConstValue::Bool(val) => vec![*val as u8],
-                            ConstValue::Null => {
-                                let pointer_size = self.module.target_config().pointer_bytes() as usize;
-                                vec![0; pointer_size]
-                            }
-                            ConstValue::String(s) => {
-                                let mut bytes = s.as_bytes().to_vec();
-                                bytes.push(0);
-                                bytes
-                            }
-                            _ => {
-                                let global_type = self
-                                    .types
-                                    .get(&global.type_id)
-                                    .ok_or_else(|| format!("Type ID {} not found", global.type_id.get()))?;
-                                let size = mir_type_size(global_type, &self.types)? as usize;
-                                vec![0; size]
-                            }
-                        };
-                        data_description.define(initial_value_bytes.into_boxed_slice());
-                    } else {
-                        let global_type = self
-                            .types
-                            .get(&global.type_id)
-                            .ok_or_else(|| format!("Type ID {} not found", global.type_id.get()))?;
-                        let size = mir_type_size(global_type, &self.types)? as usize;
-                        data_description.define_zeroinit(size);
-                    }
+                        }
+                        ConstValue::Bool(val) => vec![*val as u8],
+                        ConstValue::Null => {
+                            let pointer_size = self.module.target_config().pointer_bytes() as usize;
+                            vec![0; pointer_size]
+                        }
+                        ConstValue::String(s) => {
+                            let mut bytes = s.as_bytes().to_vec();
+                            bytes.push(0);
+                            bytes
+                        }
+                        _ => {
+                            let global_type = self.mir.get_type(global.type_id);
+                            let size = mir_type_size(global_type, &self.mir)? as usize;
+                            vec![0; size]
+                        }
+                    };
+                    data_description.define(initial_value_bytes.into_boxed_slice());
                 } else {
-                    let global_type = self
-                        .types
-                        .get(&global.type_id)
-                        .ok_or_else(|| format!("Type ID {} not found", global.type_id.get()))?;
-                    let size = mir_type_size(global_type, &self.types)? as usize;
+                    let global_type = self.mir.get_type(global.type_id);
+                    let size = mir_type_size(global_type, &self.mir)? as usize;
                     data_description.define_zeroinit(size);
                 }
-
-                self.module
-                    .define_data(data_id, &data_description)
-                    .map_err(|e| format!("Failed to define global data: {:?}", e))?;
+            } else {
+                let global_type = self.mir.get_type(global.type_id);
+                let size = mir_type_size(global_type, &self.mir)? as usize;
+                data_description.define_zeroinit(size);
             }
 
-            // Lower all functions
-            for func_id in self.mir_module.functions.clone() {
-                self.lower_function(func_id)
-                    .map_err(|e| format!("Error lowering function: {}", e))?;
-            }
+            self.module
+                .define_data(data_id, &data_description)
+                .map_err(|e| format!("Failed to define global data: {:?}", e))?;
+        }
 
-            Ok(())
-        })();
-
-        result?;
-
-        // Store the string representation of the final function
-        // let final_func_ir = self.ctx.func.to_string();
-        // let final_func_name = "final".to_string();
-        // self.compiled_functions.insert(final_func_name, final_func_ir);
+        // Lower all functions
+        for func_id in self.mir.module.functions.clone() {
+            self.lower_function(func_id)
+                .map_err(|e| format!("Error lowering function: {}", e))?;
+        }
 
         // Finalize and return the compiled code
         let product = self.module.finish();
@@ -728,15 +574,15 @@ impl MirToCraneliftLowerer {
     /// Populate state from MIR module
     fn populate_state(&mut self) {
         // Populate types from the MIR module
-        for (index, mir_type) in self.mir_module.types.iter().enumerate() {
+        for (index, mir_type) in self.mir.module.types.iter().enumerate() {
             let type_id = TypeId::new((index + 1) as u32).unwrap(); // Types are 1-indexed
-            self.types.insert(type_id, mir_type.clone());
+            self.mir.types.insert(type_id, mir_type.clone());
         }
 
         // Populate constants from the MIR module
-        for (index, const_value) in self.mir_module.constants.iter().enumerate() {
+        for (index, const_value) in self.mir.module.constants.iter().enumerate() {
             let const_id = ConstValueId::new((index + 1) as u32).unwrap(); // Constants are 1-indexed
-            self.constants.insert(const_id, const_value.clone());
+            self.mir.constants.insert(const_id, const_value.clone());
         }
 
         // The globals and functions are already populated in the constructor
@@ -745,7 +591,7 @@ impl MirToCraneliftLowerer {
         // No additional population needed for globals as they're set in constructor
 
         // If no functions were found, create a default main function
-        if self.functions.is_empty() {
+        if self.mir.functions.is_empty() {
             let func_id = MirFunctionId::new(1).unwrap();
             let mut func = MirFunction::new(func_id, NameId::new("main"), TypeId::new(1).unwrap());
 
@@ -753,25 +599,22 @@ impl MirToCraneliftLowerer {
             let mut entry_block = MirBlock::new(entry_block_id);
 
             // Default to returning 0
-            let return_const_id = ConstValueId::new((self.constants.len() + 1) as u32).unwrap();
-            self.constants.insert(return_const_id, ConstValue::Int(0));
+            let return_const_id = ConstValueId::new((self.mir.constants.len() + 1) as u32).unwrap();
+            self.mir.constants.insert(return_const_id, ConstValue::Int(0));
             let return_operand = Operand::Constant(return_const_id);
             entry_block.terminator = Terminator::Return(Some(return_operand));
 
             func.entry_block = entry_block_id;
             func.blocks.push(entry_block_id);
 
-            self.functions.insert(func_id, func);
-            self.blocks.insert(entry_block_id, entry_block);
+            self.mir.functions.insert(func_id, func);
+            self.mir.blocks.insert(entry_block_id, entry_block);
         }
     }
 
     /// Lower a MIR function to Cranelift IR using 3-phase algorithm
     fn lower_function(&mut self, func_id: MirFunctionId) -> Result<(), String> {
-        let func = self
-            .functions
-            .get(&func_id)
-            .ok_or_else(|| format!("Function {} not found in MIR", func_id.get()))?;
+        let func = self.mir.get_function(func_id);
         // Create a fresh context for this function
         let mut func_ctx = self.module.make_context();
 
@@ -779,20 +622,16 @@ impl MirToCraneliftLowerer {
         func_ctx.func.signature.params.clear();
 
         // Get the return type from MIR and convert to Cranelift type
-        let return_type_opt = self.types.get(&func.return_type).and_then(mir_type_to_cranelift_type);
+        let return_type = self.mir.get_type(func.return_type);
+        let return_type_opt = mir_type_to_cranelift_type(return_type);
 
         // Add parameters from MIR function signature
         let mut param_types = Vec::new();
         for &param_id in &func.params {
-            if let Some(param_local) = self.locals.get(&param_id) {
-                let param_type = self
-                    .types
-                    .get(&param_local.type_id)
-                    .and_then(mir_type_to_cranelift_type)
-                    .unwrap_or(types::I32);
-                func_ctx.func.signature.params.push(AbiParam::new(param_type));
-                param_types.push(param_type);
-            }
+            let param_local = self.mir.get_local(param_id);
+            let param_type = mir_type_to_cranelift_type(self.mir.get_type(param_local.type_id)).unwrap();
+            func_ctx.func.signature.params.push(AbiParam::new(param_type));
+            param_types.push(param_type);
         }
 
         // Only add return parameter if the function has a non-void return type
@@ -812,15 +651,9 @@ impl MirToCraneliftLowerer {
         let all_locals: Vec<LocalId> = func.locals.iter().chain(func.params.iter()).cloned().collect();
 
         for &local_id in &all_locals {
-            let local = self
-                .locals
-                .get(&local_id)
-                .ok_or_else(|| format!("Local {} not found", local_id.get()))?;
-            let local_type = self
-                .types
-                .get(&local.type_id)
-                .ok_or_else(|| format!("Type for local {} not found", local_id.get()))?;
-            let size = mir_type_size(local_type, &self.types)?;
+            let local = self.mir.get_local(local_id);
+            let local_type = self.mir.get_type(local.type_id);
+            let size = mir_type_size(local_type, &self.mir)?;
 
             // Don't allocate space for zero-sized types
             if size > 0 {
@@ -871,6 +704,7 @@ impl MirToCraneliftLowerer {
 
             // Get the MIR block
             let mir_block = self
+                .mir
                 .blocks
                 .get(&current_block_id)
                 .ok_or_else(|| format!("Block {} not found in MIR", current_block_id.get()))?;
@@ -881,7 +715,7 @@ impl MirToCraneliftLowerer {
             let statements_to_process: Vec<MirStmt> = mir_block
                 .statements
                 .iter()
-                .filter_map(|&stmt_id| self.statements.get(&stmt_id).cloned())
+                .filter_map(|&stmt_id| self.mir.statements.get(&stmt_id).cloned())
                 .collect();
 
             // Process statements
@@ -894,23 +728,16 @@ impl MirToCraneliftLowerer {
                                 operand,
                                 &mut builder,
                                 types::I32, // Assuming i32 for now
-                                &self.constants,
                                 &self.cranelift_stack_slots,
-                                &self.globals,
-                                &self.types,
-                                &self.locals,
+                                &self.mir,
                                 &mut self.module,
                             ),
                             Rvalue::Call(call_target, args) => emit_function_call_impl(
                                 call_target,
                                 args,
                                 &mut builder,
-                                &self.functions,
-                                &self.types,
-                                &self.locals,
+                                &self.mir,
                                 &self.cranelift_stack_slots,
-                                &self.constants,
-                                &self.globals,
                                 &mut self.module,
                             ),
                             Rvalue::BinaryOp(op, left_operand, right_operand) => {
@@ -918,11 +745,8 @@ impl MirToCraneliftLowerer {
                                     left_operand,
                                     &mut builder,
                                     types::I32,
-                                    &self.constants,
                                     &self.cranelift_stack_slots,
-                                    &self.globals,
-                                    &self.types,
-                                    &self.locals,
+                                    &self.mir,
                                     &mut self.module,
                                 )?;
 
@@ -930,11 +754,8 @@ impl MirToCraneliftLowerer {
                                     right_operand,
                                     &mut builder,
                                     types::I32,
-                                    &self.constants,
                                     &self.cranelift_stack_slots,
-                                    &self.globals,
-                                    &self.types,
-                                    &self.locals,
+                                    &self.mir,
                                     &mut self.module,
                                 )?;
 
@@ -993,8 +814,8 @@ impl MirToCraneliftLowerer {
                                     } else {
                                         // This local doesn't have a stack slot (likely a void type)
                                         // Check if it's actually a void type to provide a better warning
-                                        if let Some(local) = self.locals.get(local_id)
-                                            && let Some(local_type) = self.types.get(&local.type_id)
+                                        if let Some(local) = self.mir.locals.get(local_id)
+                                            && let Some(local_type) = self.mir.types.get(&local.type_id)
                                             && !matches!(local_type, MirType::Void)
                                         {
                                             eprintln!("Warning: Stack slot not found for local {}", local_id.get());
@@ -1007,10 +828,7 @@ impl MirToCraneliftLowerer {
                                         place,
                                         &mut builder,
                                         &self.cranelift_stack_slots,
-                                        &self.globals,
-                                        &self.constants,
-                                        &self.types,
-                                        &self.locals,
+                                        &self.mir,
                                         &mut self.module,
                                     ) {
                                         Ok(addr) => {
@@ -1029,11 +847,8 @@ impl MirToCraneliftLowerer {
 
                     MirStmt::Store(operand, place) => {
                         // We need to determine the correct type for the operand
-                        let place_type_id = get_place_type_id(place, &self.locals, &self.globals, &self.types)?;
-                        let place_type = self
-                            .types
-                            .get(&place_type_id)
-                            .ok_or_else(|| format!("Type ID {} not found", place_type_id.get()))?;
+                        let place_type_id = get_place_type_id(place, &self.mir)?;
+                        let place_type = self.mir.get_type(place_type_id);
                         let cranelift_type = mir_type_to_cranelift_type(place_type)
                             .ok_or_else(|| "Cannot store to a void type".to_string())?;
 
@@ -1041,11 +856,8 @@ impl MirToCraneliftLowerer {
                             operand,
                             &mut builder,
                             cranelift_type,
-                            &self.constants,
                             &self.cranelift_stack_slots,
-                            &self.globals,
-                            &self.types,
-                            &self.locals,
+                            &self.mir,
                             &mut self.module,
                         )?;
 
@@ -1064,10 +876,7 @@ impl MirToCraneliftLowerer {
                                     place,
                                     &mut builder,
                                     &self.cranelift_stack_slots,
-                                    &self.globals,
-                                    &self.constants,
-                                    &self.types,
-                                    &self.locals,
+                                    &self.mir,
                                     &mut self.module,
                                 )?;
                                 builder.ins().store(MemFlags::new(), value, addr, 0);
@@ -1106,11 +915,8 @@ impl MirToCraneliftLowerer {
                         cond,
                         &mut builder,
                         types::I32,
-                        &self.constants,
                         &self.cranelift_stack_slots,
-                        &self.globals,
-                        &self.types,
-                        &self.locals,
+                        &self.mir,
                         &mut self.module,
                     )?;
 
@@ -1134,11 +940,8 @@ impl MirToCraneliftLowerer {
                                 operand,
                                 &mut builder,
                                 ret_type,
-                                &self.constants,
                                 &self.cranelift_stack_slots,
-                                &self.globals,
-                                &self.types,
-                                &self.locals,
+                                &self.mir,
                                 &mut self.module,
                             )?;
                             builder.ins().return_(&[return_value]);

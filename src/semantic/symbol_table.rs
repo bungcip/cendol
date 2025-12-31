@@ -68,9 +68,10 @@ pub enum SymbolKind {
         #[allow(unused)]
         value: i64, // Resolved constant value
     },
-    #[allow(unused)]
     Label {
+        #[allow(unused)]
         is_defined: bool,
+        #[allow(unused)]
         is_used: bool,
     },
     Record {

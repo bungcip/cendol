@@ -490,8 +490,7 @@ fn resolve_place_to_addr(
 
             let mut offset = 0;
             for i in 0..*field_index {
-                let (_, field_type_id) =
-                    struct_fields.get(i).ok_or("Field index out of bounds")?;
+                let (_, field_type_id) = struct_fields.get(i).ok_or("Field index out of bounds")?;
                 let field_type = types.get(field_type_id).ok_or("Field type not found")?;
                 offset += mir_type_size(field_type, types)?;
             }

@@ -278,7 +278,7 @@ pub struct FunctionParameter {
 /// Struct/union member information
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructMember {
-    pub name: NameId,
+    pub name: Option<NameId>,
     pub member_type: QualType,
     pub bit_field_size: Option<NonZeroU16>,
     pub span: SourceSpan, // for diagnostic

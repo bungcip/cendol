@@ -399,11 +399,7 @@ fn convert_parsed_base_type_to_qual_type(
                     struct_members.push(StructMember {
                         name: parsed_member.name,
                         member_type: member_types[i],
-                        bit_field_size: parsed_member.bit_field_size.map(|size| {
-                            // Convert from NonZeroU32 to NonZeroU16
-                            std::num::NonZeroU16::new(size.get() as u16)
-                                .unwrap_or_else(|| std::num::NonZeroU16::new(1).unwrap())
-                        }),
+                        bit_field_size: parsed_member.bit_field_size,
                         span: parsed_member.span,
                     });
                 }
@@ -762,7 +758,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                                     };
 
                                     struct_members.push(StructMember {
-                                        name: member_name,
+                                        name: Some(member_name),
                                         member_type: QualType::unqualified(member_type),
                                         bit_field_size: None,
                                         span,
@@ -1875,7 +1871,7 @@ fn process_anonymous_struct_members(
                         };
 
                     flattened_members.push(StructMember {
-                        name: member_name,
+                        name: Some(member_name),
                         member_type,
                         bit_field_size: None,
                         span,

@@ -151,7 +151,7 @@ fn parse_type_specifier_to_parsed_base(
                                 )?;
 
                                 parsed_members.push(ParsedStructMember {
-                                    name: member_name,
+                                    name: Some(member_name),
                                     ty: member_parsed_type,
                                     bit_field_size: None,
                                     span: SourceSpan::empty(), // TODO: Get proper span

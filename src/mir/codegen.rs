@@ -71,13 +71,27 @@ fn mir_type_size(mir_type: &MirType, mir: &SemaOutput) -> Result<u32, String> {
             let element_type = mir.get_type(*element);
             Ok(mir_type_size(element_type, mir)? * (*size as u32))
         }
-        MirType::Struct { fields, .. } => {
-            let mut total_size = 0;
-            for (_, field_type_id) in fields {
-                let field_type = mir.get_type(*field_type_id);
-                total_size += mir_type_size(field_type, mir)?;
+        MirType::Record { fields, is_union, .. } => {
+            if *is_union {
+                // Size of union is max size of its fields
+                let mut max_size = 0;
+                for (_, field_type_id) in fields {
+                    let field_type = mir.get_type(*field_type_id);
+                    let s = mir_type_size(field_type, mir)?;
+                    if s > max_size {
+                        max_size = s;
+                    }
+                }
+                Ok(max_size)
+            } else {
+                // Size of struct is sum of sizes of its fields
+                let mut total_size = 0;
+                for (_, field_type_id) in fields {
+                    let field_type = mir.get_type(*field_type_id);
+                    total_size += mir_type_size(field_type, mir)?;
+                }
+                Ok(total_size)
             }
-            Ok(total_size)
         }
         MirType::Bool => Ok(1),
         MirType::Void => Ok(0),
@@ -218,7 +232,6 @@ fn resolve_operand_to_value(
 }
 
 /// Helper function to resolve a MIR place to a Cranelift value
-#[allow(clippy::too_many_arguments)]
 fn resolve_place_to_value(
     place: &Place,
     builder: &mut FunctionBuilder,
@@ -304,13 +317,13 @@ fn get_place_type_id(place: &Place, mir: &SemaOutput) -> Result<TypeId, String> 
             let base_type_id = get_place_type_id(base_place, mir)?;
             let base_type = mir.get_type(base_type_id);
             match base_type {
-                MirType::Struct { fields, .. } => fields
+                MirType::Record { fields, .. } => fields
                     .get(*field_index)
                     .map(|(_, type_id)| *type_id)
                     .ok_or_else(|| "Field index out of bounds".to_string()),
                 MirType::Pointer { pointee } => {
                     let pointee_type = mir.get_type(*pointee);
-                    if let MirType::Struct { fields, .. } = pointee_type {
+                    if let MirType::Record { fields, .. } = pointee_type {
                         fields
                             .get(*field_index)
                             .map(|(_, type_id)| *type_id)
@@ -379,12 +392,12 @@ fn resolve_place_to_addr(
 
             let base_type = mir.get_type(base_place_type_id);
 
-            let (struct_fields, is_pointer) = match base_type {
-                MirType::Struct { fields, .. } => (fields, false),
+            let (record_fields, is_pointer, is_union) = match base_type {
+                MirType::Record { fields, is_union, .. } => (fields, false, *is_union),
                 MirType::Pointer { pointee } => {
                     let pointee_type = mir.get_type(*pointee);
-                    if let MirType::Struct { fields, .. } = pointee_type {
-                        (fields, true)
+                    if let MirType::Record { fields, is_union, .. } = pointee_type {
+                        (fields, true, *is_union)
                     } else {
                         return Err("Base of StructField is not a struct type".to_string());
                     }
@@ -393,10 +406,15 @@ fn resolve_place_to_addr(
             };
 
             let mut offset = 0;
-            for i in 0..*field_index {
-                let (_, field_type_id) = struct_fields.get(i).ok_or("Field index out of bounds")?;
-                let field_type = mir.get_type(*field_type_id);
-                offset += mir_type_size(field_type, mir)?;
+            if !is_union {
+                for i in 0..*field_index {
+                    let (_, field_type_id) = record_fields.get(i).ok_or("Field index out of bounds")?;
+                    let field_type = mir.get_type(*field_type_id);
+                    offset += mir_type_size(field_type, mir)?;
+                }
+            } else {
+                // For unions all fields start at offset 0
+                offset = 0;
             }
 
             let final_addr = if is_pointer {

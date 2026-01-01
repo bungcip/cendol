@@ -244,6 +244,10 @@ pub enum UnaryOp {
 }
 
 /// Type - MIR type system
+// - All Struct/Union have a stable NameId
+// - No anonymous record types exist in MIR
+// - No anonymous members exist in MIR
+// - Field names are unique within a record
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum MirType {
     Void,
@@ -266,13 +270,10 @@ pub enum MirType {
         return_type: TypeId,
         params: Vec<TypeId>,
     },
-    Struct {
-        name: NameId,
-        fields: Vec<(NameId, TypeId)>,
-    },
-    Union {
-        name: NameId,
-        fields: Vec<(NameId, TypeId)>,
+    Record {
+        name: NameId,                  // unlike in C, in MIR we must have name
+        fields: Vec<(NameId, TypeId)>, // unlike in C, in MIR we must have name
+        is_union: bool,
     },
     Enum {
         name: NameId,
@@ -559,35 +560,8 @@ impl MirBuilder {
     /// Add a type to the module with interning
     pub fn add_type(&mut self, mir_type: MirType) -> TypeId {
         // Check if type already exists (type interning)
-        // For struct types, we need to be careful about self-referential types
         for (existing_id, existing_type) in &self.types {
-            // Special handling for struct types to avoid self-referential issues
-            if let (
-                MirType::Struct {
-                    name: struct_name,
-                    fields: struct_fields,
-                },
-                MirType::Struct {
-                    name: existing_struct_name,
-                    fields: existing_struct_fields,
-                },
-            ) = (&mir_type, existing_type)
-            {
-                // Only intern struct types if they have the same name and field structure
-                // but avoid interning if it would create self-referential types
-                if struct_name == existing_struct_name && struct_fields.len() == existing_struct_fields.len() {
-                    let fields_match = struct_fields.iter().zip(existing_struct_fields.iter()).all(
-                        |((field_name, field_type), (existing_field_name, existing_field_type))| {
-                            field_name == existing_field_name && field_type == existing_field_type
-                        },
-                    );
-                    if fields_match {
-                        return *existing_id;
-                    }
-                }
-            }
-            // For non-struct types, use normal equality comparison
-            else if existing_type == &mir_type {
+            if existing_type == &mir_type {
                 return *existing_id;
             }
         }
@@ -680,29 +654,15 @@ impl MirBuilder {
         NameId::new(name)
     }
 
-    pub fn update_struct_fields(&mut self, type_id: TypeId, fields: Vec<(NameId, TypeId)>) {
+    pub fn update_record_fields(&mut self, type_id: TypeId, fields: Vec<(NameId, TypeId)>) {
         let type_index = (type_id.get() - 1) as usize;
         if let Some(mir_type) = self.module.types.get_mut(type_index)
-            && let MirType::Struct { fields: old_fields, .. } = mir_type
+            && let MirType::Record { fields: old_fields, .. } = mir_type
         {
             *old_fields = fields.clone();
         }
         if let Some(mir_type) = self.types.get_mut(&type_id)
-            && let MirType::Struct { fields: old_fields, .. } = mir_type
-        {
-            *old_fields = fields;
-        }
-    }
-
-    pub fn update_union_fields(&mut self, type_id: TypeId, fields: Vec<(NameId, TypeId)>) {
-        let type_index = (type_id.get() - 1) as usize;
-        if let Some(mir_type) = self.module.types.get_mut(type_index)
-            && let MirType::Union { fields: old_fields, .. } = mir_type
-        {
-            *old_fields = fields.clone();
-        }
-        if let Some(mir_type) = self.types.get_mut(&type_id)
-            && let MirType::Union { fields: old_fields, .. } = mir_type
+            && let MirType::Record { fields: old_fields, .. } = mir_type
         {
             *old_fields = fields;
         }
@@ -827,8 +787,10 @@ impl fmt::Display for MirType {
             MirType::Pointer { pointee } => write!(f, "*{}", pointee.get()),
             MirType::Array { element, size } => write!(f, "[{}]{}", size, element.get()),
             MirType::Function { return_type, params } => write!(f, "fn({:?}) -> {}", params, return_type.get()),
-            MirType::Struct { name, fields } => write!(f, "struct {} {{ {:?} }}", name, fields),
-            MirType::Union { name, fields } => write!(f, "union {} {{ {:?} }}", name, fields),
+            MirType::Record { name, fields, is_union } => {
+                let kind = if *is_union { "union" } else { "struct" };
+                write!(f, "{} {} {{ {:?} }}", kind, name, fields)
+            }
             MirType::Enum { name, variants } => write!(f, "enum {} {{ {:?} }}", name, variants),
         }
     }

@@ -293,3 +293,28 @@ fn test_compile_struct_pointer_access() {
     "
     );
 }
+
+#[test]
+fn test_compile_union_field_access() {
+    let source = r#"
+            int main() {
+                union U { int a; int b; } u;
+                u.a = 1;
+                u.b = 3;
+                if (u.a != 3 || u.b != 3)
+                    return 1;
+                return 0;
+            }
+        "#;
+
+    let clif_dump = setup_cranelift(source);
+    println!("{}", clif_dump);
+
+    // Expect loads/stores with zero offset (union fields share offset 0)
+    assert!(
+        clif_dump.contains("iconst.i64 0"),
+        "expected zero offset constant in IR"
+    );
+    assert!(clif_dump.contains("store"), "expected store instruction in IR");
+    assert!(clif_dump.contains("load"), "expected load instruction in IR");
+}

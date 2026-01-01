@@ -237,7 +237,7 @@ impl<'a> TypeResolver<'a> {
 
         if let TypeKind::Record { members, .. } = &self.registry.get(record_ty_ref).kind {
             // Find the member
-            if let Some(member) = members.iter().find(|m| m.name == field_name) {
+            if let Some(member) = members.iter().find(|m| m.name == Some(field_name)) {
                 return Some(member.member_type);
             }
         }

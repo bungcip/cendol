@@ -182,7 +182,7 @@ impl<'a> MirDumper<'a> {
                     .collect();
                 format!("type {} = fn({}) -> %t{}", type_name, param_types.join(", "), ret_index)
             }
-            MirType::Struct { name, fields } => {
+            MirType::Record { name, fields, is_union } => {
                 let field_strs: Vec<String> = fields
                     .iter()
                     .map(|(fname, fid)| {
@@ -190,17 +190,8 @@ impl<'a> MirDumper<'a> {
                         format!("{}: %t{}", fname, field_index)
                     })
                     .collect();
-                format!("type {} = struct {} {{ {} }}", type_name, name, field_strs.join(", "))
-            }
-            MirType::Union { name, fields } => {
-                let field_strs: Vec<String> = fields
-                    .iter()
-                    .map(|(fname, fid)| {
-                        let field_index = self.get_type_index_from_type_id(*fid);
-                        format!("{}: %t{}", fname, field_index)
-                    })
-                    .collect();
-                format!("type {} = union {} {{ {} }}", type_name, name, field_strs.join(", "))
+                let kind = if *is_union { "union" } else { "struct" };
+                format!("type {} = {} {} {{ {} }}", type_name, kind, name, field_strs.join(", "))
             }
             MirType::Enum { name, variants } => {
                 let variant_strs: Vec<String> = variants
@@ -354,11 +345,7 @@ impl<'a> MirDumper<'a> {
                     let param_types: Vec<String> = params.iter().map(|&p| self.type_to_string(p)).collect();
                     format!("fn({}) -> {}", param_types.join(", "), ret_type)
                 }
-                MirType::Struct { .. } => {
-                    // For aggregate types, use the type ID to keep output concise
-                    format!("%t{}", type_index)
-                }
-                MirType::Union { .. } => {
+                MirType::Record { .. } => {
                     // For aggregate types, use the type ID to keep output concise
                     format!("%t{}", type_index)
                 }

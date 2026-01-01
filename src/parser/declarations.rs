@@ -15,7 +15,7 @@ use thin_vec::ThinVec;
 use super::Parser;
 
 /// Parse a declaration
-pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
+pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let trx = parser.start_transaction();
     let start_loc = trx.parser.current_token_span()?.start;
 
@@ -262,7 +262,7 @@ pub fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 }
 
 /// Parse function definition
-pub fn parse_function_definition(parser: &mut Parser) -> Result<NodeRef, ParseError> {
+pub(crate) fn parse_function_definition(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let start_loc = parser.current_token()?.span.start;
     let dummy = parser.push_dummy();
 
@@ -292,7 +292,7 @@ pub fn parse_function_definition(parser: &mut Parser) -> Result<NodeRef, ParseEr
 }
 
 /// Parse translation unit (top level)
-pub fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError> {
+pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let start_loc = parser.current_token()?.span.start;
     let mut end_loc = SourceLoc::builtin();
 
@@ -350,7 +350,7 @@ pub fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError
 }
 
 /// Parse static assert (C11)
-pub fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<NodeRef, ParseError> {
+pub(crate) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<NodeRef, ParseError> {
     // already consumed `_Static_assert`
     let start_loc = start_token.span.start;
     parser.expect(TokenKind::LeftParen)?;

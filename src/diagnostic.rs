@@ -216,6 +216,8 @@ pub enum SemanticError {
     StaticAssertNotConstant { span: SourceSpan },
     #[error("recursive type definition")]
     RecursiveType { ty: TypeRef },
+    #[error("controlling expression type does not match any generic association")]
+    GenericNoMatch { span: SourceSpan },
 }
 
 impl SemanticError {
@@ -239,6 +241,7 @@ impl SemanticError {
                 // For recursive types, we don't have a specific span, so use a dummy span
                 SourceSpan::dummy()
             }
+            SemanticError::GenericNoMatch { span } => *span,
         }
     }
 }

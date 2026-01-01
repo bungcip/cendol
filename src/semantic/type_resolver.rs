@@ -433,13 +433,7 @@ impl<'a> TypeResolver<'a> {
                 self.visit_node(init);
                 Some(ty)
             }
-            NodeKind::GenericSelection(ctrl, assocs) => {
-                self.visit_node(ctrl);
-                for assoc in &assocs {
-                    self.visit_node(assoc.result_expr);
-                }
-                assocs.first().and_then(|a| self.visit_node(a.result_expr))
-            }
+            NodeKind::GenericSelection(ctrl, assocs) => self.visit_generic_selection(ctrl, &assocs),
             NodeKind::VaArg(expr, ty) => {
                 self.visit_node(expr);
                 Some(QualType::unqualified(ty))
@@ -521,6 +515,50 @@ impl<'a> TypeResolver<'a> {
                 }
                 _ => {}
             }
+        }
+    }
+
+    fn visit_generic_selection(
+        &mut self,
+        ctrl_ref: NodeRef,
+        assocs: &[ResolvedGenericAssociation],
+    ) -> Option<QualType> {
+        // First, visit the controlling expression to determine its type.
+        let ctrl_ty = self.visit_node(ctrl_ref)?;
+
+        // It's crucial to visit *all* result expressions to ensure they are
+        // fully type-checked, even if they are not the selected branch.
+        // This resolves all identifier types within them.
+        for assoc in assocs {
+            self.visit_node(assoc.result_expr);
+        }
+
+        // Now, find the selected expression based on type compatibility.
+        let mut selected_expr_ref = None;
+        for assoc in assocs {
+            if let Some(assoc_ty) = assoc.ty {
+                // This is a type association.
+                if self.registry.is_compatible(ctrl_ty, assoc_ty) {
+                    selected_expr_ref = Some(assoc.result_expr);
+                    break;
+                }
+            } else {
+                // This is the 'default' association.
+                selected_expr_ref = Some(assoc.result_expr);
+                break;
+            }
+        }
+
+        // The type of the _Generic expression is the type of the selected result expression.
+        if let Some(expr_ref) = selected_expr_ref {
+            // The type should already be resolved from the earlier pass.
+            self.ast.get_node(expr_ref).resolved_type.get()
+        } else {
+            // If no match is found and there's no default, it's a semantic error.
+            self.report_error(SemanticError::GenericNoMatch {
+                span: self.ast.get_node(ctrl_ref).span,
+            });
+            None
         }
     }
 }

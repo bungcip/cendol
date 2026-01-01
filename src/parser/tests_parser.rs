@@ -239,7 +239,7 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
             Box::new(resolve_node(ast, *compound_stmt)),
             Box::new(resolve_node(ast, *result_expr)),
         ),
-        NodeKind::GenericSelection(controlling_expr, associations) => {
+        NodeKind::ParsedGenericSelection(controlling_expr, associations) => {
             let resolved_controlling = Box::new(resolve_node(ast, *controlling_expr));
             let resolved_associations = associations
                 .iter()

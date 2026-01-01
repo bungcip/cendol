@@ -270,6 +270,9 @@ impl OutputHandler {
             NodeKind::ParsedSizeOfType(_) => println!("ParsedSizeOfType(PARSED_TYPE)"),
             NodeKind::ParsedAlignOf(_) => println!("ParsedAlignOf(PARSED_TYPE)"),
             NodeKind::ParsedCompoundLiteral(_, init) => println!("ParsedCompoundLiteral(PARSED_TYPE, {})", init.get()),
+            NodeKind::ParsedGenericSelection(ctrl, assocs) => {
+                println!("ParsedGenericSelection({}, {} associations)", ctrl.get(), assocs.len())
+            }
             NodeKind::GenericSelection(ctrl, assocs) => {
                 println!("GenericSelection({}, {} associations)", ctrl.get(), assocs.len())
             }

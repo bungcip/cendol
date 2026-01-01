@@ -465,9 +465,13 @@ fn get_operand_cranelift_type(operand: &Operand, mir: &SemaOutput) -> Result<Typ
         Operand::Constant(const_id) => {
             let const_value = mir.constants.get(const_id).expect("constant id not found");
             match const_value {
-                ConstValue::Int(_) => Ok(types::I64),
+                // Integer literals in MIR are typically used in integer-sized contexts
+                // Default to I32 so common small integer constants (like `4`) match i32
+                // places instead of being treated as 64-bit immediates.
+                ConstValue::Int(_) => Ok(types::I32),
                 ConstValue::Float(_) => Ok(types::F64),
                 ConstValue::Bool(_) => Ok(types::I32),
+                // Null/Zero/Global addresses are pointer-sized
                 ConstValue::Null | ConstValue::Zero | ConstValue::GlobalAddress(_) => Ok(types::I64),
                 ConstValue::FunctionAddress(_) => Ok(types::I64),
                 ConstValue::StructLiteral(_) => Ok(types::I32),

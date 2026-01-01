@@ -266,6 +266,7 @@ impl CompilerDriver {
         // for (i, entry) in symbol_table.entries.iter().enumerate() {
         //     debug!("symbol[{}]: {:?}", i, entry.name);
         // }
+        // Validate that parsing-only node kinds have been lowered by the symbol resolver
         for node in &ast.nodes {
             match &node.kind {
                 NodeKind::Declaration(..)

@@ -492,6 +492,10 @@ pub(crate) fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, Pa
 
     parser.expect(TokenKind::Comma)?;
 
+    // Reserve slot for the generic selection node so that any nested parsing
+    // that might push nodes won't accidentally observe an unstable index.
+    let dummy = parser.push_dummy();
+
     let mut associations = Vec::new();
 
     loop {
@@ -517,7 +521,12 @@ pub(crate) fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, Pa
     let right_paren_token = parser.expect(TokenKind::RightParen)?;
     let end_loc = right_paren_token.span.end;
     let span = SourceSpan::new(start_loc, end_loc);
-    let node = parser.push_node(NodeKind::ParsedGenericSelection(controlling_expr, associations), span);
+
+    let node = parser.replace_node(
+        dummy,
+        NodeKind::ParsedGenericSelection(controlling_expr, associations),
+        span,
+    );
     Ok(node)
 }
 

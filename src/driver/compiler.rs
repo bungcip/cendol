@@ -6,7 +6,6 @@
 
 use hashbrown::HashMap;
 use indexmap::IndexMap;
-use log::debug;
 
 use crate::ast::{Ast, NodeKind, SourceId};
 use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
@@ -256,17 +255,17 @@ impl CompilerDriver {
 
         let scope_map = run_symbol_resolver(&mut ast, &mut self.diagnostics, &mut symbol_table, &mut registry);
         ast.attach_scope_map(scope_map.clone());
-        eprintln!("Symbol table entries after symbol resolver:");
-        for (i, _entry) in symbol_table.entries.iter().enumerate() {
-            let s = &symbol_table.entries[i];
-            eprintln!("  {}: {:?}", i, s.name);
-        }
+        // eprintln!("Symbol table entries after symbol resolver:");
+        // for (i, _entry) in symbol_table.entries.iter().enumerate() {
+        //     let s = &symbol_table.entries[i];
+        //     eprintln!("  {}: {:?}", i, s.name);
+        // }
         self.check_diagnostics_and_return_if_error()?;
 
         // invariant validation after symbol resolver
-        for (i, entry) in symbol_table.entries.iter().enumerate() {
-            debug!("symbol[{}]: {:?}", i, entry.name);
-        }
+        // for (i, entry) in symbol_table.entries.iter().enumerate() {
+        //     debug!("symbol[{}]: {:?}", i, entry.name);
+        // }
         for node in &ast.nodes {
             match &node.kind {
                 NodeKind::Declaration(..)
@@ -274,7 +273,8 @@ impl CompilerDriver {
                 | NodeKind::ParsedAlignOf(..)
                 | NodeKind::ParsedCast(..)
                 | NodeKind::ParsedCompoundLiteral(..)
-                | NodeKind::ParsedSizeOfType(..) => {
+                | NodeKind::ParsedSizeOfType(..)
+                | NodeKind::ParsedGenericSelection(..) => {
                     panic!("ICE: AST still has exclusive node which only live in parsing stage");
                 }
                 _ => {}

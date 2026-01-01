@@ -19,7 +19,6 @@ struct NameResolverCtx<'ast, 'diag> {
 }
 
 pub fn run_name_resolver(ast: &Ast, diag: &mut DiagnosticEngine, symbol_table: &SymbolTable) {
-    eprintln!("name_resolver: starting; ast nodes = {}", ast.nodes.len());
     let mut ctx = NameResolverCtx {
         diag,
         ast,
@@ -39,15 +38,6 @@ pub fn run_name_resolver(ast: &Ast, diag: &mut DiagnosticEngine, symbol_table: &
 }
 
 fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
-    debug!("solving: {}", node_ref);
-    // Temporary debug: log when visiting suspicious node indices to aid debugging
-    if node_ref.get() == 14 || node_ref.get() == 52 {
-        eprintln!(
-            "name_resolver: visiting node {} (suspicious) with current scope {:?}",
-            node_ref.get(),
-            ctx.scope_id
-        );
-    }
     let node = ctx.ast.get_node(node_ref);
     match &node.kind {
         NodeKind::TranslationUnit(decls) => {
@@ -212,23 +202,9 @@ fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
         }
 
         NodeKind::Ident(name, resolved) => {
-            eprintln!(
-                "name_resolver: visit ident node={} name={:?} scope={:?}",
-                node_ref.get(),
-                name,
-                ctx.scope_id
-            );
             if let Some(sym) = ctx.symbol_table.lookup(*name, ctx.scope_id, Namespace::Ordinary) {
-                eprintln!("name_resolver: -> resolved to symbol {:?}", sym);
                 resolved.set(Some(sym.0));
             } else {
-                eprintln!(
-                    "name_resolver: lookup failed for {:?} in scope {:?} at node {}",
-                    name,
-                    ctx.scope_id,
-                    node_ref.get()
-                );
-                debug!("ndak nemu {}!", name);
                 ctx.diag.report(SemanticError::UndeclaredIdentifier {
                     name: *name,
                     span: node.span,

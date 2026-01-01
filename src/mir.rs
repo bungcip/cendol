@@ -167,7 +167,7 @@ pub enum Place {
     Deref(Box<Operand>),
     Global(GlobalId),
     // Aggregate access
-    StructField(Box<Place>, /* index */ usize),
+    StructField(Box<Place>, /* struct index */ usize),
     ArrayIndex(Box<Place>, Box<Operand>),
 }
 
@@ -175,7 +175,6 @@ pub enum Place {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum Operand {
     Copy(Box<Place>),
-    Move(Box<Place>),
     Constant(ConstValueId),
     // Address operations
     AddressOf(Box<Place>),
@@ -794,7 +793,6 @@ impl fmt::Display for Operand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Operand::Copy(place) => write!(f, "Copy({:?})", place),
-            Operand::Move(place) => write!(f, "Move({:?})", place),
             Operand::Constant(const_id) => write!(f, "Constant({})", const_id.get()),
             Operand::AddressOf(place) => write!(f, "AddressOf({:?})", place),
             Operand::Cast(type_id, operand) => write!(f, "Cast({}, {:?})", type_id.get(), operand),

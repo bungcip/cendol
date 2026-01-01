@@ -369,7 +369,7 @@ fn resolve_operand_to_value(
                 _ => Ok(builder.ins().iconst(expected_type, 0)),
             }
         }
-        Operand::Copy(place) | Operand::Move(place) => {
+        Operand::Copy(place) => {
             // Determine the correct type from the place itself
             let place_type_id =
                 get_place_type_id(place, mir).map_err(|e| format!("Failed to get place type: {}", e))?;
@@ -459,6 +459,31 @@ fn resolve_place_to_value(
     }
 }
 
+/// Helper function to get the Cranelift Type of an operand
+fn get_operand_cranelift_type(operand: &Operand, mir: &SemaOutput) -> Result<Type, String> {
+    match operand {
+        Operand::Constant(const_id) => {
+            let const_value = mir.constants.get(const_id).expect("constant id not found");
+            match const_value {
+                ConstValue::Int(_) => Ok(types::I64),
+                ConstValue::Float(_) => Ok(types::F64),
+                ConstValue::Bool(_) => Ok(types::I32),
+                ConstValue::Null | ConstValue::Zero | ConstValue::GlobalAddress(_) => Ok(types::I64),
+                ConstValue::FunctionAddress(_) => Ok(types::I64),
+                ConstValue::StructLiteral(_) => Ok(types::I32),
+                ConstValue::ArrayLiteral(_) => Ok(types::I32),
+            }
+        }
+        Operand::Copy(place) => {
+            let place_type_id = get_place_type_id(place, mir)?;
+            let place_type = mir.get_type(place_type_id);
+            convert_type(place_type).ok_or_else(|| format!("Unsupported place type: {:?}", place_type))
+        }
+        Operand::Cast(_, operand) => get_operand_cranelift_type(operand, mir),
+        Operand::AddressOf(_) => Ok(types::I64), // AddressOf always returns a pointer
+    }
+}
+
 /// Helper function to get the TypeId of a place
 fn get_place_type_id(place: &Place, mir: &SemaOutput) -> Result<TypeId, String> {
     match place {
@@ -476,7 +501,7 @@ fn get_place_type_id(place: &Place, mir: &SemaOutput) -> Result<TypeId, String> 
             // To get the type of a dereference, we need the type of the operand,
             // which should be a pointer. The resulting type is the pointee.
             match operand.as_ref() {
-                Operand::Copy(place_box) | Operand::Move(place_box) => {
+                Operand::Copy(place_box) => {
                     let operand_type_id = get_place_type_id(place_box, mir)?;
                     let operand_type = mir.get_type(operand_type_id);
                     match operand_type {
@@ -619,11 +644,16 @@ fn resolve_place_to_addr(
             let base_place_type_id = get_place_type_id(base_place, mir).map_err(|e| e.to_string())?;
             let base_type = mir.get_type(base_place_type_id);
 
-            let element_size = match base_type {
-                MirType::Array { layout, .. } => layout.stride as u32,
+            // If the base is a pointer, we must load the pointer value from the base address
+            // before adding the element offset. For arrays, the base address is already
+            // the address of the first element.
+            let (element_size, final_base_addr) = match base_type {
+                MirType::Array { layout, .. } => (layout.stride as u32, base_addr),
                 MirType::Pointer { pointee } => {
                     let pointee_type = mir.get_type(*pointee);
-                    mir_type_size(pointee_type, mir)?
+                    let size = mir_type_size(pointee_type, mir)?;
+                    let loaded_ptr = builder.ins().load(types::I64, MemFlags::new(), base_addr, 0);
+                    (size, loaded_ptr)
                 }
                 _ => return Err("Base of ArrayIndex is not an array or pointer".to_string()),
             };
@@ -631,7 +661,7 @@ fn resolve_place_to_addr(
             let element_size_val = builder.ins().iconst(types::I64, element_size as i64);
             let offset = builder.ins().imul(index_val, element_size_val);
 
-            Ok(builder.ins().iadd(base_addr, offset))
+            Ok(builder.ins().iadd(final_base_addr, offset))
         }
     }
 }
@@ -909,10 +939,17 @@ impl MirToCraneliftLowerer {
                                 &mut self.module,
                             ),
                             Rvalue::BinaryOp(op, left_operand, right_operand) => {
+                                // For binary operations, we need to determine the correct types
+                                // based on the operands themselves, not hardcode I32
+                                let left_cranelift_type = get_operand_cranelift_type(left_operand, &self.mir)
+                                    .map_err(|e| format!("Failed to get left operand type: {}", e))?;
+                                let right_cranelift_type = get_operand_cranelift_type(right_operand, &self.mir)
+                                    .map_err(|e| format!("Failed to get right operand type: {}", e))?;
+
                                 let left_val = resolve_operand_to_value(
                                     left_operand,
                                     &mut builder,
-                                    types::I32,
+                                    left_cranelift_type,
                                     &self.clif_stack_slots,
                                     &self.mir,
                                     &mut self.module,
@@ -921,7 +958,7 @@ impl MirToCraneliftLowerer {
                                 let right_val = resolve_operand_to_value(
                                     right_operand,
                                     &mut builder,
-                                    types::I32,
+                                    right_cranelift_type,
                                     &self.clif_stack_slots,
                                     &self.mir,
                                     &mut self.module,

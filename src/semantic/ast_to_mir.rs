@@ -712,45 +712,26 @@ impl<'a> AstToMirLowerer<'a> {
                             _ => panic!("Array type layout is not an Array layout kind"),
                         }
                     }
-                    TypeKind::Pointer { pointee } => {
-                        // Pointer indexing - convert to pointer arithmetic and dereference
-                        // p[idx] becomes *(p + idx)
-                        // Note: We don't need to call lower_type_to_mir here as it's not used
-                        // let _pointee_mir_type = self.lower_type_to_mir(*pointee);
+                    TypeKind::Pointer { pointee: _ } => {
+                        // For pointer indexing, we can use the ArrayIndex place directly
+                        // since pointer indexing follows the same rules as array indexing
+                        // p[idx] is equivalent to *(p + idx) which is what ArrayIndex does
 
-                        // Convert pointer to operand if needed
-                        let pointer_operand = arr_operand;
+                        // Create an ArrayIndex place with the pointer as base and index
+                        let pointer_place = if let Operand::Copy(place) = arr_operand {
+                            *place
+                        } else {
+                            // If it's not a Copy, create a temporary
+                            let mir_type = self.lower_type_to_mir(arr_ty.ty);
+                            let (_, temp_place) =
+                                self.create_temp_local_with_assignment(Rvalue::Use(arr_operand), mir_type);
+                            temp_place
+                        };
 
-                        // Calculate pointer offset: pointer + (index * element_size)
-                        // Drop the immutable borrow from arr_ty_info before making mutable calls
-                        let element_size = self
-                            .registry
-                            .get(*pointee)
-                            .layout
-                            .as_ref()
-                            .map(|layout| layout.size as i64)
-                            .unwrap_or(std::mem::size_of::<i64>() as i64); // fallback
-
-                        let element_size_operand =
-                            Operand::Constant(self.create_constant(ConstValue::Int(element_size)));
-
-                        // Get type IDs first to avoid borrowing issues
-                        let int_type_id = self.get_int_type();
-                        let pointer_type_id = self.lower_type_to_mir(arr_ty.ty);
-
-                        let scaled_index =
-                            Rvalue::BinaryOp(MirBinaryOp::Mul, idx_operand.clone(), element_size_operand);
-                        let (_, scaled_index_place) = self.create_temp_local_with_assignment(scaled_index, int_type_id);
-
-                        let offset_calc = Rvalue::BinaryOp(
-                            MirBinaryOp::Add,
-                            pointer_operand,
-                            Operand::Copy(Box::new(scaled_index_place)),
-                        );
-                        let (_, offset_place) = self.create_temp_local_with_assignment(offset_calc, pointer_type_id);
-
-                        // Dereference the result: *(pointer + offset)
-                        Operand::Copy(Box::new(Place::Deref(Box::new(Operand::Copy(Box::new(offset_place))))))
+                        Operand::Copy(Box::new(Place::ArrayIndex(
+                            Box::new(pointer_place),
+                            Box::new(idx_operand),
+                        )))
                     }
                     _ => panic!("Index access on non-array, non-pointer type"),
                 }

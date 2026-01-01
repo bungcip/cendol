@@ -519,7 +519,6 @@ impl<'a> MirDumper<'a> {
     fn operand_to_string(&self, operand: &Operand) -> String {
         match operand {
             Operand::Copy(place) => self.place_to_string(place),
-            Operand::Move(place) => format!("move({})", self.place_to_string(place)),
             Operand::Constant(const_id) => self.const_to_string(*const_id),
             Operand::AddressOf(place) => {
                 format!("addr_of({})", self.place_to_string(place))

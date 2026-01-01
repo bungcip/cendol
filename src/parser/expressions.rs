@@ -517,7 +517,7 @@ pub(crate) fn parse_generic_selection(parser: &mut Parser) -> Result<NodeRef, Pa
     let right_paren_token = parser.expect(TokenKind::RightParen)?;
     let end_loc = right_paren_token.span.end;
     let span = SourceSpan::new(start_loc, end_loc);
-    let node = parser.push_node(NodeKind::GenericSelection(controlling_expr, associations), span);
+    let node = parser.push_node(NodeKind::ParsedGenericSelection(controlling_expr, associations), span);
     Ok(node)
 }
 

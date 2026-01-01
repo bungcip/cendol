@@ -22,6 +22,8 @@ pub mod types;
 pub mod utils;
 
 #[cfg(test)]
+mod tests_generic;
+#[cfg(test)]
 pub mod tests_lowering;
 #[cfg(test)]
 pub mod tests_mir;

@@ -1674,11 +1674,33 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
         NodeKind::CompoundLiteral(_, init) => {
             lower_node_recursive(ctx, init);
         }
-        NodeKind::GenericSelection(ctrl, assocs) => {
+        NodeKind::ParsedGenericSelection(ctrl, assocs) => {
             lower_node_recursive(ctx, ctrl);
+            let mut resolved_assocs = Vec::new();
             for assoc in assocs {
                 lower_node_recursive(ctx, assoc.result_expr);
+                let ty = match assoc.type_name {
+                    Some(parsed_type) => {
+                        match convert_parsed_type_to_qual_type(ctx, parsed_type, ctx.ast.get_node(node_ref).span) {
+                            Ok(ty) => Some(ty),
+                            Err(e) => {
+                                ctx.report_error(e);
+                                Some(QualType::unqualified(ctx.registry.type_error))
+                            }
+                        }
+                    }
+                    None => None,
+                };
+                resolved_assocs.push(ResolvedGenericAssociation {
+                    ty,
+                    result_expr: assoc.result_expr,
+                });
             }
+            let generic_node = Node::new(
+                NodeKind::GenericSelection(ctrl, resolved_assocs),
+                ctx.ast.get_node(node_ref).span,
+            );
+            ctx.ast.replace_node(node_ref, generic_node);
         }
         // Statement nodes that contain expressions
         NodeKind::ExpressionStatement(Some(expr)) => {

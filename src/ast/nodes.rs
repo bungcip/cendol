@@ -53,7 +53,7 @@ pub enum NodeKind {
     AlignOf(QualType), // C11 _Alignof
 
     CompoundLiteral(QualType, NodeRef),
-    GenericSelection(NodeRef /* controlling_expr */, Vec<GenericAssociation>),
+    GenericSelection(NodeRef /* controlling_expr */, Vec<ResolvedGenericAssociation>),
     VaArg(NodeRef /* va_list_expr */, TypeRef), // va_arg macro expansion
 
     // --- Parser Nodes (using ParsedType) ---
@@ -62,6 +62,7 @@ pub enum NodeKind {
     ParsedSizeOfType(ParsedType),
     ParsedCompoundLiteral(ParsedType, NodeRef),
     ParsedAlignOf(ParsedType),
+    ParsedGenericSelection(NodeRef /* controlling_expr */, Vec<GenericAssociation>),
 
     // --- Statements (Complex statements are separate structs) ---
     CompoundStatement(Vec<NodeRef> /* block items */),
@@ -432,5 +433,11 @@ pub enum Designator {
 #[derive(Debug, Clone, Serialize)]
 pub struct GenericAssociation {
     pub type_name: Option<ParsedType>, // None for 'default:'
+    pub result_expr: NodeRef,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ResolvedGenericAssociation {
+    pub ty: Option<QualType>, // None for 'default:'
     pub result_expr: NodeRef,
 }

@@ -513,6 +513,13 @@ impl TypeRegistry {
             qualifiers: base.qualifiers | add,
         }
     }
+
+    pub fn is_compatible(&self, a: QualType, b: QualType) -> bool {
+        // C11 6.7.6.1p2: For two type names to be compatible, ...
+        // This is a simplified check. A full implementation would handle
+        // qualifiers, array sizes, function parameter compatibility, etc.
+        a.ty == b.ty
+    }
 }
 
 // ================================================================

@@ -225,7 +225,12 @@ impl<'a> MirDumper<'a> {
         write!(output, "global @{}: {}", global.name, global_type)?;
 
         if let Some(const_id) = global.initial_value {
-            write!(output, " = {}", self.const_to_string(const_id))?;
+            // Check if this global represents a string literal
+            if let Some(string_repr) = self.try_format_as_string_literal(&global.name.to_string(), const_id) {
+                write!(output, " = {}", string_repr)?;
+            } else {
+                write!(output, " = {}", self.const_to_string(const_id))?;
+            }
         }
 
         Ok(())
@@ -412,6 +417,45 @@ impl<'a> MirDumper<'a> {
         }
     }
 
+    /// Try to format a constant as a string literal if applicable
+    fn try_format_as_string_literal(&self, global_name: &str, const_id: ConstValueId) -> Option<String> {
+        // Only format as string if the global name starts with .L.str (our anonymous string literals)
+        if !global_name.starts_with(".L.str") {
+            return None;
+        }
+
+        if let Some(const_value) = self.sema_output.constants.get(&const_id)
+            && let ConstValue::ArrayLiteral(elements) = const_value
+        {
+            // Try to convert the array elements to a string
+            let mut chars = Vec::new();
+            for &element_id in elements {
+                let element = self.sema_output.constants.get(&element_id).unwrap();
+                if let ConstValue::Int(byte) = element {
+                    if *byte == 0 {
+                        // Null terminator - end of string
+                        break;
+                    } else if *byte >= 32 && *byte <= 126 {
+                        // Printable ASCII character
+                        chars.push(*byte as u8 as char);
+                    } else {
+                        // Non-printable character, not a simple string literal
+                        return None;
+                    }
+                } else {
+                    // Non-integer element, not a string
+                    return None;
+                }
+            }
+
+            if !chars.is_empty() {
+                return Some(format!("const \"{}\"", chars.iter().collect::<String>()));
+            }
+        }
+
+        None
+    }
+
     /// Convert constant ID to string representation
     fn const_to_string(&self, const_id: ConstValueId) -> String {
         if let Some(const_value) = self.sema_output.constants.get(&const_id) {
@@ -421,7 +465,6 @@ impl<'a> MirDumper<'a> {
                 ConstValue::Bool(val) => format!("const {}", val),
                 ConstValue::Null => "const null".to_string(),
                 ConstValue::Zero => "const zero".to_string(),
-                ConstValue::String(s) => format!("const \"{}\"", s),
                 ConstValue::StructLiteral(fields) => {
                     // Expand struct literal to show field contents
                     let field_strs: Vec<String> = fields

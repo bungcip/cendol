@@ -948,10 +948,10 @@ mod tests {
         type %t0 = i32
         type %t1 = ptr<%t2>
         type %t2 = i8
-        type %t3 = [7]%t2
+        type %t3 = [5]%t2
         type %t4 = fn(%t1) -> %t0
 
-        global @.L.str0: [7]i8 = const ""gate""
+        global @.L.str0: [5]i8 = const "gate"
 
         fn main() -> i32
         {

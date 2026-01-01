@@ -493,7 +493,14 @@ impl<'src> Lexer<'src> {
                 // Check if it's a keyword
                 is_keyword(symbol).unwrap_or(TokenKind::Identifier(symbol))
             }
-            PPTokenKind::StringLiteral(symbol) => TokenKind::StringLiteral(symbol),
+            PPTokenKind::StringLiteral(symbol) => {
+                // Strip quotes from string literal
+                if let Some(content) = Self::extract_string_content(&symbol) {
+                    TokenKind::StringLiteral(StringId::new(content))
+                } else {
+                    TokenKind::StringLiteral(symbol)
+                }
+            }
             PPTokenKind::CharLiteral(codepoint, _) => TokenKind::CharacterConstant(codepoint),
             PPTokenKind::Number(value) => {
                 // Try to parse as integer first, then float, then unknown
@@ -518,8 +525,68 @@ impl<'src> Lexer<'src> {
         let mut current_token_iter = self.tokens.iter().peekable();
 
         while let Some(pptoken) = current_token_iter.next() {
-            // next_token logic inlined and adapted
-            let mut token = Token {
+            // Handle string literal concatenation before classification
+            let mut tokens_to_process = vec![pptoken];
+            let mut end_location = SourceLoc::new(
+                pptoken.location.source_id(),
+                pptoken.location.offset() + pptoken.length as u32,
+            );
+
+            // Check if this is a string literal that needs concatenation
+            if let PPTokenKind::StringLiteral(_) = pptoken.kind {
+                // Collect all adjacent string literal tokens
+                while let Some(next_pptoken) = current_token_iter.peek() {
+                    if let PPTokenKind::StringLiteral(_) = next_pptoken.kind {
+                        let consumed_pptoken = current_token_iter.next().unwrap();
+                        tokens_to_process.push(consumed_pptoken);
+                        end_location = SourceLoc::new(
+                            consumed_pptoken.location.source_id(),
+                            consumed_pptoken.location.offset() + consumed_pptoken.length as u32,
+                        );
+                    } else {
+                        break;
+                    }
+                }
+
+                // If we have multiple string literals, concatenate them before classification
+                if tokens_to_process.len() > 1 {
+                    // Calculate total length and concatenate all string contents
+                    let total_len: usize = tokens_to_process
+                        .iter()
+                        .map(|token| {
+                            if let PPTokenKind::StringLiteral(symbol) = token.kind {
+                                Self::extract_string_content(&symbol).unwrap_or("").len()
+                            } else {
+                                0
+                            }
+                        })
+                        .sum();
+
+                    let mut content = String::with_capacity(total_len);
+                    for token in &tokens_to_process {
+                        if let PPTokenKind::StringLiteral(symbol) = token.kind
+                            && let Some(s_content) = Self::extract_string_content(&symbol)
+                        {
+                            content.push_str(s_content);
+                        }
+                    }
+
+                    // Create a single concatenated token
+                    let concatenated_token = Token {
+                        kind: TokenKind::StringLiteral(StringId::new(content)),
+                        span: SourceSpan {
+                            start: pptoken.location,
+                            end: end_location,
+                        },
+                    };
+
+                    tokens.push(concatenated_token);
+                    continue;
+                }
+            }
+
+            // For non-string literals or single string literals, process normally
+            let token = Token {
                 kind: self.classify_token(pptoken),
                 span: SourceSpan {
                     start: pptoken.location,
@@ -529,59 +596,6 @@ impl<'src> Lexer<'src> {
                     ),
                 },
             };
-
-            if let TokenKind::StringLiteral(symbol) = token.kind {
-                // Optimization: Avoid allocation for single string literals.
-                // Peek ahead to see if the next token is also a string literal.
-                // If so, we need to concatenate them, which requires allocation.
-                if let Some(next_pptoken) = current_token_iter.peek()
-                    && let PPTokenKind::StringLiteral(_) = next_pptoken.kind
-                {
-                    // ⚡ Bolt: Optimized string concatenation.
-                    // The previous implementation performed multiple string allocations and copies.
-                    // This version calculates the total required size first, performs a single
-                    // allocation, and then appends the string contents. This significantly
-                    // reduces memory allocations and improves performance for code with many
-                    // adjacent string literals.
-
-                    // Collect all adjacent string literal symbols first.
-                    let mut symbols_to_concat = vec![symbol];
-                    let mut end_location = token.span.end;
-
-                    while let Some(next_pptoken) = current_token_iter.peek() {
-                        if let PPTokenKind::StringLiteral(next_symbol) = next_pptoken.kind {
-                            let consumed_pptoken = current_token_iter.next().unwrap();
-                            end_location = SourceLoc::new(
-                                consumed_pptoken.location.source_id(),
-                                consumed_pptoken.location.offset() + consumed_pptoken.length as u32,
-                            );
-                            symbols_to_concat.push(next_symbol);
-                        } else {
-                            break;
-                        }
-                    }
-
-                    // Calculate the total length of the final string for a single allocation.
-                    let total_len = symbols_to_concat
-                        .iter()
-                        .map(|s| Self::extract_string_content(s).unwrap_or("").len())
-                        .sum();
-
-                    // Allocate the string with the exact capacity and build it.
-                    let mut content = String::with_capacity(total_len);
-                    for s in symbols_to_concat {
-                        if let Some(s_content) = Self::extract_string_content(&s) {
-                            content.push_str(s_content);
-                        }
-                    }
-
-                    // Create a new symbol with the concatenated content and update the token.
-                    token.kind = TokenKind::StringLiteral(StringId::new(format!("\"{}\"", content)));
-                    token.span.end = end_location;
-                }
-                // If the next token is not a string literal, we do nothing. The original,
-                // un-concatenated StringLiteral token is used, avoiding any string allocation.
-            }
 
             let is_eof = matches!(token.kind, TokenKind::EndOfFile);
             tokens.push(token);

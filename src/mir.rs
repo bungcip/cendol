@@ -82,6 +82,7 @@ pub struct MirFunction {
     pub params: Vec<LocalId>,
 
     pub kind: MirFunctionKind,
+    pub is_variadic: bool, // Track if this function is variadic
 
     // Only valid if kind is Defined
     pub locals: Vec<LocalId>,
@@ -97,6 +98,7 @@ impl MirFunction {
             return_type,
             params: Vec::new(),
             kind: MirFunctionKind::Defined,
+            is_variadic: false,
             locals: Vec::new(),
             blocks: Vec::new(),
             entry_block: None,
@@ -110,6 +112,7 @@ impl MirFunction {
             return_type,
             params: Vec::new(),
             kind: MirFunctionKind::Extern,
+            is_variadic: false,
             locals: Vec::new(),
             blocks: Vec::new(),
             entry_block: None,
@@ -303,10 +306,8 @@ pub enum ConstValue {
     Int(i64),
     Float(f64),
     Bool(bool),
-    Null,
-    Zero,
-    // String literals
-    String(String),
+    Null, // pointer null
+    Zero, // memset / padding / zero-init
     // Aggregate constants
     StructLiteral(Vec<(usize, ConstValueId)>),
     ArrayLiteral(Vec<ConstValueId>),
@@ -491,9 +492,16 @@ impl MirBuilder {
     }
 
     /// Declare a function (extern - no body)
-    pub fn declare_function(&mut self, name: NameId, param_types: Vec<TypeId>, return_type: TypeId) -> MirFunctionId {
+    pub fn declare_function(
+        &mut self,
+        name: NameId,
+        param_types: Vec<TypeId>,
+        return_type: TypeId,
+        is_variadic: bool,
+    ) -> MirFunctionId {
         let func_id = MirFunctionId::new(self.module.functions.len() as u32 + 1).unwrap();
         let mut func = MirFunction::new_extern(func_id, name, return_type);
+        func.is_variadic = is_variadic;
 
         // Create locals for each parameter
         for (i, &param_type) in param_types.iter().enumerate() {
@@ -509,9 +517,16 @@ impl MirBuilder {
     }
 
     /// Define a function (has body)
-    pub fn define_function(&mut self, name: NameId, param_types: Vec<TypeId>, return_type: TypeId) -> MirFunctionId {
+    pub fn define_function(
+        &mut self,
+        name: NameId,
+        param_types: Vec<TypeId>,
+        return_type: TypeId,
+        is_variadic: bool,
+    ) -> MirFunctionId {
         let func_id = MirFunctionId::new(self.module.functions.len() as u32 + 1).unwrap();
         let mut func = MirFunction::new_defined(func_id, name, return_type);
+        func.is_variadic = is_variadic;
 
         // Create locals for each parameter
         for (i, &param_type) in param_types.iter().enumerate() {
@@ -832,7 +847,6 @@ impl fmt::Display for ConstValue {
             ConstValue::Bool(val) => write!(f, "{}", val),
             ConstValue::Null => write!(f, "null"),
             ConstValue::Zero => write!(f, "zeroinit"),
-            ConstValue::String(val) => write!(f, "{}", val),
             ConstValue::StructLiteral(fields) => write!(f, "StructLiteral({:?})", fields),
             ConstValue::ArrayLiteral(elements) => write!(f, "ArrayLiteral({:?})", elements),
             ConstValue::GlobalAddress(global_id) => write!(f, "GlobalAddress({})", global_id.get()),

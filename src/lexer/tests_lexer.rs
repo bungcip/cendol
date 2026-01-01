@@ -189,8 +189,8 @@ mod tests {
 
         // String literals
         let string_literals = vec![
-            ("\"hello\"", TokenKind::StringLiteral(StringId::new("\"hello\""))),
-            ("\"world\\n\"", TokenKind::StringLiteral(StringId::new("\"world\\n\""))),
+            ("\"hello\"", TokenKind::StringLiteral(StringId::new("hello"))),
+            ("\"world\\n\"", TokenKind::StringLiteral(StringId::new("world\\n"))),
         ];
 
         for (text, expected_kind) in string_literals {
@@ -222,15 +222,15 @@ mod tests {
         // Test adjacent string literal concatenation (C11 6.4.5)
         let test_cases = vec![
             // Basic concatenation
-            ("\"hello\" \"world\"", "\"helloworld\""),
+            ("\"hello\" \"world\"", "helloworld"),
             // With whitespace between
-            ("\"hello\"   \"world\"", "\"helloworld\""),
+            ("\"hello\"   \"world\"", "helloworld"),
             // Multiple concatenations
-            ("\"a\" \"b\" \"c\"", "\"abc\""),
+            ("\"a\" \"b\" \"c\"", "abc"),
             // With escape sequences
-            ("\"hello\\n\" \"world\"", "\"hello\\nworld\""),
+            ("\"hello\\n\" \"world\"", "hello\\nworld"),
             // Mixed quotes and content
-            ("\"start\" \" middle \" \"end\"", "\"start middle end\""),
+            ("\"start\" \" middle \" \"end\"", "start middle end"),
         ];
 
         for (input, expected_content) in test_cases {

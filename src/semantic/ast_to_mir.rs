@@ -150,7 +150,7 @@ impl<'a> AstToMirLowerer<'a> {
                         if let TypeKind::Function {
                             return_type,
                             parameters,
-                            ..
+                            is_variadic,
                         } = &func_type.kind
                         {
                             let return_mir_type = self.lower_type_to_mir(*return_type);
@@ -161,19 +161,29 @@ impl<'a> AstToMirLowerer<'a> {
 
                             // Use declare_function for declarations, define_function for definitions
                             if has_definition {
-                                self.mir_builder
-                                    .define_function(symbol_name, param_mir_types, return_mir_type);
+                                self.mir_builder.define_function(
+                                    symbol_name,
+                                    param_mir_types,
+                                    return_mir_type,
+                                    *is_variadic,
+                                );
                             } else {
-                                self.mir_builder
-                                    .declare_function(symbol_name, param_mir_types, return_mir_type);
+                                self.mir_builder.declare_function(
+                                    symbol_name,
+                                    param_mir_types,
+                                    return_mir_type,
+                                    *is_variadic,
+                                );
                             }
                         } else {
                             // This case should ideally not be reached for a SymbolKind::Function
                             let return_mir_type = self.get_int_type();
                             if has_definition {
-                                self.mir_builder.define_function(symbol_name, vec![], return_mir_type);
+                                self.mir_builder
+                                    .define_function(symbol_name, vec![], return_mir_type, false);
                             } else {
-                                self.mir_builder.declare_function(symbol_name, vec![], return_mir_type);
+                                self.mir_builder
+                                    .declare_function(symbol_name, vec![], return_mir_type, false);
                             }
                         }
                     }
@@ -429,12 +439,30 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::LiteralChar(val) => Operand::Constant(self.create_constant(ConstValue::Int(*val as i64))),
             NodeKind::LiteralString(val) => {
                 let string_type = self.lower_type_to_mir(ty.ty);
-                let const_val = ConstValue::String(val.to_string());
-                let const_id = self.create_constant(const_val);
+
+                // Convert string literal to array of character constants
+                let string_content = val.as_str();
+                let mut char_constants = Vec::new();
+
+                // Add each character as a constant, including null terminator
+                for &byte in string_content.as_bytes() {
+                    let char_const = ConstValue::Int(byte as i64);
+                    let char_const_id = self.create_constant(char_const);
+                    char_constants.push(char_const_id);
+                }
+
+                // Add null terminator
+                let null_const = ConstValue::Int(0);
+                let null_const_id = self.create_constant(null_const);
+                char_constants.push(null_const_id);
+
+                let array_const = ConstValue::ArrayLiteral(char_constants);
+                let array_const_id = self.create_constant(array_const);
+
                 let global_name = self.mir_builder.get_next_anonymous_global_name();
                 let global_id =
                     self.mir_builder
-                        .create_global_with_init(global_name, string_type, true, Some(const_id));
+                        .create_global_with_init(global_name, string_type, true, Some(array_const_id));
 
                 let addr_const_val = ConstValue::GlobalAddress(global_id);
                 Operand::Constant(self.create_constant(addr_const_val))

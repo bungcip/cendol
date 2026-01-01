@@ -38,7 +38,7 @@ pub enum ClifOutput {
 
 /// Helper function to convert MIR type to Cranelift type
 /// Returns None for void types, as they don't have a representation in Cranelift
-fn mir_type_to_cranelift_type(mir_type: &MirType) -> Option<Type> {
+fn convert_type(mir_type: &MirType) -> Option<Type> {
     match mir_type {
         MirType::Void => None,
         MirType::Int { width, is_signed: _ } => {
@@ -57,7 +57,12 @@ fn mir_type_to_cranelift_type(mir_type: &MirType) -> Option<Type> {
                 _ => Some(types::F32), // Default to 32-bit float
             }
         }
-        _ => Some(types::I32), // Default to i32 for other types (bool, pointer, etc.)
+        MirType::Pointer { .. } => Some(types::I64), // Pointers are 64-bit on most modern systems
+        MirType::Bool => Some(types::I32),           // Booleans as 32-bit integers
+        MirType::Array { .. } => Some(types::I32),   // Arrays - need element type context
+        MirType::Record { .. } => Some(types::I32),  // Records - need field context
+        MirType::Function { .. } => Some(types::I64), // Function pointers
+        MirType::Enum { .. } => Some(types::I32),    // Enums as integers
     }
 }
 
@@ -76,6 +81,164 @@ fn mir_type_size(mir_type: &MirType, _mir: &SemaOutput) -> Result<u32, String> {
     }
 }
 
+/// Helper function to get type layout information for emit_const
+fn get_type_layout(mir_type: &MirType, _mir: &SemaOutput) -> Result<MirType, String> {
+    Ok(mir_type.clone())
+}
+
+/// Emit a constant value to the output buffer based on its type layout
+fn emit_const(
+    const_id: ConstValueId,
+    _type_id: TypeId,
+    layout: &MirType,
+    output: &mut Vec<u8>,
+    mir: &SemaOutput,
+) -> Result<(), String> {
+    let const_value = mir
+        .constants
+        .get(&const_id)
+        .ok_or_else(|| format!("Constant ID {} not found", const_id.get()))?;
+
+    match const_value {
+        ConstValue::Int(val) => {
+            match layout {
+                MirType::Int { width, is_signed: _ } => match width {
+                    8 | 16 | 32 | 64 => {
+                        let bytes = val.to_le_bytes();
+                        let size = (width / 8) as usize;
+                        output.extend_from_slice(&bytes[0..size]);
+                    }
+                    _ => {
+                        let bytes = (*val as i32).to_le_bytes();
+                        output.extend_from_slice(&bytes);
+                    }
+                },
+                MirType::Bool => {
+                    let byte = if *val != 0 { 1u8 } else { 0u8 };
+                    output.push(byte);
+                }
+                MirType::Pointer { .. } => {
+                    // For pointers, treat as 64-bit integer
+                    let bytes = (*val).to_le_bytes();
+                    output.extend_from_slice(&bytes);
+                }
+                _ => {
+                    // Default to 32-bit integer representation
+                    let bytes = (*val as i32).to_le_bytes();
+                    output.extend_from_slice(&bytes);
+                }
+            }
+        }
+        ConstValue::Float(val) => {
+            match layout {
+                MirType::Float { width } => match width {
+                    32 => {
+                        let bytes = (*val as f32).to_bits().to_le_bytes();
+                        output.extend_from_slice(&bytes);
+                    }
+                    64 => {
+                        let bytes = val.to_bits().to_le_bytes();
+                        output.extend_from_slice(&bytes);
+                    }
+                    _ => {
+                        let bytes = (*val as f32).to_bits().to_le_bytes();
+                        output.extend_from_slice(&bytes);
+                    }
+                },
+                _ => {
+                    // Default to 64-bit float representation
+                    let bytes = val.to_bits().to_le_bytes();
+                    output.extend_from_slice(&bytes);
+                }
+            }
+        }
+        ConstValue::Bool(val) => {
+            let byte = if *val { 1u8 } else { 0u8 };
+            output.push(byte);
+        }
+        ConstValue::Null => {
+            // Emit null as all zeros (pointer-sized)
+            let null_bytes = 0i64.to_le_bytes();
+            output.extend_from_slice(&null_bytes);
+        }
+        ConstValue::Zero => {
+            // Emit zeros for the entire type size
+            let size = mir_type_size(layout, mir)? as usize;
+            output.extend_from_slice(&vec![0u8; size]);
+        }
+        ConstValue::GlobalAddress(global_id) => {
+            // For global addresses, emit as pointer-sized integer
+            let addr_bytes = (global_id.get() as i64).to_le_bytes();
+            output.extend_from_slice(&addr_bytes);
+        }
+        ConstValue::FunctionAddress(func_id) => {
+            // For function addresses, emit as pointer-sized integer
+            let addr_bytes = (func_id.get() as i64).to_le_bytes();
+            output.extend_from_slice(&addr_bytes);
+        }
+        ConstValue::StructLiteral(fields) => {
+            match layout {
+                MirType::Record {
+                    layout: record_layout, ..
+                } => {
+                    // Initialize the entire struct with zeros
+                    let struct_size = record_layout.size as usize;
+                    output.extend_from_slice(&vec![0u8; struct_size]);
+
+                    // Emit each field at its proper offset
+                    for (field_index, _field_const_id) in fields {
+                        if *field_index < record_layout.field_offsets.len() {
+                            let _field_offset = record_layout.field_offsets[*field_index] as usize;
+
+                            // For now, we'll emit zeros for struct fields
+                            // TODO: Get the actual field type and emit the constant value
+                            let field_size = 4; // Default field size
+                            output.extend_from_slice(&vec![0u8; field_size]);
+                        }
+                    }
+                }
+                _ => return Err("StructLiteral with non-record type".to_string()),
+            }
+        }
+        ConstValue::ArrayLiteral(elements) => {
+            match layout {
+                MirType::Array {
+                    element,
+                    size,
+                    layout: array_layout,
+                } => {
+                    // Emit each element according to the array layout
+                    for (i, element_const_id) in elements.iter().enumerate() {
+                        if i >= *size {
+                            break; // Don't emit more elements than the array size
+                        }
+
+                        let element_type = mir.get_type(*element);
+                        emit_const(*element_const_id, *element, element_type, output, mir)?;
+
+                        // Add padding if needed for stride > element size
+                        let element_size = mir_type_size(element_type, mir)? as usize;
+                        if array_layout.stride as usize > element_size {
+                            let padding = array_layout.stride as usize - element_size;
+                            output.extend_from_slice(&vec![0u8; padding]);
+                        }
+                    }
+
+                    // Fill remaining space with zeros if array is partially initialized
+                    let emitted_size = elements.len() * array_layout.stride as usize;
+                    if emitted_size < array_layout.size as usize {
+                        let remaining = array_layout.size as usize - emitted_size;
+                        output.extend_from_slice(&vec![0u8; remaining]);
+                    }
+                }
+                _ => return Err("ArrayLiteral with non-array type".to_string()),
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Standalone function to emit a proper function call that actually invokes the function
 fn emit_function_call_impl(
     call_target: &CallTarget,
@@ -91,19 +254,14 @@ fn emit_function_call_impl(
             let func = mir.get_function(*func_id);
 
             // Get the return type for this function
-            let return_type = mir_type_to_cranelift_type(mir.get_type(func.return_type));
+            let return_type = convert_type(mir.get_type(func.return_type));
 
             // Resolve function arguments to Cranelift values
             let mut arg_values = Vec::new();
-            for arg in args {
-                match resolve_operand_to_value(
-                    arg,
-                    builder,
-                    types::I32, // Default to int for now
-                    cranelift_stack_slots,
-                    mir,
-                    module,
-                ) {
+            for (arg, &param_id) in args.iter().zip(func.params.iter()) {
+                let param_local = mir.get_local(param_id);
+                let param_type = convert_type(mir.get_type(param_local.type_id)).unwrap_or(types::I64);
+                match resolve_operand_to_value(arg, builder, param_type, cranelift_stack_slots, mir, module) {
                     Ok(value) => arg_values.push(value),
                     Err(e) => return Err(format!("Failed to resolve function argument: {}", e)),
                 }
@@ -117,11 +275,23 @@ fn emit_function_call_impl(
                 sig.returns.push(AbiParam::new(ret_type));
             }
 
-            // Add parameter types to signature
-            for &param_id in &func.params {
-                let param_local = mir.get_local(param_id);
-                let param_type = mir_type_to_cranelift_type(mir.get_type(param_local.type_id)).unwrap();
-                sig.params.push(AbiParam::new(param_type));
+            // For variadic functions, we need to create a signature that matches the actual arguments
+            // being passed, not just the fixed parameters
+            if func.is_variadic {
+                // For variadic functions, add all the arguments to the signature
+                // This allows the call to pass more arguments than just the fixed parameters
+                for _arg_value in &arg_values {
+                    // Use i32 as a generic type for variadic arguments
+                    // In a more complete implementation, we'd need to infer the actual types
+                    sig.params.push(AbiParam::new(types::I32));
+                }
+            } else {
+                // For non-variadic functions, use the fixed parameter types from the function signature
+                for &param_id in &func.params {
+                    let param_local = mir.get_local(param_id);
+                    let param_type = convert_type(mir.get_type(param_local.type_id)).unwrap();
+                    sig.params.push(AbiParam::new(param_type));
+                }
             }
 
             // Declare the function in the module if not already declared
@@ -185,15 +355,29 @@ fn resolve_operand_to_value(
                     Ok(builder.ins().iconst(expected_type, int_val))
                 }
                 ConstValue::Null => Ok(builder.ins().iconst(expected_type, 0)),
-                ConstValue::String(_) => {
-                    // For now, treat string constants as pointers to null
-                    Ok(builder.ins().iconst(expected_type, 0))
+                ConstValue::GlobalAddress(global_id) => {
+                    // Get the global variable and return its address
+                    // This handles the array-to-pointer decay for string literals
+                    let global = mir.get_global(*global_id);
+                    let global_val = module
+                        .declare_data(global.name.as_str(), Linkage::Export, true, false)
+                        .map_err(|e| format!("Failed to declare global data: {:?}", e))?;
+                    let local_id = module.declare_data_in_func(global_val, builder.func);
+                    // Global addresses are always pointer-sized (i64)
+                    Ok(builder.ins().global_value(types::I64, local_id))
                 }
                 _ => Ok(builder.ins().iconst(expected_type, 0)),
             }
         }
         Operand::Copy(place) | Operand::Move(place) => {
-            resolve_place_to_value(place, builder, expected_type, cranelift_stack_slots, mir, module)
+            // Determine the correct type from the place itself
+            let place_type_id =
+                get_place_type_id(place, mir).map_err(|e| format!("Failed to get place type: {}", e))?;
+            let place_type = mir.get_type(place_type_id);
+            let place_cranelift_type =
+                convert_type(place_type).ok_or_else(|| format!("Unsupported place type: {:?}", place_type))?;
+
+            resolve_place_to_value(place, builder, place_cranelift_type, cranelift_stack_slots, mir, module)
         }
         Operand::Cast(_, operand) => {
             // For now, just resolve the inner operand
@@ -456,7 +640,7 @@ pub struct MirToCraneliftLowerer {
     builder_context: FunctionBuilderContext,
     module: ObjectModule,
     mir: SemaOutput, // NOTE: need better nama
-    cranelift_stack_slots: HashMap<LocalId, StackSlot>,
+    clif_stack_slots: HashMap<LocalId, StackSlot>,
     // Store compiled functions for dumping
     compiled_functions: HashMap<String, String>,
 
@@ -485,7 +669,7 @@ impl MirToCraneliftLowerer {
             // ctx: module.make_context(),
             module,
             mir,
-            cranelift_stack_slots: HashMap::new(),
+            clif_stack_slots: HashMap::new(),
             compiled_functions: HashMap::new(),
             emit_kind: EmitKind::Object,
         }
@@ -505,43 +689,14 @@ impl MirToCraneliftLowerer {
             let mut data_description = DataDescription::new();
 
             if let Some(const_id) = global.initial_value {
-                if let Some(const_val) = self.mir.constants.get(&const_id) {
-                    let initial_value_bytes = match const_val {
-                        ConstValue::Int(val) => val.to_le_bytes().to_vec(),
-                        ConstValue::Float(val) => {
-                            let global_type = self.mir.get_type(global.type_id);
-                            if let MirType::Float { width } = global_type {
-                                if *width == 64 {
-                                    val.to_le_bytes().to_vec()
-                                } else {
-                                    (*val as f32).to_le_bytes().to_vec()
-                                }
-                            } else {
-                                (*val as f32).to_le_bytes().to_vec()
-                            }
-                        }
-                        ConstValue::Bool(val) => vec![*val as u8],
-                        ConstValue::Null => {
-                            let pointer_size = self.module.target_config().pointer_bytes() as usize;
-                            vec![0; pointer_size]
-                        }
-                        ConstValue::String(s) => {
-                            let mut bytes = s.as_bytes().to_vec();
-                            bytes.push(0);
-                            bytes
-                        }
-                        _ => {
-                            let global_type = self.mir.get_type(global.type_id);
-                            let size = mir_type_size(global_type, &self.mir)? as usize;
-                            vec![0; size]
-                        }
-                    };
-                    data_description.define(initial_value_bytes.into_boxed_slice());
-                } else {
-                    let global_type = self.mir.get_type(global.type_id);
-                    let size = mir_type_size(global_type, &self.mir)? as usize;
-                    data_description.define_zeroinit(size);
-                }
+                let global_type = self.mir.get_type(global.type_id);
+                let layout = get_type_layout(global_type, &self.mir)
+                    .map_err(|e| format!("Failed to get layout for global {}: {}", global.name, e))?;
+
+                let mut initial_value_bytes = Vec::new();
+                emit_const(const_id, global.type_id, &layout, &mut initial_value_bytes, &self.mir)
+                    .map_err(|e| format!("Failed to emit constant for global {}: {}", global.name, e))?;
+                data_description.define(initial_value_bytes.into_boxed_slice());
             } else {
                 let global_type = self.mir.get_type(global.type_id);
                 let size = mir_type_size(global_type, &self.mir)? as usize;
@@ -637,13 +792,13 @@ impl MirToCraneliftLowerer {
 
         // Get the return type from MIR and convert to Cranelift type
         let return_type = self.mir.get_type(func.return_type);
-        let return_type_opt = mir_type_to_cranelift_type(return_type);
+        let return_type_opt = convert_type(return_type);
 
         // Add parameters from MIR function signature
         let mut param_types = Vec::new();
         for &param_id in &func.params {
             let param_local = self.mir.get_local(param_id);
-            let param_type = mir_type_to_cranelift_type(self.mir.get_type(param_local.type_id)).unwrap();
+            let param_type = convert_type(self.mir.get_type(param_local.type_id)).unwrap();
             func_ctx.func.signature.params.push(AbiParam::new(param_type));
             param_types.push(param_type);
         }
@@ -659,7 +814,7 @@ impl MirToCraneliftLowerer {
         // Create variables for function parameters (will be defined when we switch to entry block)
         // We'll handle this after creating all blocks
 
-        self.cranelift_stack_slots.clear(); // Clear for each function
+        self.clif_stack_slots.clear(); // Clear for each function
 
         // Combine locals and params for slot allocation
         let all_locals: Vec<LocalId> = func.locals.iter().chain(func.params.iter()).cloned().collect();
@@ -672,15 +827,14 @@ impl MirToCraneliftLowerer {
             // Don't allocate space for zero-sized types
             if size > 0 {
                 let slot = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, size, 0));
-                self.cranelift_stack_slots.insert(local_id, slot);
+                self.clif_stack_slots.insert(local_id, slot);
             }
         }
         // PHASE 1️⃣ — Create all Cranelift blocks first (no instructions)
-        let mut cl_blocks = HashMap::new();
+        let mut clif_blocks = HashMap::new();
 
         for &block_id in &func.blocks {
-            let cl_block = builder.create_block();
-            cl_blocks.insert(block_id, cl_block);
+            clif_blocks.insert(block_id, builder.create_block());
         }
 
         // PHASE 2️⃣ — Lower block content (without sealing)
@@ -695,22 +849,22 @@ impl MirToCraneliftLowerer {
             }
             visited.insert(current_block_id);
 
-            let cl_block = cl_blocks
+            let clif_block = clif_blocks
                 .get(&current_block_id)
                 .ok_or_else(|| format!("Block {} not found in mapping", current_block_id.get()))?;
-            builder.switch_to_block(*cl_block);
+            builder.switch_to_block(*clif_block);
 
             // If this is the entry block, set up its parameters
             if Some(current_block_id) == func.entry_block {
                 // Add function parameters as block parameters
                 for &param_type in &param_types {
-                    builder.append_block_param(*cl_block, param_type);
+                    builder.append_block_param(*clif_block, param_type);
                 }
 
                 // Store incoming parameter values into their stack slots
-                let param_values: Vec<Value> = builder.block_params(*cl_block).to_vec();
+                let param_values: Vec<Value> = builder.block_params(*clif_block).to_vec();
                 for (&param_id, param_value) in func.params.iter().zip(param_values.into_iter()) {
-                    if let Some(stack_slot) = self.cranelift_stack_slots.get(&param_id) {
+                    if let Some(stack_slot) = self.clif_stack_slots.get(&param_id) {
                         builder.ins().stack_store(param_value, *stack_slot, 0);
                     }
                 }
@@ -742,7 +896,7 @@ impl MirToCraneliftLowerer {
                                 operand,
                                 &mut builder,
                                 types::I32, // Assuming i32 for now
-                                &self.cranelift_stack_slots,
+                                &self.clif_stack_slots,
                                 &self.mir,
                                 &mut self.module,
                             ),
@@ -751,7 +905,7 @@ impl MirToCraneliftLowerer {
                                 args,
                                 &mut builder,
                                 &self.mir,
-                                &self.cranelift_stack_slots,
+                                &self.clif_stack_slots,
                                 &mut self.module,
                             ),
                             Rvalue::BinaryOp(op, left_operand, right_operand) => {
@@ -759,7 +913,7 @@ impl MirToCraneliftLowerer {
                                     left_operand,
                                     &mut builder,
                                     types::I32,
-                                    &self.cranelift_stack_slots,
+                                    &self.clif_stack_slots,
                                     &self.mir,
                                     &mut self.module,
                                 )?;
@@ -768,7 +922,7 @@ impl MirToCraneliftLowerer {
                                     right_operand,
                                     &mut builder,
                                     types::I32,
-                                    &self.cranelift_stack_slots,
+                                    &self.clif_stack_slots,
                                     &self.mir,
                                     &mut self.module,
                                 )?;
@@ -823,7 +977,7 @@ impl MirToCraneliftLowerer {
                             match place {
                                 Place::Local(local_id) => {
                                     // Check if this local has a stack slot (non-void types)
-                                    if let Some(stack_slot) = self.cranelift_stack_slots.get(local_id) {
+                                    if let Some(stack_slot) = self.clif_stack_slots.get(local_id) {
                                         builder.ins().stack_store(value, *stack_slot, 0);
                                     } else {
                                         // This local doesn't have a stack slot (likely a void type)
@@ -841,7 +995,7 @@ impl MirToCraneliftLowerer {
                                     match resolve_place_to_addr(
                                         place,
                                         &mut builder,
-                                        &self.cranelift_stack_slots,
+                                        &self.clif_stack_slots,
                                         &self.mir,
                                         &mut self.module,
                                     ) {
@@ -863,14 +1017,14 @@ impl MirToCraneliftLowerer {
                         // We need to determine the correct type for the operand
                         let place_type_id = get_place_type_id(place, &self.mir)?;
                         let place_type = self.mir.get_type(place_type_id);
-                        let cranelift_type = mir_type_to_cranelift_type(place_type)
-                            .ok_or_else(|| "Cannot store to a void type".to_string())?;
+                        let cranelift_type =
+                            convert_type(place_type).ok_or_else(|| "Cannot store to a void type".to_string())?;
 
                         let value = resolve_operand_to_value(
                             operand,
                             &mut builder,
                             cranelift_type,
-                            &self.cranelift_stack_slots,
+                            &self.clif_stack_slots,
                             &self.mir,
                             &mut self.module,
                         )?;
@@ -879,7 +1033,7 @@ impl MirToCraneliftLowerer {
                         match place {
                             Place::Local(local_id) => {
                                 let stack_slot = self
-                                    .cranelift_stack_slots
+                                    .clif_stack_slots
                                     .get(local_id)
                                     .ok_or_else(|| format!("Stack slot not found for local {}", local_id.get()))?;
                                 builder.ins().stack_store(value, *stack_slot, 0);
@@ -889,7 +1043,7 @@ impl MirToCraneliftLowerer {
                                 let addr = resolve_place_to_addr(
                                     place,
                                     &mut builder,
-                                    &self.cranelift_stack_slots,
+                                    &self.clif_stack_slots,
                                     &self.mir,
                                     &mut self.module,
                                 )?;
@@ -906,7 +1060,7 @@ impl MirToCraneliftLowerer {
                             args,
                             &mut builder,
                             &self.mir,
-                            &self.cranelift_stack_slots,
+                            &self.clif_stack_slots,
                             &mut self.module,
                         )?; // Ignore return value as this is a side-effect only call
                     }
@@ -930,7 +1084,7 @@ impl MirToCraneliftLowerer {
             // ========================================================================
             match &mir_block.terminator {
                 Terminator::Goto(target) => {
-                    let target_cl_block = cl_blocks
+                    let target_cl_block = clif_blocks
                         .get(target)
                         .ok_or_else(|| format!("Target block {} not found", target.get()))?;
                     builder.ins().jump(*target_cl_block, &[]);
@@ -942,15 +1096,15 @@ impl MirToCraneliftLowerer {
                         cond,
                         &mut builder,
                         types::I32,
-                        &self.cranelift_stack_slots,
+                        &self.clif_stack_slots,
                         &self.mir,
                         &mut self.module,
                     )?;
 
-                    let then_cl_block = cl_blocks
+                    let then_cl_block = clif_blocks
                         .get(then_bb)
                         .ok_or_else(|| format!("'Then' block {} not found", then_bb.get()))?;
-                    let else_cl_block = cl_blocks
+                    let else_cl_block = clif_blocks
                         .get(else_bb)
                         .ok_or_else(|| format!("'Else' block {} not found", else_bb.get()))?;
 
@@ -967,7 +1121,7 @@ impl MirToCraneliftLowerer {
                                 operand,
                                 &mut builder,
                                 ret_type,
-                                &self.cranelift_stack_slots,
+                                &self.clif_stack_slots,
                                 &self.mir,
                                 &mut self.module,
                             )?;
@@ -995,7 +1149,7 @@ impl MirToCraneliftLowerer {
 
         // PHASE 3️⃣ — Seal blocks with correct order
         for &mir_block_id in &func.blocks {
-            let cl_block = cl_blocks.get(&mir_block_id).expect("Block not found in mapping");
+            let cl_block = clif_blocks.get(&mir_block_id).expect("Block not found in mapping");
             builder.seal_block(*cl_block);
         }
 

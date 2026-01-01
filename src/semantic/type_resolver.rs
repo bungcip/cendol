@@ -149,6 +149,10 @@ impl<'a> TypeResolver<'a> {
                     None
                 }
             }
+            UnaryOp::LogicNot => {
+                // Logical NOT always returns bool type
+                Some(QualType::unqualified(self.registry.type_bool))
+            }
             _ => None,
         }
     }

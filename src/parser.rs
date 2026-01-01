@@ -29,7 +29,7 @@ use expressions::parse_expression;
 
 /// Type context for tracking typedef names and other type-related state
 #[derive(Debug)]
-pub struct TypeDefContext {
+pub(crate) struct TypeDefContext {
     /// Set of typedef names for disambiguation
     typedef_names: HashSet<NameId>,
 }
@@ -42,7 +42,7 @@ impl Default for TypeDefContext {
 
 impl TypeDefContext {
     /// Create a new type context with builtin typedefs
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let mut typedef_names = HashSet::new();
         // Add builtin typedefs
         typedef_names.insert(NameId::new("va_list"));
@@ -63,14 +63,14 @@ impl TypeDefContext {
     }
 
     /// Check if a symbol is a typedef name
-    pub fn is_type_name(&self, symbol: NameId) -> bool {
+    pub(crate) fn is_type_name(&self, symbol: NameId) -> bool {
         let result = self.typedef_names.contains(&symbol);
         debug!("is_type_name({:?}) = {}", symbol, result);
         result
     }
 
     /// Add a typedef name
-    pub fn add_typedef(&mut self, symbol: NameId) {
+    pub(crate) fn add_typedef(&mut self, symbol: NameId) {
         self.typedef_names.insert(symbol);
     }
 }
@@ -252,7 +252,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Main expression parsing using Pratt algorithm
-    pub fn parse_expression(&mut self, min_binding_power: expressions::BindingPower) -> Result<NodeRef, ParseError> {
+    pub(crate) fn parse_expression(
+        &mut self,
+        min_binding_power: expressions::BindingPower,
+    ) -> Result<NodeRef, ParseError> {
         parse_expression(self, min_binding_power)
     }
 
@@ -343,7 +346,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Add a typedef name to the type context
-    pub fn add_typedef(&mut self, symbol: NameId) {
+    pub(crate) fn add_typedef(&mut self, symbol: NameId) {
         debug!("add_typedef: adding {:?} to typedef_names", symbol);
         self.type_context.add_typedef(symbol);
     }

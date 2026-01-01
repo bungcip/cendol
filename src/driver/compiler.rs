@@ -78,25 +78,25 @@ pub struct SemaOutput {
 
 impl SemaOutput {
     /// get type or panic if not found
-    pub fn get_type(&self, id: TypeId) -> &MirType {
+    pub(crate) fn get_type(&self, id: TypeId) -> &MirType {
         match self.types.get(&id) {
             Some(id) => id,
             None => panic!("ICE: Type ID {id} not found"),
         }
     }
-    pub fn get_local(&self, id: LocalId) -> &Local {
+    pub(crate) fn get_local(&self, id: LocalId) -> &Local {
         match self.locals.get(&id) {
             Some(id) => id,
             None => panic!("ICE: Local ID {id} not found"),
         }
     }
-    pub fn get_function(&self, id: MirFunctionId) -> &MirFunction {
+    pub(crate) fn get_function(&self, id: MirFunctionId) -> &MirFunction {
         match self.functions.get(&id) {
             Some(id) => id,
             None => panic!("ICE: Function ID {id} not found"),
         }
     }
-    pub fn get_global(&self, id: GlobalId) -> &Global {
+    pub(crate) fn get_global(&self, id: GlobalId) -> &Global {
         match self.globals.get(&id) {
             Some(id) => id,
             None => panic!("ICE: Global ID {id} not found"),
@@ -450,7 +450,8 @@ impl CompilerDriver {
     }
 
     /// Get diagnostics for testing
-    pub fn get_diagnostics(&self) -> Vec<Diagnostic> {
+    #[cfg(test)]
+    pub(crate) fn get_diagnostics(&self) -> Vec<Diagnostic> {
         self.diagnostics.diagnostics().to_vec()
     }
 

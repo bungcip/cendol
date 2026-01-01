@@ -20,6 +20,16 @@ pub mod type_registry;
 pub mod type_resolver;
 pub mod types;
 pub mod utils;
+
+#[cfg(test)]
+mod tests_generic;
+#[cfg(test)]
+pub mod tests_lowering;
+#[cfg(test)]
+pub mod tests_mir;
+#[cfg(test)]
+pub mod tests_validation;
+
 /// Side table containing semantic information for AST nodes.
 /// Parallel vectors indexed by node index (NodeRef.get() - 1).
 #[derive(Debug, Clone)]

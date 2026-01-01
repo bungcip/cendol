@@ -19,6 +19,7 @@
 //! - **Type System**: Canonical types distinct from syntactic type specifiers
 //!
 
+use smallvec::SmallVec;
 use std::num::NonZeroU32;
 
 /// Represents an interned string using symbol_table crate.
@@ -136,5 +137,31 @@ impl Ast {
     /// Get the resolved type for a node (reads from attached semantic_info)
     pub fn get_resolved_type(&self, node_ref: NodeRef) -> Option<crate::semantic::QualType> {
         self.semantic_info.as_ref()?.types[(node_ref.get() - 1) as usize]
+    }
+
+    /// Get the value category for a node (reads from attached semantic_info)
+    pub fn get_value_category(&self, node_ref: NodeRef) -> Option<crate::semantic::ValueCategory> {
+        self.semantic_info
+            .as_ref()?
+            .value_categories
+            .get((node_ref.get() - 1) as usize)
+            .copied()
+    }
+
+    /// Get the conversions for a node (reads from attached semantic_info)
+    pub fn get_conversions(&self, node_ref: NodeRef) -> Option<&SmallVec<[crate::semantic::ImplicitConversion; 1]>> {
+        self.semantic_info
+            .as_ref()?
+            .conversions
+            .get((node_ref.get() - 1) as usize)
+    }
+
+    /// Check if a node has only pointer decay conversion (optimization opportunity)
+    pub fn has_only_pointer_decay(&self, node_ref: NodeRef) -> bool {
+        if let Some(conversions) = self.get_conversions(node_ref) {
+            conversions.len() == 1 && conversions[0] == crate::semantic::ImplicitConversion::PointerDecay
+        } else {
+            false
+        }
     }
 }

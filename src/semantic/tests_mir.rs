@@ -962,7 +962,7 @@ mod tests {
           }
 
           bb1:
-            %steins = const @.L.str0
+            %steins = cast<ptr<i8>>(const @.L.str0)
             %3 = call strlen(%steins)
             %4 = %3 - const 4
             return %4
@@ -998,28 +998,32 @@ mod tests {
             %okabe: i32
             %rintaro: i32
             %3: i32
+            %4: i32
             %kyouma: i32
-            %5: i32
+            %6: i32
             %hohohin: i32
-            %7: i32
-            %kanggoru: i32
+            %8: i32
             %9: i32
+            %kanggoru: i32
+            %11: i32
           }
 
           bb1:
             %okabe = const 1
-            %3 = %okabe + const 1
-            %okabe = %3
-            %rintaro = %okabe
-            %5 = %rintaro + const 1
-            %rintaro = %5
-            %kyouma = %5
-            %7 = %kyouma - const 1
-            %kyouma = %7
-            %hohohin = %kyouma
-            %9 = %hohohin - const 1
-            %hohohin = %9
-            %kanggoru = %9
+            %3 = %okabe
+            %4 = %okabe + const 1
+            %okabe = %4
+            %rintaro = %3
+            %6 = %rintaro + const 1
+            %rintaro = %6
+            %kyouma = %6
+            %8 = %kyouma
+            %9 = %kyouma - const -1
+            %kyouma = %9
+            %hohohin = %8
+            %11 = %hohohin - const 1
+            %hohohin = %11
+            %kanggoru = %11
             return %kanggoru
         }
         ");

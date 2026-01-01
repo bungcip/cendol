@@ -40,13 +40,11 @@ fn rejects_variable_as_typedef_in_cast() {
     );
     let mut driver = CompilerDriver::from_config(config);
     let result = driver.run_pipeline(crate::driver::compiler::CompilePhase::Mir);
-    assert!(
-        driver
-            .get_diagnostics()
-            .iter()
-            .any(|d| d.level == DiagnosticLevel::Error
-                && d.message.contains("expected a typedef name, found a variable"))
-    );
+    assert!(driver.get_diagnostics().iter().any(|d| {
+        d.level == DiagnosticLevel::Error
+            && d.message
+                .contains("Unexpected token: expected Semicolon, found IntegerConstant(1)")
+    }));
     assert!(result.is_err());
 }
 

@@ -632,7 +632,7 @@ impl MirBuilder {
         &self.module
     }
 
-    /// Finalize the module by updating all references
+    /// Finalize the module by updating all references and applying optimizations
     pub fn finalize_module(&mut self) -> MirModule {
         // Return the accumulated module directly
         // This preserves the insertion order of types and constants,

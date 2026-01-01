@@ -573,7 +573,7 @@ impl<'a> MirDumper<'a> {
             Rvalue::PtrAdd(base, offset) => {
                 write!(
                     output,
-                    "{} + {}",
+                    "ptradd({}, {})",
                     self.operand_to_string(base),
                     self.operand_to_string(offset)
                 )?;

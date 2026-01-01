@@ -540,8 +540,7 @@ impl<'src> Lexer<'src> {
                 );
 
                 // Initialize content with the first string literal's content
-                let mut content =
-                    Self::extract_string_content(&symbol).unwrap_or("").to_string();
+                let mut content = Self::extract_string_content(&symbol).unwrap_or("").to_string();
 
                 // Peek ahead and consume all adjacent string literals
                 while let Some(next_pptoken) = current_token_iter.peek() {

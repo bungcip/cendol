@@ -2,7 +2,8 @@ use crate::{
     ast::{nodes::*, *},
     diagnostic::SemanticError,
     semantic::{
-        ArraySizeType, QualType, SymbolTable, TypeKind, TypeRegistry, conversions::usual_arithmetic_conversions,
+        ArraySizeType, ImplicitConversion, QualType, SymbolTable, TypeKind, TypeRegistry, ValueCategory,
+        conversions::{integer_promotion, usual_arithmetic_conversions},
         utils::is_scalar_type,
     },
 };
@@ -12,18 +13,21 @@ pub fn run_type_resolver(
     diag: &mut crate::diagnostic::DiagnosticEngine,
     symbol_table: &SymbolTable,
     registry: &mut TypeRegistry,
-) {
+) -> crate::semantic::SemanticInfo {
+    let mut semantic_info = crate::semantic::SemanticInfo::with_capacity(ast.nodes.len());
     let mut resolver = TypeResolver {
         ast,
         diag,
         symbol_table,
         registry,
+        semantic_info: &mut semantic_info,
         current_function_ret_type: None,
         deferred_checks: Vec::new(),
     };
     let root = ast.get_root();
     resolver.visit_node(root);
     resolver.process_deferred_checks();
+    semantic_info
 }
 
 enum DeferredCheck {
@@ -35,6 +39,7 @@ struct TypeResolver<'a> {
     diag: &'a mut crate::diagnostic::DiagnosticEngine,
     symbol_table: &'a SymbolTable,
     registry: &'a mut TypeRegistry,
+    semantic_info: &'a mut crate::semantic::SemanticInfo,
     current_function_ret_type: Option<QualType>,
     deferred_checks: Vec<DeferredCheck>,
 }
@@ -125,6 +130,14 @@ impl<'a> TypeResolver<'a> {
                     self.report_error(SemanticError::NotAnLvalue { span: full_span });
                     return None;
                 }
+                // If operand is array/function, record pointer decay conversion
+                match &self.registry.get(operand_ty.ty).kind {
+                    TypeKind::Array { .. } | TypeKind::Function { .. } => {
+                        let idx = (operand_ref.get() - 1) as usize;
+                        self.semantic_info.conversions[idx].push(ImplicitConversion::PointerDecay);
+                    }
+                    _ => {}
+                }
                 Some(self.registry.decay(operand_ty))
             }
             UnaryOp::Deref => match operand_kind {
@@ -144,7 +157,15 @@ impl<'a> TypeResolver<'a> {
             UnaryOp::Plus | UnaryOp::Minus => {
                 if is_scalar_type(operand_ty, self.registry) {
                     // Strip all qualifiers for unary plus/minus operations
-                    Some(self.registry.strip_all(operand_ty))
+                    let stripped = self.registry.strip_all(operand_ty);
+                    if stripped.qualifiers != operand_ty.qualifiers {
+                        let idx = (operand_ref.get() - 1) as usize;
+                        self.semantic_info.conversions[idx].push(ImplicitConversion::QualifierAdjust {
+                            from: operand_ty.qualifiers,
+                            to: stripped.qualifiers,
+                        });
+                    }
+                    Some(stripped)
                 } else {
                     None
                 }
@@ -164,6 +185,24 @@ impl<'a> TypeResolver<'a> {
         // Handle pointer arithmetic
         let lhs_kind = &self.registry.get(lhs_ty.ty).kind;
         let rhs_kind = &self.registry.get(rhs_ty.ty).kind;
+
+        // Perform integer promotions and record them
+        let lhs_promoted = integer_promotion(self.registry, lhs_ty);
+        if lhs_promoted.ty != lhs_ty.ty {
+            let idx = (lhs_ref.get() - 1) as usize;
+            self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerPromotion {
+                from: lhs_ty.ty,
+                to: lhs_promoted.ty,
+            });
+        }
+        let rhs_promoted = integer_promotion(self.registry, rhs_ty);
+        if rhs_promoted.ty != rhs_ty.ty {
+            let idx = (rhs_ref.get() - 1) as usize;
+            self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerPromotion {
+                from: rhs_ty.ty,
+                to: rhs_promoted.ty,
+            });
+        }
 
         match (op, lhs_kind, rhs_kind) {
             // Pointer + integer = pointer
@@ -191,11 +230,57 @@ impl<'a> TypeResolver<'a> {
 
     fn visit_assignment(&mut self, lhs_ref: NodeRef, rhs_ref: NodeRef, full_span: SourceSpan) -> Option<QualType> {
         let lhs_ty = self.visit_node(lhs_ref)?;
-        self.visit_node(rhs_ref)?;
+        let rhs_result = self.visit_node(rhs_ref)?;
 
         if !self.is_lvalue(lhs_ref) {
             self.report_error(SemanticError::NotAnLvalue { span: full_span });
         }
+        // Record potential implicit conversions from rhs -> lhs
+        let lhs_kind = &self.registry.get(lhs_ty.ty).kind;
+        let rhs_kind = &self.registry.get(rhs_result.ty).kind;
+
+        // Array-to-pointer decay: array assigned to pointer
+        if let (TypeKind::Pointer { .. }, TypeKind::Array { .. }) = (lhs_kind, rhs_kind) {
+            let idx = (rhs_ref.get() - 1) as usize;
+            self.semantic_info.conversions[idx].push(ImplicitConversion::PointerDecay);
+        }
+
+        // Qualifier adjustment: same canonical type but different qualifiers
+        if lhs_ty.ty == rhs_result.ty && lhs_ty.qualifiers != rhs_result.qualifiers {
+            let idx = (rhs_ref.get() - 1) as usize;
+            self.semantic_info.conversions[idx].push(ImplicitConversion::QualifierAdjust {
+                from: rhs_result.qualifiers,
+                to: lhs_ty.qualifiers,
+            });
+        }
+
+        // Integer casts
+        match (lhs_kind, rhs_kind) {
+            (
+                TypeKind::Char { .. } | TypeKind::Short { .. } | TypeKind::Int { .. } | TypeKind::Long { .. },
+                TypeKind::Char { .. } | TypeKind::Short { .. } | TypeKind::Int { .. } | TypeKind::Long { .. },
+            ) => {
+                if lhs_ty.ty != rhs_result.ty {
+                    let idx = (rhs_ref.get() - 1) as usize;
+                    self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerCast {
+                        from: rhs_result.ty,
+                        to: lhs_ty.ty,
+                    });
+                }
+            }
+            // Pointer casts
+            (TypeKind::Pointer { .. }, TypeKind::Pointer { .. }) => {
+                if lhs_ty.ty != rhs_result.ty {
+                    let idx = (rhs_ref.get() - 1) as usize;
+                    self.semantic_info.conversions[idx].push(ImplicitConversion::PointerCast {
+                        from: rhs_result.ty,
+                        to: lhs_ty.ty,
+                    });
+                }
+            }
+            _ => {}
+        }
+
         Some(lhs_ty)
     }
 
@@ -485,7 +570,15 @@ impl<'a> TypeResolver<'a> {
         }
 
         if let Some(ty) = result_type {
-            node.resolved_type.set(Some(ty));
+            // set resolved type and value category for this node
+            let idx = (node_ref.get() - 1) as usize;
+            self.semantic_info.types[idx] = Some(ty);
+            let vc = if self.is_lvalue(node_ref) {
+                ValueCategory::LValue
+            } else {
+                ValueCategory::RValue
+            };
+            self.semantic_info.value_categories[idx] = vc;
         }
         result_type
     }
@@ -552,7 +645,8 @@ impl<'a> TypeResolver<'a> {
         // The type of the _Generic expression is the type of the selected result expression.
         if let Some(expr_ref) = selected_expr_ref {
             // The type should already be resolved from the earlier pass.
-            self.ast.get_node(expr_ref).resolved_type.get()
+            let idx = (expr_ref.get() - 1) as usize;
+            self.semantic_info.types.get(idx).and_then(|t| *t)
         } else {
             // If no match is found and there's no default, it's a semantic error.
             self.report_error(SemanticError::GenericNoMatch {

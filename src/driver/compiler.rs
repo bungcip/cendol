@@ -363,14 +363,19 @@ impl CompilerDriver {
         }
 
         use crate::semantic::type_resolver::run_type_resolver;
-        run_type_resolver(&ast, &mut self.diagnostics, &symbol_table, &mut registry);
+        let semantic_info = run_type_resolver(&ast, &mut self.diagnostics, &symbol_table, &mut registry);
         self.check_diagnostics_and_return_if_error()?;
+
+        // Attach semantic info to AST (like scope_map)
+        let mut ast = ast;
+        ast.attach_semantic_info(semantic_info);
 
         // invariant validations
         // all expression must have resolved_type set
         for (i, node) in ast.nodes.iter().enumerate() {
+            let node_ref = crate::ast::NodeRef::new((i as u32) + 1).unwrap();
             match &node.kind {
-                NodeKind::Ident(name, ..) if node.resolved_type.get().is_none() => {
+                NodeKind::Ident(name, ..) if ast.get_resolved_type(node_ref).is_none() => {
                     eprintln!(
                         "ICE: unresolved ident node idx={} name={:?} span={:?}",
                         i + 1,
@@ -387,7 +392,7 @@ impl CompilerDriver {
             }
         }
 
-        let mut sema = AstToMirLowerer::new(&ast, &mut symbol_table, &registry);
+        let mut sema = AstToMirLowerer::new(&ast, &symbol_table, &registry);
         let sema_output = sema.lower_module_complete();
         self.check_diagnostics_and_return_if_error()?;
 

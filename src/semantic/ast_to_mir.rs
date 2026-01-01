@@ -16,7 +16,7 @@ use crate::semantic::SymbolRef;
 use crate::semantic::SymbolTable;
 use crate::semantic::TypeKind;
 use crate::semantic::{DefinitionState, TypeRef, TypeRegistry};
-use crate::semantic::{Namespace, ScopeId};
+use crate::semantic::{ImplicitConversion, Namespace, ScopeId};
 use crate::source_manager::SourceSpan;
 use hashbrown::{HashMap, HashSet};
 use log::debug;
@@ -25,7 +25,7 @@ use crate::mir::GlobalId;
 
 pub struct AstToMirLowerer<'a> {
     ast: &'a Ast,
-    symbol_table: &'a mut SymbolTable, // TODO: need to be imutable
+    symbol_table: &'a SymbolTable, // Now immutable
     mir_builder: MirBuilder,
     current_function: Option<MirFunctionId>,
     current_block: Option<MirBlockId>,
@@ -39,7 +39,7 @@ pub struct AstToMirLowerer<'a> {
 }
 
 impl<'a> AstToMirLowerer<'a> {
-    pub fn new(ast: &'a Ast, symbol_table: &'a mut SymbolTable, registry: &'a TypeRegistry) -> Self {
+    pub fn new(ast: &'a Ast, symbol_table: &'a SymbolTable, registry: &'a TypeRegistry) -> Self {
         let mir_builder = MirBuilder::new(mir::MirModuleId::new(1).unwrap());
         Self {
             ast,
@@ -61,7 +61,6 @@ impl<'a> AstToMirLowerer<'a> {
         let root = self.ast.get_root();
         self.lower_node_ref(root, ScopeId::GLOBAL);
         debug!("Semantic analysis complete");
-        self.finalize_globals();
 
         let module = self.mir_builder.finalize_module();
         let functions = self.mir_builder.get_functions().clone();
@@ -81,32 +80,6 @@ impl<'a> AstToMirLowerer<'a> {
             types,
             constants,
             statements,
-        }
-    }
-
-    fn finalize_globals(&mut self) {
-        let tentative_entries: Vec<(NameId, SymbolRef)> = self
-            .symbol_table
-            .get_scope(ScopeId::GLOBAL)
-            .symbols
-            .values()
-            .filter_map(|entry_ref| {
-                let entry = self.symbol_table.get_symbol(*entry_ref);
-                if matches!(entry.kind, SymbolKind::Variable { .. }) && entry.def_state == DefinitionState::Tentative {
-                    Some((entry.name, *entry_ref))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        for (_, entry_ref) in &tentative_entries {
-            let entry = self.symbol_table.get_symbol_mut(*entry_ref);
-            if let SymbolKind::Variable { .. } = &mut entry.kind
-                && entry.def_state == DefinitionState::Tentative
-            {
-                entry.def_state = DefinitionState::Defined;
-            }
         }
     }
 
@@ -427,8 +400,7 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn lower_expression(&mut self, scope_id: ScopeId, expr_ref: NodeRef) -> Operand {
-        let node = self.ast.get_node(expr_ref);
-        let ty = node.resolved_type.get().expect("Type not resolved");
+        let ty = self.ast.get_resolved_type(expr_ref).expect("Type not resolved");
         let node_kind = self.ast.get_node(expr_ref).kind.clone();
 
         let mir_ty = self.lower_type_to_mir(ty.ty);
@@ -520,43 +492,112 @@ impl<'a> AstToMirLowerer<'a> {
             },
             NodeKind::PostIncrement(operand_ref) => {
                 let operand = self.lower_expression(scope_id, *operand_ref);
-                let result = operand.clone();
+                let operand_ty = self.ast.get_resolved_type(*operand_ref).unwrap();
+                let mir_ty = self.lower_type_to_mir(operand_ty.ty);
 
                 if let Operand::Copy(place) = operand.clone() {
-                    let rhs = Operand::Constant(self.create_constant(ConstValue::Int(1)));
-                    let rval = Rvalue::BinaryOp(MirBinaryOp::Add, operand, rhs);
-                    let mir_ty =
-                        self.lower_type_to_mir(self.ast.get_node(*operand_ref).resolved_type.get().unwrap().ty);
-                    let (_, temp_place) = self.create_temp_local_with_assignment(rval, mir_ty);
-                    self.emit_assignment(*place, Operand::Copy(Box::new(temp_place)));
+                    let type_info = self.registry.get(operand_ty.ty);
+
+                    match &type_info.kind {
+                        TypeKind::Pointer { .. } => {
+                            // For pointers, manually generate the correct sequence:
+                            // 1. Load the value pointed to by the original pointer
+                            // 2. Increment the pointer
+                            // 3. Return the loaded value
+
+                            // Step 1: Create a temp to hold the dereferenced value
+                            let deref_operand = Operand::Copy(place.clone());
+                            let deref_rval = Rvalue::Use(deref_operand);
+                            let (_, temp_place) = self.create_temp_local_with_assignment(deref_rval, mir_ty);
+                            let loaded_value = Operand::Copy(Box::new(temp_place));
+
+                            // Step 2: Increment the pointer
+                            let rhs = Operand::Constant(self.create_constant(ConstValue::Int(1)));
+                            let increment_rval = Rvalue::BinaryOp(MirBinaryOp::Add, operand, rhs);
+                            let (_, incremented_place) = self.create_temp_local_with_assignment(increment_rval, mir_ty);
+
+                            // Step 3: Update the original pointer
+                            self.emit_assignment(*place, Operand::Copy(Box::new(incremented_place)));
+
+                            // Step 4: Return the loaded value
+                            loaded_value
+                        }
+                        _ => {
+                            // For non-pointer values, use the simple approach
+                            let rval = Rvalue::Use(operand.clone());
+                            let (_, temp_place) = self.create_temp_local_with_assignment(rval, mir_ty);
+
+                            let rhs = Operand::Constant(self.create_constant(ConstValue::Int(1)));
+                            let increment_rval = Rvalue::BinaryOp(MirBinaryOp::Add, operand, rhs);
+                            let (_, incremented_place) = self.create_temp_local_with_assignment(increment_rval, mir_ty);
+                            self.emit_assignment(*place, Operand::Copy(Box::new(incremented_place)));
+
+                            Operand::Copy(Box::new(temp_place))
+                        }
+                    }
                 } else {
                     panic!("Post-increment operand is not a place");
                 }
-
-                result
             }
             NodeKind::PostDecrement(operand_ref) => {
                 let operand = self.lower_expression(scope_id, *operand_ref);
-                let result = operand.clone();
+                let operand_ty = self.ast.get_resolved_type(*operand_ref).unwrap();
+                let mir_ty = self.lower_type_to_mir(operand_ty.ty);
 
                 if let Operand::Copy(place) = operand.clone() {
-                    let rhs = Operand::Constant(self.create_constant(ConstValue::Int(1)));
-                    let rval = Rvalue::BinaryOp(MirBinaryOp::Sub, operand, rhs);
-                    let mir_ty =
-                        self.lower_type_to_mir(self.ast.get_node(*operand_ref).resolved_type.get().unwrap().ty);
-                    let (_, temp_place) = self.create_temp_local_with_assignment(rval, mir_ty);
-                    self.emit_assignment(*place, Operand::Copy(Box::new(temp_place)));
+                    let type_info = self.registry.get(operand_ty.ty);
+
+                    match &type_info.kind {
+                        TypeKind::Pointer { .. } => {
+                            // For pointers, manually generate the correct sequence:
+                            // 1. Load the value pointed to by the original pointer
+                            // 2. Decrement the pointer
+                            // 3. Return the loaded value
+
+                            // Step 1: Create a temp to hold the dereferenced value
+                            let deref_operand = Operand::Copy(place.clone());
+                            let deref_rval = Rvalue::Use(deref_operand);
+                            let (_, temp_place) = self.create_temp_local_with_assignment(deref_rval, mir_ty);
+                            let loaded_value = Operand::Copy(Box::new(temp_place));
+
+                            // Step 2: Decrement the pointer
+                            let rhs = Operand::Constant(self.create_constant(ConstValue::Int(1)));
+                            let decrement_rval = Rvalue::BinaryOp(MirBinaryOp::Sub, operand, rhs);
+                            let (_, decremented_place) = self.create_temp_local_with_assignment(decrement_rval, mir_ty);
+
+                            // Step 3: Update the original pointer
+                            self.emit_assignment(*place, Operand::Copy(Box::new(decremented_place)));
+
+                            // Step 4: Return the loaded value
+                            loaded_value
+                        }
+                        _ => {
+                            // For non-pointer values, use the simple approach
+                            let rval = Rvalue::Use(operand.clone());
+                            let (_, temp_place) = self.create_temp_local_with_assignment(rval, mir_ty);
+
+                            let rhs = Operand::Constant(self.create_constant(ConstValue::Int(1)));
+                            let decrement_rval = Rvalue::BinaryOp(MirBinaryOp::Sub, operand, rhs);
+                            let (_, decremented_place) = self.create_temp_local_with_assignment(decrement_rval, mir_ty);
+                            self.emit_assignment(*place, Operand::Copy(Box::new(decremented_place)));
+
+                            Operand::Copy(Box::new(temp_place))
+                        }
+                    }
                 } else {
                     panic!("Post-decrement operand is not a place");
                 }
-
-                result
             }
             NodeKind::BinaryOp(op, left_ref, right_ref) => {
                 let lhs = self.lower_expression(scope_id, *left_ref);
                 let rhs = self.lower_expression(scope_id, *right_ref);
+
+                // Apply any recorded implicit conversions (e.g., integer promotions)
+                let lhs_converted = self.apply_conversions(lhs, *left_ref, mir_ty);
+                let rhs_converted = self.apply_conversions(rhs, *right_ref, mir_ty);
+
                 let mir_op = self.map_ast_binary_op_to_mir(op);
-                let rval = Rvalue::BinaryOp(mir_op, lhs, rhs);
+                let rval = Rvalue::BinaryOp(mir_op, lhs_converted, rhs_converted);
                 let (_, place) = self.create_temp_local_with_assignment(rval, mir_ty);
                 Operand::Copy(Box::new(place))
             }
@@ -564,9 +605,12 @@ impl<'a> AstToMirLowerer<'a> {
                 let lhs_op = self.lower_expression(scope_id, *left_ref);
                 let rhs_op = self.lower_expression(scope_id, *right_ref);
 
+                // Apply any recorded implicit conversions from rhs to lhs type
+                let rhs_converted = self.apply_conversions(rhs_op.clone(), *right_ref, mir_ty);
+
                 if let Operand::Copy(place) = lhs_op {
-                    self.emit_assignment(*place, rhs_op.clone());
-                    rhs_op
+                    self.emit_assignment(*place, rhs_converted.clone());
+                    rhs_converted
                 } else {
                     panic!("LHS of assignment is not a place");
                 }
@@ -575,8 +619,13 @@ impl<'a> AstToMirLowerer<'a> {
                 let callee = self.lower_expression(scope_id, *func_ref);
 
                 let mut arg_operands = Vec::new();
-                for arg in args {
-                    arg_operands.push(self.lower_expression(scope_id, *arg));
+                for arg in args.iter() {
+                    let arg_operand = self.lower_expression(scope_id, *arg);
+                    // Apply conversions for function arguments if needed
+                    let arg_ty = self.ast.get_resolved_type(*arg).unwrap();
+                    let arg_mir_ty = self.lower_type_to_mir(arg_ty.ty);
+                    let converted_arg = self.apply_conversions(arg_operand, *arg, arg_mir_ty);
+                    arg_operands.push(converted_arg);
                 }
 
                 let call_target = if let Operand::Constant(const_id) = callee {
@@ -594,26 +643,21 @@ impl<'a> AstToMirLowerer<'a> {
                 // Check if this is a void function call - if so, we use MirStmt::Call
                 // Otherwise, we use Rvalue::Call and create a temporary local
                 let func_node = self.ast.get_node(*func_ref);
-                if let Some(resolved_symbol) = func_node.resolved_type.get().and_then(|_qual_type| {
-                    // Get the function symbol reference from the identifier if it exists
-                    if let NodeKind::Ident(_, symbol_ref) = &func_node.kind {
-                        symbol_ref.get()
-                    } else {
-                        None
-                    }
-                }) {
-                    let func_entry = self.symbol_table.get_symbol(resolved_symbol);
-                    let func_type = self.registry.get(func_entry.type_info);
-                    if let TypeKind::Function { return_type, .. } = &func_type.kind
-                        && self.registry.get(*return_type).kind == TypeKind::Void
-                    {
-                        // Void function call - use MirStmt::Call for side effects only
-                        let stmt = MirStmt::Call(call_target, arg_operands);
-                        self.mir_builder.add_statement(stmt);
-                        // Return a dummy operand for void functions
-                        return Operand::Constant(self.create_constant(ConstValue::Int(0)));
-                    }
-                }
+                if self.ast.get_resolved_type(*func_ref).is_some()
+                    && let NodeKind::Ident(_, symbol_ref) = &func_node.kind
+                        && let Some(resolved_symbol) = symbol_ref.get() {
+                            let func_entry = self.symbol_table.get_symbol(resolved_symbol);
+                            let func_type = self.registry.get(func_entry.type_info);
+                            if let TypeKind::Function { return_type, .. } = &func_type.kind
+                                && self.registry.get(*return_type).kind == TypeKind::Void
+                            {
+                                // Void function call - use MirStmt::Call for side effects only
+                                let stmt = MirStmt::Call(call_target, arg_operands);
+                                self.mir_builder.add_statement(stmt);
+                                // Return a dummy operand for void functions
+                                return Operand::Constant(self.create_constant(ConstValue::Int(0)));
+                            }
+                        }
 
                 // Non-void function call - use Rvalue::Call and store result
                 let rval = Rvalue::Call(call_target, arg_operands);
@@ -622,7 +666,7 @@ impl<'a> AstToMirLowerer<'a> {
             }
             NodeKind::MemberAccess(obj_ref, field_name, is_arrow) => {
                 let obj_operand = self.lower_expression(scope_id, *obj_ref);
-                let obj_ty = self.ast.get_node(*obj_ref).resolved_type.get().unwrap();
+                let obj_ty = self.ast.get_resolved_type(*obj_ref).unwrap();
                 let record_ty = if *is_arrow {
                     if let TypeKind::Pointer { pointee } = &self.registry.get(obj_ty.ty).kind {
                         *pointee
@@ -671,7 +715,7 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::IndexAccess(arr_ref, idx_ref) => {
                 let arr_operand = self.lower_expression(scope_id, *arr_ref);
                 let idx_operand = self.lower_expression(scope_id, *idx_ref);
-                let arr_ty = self.ast.get_node(*arr_ref).resolved_type.get().unwrap();
+                let arr_ty = self.ast.get_resolved_type(*arr_ref).unwrap();
 
                 // Handle both array and pointer types for index access
                 // In C, arr[idx] is equivalent to *(arr + idx)
@@ -741,7 +785,17 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn lower_return_statement(&mut self, scope_id: ScopeId, expr: &Option<NodeRef>) {
-        let operand = expr.map(|expr_ref| self.lower_expression(scope_id, expr_ref));
+        let operand = expr.map(|expr_ref| {
+            let expr_operand = self.lower_expression(scope_id, expr_ref);
+            // Apply conversions for return value if needed
+            if let Some(func_id) = self.current_function {
+                let func = self.mir_builder.get_functions().get(&func_id).unwrap();
+                let return_mir_ty = func.return_type;
+                self.apply_conversions(expr_operand, expr_ref, return_mir_ty)
+            } else {
+                expr_operand
+            }
+        });
         self.mir_builder.set_terminator(Terminator::Return(operand));
     }
 
@@ -751,8 +805,12 @@ impl<'a> AstToMirLowerer<'a> {
         let merge_block = self.mir_builder.create_block();
 
         let cond_operand = self.lower_expression(scope_id, if_stmt.condition);
+        // Apply conversions for condition (should be boolean)
+        let cond_ty = self.ast.get_resolved_type(if_stmt.condition).unwrap();
+        let cond_mir_ty = self.lower_type_to_mir(cond_ty.ty);
+        let cond_converted = self.apply_conversions(cond_operand, if_stmt.condition, cond_mir_ty);
         self.mir_builder
-            .set_terminator(Terminator::If(cond_operand, then_block, else_block));
+            .set_terminator(Terminator::If(cond_converted, then_block, else_block));
 
         self.mir_builder.set_current_block(then_block);
         self.lower_node_ref(if_stmt.then_branch, scope_id);
@@ -781,8 +839,12 @@ impl<'a> AstToMirLowerer<'a> {
         self.mir_builder.set_current_block(cond_block);
 
         let cond_operand = self.lower_expression(scope_id, while_stmt.condition);
+        // Apply conversions for condition (should be boolean)
+        let cond_ty = self.ast.get_resolved_type(while_stmt.condition).unwrap();
+        let cond_mir_ty = self.lower_type_to_mir(cond_ty.ty);
+        let cond_converted = self.apply_conversions(cond_operand, while_stmt.condition, cond_mir_ty);
         self.mir_builder
-            .set_terminator(Terminator::If(cond_operand, body_block, exit_block));
+            .set_terminator(Terminator::If(cond_converted, body_block, exit_block));
 
         self.mir_builder.set_current_block(body_block);
         self.lower_node_ref(while_stmt.body, scope_id);
@@ -808,8 +870,12 @@ impl<'a> AstToMirLowerer<'a> {
 
         if let Some(cond_ref) = for_stmt.condition {
             let cond_operand = self.lower_expression(scope_id, cond_ref);
+            // Apply conversions for condition (should be boolean)
+            let cond_ty = self.ast.get_resolved_type(cond_ref).unwrap();
+            let cond_mir_ty = self.lower_type_to_mir(cond_ty.ty);
+            let cond_converted = self.apply_conversions(cond_operand, cond_ref, cond_mir_ty);
             self.mir_builder
-                .set_terminator(Terminator::If(cond_operand, body_block, exit_block));
+                .set_terminator(Terminator::If(cond_converted, body_block, exit_block));
         } else {
             self.mir_builder.set_terminator(Terminator::Goto(body_block));
         }
@@ -973,6 +1039,27 @@ impl<'a> AstToMirLowerer<'a> {
         self.mir_builder.create_constant(value)
     }
 
+    fn emit_conversion(&mut self, operand: Operand, _conv: &ImplicitConversion, target_type_id: TypeId) -> Operand {
+        let rval = Rvalue::Cast(target_type_id, operand);
+        let (_, place) = self.create_temp_local_with_assignment(rval, target_type_id);
+        Operand::Copy(Box::new(place))
+    }
+
+    fn apply_conversions(&mut self, operand: Operand, node_ref: NodeRef, target_type_id: TypeId) -> Operand {
+        // Look up conversions for this node in semantic_info
+        if let Some(semantic_info) = &self.ast.semantic_info {
+            let idx = (node_ref.get() - 1) as usize;
+            if idx < semantic_info.conversions.len() {
+                let mut result = operand;
+                for conv in &semantic_info.conversions[idx] {
+                    result = self.emit_conversion(result, conv, target_type_id);
+                }
+                return result;
+            }
+        }
+        operand
+    }
+
     fn get_int_type(&mut self) -> TypeId {
         self.mir_builder.add_type(MirType::Int {
             is_signed: true,
@@ -1049,7 +1136,7 @@ impl<'a> AstToMirLowerer<'a> {
         };
 
         let rval = Rvalue::BinaryOp(mir_op, lhs.clone(), rhs);
-        let mir_ty = self.lower_type_to_mir(self.ast.get_node(lhs_ref).resolved_type.get().unwrap().ty);
+        let mir_ty = self.lower_type_to_mir(self.ast.get_resolved_type(lhs_ref).unwrap().ty);
         let (_, place) = self.create_temp_local_with_assignment(rval, mir_ty);
 
         if let Operand::Copy(lhs_place) = lhs {

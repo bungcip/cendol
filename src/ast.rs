@@ -19,14 +19,13 @@
 //! - **Type System**: Canonical types distinct from syntactic type specifiers
 //!
 
-use std::cell::Cell;
 use std::num::NonZeroU32;
 
 /// Represents an interned string using symbol_table crate.
 /// Alias for GlobalSymbol from symbol_table crate with global feature.
 pub type NameId = symbol_table::GlobalSymbol;
 
-use crate::semantic::{QualType, ScopeId, SymbolRef, TypeRef};
+use crate::semantic::{ScopeId, SymbolRef, TypeRef};
 pub use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
 
 // Submodules
@@ -46,8 +45,9 @@ pub use utils::extract_identifier;
 /// Contains all AST nodes, types, symbol entries in contiguous vectors.
 pub struct Ast {
     pub nodes: Vec<Node>,
-    pub parsed_types: ParsedTypeArena, // syntax type
-    scope_map: Vec<Option<ScopeId>>,   // index = NodeRef
+    pub parsed_types: ParsedTypeArena,                        // syntax type
+    scope_map: Vec<Option<ScopeId>>,                          // index = NodeRef
+    pub semantic_info: Option<crate::semantic::SemanticInfo>, // Populated after type resolution
 }
 
 /// Node reference type for referencing child nodes.
@@ -67,6 +67,7 @@ impl Ast {
             nodes: Vec::new(),
             parsed_types: ParsedTypeArena::new(),
             scope_map: Vec::new(),
+            semantic_info: None,
         }
     }
 
@@ -105,6 +106,11 @@ impl Ast {
     pub fn attach_scope_map(&mut self, scope_map: Vec<Option<ScopeId>>) {
         self.scope_map = scope_map;
     }
+
+    /// attach semantic info side table for AST (populated after type resolution)
+    pub fn attach_semantic_info(&mut self, semantic_info: crate::semantic::SemanticInfo) {
+        self.semantic_info = Some(semantic_info);
+    }
 }
 
 /// The primary AST node structure.
@@ -114,18 +120,21 @@ impl Ast {
 pub struct Node {
     pub kind: NodeKind,
     pub span: SourceSpan,
-    // Uses Cell for Interior Mutability: allows type checking to annotate the AST
-    // without requiring mutable access to the entire tree structure.
-    pub resolved_type: Cell<Option<QualType>>, // Hot data, now ref-based
 }
 
 impl Node {
     /// Create a new node with the given kind and source span
     pub fn new(kind: NodeKind, span: SourceSpan) -> Self {
-        Node {
-            kind,
-            span,
-            resolved_type: Cell::new(None),
-        }
+        Node { kind, span }
+    }
+
+    // Note: Node no longer stores resolved type directly; resolved types & conversions
+    // are stored in semantic_info side table after type resolution completes.
+}
+
+impl Ast {
+    /// Get the resolved type for a node (reads from attached semantic_info)
+    pub fn get_resolved_type(&self, node_ref: NodeRef) -> Option<crate::semantic::QualType> {
+        self.semantic_info.as_ref()?.types[(node_ref.get() - 1) as usize]
     }
 }

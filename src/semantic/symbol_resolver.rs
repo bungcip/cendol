@@ -13,7 +13,7 @@
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::semantic::const_eval::{self, ConstEvalCtx};
-use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
+use crate::semantic::symbol_table::{DefinitionState, SymbolRef, SymbolTableError};
 use crate::semantic::{
     ArraySizeType, EnumConstant, Namespace, ScopeId, StructMember, Symbol, SymbolKind, SymbolTable, TypeKind,
     TypeQualifiers, TypeRef, TypeRegistry,
@@ -1384,6 +1384,33 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
     }
 }
 
+/// Finalize tentative definitions by converting them to defined state
+/// This implements C11 6.9.2 semantics for tentative definitions
+fn finalize_tentative_definitions(symbol_table: &mut SymbolTable) {
+    let tentative_entries: Vec<(NameId, SymbolRef)> = symbol_table
+        .get_scope(ScopeId::GLOBAL)
+        .symbols
+        .values()
+        .filter_map(|entry_ref| {
+            let entry = symbol_table.get_symbol(*entry_ref);
+            if matches!(entry.kind, SymbolKind::Variable { .. }) && entry.def_state == DefinitionState::Tentative {
+                Some((entry.name, *entry_ref))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    for (_, entry_ref) in &tentative_entries {
+        let entry = symbol_table.get_symbol_mut(*entry_ref);
+        if let SymbolKind::Variable { .. } = &mut entry.kind
+            && entry.def_state == DefinitionState::Tentative
+        {
+            entry.def_state = DefinitionState::Defined;
+        }
+    }
+}
+
 /// Main entry point for running semantic lowering on an entire AST
 pub fn run_symbol_resolver(
     ast: &mut Ast,
@@ -1395,6 +1422,10 @@ pub fn run_symbol_resolver(
     let node_length = ast.nodes.len();
     let root_node_ref = ast.get_root();
 
+    // Finalize tentative definitions before any processing
+    // This must happen before creating the LowerCtx to avoid borrow conflicts
+    finalize_tentative_definitions(symbol_table);
+
     // Create lowering context
     let mut lower_ctx = LowerCtx::new(ast, diag, symbol_table, registry);
 
@@ -1403,6 +1434,7 @@ pub fn run_symbol_resolver(
 
     // Perform recursive scope-aware lowering
     lower_node_recursive(&mut lower_ctx, root_node_ref);
+
     lower_ctx.scope_map
 }
 

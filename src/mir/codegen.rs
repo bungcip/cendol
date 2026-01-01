@@ -950,10 +950,30 @@ impl MirToCraneliftLowerer {
                                 let right_cranelift_type = get_operand_cranelift_type(right_operand, &self.mir)
                                     .map_err(|e| format!("Failed to get right operand type: {}", e))?;
 
+                                // For Add/Sub operations, check if we have pointer arithmetic
+                                // If one operand is a pointer and the other is an integer constant,
+                                // ensure the constant is pointer-sized (i64)
+                                let (final_left_type, final_right_type) = match op {
+                                    BinaryOp::Add | BinaryOp::Sub => {
+                                        if left_cranelift_type == types::I64 && right_cranelift_type == types::I32 {
+                                            // Pointer + int constant
+                                            (types::I64, types::I64)
+                                        } else if left_cranelift_type == types::I32
+                                            && right_cranelift_type == types::I64
+                                        {
+                                            // int constant + pointer
+                                            (types::I64, types::I64)
+                                        } else {
+                                            (left_cranelift_type, right_cranelift_type)
+                                        }
+                                    }
+                                    _ => (left_cranelift_type, right_cranelift_type),
+                                };
+
                                 let left_val = resolve_operand_to_value(
                                     left_operand,
                                     &mut builder,
-                                    left_cranelift_type,
+                                    final_left_type,
                                     &self.clif_stack_slots,
                                     &self.mir,
                                     &mut self.module,
@@ -962,7 +982,7 @@ impl MirToCraneliftLowerer {
                                 let right_val = resolve_operand_to_value(
                                     right_operand,
                                     &mut builder,
-                                    right_cranelift_type,
+                                    final_right_type,
                                     &self.clif_stack_slots,
                                     &self.mir,
                                     &mut self.module,

@@ -167,6 +167,7 @@ dependencies = [
  "log",
  "serde",
  "serde_yaml",
+ "smallvec",
  "symbol_table",
  "target-lexicon",
  "tempfile",

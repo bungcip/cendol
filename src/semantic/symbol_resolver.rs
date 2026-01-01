@@ -322,7 +322,7 @@ fn convert_parsed_base_type_to_qual_type(
                     } else {
                         // Not in current scope (either not found or shadowing outer)
                         // Create a new record type
-                        let new_type_ref = ctx.registry.new_record(Some(*tag_name), *is_union);
+                        let new_type_ref = ctx.registry.declare_record(Some(*tag_name), *is_union);
 
                         // Add it to the symbol table in the current scope
                         let symbol_entry = Symbol {
@@ -353,7 +353,7 @@ fn convert_parsed_base_type_to_qual_type(
                         entry.type_info
                     } else {
                         // Not found anywhere, create an implicit forward declaration in current scope
-                        let forward_ref = ctx.registry.new_record(Some(*tag_name), *is_union);
+                        let forward_ref = ctx.registry.declare_record(Some(*tag_name), *is_union);
 
                         let symbol_entry = Symbol {
                             name: *tag_name,
@@ -378,7 +378,7 @@ fn convert_parsed_base_type_to_qual_type(
                 }
             } else {
                 // Anonymous struct/union definition
-                ctx.registry.new_record(None, *is_union)
+                ctx.registry.declare_record(None, *is_union)
             };
 
             // Now handle members if it's a definition
@@ -405,8 +405,7 @@ fn convert_parsed_base_type_to_qual_type(
                 }
 
                 // Update the type in AST and SymbolTable
-                ctx.registry
-                    .complete_record(type_ref_to_use, struct_members.clone(), None);
+                ctx.registry.complete_record(type_ref_to_use, struct_members.clone());
 
                 if let Some(tag_name) = *tag
                     && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(tag_name)
@@ -451,7 +450,7 @@ fn convert_parsed_base_type_to_qual_type(
                         type_info
                     } else {
                         // Not found in current scope, create new entry
-                        let new_type_ref = ctx.registry.new_enum(Some(*tag_name), ctx.registry.type_int);
+                        let new_type_ref = ctx.registry.declare_enum(Some(*tag_name), ctx.registry.type_int);
                         let symbol_entry = Symbol {
                             name: *tag_name,
                             kind: SymbolKind::EnumTag { is_complete: false },
@@ -474,7 +473,7 @@ fn convert_parsed_base_type_to_qual_type(
                         entry.type_info
                     } else {
                         // Implicit forward declaration
-                        let forward_ref = ctx.registry.new_enum(Some(*tag_name), ctx.registry.type_int);
+                        let forward_ref = ctx.registry.declare_enum(Some(*tag_name), ctx.registry.type_int);
 
                         let symbol = Symbol {
                             name: *tag_name,
@@ -494,7 +493,7 @@ fn convert_parsed_base_type_to_qual_type(
                 }
             } else {
                 // Anonymous enum definition
-                ctx.registry.new_enum(None, ctx.registry.type_int)
+                ctx.registry.declare_enum(None, ctx.registry.type_int)
             };
 
             // Process enumerators if it's a definition
@@ -530,7 +529,8 @@ fn convert_parsed_base_type_to_qual_type(
                 }
 
                 // Update the type in AST and SymbolTable using the proper completion function
-                ctx.registry.complete_enum(type_ref_to_use, enumerators_list, None);
+                ctx.registry.complete_enum(type_ref_to_use, enumerators_list);
+                ctx.registry.ensure_layout(type_ref_to_use)?;
 
                 if let Some(tag_name) = tag
                     && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(*tag_name)
@@ -564,7 +564,7 @@ fn convert_parsed_base_type_to_qual_type(
             } else {
                 // Typedef not found during semantic lowering - this is expected
                 // when typedefs are defined later in the same scope.
-                Ok(QualType::unqualified(ctx.registry.new_record(Some(*name), false)))
+                Ok(QualType::unqualified(ctx.registry.declare_record(Some(*name), false)))
             }
         }
         ParsedBaseTypeNode::Error => {
@@ -655,7 +655,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     } else {
                         // Not in current scope (either not found or shadowing outer)
                         // Create a new record type
-                        let new_type_ref = ctx.registry.new_record(Some(*tag_name), *is_union);
+                        let new_type_ref = ctx.registry.declare_record(Some(*tag_name), *is_union);
 
                         // Add it to the symbol table in the current scope
                         let symbol_entry = Symbol {
@@ -686,7 +686,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                         entry.type_info
                     } else {
                         // Not found anywhere, create an implicit forward declaration in current scope
-                        let forward_ref = ctx.registry.new_record(Some(*tag_name), *is_union);
+                        let forward_ref = ctx.registry.declare_record(Some(*tag_name), *is_union);
 
                         let symbol_entry = Symbol {
                             name: *tag_name,
@@ -711,7 +711,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                 }
             } else {
                 // Anonymous struct/union definition
-                ctx.registry.new_record(None, *is_union)
+                ctx.registry.declare_record(None, *is_union)
             };
 
             // Now handle members if it's a definition
@@ -771,7 +771,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     .unwrap_or_default();
 
                 // Update the type in AST and SymbolTable
-                ctx.registry.complete_record(type_ref_to_use, members.clone(), None);
+                ctx.registry.complete_record(type_ref_to_use, members.clone());
 
                 if let Some(tag_name) = tag
                     && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(*tag_name)
@@ -816,7 +816,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                         type_info
                     } else {
                         // Not found in current scope, create new entry
-                        let new_type_ref = ctx.registry.new_enum(Some(*tag_name), ctx.registry.type_int);
+                        let new_type_ref = ctx.registry.declare_enum(Some(*tag_name), ctx.registry.type_int);
                         let symbol_entry = Symbol {
                             name: *tag_name,
                             kind: SymbolKind::EnumTag { is_complete: false },
@@ -839,7 +839,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                         entry.type_info
                     } else {
                         // Implicit forward declaration
-                        let forward_ref = ctx.registry.new_enum(Some(*tag_name), ctx.registry.type_int);
+                        let forward_ref = ctx.registry.declare_enum(Some(*tag_name), ctx.registry.type_int);
                         let symbol = Symbol {
                             name: *tag_name,
                             kind: SymbolKind::EnumTag { is_complete: false },
@@ -858,7 +858,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                 }
             } else {
                 // Anonymous enum definition
-                ctx.registry.new_enum(None, ctx.registry.type_int)
+                ctx.registry.declare_enum(None, ctx.registry.type_int)
             };
 
             // 2. Process enumerators if it's a definition
@@ -905,7 +905,8 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                 }
 
                 // Update the type in AST and SymbolTable using the proper completion function
-                ctx.registry.complete_enum(type_ref_to_use, enumerators_list, None);
+                ctx.registry.complete_enum(type_ref_to_use, enumerators_list);
+                ctx.registry.ensure_layout(type_ref_to_use)?;
 
                 if let Some(tag_name) = tag
                     && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(*tag_name)
@@ -942,7 +943,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                 // For now, create a placeholder record type with the expected structure.
                 // This is a temporary solution - in a full implementation, we'd have a proper
                 // forward reference mechanism.
-                Ok(QualType::unqualified(ctx.registry.new_record(Some(*name), false)))
+                Ok(QualType::unqualified(ctx.registry.declare_record(Some(*name), false)))
             }
         }
     }

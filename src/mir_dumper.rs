@@ -167,7 +167,7 @@ impl<'a> MirDumper<'a> {
                 let pointee_index = self.get_type_index_from_type_id(*pointee);
                 format!("type {} = ptr<%t{}>", type_name, pointee_index)
             }
-            MirType::Array { element, size } => {
+            MirType::Array { element, size, .. } => {
                 let elem_index = self.get_type_index_from_type_id(*element);
                 format!("type {} = [{}]%t{}", type_name, size, elem_index)
             }
@@ -182,7 +182,9 @@ impl<'a> MirDumper<'a> {
                     .collect();
                 format!("type {} = fn({}) -> %t{}", type_name, param_types.join(", "), ret_index)
             }
-            MirType::Record { name, fields, is_union } => {
+            MirType::Record {
+                name, fields, is_union, ..
+            } => {
                 let field_strs: Vec<String> = fields
                     .iter()
                     .map(|(fname, fid)| {
@@ -336,7 +338,7 @@ impl<'a> MirDumper<'a> {
                     let pointee_type = self.type_to_string(*pointee);
                     format!("ptr<{}>", pointee_type)
                 }
-                MirType::Array { element, size } => {
+                MirType::Array { element, size, .. } => {
                     let elem_type = self.type_to_string(*element);
                     format!("[{}]{}", size, elem_type)
                 }

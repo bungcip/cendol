@@ -14,18 +14,36 @@ use crate::ast::{NameId, NodeRef, SourceSpan};
 /// Type representation (for semantic analysis)
 /// This is a canonical type, distinct from TypeSpecifier which is a syntax construct.
 /// Types are stored in a separate Vec<Type> with TypeRef references.
-#[derive(Debug, Clone, Default)]
+/// invariant:
+/// - layout == None for incomplete types
+/// - layout is computed according to C abstract machine rules
+/// - layout may differ from MIR layout
+
+#[derive(Debug, Clone)]
 pub struct Type {
     pub kind: TypeKind,
     pub layout: Option<TypeLayout>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct TypeLayout {
     #[allow(unused)]
-    size: u16,
+    pub size: u16,
     #[allow(unused)]
-    alignment: u16,
+    pub alignment: u16,
+    pub kind: LayoutKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum LayoutKind {
+    Scalar,
+    Array { element: TypeRef, len: u64 },
+    Record { fields: Vec<FieldLayout>, is_union: bool },
+}
+
+#[derive(Debug, Clone)]
+pub struct FieldLayout {
+    pub offset: u16,
 }
 
 impl Type {
@@ -33,6 +51,17 @@ impl Type {
     /// can only be called by TypeRegistry
     pub(crate) fn new(kind: TypeKind) -> Self {
         Type { kind, layout: None }
+    }
+
+    /// get record layout. panic if not found
+    pub(crate) fn get_record_layout(&self) -> (&[FieldLayout], bool) {
+        match &self.layout {
+            None => panic!("ICE: type.layout is not set"),
+            Some(layout) => match &layout.kind {
+                LayoutKind::Record { fields, is_union } => (fields.as_ref(), *is_union),
+                _ => panic!("ICE: type.layout.kind is not Record"),
+            },
+        }
     }
 }
 

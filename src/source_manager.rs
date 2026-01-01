@@ -89,6 +89,10 @@ impl SourceSpan {
         }
     }
 
+    pub fn dummy() -> Self {
+        Self::empty()
+    }
+
     pub fn source_id(&self) -> SourceId {
         self.start.source_id()
     }

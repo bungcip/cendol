@@ -2,6 +2,8 @@ use crate::ast::BinaryOp;
 use crate::ast::nodes;
 use crate::ast::*;
 use crate::driver::compiler::SemaOutput;
+use crate::mir::MirArrayLayout;
+use crate::mir::MirRecordLayout;
 use crate::mir::{
     self, BinaryOp as MirBinaryOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlockId, MirBuilder,
     MirFunctionId, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
@@ -16,14 +18,14 @@ use crate::semantic::TypeKind;
 use crate::semantic::{DefinitionState, TypeRef, TypeRegistry};
 use crate::semantic::{Namespace, ScopeId};
 use crate::source_manager::SourceSpan;
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use log::debug;
 
 use crate::mir::GlobalId;
 
 pub struct AstToMirLowerer<'a> {
     ast: &'a Ast,
-    symbol_table: &'a mut SymbolTable,
+    symbol_table: &'a mut SymbolTable, // TODO: need to be imutable
     mir_builder: MirBuilder,
     current_function: Option<MirFunctionId>,
     current_block: Option<MirBlockId>,
@@ -33,6 +35,7 @@ pub struct AstToMirLowerer<'a> {
     #[allow(unused)]
     label_map: HashMap<NameId, MirBlockId>,
     type_cache: HashMap<TypeRef, TypeId>,
+    type_conversion_in_progress: HashSet<TypeRef>,
 }
 
 impl<'a> AstToMirLowerer<'a> {
@@ -49,6 +52,7 @@ impl<'a> AstToMirLowerer<'a> {
             label_map: HashMap::new(),
             registry,
             type_cache: HashMap::new(),
+            type_conversion_in_progress: HashSet::new(),
         }
     }
 
@@ -557,9 +561,21 @@ impl<'a> AstToMirLowerer<'a> {
                     obj_ty.ty
                 };
 
-                let record_kind = &self.registry.get(record_ty).kind;
-                if let TypeKind::Record { members, .. } = record_kind {
-                    let field_idx = members.iter().position(|m| m.name == Some(*field_name)).unwrap();
+                let record_ty_info = self.registry.get(record_ty);
+                if let TypeKind::Record { members, .. } = &record_ty_info.kind {
+                    // Validate that the field exists and get its layout information
+                    let field_idx = members
+                        .iter()
+                        .position(|m| m.name == Some(*field_name))
+                        .expect("Field not found - should be caught by semantic analysis");
+
+                    let (fields, _is_union) = record_ty_info.get_record_layout();
+
+                    // Ensure the field index is valid
+                    assert!(field_idx < fields.len(), "Field index out of bounds");
+
+                    // For unions, all fields are at offset 0, but we still track the field index
+                    // for type information purposes
                     let place = if let Operand::Copy(place) = obj_operand {
                         Place::StructField(place, field_idx)
                     } else {
@@ -576,17 +592,89 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::IndexAccess(arr_ref, idx_ref) => {
                 let arr_operand = self.lower_expression(scope_id, *arr_ref);
                 let idx_operand = self.lower_expression(scope_id, *idx_ref);
+                let arr_ty = self.ast.get_node(*arr_ref).resolved_type.get().unwrap();
 
-                let arr_place = if let Operand::Copy(place) = arr_operand {
-                    *place
-                } else {
-                    let arr_ty = self.ast.get_node(*arr_ref).resolved_type.get().unwrap();
-                    let mir_type = self.lower_type_to_mir(arr_ty.ty);
-                    let (_, temp_place) = self.create_temp_local_with_assignment(Rvalue::Use(arr_operand), mir_type);
-                    temp_place
-                };
+                // Handle both array and pointer types for index access
+                // In C, arr[idx] is equivalent to *(arr + idx)
+                let arr_ty_kind = self.registry.get(arr_ty.ty).kind.clone();
 
-                Operand::Copy(Box::new(Place::ArrayIndex(Box::new(arr_place), Box::new(idx_operand))))
+                match &arr_ty_kind {
+                    TypeKind::Array { element_type: _, .. } => {
+                        // Array indexing - use ArrayIndex place
+                        let arr_ty_info = self.registry.get(arr_ty.ty);
+                        let layout = arr_ty_info
+                            .layout
+                            .as_ref()
+                            .expect("Array type layout should be computed before MIR lowering");
+
+                        match &layout.kind {
+                            crate::semantic::types::LayoutKind::Array { element, len: _ } => {
+                                // Verify that the array element type has a layout too
+                                let element_ty_info = self.registry.get(*element);
+                                assert!(
+                                    element_ty_info.layout.is_some(),
+                                    "Array element type should have layout"
+                                );
+
+                                // Note: In a full implementation, we could add bounds checking here
+                                // for static arrays if the index is a constant
+
+                                let arr_place = if let Operand::Copy(place) = arr_operand {
+                                    *place
+                                } else {
+                                    let mir_type = self.lower_type_to_mir(arr_ty.ty);
+                                    let (_, temp_place) =
+                                        self.create_temp_local_with_assignment(Rvalue::Use(arr_operand), mir_type);
+                                    temp_place
+                                };
+
+                                Operand::Copy(Box::new(Place::ArrayIndex(Box::new(arr_place), Box::new(idx_operand))))
+                            }
+                            _ => panic!("Array type layout is not an Array layout kind"),
+                        }
+                    }
+                    TypeKind::Pointer { pointee } => {
+                        // Pointer indexing - convert to pointer arithmetic and dereference
+                        // p[idx] becomes *(p + idx)
+                        // Note: We don't need to call lower_type_to_mir here as it's not used
+                        // let _pointee_mir_type = self.lower_type_to_mir(*pointee);
+
+                        // Convert pointer to operand if needed
+                        let pointer_operand = arr_operand;
+
+                        // Calculate pointer offset: pointer + (index * element_size)
+                        // Drop the immutable borrow from arr_ty_info before making mutable calls
+                        let element_size = self
+                            .registry
+                            .get(*pointee)
+                            .layout
+                            .as_ref()
+                            .map(|layout| layout.size as i64)
+                            .unwrap_or(std::mem::size_of::<i64>() as i64); // fallback
+
+                        let element_size_operand =
+                            Operand::Constant(self.create_constant(ConstValue::Int(element_size)));
+
+                        // Get type IDs first to avoid borrowing issues
+                        let int_type_id = self.get_int_type();
+                        let pointer_type_id = self.lower_type_to_mir(arr_ty.ty);
+
+                        let scaled_index =
+                            Rvalue::BinaryOp(MirBinaryOp::Mul, idx_operand.clone(), element_size_operand);
+                        let (_, scaled_index_place) = self.create_temp_local_with_assignment(scaled_index, int_type_id);
+
+                        let offset_calc = Rvalue::BinaryOp(
+                            MirBinaryOp::Add,
+                            pointer_operand,
+                            Operand::Copy(Box::new(scaled_index_place)),
+                        );
+                        let (_, offset_place) = self.create_temp_local_with_assignment(offset_calc, pointer_type_id);
+
+                        // Dereference the result: *(pointer + offset)
+                        Operand::Copy(Box::new(Place::Deref(Box::new(Operand::Copy(Box::new(offset_place))))))
+                    }
+                    _ => panic!("Index access on non-array, non-pointer type"),
+                }
             }
             _ => Operand::Constant(self.create_constant(ConstValue::Int(0))),
         }
@@ -696,7 +784,23 @@ impl<'a> AstToMirLowerer<'a> {
             return *type_id;
         }
 
-        let ast_type_kind = self.registry.get(type_ref).kind.clone();
+        // Check for recursion - if this type is already being converted, return a placeholder
+        if self.type_conversion_in_progress.contains(&type_ref) {
+            // Create a placeholder int type for recursive references
+            let placeholder_id = self.mir_builder.add_type(MirType::Int {
+                is_signed: true,
+                width: 32,
+            });
+            self.type_cache.insert(type_ref, placeholder_id);
+            return placeholder_id;
+        }
+
+        let ast_type = self.registry.get(type_ref).clone();
+        let ast_type_kind = ast_type.kind;
+
+        // Mark this type as being processed
+        self.type_conversion_in_progress.insert(type_ref);
+
         let mir_type = match &ast_type_kind {
             TypeKind::Void => MirType::Void,
             TypeKind::Bool => MirType::Bool,
@@ -729,7 +833,19 @@ impl<'a> AstToMirLowerer<'a> {
             TypeKind::Array { element_type, size } => {
                 let element = self.lower_type_to_mir(*element_type);
                 let size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
-                MirType::Array { element, size }
+
+                let (layout_size, layout_align, element_ref, _) = self.registry.get_array_layout(type_ref);
+                let element_layout = self.registry.get_layout(element_ref);
+
+                MirType::Array {
+                    element,
+                    size,
+                    layout: MirArrayLayout {
+                        size: layout_size,
+                        align: layout_align,
+                        stride: element_layout.size,
+                    },
+                }
             }
             TypeKind::Function {
                 return_type,
@@ -747,29 +863,39 @@ impl<'a> AstToMirLowerer<'a> {
                 tag, members, is_union, ..
             } => {
                 let name = tag.unwrap_or_else(|| NameId::new("anonymous"));
-                let placeholder = MirType::Record {
-                    name,
-                    fields: Vec::new(),
-                    is_union: *is_union,
-                };
-                let type_id = self.mir_builder.add_type(placeholder);
-                self.type_cache.insert(type_ref, type_id);
+
+                let (size, alignment, field_layouts, _) = self.registry.get_record_layout(type_ref);
+                let field_offsets = field_layouts.iter().map(|f| f.offset).collect();
+
                 let mut fields = Vec::new();
                 for m in members {
                     if let Some(name) = m.name {
                         fields.push((name, self.lower_type_to_mir(m.member_type.ty)));
                     }
                 }
-                self.mir_builder.update_record_fields(type_id, fields);
-
-                return type_id;
+                MirType::Record {
+                    name,
+                    fields,
+                    is_union: *is_union,
+                    layout: MirRecordLayout {
+                        size,
+                        alignment,
+                        field_offsets,
+                    },
+                }
             }
             _ => MirType::Int {
                 is_signed: true,
                 width: 32,
             },
         };
-        self.mir_builder.add_type(mir_type)
+
+        // Remove from in-progress set
+        self.type_conversion_in_progress.remove(&type_ref);
+
+        let type_id = self.mir_builder.add_type(mir_type);
+        self.type_cache.insert(type_ref, type_id);
+        type_id
     }
 
     fn create_constant(&mut self, value: ConstValue) -> ConstValueId {

@@ -1,5 +1,6 @@
 use crate::ast::NameId;
 use crate::lexer::TokenKind;
+use crate::semantic::TypeRef;
 use crate::source_manager::{SourceManager, SourceSpan};
 use annotate_snippets::renderer::DecorStyle;
 use annotate_snippets::{AnnotationKind, Level, Renderer, Snippet};
@@ -213,6 +214,8 @@ pub enum SemanticError {
     StaticAssertFailed { message: String, span: SourceSpan },
     #[error("expression in static assertion is not constant")]
     StaticAssertNotConstant { span: SourceSpan },
+    #[error("recursive type definition")]
+    RecursiveType { ty: TypeRef },
 }
 
 impl SemanticError {
@@ -232,6 +235,10 @@ impl SemanticError {
             SemanticError::MissingTypeSpecifier { span } => *span,
             SemanticError::StaticAssertFailed { span, .. } => *span,
             SemanticError::StaticAssertNotConstant { span } => *span,
+            SemanticError::RecursiveType { .. } => {
+                // For recursive types, we don't have a specific span, so use a dummy span
+                SourceSpan::dummy()
+            }
         }
     }
 }

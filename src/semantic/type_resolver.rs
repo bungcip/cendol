@@ -235,6 +235,9 @@ impl<'a> TypeResolver<'a> {
             obj_ty.ty
         };
 
+        // Ensure layout is computed for the record type
+        let _ = self.registry.ensure_layout(record_ty_ref);
+
         if let TypeKind::Record { members, .. } = &self.registry.get(record_ty_ref).kind {
             // Find the member
             if let Some(member) = members.iter().find(|m| m.name == Some(field_name)) {
@@ -248,11 +251,15 @@ impl<'a> TypeResolver<'a> {
     fn visit_index_access(&mut self, arr_ref: NodeRef, idx_ref: NodeRef) -> Option<QualType> {
         self.visit_node(idx_ref);
         let arr_ty = self.visit_node(arr_ref)?;
-        let arr_kind = &self.registry.get(arr_ty.ty).kind;
+        let arr_kind = self.registry.get(arr_ty.ty).kind.clone();
 
         match arr_kind {
-            TypeKind::Array { element_type, .. } => Some(QualType::unqualified(*element_type)),
-            TypeKind::Pointer { pointee } => Some(QualType::unqualified(*pointee)),
+            TypeKind::Array { element_type, .. } => {
+                // Ensure layout is computed for array type
+                let _ = self.registry.ensure_layout(arr_ty.ty);
+                Some(QualType::unqualified(element_type))
+            }
+            TypeKind::Pointer { pointee } => Some(QualType::unqualified(pointee)),
             _ => None,
         }
     }
@@ -277,6 +284,8 @@ impl<'a> TypeResolver<'a> {
                 None
             }
             NodeKind::VarDecl(data) => {
+                // Ensure layout is computed for the variable type
+                let _ = self.registry.ensure_layout(data.ty.ty);
                 if let Some(init) = data.init {
                     self.visit_node(init);
                 }
@@ -360,6 +369,8 @@ impl<'a> TypeResolver<'a> {
                 let char_type = self.registry.type_char;
                 let array_size = name.as_str().len() + 1;
                 let array_type = self.registry.array_of(char_type, ArraySizeType::Constant(array_size));
+                // Ensure layout is computed for string literal array type
+                let _ = self.registry.ensure_layout(array_type);
                 Some(QualType::unqualified(array_type))
             }
             // Expressions
@@ -406,9 +417,15 @@ impl<'a> TypeResolver<'a> {
                 self.visit_node(expr);
                 Some(QualType::unqualified(self.registry.type_long_unsigned))
             }
-            NodeKind::SizeOfType(_) => Some(QualType::unqualified(self.registry.type_long_unsigned)),
+            NodeKind::SizeOfType(ty) => {
+                // Ensure layout is computed for the type being sized
+                let _ = self.registry.ensure_layout(ty.ty);
+                Some(QualType::unqualified(self.registry.type_long_unsigned))
+            }
             NodeKind::AlignOf(_) => Some(QualType::unqualified(self.registry.type_long_unsigned)),
             NodeKind::CompoundLiteral(ty, init) => {
+                // Ensure layout is computed for the compound literal type
+                let _ = self.registry.ensure_layout(ty.ty);
                 self.visit_node(init);
                 Some(ty)
             }
@@ -441,7 +458,17 @@ impl<'a> TypeResolver<'a> {
                 }
                 None
             }
-            NodeKind::RecordDecl(_) | NodeKind::TypedefDecl(_) | NodeKind::FunctionDecl(_) => None,
+            NodeKind::RecordDecl(_) | NodeKind::TypedefDecl(_) => None,
+            NodeKind::FunctionDecl(ref data) => {
+                // Ensure layouts are computed for function parameter types
+                let func_type = self.registry.get(data.ty).kind.clone();
+                if let TypeKind::Function { parameters, .. } = func_type {
+                    for param in parameters {
+                        let _ = self.registry.ensure_layout(param.param_type.ty);
+                    }
+                }
+                None
+            }
             NodeKind::Break
             | NodeKind::Continue
             | NodeKind::Goto(_, _)

@@ -3,9 +3,11 @@
 //! Arena + canonicalization layer for semantic types.
 //! All TypeRef creation and mutation MUST go through this context.
 
-use crate::{ast::NameId, semantic::QualType};
-use hashbrown::HashMap;
+use crate::source_manager::SourceSpan;
+use crate::{ast::NameId, diagnostic::SemanticError, semantic::QualType};
+use hashbrown::{HashMap, HashSet};
 
+use super::types::{FieldLayout, LayoutKind};
 use super::{
     ArraySizeType, EnumConstant, FunctionParameter, StructMember, Type, TypeKind, TypeLayout, TypeQualifiers, TypeRef,
 };
@@ -23,6 +25,9 @@ pub struct TypeRegistry {
     pointer_cache: HashMap<TypeRef, TypeRef>,
     array_cache: HashMap<(TypeRef, ArraySizeType), TypeRef>,
     function_cache: HashMap<FnSigKey, TypeRef>,
+
+    // --- Layout computation tracking ---
+    layout_in_progress: HashSet<TypeRef>,
 
     // --- Common builtin types ---
     pub type_void: TypeRef,
@@ -51,6 +56,7 @@ impl TypeRegistry {
             pointer_cache: HashMap::new(),
             array_cache: HashMap::new(),
             function_cache: HashMap::new(),
+            layout_in_progress: HashSet::new(),
 
             // temporary placeholders, overwritten below
             type_void: dummy(),
@@ -183,7 +189,10 @@ impl TypeRegistry {
     // ============================================================
     // Record / enum handling (two-phase)
     // ============================================================
-    pub fn new_record(&mut self, tag: Option<NameId>, is_union: bool) -> TypeRef {
+
+    /// create new record type. this is still inclompete, need to call complete_record()
+    /// to mark it as complete
+    pub fn declare_record(&mut self, tag: Option<NameId>, is_union: bool) -> TypeRef {
         self.alloc(Type::new(TypeKind::Record {
             tag,
             members: Vec::new(),
@@ -192,7 +201,10 @@ impl TypeRegistry {
         }))
     }
 
-    pub fn complete_record(&mut self, record: TypeRef, members: Vec<StructMember>, layout: Option<TypeLayout>) {
+    /// marks record as complete
+    /// - does NOT compute layout
+    /// - layout is computed lazily via ensure_layout
+    pub fn complete_record(&mut self, record: TypeRef, members: Vec<StructMember>) {
         let ty = self.get_mut(record);
         match &mut ty.kind {
             TypeKind::Record {
@@ -202,13 +214,14 @@ impl TypeRegistry {
             } => {
                 *slot = members;
                 *is_complete = true;
-                ty.layout = layout;
             }
             _ => unreachable!("complete_record on non-record"),
         }
     }
 
-    pub fn new_enum(&mut self, tag: Option<NameId>, base_type: TypeRef) -> TypeRef {
+    /// create new enum type. this is still inclompete, need to call complete_enum()
+    /// to mark it as complete
+    pub fn declare_enum(&mut self, tag: Option<NameId>, base_type: TypeRef) -> TypeRef {
         self.alloc(Type::new(TypeKind::Enum {
             tag,
             base_type,
@@ -217,7 +230,7 @@ impl TypeRegistry {
         }))
     }
 
-    pub fn complete_enum(&mut self, enum_ty: TypeRef, enumerators: Vec<EnumConstant>, layout: Option<TypeLayout>) {
+    pub fn complete_enum(&mut self, enum_ty: TypeRef, enumerators: Vec<EnumConstant>) {
         let ty = self.get_mut(enum_ty);
         match &mut ty.kind {
             TypeKind::Enum {
@@ -227,10 +240,253 @@ impl TypeRegistry {
             } => {
                 *slot = enumerators;
                 *is_complete = true;
-                ty.layout = layout;
             }
             _ => unreachable!("complete_enum on non-enum"),
         }
+    }
+
+    pub fn get_layout(&self, ty: TypeRef) -> &TypeLayout {
+        let idx = ty.index();
+        self.types[idx].layout.as_ref().unwrap()
+    }
+
+    pub fn get_array_layout(&self, ty: TypeRef) -> (u16, u16, TypeRef, u64) {
+        let layout = self.get_layout(ty);
+        match layout.kind {
+            LayoutKind::Array { element, len } => (layout.size, layout.alignment, element, len),
+            _ => panic!("ICE: layout is not array"),
+        }
+    }
+
+    pub fn get_record_layout(&self, ty: TypeRef) -> (u16, u16, &[FieldLayout], bool) {
+        let layout = self.get_layout(ty);
+        match &layout.kind {
+            LayoutKind::Record { fields, is_union } => (layout.size, layout.alignment, fields.as_ref(), *is_union),
+            _ => panic!("ICE: layout is not record"),
+        }
+    }
+
+    pub fn ensure_layout(&mut self, ty: TypeRef) -> Result<&TypeLayout, SemanticError> {
+        let idx = ty.index();
+        if self.types[idx].layout.is_some() {
+            return Ok(self.types[idx].layout.as_ref().unwrap());
+        }
+
+        let layout = self.compute_layout(ty)?;
+        self.types[idx].layout = Some(layout);
+
+        Ok(self.types[idx].layout.as_ref().unwrap())
+    }
+
+    fn compute_layout(&mut self, ty: TypeRef) -> Result<TypeLayout, SemanticError> {
+        // ensure_layout invariants:
+        // - fails if type is incomplete
+        // - caches result in Type.layout
+        // - idempotent
+        // - semantic-only layout (not MIR)
+
+        // Check for recursive type definition
+        if self.layout_in_progress.contains(&ty) {
+            return Err(SemanticError::RecursiveType { ty });
+        }
+
+        // Get the type without mutability first to avoid borrow issues
+        let type_kind = self.get(ty).kind.clone();
+
+        // Mark this type as being computed
+        self.layout_in_progress.insert(ty);
+
+        let layout = match type_kind {
+            TypeKind::Void => TypeLayout {
+                size: 0,
+                alignment: 1,
+                kind: LayoutKind::Scalar,
+            },
+
+            TypeKind::Bool => TypeLayout {
+                size: 1,
+                alignment: 1,
+                kind: LayoutKind::Scalar,
+            },
+
+            TypeKind::Char { .. } => TypeLayout {
+                size: 1,
+                alignment: 1,
+                kind: LayoutKind::Scalar,
+            },
+
+            TypeKind::Short { .. } => TypeLayout {
+                size: 2,
+                alignment: 2,
+                kind: LayoutKind::Scalar,
+            },
+
+            TypeKind::Int { .. } => TypeLayout {
+                size: 4,
+                alignment: 4,
+                kind: LayoutKind::Scalar,
+            },
+
+            TypeKind::Long { .. } => {
+                let (size, alignment) = (8, 8); // LP64 model
+                TypeLayout {
+                    size,
+                    alignment,
+                    kind: LayoutKind::Scalar,
+                }
+            }
+
+            TypeKind::Float => TypeLayout {
+                size: 4,
+                alignment: 4,
+                kind: LayoutKind::Scalar,
+            },
+
+            TypeKind::Double { is_long_double } => {
+                let (size, alignment) = if is_long_double { (16, 16) } else { (8, 8) };
+                TypeLayout {
+                    size,
+                    alignment,
+                    kind: LayoutKind::Scalar,
+                }
+            }
+
+            TypeKind::Complex { base_type } => {
+                let base_layout = self.ensure_layout(base_type)?;
+                TypeLayout {
+                    size: base_layout.size * 2,
+                    alignment: base_layout.alignment,
+                    kind: LayoutKind::Scalar,
+                }
+            }
+
+            TypeKind::Pointer { .. } => TypeLayout {
+                size: 8, // 64-bit pointers
+                alignment: 8,
+                kind: LayoutKind::Scalar,
+            },
+
+            TypeKind::Array { element_type, size } => match size {
+                ArraySizeType::Constant(len) => {
+                    let element_layout = self.ensure_layout(element_type)?;
+                    let total_size = element_layout.size as u64 * len as u64;
+                    TypeLayout {
+                        size: total_size as u16,
+                        alignment: element_layout.alignment,
+                        kind: LayoutKind::Array {
+                            element: element_type,
+                            len: len as u64,
+                        },
+                    }
+                }
+                ArraySizeType::Incomplete => {
+                    return Err(SemanticError::UnsupportedFeature {
+                        feature: "incomplete array type layout".to_string(),
+                        span: SourceSpan::dummy(),
+                    });
+                }
+                ArraySizeType::Variable(_) | ArraySizeType::Star => {
+                    return Err(SemanticError::UnsupportedFeature {
+                        feature: "variable length array type layout".to_string(),
+                        span: SourceSpan::dummy(),
+                    });
+                }
+            },
+
+            TypeKind::Function { .. } => TypeLayout {
+                size: 0,
+                alignment: 1,
+                kind: LayoutKind::Scalar,
+            },
+
+            TypeKind::Record {
+                members,
+                is_complete,
+                is_union,
+                ..
+            } => {
+                if !is_complete {
+                    return Err(SemanticError::UnsupportedFeature {
+                        feature: "incomplete record type layout".to_string(),
+                        span: SourceSpan::dummy(),
+                    });
+                }
+
+                self.compute_record_layout(&members, is_union)?
+            }
+
+            TypeKind::Enum {
+                base_type, is_complete, ..
+            } => {
+                if !is_complete {
+                    return Err(SemanticError::UnsupportedFeature {
+                        feature: "incomplete enum type layout".to_string(),
+                        span: SourceSpan::dummy(),
+                    });
+                }
+
+                // Enum layout is the same as its base type
+                self.ensure_layout(base_type)?.clone()
+            }
+
+            TypeKind::Error => {
+                return Err(SemanticError::UnsupportedFeature {
+                    feature: "layout computation for error type".to_string(),
+                    span: SourceSpan::dummy(),
+                });
+            }
+        };
+
+        // Remove from in-progress set
+        self.layout_in_progress.remove(&ty);
+
+        Ok(layout)
+    }
+
+    fn compute_record_layout(&mut self, members: &[StructMember], is_union: bool) -> Result<TypeLayout, SemanticError> {
+        let mut max_size = 0;
+        let mut max_align = 1;
+        let mut field_layouts = Vec::new();
+        let mut offset = 0;
+
+        if is_union {
+            // Union layout: size = max field size, alignment = max field alignment
+            for member in members {
+                let member_layout = self.ensure_layout(member.member_type.ty)?;
+                max_size = max_size.max(member_layout.size);
+                max_align = max_align.max(member_layout.alignment);
+
+                field_layouts.push(FieldLayout {
+                    offset, // All union fields start at offset 0
+                });
+            }
+        } else {
+            // Struct layout: sequential field placement with padding
+            for member in members {
+                let member_layout = self.ensure_layout(member.member_type.ty)?;
+                max_align = max_align.max(member_layout.alignment);
+
+                // Add padding to align the field
+                let padding = (member_layout.alignment - (offset % member_layout.alignment)) % member_layout.alignment;
+                offset += padding;
+
+                field_layouts.push(FieldLayout { offset });
+
+                offset += member_layout.size;
+            }
+
+            // Add padding at the end to satisfy struct alignment
+            max_size = (offset + max_align - 1) & !(max_align - 1);
+        }
+
+        Ok(TypeLayout {
+            size: max_size,
+            alignment: max_align,
+            kind: LayoutKind::Record {
+                fields: field_layouts,
+                is_union,
+            },
+        })
     }
 
     pub fn decay(&mut self, qt: QualType) -> QualType {

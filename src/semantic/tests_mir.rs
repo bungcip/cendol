@@ -352,11 +352,11 @@ mod tests {
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
-        type %t1 = struct S { a: %t0, p: %t2 }
-        type %t2 = ptr<%t0>
+        type %t1 = ptr<%t0>
+        type %t2 = struct S { a: %t0, p: %t1 }
 
         global @x: i32 = const 10
-        global @s: %t1 = const struct_literal { 1: const @x, 0: const 1 }
+        global @s: %t2 = const struct_literal { 1: const @x, 0: const 1 }
 
         fn main() -> i32
         {
@@ -391,10 +391,10 @@ mod tests {
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
-        type %t1 = struct S2 { a: %t0, b: %t0, s: %t2 }
-        type %t2 = struct S1 { a: %t0, b: %t0 }
+        type %t1 = struct S1 { a: %t0, b: %t0 }
+        type %t2 = struct S2 { a: %t0, b: %t0, s: %t1 }
 
-        global @v: %t1 = const struct_literal { 0: const 1, 1: const 2, 2: const struct_literal { 0: const 3, 1: const 4 } }
+        global @v: %t2 = const struct_literal { 0: const 1, 1: const 2, 2: const struct_literal { 0: const 3, 1: const 4 } }
 
         fn main() -> i32
         {
@@ -876,15 +876,15 @@ mod tests {
             }
         "#;
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @"
+        insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
-        type %t1 = struct S { p: %t2, x: %t0 }
-        type %t2 = ptr<%t1>
+        type %t1 = ptr<%t0>
+        type %t2 = struct S { p: %t1, x: %t0 }
 
         fn main() -> i32
         {
           locals {
-            %s: %t1
+            %s: %t2
           }
 
           bb1:
@@ -906,15 +906,15 @@ mod tests {
             }
         "#;
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @"
+        insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
-        type %t1 = union U { p: %t2, x: %t0 }
-        type %t2 = ptr<%t1>
+        type %t1 = ptr<%t0>
+        type %t2 = union U { p: %t1, x: %t0 }
 
         fn main() -> i32
         {
           locals {
-            %u: %t1
+            %u: %t2
           }
 
           bb1:

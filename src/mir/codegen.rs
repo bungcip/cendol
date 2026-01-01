@@ -62,37 +62,13 @@ fn mir_type_to_cranelift_type(mir_type: &MirType) -> Option<Type> {
 }
 
 /// Helper function to get the size of a MIR type in bytes
-fn mir_type_size(mir_type: &MirType, mir: &SemaOutput) -> Result<u32, String> {
+fn mir_type_size(mir_type: &MirType, _mir: &SemaOutput) -> Result<u32, String> {
     match mir_type {
         MirType::Int { width, .. } => Ok((*width / 8) as u32),
         MirType::Float { width } => Ok((*width / 8) as u32),
         MirType::Pointer { .. } => Ok(8), // Assuming 64-bit pointers for now
-        MirType::Array { element, size } => {
-            let element_type = mir.get_type(*element);
-            Ok(mir_type_size(element_type, mir)? * (*size as u32))
-        }
-        MirType::Record { fields, is_union, .. } => {
-            if *is_union {
-                // Size of union is max size of its fields
-                let mut max_size = 0;
-                for (_, field_type_id) in fields {
-                    let field_type = mir.get_type(*field_type_id);
-                    let s = mir_type_size(field_type, mir)?;
-                    if s > max_size {
-                        max_size = s;
-                    }
-                }
-                Ok(max_size)
-            } else {
-                // Size of struct is sum of sizes of its fields
-                let mut total_size = 0;
-                for (_, field_type_id) in fields {
-                    let field_type = mir.get_type(*field_type_id);
-                    total_size += mir_type_size(field_type, mir)?;
-                }
-                Ok(total_size)
-            }
-        }
+        MirType::Array { layout, .. } => Ok(layout.size as u32),
+        MirType::Record { layout, .. } => Ok(layout.size as u32),
         MirType::Bool => Ok(1),
         MirType::Void => Ok(0),
         // For other complex types, let's have a default, though this should be comprehensive.
@@ -387,35 +363,35 @@ fn resolve_place_to_addr(
             // Get the base address of the struct
             let base_addr = resolve_place_to_addr(base_place, builder, cranelift_stack_slots, mir, module)?;
 
-            // We need to find the type of the base_place to calculate the offset
+            // We need to find the type of the base_place to get the pre-computed field offset
             let base_place_type_id = get_place_type_id(base_place, mir).map_err(|e| e.to_string())?;
 
             let base_type = mir.get_type(base_place_type_id);
 
-            let (record_fields, is_pointer, is_union) = match base_type {
-                MirType::Record { fields, is_union, .. } => (fields, false, *is_union),
+            let (field_offset, is_pointer) = match base_type {
+                MirType::Record { layout, .. } => {
+                    let offset = layout
+                        .field_offsets
+                        .get(*field_index)
+                        .copied()
+                        .ok_or_else(|| format!("Field index {} out of bounds", field_index))?;
+                    (offset, false)
+                }
                 MirType::Pointer { pointee } => {
                     let pointee_type = mir.get_type(*pointee);
-                    if let MirType::Record { fields, is_union, .. } = pointee_type {
-                        (fields, true, *is_union)
+                    if let MirType::Record { layout, .. } = pointee_type {
+                        let offset = layout
+                            .field_offsets
+                            .get(*field_index)
+                            .copied()
+                            .ok_or_else(|| format!("Field index {} out of bounds", field_index))?;
+                        (offset, true)
                     } else {
                         return Err("Base of StructField is not a struct type".to_string());
                     }
                 }
                 _ => return Err("Base of StructField is not a struct type".to_string()),
             };
-
-            let mut offset = 0;
-            if !is_union {
-                for i in 0..*field_index {
-                    let (_, field_type_id) = record_fields.get(i).ok_or("Field index out of bounds")?;
-                    let field_type = mir.get_type(*field_type_id);
-                    offset += mir_type_size(field_type, mir)?;
-                }
-            } else {
-                // For unions all fields start at offset 0
-                offset = 0;
-            }
 
             let final_addr = if is_pointer {
                 // If the base is a pointer, we need to load the address it points to first
@@ -424,7 +400,7 @@ fn resolve_place_to_addr(
                 base_addr
             };
 
-            let offset_val = builder.ins().iconst(types::I64, offset as i64);
+            let offset_val = builder.ins().iconst(types::I64, field_offset as i64);
             Ok(builder.ins().iadd(final_addr, offset_val))
         }
         Place::ArrayIndex(base_place, index_operand) => {
@@ -441,19 +417,15 @@ fn resolve_place_to_addr(
                 module,
             )?;
 
-            // Determine the size of the element by getting the type of the base place
+            // Determine the element size using pre-computed layout information
             let base_place_type_id = get_place_type_id(base_place, mir).map_err(|e| e.to_string())?;
-
             let base_type = mir.get_type(base_place_type_id);
 
             let element_size = match base_type {
-                MirType::Array { element, .. } => {
-                    let element_type = mir.get_type(*element);
-                    mir_type_size(element_type, mir)?
-                }
+                MirType::Array { layout, .. } => layout.stride,
                 MirType::Pointer { pointee } => {
                     let pointee_type = mir.get_type(*pointee);
-                    mir_type_size(pointee_type, mir)?
+                    mir_type_size(pointee_type, mir)? as u16
                 }
                 _ => return Err("Base of ArrayIndex is not an array or pointer".to_string()),
             };

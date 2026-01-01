@@ -164,7 +164,7 @@ pub enum Place {
     Deref(Box<Operand>),
     Global(GlobalId),
     // Aggregate access
-    StructField(Box<Place>, usize),
+    StructField(Box<Place>, /* index */ usize),
     ArrayIndex(Box<Place>, Box<Operand>),
 }
 
@@ -265,6 +265,7 @@ pub enum MirType {
     Array {
         element: TypeId,
         size: usize,
+        layout: MirArrayLayout,
     },
     Function {
         return_type: TypeId,
@@ -274,11 +275,26 @@ pub enum MirType {
         name: NameId,                  // unlike in C, in MIR we must have name
         fields: Vec<(NameId, TypeId)>, // unlike in C, in MIR we must have name
         is_union: bool,
+        layout: MirRecordLayout,
     },
     Enum {
         name: NameId,
         variants: Vec<(NameId, i64)>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct MirRecordLayout {
+    pub size: u16,
+    pub alignment: u16,
+    pub field_offsets: Vec<u16>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct MirArrayLayout {
+    pub size: u16,
+    pub align: u16,
+    pub stride: u16,
 }
 
 /// Constant Value - Literal values in MIR
@@ -785,9 +801,11 @@ impl fmt::Display for MirType {
             MirType::Int { is_signed, width } => write!(f, "{}{}", if *is_signed { "i" } else { "u" }, width),
             MirType::Float { width } => write!(f, "f{}", width),
             MirType::Pointer { pointee } => write!(f, "*{}", pointee.get()),
-            MirType::Array { element, size } => write!(f, "[{}]{}", size, element.get()),
+            MirType::Array { element, size, .. } => write!(f, "[{}]{}", size, element.get()),
             MirType::Function { return_type, params } => write!(f, "fn({:?}) -> {}", params, return_type.get()),
-            MirType::Record { name, fields, is_union } => {
+            MirType::Record {
+                name, fields, is_union, ..
+            } => {
                 let kind = if *is_union { "union" } else { "struct" };
                 write!(f, "{} {} {{ {:?} }}", kind, name, fields)
             }

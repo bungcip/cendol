@@ -27,6 +27,30 @@ fn test_static_assert_pass() {
 }
 
 #[test]
+fn rejects_variable_as_typedef_in_cast() {
+    let config = CompileConfig::from_virtual_file(
+        r#"
+        int main() {
+            int my_var = 10;
+            (my_var) 1;
+        }
+    "#
+        .to_string(),
+        crate::driver::compiler::CompilePhase::Mir,
+    );
+    let mut driver = CompilerDriver::from_config(config);
+    let result = driver.run_pipeline(crate::driver::compiler::CompilePhase::Mir);
+    assert!(
+        driver
+            .get_diagnostics()
+            .iter()
+            .any(|d| d.level == DiagnosticLevel::Error
+                && d.message.contains("expected a typedef name, found a variable"))
+    );
+    assert!(result.is_err());
+}
+
+#[test]
 fn test_static_assert_fail() {
     let config = CompileConfig::from_virtual_file(
         r#"

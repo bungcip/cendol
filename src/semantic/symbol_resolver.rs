@@ -1527,9 +1527,10 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                     ctx.ast.replace_node(node_ref, semantic_node_data.clone());
                     // After replacement, recurse into the semantic node to process its children
                     if let NodeKind::VarDecl(var_decl) = &semantic_node_data.kind
-                        && let Some(init_expr) = var_decl.init {
-                            lower_node_recursive(ctx, init_expr);
-                        }
+                        && let Some(init_expr) = var_decl.init
+                    {
+                        lower_node_recursive(ctx, init_expr);
+                    }
                 } else {
                     // Multi-declarator case: create a DeclarationList containing all semantic nodes
                     let original_node = ctx.ast.get_node(node_ref);

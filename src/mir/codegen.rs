@@ -278,14 +278,28 @@ fn resolve_place_to_value(
 /// Helper function to get the TypeId of a place
 fn get_place_type_id(place: &Place, mir: &SemaOutput) -> Result<TypeId, String> {
     match place {
-        Place::Local(local_id) => Ok(mir.get_local(*local_id).type_id),
-        Place::Global(global_id) => Ok(mir.get_global(*global_id).type_id),
+        Place::Local(local_id) => {
+            let tid = mir.get_local(*local_id).type_id;
+
+            Ok(tid)
+        }
+        Place::Global(global_id) => {
+            let tid = mir.get_global(*global_id).type_id;
+
+            Ok(tid)
+        }
         Place::Deref(operand) => {
             // To get the type of a dereference, we need the type of the operand,
             // which should be a pointer. The resulting type is the pointee.
-            // For now, we'll try to extract the type from the operand if it's a place.
             match operand.as_ref() {
-                Operand::Copy(place_box) | Operand::Move(place_box) => get_place_type_id(place_box, mir),
+                Operand::Copy(place_box) | Operand::Move(place_box) => {
+                    let operand_type_id = get_place_type_id(place_box, mir)?;
+                    let operand_type = mir.get_type(operand_type_id);
+                    match operand_type {
+                        MirType::Pointer { pointee } => Ok(*pointee),
+                        _ => Err("Cannot determine type for deref operand".to_string()),
+                    }
+                }
                 _ => Err("Cannot determine type for deref operand".to_string()),
             }
         }
@@ -422,10 +436,10 @@ fn resolve_place_to_addr(
             let base_type = mir.get_type(base_place_type_id);
 
             let element_size = match base_type {
-                MirType::Array { layout, .. } => layout.stride,
+                MirType::Array { layout, .. } => layout.stride as u32,
                 MirType::Pointer { pointee } => {
                     let pointee_type = mir.get_type(*pointee);
-                    mir_type_size(pointee_type, mir)? as u16
+                    mir_type_size(pointee_type, mir)?
                 }
                 _ => return Err("Base of ArrayIndex is not an array or pointer".to_string()),
             };

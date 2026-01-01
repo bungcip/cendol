@@ -352,11 +352,11 @@ mod tests {
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
-        type %t1 = ptr<%t0>
-        type %t2 = struct S { a: %t0, p: %t1 }
+        type %t1 = struct S { a: %t0, p: %t2 }
+        type %t2 = ptr<%t0>
 
         global @x: i32 = const 10
-        global @s: %t2 = const struct_literal { 1: const @x, 0: const 1 }
+        global @s: %t1 = const struct_literal { 1: const @x, 0: const 1 }
 
         fn main() -> i32
         {
@@ -391,10 +391,10 @@ mod tests {
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
-        type %t1 = struct S1 { a: %t0, b: %t0 }
-        type %t2 = struct S2 { a: %t0, b: %t0, s: %t1 }
+        type %t1 = struct S2 { a: %t0, b: %t0, s: %t2 }
+        type %t2 = struct S1 { a: %t0, b: %t0 }
 
-        global @v: %t2 = const struct_literal { 0: const 1, 1: const 2, 2: const struct_literal { 0: const 3, 1: const 4 } }
+        global @v: %t1 = const struct_literal { 0: const 1, 1: const 2, 2: const struct_literal { 0: const 3, 1: const 4 } }
 
         fn main() -> i32
         {
@@ -631,22 +631,26 @@ mod tests {
         type %t3 = u32
         type %t4 = void
         type %t5 = u8
-        type %t6 = i16
-        type %t7 = f32
-        type %t8 = i64
-        type %t9 = u16
-        type %t10 = u64
-        type %t11 = fn() -> %t4
-        type %t12 = fn() -> %t2
-        type %t13 = fn() -> %t5
-        type %t14 = fn() -> %t6
-        type %t15 = fn() -> %t9
-        type %t16 = fn() -> %t0
-        type %t17 = fn() -> %t3
-        type %t18 = fn() -> %t8
-        type %t19 = fn() -> %t10
-        type %t20 = fn() -> %t7
-        type %t21 = fn() -> %t1
+        type %t6 = u32
+        type %t7 = i16
+        type %t8 = f32
+        type %t9 = i64
+        type %t10 = i32
+        type %t11 = u16
+        type %t12 = u64
+        type %t13 = fn() -> %t4
+        type %t14 = fn() -> %t2
+        type %t15 = fn() -> %t5
+        type %t16 = fn() -> %t7
+        type %t17 = fn() -> %t11
+        type %t18 = fn() -> %t0
+        type %t19 = fn() -> %t6
+        type %t20 = fn() -> %t10
+        type %t21 = fn() -> %t3
+        type %t22 = fn() -> %t9
+        type %t23 = fn() -> %t12
+        type %t24 = fn() -> %t8
+        type %t25 = fn() -> %t1
 
         fn main() -> i32
         {
@@ -878,19 +882,19 @@ mod tests {
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
-        type %t1 = ptr<%t0>
-        type %t2 = struct S { p: %t1, x: %t0 }
+        type %t1 = struct S { p: %t2, x: %t0 }
+        type %t2 = ptr<%t1>
 
         fn main() -> i32
         {
           locals {
-            %s: %t2
+            %s: %t1
           }
 
           bb1:
             %s.field_1 = const 0
             %s.field_0 = addr_of(%s)
-            return %s.field_0.field_0.field_0.field_0.field_0.field_1
+            return deref(deref(deref(deref(deref(%s.field_0).field_0).field_0).field_0).field_0).field_1
         }
         ");
     }
@@ -908,19 +912,19 @@ mod tests {
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
-        type %t1 = ptr<%t0>
-        type %t2 = union U { p: %t1, x: %t0 }
+        type %t1 = union U { p: %t2, x: %t0 }
+        type %t2 = ptr<%t1>
 
         fn main() -> i32
         {
           locals {
-            %u: %t2
+            %u: %t1
           }
 
           bb1:
             %u.field_1 = const 0
             %u.field_0 = addr_of(%u)
-            return %u.field_0.field_0.field_0.field_0.field_0.field_1
+            return deref(deref(deref(deref(deref(%u.field_0).field_0).field_0).field_0).field_0).field_1
         }
         ");
     }
@@ -942,10 +946,10 @@ mod tests {
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @r#"
         type %t0 = i32
-        type %t1 = i8
-        type %t2 = ptr<%t1>
-        type %t3 = [7]%t1
-        type %t4 = fn(%t2) -> %t0
+        type %t1 = ptr<%t2>
+        type %t2 = i8
+        type %t3 = [7]%t2
+        type %t4 = fn(%t1) -> %t0
 
         global @.L.str0: [7]i8 = const ""gate""
 

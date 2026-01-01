@@ -255,7 +255,12 @@ impl CompilerDriver {
         use crate::semantic::symbol_resolver::run_symbol_resolver;
 
         let scope_map = run_symbol_resolver(&mut ast, &mut self.diagnostics, &mut symbol_table, &mut registry);
-        ast.attach_scope_map(scope_map);
+        ast.attach_scope_map(scope_map.clone());
+        eprintln!("Symbol table entries after symbol resolver:");
+        for (i, _entry) in symbol_table.entries.iter().enumerate() {
+            let s = &symbol_table.entries[i];
+            eprintln!("  {}: {:?}", i, s.name);
+        }
         self.check_diagnostics_and_return_if_error()?;
 
         // invariant validation after symbol resolver
@@ -289,23 +294,71 @@ impl CompilerDriver {
         self.check_diagnostics_and_return_if_error()?;
 
         // validations
-        for node in &ast.nodes {
+        // Report unresolved name bindings (helpful for debugging)
+        let mut unresolved_idents = Vec::new();
+        let mut unresolved_gotos = Vec::new();
+        let mut unresolved_labels = Vec::new();
+        for (i, node) in ast.nodes.iter().enumerate() {
             match &node.kind {
                 crate::ast::NodeKind::Ident(name, resolved_symbol) if resolved_symbol.get().is_none() => {
-                    panic!(
-                        "ICE: ident '{}' still not resolved: {:?}",
-                        name,
-                        self.source_manager.get_line_column(node.span.start)
-                    );
+                    unresolved_idents.push((i, *name, node.span));
                 }
                 crate::ast::NodeKind::Goto(name, resolved_symbol) if resolved_symbol.get().is_none() => {
-                    panic!("ICE: goto '{}' still not resolved", name);
+                    unresolved_gotos.push((i, *name, node.span));
                 }
                 crate::ast::NodeKind::Label(name, _, resolved_symbol) if resolved_symbol.get().is_none() => {
-                    panic!("ICE: label '{}' still not resolved", name);
+                    unresolved_labels.push((i, *name, node.span));
                 }
                 _ => {}
             }
+        }
+
+        if !unresolved_idents.is_empty() || !unresolved_gotos.is_empty() || !unresolved_labels.is_empty() {
+            eprintln!("Unresolved identifiers (index, name, span start):");
+            for (i, name, span) in &unresolved_idents {
+                let _node_ref = crate::ast::NodeRef::new((*i as u32) + 1).unwrap();
+                let scope_opt = scope_map.get(*i).and_then(|x| *x);
+                let scope_str = match scope_opt {
+                    Some(s) => s.get().to_string(),
+                    None => "<none>".to_string(),
+                };
+                eprintln!(
+                    "  ident idx={} name={:?} pos={:?} scope={}",
+                    i,
+                    name,
+                    self.source_manager.get_line_column(span.start),
+                    scope_str
+                );
+            }
+            for (i, name, span) in &unresolved_gotos {
+                let scope_opt = scope_map.get(*i).and_then(|x| *x);
+                let scope_str = match scope_opt {
+                    Some(s) => s.get().to_string(),
+                    None => "<none>".to_string(),
+                };
+                eprintln!(
+                    "  goto  idx={} name={:?} pos={:?} scope={}",
+                    i,
+                    name,
+                    self.source_manager.get_line_column(span.start),
+                    scope_str
+                );
+            }
+            for (i, name, span) in &unresolved_labels {
+                let scope_opt = scope_map.get(*i).and_then(|x| *x);
+                let scope_str = match scope_opt {
+                    Some(s) => s.get().to_string(),
+                    None => "<none>".to_string(),
+                };
+                eprintln!(
+                    "  label idx={} name={:?} pos={:?} scope={}",
+                    i,
+                    name,
+                    self.source_manager.get_line_column(span.start),
+                    scope_str
+                );
+            }
+            panic!("ICE: unresolved name bindings found");
         }
 
         use crate::semantic::type_resolver::run_type_resolver;
@@ -314,9 +367,15 @@ impl CompilerDriver {
 
         // invariant validations
         // all expression must have resolved_type set
-        for node in &ast.nodes {
+        for (i, node) in ast.nodes.iter().enumerate() {
             match &node.kind {
                 NodeKind::Ident(name, ..) if node.resolved_type.get().is_none() => {
+                    eprintln!(
+                        "ICE: unresolved ident node idx={} name={:?} span={:?}",
+                        i + 1,
+                        name,
+                        self.source_manager.get_line_column(node.span.start)
+                    );
                     panic!(
                         "ICE: ident '{}' still not have resolved type: {:?}",
                         name,

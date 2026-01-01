@@ -592,6 +592,16 @@ impl MirBuilder {
         type_id
     }
 
+    /// Update an existing type previously inserted with `add_type`.
+    /// This replaces the type entry in both the internal map and the module vector.
+    pub fn update_type(&mut self, type_id: TypeId, mir_type: MirType) {
+        self.types.insert(type_id, mir_type.clone());
+        let idx = (type_id.get() - 1) as usize;
+        if idx < self.module.types.len() {
+            self.module.types[idx] = mir_type;
+        }
+    }
+
     /// Create a constant value
     pub fn create_constant(&mut self, value: ConstValue) -> ConstValueId {
         let const_id = ConstValueId::new(self.next_const_id).unwrap();

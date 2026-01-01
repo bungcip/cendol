@@ -262,33 +262,33 @@ fn test_compile_struct_pointer_access() {
         v4 = iadd v2, v3  ; v3 = 0
         store v1, v4  ; v1 = 1
         v5 = iconst.i32 2
-        v6 = stack_addr.i64 ss1
-        v7 = load.i64 v6
-        v8 = iconst.i64 4
-        v9 = iadd v7, v8  ; v8 = 4
-        store v5, v9  ; v5 = 2
-        v10 = stack_addr.i64 ss1
-        v11 = load.i64 v10
-        v12 = iconst.i64 4
-        v13 = iadd v11, v12  ; v12 = 4
-        v14 = load.i32 v13
-        v15 = stack_addr.i64 ss1
-        v16 = load.i64 v15
-        v17 = iconst.i64 0
-        v18 = iadd v16, v17  ; v17 = 0
-        v19 = load.i32 v18
-        v20 = iadd v14, v19
-        v28 = stack_addr.i64 ss2
-        store notrap v20, v28
-        v27 = stack_addr.i64 ss2
-        v21 = load.i32 notrap v27
-        v22 = iconst.i32 3
-        v23 = isub v21, v22  ; v22 = 3
-        v26 = stack_addr.i64 ss3
-        store notrap v23, v26
-        v25 = stack_addr.i64 ss3
-        v24 = load.i32 notrap v25
-        return v24
+        v28 = stack_addr.i64 ss1
+        v6 = load.i64 notrap v28
+        v7 = iconst.i64 4
+        v8 = iadd v6, v7  ; v7 = 4
+        store v5, v8  ; v5 = 2
+        v27 = stack_addr.i64 ss1
+        v9 = load.i64 notrap v27
+        v10 = iconst.i64 4
+        v11 = iadd v9, v10  ; v10 = 4
+        v12 = load.i32 v11
+        v26 = stack_addr.i64 ss1
+        v13 = load.i64 notrap v26
+        v14 = iconst.i64 0
+        v15 = iadd v13, v14  ; v14 = 0
+        v16 = load.i32 v15
+        v17 = iadd v12, v16
+        v25 = stack_addr.i64 ss2
+        store notrap v17, v25
+        v24 = stack_addr.i64 ss2
+        v18 = load.i32 notrap v24
+        v19 = iconst.i32 3
+        v20 = isub v18, v19  ; v19 = 3
+        v23 = stack_addr.i64 ss3
+        store notrap v20, v23
+        v22 = stack_addr.i64 ss3
+        v21 = load.i32 notrap v22
+        return v21
     }
     "
     );

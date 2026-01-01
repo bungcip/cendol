@@ -271,14 +271,13 @@ impl<'a> TypeResolver<'a> {
                 for child in nodes {
                     self.visit_node(child);
                 }
-                self.process_deferred_checks();
                 None
             }
             NodeKind::Function(data) => {
                 let func_ty = self.registry.get(data.ty);
                 if let TypeKind::Function { return_type, .. } = func_ty.kind.clone() {
                     self.current_function_ret_type = Some(QualType::unqualified(return_type));
-                }
+                };
                 self.visit_node(data.body);
                 self.current_function_ret_type = None;
                 None
@@ -376,7 +375,12 @@ impl<'a> TypeResolver<'a> {
             // Expressions
             NodeKind::Ident(_, symbol_ref) => {
                 let symbol = self.symbol_table.get_symbol(symbol_ref.get().unwrap());
-                Some(QualType::unqualified(symbol.type_info))
+                match &symbol.kind {
+                    crate::semantic::SymbolKind::EnumConstant { .. } => {
+                        Some(QualType::unqualified(self.registry.type_int))
+                    }
+                    _ => Some(QualType::unqualified(symbol.type_info)),
+                }
             }
             NodeKind::UnaryOp(op, operand) => self.visit_unary_op(op, operand, node.span),
             NodeKind::BinaryOp(op, lhs, rhs) => self.visit_binary_op(op, lhs, rhs),
@@ -469,17 +473,22 @@ impl<'a> TypeResolver<'a> {
                 }
                 None
             }
-            NodeKind::Break
-            | NodeKind::Continue
-            | NodeKind::Goto(_, _)
-            | NodeKind::Label(_, _, _)
-            | NodeKind::EmptyStatement => None,
+            NodeKind::Break | NodeKind::Continue | NodeKind::Goto(_, _) | NodeKind::EmptyStatement => None,
+            NodeKind::Label(_, stmt, _) => {
+                self.visit_node(stmt);
+                None
+            }
             _ => {
                 // For any unhandled nodes, explicitly do nothing.
                 // This prevents panics for node types that don't need type resolution.
                 None
             }
         };
+
+        // Debug: log certain nodes
+        if node_ref.get() == 27 {
+            eprintln!("type_resolver: node {} result_type={:?}", node_ref.get(), result_type);
+        }
 
         if let Some(ty) = result_type {
             node.resolved_type.set(Some(ty));

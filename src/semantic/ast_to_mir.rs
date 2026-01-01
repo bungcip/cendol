@@ -217,6 +217,11 @@ impl<'a> AstToMirLowerer<'a> {
     ) -> Operand {
         let mut field_operands = Vec::new();
         let mut current_field_idx = 0;
+        // Get record layout to detect anonymous-union-like members that share the
+        // same offset. If multiple consecutive members have the same offset,
+        // they form an (anonymous) union and should be initialized by a single
+        // initializer.
+        let (_rec_size, _rec_align, field_layouts, _) = self.registry.get_record_layout(target_ty.ty);
 
         for init in inits {
             let field_idx = if let Some(designator) = init.designation.first() {
@@ -226,14 +231,57 @@ impl<'a> AstToMirLowerer<'a> {
                     panic!("Array designator for struct initializer");
                 }
             } else {
-                let idx = current_field_idx;
-                current_field_idx += 1;
-                idx
+                // Heuristic: if the initializer is itself an initializer list (a subaggregate),
+                // and the current member is not a record but a later member is a record,
+                // prefer assigning this initializer to that later record member. This handles
+                // cases with anonymous unions where members are flattened in the member list.
+                let mut idx = current_field_idx;
+                let init_node_kind = self.ast.get_node(init.initializer).kind.clone();
+                if let NodeKind::InitializerList(_) = init_node_kind {
+                    if idx < members.len() {
+                        let mut found = None;
+                        for (j, item) in members.iter().enumerate().skip(idx) {
+                            let mty = item.member_type;
+                            if let TypeKind::Record { .. } = &self.registry.get(mty.ty).kind {
+                                found = Some(j);
+                                break;
+                            }
+                        }
+                        if let Some(j) = found {
+                            // assign to the record member
+                            idx = j;
+                            current_field_idx = j + 1;
+                            idx
+                        } else {
+                            current_field_idx += 1;
+                            idx
+                        }
+                    } else {
+                        current_field_idx += 1;
+                        idx
+                    }
+                } else {
+                    let tmp = idx;
+                    current_field_idx += 1;
+                    tmp
+                }
             };
 
             let member_ty = members[field_idx].member_type;
+
             let operand = self.lower_initializer(scope_id, init.initializer, member_ty);
             field_operands.push((field_idx, operand));
+            // If subsequent members share the same offset, they are part of a union
+            // and should not consume additional initializers. Advance current_field_idx
+            // past all members that share this field's offset.
+            if field_idx < field_layouts.len() {
+                let base_offset = field_layouts[field_idx].offset;
+                let mut next_idx = field_idx + 1;
+                while next_idx < field_layouts.len() && field_layouts[next_idx].offset == base_offset {
+                    next_idx += 1;
+                }
+                current_field_idx = next_idx;
+            }
         }
 
         let is_global = self.current_function.is_none();
@@ -369,12 +417,8 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn lower_expression(&mut self, scope_id: ScopeId, expr_ref: NodeRef) -> Operand {
-        let ty = self
-            .ast
-            .get_node(expr_ref)
-            .resolved_type
-            .get()
-            .expect("Type not resolved");
+        let node = self.ast.get_node(expr_ref);
+        let ty = node.resolved_type.get().expect("Type not resolved");
         let node_kind = self.ast.get_node(expr_ref).kind.clone();
 
         let mir_ty = self.lower_type_to_mir(ty.ty);
@@ -577,7 +621,14 @@ impl<'a> AstToMirLowerer<'a> {
                     // For unions, all fields are at offset 0, but we still track the field index
                     // for type information purposes
                     let place = if let Operand::Copy(place) = obj_operand {
-                        Place::StructField(place, field_idx)
+                        let place_box = place;
+                        if *is_arrow {
+                            let deref_operand = Operand::Copy(place_box.clone());
+                            let deref_place = Place::Deref(Box::new(deref_operand));
+                            Place::StructField(Box::new(deref_place), field_idx)
+                        } else {
+                            Place::StructField(place_box, field_idx)
+                        }
                     } else {
                         let mir_type = self.lower_type_to_mir(obj_ty.ty);
                         let (_, temp_place) =
@@ -784,22 +835,32 @@ impl<'a> AstToMirLowerer<'a> {
             return *type_id;
         }
 
-        // Check for recursion - if this type is already being converted, return a placeholder
+        // If this type is already being converted, return the placeholder we've inserted earlier
         if self.type_conversion_in_progress.contains(&type_ref) {
-            // Create a placeholder int type for recursive references
-            let placeholder_id = self.mir_builder.add_type(MirType::Int {
-                is_signed: true,
-                width: 32,
-            });
-            self.type_cache.insert(type_ref, placeholder_id);
-            return placeholder_id;
+            return *self
+                .type_cache
+                .get(&type_ref)
+                .expect("Placeholder must exist for recursive type");
         }
+
+        // Begin conversion: reserve a placeholder TypeId so recursive references can point to it.
+        self.type_conversion_in_progress.insert(type_ref);
+        let placeholder_name = NameId::new(format!("__recursive_placeholder_{}", type_ref.get()));
+        let placeholder_type = MirType::Record {
+            name: placeholder_name,
+            fields: Vec::new(),
+            is_union: false,
+            layout: MirRecordLayout {
+                size: 0,
+                alignment: 0,
+                field_offsets: Vec::new(),
+            },
+        };
+        let placeholder_id = self.mir_builder.add_type(placeholder_type);
+        self.type_cache.insert(type_ref, placeholder_id);
 
         let ast_type = self.registry.get(type_ref).clone();
         let ast_type_kind = ast_type.kind;
-
-        // Mark this type as being processed
-        self.type_conversion_in_progress.insert(type_ref);
 
         let mir_type = match &ast_type_kind {
             TypeKind::Void => MirType::Void,
@@ -893,9 +954,10 @@ impl<'a> AstToMirLowerer<'a> {
         // Remove from in-progress set
         self.type_conversion_in_progress.remove(&type_ref);
 
-        let type_id = self.mir_builder.add_type(mir_type);
-        self.type_cache.insert(type_ref, type_id);
-        type_id
+        // Replace the placeholder entry with the real type
+        self.mir_builder.update_type(placeholder_id, mir_type.clone());
+        self.type_cache.insert(type_ref, placeholder_id);
+        placeholder_id
     }
 
     fn create_constant(&mut self, value: ConstValue) -> ConstValueId {

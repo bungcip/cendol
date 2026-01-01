@@ -160,11 +160,11 @@ impl<'a> TypeResolver<'a> {
     fn visit_binary_op(&mut self, op: BinaryOp, lhs_ref: NodeRef, rhs_ref: NodeRef) -> Option<QualType> {
         let lhs_ty = self.visit_node(lhs_ref)?;
         let rhs_ty = self.visit_node(rhs_ref)?;
-        
+
         // Handle pointer arithmetic
         let lhs_kind = &self.registry.get(lhs_ty.ty).kind;
         let rhs_kind = &self.registry.get(rhs_ty.ty).kind;
-        
+
         match (op, lhs_kind, rhs_kind) {
             // Pointer + integer = pointer
             (BinaryOp::Add, TypeKind::Pointer { pointee }, TypeKind::Int { .. }) => {
@@ -173,19 +173,19 @@ impl<'a> TypeResolver<'a> {
             (BinaryOp::Add, TypeKind::Int { .. }, TypeKind::Pointer { pointee }) => {
                 Some(QualType::unqualified(*pointee))
             }
-            
+
             // Pointer - integer = pointer
             (BinaryOp::Sub, TypeKind::Pointer { pointee }, TypeKind::Int { .. }) => {
                 Some(QualType::unqualified(*pointee))
             }
-            
+
             // Pointer - pointer = integer (ptrdiff_t)
             (BinaryOp::Sub, TypeKind::Pointer { .. }, TypeKind::Pointer { .. }) => {
                 Some(QualType::unqualified(self.registry.type_int))
             }
-            
+
             // For other operations, use usual arithmetic conversions
-            _ => usual_arithmetic_conversions(self.registry, lhs_ty, rhs_ty)
+            _ => usual_arithmetic_conversions(self.registry, lhs_ty, rhs_ty),
         }
     }
 

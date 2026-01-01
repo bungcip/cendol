@@ -95,7 +95,8 @@ fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
             visit_node(ctx, *body);
             visit_node(ctx, *condition);
         }
-        NodeKind::Switch(_, body) => {
+        NodeKind::Switch(expr, body) => {
+            visit_node(ctx, *expr);
             visit_node(ctx, *body);
         }
         NodeKind::Return(expr) => {
@@ -141,7 +142,46 @@ fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
         NodeKind::InitializerList(inits) => {
             for init in inits {
                 visit_node(ctx, init.initializer);
+                for designator in &init.designation {
+                    if let crate::ast::Designator::ArrayIndex(idx_expr) = designator {
+                        visit_node(ctx, *idx_expr);
+                    }
+                }
             }
+        }
+        // More expression nodes
+        NodeKind::SizeOfExpr(expr) => {
+            visit_node(ctx, *expr);
+        }
+        NodeKind::SizeOfType(_) => {
+            // Already resolved
+        }
+        NodeKind::AlignOf(_) => {
+            // Already resolved
+        }
+        NodeKind::Cast(_, expr) => {
+            visit_node(ctx, *expr);
+        }
+        NodeKind::CompoundLiteral(_, init) => {
+            visit_node(ctx, *init);
+        }
+        NodeKind::TernaryOp(cond, then_branch, else_branch) => {
+            visit_node(ctx, *cond);
+            visit_node(ctx, *then_branch);
+            visit_node(ctx, *else_branch);
+        }
+        NodeKind::GenericSelection(ctrl, assocs) => {
+            visit_node(ctx, *ctrl);
+            for assoc in assocs {
+                visit_node(ctx, assoc.result_expr);
+            }
+        }
+        NodeKind::GnuStatementExpression(compound, result) => {
+            visit_node(ctx, *compound);
+            visit_node(ctx, *result);
+        }
+        NodeKind::VaArg(expr, _) => {
+            visit_node(ctx, *expr);
         }
         NodeKind::VarDecl(data) => {
             let VarDeclData { init, .. } = data;

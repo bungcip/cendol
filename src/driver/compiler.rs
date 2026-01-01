@@ -270,7 +270,7 @@ impl CompilerDriver {
                 | NodeKind::ParsedCast(..)
                 | NodeKind::ParsedCompoundLiteral(..)
                 | NodeKind::ParsedSizeOfType(..) => {
-                    panic!("AST still has exclusive node which only live in parsing stage");
+                    panic!("ICE: AST still has exclusive node which only live in parsing stage");
                 }
                 _ => {}
             }

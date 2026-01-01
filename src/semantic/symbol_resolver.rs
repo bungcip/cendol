@@ -1554,19 +1554,19 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
         }
         // Other nodes that might contain statements/declarations
         NodeKind::If(if_stmt) => {
+            lower_node_recursive(ctx, if_stmt.condition);
             lower_node_recursive(ctx, if_stmt.then_branch);
             if let Some(else_branch) = if_stmt.else_branch {
                 lower_node_recursive(ctx, else_branch);
             }
         }
         NodeKind::While(while_stmt) => {
+            lower_node_recursive(ctx, while_stmt.condition);
             lower_node_recursive(ctx, while_stmt.body);
         }
-        NodeKind::DoWhile(body, _) => {
+        NodeKind::DoWhile(body, condition) => {
             lower_node_recursive(ctx, body);
-        }
-        NodeKind::Switch(_, body) => {
-            lower_node_recursive(ctx, body);
+            lower_node_recursive(ctx, condition);
         }
         NodeKind::Label(name, stmt, _) => {
             let label_ty = ctx.registry.type_void; // void for now
@@ -1635,6 +1635,104 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             // Replace the ParsedAlignOf node with an AlignOf node
             let align_of_node = Node::new(NodeKind::AlignOf(type_ref), ctx.ast.get_node(node_ref).span);
             ctx.ast.replace_node(node_ref, align_of_node);
+        }
+        // Expression nodes - recurse into subexpressions
+        NodeKind::UnaryOp(_, expr) => {
+            lower_node_recursive(ctx, expr);
+        }
+        NodeKind::BinaryOp(_, left, right) => {
+            lower_node_recursive(ctx, left);
+            lower_node_recursive(ctx, right);
+        }
+        NodeKind::TernaryOp(cond, then_branch, else_branch) => {
+            lower_node_recursive(ctx, cond);
+            lower_node_recursive(ctx, then_branch);
+            lower_node_recursive(ctx, else_branch);
+        }
+        NodeKind::FunctionCall(func, args) => {
+            lower_node_recursive(ctx, func);
+            for arg in args {
+                lower_node_recursive(ctx, arg);
+            }
+        }
+        NodeKind::MemberAccess(obj, _, _) => {
+            lower_node_recursive(ctx, obj);
+        }
+        NodeKind::IndexAccess(arr, idx) => {
+            lower_node_recursive(ctx, arr);
+            lower_node_recursive(ctx, idx);
+        }
+        NodeKind::Cast(_, expr) => {
+            lower_node_recursive(ctx, expr);
+        }
+        NodeKind::SizeOfExpr(expr) => {
+            lower_node_recursive(ctx, expr);
+        }
+        NodeKind::SizeOfType(_) => {
+            // Already resolved, no subexpressions
+        }
+        NodeKind::AlignOf(_) => {
+            // Already resolved, no subexpressions
+        }
+        NodeKind::CompoundLiteral(_, init) => {
+            lower_node_recursive(ctx, init);
+        }
+        NodeKind::GenericSelection(ctrl, assocs) => {
+            lower_node_recursive(ctx, ctrl);
+            for assoc in assocs {
+                lower_node_recursive(ctx, assoc.result_expr);
+            }
+        }
+        // Statement nodes that contain expressions
+        NodeKind::ExpressionStatement(Some(expr)) => {
+            lower_node_recursive(ctx, expr);
+        }
+        NodeKind::Return(Some(expr)) => {
+            lower_node_recursive(ctx, expr);
+        }
+        NodeKind::Case(expr, stmt) => {
+            lower_node_recursive(ctx, expr);
+            lower_node_recursive(ctx, stmt);
+        }
+        NodeKind::CaseRange(start, end, stmt) => {
+            lower_node_recursive(ctx, start);
+            lower_node_recursive(ctx, end);
+            lower_node_recursive(ctx, stmt);
+        }
+        NodeKind::Default(stmt) => {
+            lower_node_recursive(ctx, stmt);
+        }
+        NodeKind::Switch(expr, body) => {
+            lower_node_recursive(ctx, expr);
+            lower_node_recursive(ctx, body);
+        }
+        // More expression nodes
+        NodeKind::Assignment(_, lhs, rhs) => {
+            lower_node_recursive(ctx, lhs);
+            lower_node_recursive(ctx, rhs);
+        }
+        NodeKind::PostIncrement(expr) => {
+            lower_node_recursive(ctx, expr);
+        }
+        NodeKind::PostDecrement(expr) => {
+            lower_node_recursive(ctx, expr);
+        }
+        NodeKind::GnuStatementExpression(compound, result) => {
+            lower_node_recursive(ctx, compound);
+            lower_node_recursive(ctx, result);
+        }
+        NodeKind::VaArg(expr, _) => {
+            lower_node_recursive(ctx, expr);
+        }
+        NodeKind::InitializerList(designated_inits) => {
+            for designated_init in designated_inits {
+                lower_node_recursive(ctx, designated_init.initializer);
+                for designator in &designated_init.designation {
+                    if let crate::ast::Designator::ArrayIndex(idx_expr) = designator {
+                        lower_node_recursive(ctx, *idx_expr);
+                    }
+                }
+            }
         }
         _ => {}
     }

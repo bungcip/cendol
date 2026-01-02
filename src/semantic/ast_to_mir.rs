@@ -483,6 +483,11 @@ impl<'a> AstToMirLowerer<'a> {
                         panic!("Cannot take address of a non-lvalue");
                     }
                 }
+                UnaryOp::Deref => {
+                    let operand = self.lower_expression(scope_id, *operand_ref, true);
+                    let place = Place::Deref(Box::new(operand));
+                    Operand::Copy(Box::new(place))
+                }
                 _ => {
                     let operand = self.lower_expression(scope_id, *operand_ref, true);
                     let mir_op = self.map_ast_unary_op_to_mir(op);

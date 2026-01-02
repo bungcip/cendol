@@ -27,6 +27,30 @@ fn test_static_assert_pass() {
 }
 
 #[test]
+fn rejects_conflicting_storage_classes() {
+    let config = CompileConfig::from_virtual_file(
+        r#"
+        extern static int x;
+    "#
+        .to_string(),
+        crate::driver::compiler::CompilePhase::Mir,
+    );
+    let mut driver = CompilerDriver::from_config(config);
+    let result = driver.run_pipeline(crate::driver::compiler::CompilePhase::Mir);
+    assert!(driver.get_diagnostics().iter().any(|d| {
+        if d.level == DiagnosticLevel::Error && d.message.contains("conflicting storage class specifiers") {
+            let (line, col) = driver.source_manager.get_line_column(d.span.start).unwrap();
+            assert_eq!(line, 2);
+            assert_eq!(col, 9);
+            true
+        } else {
+            false
+        }
+    }));
+    assert!(result.is_err());
+}
+
+#[test]
 fn rejects_variable_as_typedef_in_cast() {
     let config = CompileConfig::from_virtual_file(
         r#"

@@ -69,12 +69,16 @@ impl<'a> TypeResolver<'a> {
         }
     }
 
-    fn visit_if_statement(&mut self, stmt: &IfStmt) {
-        if let Some(cond_ty) = self.visit_node(stmt.condition)
+    fn check_scalar_condition(&mut self, condition: NodeRef) {
+        if let Some(cond_ty) = self.visit_node(condition)
             && !is_scalar_type(cond_ty, self.registry)
         {
             // report error
         }
+    }
+
+    fn visit_if_statement(&mut self, stmt: &IfStmt) {
+        self.check_scalar_condition(stmt.condition);
         self.visit_node(stmt.then_branch);
         if let Some(else_branch) = stmt.else_branch {
             self.visit_node(else_branch);
@@ -82,11 +86,7 @@ impl<'a> TypeResolver<'a> {
     }
 
     fn visit_while_statement(&mut self, stmt: &WhileStmt) {
-        if let Some(cond_ty) = self.visit_node(stmt.condition)
-            && !is_scalar_type(cond_ty, self.registry)
-        {
-            // report error
-        }
+        self.check_scalar_condition(stmt.condition);
         self.visit_node(stmt.body);
     }
 
@@ -94,11 +94,8 @@ impl<'a> TypeResolver<'a> {
         if let Some(init) = stmt.init {
             self.visit_node(init);
         }
-        if let Some(cond) = stmt.condition
-            && let Some(cond_ty) = self.visit_node(cond)
-            && !is_scalar_type(cond_ty, self.registry)
-        {
-            // report error
+        if let Some(cond) = stmt.condition {
+            self.check_scalar_condition(cond);
         }
         if let Some(inc) = stmt.increment {
             self.visit_node(inc);
@@ -178,31 +175,30 @@ impl<'a> TypeResolver<'a> {
         }
     }
 
+    fn apply_and_record_integer_promotion(&mut self, node_ref: NodeRef, ty: QualType) -> QualType {
+        let promoted = integer_promotion(self.registry, ty);
+        if promoted.ty != ty.ty {
+            let idx = (node_ref.get() - 1) as usize;
+            self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerPromotion {
+                from: ty.ty,
+                to: promoted.ty,
+            });
+        }
+        promoted
+    }
+
     fn visit_binary_op(&mut self, op: BinaryOp, lhs_ref: NodeRef, rhs_ref: NodeRef) -> Option<QualType> {
         let lhs_ty = self.visit_node(lhs_ref)?;
         let rhs_ty = self.visit_node(rhs_ref)?;
 
+        // Perform integer promotions and record them
+        let _lhs_promoted = self.apply_and_record_integer_promotion(lhs_ref, lhs_ty);
+        let _rhs_promoted = self.apply_and_record_integer_promotion(rhs_ref, rhs_ty);
+
         // Handle pointer arithmetic
+        // Re-borrow kinds after mutable borrows above
         let lhs_kind = &self.registry.get(lhs_ty.ty).kind;
         let rhs_kind = &self.registry.get(rhs_ty.ty).kind;
-
-        // Perform integer promotions and record them
-        let lhs_promoted = integer_promotion(self.registry, lhs_ty);
-        if lhs_promoted.ty != lhs_ty.ty {
-            let idx = (lhs_ref.get() - 1) as usize;
-            self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerPromotion {
-                from: lhs_ty.ty,
-                to: lhs_promoted.ty,
-            });
-        }
-        let rhs_promoted = integer_promotion(self.registry, rhs_ty);
-        if rhs_promoted.ty != rhs_ty.ty {
-            let idx = (rhs_ref.get() - 1) as usize;
-            self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerPromotion {
-                from: rhs_ty.ty,
-                to: rhs_promoted.ty,
-            });
-        }
 
         match (op, lhs_kind, rhs_kind) {
             // Pointer + integer = pointer

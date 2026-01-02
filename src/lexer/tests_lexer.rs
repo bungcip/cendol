@@ -46,7 +46,7 @@ mod tests {
             "unsigned", "void", "volatile", "while",
             // C11 specific keywords
             "_Alignas", "_Alignof", "_Atomic", "_Bool", "_Complex", "_Generic",
-            "_Noreturn", "_Pragma", "_Static_assert", "_Thread_local",
+            "_Noreturn", "_Static_assert", "_Thread_local",
         ];
 
         for keyword in keywords {

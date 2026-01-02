@@ -167,8 +167,301 @@ impl MirValidator {
             self.errors.push(ValidationError::BlockNotFound(entry_block));
         }
         // Extern functions don't need entry blocks
+        // Validate statements within blocks for defined functions
+        if func.kind == MirFunctionKind::Defined {
+            for block_id in &func.blocks {
+                if let Some(block) = sema_output.blocks.get(block_id) {
+                    for stmt_id in &block.statements {
+                        if let Some(stmt) = sema_output.statements.get(stmt_id) {
+                            self.validate_statement(sema_output, stmt);
+                        } else {
+                            self.errors.push(ValidationError::IllegalOperation(format!(
+                                "Statement {} not found",
+                                stmt_id.get()
+                            )));
+                        }
+                    }
+                }
+            }
+        }
     }
 
+    fn validate_statement(&mut self, sema_output: &SemaOutput, stmt: &MirStmt) {
+        match stmt {
+            MirStmt::Assign(place, rvalue) => {
+                let place_ty = self.validate_place(sema_output, place);
+                let rval_ty = self.validate_rvalue(sema_output, rvalue);
+                if let (Some(from), Some(to)) = (rval_ty, place_ty)
+                    && from != to
+                {
+                    self.errors.push(ValidationError::InvalidCast(from, to));
+                }
+            }
+            MirStmt::Store(op, place) => {
+                let op_ty = self.validate_operand(sema_output, op);
+                let place_ty = self.validate_place(sema_output, place);
+                if let (Some(from), Some(to)) = (op_ty, place_ty)
+                    && from != to
+                {
+                    self.errors.push(ValidationError::InvalidCast(from, to));
+                }
+            }
+            MirStmt::Call(target, args) => {
+                self.validate_call_target(sema_output, target);
+                for a in args {
+                    self.validate_operand(sema_output, a);
+                }
+                // Validate argument types against function signature when possible
+                match target {
+                    CallTarget::Direct(fid) => {
+                        if let Some(func) = sema_output.functions.get(fid) {
+                            // use param locals to get their types
+                            if func.params.len() != args.len() && !func.is_variadic {
+                                self.errors.push(ValidationError::IllegalOperation(format!(
+                                    "Call to function {} arg count mismatch",
+                                    fid.get()
+                                )));
+                            } else {
+                                for (i, arg) in args.iter().enumerate().take(func.params.len()) {
+                                    let param_id = func.params[i];
+                                    if let Some(param) = sema_output.locals.get(&param_id)
+                                        && let Some(arg_ty) = self.validate_operand(sema_output, arg)
+                                        && arg_ty != param.type_id
+                                    {
+                                        self.errors.push(ValidationError::InvalidCast(arg_ty, param.type_id));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    CallTarget::Indirect(op) => {
+                        if let Some(op_ty) = self.validate_operand(sema_output, op)
+                            && let Some(MirType::Pointer { pointee }) = sema_output.types.get(&op_ty)
+                            && let Some(MirType::Function { params, .. }) = sema_output.types.get(pointee)
+                        {
+                            if params.len() != args.len() {
+                                self.errors.push(ValidationError::IllegalOperation(
+                                    "Indirect call argument count mismatch".to_string(),
+                                ));
+                            } else {
+                                for (i, arg) in args.iter().enumerate() {
+                                    if let Some(arg_ty) = self.validate_operand(sema_output, arg)
+                                        && arg_ty != params[i]
+                                    {
+                                        self.errors.push(ValidationError::InvalidCast(arg_ty, params[i]));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            MirStmt::Alloc(place, type_id) => {
+                self.validate_place(sema_output, place);
+                if !sema_output.types.contains_key(type_id) {
+                    self.errors.push(ValidationError::TypeNotFound(*type_id));
+                }
+            }
+            MirStmt::Dealloc(op) => {
+                self.validate_operand(sema_output, op);
+            }
+        }
+    }
+
+    fn validate_place(&mut self, sema_output: &SemaOutput, place: &Place) -> Option<TypeId> {
+        match place {
+            Place::Local(local_id) => {
+                if let Some(local) = sema_output.locals.get(local_id) {
+                    Some(local.type_id)
+                } else {
+                    self.errors.push(ValidationError::LocalNotFound(*local_id));
+                    None
+                }
+            }
+            Place::Deref(op) => {
+                self.validate_operand(sema_output, op);
+                // try to infer pointer pointee type
+                if let Some(op_ty) = self.operand_type(sema_output, op) {
+                    if let Some(MirType::Pointer { pointee }) = sema_output.types.get(&op_ty) {
+                        Some(*pointee)
+                    } else {
+                        // Not a pointer - deref of non-pointer
+                        self.errors.push(ValidationError::IllegalOperation(
+                            "Deref of non-pointer operand".to_string(),
+                        ));
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            Place::Global(gid) => {
+                if let Some(g) = sema_output.globals.get(gid) {
+                    Some(g.type_id)
+                } else {
+                    self.errors.push(ValidationError::GlobalNotFound(*gid));
+                    None
+                }
+            }
+            Place::StructField(base, idx) => {
+                if let Some(base_ty) = self.validate_place(sema_output, base) {
+                    if let Some(MirType::Record { fields, .. }) = sema_output.types.get(&base_ty) {
+                        if *idx < fields.len() {
+                            Some(fields[*idx].1)
+                        } else {
+                            self.errors.push(ValidationError::IllegalOperation(format!(
+                                "Struct field index {} out of bounds",
+                                idx
+                            )));
+                            None
+                        }
+                    } else {
+                        self.errors.push(ValidationError::IllegalOperation(
+                            "Struct field access on non-record type".to_string(),
+                        ));
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            Place::ArrayIndex(base, _idx_op) => {
+                // validate base place and index operand
+                let _ = self.validate_place(sema_output, base);
+                // index operand may be complex; index operand validation is handled where used
+                None
+            }
+        }
+    }
+
+    fn validate_operand(&mut self, sema_output: &SemaOutput, op: &Operand) -> Option<TypeId> {
+        match op {
+            Operand::Copy(place) => self.validate_place(sema_output, place),
+            Operand::Constant(cid) => {
+                if sema_output.constants.get(cid).is_none() {
+                    self.errors.push(ValidationError::IllegalOperation(format!(
+                        "Constant {} not found",
+                        cid.get()
+                    )));
+                }
+                None
+            }
+            Operand::AddressOf(place) => {
+                if let Some(base_ty) = self.validate_place(sema_output, place) {
+                    // create or lookup a pointer type for base_ty is non-trivial; try to find existing pointer type
+                    for (tid, ty) in &sema_output.types {
+                        if let MirType::Pointer { pointee } = ty
+                            && *pointee == base_ty
+                        {
+                            return Some(*tid);
+                        }
+                    }
+                    None
+                } else {
+                    None
+                }
+            }
+            Operand::Cast(type_id, inner) => {
+                if !sema_output.types.contains_key(type_id) {
+                    self.errors.push(ValidationError::TypeNotFound(*type_id));
+                }
+                self.validate_operand(sema_output, inner);
+                Some(*type_id)
+            }
+        }
+    }
+
+    fn validate_rvalue(&mut self, sema_output: &SemaOutput, r: &Rvalue) -> Option<TypeId> {
+        match r {
+            Rvalue::Use(op) => self.validate_operand(sema_output, op),
+            Rvalue::BinaryOp(_bin, a, b) => {
+                let _ = self.validate_operand(sema_output, a);
+                let _ = self.validate_operand(sema_output, b);
+                None
+            }
+            Rvalue::UnaryOp(_u, a) => self.validate_operand(sema_output, a),
+            Rvalue::Cast(type_id, op) => {
+                if !sema_output.types.contains_key(type_id) {
+                    self.errors.push(ValidationError::TypeNotFound(*type_id));
+                }
+                let from_ty = self.validate_operand(sema_output, op);
+                if let (Some(from), true) = (from_ty, sema_output.types.contains_key(type_id)) {
+                    // basic invalid cast check: disallow casts from record/array/enum/function to non-pointer/scalar types
+                    if let Some(MirType::Record { .. } | MirType::Array { .. } | MirType::Enum { .. }) =
+                        sema_output.types.get(&from)
+                    {
+                        if let Some(MirType::Pointer { .. }) = sema_output.types.get(type_id) {
+                            // pointer casts allowed
+                        } else if let MirType::Int { .. } | MirType::Float { .. } | MirType::Bool =
+                            sema_output.types.get(type_id).unwrap()
+                        {
+                            self.errors.push(ValidationError::InvalidCast(from, *type_id));
+                        }
+                    }
+                }
+                Some(*type_id)
+            }
+            Rvalue::PtrAdd(a, b) => {
+                let ta = self.validate_operand(sema_output, a);
+                let tb = self.validate_operand(sema_output, b);
+                let mut ok = false;
+                if let Some(taid) = ta
+                    && let Some(MirType::Pointer { .. }) = sema_output.types.get(&taid)
+                {
+                    ok = true;
+                }
+                if let Some(tbid) = tb
+                    && let Some(MirType::Pointer { .. }) = sema_output.types.get(&tbid)
+                {
+                    ok = true;
+                }
+                if !ok {
+                    self.errors.push(ValidationError::InvalidPointerArithmetic);
+                }
+                None
+            }
+            Rvalue::StructLiteral(fields) => {
+                for (_idx, op) in fields {
+                    self.validate_operand(sema_output, op);
+                }
+                None
+            }
+            Rvalue::ArrayLiteral(elems) => {
+                for e in elems {
+                    self.validate_operand(sema_output, e);
+                }
+                None
+            }
+            Rvalue::Load(op) => {
+                self.validate_operand(sema_output, op);
+                None
+            }
+            Rvalue::Call(target, args) => {
+                self.validate_call_target(sema_output, target);
+                for a in args {
+                    self.validate_operand(sema_output, a);
+                }
+                None
+            }
+        }
+    }
+
+    fn validate_call_target(&mut self, sema_output: &SemaOutput, target: &CallTarget) {
+        match target {
+            CallTarget::Direct(fid) => {
+                if sema_output.functions.get(fid).is_none() {
+                    self.errors.push(ValidationError::FunctionNotFound(*fid));
+                }
+            }
+            CallTarget::Indirect(op) => {
+                self.validate_operand(sema_output, op);
+            }
+        }
+    }
+
+    fn operand_type(&mut self, sema_output: &SemaOutput, op: &Operand) -> Option<TypeId> {
+        self.validate_operand(sema_output, op)
+    }
     /// Get the validation errors (for testing purposes)
     pub fn get_errors(&self) -> &Vec<ValidationError> {
         &self.errors

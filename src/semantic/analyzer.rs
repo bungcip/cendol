@@ -1,21 +1,24 @@
 use crate::{
     ast::{nodes::*, *},
-    diagnostic::SemanticError,
+    diagnostic::{DiagnosticEngine, SemanticError},
     semantic::{
-        ArraySizeType, ImplicitConversion, QualType, SymbolTable, TypeKind, TypeRegistry, ValueCategory,
+        ArraySizeType, ImplicitConversion, QualType, SemanticInfo, SymbolKind, SymbolTable, TypeKind, TypeRegistry,
+        ValueCategory,
         conversions::{integer_promotion, usual_arithmetic_conversions},
         utils::is_scalar_type,
     },
 };
 
-pub fn run_type_resolver(
+/// Run Semantic Analyzer in our AST and return analysist result in SemanticInfo
+/// which contains resolved type, conversion table, and value category
+pub fn run_semantic_analyzer(
     ast: &Ast,
-    diag: &mut crate::diagnostic::DiagnosticEngine,
+    diag: &mut DiagnosticEngine,
     symbol_table: &SymbolTable,
     registry: &mut TypeRegistry,
-) -> crate::semantic::SemanticInfo {
-    let mut semantic_info = crate::semantic::SemanticInfo::with_capacity(ast.nodes.len());
-    let mut resolver = TypeResolver {
+) -> SemanticInfo {
+    let mut semantic_info = SemanticInfo::with_capacity(ast.nodes.len());
+    let mut resolver = SemanticAnalyzer {
         ast,
         diag,
         symbol_table,
@@ -34,17 +37,17 @@ enum DeferredCheck {
     StaticAssert(NodeRef),
 }
 
-struct TypeResolver<'a> {
+struct SemanticAnalyzer<'a> {
     ast: &'a Ast,
-    diag: &'a mut crate::diagnostic::DiagnosticEngine,
+    diag: &'a mut DiagnosticEngine,
     symbol_table: &'a SymbolTable,
     registry: &'a mut TypeRegistry,
-    semantic_info: &'a mut crate::semantic::SemanticInfo,
+    semantic_info: &'a mut SemanticInfo,
     current_function_ret_type: Option<QualType>,
     deferred_checks: Vec<DeferredCheck>,
 }
 
-impl<'a> TypeResolver<'a> {
+impl<'a> SemanticAnalyzer<'a> {
     fn report_error(&mut self, error: SemanticError) {
         self.diag.report(error);
     }
@@ -55,7 +58,7 @@ impl<'a> TypeResolver<'a> {
             NodeKind::Ident(_, symbol) => {
                 if let Some(symbol_ref) = symbol.get() {
                     let symbol = self.symbol_table.get_symbol(symbol_ref);
-                    matches!(symbol.kind, crate::semantic::SymbolKind::Variable { .. })
+                    matches!(symbol.kind, SymbolKind::Variable { .. })
                 } else {
                     false
                 }
@@ -481,9 +484,7 @@ impl<'a> TypeResolver<'a> {
             NodeKind::Ident(_, symbol_ref) => {
                 let symbol = self.symbol_table.get_symbol(symbol_ref.get().unwrap());
                 match &symbol.kind {
-                    crate::semantic::SymbolKind::EnumConstant { .. } => {
-                        Some(QualType::unqualified(self.registry.type_int))
-                    }
+                    SymbolKind::EnumConstant { .. } => Some(QualType::unqualified(self.registry.type_int)),
                     _ => Some(QualType::unqualified(symbol.type_info)),
                 }
             }

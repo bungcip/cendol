@@ -254,7 +254,7 @@ impl CompilerDriver {
         use crate::semantic::symbol_resolver::run_symbol_resolver;
 
         let scope_map = run_symbol_resolver(&mut ast, &mut self.diagnostics, &mut symbol_table, &mut registry);
-        ast.attach_scope_map(scope_map.clone());
+        ast.attach_scope_map(scope_map);
         // eprintln!("Symbol table entries after symbol resolver:");
         // for (i, _entry) in symbol_table.entries.iter().enumerate() {
         //     let s = &symbol_table.entries[i];
@@ -317,8 +317,7 @@ impl CompilerDriver {
         if !unresolved_idents.is_empty() || !unresolved_gotos.is_empty() || !unresolved_labels.is_empty() {
             eprintln!("Unresolved identifiers (index, name, span start):");
             for (i, name, span) in &unresolved_idents {
-                let _node_ref = crate::ast::NodeRef::new((*i as u32) + 1).unwrap();
-                let scope_opt = scope_map.get(*i).and_then(|x| *x);
+                let scope_opt = ast.get_scope_map().get(*i).and_then(|x| *x);
                 let scope_str = match scope_opt {
                     Some(s) => s.get().to_string(),
                     None => "<none>".to_string(),
@@ -332,7 +331,7 @@ impl CompilerDriver {
                 );
             }
             for (i, name, span) in &unresolved_gotos {
-                let scope_opt = scope_map.get(*i).and_then(|x| *x);
+                let scope_opt = ast.get_scope_map().get(*i).and_then(|x| *x);
                 let scope_str = match scope_opt {
                     Some(s) => s.get().to_string(),
                     None => "<none>".to_string(),
@@ -346,7 +345,7 @@ impl CompilerDriver {
                 );
             }
             for (i, name, span) in &unresolved_labels {
-                let scope_opt = scope_map.get(*i).and_then(|x| *x);
+                let scope_opt = ast.get_scope_map().get(*i).and_then(|x| *x);
                 let scope_str = match scope_opt {
                     Some(s) => s.get().to_string(),
                     None => "<none>".to_string(),
@@ -362,12 +361,11 @@ impl CompilerDriver {
             panic!("ICE: unresolved name bindings found");
         }
 
-        use crate::semantic::type_resolver::run_type_resolver;
-        let semantic_info = run_type_resolver(&ast, &mut self.diagnostics, &symbol_table, &mut registry);
+        use crate::semantic::analyzer::run_semantic_analyzer;
+        let semantic_info = run_semantic_analyzer(&ast, &mut self.diagnostics, &symbol_table, &mut registry);
         self.check_diagnostics_and_return_if_error()?;
 
         // Attach semantic info to AST (like scope_map)
-        let mut ast = ast;
         ast.attach_semantic_info(semantic_info);
 
         // invariant validations

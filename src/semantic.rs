@@ -10,6 +10,7 @@
 //! The analysis is performed in distinct phases using the visitor pattern
 //! for clean separation of concerns and maintainable code.
 
+pub mod analyzer;
 pub mod ast_to_mir;
 pub mod const_eval;
 pub mod conversions;
@@ -17,7 +18,6 @@ pub mod name_resolver;
 pub mod symbol_resolver;
 pub mod symbol_table;
 pub mod type_registry;
-pub mod type_resolver;
 pub mod types;
 pub mod utils;
 

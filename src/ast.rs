@@ -102,6 +102,10 @@ impl Ast {
         self.scope_map[(node.get() - 1) as usize].expect("ICE: AST Node scope is not set")
     }
 
+    pub fn get_scope_map(&self) -> &[Option<ScopeId>] {
+        &self.scope_map
+    }
+
     /// attach new scope map for AST
     pub fn attach_scope_map(&mut self, scope_map: Vec<Option<ScopeId>>) {
         self.scope_map = scope_map;

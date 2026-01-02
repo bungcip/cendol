@@ -187,9 +187,7 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::Return(expr) => self.lower_return_statement(scope_id, &expr),
             NodeKind::If(if_stmt) => self.lower_if_statement(scope_id, &if_stmt),
             NodeKind::While(while_stmt) => self.lower_while_statement(scope_id, &while_stmt),
-            NodeKind::DoWhile(body, condition) => {
-                self.lower_do_while_statement(scope_id, body, condition)
-            }
+            NodeKind::DoWhile(body, condition) => self.lower_do_while_statement(scope_id, body, condition),
             NodeKind::For(for_stmt) => self.lower_for_statement(scope_id, &for_stmt),
             NodeKind::ExpressionStatement(Some(expr_ref)) => {
                 // Expression statement: value not needed, only side-effects

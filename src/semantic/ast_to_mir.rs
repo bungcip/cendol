@@ -445,15 +445,11 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::Assignment(_, left_ref, right_ref) => {
                 self.lower_assignment_expr(scope_id, *left_ref, *right_ref, mir_ty)
             }
-            NodeKind::FunctionCall(func_ref, args) => {
-                self.lower_function_call(scope_id, *func_ref, args, mir_ty)
-            }
+            NodeKind::FunctionCall(func_ref, args) => self.lower_function_call(scope_id, *func_ref, args, mir_ty),
             NodeKind::MemberAccess(obj_ref, field_name, is_arrow) => {
                 self.lower_member_access(scope_id, *obj_ref, field_name, *is_arrow)
             }
-            NodeKind::IndexAccess(arr_ref, idx_ref) => {
-                self.lower_index_access(scope_id, *arr_ref, *idx_ref)
-            }
+            NodeKind::IndexAccess(arr_ref, idx_ref) => self.lower_index_access(scope_id, *arr_ref, *idx_ref),
             _ => Operand::Constant(self.create_constant(ConstValue::Int(0))),
         }
     }
@@ -481,9 +477,9 @@ impl<'a> AstToMirLowerer<'a> {
         let array_const_id = self.create_constant(array_const);
 
         let global_name = self.mir_builder.get_next_anonymous_global_name();
-        let global_id =
-            self.mir_builder
-                .create_global_with_init(global_name, string_type, true, Some(array_const_id));
+        let global_id = self
+            .mir_builder
+            .create_global_with_init(global_name, string_type, true, Some(array_const_id));
 
         let addr_const_val = ConstValue::GlobalAddress(global_id);
         Operand::Constant(self.create_constant(addr_const_val))
@@ -514,9 +510,7 @@ impl<'a> AstToMirLowerer<'a> {
                 let const_val = ConstValue::FunctionAddress(func_id);
                 Operand::Constant(self.create_constant(const_val))
             }
-            SymbolKind::EnumConstant { value } => {
-                Operand::Constant(self.create_constant(ConstValue::Int(*value)))
-            }
+            SymbolKind::EnumConstant { value } => Operand::Constant(self.create_constant(ConstValue::Int(*value))),
             _ => panic!("Unexpected symbol kind"),
         }
     }
@@ -583,9 +577,7 @@ impl<'a> AstToMirLowerer<'a> {
         }
 
         let call_target = if let Operand::Constant(const_id) = callee {
-            if let ConstValue::FunctionAddress(func_id) =
-                self.mir_builder.get_constants().get(&const_id).unwrap()
-            {
+            if let ConstValue::FunctionAddress(func_id) = self.mir_builder.get_constants().get(&const_id).unwrap() {
                 CallTarget::Direct(*func_id)
             } else {
                 panic!("Expected function address");
@@ -665,8 +657,7 @@ impl<'a> AstToMirLowerer<'a> {
                 }
             } else {
                 let mir_type = self.lower_type_to_mir(obj_ty.ty);
-                let (_, temp_place) =
-                    self.create_temp_local_with_assignment(Rvalue::Use(obj_operand), mir_type);
+                let (_, temp_place) = self.create_temp_local_with_assignment(Rvalue::Use(obj_operand), mir_type);
                 Place::StructField(Box::new(temp_place), field_idx)
             };
             Operand::Copy(Box::new(place))
@@ -675,12 +666,7 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn lower_index_access(
-        &mut self,
-        scope_id: ScopeId,
-        arr_ref: NodeRef,
-        idx_ref: NodeRef,
-    ) -> Operand {
+    fn lower_index_access(&mut self, scope_id: ScopeId, arr_ref: NodeRef, idx_ref: NodeRef) -> Operand {
         let arr_operand = self.lower_expression(scope_id, arr_ref, true);
         let idx_operand = self.lower_expression(scope_id, idx_ref, true);
         let arr_ty = self.ast.get_resolved_type(arr_ref).unwrap();
@@ -735,8 +721,7 @@ impl<'a> AstToMirLowerer<'a> {
                 } else {
                     // If it's not a Copy, create a temporary
                     let mir_type = self.lower_type_to_mir(arr_ty.ty);
-                    let (_, temp_place) =
-                        self.create_temp_local_with_assignment(Rvalue::Use(arr_operand), mir_type);
+                    let (_, temp_place) = self.create_temp_local_with_assignment(Rvalue::Use(arr_operand), mir_type);
                     temp_place
                 };
 

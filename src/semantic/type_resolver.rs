@@ -566,33 +566,33 @@ impl<'a> TypeResolver<'a> {
         let node = self.ast.get_node(node_ref);
         let result_type = match &node.kind {
             // Declarations
-            NodeKind::TranslationUnit(_) |
-            NodeKind::Function(_) |
-            NodeKind::VarDecl(_) |
-            NodeKind::DeclarationList(_) |
-            NodeKind::RecordDecl(_) |
-            NodeKind::TypedefDecl(_) |
-            NodeKind::EnumConstant(..) |
-            NodeKind::FunctionDecl(_) => self.visit_declaration_node(node_ref, &node.kind),
+            NodeKind::TranslationUnit(_)
+            | NodeKind::Function(_)
+            | NodeKind::VarDecl(_)
+            | NodeKind::DeclarationList(_)
+            | NodeKind::RecordDecl(_)
+            | NodeKind::TypedefDecl(_)
+            | NodeKind::EnumConstant(..)
+            | NodeKind::FunctionDecl(_) => self.visit_declaration_node(node_ref, &node.kind),
 
             // Statements
-            NodeKind::CompoundStatement(_) |
-            NodeKind::If(_) |
-            NodeKind::While(_) |
-            NodeKind::DoWhile(..) |
-            NodeKind::For(_) |
-            NodeKind::Return(_) |
-            NodeKind::ExpressionStatement(_) |
-            NodeKind::StaticAssert(..) |
-            NodeKind::Switch(..) |
-            NodeKind::Case(..) |
-            NodeKind::CaseRange(..) |
-            NodeKind::Default(_) |
-            NodeKind::Break |
-            NodeKind::Continue |
-            NodeKind::Goto(..) |
-            NodeKind::Label(..) |
-            NodeKind::EmptyStatement => self.visit_statement_node(node_ref, &node.kind),
+            NodeKind::CompoundStatement(_)
+            | NodeKind::If(_)
+            | NodeKind::While(_)
+            | NodeKind::DoWhile(..)
+            | NodeKind::For(_)
+            | NodeKind::Return(_)
+            | NodeKind::ExpressionStatement(_)
+            | NodeKind::StaticAssert(..)
+            | NodeKind::Switch(..)
+            | NodeKind::Case(..)
+            | NodeKind::CaseRange(..)
+            | NodeKind::Default(_)
+            | NodeKind::Break
+            | NodeKind::Continue
+            | NodeKind::Goto(..)
+            | NodeKind::Label(..)
+            | NodeKind::EmptyStatement => self.visit_statement_node(node_ref, &node.kind),
 
             // Expressions (Catch-all)
             _ => self.visit_expression_node(node_ref, &node.kind),

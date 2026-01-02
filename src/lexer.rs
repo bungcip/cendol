@@ -309,66 +309,69 @@ fn classify_punctuation(pp_token_kind: PPTokenKind) -> TokenKind {
 
 /// Check if a symbol represents a C11 keyword.
 ///
-/// ⚡ Bolt: Optimized with a `match` statement.
-/// This is significantly faster than the previous `HashMap` implementation because
-/// the Rust compiler can optimize it into a perfect hash table or a more direct
-/// jump table, avoiding the overhead of runtime hashing and lookups.
+/// ⚡ Bolt: Optimized with a pre-initialized `HashMap`.
+/// This is significantly faster than the previous match-based implementation, which
+/// required converting the `StringId` to a `&str` for every lookup. This version
+// pre-interns all keywords and stores them in a lazily-initialized `HashMap`.
+/// Subsequent lookups use the `StringId` directly, resulting in a much faster
+/// integer comparison instead of a string comparison.
 pub fn is_keyword(symbol: StringId) -> Option<TokenKind> {
-    match symbol.as_str() {
-        // C11 keywords
-        "auto" => Some(TokenKind::Auto),
-        "break" => Some(TokenKind::Break),
-        "case" => Some(TokenKind::Case),
-        "char" => Some(TokenKind::Char),
-        "const" => Some(TokenKind::Const),
-        "continue" => Some(TokenKind::Continue),
-        "default" => Some(TokenKind::Default),
-        "do" => Some(TokenKind::Do),
-        "double" => Some(TokenKind::Double),
-        "else" => Some(TokenKind::Else),
-        "enum" => Some(TokenKind::Enum),
-        "extern" => Some(TokenKind::Extern),
-        "float" => Some(TokenKind::Float),
-        "for" => Some(TokenKind::For),
-        "goto" => Some(TokenKind::Goto),
-        "if" => Some(TokenKind::If),
-        "inline" => Some(TokenKind::Inline),
-        "int" => Some(TokenKind::Int),
-        "long" => Some(TokenKind::Long),
-        "register" => Some(TokenKind::Register),
-        "restrict" => Some(TokenKind::Restrict),
-        "return" => Some(TokenKind::Return),
-        "short" => Some(TokenKind::Short),
-        "signed" => Some(TokenKind::Signed),
-        "sizeof" => Some(TokenKind::Sizeof),
-        "static" => Some(TokenKind::Static),
-        "struct" => Some(TokenKind::Struct),
-        "switch" => Some(TokenKind::Switch),
-        "typedef" => Some(TokenKind::Typedef),
-        "union" => Some(TokenKind::Union),
-        "unsigned" => Some(TokenKind::Unsigned),
-        "void" => Some(TokenKind::Void),
-        "volatile" => Some(TokenKind::Volatile),
-        "while" => Some(TokenKind::While),
+    keyword_map().get(&symbol).copied()
+}
 
-        // C11 specific keywords
-        "_Alignas" => Some(TokenKind::Alignas),
-        "_Alignof" => Some(TokenKind::Alignof),
-        "_Atomic" => Some(TokenKind::Atomic),
-        "_Bool" => Some(TokenKind::Bool),
-        "_Complex" => Some(TokenKind::Complex),
-        "_Generic" => Some(TokenKind::Generic),
-        "_Noreturn" => Some(TokenKind::Noreturn),
-        "_Pragma" => Some(TokenKind::Pragma),
-        "_Static_assert" => Some(TokenKind::StaticAssert),
-        "_Thread_local" => Some(TokenKind::ThreadLocal),
-
-        // GCC extensions
-        "__attribute__" => Some(TokenKind::Attribute),
-        "__attribute" => Some(TokenKind::Attribute),
-
-        _ => None,
-    }
+fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
+    static KEYWORDS: std::sync::OnceLock<hashbrown::HashMap<StringId, TokenKind>> =
+        std::sync::OnceLock::new();
+    KEYWORDS.get_or_init(|| {
+        let mut m = hashbrown::HashMap::new();
+        m.insert(StringId::new("auto"), TokenKind::Auto);
+        m.insert(StringId::new("break"), TokenKind::Break);
+        m.insert(StringId::new("case"), TokenKind::Case);
+        m.insert(StringId::new("char"), TokenKind::Char);
+        m.insert(StringId::new("const"), TokenKind::Const);
+        m.insert(StringId::new("continue"), TokenKind::Continue);
+        m.insert(StringId::new("default"), TokenKind::Default);
+        m.insert(StringId::new("do"), TokenKind::Do);
+        m.insert(StringId::new("double"), TokenKind::Double);
+        m.insert(StringId::new("else"), TokenKind::Else);
+        m.insert(StringId::new("enum"), TokenKind::Enum);
+        m.insert(StringId::new("extern"), TokenKind::Extern);
+        m.insert(StringId::new("float"), TokenKind::Float);
+        m.insert(StringId::new("for"), TokenKind::For);
+        m.insert(StringId::new("goto"), TokenKind::Goto);
+        m.insert(StringId::new("if"), TokenKind::If);
+        m.insert(StringId::new("inline"), TokenKind::Inline);
+        m.insert(StringId::new("int"), TokenKind::Int);
+        m.insert(StringId::new("long"), TokenKind::Long);
+        m.insert(StringId::new("register"), TokenKind::Register);
+        m.insert(StringId::new("restrict"), TokenKind::Restrict);
+        m.insert(StringId::new("return"), TokenKind::Return);
+        m.insert(StringId::new("short"), TokenKind::Short);
+        m.insert(StringId::new("signed"), TokenKind::Signed);
+        m.insert(StringId::new("sizeof"), TokenKind::Sizeof);
+        m.insert(StringId::new("static"), TokenKind::Static);
+        m.insert(StringId::new("struct"), TokenKind::Struct);
+        m.insert(StringId::new("switch"), TokenKind::Switch);
+        m.insert(StringId::new("typedef"), TokenKind::Typedef);
+        m.insert(StringId::new("union"), TokenKind::Union);
+        m.insert(StringId::new("unsigned"), TokenKind::Unsigned);
+        m.insert(StringId::new("void"), TokenKind::Void);
+        m.insert(StringId::new("volatile"), TokenKind::Volatile);
+        m.insert(StringId::new("while"), TokenKind::While);
+        m.insert(StringId::new("_Alignas"), TokenKind::Alignas);
+        m.insert(StringId::new("_Alignof"), TokenKind::Alignof);
+        m.insert(StringId::new("_Atomic"), TokenKind::Atomic);
+        m.insert(StringId::new("_Bool"), TokenKind::Bool);
+        m.insert(StringId::new("_Complex"), TokenKind::Complex);
+        m.insert(StringId::new("_Generic"), TokenKind::Generic);
+        m.insert(StringId::new("_Noreturn"), TokenKind::Noreturn);
+        m.insert(StringId::new("_Pragma"), TokenKind::Pragma);
+        m.insert(StringId::new("_Static_assert"), TokenKind::StaticAssert);
+        m.insert(StringId::new("_Thread_local"), TokenKind::ThreadLocal);
+        m.insert(StringId::new("__attribute__"), TokenKind::Attribute);
+        m.insert(StringId::new("__attribute"), TokenKind::Attribute);
+        m
+    })
 }
 
 /// Lexer state machine

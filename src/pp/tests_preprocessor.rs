@@ -775,3 +775,28 @@ int x = P(foo,);
         PPTokenKind::Semicolon
     );
 }
+
+#[test]
+fn test_macro_argument_prescan_bug() {
+    let src = r#"
+#define STR(x) #x
+#define XSTR(x) STR(x)
+#define FOO 42
+const char* s = XSTR(FOO);
+"#;
+
+    let significant_tokens = setup_preprocessor_test(src);
+
+    // Expected: const, char*, s, =, "42", ;
+    // Currently, it likely produces "FOO" because of the bug
+    assert_token_kinds!(
+        significant_tokens,
+        PPTokenKind::Identifier(StringId::new("const")),
+        PPTokenKind::Identifier(StringId::new("char")),
+        PPTokenKind::Star,
+        PPTokenKind::Identifier(StringId::new("s")),
+        PPTokenKind::Assign,
+        PPTokenKind::StringLiteral(StringId::new("\"42\"")), // Use explicit quotes as in the impl
+        PPTokenKind::Semicolon
+    );
+}

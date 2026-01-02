@@ -841,11 +841,11 @@ impl<'src> Preprocessor<'src> {
                     let popped_lexer = self.lexer_stack.pop().unwrap();
 
                     // If this was an included file, pop from include stack and decrement depth.
-                    if let Some(include_info) = self.include_stack.last() {
-                        if include_info.file_id == popped_lexer.source_id {
-                            self.include_stack.pop();
-                            self.include_depth -= 1;
-                        }
+                    if let Some(include_info) = self.include_stack.last()
+                        && include_info.file_id == popped_lexer.source_id
+                    {
+                        self.include_stack.pop();
+                        self.include_depth -= 1;
                     }
 
                     // Set the line_starts from the lexer to the source manager
@@ -935,7 +935,7 @@ impl<'src> Preprocessor<'src> {
     fn handle_pragma_operator(&mut self) -> Result<(), PPError> {
         // We have already consumed the `_Pragma` identifier.
         // Expect '('.
-        if self.lex_token().map_or(true, |t| t.kind != PPTokenKind::LeftParen) {
+        if self.lex_token().is_none_or(|t| t.kind != PPTokenKind::LeftParen) {
             return Err(PPError::InvalidDirective);
         }
 
@@ -968,7 +968,7 @@ impl<'src> Preprocessor<'src> {
         };
 
         // Expect ')'.
-        if self.lex_token().map_or(true, |t| t.kind != PPTokenKind::RightParen) {
+        if self.lex_token().is_none_or(|t| t.kind != PPTokenKind::RightParen) {
             return Err(PPError::InvalidDirective);
         }
 
@@ -984,16 +984,16 @@ impl<'src> Preprocessor<'src> {
 
         // Process all tokens from the pragma's content.
         while let Some(pragma_token) = temp_lexer.next_token() {
-            if let PPTokenKind::Identifier(symbol) = pragma_token.kind {
-                if symbol.as_str() == "once" {
-                    if let Some(id) = pragma_source_id {
-                        self.once_included.insert(id);
-                    }
-                    // After "once", no other tokens matter.
-                    break;
+            if let PPTokenKind::Identifier(symbol) = pragma_token.kind
+                && symbol.as_str() == "once"
+            {
+                if let Some(id) = pragma_source_id {
+                    self.once_included.insert(id);
                 }
-                // Other pragma directives are tokenized but currently ignored.
+                // After "once", no other tokens matter.
+                break;
             }
+            // Other pragma directives are tokenized but currently ignored.
         }
 
         Ok(())
@@ -1760,8 +1760,16 @@ impl<'src> Preprocessor<'src> {
         // Parse arguments from lexer
         let args = self.parse_macro_args_from_lexer(macro_info)?;
 
+        // Pre-expand arguments (prescan)
+        let mut expanded_args = Vec::with_capacity(args.len());
+        for arg in &args {
+            let mut arg_clone = arg.clone();
+            self.expand_tokens(&mut arg_clone)?;
+            expanded_args.push(arg_clone);
+        }
+
         // Substitute parameters in macro body
-        let substituted = self.substitute_macro(macro_info, &args)?;
+        let substituted = self.substitute_macro(macro_info, &args, &expanded_args)?;
 
         // For Level B: Create a virtual buffer containing the substituted text
         let replacement_text = self.tokens_to_string(&substituted);
@@ -1893,7 +1901,12 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Substitute parameters in macro body
-    fn substitute_macro(&mut self, macro_info: &MacroInfo, args: &[Vec<PPToken>]) -> Result<Vec<PPToken>, PPError> {
+    fn substitute_macro(
+        &mut self,
+        macro_info: &MacroInfo,
+        args: &[Vec<PPToken>],
+        expanded_args: &[Vec<PPToken>],
+    ) -> Result<Vec<PPToken>, PPError> {
         let mut result = Vec::new();
         let mut i = 0;
 
@@ -1908,6 +1921,7 @@ impl<'src> Preprocessor<'src> {
                         if let PPTokenKind::Identifier(param_symbol) = next_token.kind {
                             if let Some(param_index) = macro_info.parameter_list.iter().position(|&p| p == param_symbol)
                             {
+                                // Argument is used with #, so use unexpanded tokens
                                 let arg_tokens = &args[param_index];
                                 let stringified = self.stringify_tokens(arg_tokens, token.location)?;
                                 result.push(stringified);
@@ -1942,6 +1956,7 @@ impl<'src> Preprocessor<'src> {
                         // Determine the right operand for pasting
                         let right_tokens = if let PPTokenKind::Identifier(symbol) = right_token.kind {
                             if let Some(param_index) = macro_info.parameter_list.iter().position(|&p| p == symbol) {
+                                // Argument is preceded by ##, so use unexpanded tokens
                                 args[param_index].clone()
                             } else if macro_info.variadic_arg == Some(symbol) {
                                 let start_index = macro_info.parameter_list.len();
@@ -1977,12 +1992,37 @@ impl<'src> Preprocessor<'src> {
                 PPTokenKind::Identifier(symbol) => {
                     // Parameter substitution
                     if let Some(param_index) = macro_info.parameter_list.iter().position(|&p| p == symbol) {
-                        result.extend(args[param_index].clone());
+                        // Check if followed by ##
+                        let next_is_hashhash = if i + 1 < macro_info.tokens.len() {
+                            macro_info.tokens[i + 1].kind == PPTokenKind::HashHash
+                        } else {
+                            false
+                        };
+
+                        if next_is_hashhash {
+                            // Argument is followed by ##, use unexpanded tokens
+                            result.extend(args[param_index].clone());
+                        } else {
+                            // Argument is not involved in # or ## (preceding check handled by ## logic), use expanded tokens
+                            result.extend(expanded_args[param_index].clone());
+                        }
                     } else if macro_info.variadic_arg == Some(symbol) {
                         // Handle variadic argument
                         let start_index = macro_info.parameter_list.len();
+
+                        // Check if followed by ##
+                        let next_is_hashhash = if i + 1 < macro_info.tokens.len() {
+                            macro_info.tokens[i + 1].kind == PPTokenKind::HashHash
+                        } else {
+                            false
+                        };
+
+                        // Decide which args to use (unexpanded or expanded)
+                        // Note: For variadic, we need to collect slices of args
+                        let source_args = if next_is_hashhash { args } else { expanded_args };
+
                         let mut first = true;
-                        for arg in args.iter().skip(start_index) {
+                        for arg in source_args.iter().skip(start_index) {
                             if !first {
                                 result.push(PPToken::new(
                                     PPTokenKind::Comma,
@@ -2178,8 +2218,19 @@ impl<'src> Preprocessor<'src> {
                         i += 1;
                         continue;
                     }
+                    // Pre-expand arguments (prescan)
+                    let mut expanded_args = Vec::with_capacity(args.len());
+                    for arg in &args {
+                        let mut arg_clone = arg.clone();
+                        // Handle potential error in argument expansion
+                        match self.expand_tokens(&mut arg_clone) {
+                            Ok(_) => expanded_args.push(arg_clone),
+                            Err(_) => expanded_args.push(arg.clone()), // Fallback to unexpanded
+                        }
+                    }
+
                     // Substitute
-                    let substituted = match self.substitute_macro(&macro_info, &args) {
+                    let substituted = match self.substitute_macro(&macro_info, &args, &expanded_args) {
                         Ok(substituted) => substituted,
                         Err(_) => {
                             // For conditional expressions, skip problematic substitutions

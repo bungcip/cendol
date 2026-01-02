@@ -1018,10 +1018,10 @@ mod tests {
             %rintaro = %6
             %kyouma = %6
             %8 = %kyouma
-            %9 = %kyouma - const -1
+            %9 = %kyouma + const -1
             %kyouma = %9
             %hohohin = %8
-            %11 = %hohohin - const 1
+            %11 = %hohohin + const -1
             %hohohin = %11
             %kanggoru = %11
             return %kanggoru

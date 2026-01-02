@@ -36,6 +36,8 @@ pub struct AstToMirLowerer<'a> {
     label_map: HashMap<NameId, MirBlockId>,
     type_cache: HashMap<TypeRef, TypeId>,
     type_conversion_in_progress: HashSet<TypeRef>,
+    break_target: Option<MirBlockId>,
+    continue_target: Option<MirBlockId>,
 }
 
 impl<'a> AstToMirLowerer<'a> {
@@ -53,6 +55,8 @@ impl<'a> AstToMirLowerer<'a> {
             registry,
             type_cache: HashMap::new(),
             type_conversion_in_progress: HashSet::new(),
+            break_target: None,
+            continue_target: None,
         }
     }
 
@@ -183,10 +187,30 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::Return(expr) => self.lower_return_statement(scope_id, &expr),
             NodeKind::If(if_stmt) => self.lower_if_statement(scope_id, &if_stmt),
             NodeKind::While(while_stmt) => self.lower_while_statement(scope_id, &while_stmt),
+            NodeKind::DoWhile(body, condition) => {
+                self.lower_do_while_statement(scope_id, body, condition)
+            }
             NodeKind::For(for_stmt) => self.lower_for_statement(scope_id, &for_stmt),
             NodeKind::ExpressionStatement(Some(expr_ref)) => {
                 // Expression statement: value not needed, only side-effects
                 self.lower_expression(scope_id, expr_ref, false);
+            }
+            NodeKind::Break => {
+                if let Some(target) = self.break_target {
+                    self.mir_builder.set_terminator(Terminator::Goto(target));
+                } else {
+                    // This should be caught by semantic analysis as a compile error
+                    // For now, we'll just panic as this indicates a bug in the analyzer
+                    panic!("Break statement outside of loop or switch");
+                }
+            }
+            NodeKind::Continue => {
+                if let Some(target) = self.continue_target {
+                    self.mir_builder.set_terminator(Terminator::Goto(target));
+                } else {
+                    // This should be caught by semantic analysis as a compile error
+                    panic!("Continue statement outside of loop");
+                }
             }
             _ => {}
         }
@@ -785,6 +809,10 @@ impl<'a> AstToMirLowerer<'a> {
         let body_block = self.mir_builder.create_block();
         let exit_block = self.mir_builder.create_block();
 
+        // Save old targets and set new ones for this loop
+        let old_break_target = self.break_target.replace(exit_block);
+        let old_continue_target = self.continue_target.replace(cond_block);
+
         self.mir_builder.set_terminator(Terminator::Goto(cond_block));
         self.mir_builder.set_current_block(cond_block);
 
@@ -804,6 +832,47 @@ impl<'a> AstToMirLowerer<'a> {
 
         self.mir_builder.set_current_block(exit_block);
         self.current_block = Some(exit_block);
+
+        // Restore old targets
+        self.break_target = old_break_target;
+        self.continue_target = old_continue_target;
+    }
+
+    fn lower_do_while_statement(&mut self, scope_id: ScopeId, body: NodeRef, condition: NodeRef) {
+        let body_block = self.mir_builder.create_block();
+        let cond_block = self.mir_builder.create_block();
+        let exit_block = self.mir_builder.create_block();
+
+        // Save old targets and set new ones for this loop
+        let old_break_target = self.break_target.replace(exit_block);
+        let old_continue_target = self.continue_target.replace(cond_block);
+
+        // Unconditionally enter the loop body first
+        self.mir_builder.set_terminator(Terminator::Goto(body_block));
+        self.mir_builder.set_current_block(body_block);
+
+        // Lower the loop body
+        self.lower_node_ref(body, scope_id);
+        if !self.mir_builder.current_block_has_terminator() {
+            self.mir_builder.set_terminator(Terminator::Goto(cond_block));
+        }
+
+        // After the body, evaluate the condition
+        self.mir_builder.set_current_block(cond_block);
+        let cond_operand = self.lower_expression(scope_id, condition, true);
+        let cond_ty = self.ast.get_resolved_type(condition).unwrap();
+        let cond_mir_ty = self.lower_type_to_mir(cond_ty.ty);
+        let cond_converted = self.apply_conversions(cond_operand, condition, cond_mir_ty);
+        self.mir_builder
+            .set_terminator(Terminator::If(cond_converted, body_block, exit_block));
+
+        // Set current block to the exit block
+        self.mir_builder.set_current_block(exit_block);
+        self.current_block = Some(exit_block);
+
+        // Restore old targets
+        self.break_target = old_break_target;
+        self.continue_target = old_continue_target;
     }
 
     fn lower_for_statement(&mut self, scope_id: ScopeId, for_stmt: &ForStmt) {
@@ -811,6 +880,10 @@ impl<'a> AstToMirLowerer<'a> {
         let body_block = self.mir_builder.create_block();
         let increment_block = self.mir_builder.create_block();
         let exit_block = self.mir_builder.create_block();
+
+        // Save old targets and set new ones for this loop
+        let old_break_target = self.break_target.replace(exit_block);
+        let old_continue_target = self.continue_target.replace(increment_block);
 
         if let Some(init_ref) = for_stmt.init {
             self.lower_node_ref(init_ref, scope_id);
@@ -845,6 +918,10 @@ impl<'a> AstToMirLowerer<'a> {
 
         self.mir_builder.set_current_block(exit_block);
         self.current_block = Some(exit_block);
+
+        // Restore old targets
+        self.break_target = old_break_target;
+        self.continue_target = old_continue_target;
     }
 
     fn emit_assignment(&mut self, place: Place, operand: Operand) {

@@ -10,7 +10,7 @@
 //! grammar-oriented parser AST and the type-resolved semantic AST (HIR). The lowering
 //! phase handles all C-style declaration forms
 
-use crate::ast::*;
+use crate::ast::{utils::extract_identifier, *};
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::semantic::const_eval::{self, ConstEvalCtx};
 use crate::semantic::symbol_table::{DefinitionState, SymbolRef, SymbolTableError};

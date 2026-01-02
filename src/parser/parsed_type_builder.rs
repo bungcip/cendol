@@ -5,7 +5,7 @@
 //! These functions ensure that no semantic types (TypeRef) are created
 //! during parsing, only syntactic types (ParsedType).
 
-use crate::ast::*;
+use crate::ast::{utils::extract_identifier, *};
 use crate::diagnostic::ParseError;
 use crate::semantic::TypeQualifiers;
 use thin_vec::ThinVec;
@@ -340,12 +340,4 @@ pub(crate) fn parse_parsed_type_name(parser: &mut Parser) -> Result<ParsedType, 
 
     // Build the ParsedType from specifiers and declarator
     build_parsed_type_from_specifiers(parser, &specifiers, declarator.as_ref())
-}
-
-/// Helper function to extract identifier from declarator (needed for struct members)
-fn extract_identifier(declarator: &Declarator) -> Option<NameId> {
-    match declarator {
-        Declarator::Identifier(name, _) => Some(*name),
-        _ => None,
-    }
 }

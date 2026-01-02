@@ -40,7 +40,6 @@ pub use parsed_types::*;
 
 // Re-export operators that are used throughout the codebase
 pub use nodes::{BinaryOp, UnaryOp};
-pub use utils::extract_identifier;
 
 /// The flattened AST storage.
 /// Contains all AST nodes, types, symbol entries in contiguous vectors.

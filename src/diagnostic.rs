@@ -347,15 +347,6 @@ impl ErrorFormatter {
         snippet
     }
 
-    /// Format multiple diagnostics
-    pub fn format_diagnostics(&self, diagnostics: &[Diagnostic], source_manager: &SourceManager) -> String {
-        diagnostics
-            .iter()
-            .map(|diag| self.format_diagnostic(diag, source_manager))
-            .collect::<Vec<_>>()
-            .join("\n\n")
-    }
-
     /// Print all diagnostics to stderr
     pub fn print_diagnostics(&self, diagnostics: &[Diagnostic], source_manager: &SourceManager) {
         for diag in diagnostics {

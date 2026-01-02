@@ -1,0 +1,75 @@
+name: Coverage Diff
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  coverage-diff:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov
+
+      # -------------------------
+      # Coverage: PR branch
+      # -------------------------
+      - name: Run coverage (PR)
+        run: |
+          cargo llvm-cov --json --output-path pr.json
+
+      - name: Extract PR coverage
+        run: |
+          jq '.data[0].totals.lines.percent' pr.json > pr_lines.txt
+          jq '.data[0].totals.regions.percent' pr.json > pr_regions.txt
+
+      # -------------------------
+      # Coverage: base branch
+      # -------------------------
+      - name: Checkout base branch
+        run: |
+          git checkout origin/${{ github.base_ref }}
+
+      - name: Run coverage (base)
+        run: |
+          cargo llvm-cov --json --output-path base.json
+
+      - name: Extract base coverage
+        run: |
+          jq '.data[0].totals.lines.percent' base.json > base_lines.txt
+          jq '.data[0].totals.regions.percent' base.json > base_regions.txt
+
+      # -------------------------
+      # Compare
+      # -------------------------
+      - name: Compare coverage
+        run: |
+          PR_LINES=$(cat pr_lines.txt)
+          BASE_LINES=$(cat base_lines.txt)
+
+          PR_REGIONS=$(cat pr_regions.txt)
+          BASE_REGIONS=$(cat base_regions.txt)
+
+          echo "Line coverage:    base=$BASE_LINES pr=$PR_LINES"
+          echo "Region coverage:  base=$BASE_REGIONS pr=$PR_REGIONS"
+
+          FAIL=0
+
+          awk "BEGIN {exit !($PR_LINES < $BASE_LINES)}" && FAIL=1 || true
+          awk "BEGIN {exit !($PR_REGIONS < $BASE_REGIONS)}" && FAIL=1 || true
+
+          if [ "$FAIL" -eq 1 ]; then
+            echo "❌ Coverage decreased!"
+            exit 1
+          else
+            echo "✅ Coverage did not decrease"
+          fi

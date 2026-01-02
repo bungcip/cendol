@@ -347,7 +347,6 @@ impl ErrorFormatter {
         snippet
     }
 
-
     /// Print all diagnostics to stderr
     pub fn print_diagnostics(&self, diagnostics: &[Diagnostic], source_manager: &SourceManager) {
         for diag in diagnostics {

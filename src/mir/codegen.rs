@@ -1126,16 +1126,75 @@ impl MirToCraneliftLowerer {
                         )?; // Ignore return value as this is a side-effect only call
                     }
 
-                    MirStmt::Alloc(_place, _type_id) => {
-                        // TODO: Implement allocation operations
-                        // Alloc operations allocate memory for a place with a specific type
-                        todo!("Alloc operation not implemented yet");
+                    MirStmt::Alloc(place, type_id) => {
+                        // Get the size of the type to be allocated
+                        let alloc_type = self.mir.get_type(*type_id);
+                        let size = mir_type_size(alloc_type, &self.mir)?;
+
+                        // Define the `malloc` function signature (size_t -> void*)
+                        // In Cranelift, this would be (i64) -> i64 for a 64-bit target
+                        let mut malloc_sig = Signature::new(builder.func.signature.call_conv);
+                        malloc_sig.params.push(AbiParam::new(types::I64));
+                        malloc_sig.returns.push(AbiParam::new(types::I64));
+
+                        // Declare `malloc` if not already declared
+                        let malloc_func = self
+                            .module
+                            .declare_function("malloc", Linkage::Import, &malloc_sig)
+                            .map_err(|e| format!("Failed to declare malloc: {:?}", e))?;
+                        let local_malloc = self.module.declare_func_in_func(malloc_func, builder.func);
+
+                        // Call `malloc` with the calculated size
+                        let size_val = builder.ins().iconst(types::I64, size as i64);
+                        let call_inst = builder.ins().call(local_malloc, &[size_val]);
+                        let alloc_ptr = builder.inst_results(call_inst)[0];
+
+                        // Store the returned pointer into the destination place
+                        match place {
+                            Place::Local(local_id) => {
+                                if let Some(stack_slot) = self.clif_stack_slots.get(local_id) {
+                                    builder.ins().stack_store(alloc_ptr, *stack_slot, 0);
+                                } else {
+                                    eprintln!("Warning: Stack slot not found for local {}", local_id.get());
+                                }
+                            }
+                            _ => {
+                                let addr = resolve_place_to_addr(
+                                    place,
+                                    &mut builder,
+                                    &self.clif_stack_slots,
+                                    &self.mir,
+                                    &mut self.module,
+                                )?;
+                                builder.ins().store(MemFlags::new(), alloc_ptr, addr, 0);
+                            }
+                        }
                     }
 
-                    MirStmt::Dealloc(_operand) => {
-                        // TODO: Implement deallocation operations
-                        // Dealloc operations free previously allocated memory
-                        todo!("Dealloc operation not implemented yet");
+                    MirStmt::Dealloc(operand) => {
+                        // Resolve the operand to get the pointer to be freed
+                        let ptr_val = resolve_operand_to_value(
+                            operand,
+                            &mut builder,
+                            types::I64, // Pointers are i64
+                            &self.clif_stack_slots,
+                            &self.mir,
+                            &mut self.module,
+                        )?;
+
+                        // Define the `free` function signature (void* -> void)
+                        let mut free_sig = Signature::new(builder.func.signature.call_conv);
+                        free_sig.params.push(AbiParam::new(types::I64));
+
+                        // Declare `free` if not already declared
+                        let free_func = self
+                            .module
+                            .declare_function("free", Linkage::Import, &free_sig)
+                            .map_err(|e| format!("Failed to declare free: {:?}", e))?;
+                        let local_free = self.module.declare_func_in_func(free_func, builder.func);
+
+                        // Call `free` with the pointer
+                        builder.ins().call(local_free, &[ptr_val]);
                     }
                 }
             }

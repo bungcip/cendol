@@ -318,3 +318,105 @@ fn test_compile_union_field_access() {
     assert!(clif_dump.contains("store"), "expected store instruction in IR");
     assert!(clif_dump.contains("load"), "expected load instruction in IR");
 }
+
+#[test]
+fn test_alloc_dealloc_codegen() {
+    // 1. Set up MIR for:
+    // fn main() {
+    //   let p: *mut i32;
+    //   p = alloc(i32);
+    //   dealloc(p);
+    // }
+    let mut types = HashMap::new();
+    let int_type_id = TypeId::new(1).unwrap();
+    let ptr_type_id = TypeId::new(2).unwrap();
+    let void_type_id = TypeId::new(3).unwrap();
+    types.insert(
+        int_type_id,
+        MirType::Int {
+            width: 32,
+            is_signed: true,
+        },
+    );
+    types.insert(ptr_type_id, MirType::Pointer { pointee: int_type_id });
+    types.insert(void_type_id, MirType::Void);
+
+    let mut locals = HashMap::new();
+    let local_p_id = LocalId::new(1).unwrap();
+    locals.insert(
+        local_p_id,
+        Local::new(local_p_id, Some(NameId::new("p")), ptr_type_id, false),
+    );
+
+    let mut statements = HashMap::new();
+    let alloc_stmt_id = MirStmtId::new(1).unwrap();
+    let dealloc_stmt_id = MirStmtId::new(2).unwrap();
+
+    // p = alloc(...)
+    statements.insert(alloc_stmt_id, MirStmt::Alloc(Place::Local(local_p_id), int_type_id));
+    // dealloc(p)
+    statements.insert(
+        dealloc_stmt_id,
+        MirStmt::Dealloc(Operand::Copy(Box::new(Place::Local(local_p_id)))),
+    );
+
+    let mut blocks = HashMap::new();
+    let entry_block_id = MirBlockId::new(1).unwrap();
+    let mut entry_block = MirBlock::new(entry_block_id);
+    entry_block.statements.push(alloc_stmt_id);
+    entry_block.statements.push(dealloc_stmt_id);
+    entry_block.terminator = Terminator::Return(None);
+    blocks.insert(entry_block_id, entry_block);
+
+    let mut functions = HashMap::new();
+    let func_id = MirFunctionId::new(1).unwrap();
+    let mut main_func = MirFunction::new_defined(func_id, NameId::new("main"), void_type_id);
+    main_func.locals.push(local_p_id);
+    main_func.entry_block = Some(entry_block_id);
+    main_func.blocks.push(entry_block_id);
+    functions.insert(func_id, main_func);
+
+    let mut mir_module = MirModule::new(MirModuleId::new(1).unwrap());
+    mir_module.functions.push(func_id);
+
+    let sema_output = SemaOutput {
+        module: mir_module,
+        functions,
+        blocks,
+        locals,
+        globals: HashMap::new(),
+        types,
+        constants: HashMap::new(),
+        statements,
+    };
+
+    let lowerer = MirToCraneliftLowerer::new(sema_output);
+    let result = lowerer.compile_module(EmitKind::Clif);
+
+    match result {
+        Ok(ClifOutput::ClifDump(clif_ir)) => {
+            insta::assert_snapshot!(clif_ir, @"
+            ; Function: main
+            function u0:0() system_v {
+                ss0 = explicit_slot 8
+                sig0 = (i64) -> i64 system_v
+                sig1 = (i64) system_v
+                fn0 = u0:0 sig0
+                fn1 = u0:1 sig1
+
+            block0:
+                v0 = iconst.i64 4
+                v1 = call fn0(v0)  ; v0 = 4
+                v4 = stack_addr.i64 ss0
+                store notrap v1, v4
+                v3 = stack_addr.i64 ss0
+                v2 = load.i64 notrap v3
+                call fn1(v2)
+                return
+            }
+            ");
+        }
+        Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump, got object file"),
+        Err(e) => panic!("MIR to Cranelift lowering failed: {}", e),
+    }
+}

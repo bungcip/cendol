@@ -454,6 +454,98 @@ int result = 42;
 }
 
 #[test]
+fn test_pragma_operator_removes_tokens() {
+    let src = r#"
+_Pragma("STDC FP_CONTRACT ON")
+int x = 1;
+"#;
+    let significant_tokens = setup_preprocessor_test(src);
+
+    assert_token_kinds!(
+        significant_tokens,
+        PPTokenKind::Identifier(StringId::new("int")),
+        PPTokenKind::Identifier(StringId::new("x")),
+        PPTokenKind::Assign,
+        PPTokenKind::Number(StringId::new("1")),
+        PPTokenKind::Semicolon
+    );
+}
+
+#[test]
+fn test_pragma_once_via_pragma_operator() {
+    let mut sm = SourceManager::new();
+    let header_content = r#"
+_Pragma("once")
+int a = 1;
+"#;
+    sm.add_buffer(header_content.as_bytes().to_vec(), "header.h");
+
+    let main_content = r#"
+#include "header.h"
+#include "header.h"
+"#;
+    let main_id = sm.add_buffer(main_content.as_bytes().to_vec(), "main.c");
+
+    let mut diag = DiagnosticEngine::new();
+    let config = PPConfig::default();
+    let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
+
+    let tokens = pp.process(main_id, &config).unwrap();
+    let significant_tokens: Vec<_> = tokens
+        .into_iter()
+        .filter(|t| !matches!(t.kind, PPTokenKind::Eof | PPTokenKind::Eod))
+        .collect();
+
+    // The tokens from "header.h" should only appear once.
+    assert_token_kinds!(
+        significant_tokens,
+        PPTokenKind::Identifier(StringId::new("int")),
+        PPTokenKind::Identifier(StringId::new("a")),
+        PPTokenKind::Assign,
+        PPTokenKind::Number(StringId::new("1")),
+        PPTokenKind::Semicolon
+    );
+}
+
+#[test]
+fn test_include_same_file_twice_without_pragma_once() {
+    let mut sm = SourceManager::new();
+    let header_content = "int a = 1;";
+    sm.add_buffer(header_content.as_bytes().to_vec(), "header.h");
+
+    let main_content = r#"
+#include "header.h"
+#include "header.h"
+"#;
+    let main_id = sm.add_buffer(main_content.as_bytes().to_vec(), "main.c");
+
+    let mut diag = DiagnosticEngine::new();
+    let config = PPConfig::default();
+    let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
+
+    let tokens = pp.process(main_id, &config).unwrap();
+    let significant_tokens: Vec<_> = tokens
+        .into_iter()
+        .filter(|t| !matches!(t.kind, PPTokenKind::Eof | PPTokenKind::Eod))
+        .collect();
+
+    // The tokens from "header.h" should appear twice.
+    assert_token_kinds!(
+        significant_tokens,
+        PPTokenKind::Identifier(StringId::new("int")),
+        PPTokenKind::Identifier(StringId::new("a")),
+        PPTokenKind::Assign,
+        PPTokenKind::Number(StringId::new("1")),
+        PPTokenKind::Semicolon,
+        PPTokenKind::Identifier(StringId::new("int")),
+        PPTokenKind::Identifier(StringId::new("a")),
+        PPTokenKind::Assign,
+        PPTokenKind::Number(StringId::new("1")),
+        PPTokenKind::Semicolon
+    );
+}
+
+#[test]
 fn test_circular_include_in_memory() {
     let mut sm = SourceManager::new();
     sm.add_buffer("#include \"b.h\"".as_bytes().to_vec(), "a.h");

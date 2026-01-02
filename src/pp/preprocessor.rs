@@ -628,7 +628,8 @@ impl<'src> Preprocessor<'src> {
                 match token.kind {
                     PPTokenKind::Eod => continue,
                     PPTokenKind::Identifier(symbol) => {
-                        if symbol.as_str() == "__LINE__" {
+                        let sym_str = symbol.as_str();
+                        if sym_str == "__LINE__" {
                             let line = if let Some(presumed) = self.source_manager.get_presumed_location(token.location)
                             {
                                 presumed.0
@@ -643,6 +644,8 @@ impl<'src> Preprocessor<'src> {
                                 token.location,
                                 line_str.len() as u16,
                             ));
+                        } else if sym_str == "_Pragma" {
+                            self.handle_pragma_operator()?;
                         } else {
                             // Check for macro expansion
                             if let Some(expanded) = self.expand_macro(&token)? {
@@ -836,6 +839,15 @@ impl<'src> Preprocessor<'src> {
                 } else {
                     // EOF reached, pop the lexer
                     let popped_lexer = self.lexer_stack.pop().unwrap();
+
+                    // If this was an included file, pop from include stack and decrement depth.
+                    if let Some(include_info) = self.include_stack.last() {
+                        if include_info.file_id == popped_lexer.source_id {
+                            self.include_stack.pop();
+                            self.include_depth -= 1;
+                        }
+                    }
+
                     // Set the line_starts from the lexer to the source manager
                     self.source_manager
                         .set_line_starts(popped_lexer.source_id, popped_lexer.get_line_starts().clone());
@@ -913,6 +925,74 @@ impl<'src> Preprocessor<'src> {
                 };
                 self.diag.report_diagnostic(diag);
                 return Err(PPError::InvalidDirective);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Handle _Pragma("...") operator
+    fn handle_pragma_operator(&mut self) -> Result<(), PPError> {
+        // We have already consumed the `_Pragma` identifier.
+        // Expect '('.
+        if self.lex_token().map_or(true, |t| t.kind != PPTokenKind::LeftParen) {
+            return Err(PPError::InvalidDirective);
+        }
+
+        // Expect string literal.
+        let string_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
+        let pragma_content = if let PPTokenKind::StringLiteral(symbol) = string_token.kind {
+            let full_str = symbol.as_str();
+            // Destringize: remove quotes and handle escaped characters.
+            let inner_content = &full_str[1..full_str.len() - 1];
+            let mut content = String::with_capacity(inner_content.len());
+            let mut chars = inner_content.chars();
+            while let Some(c) = chars.next() {
+                if c == '\\' {
+                    match chars.next() {
+                        Some('"') => content.push('"'),
+                        Some('\\') => content.push('\\'),
+                        Some(other) => {
+                            content.push('\\');
+                            content.push(other);
+                        }
+                        None => {} // Invalid escape at end of string
+                    }
+                } else {
+                    content.push(c);
+                }
+            }
+            content
+        } else {
+            return Err(PPError::InvalidDirective);
+        };
+
+        // Expect ')'.
+        if self.lex_token().map_or(true, |t| t.kind != PPTokenKind::RightParen) {
+            return Err(PPError::InvalidDirective);
+        }
+
+        // Get the source_id of the file containing the _Pragma operator for context.
+        let pragma_source_id = self.lexer_stack.last().map(|l| l.source_id);
+
+        // --- Process the pragma content without modifying the main lexer stack ---
+        let source_id = self
+            .source_manager
+            .add_buffer(pragma_content.as_bytes().to_vec(), "<_Pragma>");
+        let buffer = self.source_manager.get_buffer(source_id);
+        let mut temp_lexer = PPLexer::new(source_id, buffer.to_vec());
+
+        // Process all tokens from the pragma's content.
+        while let Some(pragma_token) = temp_lexer.next_token() {
+            if let PPTokenKind::Identifier(symbol) = pragma_token.kind {
+                if symbol.as_str() == "once" {
+                    if let Some(id) = pragma_source_id {
+                        self.once_included.insert(id);
+                    }
+                    // After "once", no other tokens matter.
+                    break;
+                }
+                // Other pragma directives are tokenized but currently ignored.
             }
         }
 

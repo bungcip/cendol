@@ -345,12 +345,11 @@ impl<'a> TypeResolver<'a> {
         }
     }
 
-    fn visit_node(&mut self, node_ref: NodeRef) -> Option<QualType> {
-        let node = self.ast.get_node(node_ref);
-        let result_type = match node.kind.clone() {
+    fn visit_declaration_node(&mut self, _node_ref: NodeRef, kind: &NodeKind) -> Option<QualType> {
+        match kind {
             NodeKind::TranslationUnit(nodes) => {
                 for child in nodes {
-                    self.visit_node(child);
+                    self.visit_node(*child);
                 }
                 None
             }
@@ -364,7 +363,6 @@ impl<'a> TypeResolver<'a> {
                 None
             }
             NodeKind::VarDecl(data) => {
-                // Ensure layout is computed for the variable type
                 let _ = self.registry.ensure_layout(data.ty.ty);
                 if let Some(init) = data.init {
                     self.visit_node(init);
@@ -373,61 +371,84 @@ impl<'a> TypeResolver<'a> {
             }
             NodeKind::DeclarationList(nodes) => {
                 for child in nodes {
-                    self.visit_node(child);
+                    self.visit_node(*child);
                 }
                 None
             }
+            NodeKind::EnumConstant(_, value_expr) => {
+                if let Some(expr) = value_expr {
+                    self.visit_node(*expr);
+                }
+                Some(QualType::unqualified(self.registry.type_int))
+            }
+            NodeKind::RecordDecl(_) | NodeKind::TypedefDecl(_) => None,
+            NodeKind::FunctionDecl(data) => {
+                let func_type = self.registry.get(data.ty).kind.clone();
+                if let TypeKind::Function { parameters, .. } = func_type {
+                    for param in parameters {
+                        let _ = self.registry.ensure_layout(param.param_type.ty);
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn visit_statement_node(&mut self, node_ref: NodeRef, kind: &NodeKind) -> Option<QualType> {
+        let node = self.ast.get_node(node_ref); // For span access if needed
+        match kind {
             NodeKind::CompoundStatement(nodes) => {
                 for child in nodes {
-                    self.visit_node(child);
+                    self.visit_node(*child);
                 }
                 self.process_deferred_checks();
                 None
             }
             NodeKind::If(stmt) => {
-                self.visit_if_statement(&stmt);
+                self.visit_if_statement(stmt);
                 None
             }
             NodeKind::While(stmt) => {
-                self.visit_while_statement(&stmt);
+                self.visit_while_statement(stmt);
                 None
             }
             NodeKind::For(stmt) => {
-                self.visit_for_statement(&stmt);
+                self.visit_for_statement(stmt);
                 None
             }
             NodeKind::DoWhile(body, condition) => {
-                self.visit_node(body);
-                self.visit_node(condition);
+                self.visit_node(*body);
+                self.visit_node(*condition);
                 None
             }
             NodeKind::Switch(cond, body) => {
-                self.visit_node(cond);
-                self.visit_node(body);
+                self.visit_node(*cond);
+                self.visit_node(*body);
                 None
             }
             NodeKind::Case(expr, stmt) => {
-                self.visit_node(expr);
-                self.visit_node(stmt);
+                self.visit_node(*expr);
+                self.visit_node(*stmt);
                 None
             }
             NodeKind::CaseRange(start, end, stmt) => {
-                self.visit_node(start);
-                self.visit_node(end);
-                self.visit_node(stmt);
+                self.visit_node(*start);
+                self.visit_node(*end);
+                self.visit_node(*stmt);
                 None
             }
             NodeKind::Default(stmt) => {
-                self.visit_node(stmt);
+                self.visit_node(*stmt);
                 None
             }
             NodeKind::Return(expr) => {
-                self.visit_return_statement(&expr, node.span);
+                self.visit_return_statement(expr, node.span);
                 None
             }
             NodeKind::ExpressionStatement(expr) => {
                 if let Some(expr_ref) = expr {
-                    self.visit_node(expr_ref);
+                    self.visit_node(*expr_ref);
                 }
                 None
             }
@@ -435,13 +456,18 @@ impl<'a> TypeResolver<'a> {
                 self.deferred_checks.push(DeferredCheck::StaticAssert(node_ref));
                 None
             }
-            NodeKind::EnumConstant(_, value_expr) => {
-                if let Some(expr) = value_expr {
-                    self.visit_node(expr);
-                }
-                Some(QualType::unqualified(self.registry.type_int))
+            NodeKind::Break | NodeKind::Continue | NodeKind::Goto(_, _) | NodeKind::EmptyStatement => None,
+            NodeKind::Label(_, stmt, _) => {
+                self.visit_node(*stmt);
+                None
             }
-            // Literals
+            _ => None,
+        }
+    }
+
+    fn visit_expression_node(&mut self, node_ref: NodeRef, kind: &NodeKind) -> Option<QualType> {
+        let node = self.ast.get_node(node_ref);
+        match kind {
             NodeKind::LiteralInt(_) => Some(QualType::unqualified(self.registry.type_int)),
             NodeKind::LiteralFloat(_) => Some(QualType::unqualified(self.registry.type_double)),
             NodeKind::LiteralChar(_) => Some(QualType::unqualified(self.registry.type_char)),
@@ -449,11 +475,9 @@ impl<'a> TypeResolver<'a> {
                 let char_type = self.registry.type_char;
                 let array_size = name.as_str().len() + 1;
                 let array_type = self.registry.array_of(char_type, ArraySizeType::Constant(array_size));
-                // Ensure layout is computed for string literal array type
                 let _ = self.registry.ensure_layout(array_type);
                 Some(QualType::unqualified(array_type))
             }
-            // Expressions
             NodeKind::Ident(_, symbol_ref) => {
                 let symbol = self.symbol_table.get_symbol(symbol_ref.get().unwrap());
                 match &symbol.kind {
@@ -463,18 +487,17 @@ impl<'a> TypeResolver<'a> {
                     _ => Some(QualType::unqualified(symbol.type_info)),
                 }
             }
-            NodeKind::UnaryOp(op, operand) => self.visit_unary_op(op, operand, node.span),
-            NodeKind::BinaryOp(op, lhs, rhs) => self.visit_binary_op(op, lhs, rhs),
+            NodeKind::UnaryOp(op, operand) => self.visit_unary_op(*op, *operand, node.span),
+            NodeKind::BinaryOp(op, lhs, rhs) => self.visit_binary_op(*op, *lhs, *rhs),
             NodeKind::TernaryOp(cond, then, else_expr) => {
-                self.visit_node(cond);
-                let then_ty = self.visit_node(then);
-                self.visit_node(else_expr);
-                then_ty // A simplification, should implement ternary conversions
+                self.visit_node(*cond);
+                let then_ty = self.visit_node(*then);
+                self.visit_node(*else_expr);
+                then_ty
             }
             NodeKind::GnuStatementExpression(stmt, _) => {
-                // The type of a statement expression is the type of the last expression.
-                if let NodeKind::CompoundStatement(nodes) = &self.ast.get_node(stmt).kind {
-                    self.visit_node(stmt);
+                if let NodeKind::CompoundStatement(nodes) = &self.ast.get_node(*stmt).kind {
+                    self.visit_node(*stmt);
                     if let Some(last_node) = nodes.last()
                         && let NodeKind::ExpressionStatement(Some(expr)) = self.ast.get_node(*last_node).kind.clone()
                     {
@@ -484,40 +507,38 @@ impl<'a> TypeResolver<'a> {
                 None
             }
             NodeKind::PostIncrement(expr) | NodeKind::PostDecrement(expr) => {
-                let ty = self.visit_node(expr);
-                if !self.is_lvalue(expr) {
+                let ty = self.visit_node(*expr);
+                if !self.is_lvalue(*expr) {
                     self.report_error(SemanticError::NotAnLvalue { span: node.span });
                 }
                 ty
             }
-            NodeKind::Assignment(_, lhs, rhs) => self.visit_assignment(lhs, rhs, node.span),
-            NodeKind::FunctionCall(func, args) => self.visit_function_call(func, &args),
-            NodeKind::MemberAccess(obj, field_name, is_arrow) => self.visit_member_access(obj, field_name, is_arrow),
-            NodeKind::IndexAccess(arr, idx) => self.visit_index_access(arr, idx),
+            NodeKind::Assignment(_, lhs, rhs) => self.visit_assignment(*lhs, *rhs, node.span),
+            NodeKind::FunctionCall(func, args) => self.visit_function_call(*func, args),
+            NodeKind::MemberAccess(obj, field_name, is_arrow) => self.visit_member_access(*obj, *field_name, *is_arrow),
+            NodeKind::IndexAccess(arr, idx) => self.visit_index_access(*arr, *idx),
             NodeKind::Cast(ty, expr) => {
-                self.visit_node(expr);
-                Some(ty)
+                self.visit_node(*expr);
+                Some(*ty)
             }
             NodeKind::SizeOfExpr(expr) => {
-                self.visit_node(expr);
+                self.visit_node(*expr);
                 Some(QualType::unqualified(self.registry.type_long_unsigned))
             }
             NodeKind::SizeOfType(ty) => {
-                // Ensure layout is computed for the type being sized
                 let _ = self.registry.ensure_layout(ty.ty);
                 Some(QualType::unqualified(self.registry.type_long_unsigned))
             }
             NodeKind::AlignOf(_) => Some(QualType::unqualified(self.registry.type_long_unsigned)),
             NodeKind::CompoundLiteral(ty, init) => {
-                // Ensure layout is computed for the compound literal type
                 let _ = self.registry.ensure_layout(ty.ty);
-                self.visit_node(init);
-                Some(ty)
+                self.visit_node(*init);
+                Some(*ty)
             }
-            NodeKind::GenericSelection(ctrl, assocs) => self.visit_generic_selection(ctrl, &assocs),
+            NodeKind::GenericSelection(ctrl, assocs) => self.visit_generic_selection(*ctrl, assocs),
             NodeKind::VaArg(expr, ty) => {
-                self.visit_node(expr);
-                Some(QualType::unqualified(ty))
+                self.visit_node(*expr);
+                Some(QualType::unqualified(*ty))
             }
             NodeKind::InitializerList(inits) => {
                 for init in inits {
@@ -537,27 +558,44 @@ impl<'a> TypeResolver<'a> {
                 }
                 None
             }
-            NodeKind::RecordDecl(_) | NodeKind::TypedefDecl(_) => None,
-            NodeKind::FunctionDecl(ref data) => {
-                // Ensure layouts are computed for function parameter types
-                let func_type = self.registry.get(data.ty).kind.clone();
-                if let TypeKind::Function { parameters, .. } = func_type {
-                    for param in parameters {
-                        let _ = self.registry.ensure_layout(param.param_type.ty);
-                    }
-                }
-                None
-            }
-            NodeKind::Break | NodeKind::Continue | NodeKind::Goto(_, _) | NodeKind::EmptyStatement => None,
-            NodeKind::Label(_, stmt, _) => {
-                self.visit_node(stmt);
-                None
-            }
-            _ => {
-                // For any unhandled nodes, explicitly do nothing.
-                // This prevents panics for node types that don't need type resolution.
-                None
-            }
+            _ => None,
+        }
+    }
+
+    fn visit_node(&mut self, node_ref: NodeRef) -> Option<QualType> {
+        let node = self.ast.get_node(node_ref);
+        let result_type = match &node.kind {
+            // Declarations
+            NodeKind::TranslationUnit(_) |
+            NodeKind::Function(_) |
+            NodeKind::VarDecl(_) |
+            NodeKind::DeclarationList(_) |
+            NodeKind::RecordDecl(_) |
+            NodeKind::TypedefDecl(_) |
+            NodeKind::EnumConstant(..) |
+            NodeKind::FunctionDecl(_) => self.visit_declaration_node(node_ref, &node.kind),
+
+            // Statements
+            NodeKind::CompoundStatement(_) |
+            NodeKind::If(_) |
+            NodeKind::While(_) |
+            NodeKind::DoWhile(..) |
+            NodeKind::For(_) |
+            NodeKind::Return(_) |
+            NodeKind::ExpressionStatement(_) |
+            NodeKind::StaticAssert(..) |
+            NodeKind::Switch(..) |
+            NodeKind::Case(..) |
+            NodeKind::CaseRange(..) |
+            NodeKind::Default(_) |
+            NodeKind::Break |
+            NodeKind::Continue |
+            NodeKind::Goto(..) |
+            NodeKind::Label(..) |
+            NodeKind::EmptyStatement => self.visit_statement_node(node_ref, &node.kind),
+
+            // Expressions (Catch-all)
+            _ => self.visit_expression_node(node_ref, &node.kind),
         };
 
         // Debug: log certain nodes

@@ -410,67 +410,8 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::LiteralInt(val) => Operand::Constant(self.create_constant(ConstValue::Int(*val))),
             NodeKind::LiteralFloat(val) => Operand::Constant(self.create_constant(ConstValue::Float(*val))),
             NodeKind::LiteralChar(val) => Operand::Constant(self.create_constant(ConstValue::Int(*val as i64))),
-            NodeKind::LiteralString(val) => {
-                let string_type = self.lower_type_to_mir(ty.ty);
-
-                // Convert string literal to array of character constants
-                let string_content = val.as_str();
-                let mut char_constants = Vec::new();
-
-                // Add each character as a constant, including null terminator
-                for &byte in string_content.as_bytes() {
-                    let char_const = ConstValue::Int(byte as i64);
-                    let char_const_id = self.create_constant(char_const);
-                    char_constants.push(char_const_id);
-                }
-
-                // Add null terminator
-                let null_const = ConstValue::Int(0);
-                let null_const_id = self.create_constant(null_const);
-                char_constants.push(null_const_id);
-
-                let array_const = ConstValue::ArrayLiteral(char_constants);
-                let array_const_id = self.create_constant(array_const);
-
-                let global_name = self.mir_builder.get_next_anonymous_global_name();
-                let global_id =
-                    self.mir_builder
-                        .create_global_with_init(global_name, string_type, true, Some(array_const_id));
-
-                let addr_const_val = ConstValue::GlobalAddress(global_id);
-                Operand::Constant(self.create_constant(addr_const_val))
-            }
-            NodeKind::Ident(_, symbol_ref) => {
-                let resolved_ref = symbol_ref.get().unwrap();
-                let entry = self.symbol_table.get_symbol(resolved_ref);
-
-                match &entry.kind {
-                    SymbolKind::Variable { is_global, .. } => {
-                        if *is_global {
-                            let global_id = self.global_map.get(&resolved_ref).unwrap();
-                            Operand::Copy(Box::new(Place::Global(*global_id)))
-                        } else {
-                            let local_id = self.local_map.get(&resolved_ref).unwrap();
-                            Operand::Copy(Box::new(Place::Local(*local_id)))
-                        }
-                    }
-                    SymbolKind::Function { .. } => {
-                        let func_id = self
-                            .mir_builder
-                            .get_functions()
-                            .iter()
-                            .find(|(_, f)| f.name == entry.name)
-                            .map(|(id, _)| *id)
-                            .unwrap();
-                        let const_val = ConstValue::FunctionAddress(func_id);
-                        Operand::Constant(self.create_constant(const_val))
-                    }
-                    SymbolKind::EnumConstant { value } => {
-                        Operand::Constant(self.create_constant(ConstValue::Int(*value)))
-                    }
-                    _ => panic!("Unexpected symbol kind"),
-                }
-            }
+            NodeKind::LiteralString(val) => self.lower_literal_string(val, &ty),
+            NodeKind::Ident(_, symbol_ref) => self.lower_ident(symbol_ref),
             NodeKind::UnaryOp(op, operand_ref) => match *op {
                 UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
                     self.lower_compound_assignment(scope_id, op, *operand_ref, *operand_ref)
@@ -499,199 +440,312 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::PostIncrement(operand_ref) => self.lower_post_incdec(scope_id, *operand_ref, true, need_value),
             NodeKind::PostDecrement(operand_ref) => self.lower_post_incdec(scope_id, *operand_ref, false, need_value),
             NodeKind::BinaryOp(op, left_ref, right_ref) => {
-                let lhs = self.lower_expression(scope_id, *left_ref, true);
-                let rhs = self.lower_expression(scope_id, *right_ref, true);
-
-                // Apply any recorded implicit conversions (e.g., integer promotions)
-                let lhs_converted = self.apply_conversions(lhs, *left_ref, mir_ty);
-                let rhs_converted = self.apply_conversions(rhs, *right_ref, mir_ty);
-
-                let mir_op = self.map_ast_binary_op_to_mir(op);
-                let rval = Rvalue::BinaryOp(mir_op, lhs_converted, rhs_converted);
-                let (_, place) = self.create_temp_local_with_assignment(rval, mir_ty);
-                Operand::Copy(Box::new(place))
+                self.lower_binary_op_expr(scope_id, op, *left_ref, *right_ref, mir_ty)
             }
             NodeKind::Assignment(_, left_ref, right_ref) => {
-                let lhs_op = self.lower_expression(scope_id, *left_ref, true);
-                let rhs_op = self.lower_expression(scope_id, *right_ref, true);
-
-                // Apply any recorded implicit conversions from rhs to lhs type
-                let rhs_converted = self.apply_conversions(rhs_op.clone(), *right_ref, mir_ty);
-
-                if let Operand::Copy(place) = lhs_op {
-                    self.emit_assignment(*place, rhs_converted.clone());
-                    rhs_converted
-                } else {
-                    panic!("LHS of assignment is not a place");
-                }
+                self.lower_assignment_expr(scope_id, *left_ref, *right_ref, mir_ty)
             }
             NodeKind::FunctionCall(func_ref, args) => {
-                let callee = self.lower_expression(scope_id, *func_ref, true);
-
-                let mut arg_operands = Vec::new();
-                for arg in args.iter() {
-                    let arg_operand = self.lower_expression(scope_id, *arg, true);
-                    // Apply conversions for function arguments if needed
-                    let arg_ty = self.ast.get_resolved_type(*arg).unwrap();
-                    let arg_mir_ty = self.lower_type_to_mir(arg_ty.ty);
-                    let converted_arg = self.apply_conversions(arg_operand, *arg, arg_mir_ty);
-                    arg_operands.push(converted_arg);
-                }
-
-                let call_target = if let Operand::Constant(const_id) = callee {
-                    if let ConstValue::FunctionAddress(func_id) =
-                        self.mir_builder.get_constants().get(&const_id).unwrap()
-                    {
-                        CallTarget::Direct(*func_id)
-                    } else {
-                        panic!("Expected function address");
-                    }
-                } else {
-                    CallTarget::Indirect(callee)
-                };
-
-                // Check if this is a void function call - if so, we use MirStmt::Call
-                // Otherwise, we use Rvalue::Call and create a temporary local
-                let func_node = self.ast.get_node(*func_ref);
-                if self.ast.get_resolved_type(*func_ref).is_some()
-                    && let NodeKind::Ident(_, symbol_ref) = &func_node.kind
-                    && let Some(resolved_symbol) = symbol_ref.get()
-                {
-                    let func_entry = self.symbol_table.get_symbol(resolved_symbol);
-                    let func_type = self.registry.get(func_entry.type_info);
-                    if let TypeKind::Function { return_type, .. } = &func_type.kind
-                        && self.registry.get(*return_type).kind == TypeKind::Void
-                    {
-                        // Void function call - use MirStmt::Call for side effects only
-                        let stmt = MirStmt::Call(call_target, arg_operands);
-                        self.mir_builder.add_statement(stmt);
-                        // Return a dummy operand for void functions
-                        return Operand::Constant(self.create_constant(ConstValue::Int(0)));
-                    }
-                }
-
-                // Non-void function call - use Rvalue::Call and store result
-                let rval = Rvalue::Call(call_target, arg_operands);
-                let (_, place) = self.create_temp_local_with_assignment(rval, mir_ty);
-                Operand::Copy(Box::new(place))
+                self.lower_function_call(scope_id, *func_ref, args, mir_ty)
             }
             NodeKind::MemberAccess(obj_ref, field_name, is_arrow) => {
-                let obj_operand = self.lower_expression(scope_id, *obj_ref, true);
-                let obj_ty = self.ast.get_resolved_type(*obj_ref).unwrap();
-                let record_ty = if *is_arrow {
-                    if let TypeKind::Pointer { pointee } = &self.registry.get(obj_ty.ty).kind {
-                        *pointee
-                    } else {
-                        panic!("Arrow access on non-pointer type");
-                    }
-                } else {
-                    obj_ty.ty
-                };
-
-                let record_ty_info = self.registry.get(record_ty);
-                if let TypeKind::Record { members, .. } = &record_ty_info.kind {
-                    // Validate that the field exists and get its layout information
-                    let field_idx = members
-                        .iter()
-                        .position(|m| m.name == Some(*field_name))
-                        .expect("Field not found - should be caught by semantic analysis");
-
-                    let (fields, _is_union) = record_ty_info.get_record_layout();
-
-                    // Ensure the field index is valid
-                    assert!(field_idx < fields.len(), "Field index out of bounds");
-
-                    // For unions, all fields are at offset 0, but we still track the field index
-                    // for type information purposes
-                    let place = if let Operand::Copy(place) = obj_operand {
-                        let place_box = place;
-                        if *is_arrow {
-                            let deref_operand = Operand::Copy(place_box.clone());
-                            let deref_place = Place::Deref(Box::new(deref_operand));
-                            Place::StructField(Box::new(deref_place), field_idx)
-                        } else {
-                            Place::StructField(place_box, field_idx)
-                        }
-                    } else {
-                        let mir_type = self.lower_type_to_mir(obj_ty.ty);
-                        let (_, temp_place) =
-                            self.create_temp_local_with_assignment(Rvalue::Use(obj_operand), mir_type);
-                        Place::StructField(Box::new(temp_place), field_idx)
-                    };
-                    Operand::Copy(Box::new(place))
-                } else {
-                    panic!("Member access on non-record type");
-                }
+                self.lower_member_access(scope_id, *obj_ref, field_name, *is_arrow)
             }
             NodeKind::IndexAccess(arr_ref, idx_ref) => {
-                let arr_operand = self.lower_expression(scope_id, *arr_ref, true);
-                let idx_operand = self.lower_expression(scope_id, *idx_ref, true);
-                let arr_ty = self.ast.get_resolved_type(*arr_ref).unwrap();
+                self.lower_index_access(scope_id, *arr_ref, *idx_ref)
+            }
+            _ => Operand::Constant(self.create_constant(ConstValue::Int(0))),
+        }
+    }
 
-                // Handle both array and pointer types for index access
-                // In C, arr[idx] is equivalent to *(arr + idx)
-                let arr_ty_kind = self.registry.get(arr_ty.ty).kind.clone();
+    fn lower_literal_string(&mut self, val: &NameId, ty: &QualType) -> Operand {
+        let string_type = self.lower_type_to_mir(ty.ty);
 
-                match &arr_ty_kind {
-                    TypeKind::Array { element_type: _, .. } => {
-                        // Array indexing - use ArrayIndex place
-                        let arr_ty_info = self.registry.get(arr_ty.ty);
-                        let layout = arr_ty_info
-                            .layout
-                            .as_ref()
-                            .expect("Array type layout should be computed before MIR lowering");
+        // Convert string literal to array of character constants
+        let string_content = val.as_str();
+        let mut char_constants = Vec::new();
 
-                        match &layout.kind {
-                            crate::semantic::types::LayoutKind::Array { element, len: _ } => {
-                                // Verify that the array element type has a layout too
-                                let element_ty_info = self.registry.get(*element);
-                                assert!(
-                                    element_ty_info.layout.is_some(),
-                                    "Array element type should have layout"
-                                );
+        // Add each character as a constant, including null terminator
+        for &byte in string_content.as_bytes() {
+            let char_const = ConstValue::Int(byte as i64);
+            let char_const_id = self.create_constant(char_const);
+            char_constants.push(char_const_id);
+        }
 
-                                // Note: In a full implementation, we could add bounds checking here
-                                // for static arrays if the index is a constant
+        // Add null terminator
+        let null_const = ConstValue::Int(0);
+        let null_const_id = self.create_constant(null_const);
+        char_constants.push(null_const_id);
 
-                                let arr_place = if let Operand::Copy(place) = arr_operand {
-                                    *place
-                                } else {
-                                    let mir_type = self.lower_type_to_mir(arr_ty.ty);
-                                    let (_, temp_place) =
-                                        self.create_temp_local_with_assignment(Rvalue::Use(arr_operand), mir_type);
-                                    temp_place
-                                };
+        let array_const = ConstValue::ArrayLiteral(char_constants);
+        let array_const_id = self.create_constant(array_const);
 
-                                Operand::Copy(Box::new(Place::ArrayIndex(Box::new(arr_place), Box::new(idx_operand))))
-                            }
-                            _ => panic!("Array type layout is not an Array layout kind"),
-                        }
-                    }
-                    TypeKind::Pointer { pointee: _ } => {
-                        // For pointer indexing, we can use the ArrayIndex place directly
-                        // since pointer indexing follows the same rules as array indexing
-                        // p[idx] is equivalent to *(p + idx) which is what ArrayIndex does
+        let global_name = self.mir_builder.get_next_anonymous_global_name();
+        let global_id =
+            self.mir_builder
+                .create_global_with_init(global_name, string_type, true, Some(array_const_id));
 
-                        // Create an ArrayIndex place with the pointer as base and index
-                        let pointer_place = if let Operand::Copy(place) = arr_operand {
+        let addr_const_val = ConstValue::GlobalAddress(global_id);
+        Operand::Constant(self.create_constant(addr_const_val))
+    }
+
+    fn lower_ident(&mut self, symbol_ref: &std::cell::Cell<Option<SymbolRef>>) -> Operand {
+        let resolved_ref = symbol_ref.get().unwrap();
+        let entry = self.symbol_table.get_symbol(resolved_ref);
+
+        match &entry.kind {
+            SymbolKind::Variable { is_global, .. } => {
+                if *is_global {
+                    let global_id = self.global_map.get(&resolved_ref).unwrap();
+                    Operand::Copy(Box::new(Place::Global(*global_id)))
+                } else {
+                    let local_id = self.local_map.get(&resolved_ref).unwrap();
+                    Operand::Copy(Box::new(Place::Local(*local_id)))
+                }
+            }
+            SymbolKind::Function { .. } => {
+                let func_id = self
+                    .mir_builder
+                    .get_functions()
+                    .iter()
+                    .find(|(_, f)| f.name == entry.name)
+                    .map(|(id, _)| *id)
+                    .unwrap();
+                let const_val = ConstValue::FunctionAddress(func_id);
+                Operand::Constant(self.create_constant(const_val))
+            }
+            SymbolKind::EnumConstant { value } => {
+                Operand::Constant(self.create_constant(ConstValue::Int(*value)))
+            }
+            _ => panic!("Unexpected symbol kind"),
+        }
+    }
+
+    fn lower_binary_op_expr(
+        &mut self,
+        scope_id: ScopeId,
+        op: &BinaryOp,
+        left_ref: NodeRef,
+        right_ref: NodeRef,
+        mir_ty: TypeId,
+    ) -> Operand {
+        let lhs = self.lower_expression(scope_id, left_ref, true);
+        let rhs = self.lower_expression(scope_id, right_ref, true);
+
+        // Apply any recorded implicit conversions (e.g., integer promotions)
+        let lhs_converted = self.apply_conversions(lhs, left_ref, mir_ty);
+        let rhs_converted = self.apply_conversions(rhs, right_ref, mir_ty);
+
+        let mir_op = self.map_ast_binary_op_to_mir(op);
+        let rval = Rvalue::BinaryOp(mir_op, lhs_converted, rhs_converted);
+        let (_, place) = self.create_temp_local_with_assignment(rval, mir_ty);
+        Operand::Copy(Box::new(place))
+    }
+
+    fn lower_assignment_expr(
+        &mut self,
+        scope_id: ScopeId,
+        left_ref: NodeRef,
+        right_ref: NodeRef,
+        mir_ty: TypeId,
+    ) -> Operand {
+        let lhs_op = self.lower_expression(scope_id, left_ref, true);
+        let rhs_op = self.lower_expression(scope_id, right_ref, true);
+
+        // Apply any recorded implicit conversions from rhs to lhs type
+        let rhs_converted = self.apply_conversions(rhs_op.clone(), right_ref, mir_ty);
+
+        if let Operand::Copy(place) = lhs_op {
+            self.emit_assignment(*place, rhs_converted.clone());
+            rhs_converted
+        } else {
+            panic!("LHS of assignment is not a place");
+        }
+    }
+
+    fn lower_function_call(
+        &mut self,
+        scope_id: ScopeId,
+        func_ref: NodeRef,
+        args: &[NodeRef],
+        mir_ty: TypeId,
+    ) -> Operand {
+        let callee = self.lower_expression(scope_id, func_ref, true);
+
+        let mut arg_operands = Vec::new();
+        for arg in args.iter() {
+            let arg_operand = self.lower_expression(scope_id, *arg, true);
+            // Apply conversions for function arguments if needed
+            let arg_ty = self.ast.get_resolved_type(*arg).unwrap();
+            let arg_mir_ty = self.lower_type_to_mir(arg_ty.ty);
+            let converted_arg = self.apply_conversions(arg_operand, *arg, arg_mir_ty);
+            arg_operands.push(converted_arg);
+        }
+
+        let call_target = if let Operand::Constant(const_id) = callee {
+            if let ConstValue::FunctionAddress(func_id) =
+                self.mir_builder.get_constants().get(&const_id).unwrap()
+            {
+                CallTarget::Direct(*func_id)
+            } else {
+                panic!("Expected function address");
+            }
+        } else {
+            CallTarget::Indirect(callee)
+        };
+
+        // Check if this is a void function call - if so, we use MirStmt::Call
+        // Otherwise, we use Rvalue::Call and create a temporary local
+        let func_node = self.ast.get_node(func_ref);
+        if self.ast.get_resolved_type(func_ref).is_some()
+            && let NodeKind::Ident(_, symbol_ref) = &func_node.kind
+            && let Some(resolved_symbol) = symbol_ref.get()
+        {
+            let func_entry = self.symbol_table.get_symbol(resolved_symbol);
+            let func_type = self.registry.get(func_entry.type_info);
+            if let TypeKind::Function { return_type, .. } = &func_type.kind
+                && self.registry.get(*return_type).kind == TypeKind::Void
+            {
+                // Void function call - use MirStmt::Call for side effects only
+                let stmt = MirStmt::Call(call_target, arg_operands);
+                self.mir_builder.add_statement(stmt);
+                // Return a dummy operand for void functions
+                return Operand::Constant(self.create_constant(ConstValue::Int(0)));
+            }
+        }
+
+        // Non-void function call - use Rvalue::Call and store result
+        let rval = Rvalue::Call(call_target, arg_operands);
+        let (_, place) = self.create_temp_local_with_assignment(rval, mir_ty);
+        Operand::Copy(Box::new(place))
+    }
+
+    fn lower_member_access(
+        &mut self,
+        scope_id: ScopeId,
+        obj_ref: NodeRef,
+        field_name: &NameId,
+        is_arrow: bool,
+    ) -> Operand {
+        let obj_operand = self.lower_expression(scope_id, obj_ref, true);
+        let obj_ty = self.ast.get_resolved_type(obj_ref).unwrap();
+        let record_ty = if is_arrow {
+            if let TypeKind::Pointer { pointee } = &self.registry.get(obj_ty.ty).kind {
+                *pointee
+            } else {
+                panic!("Arrow access on non-pointer type");
+            }
+        } else {
+            obj_ty.ty
+        };
+
+        let record_ty_info = self.registry.get(record_ty);
+        if let TypeKind::Record { members, .. } = &record_ty_info.kind {
+            // Validate that the field exists and get its layout information
+            let field_idx = members
+                .iter()
+                .position(|m| m.name == Some(*field_name))
+                .expect("Field not found - should be caught by semantic analysis");
+
+            let (fields, _is_union) = record_ty_info.get_record_layout();
+
+            // Ensure the field index is valid
+            assert!(field_idx < fields.len(), "Field index out of bounds");
+
+            // For unions, all fields are at offset 0, but we still track the field index
+            // for type information purposes
+            let place = if let Operand::Copy(place) = obj_operand {
+                let place_box = place;
+                if is_arrow {
+                    let deref_operand = Operand::Copy(place_box.clone());
+                    let deref_place = Place::Deref(Box::new(deref_operand));
+                    Place::StructField(Box::new(deref_place), field_idx)
+                } else {
+                    Place::StructField(place_box, field_idx)
+                }
+            } else {
+                let mir_type = self.lower_type_to_mir(obj_ty.ty);
+                let (_, temp_place) =
+                    self.create_temp_local_with_assignment(Rvalue::Use(obj_operand), mir_type);
+                Place::StructField(Box::new(temp_place), field_idx)
+            };
+            Operand::Copy(Box::new(place))
+        } else {
+            panic!("Member access on non-record type");
+        }
+    }
+
+    fn lower_index_access(
+        &mut self,
+        scope_id: ScopeId,
+        arr_ref: NodeRef,
+        idx_ref: NodeRef,
+    ) -> Operand {
+        let arr_operand = self.lower_expression(scope_id, arr_ref, true);
+        let idx_operand = self.lower_expression(scope_id, idx_ref, true);
+        let arr_ty = self.ast.get_resolved_type(arr_ref).unwrap();
+
+        // Handle both array and pointer types for index access
+        // In C, arr[idx] is equivalent to *(arr + idx)
+        let arr_ty_kind = self.registry.get(arr_ty.ty).kind.clone();
+
+        match &arr_ty_kind {
+            TypeKind::Array { element_type: _, .. } => {
+                // Array indexing - use ArrayIndex place
+                let arr_ty_info = self.registry.get(arr_ty.ty);
+                let layout = arr_ty_info
+                    .layout
+                    .as_ref()
+                    .expect("Array type layout should be computed before MIR lowering");
+
+                match &layout.kind {
+                    crate::semantic::types::LayoutKind::Array { element, len: _ } => {
+                        // Verify that the array element type has a layout too
+                        let element_ty_info = self.registry.get(*element);
+                        assert!(
+                            element_ty_info.layout.is_some(),
+                            "Array element type should have layout"
+                        );
+
+                        // Note: In a full implementation, we could add bounds checking here
+                        // for static arrays if the index is a constant
+
+                        let arr_place = if let Operand::Copy(place) = arr_operand {
                             *place
                         } else {
-                            // If it's not a Copy, create a temporary
                             let mir_type = self.lower_type_to_mir(arr_ty.ty);
                             let (_, temp_place) =
                                 self.create_temp_local_with_assignment(Rvalue::Use(arr_operand), mir_type);
                             temp_place
                         };
 
-                        Operand::Copy(Box::new(Place::ArrayIndex(
-                            Box::new(pointer_place),
-                            Box::new(idx_operand),
-                        )))
+                        Operand::Copy(Box::new(Place::ArrayIndex(Box::new(arr_place), Box::new(idx_operand))))
                     }
-                    _ => panic!("Index access on non-array, non-pointer type"),
+                    _ => panic!("Array type layout is not an Array layout kind"),
                 }
             }
-            _ => Operand::Constant(self.create_constant(ConstValue::Int(0))),
+            TypeKind::Pointer { pointee: _ } => {
+                // For pointer indexing, we can use the ArrayIndex place directly
+                // since pointer indexing follows the same rules as array indexing
+                // p[idx] is equivalent to *(p + idx) which is what ArrayIndex does
+
+                // Create an ArrayIndex place with the pointer as base and index
+                let pointer_place = if let Operand::Copy(place) = arr_operand {
+                    *place
+                } else {
+                    // If it's not a Copy, create a temporary
+                    let mir_type = self.lower_type_to_mir(arr_ty.ty);
+                    let (_, temp_place) =
+                        self.create_temp_local_with_assignment(Rvalue::Use(arr_operand), mir_type);
+                    temp_place
+                };
+
+                Operand::Copy(Box::new(Place::ArrayIndex(
+                    Box::new(pointer_place),
+                    Box::new(idx_operand),
+                )))
+            }
+            _ => panic!("Index access on non-array, non-pointer type"),
         }
     }
 

@@ -66,24 +66,22 @@ impl<'a> AstToMirLowerer<'a> {
         self.lower_node_ref(root, ScopeId::GLOBAL);
         debug!("Semantic analysis complete");
 
-        let module = self.mir_builder.finalize_module();
-        let functions = self.mir_builder.get_functions().clone();
-        let blocks = self.mir_builder.get_blocks().clone();
-        let locals = self.mir_builder.get_locals().clone();
-        let globals = self.mir_builder.get_globals().clone();
-        let types = self.mir_builder.get_types().clone();
-        let constants = self.mir_builder.get_constants().clone();
-        let statements = self.mir_builder.get_statements().clone();
+        // Take ownership of the builder to consume it, replacing it with a dummy.
+        let builder = std::mem::replace(
+            &mut self.mir_builder,
+            MirBuilder::new(mir::MirModuleId::new(1).unwrap()),
+        );
+        let output = builder.consume();
 
         SemaOutput {
-            module,
-            functions,
-            blocks,
-            locals,
-            globals,
-            types,
-            constants,
-            statements,
+            module: output.module,
+            functions: output.functions,
+            blocks: output.blocks,
+            locals: output.locals,
+            globals: output.globals,
+            types: output.types,
+            constants: output.constants,
+            statements: output.statements,
         }
     }
 

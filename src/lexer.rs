@@ -320,8 +320,7 @@ pub fn is_keyword(symbol: StringId) -> Option<TokenKind> {
 }
 
 fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
-    static KEYWORDS: std::sync::OnceLock<hashbrown::HashMap<StringId, TokenKind>> =
-        std::sync::OnceLock::new();
+    static KEYWORDS: std::sync::OnceLock<hashbrown::HashMap<StringId, TokenKind>> = std::sync::OnceLock::new();
     KEYWORDS.get_or_init(|| {
         let mut m = hashbrown::HashMap::new();
         m.insert(StringId::new("auto"), TokenKind::Auto);

@@ -10,8 +10,9 @@
 use crate::ast::NameId;
 use crate::driver::compiler::SemaOutput;
 use crate::mir::{
-    BinaryOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlock, MirBlockId, MirFunction, MirFunctionId,
-    MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
+    BinaryOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlock, MirBlockId, MirFunction,
+    MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
+    UnaryOp,
 };
 use cranelift::codegen::ir::{StackSlot, StackSlotData, StackSlotKind};
 use cranelift::prelude::{
@@ -331,8 +332,40 @@ fn emit_function_call_impl(
     }
 }
 
+/// Helper function to emit a type conversion in Cranelift
+fn emit_type_conversion(
+    val: Value,
+    from: Type,
+    to: Type,
+    is_signed: bool,
+    builder: &mut FunctionBuilder,
+) -> Value {
+    if from == to {
+        return val;
+    }
+
+    let from_width = from.bits();
+    let to_width = to.bits();
+
+    if from_width < to_width {
+        // Extension
+        if is_signed {
+            builder.ins().sextend(to, val)
+        } else {
+            builder.ins().uextend(to, val)
+        }
+    } else if from_width > to_width {
+        // Reduction
+        builder.ins().ireduce(to, val)
+    } else {
+        // Same width, diff types (e.g. i32 and f32) - not fully handled yet
+        // Bitcast for now if they have same size
+        val
+    }
+}
+
+
 /// Helper function to resolve a MIR operand to a Cranelift value
-#[allow(clippy::too_many_arguments)]
 fn resolve_operand_to_value(
     operand: &Operand,
     builder: &mut FunctionBuilder,
@@ -368,12 +401,18 @@ fn resolve_operand_to_value(
                         .map_err(|e| format!("Failed to declare global data: {:?}", e))?;
                     let local_id = module.declare_data_in_func(global_val, builder.func);
                     // Global addresses are always pointer-sized (i64)
-                    Ok(builder.ins().global_value(types::I64, local_id))
+                    let addr = builder.ins().global_value(types::I64, local_id);
+                    Ok(emit_type_conversion(addr, types::I64, expected_type, false, builder))
                 }
-                ConstValue::Cast(_type_id, inner_id) => {
-                    // Create a dummy Operand::Constant to recursively resolve
+                ConstValue::Cast(type_id, inner_id) => {
+                    let mir_type = mir.get_type(*type_id);
+                    let target_type = convert_type(mir_type).unwrap_or(types::I32);
+
+                    // For constant casts, we still recursively resolve but with the target type
                     let temp_op = Operand::Constant(*inner_id);
-                    resolve_operand_to_value(&temp_op, builder, expected_type, cranelift_stack_slots, mir, module)
+                    let val = resolve_operand_to_value(&temp_op, builder, target_type, cranelift_stack_slots, mir, module)?;
+
+                    Ok(emit_type_conversion(val, target_type, expected_type, is_operand_signed(&temp_op, mir), builder))
                 }
                 _ => Ok(builder.ins().iconst(expected_type, 0)),
             }
@@ -386,16 +425,23 @@ fn resolve_operand_to_value(
             let place_cranelift_type =
                 convert_type(place_type).ok_or_else(|| format!("Unsupported place type: {:?}", place_type))?;
 
-            resolve_place_to_value(place, builder, place_cranelift_type, cranelift_stack_slots, mir, module)
+            let val = resolve_place_to_value(place, builder, place_cranelift_type, cranelift_stack_slots, mir, module)?;
+            Ok(emit_type_conversion(val, place_cranelift_type, expected_type, place_type.is_signed(), builder))
         }
-        Operand::Cast(_, operand) => {
-            // For now, just resolve the inner operand
-            // TODO: Handle actual type conversions
-            resolve_operand_to_value(operand, builder, expected_type, cranelift_stack_slots, mir, module)
+        Operand::Cast(type_id, inner_operand) => {
+            let inner_type = get_operand_cranelift_type(inner_operand, mir)?;
+            let inner_val = resolve_operand_to_value(inner_operand, builder, inner_type, cranelift_stack_slots, mir, module)?;
+
+            let mir_type = mir.get_type(*type_id);
+            let target_type = convert_type(mir_type).unwrap_or(types::I32);
+
+            let converted = emit_type_conversion(inner_val, inner_type, target_type, is_operand_signed(inner_operand, mir), builder);
+            Ok(emit_type_conversion(converted, target_type, expected_type, mir_type.is_signed(), builder))
         }
         Operand::AddressOf(place) => {
             // The value of an AddressOf operand is the address of the place.
-            resolve_place_to_addr(place, builder, cranelift_stack_slots, mir, module)
+            let addr = resolve_place_to_addr(place, builder, cranelift_stack_slots, mir, module)?;
+            Ok(emit_type_conversion(addr, types::I64, expected_type, false, builder))
         }
     }
 }
@@ -496,9 +542,39 @@ fn get_operand_cranelift_type(operand: &Operand, mir: &SemaOutput) -> Result<Typ
             let place_type = mir.get_type(place_type_id);
             convert_type(place_type).ok_or_else(|| format!("Unsupported place type: {:?}", place_type))
         }
-        Operand::Cast(_, operand) => get_operand_cranelift_type(operand, mir),
+        Operand::Cast(type_id, _) => {
+            let mir_type = mir.get_type(*type_id);
+            Ok(convert_type(mir_type).unwrap_or(types::I32))
+        }
         Operand::AddressOf(_) => Ok(types::I64), // AddressOf always returns a pointer
     }
+}
+
+/// Helper function to check if a MIR type is signed
+fn is_operand_signed(operand: &Operand, mir: &SemaOutput) -> bool {
+    match operand {
+        Operand::Copy(place) => {
+            if let Ok(type_id) = get_place_type_id(place, mir)
+                && let MirType::Int { is_signed, .. } = mir.get_type(type_id) {
+                    return *is_signed;
+                }
+        }
+        Operand::Cast(type_id, _) => {
+            if let MirType::Int { is_signed, .. } = mir.get_type(*type_id) {
+                return *is_signed;
+            }
+        }
+        Operand::Constant(const_id) => {
+            if let Some(ConstValue::Cast(type_id, _)) = mir.constants.get(const_id)
+                && let MirType::Int { is_signed, .. } = mir.get_type(*type_id) {
+                    return *is_signed;
+                }
+            // Default to signed for integer constants
+            return true;
+        }
+        _ => {}
+    }
+    false
 }
 
 /// Helper function to get the TypeId of a place
@@ -937,16 +1013,102 @@ impl MirToCraneliftLowerer {
             for stmt in &statements_to_process {
                 match stmt {
                     MirStmt::Assign(place, rvalue) => {
+                        let place_type_id = get_place_type_id(place, &self.mir)?;
+                        let place_mir_type = self.mir.get_type(place_type_id);
+                        let expected_type =
+                            convert_type(place_mir_type).ok_or_else(|| "Cannot assign to void type".to_string())?;
+
                         // Process the rvalue to get a Cranelift value first
                         let rvalue_result = match rvalue {
                             Rvalue::Use(operand) => resolve_operand_to_value(
                                 operand,
                                 &mut builder,
-                                types::I32, // Assuming i32 for now
+                                expected_type,
                                 &self.clif_stack_slots,
                                 &self.mir,
                                 &mut self.module,
                             ),
+                            Rvalue::Cast(type_id, operand) => {
+                                let inner_cranelift_type = get_operand_cranelift_type(operand, &self.mir)?;
+                                let inner_val = resolve_operand_to_value(
+                                    operand,
+                                    &mut builder,
+                                    inner_cranelift_type,
+                                    &self.clif_stack_slots,
+                                    &self.mir,
+                                    &mut self.module,
+                                )?;
+
+                                let target_mir_type = self.mir.get_type(*type_id);
+                                let target_cranelift_type = convert_type(target_mir_type)
+                                    .ok_or_else(|| "Cannot cast to void type".to_string())?;
+
+                                let converted = emit_type_conversion(
+                                    inner_val,
+                                    inner_cranelift_type,
+                                    target_cranelift_type,
+                                    is_operand_signed(operand, &self.mir),
+                                    &mut builder,
+                                );
+
+                                Ok(emit_type_conversion(
+                                    converted,
+                                    target_cranelift_type,
+                                    expected_type,
+                                    target_mir_type.is_signed(),
+                                    &mut builder,
+                                ))
+                            }
+                            Rvalue::UnaryOp(op, operand) => {
+                                let operand_cranelift_type = get_operand_cranelift_type(operand, &self.mir)?;
+                                let val = resolve_operand_to_value(
+                                    operand,
+                                    &mut builder,
+                                    operand_cranelift_type,
+                                    &self.clif_stack_slots,
+                                    &self.mir,
+                                    &mut self.module,
+                                )?;
+
+                                match op {
+                                    UnaryOp::Neg => Ok(builder.ins().ineg(val)),
+                                    UnaryOp::Not => {
+                                        let is_zero = builder.ins().icmp_imm(IntCC::Equal, val, 0);
+                                        Ok(builder.ins().uextend(expected_type, is_zero))
+                                    }
+                                    _ => Err(format!("Unsupported unary op in Assign: {:?}", op)),
+                                }
+                            }
+                            Rvalue::PtrAdd(base, offset) => {
+                                let base_val = resolve_operand_to_value(
+                                    base,
+                                    &mut builder,
+                                    types::I64,
+                                    &self.clif_stack_slots,
+                                    &self.mir,
+                                    &mut self.module,
+                                )?;
+                                let offset_val = resolve_operand_to_value(
+                                    offset,
+                                    &mut builder,
+                                    types::I64,
+                                    &self.clif_stack_slots,
+                                    &self.mir,
+                                    &mut self.module,
+                                )?;
+                                Ok(builder.ins().iadd(base_val, offset_val))
+                            }
+                            Rvalue::Load(operand) => {
+                                let addr = resolve_operand_to_value(
+                                    operand,
+                                    &mut builder,
+                                    types::I64,
+                                    &self.clif_stack_slots,
+                                    &self.mir,
+                                    &mut self.module,
+                                )?;
+                                Ok(builder.ins().load(expected_type, MemFlags::new(), addr, 0))
+                            }
                             Rvalue::Call(call_target, args) => emit_function_call_impl(
                                 call_target,
                                 args,
@@ -1041,9 +1203,15 @@ impl MirToCraneliftLowerer {
                                     BinaryOp::LogicAnd | BinaryOp::LogicOr => builder.ins().band(left_val, right_val),
                                     BinaryOp::Comma => right_val,
                                 };
-                                Ok(result_val)
+                                Ok(emit_type_conversion(
+                                    result_val,
+                                    final_left_type,
+                                    expected_type,
+                                    true,
+                                    &mut builder,
+                                ))
                             }
-                            _ => Ok(builder.ins().iconst(types::I32, 0)),
+                            _ => Ok(builder.ins().iconst(expected_type, 0)),
                         };
 
                         // Now, assign the resolved value to the place

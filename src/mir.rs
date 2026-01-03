@@ -284,6 +284,15 @@ pub enum MirType {
         variants: Vec<(NameId, i64)>,
     },
 }
+impl MirType {
+    pub fn is_signed(&self) -> bool {
+        match self {
+            MirType::Int { is_signed, .. } => *is_signed,
+            MirType::Enum { .. } => true, // Enums are generally treated as signed
+            _ => false,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MirRecordLayout {

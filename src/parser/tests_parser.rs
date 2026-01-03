@@ -728,6 +728,18 @@ fn test_atomic_type_specifier() {
 }
 
 #[test]
+fn test_atomic_type_specifier_with_pointer() {
+    let resolved = setup_declaration("_Atomic(int *) x;");
+    insta::assert_yaml_snapshot!(&resolved, @r#"
+    Declaration:
+      specifiers:
+        - "Atomic(ParsedType { base: 1, declarator: 2, qualifiers: TypeQualifiers(0x0) })"
+      init_declarators:
+        - name: x
+    "#);
+}
+
+#[test]
 fn test_declaration_with_initializer() {
     let resolved = setup_declaration("int x = 42;");
     insta::assert_yaml_snapshot!(&resolved, @r"

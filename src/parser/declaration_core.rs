@@ -60,12 +60,13 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
             }
 
             TokenKind::Atomic => {
-                // Disambiguate between `_Atomic` qualifier and `_Atomic(type-name)` specifier
                 if parser.peek_token(0).is_some_and(|t| t.kind == TokenKind::LeftParen) {
                     // This is the `_Atomic(type-name)` form.
                     parser.advance(); // consume `_Atomic`
                     parser.expect(TokenKind::LeftParen)?;
+
                     let parsed_type = super::parsed_type_builder::parse_parsed_type_name(parser)?;
+
                     parser.expect(TokenKind::RightParen)?;
                     let type_specifier = TypeSpecifier::Atomic(parsed_type);
                     specifiers.push(DeclSpecifier::TypeSpecifier(type_specifier));

@@ -23,7 +23,7 @@ use log::debug;
 
 use crate::mir::GlobalId;
 
-pub struct AstToMirLowerer<'a> {
+pub(crate) struct AstToMirLowerer<'a> {
     ast: &'a Ast,
     symbol_table: &'a SymbolTable, // Now immutable
     mir_builder: MirBuilder,
@@ -41,7 +41,7 @@ pub struct AstToMirLowerer<'a> {
 }
 
 impl<'a> AstToMirLowerer<'a> {
-    pub fn new(ast: &'a Ast, symbol_table: &'a SymbolTable, registry: &'a TypeRegistry) -> Self {
+    pub(crate) fn new(ast: &'a Ast, symbol_table: &'a SymbolTable, registry: &'a TypeRegistry) -> Self {
         let mir_builder = MirBuilder::new(mir::MirModuleId::new(1).unwrap());
         Self {
             ast,
@@ -60,7 +60,7 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    pub fn lower_module_complete(&mut self) -> SemaOutput {
+    pub(crate) fn lower_module_complete(&mut self) -> SemaOutput {
         debug!("Starting semantic analysis and MIR construction (complete)");
         let root = self.ast.get_root();
         self.lower_node_ref(root, ScopeId::GLOBAL);

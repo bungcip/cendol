@@ -137,19 +137,19 @@ fn convert_parsed_array_size(size: &ParsedArraySize, _ctx: &mut LowerCtx) -> Arr
 }
 
 /// Context for the semantic lowering phase
-pub struct LowerCtx<'a, 'src> {
-    pub ast: &'a mut Ast,
-    pub diag: &'src mut DiagnosticEngine,
-    pub symbol_table: &'a mut SymbolTable,
-    pub scope_map: Vec<Option<ScopeId>>,
+pub(crate) struct LowerCtx<'a, 'src> {
+    pub(crate) ast: &'a mut Ast,
+    pub(crate) diag: &'src mut DiagnosticEngine,
+    pub(crate) symbol_table: &'a mut SymbolTable,
+    pub(crate) scope_map: Vec<Option<ScopeId>>,
     // Track errors during lowering for early termination
-    pub has_errors: bool,
-    pub registry: &'a mut TypeRegistry,
+    pub(crate) has_errors: bool,
+    pub(crate) registry: &'a mut TypeRegistry,
 }
 
 impl<'a, 'src> LowerCtx<'a, 'src> {
     /// Create a new lowering context
-    pub fn new(
+    pub(crate) fn new(
         ast: &'a mut Ast,
         diag: &'src mut DiagnosticEngine,
         symbol_table: &'a mut SymbolTable,
@@ -166,13 +166,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     /// Report a semantic error and mark context as having errors
-    pub fn report_error(&mut self, error: SemanticError) {
+    pub(crate) fn report_error(&mut self, error: SemanticError) {
         self.has_errors = true;
         self.diag.report(error);
     }
 
     /// Check if the context has any errors
-    pub fn has_errors(&self) -> bool {
+    pub(crate) fn has_errors(&self) -> bool {
         self.has_errors
     }
 
@@ -183,18 +183,18 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
 /// Information about declaration specifiers after processing
 #[derive(Debug, Clone, Default)]
-pub struct DeclSpecInfo {
-    pub storage: Option<StorageClass>,
-    pub qualifiers: TypeQualifiers,
-    pub base_type: Option<QualType>,
-    pub is_typedef: bool,
-    pub is_inline: bool,
-    pub is_noreturn: bool,
+pub(crate) struct DeclSpecInfo {
+    pub(crate) storage: Option<StorageClass>,
+    pub(crate) qualifiers: TypeQualifiers,
+    pub(crate) base_type: Option<QualType>,
+    pub(crate) is_typedef: bool,
+    pub(crate) is_inline: bool,
+    pub(crate) is_noreturn: bool,
 }
 
 /// Main entry point for lowering a declaration
 /// Returns a vector of semantic nodes (one for each declarator)
-pub fn lower_declaration(ctx: &mut LowerCtx, decl_node: NodeRef) -> Vec<NodeRef> {
+pub(crate) fn lower_declaration(ctx: &mut LowerCtx, decl_node: NodeRef) -> Vec<NodeRef> {
     // Get the declaration data from the AST node
     let (declaration_span, decl) = {
         let decl_node_data = ctx.ast.get_node(decl_node);
@@ -1412,7 +1412,7 @@ fn finalize_tentative_definitions(symbol_table: &mut SymbolTable) {
 }
 
 /// Main entry point for running semantic lowering on an entire AST
-pub fn run_symbol_resolver(
+pub(crate) fn run_symbol_resolver(
     ast: &mut Ast,
     diag: &mut DiagnosticEngine,
     symbol_table: &mut SymbolTable,

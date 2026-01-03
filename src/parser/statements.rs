@@ -17,7 +17,7 @@ use log::debug;
 use thin_vec::thin_vec;
 
 /// Parse a statement
-pub fn parse_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
+pub(crate) fn parse_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.current_token()?;
 
     // Check for label: identifier :
@@ -59,7 +59,7 @@ pub fn parse_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 }
 
 /// Parse compound statement (block)
-pub fn parse_compound_statement(parser: &mut Parser) -> Result<(NodeRef, SourceLoc), ParseError> {
+pub(crate) fn parse_compound_statement(parser: &mut Parser) -> Result<(NodeRef, SourceLoc), ParseError> {
     let token = parser.expect(TokenKind::LeftBrace)?;
     let start_loc = token.span.start;
     let dummy = parser.push_dummy();

@@ -14,10 +14,10 @@ use super::{Parser, utils::ParserExt};
 
 /// Binding power for Pratt parser operator precedence
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct BindingPower(u8);
+pub(crate) struct BindingPower(u8);
 
 impl BindingPower {
-    pub const MIN: Self = Self(0);
+    pub(crate) const MIN: Self = Self(0);
     pub const COMMA: Self = Self(2);
     pub const ASSIGNMENT: Self = Self(4);
     pub const CONDITIONAL: Self = Self(6);
@@ -38,13 +38,13 @@ impl BindingPower {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Associativity {
+pub(crate) enum Associativity {
     Left,
     Right,
 }
 
 /// Pratt parser implementation
-pub struct PrattParser;
+pub(crate) struct PrattParser;
 
 impl PrattParser {
     fn get_binding_power(token_kind: TokenKind) -> Option<(BindingPower, Associativity)> {

@@ -4,7 +4,7 @@
 use crate::semantic::{QualType, TypeKind, TypeRegistry};
 
 /// Performs the "usual arithmetic conversions" as specified in C11 6.3.1.8.
-pub fn usual_arithmetic_conversions(ctx: &TypeRegistry, lhs: QualType, rhs: QualType) -> Option<QualType> {
+pub(crate) fn usual_arithmetic_conversions(ctx: &TypeRegistry, lhs: QualType, rhs: QualType) -> Option<QualType> {
     let lhs_kind = &ctx.get(lhs.ty).kind;
     let rhs_kind = &ctx.get(rhs.ty).kind;
 
@@ -51,7 +51,7 @@ pub fn usual_arithmetic_conversions(ctx: &TypeRegistry, lhs: QualType, rhs: Qual
 }
 
 /// Performs integer promotions as specified in C11 6.3.1.1.
-pub fn integer_promotion(ctx: &TypeRegistry, ty: QualType) -> QualType {
+pub(crate) fn integer_promotion(ctx: &TypeRegistry, ty: QualType) -> QualType {
     let kind = &ctx.get(ty.ty).kind;
     match kind {
         TypeKind::Bool | TypeKind::Char { .. } | TypeKind::Short { .. } => QualType::unqualified(ctx.type_int),

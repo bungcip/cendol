@@ -23,7 +23,7 @@ pub mod type_specifiers;
 pub mod utils;
 
 // Re-export commonly used types
-pub use expressions::BindingPower;
+pub(crate) use expressions::BindingPower;
 
 use expressions::parse_expression;
 

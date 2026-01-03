@@ -12,7 +12,7 @@ use crate::lexer::TokenKind;
 use super::Parser;
 
 /// Parse struct or union specifier with context
-pub fn parse_record_specifier_with_context(
+pub(crate) fn parse_record_specifier_with_context(
     parser: &mut Parser,
     is_union: bool,
     in_struct_member: bool,
@@ -52,7 +52,7 @@ pub fn parse_record_specifier_with_context(
 }
 
 /// Parse struct declaration list
-pub fn parse_struct_declaration_list(parser: &mut Parser) -> Result<Vec<DeclarationData>, ParseError> {
+pub(crate) fn parse_struct_declaration_list(parser: &mut Parser) -> Result<Vec<DeclarationData>, ParseError> {
     let mut declarations = Vec::new();
 
     while !parser.is_token(TokenKind::RightBrace) {
@@ -64,7 +64,7 @@ pub fn parse_struct_declaration_list(parser: &mut Parser) -> Result<Vec<Declarat
 }
 
 /// Parse struct declaration
-pub fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, ParseError> {
+pub(crate) fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, ParseError> {
     // Check if we have an anonymous struct/union
     let is_struct = parser.accept(TokenKind::Struct).is_some();
     let is_union = if !is_struct {

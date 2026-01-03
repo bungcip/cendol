@@ -144,7 +144,7 @@ pub enum TokenKind {
 
 impl TokenKind {
     /// Check if the token is a storage class specifier
-    pub fn is_storage_class_specifier(&self) -> bool {
+    pub(crate) fn is_storage_class_specifier(&self) -> bool {
         matches!(
             self,
             TokenKind::Typedef
@@ -157,7 +157,7 @@ impl TokenKind {
     }
 
     /// Check if the token is a type specifier
-    pub fn is_type_specifier(&self) -> bool {
+    pub(crate) fn is_type_specifier(&self) -> bool {
         matches!(
             self,
             TokenKind::Void
@@ -179,7 +179,7 @@ impl TokenKind {
     }
 
     /// Check if the token is a type qualifier
-    pub fn is_type_qualifier(&self) -> bool {
+    pub(crate) fn is_type_qualifier(&self) -> bool {
         matches!(
             self,
             TokenKind::Const | TokenKind::Restrict | TokenKind::Volatile | TokenKind::Atomic
@@ -187,17 +187,17 @@ impl TokenKind {
     }
 
     /// Check if the token is a function specifier
-    pub fn is_function_specifier(&self) -> bool {
+    pub(crate) fn is_function_specifier(&self) -> bool {
         matches!(self, TokenKind::Inline | TokenKind::Noreturn)
     }
 
     /// Check if the token is an alignment specifier
-    pub fn is_alignment_specifier(&self) -> bool {
+    pub(crate) fn is_alignment_specifier(&self) -> bool {
         matches!(self, TokenKind::Alignas)
     }
 
     /// Check if the token can start a declaration specifier
-    pub fn is_declaration_specifier_start(&self) -> bool {
+    pub(crate) fn is_declaration_specifier_start(&self) -> bool {
         self.is_storage_class_specifier()
             || self.is_type_specifier()
             || self.is_type_qualifier()
@@ -207,7 +207,7 @@ impl TokenKind {
     }
 
     /// Check if the token can start a declaration (including typedefs)
-    pub fn is_declaration_start(&self, is_typedef: bool) -> bool {
+    pub(crate) fn is_declaration_start(&self, is_typedef: bool) -> bool {
         if self.is_declaration_specifier_start() || *self == TokenKind::StaticAssert {
             return true;
         }

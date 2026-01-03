@@ -1066,4 +1066,51 @@ mod tests {
         }
         ");
     }
+
+    #[test]
+    fn test_deref_after_cast() {
+        let source = r#"
+            int main() {
+                void *p;
+                int x;
+                x = 2;
+                p = &x;
+                if (*((int*)p) != 2)
+                    return 1;
+                return 0;
+            }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = i32
+        type %t1 = ptr<%t2>
+        type %t2 = void
+        type %t3 = ptr<%t0>
+
+        fn main() -> i32
+        {
+          locals {
+            %p: ptr<void>
+            %x: i32
+            %3: i32
+          }
+
+          bb1:
+            %x = cast<i32>(const 2)
+            %p = cast<ptr<void>>(addr_of(%x))
+            %3 = deref(cast<ptr<i32>>(%p)) != cast<i32>(const 2)
+            cond_br %3, bb2, bb3
+
+          bb2:
+            return cast<i32>(const 1)
+
+          bb3:
+            br bb4
+
+          bb4:
+            return cast<i32>(const 0)
+        }
+        ");
+    }
 }

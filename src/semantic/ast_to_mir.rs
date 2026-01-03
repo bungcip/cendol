@@ -519,6 +519,10 @@ impl<'a> AstToMirLowerer<'a> {
                 self.lower_member_access(scope_id, *obj_ref, field_name, *is_arrow)
             }
             NodeKind::IndexAccess(arr_ref, idx_ref) => self.lower_index_access(scope_id, *arr_ref, *idx_ref),
+            NodeKind::Cast(_ty, operand_ref) => {
+                let operand = self.lower_expression(scope_id, *operand_ref, true);
+                Operand::Cast(mir_ty, Box::new(operand))
+            }
             _ => Operand::Constant(self.create_constant(ConstValue::Int(0))),
         }
     }

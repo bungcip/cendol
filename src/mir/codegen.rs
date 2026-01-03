@@ -650,15 +650,10 @@ fn get_place_type_id(place: &Place, mir: &SemaOutput) -> Result<TypeId, String> 
         Place::Deref(operand) => {
             // To get the type of a dereference, we need the type of the operand,
             // which should be a pointer. The resulting type is the pointee.
-            match operand.as_ref() {
-                Operand::Copy(place_box) => {
-                    let operand_type_id = get_place_type_id(place_box, mir)?;
-                    let operand_type = mir.get_type(operand_type_id);
-                    match operand_type {
-                        MirType::Pointer { pointee } => Ok(*pointee),
-                        _ => Err("Cannot determine type for deref operand".to_string()),
-                    }
-                }
+            let operand_type_id = get_operand_type_id(operand, mir)?;
+            let operand_type = mir.get_type(operand_type_id);
+            match operand_type {
+                MirType::Pointer { pointee } => Ok(*pointee),
                 _ => Err("Cannot determine type for deref operand".to_string()),
             }
         }

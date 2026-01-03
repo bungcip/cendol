@@ -210,6 +210,10 @@ impl<'a> AstToMirLowerer<'a> {
                     panic!("Continue statement outside of loop");
                 }
             }
+            NodeKind::Goto(label_name, _) => self.lower_goto_statement(&label_name),
+            NodeKind::Label(label_name, statement, _) => {
+                self.lower_label_statement(scope_id, &label_name, statement)
+            }
             _ => {}
         }
     }
@@ -335,8 +339,19 @@ impl<'a> AstToMirLowerer<'a> {
 
     fn lower_compound_statement(&mut self, node_ref: NodeRef, nodes: &[NodeRef]) {
         let scope_id = self.ast.scope_of(node_ref);
-        for &stmt_ref in nodes {
-            self.lower_node_ref(stmt_ref, scope_id);
+        for &stmt_ref in nodes.iter() {
+            if self.mir_builder.current_block_has_terminator() {
+                let next_node_kind = &self.ast.get_node(stmt_ref).kind;
+                if let NodeKind::Label(..) = next_node_kind {
+                    // This is a label, which is a valid entry point.
+                    // Let lower_node_ref handle it, it will switch to a new block.
+                } else {
+                    // This statement is unreachable. Skip it.
+                    // A warning for unreachable code should be emitted in a separate analysis pass.
+                    continue;
+                }
+            }
+            self.lower_node_ref(stmt_ref, scope_id)
         }
     }
 
@@ -361,6 +376,10 @@ impl<'a> AstToMirLowerer<'a> {
         self.mir_builder.set_function_entry_block(func_id, entry_block_id);
         self.current_block = Some(entry_block_id);
         self.mir_builder.set_current_block(entry_block_id);
+
+        // Pre-scan for all labels in the function body to create their MIR blocks upfront.
+        self.label_map.clear();
+        self.scan_for_labels(function_data.body);
 
         // Parameter locals are now created in `define_function`. We just need to
         // map the SymbolRef to the LocalId.
@@ -1259,5 +1278,62 @@ impl<'a> AstToMirLowerer<'a> {
         need_value: bool,
     ) -> Operand {
         self.lower_inc_dec_common(scope_id, operand_ref, is_inc, true, need_value)
+    }
+
+    fn scan_for_labels(&mut self, node_ref: NodeRef) {
+        let node_kind = self.ast.get_node(node_ref).kind.clone();
+        match node_kind {
+            NodeKind::Label(name, inner_stmt, _) => {
+                if !self.label_map.contains_key(&name) {
+                    let block_id = self.mir_builder.create_block();
+                    self.label_map.insert(name, block_id);
+                }
+                self.scan_for_labels(inner_stmt);
+            }
+            NodeKind::CompoundStatement(items) => {
+                for &item in &items {
+                    self.scan_for_labels(item);
+                }
+            }
+            // Add other statement types that can contain labels, like loops and conditionals
+            NodeKind::If(if_stmt) => {
+                self.scan_for_labels(if_stmt.then_branch);
+                if let Some(else_branch) = if_stmt.else_branch {
+                    self.scan_for_labels(else_branch);
+                }
+            }
+            NodeKind::While(while_stmt) => self.scan_for_labels(while_stmt.body),
+            NodeKind::DoWhile(body, _) => self.scan_for_labels(body),
+            NodeKind::For(for_stmt) => self.scan_for_labels(for_stmt.body),
+            _ => {
+                // No labels in expressions or simple statements
+            }
+        }
+    }
+
+    fn lower_goto_statement(&mut self, label_name: &NameId) {
+        if let Some(target_block) = self.label_map.get(label_name).copied() {
+            self.mir_builder.set_terminator(Terminator::Goto(target_block));
+        } else {
+            // This should be caught by semantic analysis, but we panic as a safeguard
+            panic!("Goto to undefined label '{}'", label_name.as_str());
+        }
+    }
+
+    fn lower_label_statement(&mut self, scope_id: ScopeId, label_name: &NameId, statement: NodeRef) {
+        if let Some(label_block) = self.label_map.get(label_name).copied() {
+            // Make sure the current block is terminated before switching
+            if !self.mir_builder.current_block_has_terminator() {
+                self.mir_builder.set_terminator(Terminator::Goto(label_block));
+            }
+
+            self.mir_builder.set_current_block(label_block);
+            self.current_block = Some(label_block);
+
+            // Now, lower the statement that follows the label
+            self.lower_node_ref(statement, scope_id);
+        } else {
+            panic!("Label '{}' was not pre-scanned", label_name.as_str());
+        }
     }
 }

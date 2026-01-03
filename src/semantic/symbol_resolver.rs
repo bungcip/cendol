@@ -193,8 +193,8 @@ pub(crate) struct DeclSpecInfo {
 }
 
 /// Main entry point for lowering a declaration
-/// Returns a vector of semantic nodes (one for each declarator)
-pub(crate) fn lower_declaration(ctx: &mut LowerCtx, decl_node: NodeRef) -> Vec<NodeRef> {
+/// Returns a vector of semantic node data (one for each declarator)
+pub(crate) fn lower_declaration(ctx: &mut LowerCtx, decl_node: NodeRef) -> Vec<NodeKind> {
     // Get the declaration data from the AST node
     let (declaration_span, decl) = {
         let decl_node_data = ctx.ast.get_node(decl_node);
@@ -210,7 +210,9 @@ pub(crate) fn lower_declaration(ctx: &mut LowerCtx, decl_node: NodeRef) -> Vec<N
     if decl.init_declarators.is_empty() {
         let type_def_node = lower_type_definition(&decl.specifiers, ctx, declaration_span);
         if let Some(type_def_node_ref) = type_def_node {
-            return vec![type_def_node_ref];
+            // Extract the node kind from the created node
+            let node_kind = ctx.ast.get_node(type_def_node_ref).kind.clone();
+            return vec![node_kind];
         } else {
             return Vec::new();
         }
@@ -224,11 +226,11 @@ pub(crate) fn lower_declaration(ctx: &mut LowerCtx, decl_node: NodeRef) -> Vec<N
         return Vec::new();
     }
 
-    // 2. Process init-declarators into semantic nodes
-    let semantic_nodes: Vec<NodeRef> = decl
+    // 2. Process init-declarators into semantic node data
+    let semantic_nodes: Vec<NodeKind> = decl
         .init_declarators
         .into_iter()
-        .map(|init| lower_init_declarator(ctx, &spec, init, declaration_span))
+        .map(|init| create_semantic_node_data(ctx, &spec, init, declaration_span))
         .collect();
 
     semantic_nodes
@@ -1105,8 +1107,22 @@ fn lower_type_definition(specifiers: &[DeclSpecifier], ctx: &mut LowerCtx, span:
     }
 }
 
-/// Process an init-declarator into a semantic node
-fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDeclarator, span: SourceSpan) -> NodeRef {
+/// Check if a declarator represents a function declaration (not just a function pointer)
+fn is_function_declarator(declarator: &Declarator) -> bool {
+    match declarator {
+        Declarator::Function { .. } => true,
+        Declarator::Pointer(_, Some(inner)) => is_function_declarator(inner),
+        _ => false,
+    }
+}
+
+/// Create the semantic node data for an init-declarator without adding it to the AST
+fn create_semantic_node_data(
+    ctx: &mut LowerCtx,
+    spec: &DeclSpecInfo,
+    init: InitDeclarator,
+    span: SourceSpan,
+) -> NodeKind {
     // 1. Resolve final type (base + declarator)
     let base_ty = spec.base_type.unwrap_or_else(|| {
         ctx.report_error(SemanticError::MissingTypeSpecifier { span });
@@ -1132,7 +1148,6 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
     // 2. Handle typedefs
     if spec.is_typedef {
         let typedef_decl = TypedefDeclData { name, ty: final_ty };
-        let typedef_node = ctx.ast.push_node(Node::new(NodeKind::TypedefDecl(typedef_decl), span));
 
         // Add typedef to symbol table to resolve forward references
         let symbol_entry = Symbol {
@@ -1165,33 +1180,148 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
             ctx.symbol_table.add_symbol(name, symbol_entry);
         }
 
-        return typedef_node;
+        return NodeKind::TypedefDecl(typedef_decl);
     }
 
     // 3. Distinguish between functions and variables
-    let type_info = ctx.registry.get(final_ty.ty).clone();
-    if let TypeKind::Function {
-        parameters,
-        is_variadic,
-        ..
-    } = &type_info.kind
-    {
+    // Check if the declarator is a function declarator (even if the final type is pointer to function)
+    let is_function = is_function_declarator(&init.declarator);
+
+    if is_function {
+        // Extract function type information
+        let type_info = ctx.registry.get(final_ty.ty).clone();
+        let (function_type_ref, parameters, is_variadic) = if let TypeKind::Function {
+            parameters,
+            is_variadic,
+            ..
+        } = &type_info.kind
+        {
+            // Direct function type
+            (final_ty.ty, parameters.clone(), *is_variadic)
+        } else if let TypeKind::Pointer { pointee } = &type_info.kind {
+            // Pointer to function type - get the function type from the pointee
+            let pointee_type = ctx.registry.get(*pointee);
+            if let TypeKind::Function {
+                parameters,
+                is_variadic,
+                ..
+            } = &pointee_type.kind
+            {
+                (*pointee, parameters.clone(), *is_variadic)
+            } else {
+                // Not a function pointer, treat as variable
+                let var_decl = VarDeclData {
+                    name,
+                    ty: final_ty,
+                    storage: spec.storage,
+                    init: init.initializer,
+                };
+
+                let def_state = if var_decl.init.is_some() {
+                    DefinitionState::Defined
+                } else {
+                    DefinitionState::Tentative
+                };
+
+                let symbol_entry = Symbol {
+                    name: name.as_str().into(),
+                    kind: SymbolKind::Variable {
+                        is_global: ctx.symbol_table.current_scope() == ScopeId::GLOBAL,
+                        initializer: init.initializer,
+                    },
+                    type_info: final_ty.ty,
+                    storage_class: spec.storage,
+                    scope_id: ctx.symbol_table.current_scope(),
+                    def_span: span,
+                    def_state,
+                    is_referenced: false,
+                    is_completed: true,
+                };
+
+                if ctx.symbol_table.current_scope() == ScopeId::GLOBAL {
+                    match ctx.symbol_table.merge_global_symbol(name, symbol_entry) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            let SymbolTableError::InvalidRedefinition { name, existing } = e;
+                            let existing = ctx.symbol_table.get_symbol(existing);
+                            ctx.diag.report(SemanticError::Redefinition {
+                                name,
+                                first_def: existing.def_span,
+                                span,
+                            });
+                        }
+                    }
+                } else {
+                    ctx.symbol_table.add_symbol(name, symbol_entry);
+                }
+
+                return NodeKind::VarDecl(var_decl);
+            }
+        } else {
+            // Not a function type, treat as variable
+            let var_decl = VarDeclData {
+                name,
+                ty: final_ty,
+                storage: spec.storage,
+                init: init.initializer,
+            };
+
+            let def_state = if var_decl.init.is_some() {
+                DefinitionState::Defined
+            } else {
+                DefinitionState::Tentative
+            };
+
+            let symbol_entry = Symbol {
+                name: name.as_str().into(),
+                kind: SymbolKind::Variable {
+                    is_global: ctx.symbol_table.current_scope() == ScopeId::GLOBAL,
+                    initializer: init.initializer,
+                },
+                type_info: final_ty.ty,
+                storage_class: spec.storage,
+                scope_id: ctx.symbol_table.current_scope(),
+                def_span: span,
+                def_state,
+                is_referenced: false,
+                is_completed: true,
+            };
+
+            if ctx.symbol_table.current_scope() == ScopeId::GLOBAL {
+                match ctx.symbol_table.merge_global_symbol(name, symbol_entry) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        let SymbolTableError::InvalidRedefinition { name, existing } = e;
+                        let existing = ctx.symbol_table.get_symbol(existing);
+                        ctx.diag.report(SemanticError::Redefinition {
+                            name,
+                            first_def: existing.def_span,
+                            span,
+                        });
+                    }
+                }
+            } else {
+                ctx.symbol_table.add_symbol(name, symbol_entry);
+            }
+
+            return NodeKind::VarDecl(var_decl);
+        };
+
         let func_decl = FunctionDeclData {
             name,
-            ty: final_ty.ty,
+            ty: function_type_ref, // Use the function type, not the pointer to function type
             storage: spec.storage,
             body: None,
         };
-        let node = ctx.ast.push_node(Node::new(NodeKind::FunctionDecl(func_decl), span));
 
         let symbol_entry = Symbol {
             name: name.as_str().into(),
             kind: SymbolKind::Function {
                 is_inline: spec.is_inline,
-                is_variadic: *is_variadic,
-                parameters: parameters.clone(),
+                is_variadic,
+                parameters,
             },
-            type_info: final_ty.ty,
+            type_info: function_type_ref, // Use the function type, not the pointer to function type
             storage_class: spec.storage,
             scope_id: ctx.symbol_table.current_scope(),
             def_span: span,
@@ -1217,7 +1347,7 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
             ctx.symbol_table.add_symbol(name, symbol_entry);
         }
 
-        node
+        NodeKind::FunctionDecl(func_decl)
     } else {
         let var_decl = VarDeclData {
             name,
@@ -1231,8 +1361,6 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
         } else {
             DefinitionState::Tentative
         };
-
-        let node = ctx.ast.push_node(Node::new(NodeKind::VarDecl(var_decl), span));
 
         let symbol_entry = Symbol {
             name: name.as_str().into(),
@@ -1266,7 +1394,7 @@ fn lower_init_declarator(ctx: &mut LowerCtx, spec: &DeclSpecInfo, init: InitDecl
             ctx.symbol_table.add_symbol(name, symbol_entry);
         }
 
-        node
+        NodeKind::VarDecl(var_decl)
     }
 }
 
@@ -1554,19 +1682,25 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
 
             if !semantic_nodes.is_empty() {
                 if semantic_nodes.len() == 1 {
-                    // Single declarator case: replace the original declaration node with the semantic node
-                    let semantic_node_data = ctx.ast.get_node(semantic_nodes[0]).clone();
-                    ctx.ast.replace_node(node_ref, semantic_node_data.clone());
+                    // Single declarator case: replace the original declaration node with the semantic node data
+                    let semantic_node_kind = semantic_nodes[0].clone();
+                    let original_span = ctx.ast.get_node(node_ref).span;
+                    ctx.ast
+                        .replace_node(node_ref, Node::new(semantic_node_kind, original_span));
                     // After replacement, recurse into the semantic node to process its children
-                    if let NodeKind::VarDecl(var_decl) = &semantic_node_data.kind
+                    if let NodeKind::VarDecl(var_decl) = &semantic_nodes[0]
                         && let Some(init_expr) = var_decl.init
                     {
                         lower_node_recursive(ctx, init_expr);
                     }
                 } else {
                     // Multi-declarator case: create a DeclarationList containing all semantic nodes
-                    let original_node = ctx.ast.get_node(node_ref);
-                    let compound_node = Node::new(NodeKind::DeclarationList(semantic_nodes), original_node.span);
+                    let original_span = ctx.ast.get_node(node_ref).span;
+                    let semantic_node_refs: Vec<NodeRef> = semantic_nodes
+                        .into_iter()
+                        .map(|kind| ctx.ast.push_node(Node::new(kind, original_span)))
+                        .collect();
+                    let compound_node = Node::new(NodeKind::DeclarationList(semantic_node_refs), original_span);
                     ctx.ast.replace_node(node_ref, compound_node);
                 }
             }

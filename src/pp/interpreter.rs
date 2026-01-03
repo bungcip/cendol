@@ -3,7 +3,7 @@ use crate::intern::StringId;
 use crate::pp::{PPError, PPToken, PPTokenKind, Preprocessor};
 
 #[derive(Debug)]
-pub enum PPExpr {
+pub(crate) enum PPExpr {
     Number(i64),
     Identifier(String),
     Defined(Box<PPExpr>),
@@ -13,7 +13,7 @@ pub enum PPExpr {
 }
 
 impl PPExpr {
-    pub fn evaluate(&self, pp: &Preprocessor) -> Result<i64, PPError> {
+    pub(crate) fn evaluate(&self, pp: &Preprocessor) -> Result<i64, PPError> {
         match self {
             PPExpr::Number(n) => Ok(*n),
             PPExpr::Identifier(s) => Ok(if pp.is_macro_defined(&StringId::new(s)) { 1 } else { 0 }),
@@ -102,14 +102,14 @@ impl PPExpr {
 }
 
 /// Expression interpreter for preprocessor arithmetic
-pub struct Interpreter<'a> {
+pub(crate) struct Interpreter<'a> {
     tokens: &'a [PPToken],
     pos: usize,
     preprocessor: &'a Preprocessor<'a>,
 }
 
 impl<'a> Interpreter<'a> {
-    pub fn new(tokens: &'a [PPToken], preprocessor: &'a Preprocessor<'a>) -> Self {
+    pub(crate) fn new(tokens: &'a [PPToken], preprocessor: &'a Preprocessor<'a>) -> Self {
         Interpreter {
             tokens,
             pos: 0,
@@ -117,7 +117,7 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    pub fn evaluate(&mut self) -> Result<i64, PPError> {
+    pub(crate) fn evaluate(&mut self) -> Result<i64, PPError> {
         let expr = self.parse_conditional()?;
         expr.evaluate(self.preprocessor)
     }

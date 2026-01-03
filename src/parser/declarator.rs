@@ -41,7 +41,10 @@ fn validate_declarator_combination(base: &Declarator, new_kind: &str, span: Sour
 }
 
 /// Parse declarator
-pub fn parse_declarator(parser: &mut Parser, initial_declarator: Option<NameId>) -> Result<Declarator, ParseError> {
+pub(crate) fn parse_declarator(
+    parser: &mut Parser,
+    initial_declarator: Option<NameId>,
+) -> Result<Declarator, ParseError> {
     debug!(
         "parse_declarator: starting at position {}, token: {:?}, initial_declarator: {:?}",
         parser.current_idx,
@@ -402,7 +405,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParamData>,
 }
 
 /// Check if current token starts an abstract declarator
-pub fn is_abstract_declarator_start(parser: &Parser) -> bool {
+pub(crate) fn is_abstract_declarator_start(parser: &Parser) -> bool {
     if let Some(token) = parser.try_current_token() {
         match token.kind {
             TokenKind::Star => true,        // pointer
@@ -416,7 +419,7 @@ pub fn is_abstract_declarator_start(parser: &Parser) -> bool {
 }
 
 /// Extract the declared name from a declarator, if any
-pub fn get_declarator_name(declarator: &Declarator) -> Option<NameId> {
+pub(crate) fn get_declarator_name(declarator: &Declarator) -> Option<NameId> {
     match declarator {
         Declarator::Identifier(name, _) => Some(*name),
         Declarator::Pointer(_, Some(inner)) => get_declarator_name(inner),
@@ -430,7 +433,7 @@ pub fn get_declarator_name(declarator: &Declarator) -> Option<NameId> {
 }
 
 /// Parse abstract declarator (for type names without identifiers)
-pub fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarator, ParseError> {
+pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarator, ParseError> {
     debug!(
         "parse_abstract_declarator: starting at position {}, token {:?}",
         parser.current_idx,

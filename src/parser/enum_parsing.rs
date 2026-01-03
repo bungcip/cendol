@@ -9,7 +9,7 @@ use crate::lexer::TokenKind;
 use super::Parser;
 
 /// Parse enum specifier
-pub fn parse_enum_specifier(parser: &mut Parser) -> Result<TypeSpecifier, ParseError> {
+pub(crate) fn parse_enum_specifier(parser: &mut Parser) -> Result<TypeSpecifier, ParseError> {
     let tag = parser.accept_name();
     let enumerators = if parser.accept(TokenKind::LeftBrace).is_some() {
         let enums = parse_enumerator_list(parser)?;
@@ -23,7 +23,7 @@ pub fn parse_enum_specifier(parser: &mut Parser) -> Result<TypeSpecifier, ParseE
 }
 
 /// Parse enumerator list
-pub fn parse_enumerator_list(parser: &mut Parser) -> Result<Vec<NodeRef>, ParseError> {
+pub(crate) fn parse_enumerator_list(parser: &mut Parser) -> Result<Vec<NodeRef>, ParseError> {
     let mut enumerators = Vec::new();
 
     loop {
@@ -45,7 +45,7 @@ pub fn parse_enumerator_list(parser: &mut Parser) -> Result<Vec<NodeRef>, ParseE
 }
 
 /// Parse enumerator
-pub fn parse_enumerator(parser: &mut Parser) -> Result<NodeRef, ParseError> {
+pub(crate) fn parse_enumerator(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let (name, mut span) = parser.expect_name()?;
     let value = if parser.accept(TokenKind::Assign).is_some() {
         let expr = parser.parse_expr_assignment()?;

@@ -7,13 +7,13 @@
 use crate::ast::{Ast, BinaryOp, NodeKind, NodeRef, UnaryOp};
 
 /// Context for constant expression evaluation
-pub struct ConstEvalCtx<'a> {
-    pub ast: &'a Ast,
+pub(crate) struct ConstEvalCtx<'a> {
+    pub(crate) ast: &'a Ast,
     // Add other necessary context here, like symbol table access
 }
 
 /// Evaluate a constant expression node to an i64 value
-pub fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Option<i64> {
+pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Option<i64> {
     let node = ctx.ast.get_node(expr_node_ref);
     match &node.kind {
         NodeKind::LiteralInt(val) => Some(*val),

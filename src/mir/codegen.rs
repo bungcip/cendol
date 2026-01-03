@@ -597,6 +597,43 @@ fn is_operand_signed(operand: &Operand, mir: &SemaOutput) -> bool {
     false
 }
 
+/// Helper function to get the TypeId of an operand
+fn get_operand_type_id(operand: &Operand, mir: &SemaOutput) -> Result<TypeId, String> {
+    match operand {
+        Operand::Constant(const_id) => {
+            let const_value = mir.constants.get(const_id).expect("constant id not found");
+            match const_value {
+                ConstValue::Cast(type_id, _) => Ok(*type_id),
+                _ => {
+                    // This is tricky because raw constants in MIR don't always have an explicit TypeId
+                    // associated with them in the Operand enum if they aren't cast.
+                    // However, PtrAdd base should usually be a Copy(Place) or a Cast.
+                    // For now, let's try to infer or panic if we can't.
+                    Err("Cannot determine type of raw constant operand".to_string())
+                }
+            }
+        }
+        Operand::Copy(place) => get_place_type_id(place, mir),
+        Operand::Cast(type_id, _) => Ok(*type_id),
+        Operand::AddressOf(place) => {
+            // AddressOf returns a pointer to the place's type.
+            // We need to find or create this pointer type in MIR.
+            // Actually, for PtrAdd scaling, we only care about the base type of the pointer.
+            let place_type_id = get_place_type_id(place, mir)?;
+            // We need the TypeId for ptr<place_type_id>
+            // Let's see if we can find it in the type table.
+            for (id, ty) in &mir.types {
+                if let MirType::Pointer { pointee } = ty
+                    && *pointee == place_type_id
+                {
+                    return Ok(*id);
+                }
+            }
+            Err("Pointer type not found in MIR types".to_string())
+        }
+    }
+}
+
 /// Helper function to get the TypeId of a place
 fn get_place_type_id(place: &Place, mir: &SemaOutput) -> Result<TypeId, String> {
     match place {
@@ -1101,6 +1138,15 @@ impl MirToCraneliftLowerer {
                                 }
                             }
                             Rvalue::PtrAdd(base, offset) => {
+                                let base_type_id = get_operand_type_id(base, &self.mir)?;
+                                let base_type = self.mir.get_type(base_type_id);
+                                let pointee_size = if let MirType::Pointer { pointee } = base_type {
+                                    let pointee_type = self.mir.get_type(*pointee);
+                                    mir_type_size(pointee_type, &self.mir)?
+                                } else {
+                                    return Err("PtrAdd base is not a pointer type".to_string());
+                                };
+
                                 let base_val = resolve_operand_to_value(
                                     base,
                                     &mut builder,
@@ -1117,7 +1163,84 @@ impl MirToCraneliftLowerer {
                                     &self.mir,
                                     &mut self.module,
                                 )?;
-                                Ok(builder.ins().iadd(base_val, offset_val))
+
+                                let scaled_offset = if pointee_size > 1 {
+                                    let size_val = builder.ins().iconst(types::I64, pointee_size as i64);
+                                    builder.ins().imul(offset_val, size_val)
+                                } else {
+                                    offset_val
+                                };
+                                Ok(builder.ins().iadd(base_val, scaled_offset))
+                            }
+                            Rvalue::PtrSub(base, offset) => {
+                                let base_type_id = get_operand_type_id(base, &self.mir)?;
+                                let base_type = self.mir.get_type(base_type_id);
+                                let pointee_size = if let MirType::Pointer { pointee } = base_type {
+                                    let pointee_type = self.mir.get_type(*pointee);
+                                    mir_type_size(pointee_type, &self.mir)?
+                                } else {
+                                    return Err("PtrSub base is not a pointer type".to_string());
+                                };
+
+                                let base_val = resolve_operand_to_value(
+                                    base,
+                                    &mut builder,
+                                    types::I64,
+                                    &self.clif_stack_slots,
+                                    &self.mir,
+                                    &mut self.module,
+                                )?;
+                                let offset_val = resolve_operand_to_value(
+                                    offset,
+                                    &mut builder,
+                                    types::I64,
+                                    &self.clif_stack_slots,
+                                    &self.mir,
+                                    &mut self.module,
+                                )?;
+
+                                let scaled_offset = if pointee_size > 1 {
+                                    let size_val = builder.ins().iconst(types::I64, pointee_size as i64);
+                                    builder.ins().imul(offset_val, size_val)
+                                } else {
+                                    offset_val
+                                };
+                                Ok(builder.ins().isub(base_val, scaled_offset))
+                            }
+                            Rvalue::PtrDiff(left, right) => {
+                                let left_type_id = get_operand_type_id(left, &self.mir)?;
+                                let left_type = self.mir.get_type(left_type_id);
+                                let pointee_size = if let MirType::Pointer { pointee } = left_type {
+                                    let pointee_type = self.mir.get_type(*pointee);
+                                    mir_type_size(pointee_type, &self.mir)?
+                                } else {
+                                    return Err("PtrDiff left operand is not a pointer type".to_string());
+                                };
+
+                                let left_val = resolve_operand_to_value(
+                                    left,
+                                    &mut builder,
+                                    types::I64,
+                                    &self.clif_stack_slots,
+                                    &self.mir,
+                                    &mut self.module,
+                                )?;
+                                let right_val = resolve_operand_to_value(
+                                    right,
+                                    &mut builder,
+                                    types::I64,
+                                    &self.clif_stack_slots,
+                                    &self.mir,
+                                    &mut self.module,
+                                )?;
+
+                                let diff = builder.ins().isub(left_val, right_val);
+                                if pointee_size > 1 {
+                                    let size_val = builder.ins().iconst(types::I64, pointee_size as i64);
+                                    Ok(builder.ins().sdiv(diff, size_val))
+                                } else {
+                                    Ok(diff)
+                                }
                             }
                             Rvalue::Load(operand) => {
                                 let addr = resolve_operand_to_value(
@@ -1224,9 +1347,19 @@ impl MirToCraneliftLowerer {
                                     BinaryOp::LogicAnd | BinaryOp::LogicOr => builder.ins().band(left_val, right_val),
                                     BinaryOp::Comma => right_val,
                                 };
+                                let from_type = match op {
+                                    BinaryOp::Equal
+                                    | BinaryOp::NotEqual
+                                    | BinaryOp::Less
+                                    | BinaryOp::LessEqual
+                                    | BinaryOp::Greater
+                                    | BinaryOp::GreaterEqual => types::I32,
+                                    _ => final_left_type,
+                                };
+
                                 Ok(emit_type_conversion(
                                     result_val,
-                                    final_left_type,
+                                    from_type,
                                     expected_type,
                                     true,
                                     &mut builder,

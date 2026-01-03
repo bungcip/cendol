@@ -134,15 +134,12 @@ impl<'a> SemanticAnalyzer<'a> {
                     self.report_error(SemanticError::NotAnLvalue { span: full_span });
                     return None;
                 }
-                // If operand is array/function, record pointer decay conversion
-                match &self.registry.get(operand_ty.ty).kind {
-                    TypeKind::Array { .. } | TypeKind::Function { .. } => {
-                        let idx = (operand_ref.get() - 1) as usize;
-                        self.semantic_info.conversions[idx].push(ImplicitConversion::PointerDecay);
-                    }
-                    _ => {}
+                if let TypeKind::Array { .. } | TypeKind::Function { .. } = &self.registry.get(operand_ty.ty).kind {
+                    let idx = (operand_ref.get() - 1) as usize;
+                    self.semantic_info.conversions[idx].push(ImplicitConversion::PointerDecay);
+                    return Some(self.registry.decay(operand_ty));
                 }
-                Some(self.registry.decay(operand_ty))
+                Some(QualType::unqualified(self.registry.pointer_to(operand_ty.ty)))
             }
             UnaryOp::Deref => match operand_kind {
                 TypeKind::Pointer { pointee } => Some(QualType::unqualified(*pointee)),
@@ -207,31 +204,53 @@ impl<'a> SemanticAnalyzer<'a> {
         let lhs_kind = &self.registry.get(lhs_promoted.ty).kind;
         let rhs_kind = &self.registry.get(rhs_promoted.ty).kind;
 
-        let result_ty = match (op, lhs_kind, rhs_kind) {
+        let (result_ty, common_ty) = match (op, lhs_kind, rhs_kind) {
             // Pointer + integer = pointer
-            (BinaryOp::Add, TypeKind::Pointer { pointee }, TypeKind::Int { .. }) => {
-                Some(QualType::unqualified(*pointee))
-            }
-            (BinaryOp::Add, TypeKind::Int { .. }, TypeKind::Pointer { pointee }) => {
-                Some(QualType::unqualified(*pointee))
-            }
+            (BinaryOp::Add, TypeKind::Pointer { .. }, TypeKind::Int { .. }) => (lhs_promoted, lhs_promoted),
+            (BinaryOp::Add, TypeKind::Int { .. }, TypeKind::Pointer { .. }) => (rhs_promoted, rhs_promoted),
 
             // Pointer - integer = pointer
-            (BinaryOp::Sub, TypeKind::Pointer { pointee }, TypeKind::Int { .. }) => {
-                Some(QualType::unqualified(*pointee))
-            }
+            (BinaryOp::Sub, TypeKind::Pointer { .. }, TypeKind::Int { .. }) => (lhs_promoted, lhs_promoted),
 
             // Pointer - pointer = integer (ptrdiff_t)
             (BinaryOp::Sub, TypeKind::Pointer { .. }, TypeKind::Pointer { .. }) => {
-                Some(QualType::unqualified(self.registry.type_int))
+                (QualType::unqualified(self.registry.type_int), lhs_promoted)
+            }
+
+            // Pointer/Integer comparisons
+            (
+                BinaryOp::Equal
+                | BinaryOp::NotEqual
+                | BinaryOp::Less
+                | BinaryOp::LessEqual
+                | BinaryOp::Greater
+                | BinaryOp::GreaterEqual,
+                _,
+                _,
+            ) => {
+                let common = if let (TypeKind::Pointer { .. }, _) = (lhs_kind, rhs_kind) {
+                    lhs_promoted
+                } else if let (_, TypeKind::Pointer { .. }) = (lhs_kind, rhs_kind) {
+                    rhs_promoted
+                } else {
+                    usual_arithmetic_conversions(self.registry, lhs_promoted, rhs_promoted)?
+                };
+                (QualType::unqualified(self.registry.type_int), common)
+            }
+
+            // Logical operations
+            (BinaryOp::LogicAnd | BinaryOp::LogicOr, _, _) => {
+                (QualType::unqualified(self.registry.type_bool), lhs_promoted)
             }
 
             // For other operations, use usual arithmetic conversions
-            _ => usual_arithmetic_conversions(self.registry, lhs_promoted, rhs_promoted),
-        }?;
+            _ => {
+                let ty = usual_arithmetic_conversions(self.registry, lhs_promoted, rhs_promoted)?;
+                (ty, ty)
+            }
+        };
 
-        // Record conversions if promoted types don't match result type
-        // Special case: we also record for literals to provide explicit casts in MIR
+        // For arithmetic/comparison operations, operands should be converted to a common type.
         let lhs_node = self.ast.get_node(lhs_ref);
         let rhs_node = self.ast.get_node(rhs_ref);
 
@@ -242,18 +261,18 @@ impl<'a> SemanticAnalyzer<'a> {
             )
         };
 
-        if lhs_promoted.ty != result_ty.ty || is_literal(lhs_node) {
+        if lhs_promoted.ty != common_ty.ty || is_literal(lhs_node) {
             let idx = (lhs_ref.get() - 1) as usize;
             self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerCast {
                 from: lhs_promoted.ty,
-                to: result_ty.ty,
+                to: common_ty.ty,
             });
         }
-        if rhs_promoted.ty != result_ty.ty || is_literal(rhs_node) {
+        if rhs_promoted.ty != common_ty.ty || is_literal(rhs_node) {
             let idx = (rhs_ref.get() - 1) as usize;
             self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerCast {
                 from: rhs_promoted.ty,
-                to: result_ty.ty,
+                to: common_ty.ty,
             });
         }
 
@@ -437,10 +456,14 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::VarDecl(data) => {
                 let _ = self.registry.ensure_layout(data.ty.ty);
-                if let Some(init_ref) = data.init
-                    && let Some(init_ty) = self.visit_node(init_ref)
-                {
-                    self.record_implicit_conversions(data.ty, init_ty, init_ref);
+                if let Some(init_ref) = data.init {
+                    if let Some(init_ty) = self.visit_node(init_ref) {
+                        self.record_implicit_conversions(data.ty, init_ty, init_ref);
+                    } else if let NodeKind::InitializerList(_) = self.ast.get_node(init_ref).kind {
+                        // For InitializerList, it doesn't have an inherent type, but in a VarDecl
+                        // we can treat it as having the target type for MIR lowering.
+                        self.semantic_info.types[(init_ref.get() - 1) as usize] = Some(data.ty);
+                    }
                 }
                 Some(data.ty)
             }

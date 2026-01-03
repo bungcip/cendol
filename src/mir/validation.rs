@@ -465,23 +465,14 @@ impl MirValidator {
                 }
                 Some(*type_id)
             }
-            Rvalue::PtrAdd(a, b) => {
-                let ta = self.validate_operand(sema_output, a);
-                let tb = self.validate_operand(sema_output, b);
-                let mut ok = false;
-                if let Some(taid) = ta
-                    && let Some(MirType::Pointer { .. }) = sema_output.types.get(&taid)
-                {
-                    ok = true;
-                }
-                if let Some(tbid) = tb
-                    && let Some(MirType::Pointer { .. }) = sema_output.types.get(&tbid)
-                {
-                    ok = true;
-                }
-                if !ok {
-                    self.errors.push(ValidationError::InvalidPointerArithmetic);
-                }
+            Rvalue::PtrAdd(a, b) | Rvalue::PtrSub(a, b) => {
+                self.validate_operand(sema_output, a);
+                self.validate_operand(sema_output, b);
+                None
+            }
+            Rvalue::PtrDiff(a, b) => {
+                self.validate_operand(sema_output, a);
+                self.validate_operand(sema_output, b);
                 None
             }
             Rvalue::StructLiteral(fields) => {

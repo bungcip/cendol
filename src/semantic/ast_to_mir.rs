@@ -311,13 +311,54 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
+    fn lower_array_initializer(
+        &mut self,
+        scope_id: ScopeId,
+        inits: &[nodes::DesignatedInitializer],
+        element_ty: QualType,
+        _size: usize,
+        target_ty: QualType,
+    ) -> Operand {
+        let mut elements = Vec::new();
+        for init in inits {
+            // For now, only sequential initialization is supported.
+            // Designators for arrays are ignored for now to keep it simple.
+            let operand = self.lower_initializer(scope_id, init.initializer, element_ty);
+            elements.push(operand);
+        }
+
+        let is_global = self.current_function.is_none();
+        if is_global {
+            let mut const_elements = Vec::new();
+            for op in elements {
+                if let Some(const_id) = self.operand_to_const_id(op) {
+                    const_elements.push(const_id);
+                } else {
+                    panic!("Global array initializer must be a constant expression");
+                }
+            }
+            let const_val = ConstValue::ArrayLiteral(const_elements);
+            Operand::Constant(self.create_constant(const_val))
+        } else {
+            let rval = Rvalue::ArrayLiteral(elements);
+            let mir_ty = self.lower_type_to_mir(target_ty.ty);
+            let (_, place) = self.create_temp_local_with_assignment(rval, mir_ty);
+            Operand::Copy(Box::new(place))
+        }
+    }
+
     fn lower_initializer(&mut self, scope_id: ScopeId, init_ref: NodeRef, target_ty: QualType) -> Operand {
         let init_node_kind = self.ast.get_node(init_ref).kind.clone();
-        let target_ty_kind = &self.registry.get(target_ty.ty).kind.clone();
+        let target_ty_kind = self.registry.get(target_ty.ty).kind.clone();
 
         match (init_node_kind, target_ty_kind) {
             (NodeKind::InitializerList(inits), TypeKind::Record { members, .. }) => {
-                self.lower_initializer_list(scope_id, &inits, members, target_ty)
+                self.lower_initializer_list(scope_id, &inits, &members, target_ty)
+            }
+            (NodeKind::InitializerList(inits), TypeKind::Array { element_type, size }) => {
+                let element_ty = QualType::unqualified(element_type);
+                let array_size = if let ArraySizeType::Constant(s) = size { s } else { 0 };
+                self.lower_array_initializer(scope_id, &inits, element_ty, array_size, target_ty)
             }
             _ => {
                 // It's a simple expression initializer.
@@ -553,6 +594,42 @@ impl<'a> AstToMirLowerer<'a> {
     ) -> Operand {
         let lhs = self.lower_expression(scope_id, left_ref, true);
         let rhs = self.lower_expression(scope_id, right_ref, true);
+
+        // Handle pointer arithmetic
+        let lhs_type = self.ast.get_resolved_type(left_ref).unwrap();
+        let rhs_type = self.ast.get_resolved_type(right_ref).unwrap();
+        let lhs_kind = &self.registry.get(lhs_type.ty).kind;
+        let rhs_kind = &self.registry.get(rhs_type.ty).kind;
+
+        match (op, lhs_kind, rhs_kind) {
+            (BinaryOp::Add, TypeKind::Pointer { .. }, _) => {
+                let rhs_mir_ty = self.lower_type_to_mir(rhs_type.ty);
+                let rhs_converted = self.apply_conversions(rhs, right_ref, rhs_mir_ty);
+                let rval = Rvalue::PtrAdd(lhs, rhs_converted);
+                let (_, place) = self.create_temp_local_with_assignment(rval, mir_ty);
+                return Operand::Copy(Box::new(place));
+            }
+            (BinaryOp::Add, _, TypeKind::Pointer { .. }) => {
+                let lhs_mir_ty = self.lower_type_to_mir(lhs_type.ty);
+                let lhs_converted = self.apply_conversions(lhs, left_ref, lhs_mir_ty);
+                let rval = Rvalue::PtrAdd(rhs, lhs_converted);
+                let (_, place) = self.create_temp_local_with_assignment(rval, mir_ty);
+                return Operand::Copy(Box::new(place));
+            }
+            (BinaryOp::Sub, TypeKind::Pointer { .. }, TypeKind::Int { .. }) => {
+                let rhs_mir_ty = self.lower_type_to_mir(rhs_type.ty);
+                let rhs_converted = self.apply_conversions(rhs, right_ref, rhs_mir_ty);
+                let rval = Rvalue::PtrSub(lhs, rhs_converted);
+                let (_, place) = self.create_temp_local_with_assignment(rval, mir_ty);
+                return Operand::Copy(Box::new(place));
+            }
+            (BinaryOp::Sub, TypeKind::Pointer { .. }, TypeKind::Pointer { .. }) => {
+                let rval = Rvalue::PtrDiff(lhs, rhs);
+                let (_, place) = self.create_temp_local_with_assignment(rval, mir_ty);
+                return Operand::Copy(Box::new(place));
+            }
+            _ => {}
+        }
 
         // Apply any recorded implicit conversions (e.g., integer promotions)
         let lhs_converted = self.apply_conversions(lhs, left_ref, mir_ty);
@@ -1189,22 +1266,8 @@ impl<'a> AstToMirLowerer<'a> {
 
         if let Operand::Copy(place) = operand.clone() {
             let type_info = self.registry.get(operand_ty.ty);
-            let delta = if is_inc { 1 } else { -1 };
-
-            // Determine MIR operation and RHS constant
-            // For Pointers: PtrAdd(delta)
-            // For Integers: Add(delta) (Note: we use Add with negative delta for decrement
-            // to support proper wrapping arithmetic and fix previous bugs)
-            let (mir_op, rhs) = match &type_info.kind {
-                TypeKind::Pointer { .. } => (
-                    None, // PtrAdd is special
-                    Operand::Constant(self.create_constant(ConstValue::Int(delta))),
-                ),
-                _ => (
-                    Some(MirBinaryOp::Add),
-                    Operand::Constant(self.create_constant(ConstValue::Int(delta))),
-                ),
-            };
+            let one_const = Operand::Constant(self.create_constant(ConstValue::Int(1)));
+            let minus_one_const = Operand::Constant(self.create_constant(ConstValue::Int(-1)));
 
             // If it's post-inc/dec and we need the value, save the old value
             let old_value = if is_post && need_value {
@@ -1215,41 +1278,36 @@ impl<'a> AstToMirLowerer<'a> {
                 None
             };
 
-            // Perform the increment/decrement
-            // For pointers, use PtrAdd. For others, use the determined binary op.
-            match &type_info.kind {
+            // Determine MIR operation and Rvalue
+            let rval = match &type_info.kind {
                 TypeKind::Pointer { .. } => {
-                    let r = Rvalue::PtrAdd(operand.clone(), rhs);
-                    if is_post && !need_value {
-                        // Optimization: assign directly to place if old value not needed
-                        self.mir_builder.add_statement(MirStmt::Assign(*place.clone(), r));
+                    if is_inc {
+                        Rvalue::PtrAdd(operand.clone(), one_const)
                     } else {
-                        // If we needed old value (is_post), or if it is pre-inc (need new value),
-                        // we compute to a temp first (standardizing flow, though could be optimized)
-                        // Actually, for pre-inc, we can assign directly too if we carefully return.
-                        // But let's reuse logic.
-                        let (_, new_place) = self.create_temp_local_with_assignment(r, mir_ty);
-                        self.emit_assignment(*place.clone(), Operand::Copy(Box::new(new_place.clone())));
-
-                        if !is_post {
-                            // Pre-inc: return the new value
-                            return Operand::Copy(Box::new(new_place));
-                        }
+                        Rvalue::PtrSub(operand.clone(), one_const)
                     }
                 }
                 _ => {
-                    let r = Rvalue::BinaryOp(mir_op.unwrap(), operand.clone(), rhs);
-                    if is_post && !need_value {
-                        self.mir_builder.add_statement(MirStmt::Assign(*place.clone(), r));
-                    } else {
-                        let (_, new_place) = self.create_temp_local_with_assignment(r, mir_ty);
-                        self.emit_assignment(*place.clone(), Operand::Copy(Box::new(new_place.clone())));
+                    // For Integers: Add(delta) (Note: we use Add with negative delta for decrement
+                    // to support proper wrapping arithmetic and fix previous bugs)
+                    let rhs = if is_inc { one_const } else { minus_one_const };
+                    Rvalue::BinaryOp(mir::BinaryOp::Add, operand.clone(), rhs)
+                }
+            };
 
-                        if !is_post {
-                            // Pre-inc: return the new value
-                            return Operand::Copy(Box::new(new_place));
-                        }
-                    }
+            // Perform the assignment
+            if is_post && !need_value {
+                // Optimization: assign directly to place if old value not needed
+                self.mir_builder.add_statement(MirStmt::Assign(*place.clone(), rval));
+            } else {
+                // If we needed old value (is_post), or if it is pre-inc (need new value),
+                // we compute to a temp first to ensure correctness and return the right value.
+                let (_, new_place) = self.create_temp_local_with_assignment(rval, mir_ty);
+                self.emit_assignment(*place.clone(), Operand::Copy(Box::new(new_place.clone())));
+
+                if !is_post {
+                    // Pre-inc: return the new value
+                    return Operand::Copy(Box::new(new_place));
                 }
             }
 
@@ -1260,12 +1318,8 @@ impl<'a> AstToMirLowerer<'a> {
                     Operand::Constant(self.create_constant(ConstValue::Int(0)))
                 }
             } else {
-                // Pre-inc: we already returned inside the match if needed.
-                // If we are here, it means we didn't return (impossible given logic above?)
-                // Wait, the match arms above for Pre-inc return early.
-                // Let's make it cleaner.
-                // For Pre-inc, we just returned the new value Place.
-                // Re-fetching it from the place is safe too.
+                // Pre-inc: we already returned inside the block above.
+                // RE-FETCH from place as a fallback (should not be reached)
                 Operand::Copy(place)
             }
         } else {

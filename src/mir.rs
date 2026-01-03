@@ -190,6 +190,8 @@ pub enum Rvalue {
     UnaryOp(UnaryOp, Operand),
     Cast(TypeId, Operand),
     PtrAdd(Operand, Operand),
+    PtrSub(Operand, Operand),
+    PtrDiff(Operand, Operand),
     // Aggregate construction
     StructLiteral(Vec<(usize, Operand)>),
     ArrayLiteral(Vec<Operand>),
@@ -805,6 +807,8 @@ impl fmt::Display for Rvalue {
             Rvalue::UnaryOp(op, operand) => write!(f, "UnaryOp({:?}, {:?})", op, operand),
             Rvalue::Cast(type_id, operand) => write!(f, "Cast({}, {:?})", type_id.get(), operand),
             Rvalue::PtrAdd(base, offset) => write!(f, "PtrAdd({:?}, {:?})", base, offset),
+            Rvalue::PtrSub(base, offset) => write!(f, "PtrSub({:?}, {:?})", base, offset),
+            Rvalue::PtrDiff(left, right) => write!(f, "PtrDiff({:?}, {:?})", left, right),
             Rvalue::StructLiteral(fields) => write!(f, "StructLiteral({:?})", fields),
             Rvalue::ArrayLiteral(elements) => write!(f, "ArrayLiteral({:?})", elements),
             Rvalue::Load(operand) => write!(f, "Load({:?})", operand),

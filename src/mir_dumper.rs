@@ -585,11 +585,41 @@ impl<'a> MirDumper<'a> {
                     self.operand_to_string(offset)
                 )?;
             }
-            Rvalue::StructLiteral(_fields) => {
-                write!(output, "struct_literal")?;
+            Rvalue::PtrSub(base, offset) => {
+                write!(
+                    output,
+                    "ptrsub({}, {})",
+                    self.operand_to_string(base),
+                    self.operand_to_string(offset)
+                )?;
             }
-            Rvalue::ArrayLiteral(_elements) => {
-                write!(output, "array_literal")?;
+            Rvalue::PtrDiff(left, right) => {
+                write!(
+                    output,
+                    "ptrdiff({}, {})",
+                    self.operand_to_string(left),
+                    self.operand_to_string(right)
+                )?;
+            }
+            Rvalue::StructLiteral(fields) => {
+                write!(output, "struct{{")?;
+                for (i, (idx, op)) in fields.iter().enumerate() {
+                    if i > 0 {
+                        write!(output, ", ")?;
+                    }
+                    write!(output, "{}: {}", idx, self.operand_to_string(op))?;
+                }
+                write!(output, "}}")?;
+            }
+            Rvalue::ArrayLiteral(elements) => {
+                write!(output, "[")?;
+                for (i, op) in elements.iter().enumerate() {
+                    if i > 0 {
+                        write!(output, ", ")?;
+                    }
+                    write!(output, "{}", self.operand_to_string(op))?;
+                }
+                write!(output, "]")?;
             }
             Rvalue::Load(operand) => {
                 write!(output, "load {}", self.operand_to_string(operand))?;

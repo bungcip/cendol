@@ -211,9 +211,7 @@ impl<'a> AstToMirLowerer<'a> {
                 }
             }
             NodeKind::Goto(label_name, _) => self.lower_goto_statement(&label_name),
-            NodeKind::Label(label_name, statement, _) => {
-                self.lower_label_statement(scope_id, &label_name, statement)
-            }
+            NodeKind::Label(label_name, statement, _) => self.lower_label_statement(scope_id, &label_name, statement),
             _ => {}
         }
     }

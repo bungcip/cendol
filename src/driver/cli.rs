@@ -27,9 +27,13 @@ pub struct Cli {
     #[clap(short, long)]
     pub verbose: bool,
 
-    /// Dump parser state
+    /// Dump AST after parser phase
     #[clap(long)]
-    pub dump_parser: bool,
+    pub dump_ast_after_parser: bool,
+
+    /// Dump AST after symbol resolver phase
+    #[clap(long)]
+    pub dump_ast_after_symbol_resolver: bool,
 
     /// Dump MIR (Mid-level Intermediate Representation) to console
     #[clap(long)]
@@ -206,8 +210,10 @@ impl Cli {
 
         let stop_after = if self.preprocess_only {
             CompilePhase::Preprocess
-        } else if self.dump_parser {
+        } else if self.dump_ast_after_parser {
             CompilePhase::Parse
+        } else if self.dump_ast_after_symbol_resolver {
+            CompilePhase::SymbolResolver
         } else if self.dump_mir {
             CompilePhase::Mir
         } else if self.dump_cranelift {

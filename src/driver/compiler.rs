@@ -39,6 +39,7 @@ pub enum CompilePhase {
     Preprocess,
     Lex,
     Parse,
+    SymbolResolver,
     Mir,
     Cranelift,
     #[default]
@@ -73,6 +74,13 @@ pub struct SemaOutput {
     pub types: HashMap<TypeId, MirType>,
     pub constants: HashMap<ConstValueId, ConstValue>,
     pub statements: HashMap<MirStmtId, MirStmt>,
+}
+
+/// Semantic analysis output with AST for symbol resolver dumping
+#[derive(Clone)]
+pub struct SemaOutputWithAst {
+    pub sema_output: SemaOutput,
+    pub ast_with_scope: Ast,
 }
 
 impl SemaOutput {
@@ -177,7 +185,12 @@ impl CompilerDriver {
         }
 
         // semantic lowering and MIR generation phase
-        let sema_output = self.run_mir(ast)?;
+        let sema_output_with_ast = self.run_mir(ast)?;
+        if stop_after == CompilePhase::SymbolResolver {
+            out.ast = Some(sema_output_with_ast.ast_with_scope);
+            return Ok(out);
+        }
+        let sema_output = sema_output_with_ast.sema_output;
         if stop_after == CompilePhase::Mir {
             out.mir = Some(sema_output.module.clone());
             out.sema_output = Some(sema_output);
@@ -246,7 +259,7 @@ impl CompilerDriver {
         }
     }
 
-    fn run_mir(&mut self, mut ast: Ast) -> Result<SemaOutput, PipelineError> {
+    fn run_mir(&mut self, mut ast: Ast) -> Result<SemaOutputWithAst, PipelineError> {
         let mut symbol_table = SymbolTable::new();
         let mut registry = TypeRegistry::new();
         registry.create_builtin();
@@ -394,7 +407,10 @@ impl CompilerDriver {
         let sema_output = sema.lower_module_complete();
         self.check_diagnostics_and_return_if_error()?;
 
-        Ok(sema_output)
+        Ok(SemaOutputWithAst {
+            sema_output,
+            ast_with_scope: ast,
+        })
     }
 
     fn run_codegen(&mut self, sema_output: SemaOutput, emit_kind: EmitKind) -> Result<ClifOutput, PipelineError> {

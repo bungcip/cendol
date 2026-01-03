@@ -43,6 +43,7 @@ pub use nodes::{BinaryOp, UnaryOp};
 
 /// The flattened AST storage.
 /// Contains all AST nodes, types, symbol entries in contiguous vectors.
+#[derive(Clone)]
 pub struct Ast {
     pub nodes: Vec<Node>,
     pub parsed_types: ParsedTypeArena,                        // syntax type

@@ -5,7 +5,8 @@ use crate::driver::compiler::SemaOutput;
 use crate::mir::MirArrayLayout;
 use crate::mir::MirRecordLayout;
 use crate::mir::{
-    self, BinaryOp as MirBinaryOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlockId, MirBuilder, MirFunctionId, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
+    self, BinaryOp as MirBinaryOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlockId, MirBuilder,
+    MirFunctionId, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
 };
 use crate::semantic::ArraySizeType;
 use crate::semantic::QualType;

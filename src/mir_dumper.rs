@@ -490,6 +490,13 @@ impl<'a> MirDumper<'a> {
                 &ConstValue::FunctionAddress(func_id) => {
                     format!("const {}", self.function_to_string(func_id))
                 }
+                ConstValue::Cast(type_id, inner_id) => {
+                    format!(
+                        "cast<{}>({})",
+                        self.type_to_string(*type_id),
+                        self.const_to_string(*inner_id)
+                    )
+                }
             }
         } else {
             format!("const unknown_{}", const_id.get())

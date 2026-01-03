@@ -78,7 +78,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @"
+        insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
         fn main() -> i32
@@ -90,16 +90,16 @@ mod tests {
           }
 
           bb1:
-            %a = const 1
-            %b = const 2
+            %a = cast<i32>(const 1)
+            %b = cast<i32>(const 2)
             %3 = %a > %b
             cond_br %3, bb2, bb3
 
           bb2:
-            return const 1
+            return cast<i32>(const 1)
 
           bb3:
-            return const 2
+            return cast<i32>(const 2)
 
           bb4:
             unreachable
@@ -119,7 +119,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @"
+        insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
         fn main() -> i32
@@ -130,14 +130,14 @@ mod tests {
           }
 
           bb1:
-            %steins = const 99
+            %steins = cast<i32>(const 99)
             br bb2
 
           bb2:
             cond_br %steins, bb3, bb4
 
           bb3:
-            %2 = %steins - const 1
+            %2 = %steins - cast<i32>(const 1)
             %steins = %2
             br bb2
 
@@ -161,7 +161,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @"
+        insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
         fn main() -> i32
@@ -173,8 +173,8 @@ mod tests {
           }
 
           bb1:
-            %steins = const 44
-            %gate = const 1
+            %steins = cast<i32>(const 44)
+            %gate = cast<i32>(const 1)
             br bb2
 
           bb2:
@@ -204,7 +204,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @"
+        insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
         fn main() -> i32
@@ -214,7 +214,7 @@ mod tests {
           }
 
           bb1:
-            %result = const 99
+            %result = cast<i32>(const 99)
             return %result
         }
         ");
@@ -233,7 +233,7 @@ mod tests {
         insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
-        global @result: i32 = const 99
+        global @result: i32 = cast<i32>(const 99)
 
         fn main() -> i32
         {
@@ -259,7 +259,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @"
+        insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
         fn main() -> i32
@@ -275,10 +275,10 @@ mod tests {
             br bb4
 
           bb4:
-            return const 1
+            return cast<i32>(const 1)
 
           bb5:
-            return const 0
+            return cast<i32>(const 0)
         }
         ");
     }
@@ -296,7 +296,7 @@ mod tests {
         let mir_dump = setup_mir(source);
         // We want to ensure %t0 is i32 and %t1 is struct using %t0
         // and NOT that %t0 is struct using %t0
-        insta::assert_snapshot!(mir_dump, @"
+        insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = struct anonymous { a: %t0, b: %t0, c: %t0 }
 
@@ -309,17 +309,17 @@ mod tests {
           }
 
           bb1:
-            %1 = @s.field_0 != const 1
+            %1 = @s.field_0 != cast<i32>(const 1)
             cond_br %1, bb2, bb3
 
           bb2:
-            return const 1
+            return cast<i32>(const 1)
 
           bb3:
             br bb4
 
           bb4:
-            return const 0
+            return cast<i32>(const 0)
         }
         ");
     }
@@ -345,7 +345,7 @@ mod tests {
         {
 
           bb1:
-            return const 0
+            return cast<i32>(const 0)
         }
         ");
     }
@@ -367,14 +367,14 @@ mod tests {
         type %t1 = struct S { a: %t0, p: %t2 }
         type %t2 = ptr<%t0>
 
-        global @x: i32 = const 10
+        global @x: i32 = cast<i32>(const 10)
         global @s: %t1 = const struct_literal { 1: const @x, 0: const 1 }
 
         fn main() -> i32
         {
 
           bb1:
-            return const 0
+            return cast<i32>(const 0)
         }
         ");
     }
@@ -412,7 +412,7 @@ mod tests {
         {
 
           bb1:
-            return const 0
+            return cast<i32>(const 0)
         }
         ");
     }
@@ -431,7 +431,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @"
+        insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = struct T { x: %t0 }
         type %t2 = struct T { y: %t0 }
@@ -445,8 +445,8 @@ mod tests {
           }
 
           bb1:
-            @s1.field_0 = const 1
-            %s2.field_0 = const 2
+            @s1.field_0 = cast<i32>(const 1)
+            %s2.field_0 = cast<i32>(const 2)
             return @s1.field_0
         }
         ");
@@ -468,7 +468,7 @@ mod tests {
         let mir_dump = setup_mir(source);
         // We expect two different %x locals. MIR printer might show them with same name or different IDs.
         // Currently it shows names if available.
-        insta::assert_snapshot!(mir_dump, @"
+        insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
         fn main() -> i32
@@ -481,29 +481,29 @@ mod tests {
           }
 
           bb1:
-            %x = const 1
-            %x = const 2
-            %3 = %x != const 2
+            %x = cast<i32>(const 1)
+            %x = cast<i32>(const 2)
+            %3 = %x != cast<i32>(const 2)
             cond_br %3, bb2, bb3
 
           bb2:
-            return const 1
+            return cast<i32>(const 1)
 
           bb3:
             br bb4
 
           bb4:
-            %4 = %x != const 1
+            %4 = %x != cast<i32>(const 1)
             cond_br %4, bb5, bb6
 
           bb5:
-            return const 1
+            return cast<i32>(const 1)
 
           bb6:
             br bb7
 
           bb7:
-            return const 0
+            return cast<i32>(const 0)
         }
         ");
     }
@@ -559,7 +559,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @"
+        insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = fn(%t0) -> %t0
 
@@ -570,7 +570,7 @@ mod tests {
           }
 
           bb2:
-            %3 = call foo(const 5)
+            %3 = call foo(cast<i32>(const 5))
             return %3
         }
 
@@ -581,7 +581,7 @@ mod tests {
           }
 
           bb1:
-            %x = const 10
+            %x = cast<i32>(const 10)
             return %x
         }
         ");
@@ -695,28 +695,28 @@ mod tests {
             %13 = call fn_ullong()
             %14 = call fn_float()
             %15 = call fn_double()
-            return const 0
+            return cast<i32>(const 0)
         }
 
         fn fn_double() -> f64
         {
 
           bb13:
-            return const 2.71828
+            return cast<f64>(const 2.71828)
         }
 
         fn fn_char() -> i8
         {
 
           bb2:
-            return const 97
+            return cast<i8>(const 97)
         }
 
         fn fn_ulong() -> u32
         {
 
           bb9:
-            return const 200000
+            return cast<u32>(const 200000)
         }
 
         fn fn_void() -> void
@@ -730,14 +730,14 @@ mod tests {
         {
 
           bb3:
-            return const 98
+            return cast<u8>(const 98)
         }
 
         fn fn_uint() -> u32
         {
 
           bb7:
-            return const 42
+            return cast<u32>(const 42)
         }
 
         fn fn_short() -> i16
@@ -748,7 +748,7 @@ mod tests {
 
           bb4:
             %1 = - const 7
-            return %1
+            return cast<i16>(%1)
         }
 
         fn fn_int() -> i32
@@ -766,7 +766,7 @@ mod tests {
         {
 
           bb12:
-            return const 3.14
+            return cast<f32>(const 3.14)
         }
 
         fn fn_llong() -> i64
@@ -777,28 +777,28 @@ mod tests {
 
           bb10:
             %3 = - const 3000000000
-            return %3
+            return cast<i64>(%3)
         }
 
         fn fn_long() -> i32
         {
 
           bb8:
-            return const 100000
+            return cast<i32>(const 100000)
         }
 
         fn fn_ushort() -> u16
         {
 
           bb5:
-            return const 14
+            return cast<u16>(const 14)
         }
 
         fn fn_ullong() -> u64
         {
 
           bb11:
-            return const 4000000000
+            return cast<u64>(const 4000000000)
         }
         ");
     }
@@ -865,7 +865,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @"
+        insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
         fn main() -> i32
@@ -875,7 +875,7 @@ mod tests {
           }
 
           bb1:
-            %x = const 10
+            %x = cast<i32>(const 10)
             return %x
         }
         ");
@@ -904,7 +904,7 @@ mod tests {
           }
 
           bb1:
-            %s.field_1 = const 0
+            %s.field_1 = cast<i32>(const 0)
             %s.field_0 = addr_of(%s)
             return deref(deref(deref(deref(deref(%s.field_0).field_0).field_0).field_0).field_0).field_1
         }
@@ -934,7 +934,7 @@ mod tests {
           }
 
           bb1:
-            %u.field_1 = const 0
+            %u.field_1 = cast<i32>(const 0)
             %u.field_0 = addr_of(%u)
             return deref(deref(deref(deref(deref(%u.field_0).field_0).field_0).field_0).field_0).field_1
         }
@@ -976,7 +976,7 @@ mod tests {
           bb1:
             %steins = cast<ptr<i8>>(const @.L.str0)
             %3 = call strlen(%steins)
-            %4 = %3 - const 4
+            %4 = %3 - cast<i32>(const 4)
             return %4
         }
 
@@ -1021,7 +1021,7 @@ mod tests {
           }
 
           bb1:
-            %okabe = const 1
+            %okabe = cast<i32>(const 1)
             %3 = %okabe
             %4 = %okabe + const 1
             %okabe = %4
@@ -1052,7 +1052,7 @@ mod tests {
             }
         "#;
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @"
+        insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
         fn main() -> i32
@@ -1062,7 +1062,7 @@ mod tests {
             br bb2
 
           bb2:
-            return const 0
+            return cast<i32>(const 0)
         }
         ");
     }

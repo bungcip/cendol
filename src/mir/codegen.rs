@@ -234,6 +234,10 @@ fn emit_const(
                 _ => return Err("ArrayLiteral with non-array type".to_string()),
             }
         }
+        ConstValue::Cast(_type_id, inner_id) => {
+            // For now, just emit the inner constant. The layout already determines the size/format.
+            emit_const(*inner_id, *_type_id, layout, output, mir)?;
+        }
     }
 
     Ok(())
@@ -366,6 +370,11 @@ fn resolve_operand_to_value(
                     // Global addresses are always pointer-sized (i64)
                     Ok(builder.ins().global_value(types::I64, local_id))
                 }
+                ConstValue::Cast(_type_id, inner_id) => {
+                    // Create a dummy Operand::Constant to recursively resolve
+                    let temp_op = Operand::Constant(*inner_id);
+                    resolve_operand_to_value(&temp_op, builder, expected_type, cranelift_stack_slots, mir, module)
+                }
                 _ => Ok(builder.ins().iconst(expected_type, 0)),
             }
         }
@@ -476,6 +485,10 @@ fn get_operand_cranelift_type(operand: &Operand, mir: &SemaOutput) -> Result<Typ
                 ConstValue::FunctionAddress(_) => Ok(types::I64),
                 ConstValue::StructLiteral(_) => Ok(types::I32),
                 ConstValue::ArrayLiteral(_) => Ok(types::I32),
+                ConstValue::Cast(type_id, _) => {
+                    let mir_type = mir.get_type(*type_id);
+                    Ok(convert_type(mir_type).unwrap_or(types::I32))
+                }
             }
         }
         Operand::Copy(place) => {

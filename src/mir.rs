@@ -313,6 +313,8 @@ pub enum ConstValue {
     // Address constants
     GlobalAddress(GlobalId),
     FunctionAddress(MirFunctionId),
+    // Type conversion
+    Cast(TypeId, ConstValueId),
 }
 
 /// Local - Represents a local variable or parameter
@@ -849,6 +851,7 @@ impl fmt::Display for ConstValue {
             ConstValue::ArrayLiteral(elements) => write!(f, "ArrayLiteral({:?})", elements),
             ConstValue::GlobalAddress(global_id) => write!(f, "GlobalAddress({})", global_id.get()),
             ConstValue::FunctionAddress(func_id) => write!(f, "FunctionAddress({})", func_id.get()),
+            ConstValue::Cast(type_id, inner_id) => write!(f, "Cast({}, {})", type_id.get(), inner_id.get()),
         }
     }
 }

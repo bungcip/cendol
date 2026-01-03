@@ -114,7 +114,11 @@ impl<'a> SemanticAnalyzer<'a> {
             if is_void_func {
                 // self.report_error(SemanticError::VoidReturnWithValue { span });
             }
-            self.visit_node(*expr_ref);
+            if let Some(expr_ty) = self.visit_node(*expr_ref)
+                && let Some(target_ty) = ret_ty
+            {
+                self.record_implicit_conversions(target_ty, expr_ty, *expr_ref);
+            }
         } else if !is_void_func {
             // self.report_error(SemanticError::NonVoidReturnWithoutValue { span });
         }
@@ -195,15 +199,15 @@ impl<'a> SemanticAnalyzer<'a> {
         let rhs_ty = self.visit_node(rhs_ref)?;
 
         // Perform integer promotions and record them
-        let _lhs_promoted = self.apply_and_record_integer_promotion(lhs_ref, lhs_ty);
-        let _rhs_promoted = self.apply_and_record_integer_promotion(rhs_ref, rhs_ty);
+        let lhs_promoted = self.apply_and_record_integer_promotion(lhs_ref, lhs_ty);
+        let rhs_promoted = self.apply_and_record_integer_promotion(rhs_ref, rhs_ty);
 
         // Handle pointer arithmetic
         // Re-borrow kinds after mutable borrows above
-        let lhs_kind = &self.registry.get(lhs_ty.ty).kind;
-        let rhs_kind = &self.registry.get(rhs_ty.ty).kind;
+        let lhs_kind = &self.registry.get(lhs_promoted.ty).kind;
+        let rhs_kind = &self.registry.get(rhs_promoted.ty).kind;
 
-        match (op, lhs_kind, rhs_kind) {
+        let result_ty = match (op, lhs_kind, rhs_kind) {
             // Pointer + integer = pointer
             (BinaryOp::Add, TypeKind::Pointer { pointee }, TypeKind::Int { .. }) => {
                 Some(QualType::unqualified(*pointee))
@@ -223,73 +227,139 @@ impl<'a> SemanticAnalyzer<'a> {
             }
 
             // For other operations, use usual arithmetic conversions
-            _ => usual_arithmetic_conversions(self.registry, lhs_ty, rhs_ty),
+            _ => usual_arithmetic_conversions(self.registry, lhs_promoted, rhs_promoted),
+        }?;
+
+        // Record conversions if promoted types don't match result type
+        // Special case: we also record for literals to provide explicit casts in MIR
+        let lhs_node = self.ast.get_node(lhs_ref);
+        let rhs_node = self.ast.get_node(rhs_ref);
+
+        let is_literal = |node: &crate::ast::Node| {
+            matches!(
+                node.kind,
+                NodeKind::LiteralInt(_) | NodeKind::LiteralChar(_) | NodeKind::LiteralFloat(_)
+            )
+        };
+
+        if lhs_promoted.ty != result_ty.ty || is_literal(lhs_node) {
+            let idx = (lhs_ref.get() - 1) as usize;
+            self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerCast {
+                from: lhs_promoted.ty,
+                to: result_ty.ty,
+            });
         }
+        if rhs_promoted.ty != result_ty.ty || is_literal(rhs_node) {
+            let idx = (rhs_ref.get() - 1) as usize;
+            self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerCast {
+                from: rhs_promoted.ty,
+                to: result_ty.ty,
+            });
+        }
+
+        Some(result_ty)
     }
 
     fn visit_assignment(&mut self, lhs_ref: NodeRef, rhs_ref: NodeRef, full_span: SourceSpan) -> Option<QualType> {
         let lhs_ty = self.visit_node(lhs_ref)?;
-        let rhs_result = self.visit_node(rhs_ref)?;
+        let rhs_ty = self.visit_node(rhs_ref)?;
 
         if !self.is_lvalue(lhs_ref) {
             self.report_error(SemanticError::NotAnLvalue { span: full_span });
         }
-        // Record potential implicit conversions from rhs -> lhs
-        let lhs_kind = &self.registry.get(lhs_ty.ty).kind;
-        let rhs_kind = &self.registry.get(rhs_result.ty).kind;
 
-        // Array-to-pointer decay: array assigned to pointer
+        self.record_implicit_conversions(lhs_ty, rhs_ty, rhs_ref);
+
+        Some(lhs_ty)
+    }
+
+    fn record_implicit_conversions(&mut self, lhs_ty: QualType, rhs_ty: QualType, rhs_ref: NodeRef) {
+        let lhs_kind = &self.registry.get(lhs_ty.ty).kind;
+        let rhs_kind = &self.registry.get(rhs_ty.ty).kind;
+
+        // Array-to-pointer decay
         if let (TypeKind::Pointer { .. }, TypeKind::Array { .. }) = (lhs_kind, rhs_kind) {
             let idx = (rhs_ref.get() - 1) as usize;
             self.semantic_info.conversions[idx].push(ImplicitConversion::PointerDecay);
         }
 
-        // Qualifier adjustment: same canonical type but different qualifiers
-        if lhs_ty.ty == rhs_result.ty && lhs_ty.qualifiers != rhs_result.qualifiers {
+        // Qualifier adjustment
+        if lhs_ty.ty == rhs_ty.ty && lhs_ty.qualifiers != rhs_ty.qualifiers {
             let idx = (rhs_ref.get() - 1) as usize;
             self.semantic_info.conversions[idx].push(ImplicitConversion::QualifierAdjust {
-                from: rhs_result.qualifiers,
+                from: rhs_ty.qualifiers,
                 to: lhs_ty.qualifiers,
             });
         }
 
         // Integer casts
+        let rhs_node = self.ast.get_node(rhs_ref);
+        let is_literal = matches!(
+            rhs_node.kind,
+            NodeKind::LiteralInt(_) | NodeKind::LiteralChar(_) | NodeKind::LiteralFloat(_)
+        );
+
         match (lhs_kind, rhs_kind) {
             (
-                TypeKind::Char { .. } | TypeKind::Short { .. } | TypeKind::Int { .. } | TypeKind::Long { .. },
-                TypeKind::Char { .. } | TypeKind::Short { .. } | TypeKind::Int { .. } | TypeKind::Long { .. },
+                TypeKind::Char { .. }
+                | TypeKind::Short { .. }
+                | TypeKind::Int { .. }
+                | TypeKind::Long { .. }
+                | TypeKind::Float
+                | TypeKind::Double { .. },
+                TypeKind::Char { .. }
+                | TypeKind::Short { .. }
+                | TypeKind::Int { .. }
+                | TypeKind::Long { .. }
+                | TypeKind::Float
+                | TypeKind::Double { .. },
             ) => {
-                if lhs_ty.ty != rhs_result.ty {
+                if lhs_ty.ty != rhs_ty.ty || is_literal {
                     let idx = (rhs_ref.get() - 1) as usize;
                     self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerCast {
-                        from: rhs_result.ty,
+                        from: rhs_ty.ty,
                         to: lhs_ty.ty,
                     });
                 }
             }
             // Pointer casts
             (TypeKind::Pointer { .. }, TypeKind::Pointer { .. }) => {
-                if lhs_ty.ty != rhs_result.ty {
+                if lhs_ty.ty != rhs_ty.ty {
                     let idx = (rhs_ref.get() - 1) as usize;
                     self.semantic_info.conversions[idx].push(ImplicitConversion::PointerCast {
-                        from: rhs_result.ty,
+                        from: rhs_ty.ty,
                         to: lhs_ty.ty,
                     });
                 }
             }
             _ => {}
         }
-
-        Some(lhs_ty)
     }
 
     fn visit_function_call(&mut self, func_ref: NodeRef, args: &[NodeRef]) -> Option<QualType> {
-        for arg in args {
-            self.visit_node(*arg);
-        }
-
-        let func_ty = self.visit_node(func_ref).unwrap();
+        let func_ty = self.visit_node(func_ref)?;
         let func_kind = self.registry.get(func_ty.ty).kind.clone();
+
+        if let TypeKind::Function {
+            parameters,
+            is_variadic: _,
+            ..
+        } = &func_kind
+        {
+            for (i, arg_ref) in args.iter().enumerate() {
+                let arg_ty = self.visit_node(*arg_ref);
+                if i < parameters.len() {
+                    let param_ty = parameters[i].param_type;
+                    if let Some(actual_arg_ty) = arg_ty {
+                        self.record_implicit_conversions(param_ty, actual_arg_ty, *arg_ref);
+                    }
+                }
+            }
+        } else {
+            for arg in args {
+                self.visit_node(*arg);
+            }
+        }
 
         match func_kind {
             TypeKind::Function { return_type, .. } => Some(QualType::unqualified(return_type)),
@@ -367,8 +437,10 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::VarDecl(data) => {
                 let _ = self.registry.ensure_layout(data.ty.ty);
-                if let Some(init) = data.init {
-                    self.visit_node(init);
+                if let Some(init_ref) = data.init
+                    && let Some(init_ty) = self.visit_node(init_ref)
+                {
+                    self.record_implicit_conversions(data.ty, init_ty, init_ref);
                 }
                 Some(data.ty)
             }

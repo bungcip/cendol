@@ -297,17 +297,10 @@ impl<'a> AstToMirLowerer<'a> {
             let const_fields = field_operands
                 .into_iter()
                 .map(|(idx, op)| {
-                    if let Operand::Constant(const_id) = op {
-                        (idx, const_id)
-                    } else if let Operand::AddressOf(place) = op {
-                        if let Place::Global(global_id) = *place {
-                            (idx, self.create_constant(ConstValue::GlobalAddress(global_id)))
-                        } else {
-                            panic!("Global initializer address is not a global variable");
-                        }
-                    } else {
-                        panic!("Global initializer is not a constant expression");
-                    }
+                    let const_id = self
+                        .operand_to_const_id(op)
+                        .expect("Global initializer is not a constant expression");
+                    (idx, const_id)
                 })
                 .collect();
             let const_val = ConstValue::StructLiteral(const_fields);
@@ -330,7 +323,9 @@ impl<'a> AstToMirLowerer<'a> {
             }
             _ => {
                 // It's a simple expression initializer.
-                self.lower_expression(scope_id, init_ref, true)
+                let operand = self.lower_expression(scope_id, init_ref, true);
+                let mir_target_ty = self.lower_type_to_mir(target_ty.ty);
+                self.apply_conversions(operand, init_ref, mir_target_ty)
             }
         }
     }
@@ -402,11 +397,7 @@ impl<'a> AstToMirLowerer<'a> {
         if is_global {
             let initial_value_id = var_decl.init.and_then(|init_ref| {
                 let operand = self.lower_initializer(scope_id, init_ref, var_decl.ty);
-                if let Operand::Constant(const_id) = operand {
-                    Some(const_id)
-                } else {
-                    None
-                }
+                self.operand_to_const_id(operand)
             });
 
             if let Some(global_id) = self.global_map.get(&entry_ref) {
@@ -1105,6 +1096,33 @@ impl<'a> AstToMirLowerer<'a> {
         let assign_stmt = MirStmt::Assign(place.clone(), rvalue);
         self.mir_builder.add_statement(assign_stmt);
         (local_id, place)
+    }
+
+    fn operand_to_const_id(&mut self, operand: Operand) -> Option<ConstValueId> {
+        match operand {
+            Operand::Constant(id) => Some(id),
+            Operand::Cast(ty, inner) => {
+                let inner_id = self.operand_to_const_id(*inner)?;
+                Some(self.create_constant(ConstValue::Cast(ty, inner_id)))
+            }
+            Operand::AddressOf(place) => {
+                if let Place::Global(global_id) = *place {
+                    Some(self.create_constant(ConstValue::GlobalAddress(global_id)))
+                } else {
+                    None
+                }
+            }
+            Operand::Copy(place) => {
+                if let Place::Global(global_id) = *place {
+                    // In some contexts, a global might be referred to by copy (like array-to-pointer decay)
+                    // but for initializers we usually expect AddressOf or Constant.
+                    // However, let's be safe.
+                    Some(self.create_constant(ConstValue::GlobalAddress(global_id)))
+                } else {
+                    None
+                }
+            }
+        }
     }
 
     fn map_ast_binary_op_to_mir(&self, ast_op: &BinaryOp) -> MirBinaryOp {

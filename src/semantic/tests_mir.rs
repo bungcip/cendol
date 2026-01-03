@@ -259,14 +259,26 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
 
         fn main() -> i32
         {
 
           bb1:
-            unreachable
+            br bb5
+
+          bb2:
+            br bb3
+
+          bb3:
+            br bb4
+
+          bb4:
+            return const 1
+
+          bb5:
+            return const 0
         }
         ");
     }
@@ -1025,6 +1037,32 @@ mod tests {
             %hohohin = %11
             %kanggoru = %11
             return %kanggoru
+        }
+        ");
+    }
+
+    #[test]
+    fn test_simple_goto() {
+        let source = r#"
+            int main() {
+                goto end;
+                return 1;
+            end:
+                return 0;
+            }
+        "#;
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @"
+        type %t0 = i32
+
+        fn main() -> i32
+        {
+
+          bb1:
+            br bb2
+
+          bb2:
+            return const 0
         }
         ");
     }

@@ -41,7 +41,10 @@ fn validate_declarator_combination(base: &Declarator, new_kind: &str, span: Sour
 }
 
 /// Parse declarator
-pub(crate) fn parse_declarator(parser: &mut Parser, initial_declarator: Option<NameId>) -> Result<Declarator, ParseError> {
+pub(crate) fn parse_declarator(
+    parser: &mut Parser,
+    initial_declarator: Option<NameId>,
+) -> Result<Declarator, ParseError> {
     debug!(
         "parse_declarator: starting at position {}, token: {:?}, initial_declarator: {:?}",
         parser.current_idx,

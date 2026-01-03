@@ -644,6 +644,32 @@ impl<'src> Preprocessor<'src> {
                                 token.location,
                                 line_str.len() as u16,
                             ));
+                        } else if sym_str == "__FILE__" {
+                            let filename =
+                                if let Some(presumed) = self.source_manager.get_presumed_location(token.location) {
+                                    if let Some(name) = presumed.2 {
+                                        format!("\"{}\"", name)
+                                    } else if let Some(file_info) =
+                                        self.source_manager.get_file_info(token.location.source_id())
+                                    {
+                                        format!("\"{}\"", file_info.path.display())
+                                    } else {
+                                        "\"<unknown>\"".to_string()
+                                    }
+                                } else if let Some(file_info) =
+                                    self.source_manager.get_file_info(token.location.source_id())
+                                {
+                                    format!("\"{}\"", file_info.path.display())
+                                } else {
+                                    "\"<unknown>\"".to_string()
+                                };
+                            let file_symbol = StringId::new(&filename);
+                            result_tokens.push(PPToken::new(
+                                PPTokenKind::StringLiteral(file_symbol),
+                                PPTokenFlags::empty(),
+                                token.location,
+                                filename.len() as u16,
+                            ));
                         } else if sym_str == "_Pragma" {
                             self.handle_pragma_operator()?;
                         } else {
@@ -2131,26 +2157,53 @@ impl<'src> Preprocessor<'src> {
 
         while i < tokens.len() {
             let token = &tokens[i];
-            if let PPTokenKind::Identifier(symbol) = &token.kind
-                && symbol.as_str() == "__LINE__"
-            {
-                let line = if let Some(presumed) = self.source_manager.get_presumed_location(token.location) {
-                    presumed.0
-                } else {
-                    1
-                };
-                let line_str = line.to_string();
-                let line_symbol = StringId::new(&line_str);
-                let number_token = PPToken::new(
-                    PPTokenKind::Number(line_symbol),
-                    PPTokenFlags::empty(),
-                    token.location,
-                    line_str.len() as u16,
-                );
-                tokens[i] = number_token;
-                i += 1;
-                continue;
+            match &token.kind {
+                PPTokenKind::Identifier(symbol) if symbol.as_str() == "__LINE__" => {
+                    let line = if let Some(presumed) = self.source_manager.get_presumed_location(token.location) {
+                        presumed.0
+                    } else {
+                        1
+                    };
+                    let line_str = line.to_string();
+                    let line_symbol = StringId::new(&line_str);
+                    let number_token = PPToken::new(
+                        PPTokenKind::Number(line_symbol),
+                        PPTokenFlags::empty(),
+                        token.location,
+                        line_str.len() as u16,
+                    );
+                    tokens[i] = number_token;
+                    i += 1;
+                    continue;
+                }
+                PPTokenKind::Identifier(symbol) if symbol.as_str() == "__FILE__" => {
+                    let filename = if let Some(presumed) = self.source_manager.get_presumed_location(token.location) {
+                        if let Some(name) = presumed.2 {
+                            format!("\"{}\"", name)
+                        } else if let Some(file_info) = self.source_manager.get_file_info(token.location.source_id()) {
+                            format!("\"{}\"", file_info.path.display())
+                        } else {
+                            "\"<unknown>\"".to_string()
+                        }
+                    } else if let Some(file_info) = self.source_manager.get_file_info(token.location.source_id()) {
+                        format!("\"{}\"", file_info.path.display())
+                    } else {
+                        "\"<unknown>\"".to_string()
+                    };
+                    let file_symbol = StringId::new(&filename);
+                    let string_token = PPToken::new(
+                        PPTokenKind::StringLiteral(file_symbol),
+                        PPTokenFlags::empty(),
+                        token.location,
+                        filename.len() as u16,
+                    );
+                    tokens[i] = string_token;
+                    i += 1;
+                    continue;
+                }
+                _ => {}
             }
+
             let symbol = match tokens[i].kind {
                 PPTokenKind::Identifier(s) => s,
                 _ => {

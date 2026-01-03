@@ -454,6 +454,35 @@ int result = 42;
 }
 
 #[test]
+fn test_file_macro() {
+    let src = r#"
+const char* f = __FILE__;
+"#;
+
+    let significant_tokens = setup_preprocessor_test(src);
+
+    // Expected: const, char*, f, =, "<test>", ;
+    // Note: setup_preprocessor_test uses "<test>" as the filename
+    assert_token_kinds!(
+        significant_tokens,
+        PPTokenKind::Identifier(StringId::new("const")),
+        PPTokenKind::Identifier(StringId::new("char")),
+        PPTokenKind::Star,
+        PPTokenKind::Identifier(StringId::new("f")),
+        PPTokenKind::Assign,
+        PPTokenKind::StringLiteral(StringId::new("\"<test>\"")),
+        PPTokenKind::Semicolon
+    );
+
+    // Ensure __FILE__ was expanded
+    for token in &significant_tokens {
+        if let PPTokenKind::Identifier(sym) = &token.kind {
+            assert_ne!(sym.as_str(), "__FILE__", "__FILE__ should have been expanded");
+        }
+    }
+}
+
+#[test]
 fn test_pragma_operator_removes_tokens() {
     let src = r#"
 _Pragma("STDC FP_CONTRACT ON")

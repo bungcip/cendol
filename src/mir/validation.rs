@@ -181,6 +181,7 @@ impl MirValidator {
                             )));
                         }
                     }
+                    self.validate_terminator(sema_output, &block.terminator);
                 }
             }
         }
@@ -194,6 +195,39 @@ impl MirValidator {
                 if let (Some(from), Some(to)) = (rval_ty, place_ty)
                     && from != to
                 {
+                    // Special case for operations that can return multiple types (bool or int)
+                    let is_flexible = match rvalue {
+                        Rvalue::UnaryOp(UnaryOp::LogicalNot, _) => true,
+                        Rvalue::BinaryOp(bin, _, _) => matches!(
+                            bin,
+                            BinaryOp::Equal
+                                | BinaryOp::NotEqual
+                                | BinaryOp::Less
+                                | BinaryOp::LessEqual
+                                | BinaryOp::Greater
+                                | BinaryOp::GreaterEqual
+                                | BinaryOp::LogicAnd
+                                | BinaryOp::LogicOr
+                        ),
+                        _ => false,
+                    };
+
+                    if is_flexible {
+                        let _bool_ty = self.find_bool_type(sema_output);
+                        let is_bool_or_int = |tid: TypeId| {
+                            if let Some(ty) = sema_output.types.get(&tid) {
+                                matches!(ty, MirType::Bool | MirType::Int { .. })
+                            } else {
+                                false
+                            }
+                        };
+
+                        if is_bool_or_int(from) && is_bool_or_int(to) {
+                            // Allowed for these flexible operations
+                            return;
+                        }
+                    }
+
                     self.errors.push(ValidationError::InvalidCast(from, to));
                 }
             }
@@ -374,12 +408,42 @@ impl MirValidator {
     fn validate_rvalue(&mut self, sema_output: &SemaOutput, r: &Rvalue) -> Option<TypeId> {
         match r {
             Rvalue::Use(op) => self.validate_operand(sema_output, op),
-            Rvalue::BinaryOp(_bin, a, b) => {
-                let _ = self.validate_operand(sema_output, a);
-                let _ = self.validate_operand(sema_output, b);
-                None
+            Rvalue::BinaryOp(bin, a, b) => {
+                let ta = self.validate_operand(sema_output, a);
+                let tb = self.validate_operand(sema_output, b);
+
+                match bin {
+                    BinaryOp::Equal
+                    | BinaryOp::NotEqual
+                    | BinaryOp::Less
+                    | BinaryOp::LessEqual
+                    | BinaryOp::Greater
+                    | BinaryOp::GreaterEqual
+                    | BinaryOp::LogicAnd
+                    | BinaryOp::LogicOr => self.find_bool_type(sema_output),
+                    BinaryOp::Comma => tb,
+                    _ => {
+                        // For arithmetic/bitwise, both operands should ideally have same type
+                        // and result is that type.
+                        if let (Some(ta), Some(tb)) = (ta, tb)
+                            && ta != tb
+                        {
+                            // We could emit a warning or handle implicit promotions here if MIR allowed it,
+                            // but MIR should be explicit. For now just return ta.
+                        }
+                        ta
+                    }
+                }
             }
-            Rvalue::UnaryOp(_u, a) => self.validate_operand(sema_output, a),
+            Rvalue::UnaryOp(u, a) => {
+                let ta = self.validate_operand(sema_output, a);
+                match u {
+                    UnaryOp::Neg => ta,
+                    UnaryOp::BitwiseNot => ta,
+                    UnaryOp::LogicalNot => self.find_bool_type(sema_output),
+                    _ => ta,
+                }
+            }
             Rvalue::Cast(type_id, op) => {
                 if !sema_output.types.contains_key(type_id) {
                     self.errors.push(ValidationError::TypeNotFound(*type_id));
@@ -462,6 +526,40 @@ impl MirValidator {
     fn operand_type(&mut self, sema_output: &SemaOutput, op: &Operand) -> Option<TypeId> {
         self.validate_operand(sema_output, op)
     }
+    fn validate_terminator(&mut self, sema_output: &SemaOutput, term: &Terminator) {
+        match term {
+            Terminator::Goto(bid) => {
+                if !sema_output.blocks.contains_key(bid) {
+                    self.errors.push(ValidationError::BlockNotFound(*bid));
+                }
+            }
+            Terminator::If(cond, then_bb, else_bb) => {
+                self.validate_operand(sema_output, cond);
+                if !sema_output.blocks.contains_key(then_bb) {
+                    self.errors.push(ValidationError::BlockNotFound(*then_bb));
+                }
+                if !sema_output.blocks.contains_key(else_bb) {
+                    self.errors.push(ValidationError::BlockNotFound(*else_bb));
+                }
+            }
+            Terminator::Return(op) => {
+                if let Some(op) = op {
+                    self.validate_operand(sema_output, op);
+                }
+            }
+            Terminator::Unreachable => {}
+        }
+    }
+
+    fn find_bool_type(&self, sema_output: &SemaOutput) -> Option<TypeId> {
+        for (id, ty) in &sema_output.types {
+            if matches!(ty, MirType::Bool) {
+                return Some(*id);
+            }
+        }
+        None
+    }
+
     /// Get the validation errors (for testing purposes)
     pub fn get_errors(&self) -> &Vec<ValidationError> {
         &self.errors

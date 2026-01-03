@@ -1156,8 +1156,8 @@ impl<'a> AstToMirLowerer<'a> {
             UnaryOp::Deref => mir::UnaryOp::Deref,
             UnaryOp::Plus => panic!("Unary plus should be handled by type resolver"),
             UnaryOp::Minus => mir::UnaryOp::Neg,
-            UnaryOp::BitNot => mir::UnaryOp::Not,
-            UnaryOp::LogicNot => mir::UnaryOp::Not,
+            UnaryOp::BitNot => mir::UnaryOp::BitwiseNot,
+            UnaryOp::LogicNot => mir::UnaryOp::LogicalNot,
             UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
                 panic!("Pre-increment/decrement should be desugared in lower_expression")
             }

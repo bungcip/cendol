@@ -10,9 +10,8 @@
 use crate::ast::NameId;
 use crate::driver::compiler::SemaOutput;
 use crate::mir::{
-    BinaryOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlock, MirBlockId, MirFunction,
-    MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
-    UnaryOp,
+    BinaryOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlock, MirBlockId, MirFunction, MirFunctionId,
+    MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryOp,
 };
 use cranelift::codegen::ir::{StackSlot, StackSlotData, StackSlotKind};
 use cranelift::prelude::{
@@ -333,13 +332,7 @@ fn emit_function_call_impl(
 }
 
 /// Helper function to emit a type conversion in Cranelift
-fn emit_type_conversion(
-    val: Value,
-    from: Type,
-    to: Type,
-    is_signed: bool,
-    builder: &mut FunctionBuilder,
-) -> Value {
+fn emit_type_conversion(val: Value, from: Type, to: Type, is_signed: bool, builder: &mut FunctionBuilder) -> Value {
     if from == to {
         return val;
     }
@@ -363,7 +356,6 @@ fn emit_type_conversion(
         val
     }
 }
-
 
 /// Helper function to resolve a MIR operand to a Cranelift value
 fn resolve_operand_to_value(
@@ -410,9 +402,16 @@ fn resolve_operand_to_value(
 
                     // For constant casts, we still recursively resolve but with the target type
                     let temp_op = Operand::Constant(*inner_id);
-                    let val = resolve_operand_to_value(&temp_op, builder, target_type, cranelift_stack_slots, mir, module)?;
+                    let val =
+                        resolve_operand_to_value(&temp_op, builder, target_type, cranelift_stack_slots, mir, module)?;
 
-                    Ok(emit_type_conversion(val, target_type, expected_type, is_operand_signed(&temp_op, mir), builder))
+                    Ok(emit_type_conversion(
+                        val,
+                        target_type,
+                        expected_type,
+                        is_operand_signed(&temp_op, mir),
+                        builder,
+                    ))
                 }
                 _ => Ok(builder.ins().iconst(expected_type, 0)),
             }
@@ -426,17 +425,36 @@ fn resolve_operand_to_value(
                 convert_type(place_type).ok_or_else(|| format!("Unsupported place type: {:?}", place_type))?;
 
             let val = resolve_place_to_value(place, builder, place_cranelift_type, cranelift_stack_slots, mir, module)?;
-            Ok(emit_type_conversion(val, place_cranelift_type, expected_type, place_type.is_signed(), builder))
+            Ok(emit_type_conversion(
+                val,
+                place_cranelift_type,
+                expected_type,
+                place_type.is_signed(),
+                builder,
+            ))
         }
         Operand::Cast(type_id, inner_operand) => {
             let inner_type = get_operand_cranelift_type(inner_operand, mir)?;
-            let inner_val = resolve_operand_to_value(inner_operand, builder, inner_type, cranelift_stack_slots, mir, module)?;
+            let inner_val =
+                resolve_operand_to_value(inner_operand, builder, inner_type, cranelift_stack_slots, mir, module)?;
 
             let mir_type = mir.get_type(*type_id);
             let target_type = convert_type(mir_type).unwrap_or(types::I32);
 
-            let converted = emit_type_conversion(inner_val, inner_type, target_type, is_operand_signed(inner_operand, mir), builder);
-            Ok(emit_type_conversion(converted, target_type, expected_type, mir_type.is_signed(), builder))
+            let converted = emit_type_conversion(
+                inner_val,
+                inner_type,
+                target_type,
+                is_operand_signed(inner_operand, mir),
+                builder,
+            );
+            Ok(emit_type_conversion(
+                converted,
+                target_type,
+                expected_type,
+                mir_type.is_signed(),
+                builder,
+            ))
         }
         Operand::AddressOf(place) => {
             // The value of an AddressOf operand is the address of the place.
@@ -555,9 +573,10 @@ fn is_operand_signed(operand: &Operand, mir: &SemaOutput) -> bool {
     match operand {
         Operand::Copy(place) => {
             if let Ok(type_id) = get_place_type_id(place, mir)
-                && let MirType::Int { is_signed, .. } = mir.get_type(type_id) {
-                    return *is_signed;
-                }
+                && let MirType::Int { is_signed, .. } = mir.get_type(type_id)
+            {
+                return *is_signed;
+            }
         }
         Operand::Cast(type_id, _) => {
             if let MirType::Int { is_signed, .. } = mir.get_type(*type_id) {
@@ -566,9 +585,10 @@ fn is_operand_signed(operand: &Operand, mir: &SemaOutput) -> bool {
         }
         Operand::Constant(const_id) => {
             if let Some(ConstValue::Cast(type_id, _)) = mir.constants.get(const_id)
-                && let MirType::Int { is_signed, .. } = mir.get_type(*type_id) {
-                    return *is_signed;
-                }
+                && let MirType::Int { is_signed, .. } = mir.get_type(*type_id)
+            {
+                return *is_signed;
+            }
             // Default to signed for integer constants
             return true;
         }
@@ -1072,10 +1092,11 @@ impl MirToCraneliftLowerer {
 
                                 match op {
                                     UnaryOp::Neg => Ok(builder.ins().ineg(val)),
-                                    UnaryOp::Not => {
+                                    UnaryOp::LogicalNot => {
                                         let is_zero = builder.ins().icmp_imm(IntCC::Equal, val, 0);
                                         Ok(builder.ins().uextend(expected_type, is_zero))
                                     }
+                                    UnaryOp::BitwiseNot => Ok(builder.ins().bnot(val)),
                                     _ => Err(format!("Unsupported unary op in Assign: {:?}", op)),
                                 }
                             }

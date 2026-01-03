@@ -671,11 +671,6 @@ impl<'a> SemanticAnalyzer<'a> {
             _ => self.visit_expression_node(node_ref, &node.kind),
         };
 
-        // Debug: log certain nodes
-        if node_ref.get() == 27 {
-            eprintln!("type_resolver: node {} result_type={:?}", node_ref.get(), result_type);
-        }
-
         if let Some(ty) = result_type {
             // set resolved type and value category for this node
             let idx = (node_ref.get() - 1) as usize;

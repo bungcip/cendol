@@ -240,7 +240,8 @@ pub enum BinaryOp {
 #[repr(u8)]
 pub enum UnaryOp {
     Neg,
-    Not,
+    BitwiseNot,
+    LogicalNot,
     AddrOf,
     Deref,
 }
@@ -823,6 +824,18 @@ impl fmt::Display for Rvalue {
             Rvalue::ArrayLiteral(elements) => write!(f, "ArrayLiteral({:?})", elements),
             Rvalue::Load(operand) => write!(f, "Load({:?})", operand),
             Rvalue::Call(call_target, operands) => write!(f, "Call({:?}, {:?})", call_target, operands),
+        }
+    }
+}
+
+impl fmt::Display for UnaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            UnaryOp::Neg => write!(f, "-"),
+            UnaryOp::BitwiseNot => write!(f, "~"),
+            UnaryOp::LogicalNot => write!(f, "!"),
+            UnaryOp::AddrOf => write!(f, "&"),
+            UnaryOp::Deref => write!(f, "*"),
         }
     }
 }

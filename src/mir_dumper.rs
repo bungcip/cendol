@@ -637,7 +637,8 @@ impl<'a> MirDumper<'a> {
     fn unary_op_to_string(&self, op: &UnaryOp) -> String {
         match op {
             UnaryOp::Neg => "-".to_string(),
-            UnaryOp::Not => "!".to_string(),
+            UnaryOp::LogicalNot => "!".to_string(),
+            UnaryOp::BitwiseNot => "~".to_string(),
             UnaryOp::AddrOf => "&".to_string(),
             UnaryOp::Deref => "*".to_string(),
         }

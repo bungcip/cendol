@@ -392,6 +392,19 @@ pub struct MirBuilder {
     statements: HashMap<MirStmtId, MirStmt>,
 }
 
+/// Struct to hold the output of consuming a `MirBuilder`.
+/// This avoids cloning the internal collections.
+pub struct MirBuilderOutput {
+    pub module: MirModule,
+    pub functions: HashMap<MirFunctionId, MirFunction>,
+    pub blocks: HashMap<MirBlockId, MirBlock>,
+    pub locals: HashMap<LocalId, Local>,
+    pub globals: HashMap<GlobalId, Global>,
+    pub types: HashMap<TypeId, MirType>,
+    pub constants: HashMap<ConstValueId, ConstValue>,
+    pub statements: HashMap<MirStmtId, MirStmt>,
+}
+
 impl MirBuilder {
     pub fn new(module_id: MirModuleId) -> Self {
         Self {
@@ -639,17 +652,19 @@ impl MirBuilder {
         const_id
     }
 
-    /// Get the current MIR module
-    pub fn get_module(&self) -> &MirModule {
-        &self.module
-    }
-
-    /// Finalize the module by updating all references and applying optimizations
-    pub fn finalize_module(&mut self) -> MirModule {
-        // Return the accumulated module directly
-        // This preserves the insertion order of types and constants,
-        // which is crucial for maintaining correct ID-to-index mapping
-        self.module.clone()
+    /// Consumes the builder and returns all the generated MIR components.
+    /// This is the preferred way to get the final MIR, as it avoids cloning.
+    pub fn consume(self) -> MirBuilderOutput {
+        MirBuilderOutput {
+            module: self.module,
+            functions: self.functions,
+            blocks: self.blocks,
+            locals: self.locals,
+            globals: self.globals,
+            types: self.types,
+            constants: self.constants,
+            statements: self.statements,
+        }
     }
 
     /// Get all functions for validation
@@ -657,39 +672,9 @@ impl MirBuilder {
         &self.functions
     }
 
-    /// Get all blocks for validation
-    pub fn get_blocks(&self) -> &HashMap<MirBlockId, MirBlock> {
-        &self.blocks
-    }
-
-    /// Get all locals for validation
-    pub fn get_locals(&self) -> &HashMap<LocalId, Local> {
-        &self.locals
-    }
-
-    /// Get all globals for validation
-    pub fn get_globals(&self) -> &HashMap<GlobalId, Global> {
-        &self.globals
-    }
-
-    /// Get all globals for validation (mutable)
-    pub fn get_globals_mut(&mut self) -> &mut HashMap<GlobalId, Global> {
-        &mut self.globals
-    }
-
-    /// Get all types for validation
-    pub fn get_types(&self) -> &HashMap<TypeId, MirType> {
-        &self.types
-    }
-
     /// Get all constants for validation
     pub fn get_constants(&self) -> &HashMap<ConstValueId, ConstValue> {
         &self.constants
-    }
-
-    /// Get all statements for validation
-    pub fn get_statements(&self) -> &HashMap<MirStmtId, MirStmt> {
-        &self.statements
     }
 
     /// Set the entry block for a function

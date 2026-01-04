@@ -2,8 +2,9 @@ use crate::intern::StringId;
 use crate::pp::{PPToken, PPTokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
 
+use serde::Serialize;
 /// C11 token kinds for the lexical analyzer
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub enum TokenKind {
     // === LITERALS ===
     IntegerConstant(i64),    // Parsed integer literal value

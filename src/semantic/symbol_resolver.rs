@@ -10,7 +10,7 @@
 //! grammar-oriented parser AST and the type-resolved semantic AST (HIR). The lowering
 //! phase handles all C-style declaration forms
 
-use crate::ast::{utils::extract_identifier, *};
+use crate::ast::{nodes::TypeQualifier, utils::extract_identifier, *};
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::semantic::const_eval::{self, ConstEvalCtx};
 use crate::semantic::symbol_table::{DefinitionState, SymbolRef, SymbolTableError};
@@ -106,10 +106,10 @@ fn apply_parsed_declarator_recursive(
                 let param_type = convert_parsed_type_to_qual_type(ctx, param.ty, param.span).unwrap_or_else(|_|
                     // Create an error type if conversion fails
                     QualType::unqualified(ctx.registry.type_int));
-                
+
                 // Apply array-to-pointer decay for function parameters (C11 6.7.6.3)
                 let decayed_param_type = ctx.registry.decay(param_type);
-                
+
                 processed_params.push(FunctionParameter {
                     param_type: decayed_param_type,
                     name: param.name,
@@ -258,8 +258,14 @@ fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: Sour
                 }
             }
 
-            DeclSpecifier::TypeQualifiers(q) => {
-                info.qualifiers |= *q;
+            DeclSpecifier::TypeQualifier(q) => {
+                let qualifier = match q {
+                    TypeQualifier::Const => TypeQualifiers::CONST,
+                    TypeQualifier::Volatile => TypeQualifiers::VOLATILE,
+                    TypeQualifier::Restrict => TypeQualifiers::RESTRICT,
+                    TypeQualifier::Atomic => TypeQualifiers::ATOMIC,
+                };
+                info.qualifiers |= qualifier;
             }
 
             DeclSpecifier::TypeSpecifier(ts) => {
@@ -1419,10 +1425,10 @@ fn lower_function_parameters(params: &[ParamData], ctx: &mut LowerCtx) -> Vec<Fu
             } else {
                 base_ty
             };
-            
+
             // Apply array-to-pointer decay for function parameters (C11 6.7.6.3)
             let decayed_ty = ctx.registry.decay(final_ty);
-            
+
             FunctionParameter {
                 param_type: decayed_ty,
                 name: param.declarator.as_ref().and_then(extract_identifier),

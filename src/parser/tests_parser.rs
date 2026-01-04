@@ -195,7 +195,7 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
                         _ => format!("{:?}", ts),
                     },
                     DeclSpecifier::StorageClass(sc) => format!("{:?}", sc),
-                    DeclSpecifier::TypeQualifiers(tq) => format!("{:?}", tq),
+                    DeclSpecifier::TypeQualifier(tq) => format!("TypeQualifier({:?})", tq),
                     DeclSpecifier::FunctionSpecifiers(fs) => format!("{:?}", fs),
                     DeclSpecifier::AlignmentSpecifier(aspec) => format!("{:?}", aspec),
                     DeclSpecifier::Attribute => "__attribute__".to_string(),
@@ -1576,7 +1576,7 @@ fn test_atomic_type_qualifier() {
     insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
-        - TypeQualifiers(ATOMIC)
+        - TypeQualifier(Atomic)
         - int
       init_declarators:
         - name: x

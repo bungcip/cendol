@@ -50,8 +50,14 @@ fn parse_base_type_and_qualifiers(
                 let parsed_base = parse_type_specifier_to_parsed_base(parser, ts)?;
                 base_type_node = Some(parsed_base);
             }
-            DeclSpecifier::TypeQualifiers(q) => {
-                qualifiers |= *q;
+            DeclSpecifier::TypeQualifier(q) => {
+                let qualifier = match q {
+                    crate::ast::nodes::TypeQualifier::Const => TypeQualifiers::CONST,
+                    crate::ast::nodes::TypeQualifier::Volatile => TypeQualifiers::VOLATILE,
+                    crate::ast::nodes::TypeQualifier::Restrict => TypeQualifiers::RESTRICT,
+                    crate::ast::nodes::TypeQualifier::Atomic => TypeQualifiers::ATOMIC,
+                };
+                qualifiers |= qualifier;
             }
             _ => {
                 // Other specifiers (storage class, function specifiers, etc.)

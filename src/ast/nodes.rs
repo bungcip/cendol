@@ -212,11 +212,19 @@ pub struct FieldDeclData {
     pub ty: QualType, // object type
 }
 
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+pub enum TypeQualifier {
+    Const,
+    Restrict,
+    Volatile,
+    Atomic,
+}
+
 // Declaration specifiers and related types
 #[derive(Debug, Clone, Serialize)]
 pub enum DeclSpecifier {
     StorageClass(StorageClass),
-    TypeQualifiers(TypeQualifiers),
+    TypeQualifier(TypeQualifier),
     FunctionSpecifiers(FunctionSpecifiers),
     AlignmentSpecifier(AlignmentSpecifier),
     TypeSpecifier(TypeSpecifier),

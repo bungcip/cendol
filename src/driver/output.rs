@@ -8,7 +8,7 @@ use itertools::Itertools;
 
 use crate::ast::{Ast, NodeKind};
 use crate::pp::PPToken;
-use crate::semantic::{SymbolRef, TypeQualifiers, TypeRegistry};
+use crate::semantic::{SymbolRef, TypeRegistry};
 use crate::source_manager::SourceManager;
 
 use super::compiler::DriverError;
@@ -401,24 +401,12 @@ impl OutputHandler {
                 crate::ast::nodes::StorageClass::Register => "register".to_string(),
                 crate::ast::nodes::StorageClass::ThreadLocal => "_Thread_local".to_string(),
             },
-            crate::ast::nodes::DeclSpecifier::TypeQualifiers(quals) => {
-                let mut parts = Vec::new();
-                if quals.contains(TypeQualifiers::CONST) {
-                    parts.push("const");
-                }
-                if quals.contains(TypeQualifiers::VOLATILE) {
-                    parts.push("volatile");
-                }
-                if quals.contains(TypeQualifiers::RESTRICT) {
-                    parts.push("restrict");
-                }
-                if quals.contains(TypeQualifiers::ATOMIC) {
-                    parts.push("_Atomic");
-                }
-                if parts.is_empty() {
-                    "TypeQualifiers(0x0)".to_string()
+            crate::ast::nodes::DeclSpecifier::TypeQualifier(qual) => {
+                let s = format!("{:?}", qual);
+                if s == "Atomic" {
+                    "_Atomic".to_string()
                 } else {
-                    parts.join(" ")
+                    s.to_lowercase()
                 }
             }
             crate::ast::nodes::DeclSpecifier::FunctionSpecifiers(func_spec) => {

@@ -11,42 +11,6 @@ use log::debug;
 use super::expressions::BindingPower;
 use super::{Parser, ParserState};
 
-/// Extension trait for Parser to add utility methods
-pub(crate) trait ParserExt {
-    /// Check if current token starts a type name
-    fn is_type_name_start(&self) -> bool;
-}
-
-impl<'arena, 'src> ParserExt for Parser<'arena, 'src> {
-    fn is_type_name_start(&self) -> bool {
-        debug!(
-            "is_type_name_start: checking token {:?} at position {}",
-            self.current_token_kind(),
-            self.current_idx
-        );
-
-        if let Some(token) = self.try_current_token() {
-            let is_specifier = token.kind.is_type_specifier() || token.kind.is_type_qualifier();
-
-            let is_identifier_type = if let crate::lexer::TokenKind::Identifier(symbol) = token.kind {
-                self.is_type_name(symbol)
-            } else {
-                false
-            };
-
-            let final_result = is_specifier || is_identifier_type;
-            debug!(
-                "is_type_name_start: token {:?} is type name start: {} (specifier: {}, identifier: {})",
-                token.kind, final_result, is_specifier, is_identifier_type
-            );
-            final_result
-        } else {
-            debug!("is_type_name_start: no token available");
-            false
-        }
-    }
-}
-
 /// Common expression parsing patterns
 pub(crate) mod expr_patterns {
     use super::*;

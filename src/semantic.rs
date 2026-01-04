@@ -26,6 +26,8 @@ mod tests_generic;
 #[cfg(test)]
 pub mod tests_lowering;
 #[cfg(test)]
+mod tests_lvalue;
+#[cfg(test)]
 pub mod tests_mir;
 #[cfg(test)]
 pub mod tests_validation;

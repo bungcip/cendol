@@ -26,11 +26,11 @@ mod tests_generic;
 #[cfg(test)]
 pub mod tests_lowering;
 #[cfg(test)]
+mod tests_lvalue;
+#[cfg(test)]
 pub mod tests_mir;
 #[cfg(test)]
 pub mod tests_validation;
-#[cfg(test)]
-mod tests_lvalue;
 
 /// Side table containing semantic information for AST nodes.
 /// Parallel vectors indexed by node index (NodeRef.get() - 1).

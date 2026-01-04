@@ -10,9 +10,8 @@
 //! grammar-oriented parser AST and the type-resolved semantic AST (HIR). The lowering
 //! phase handles all C-style declaration forms
 
-use crate::ast::{utils::extract_identifier, *};
+use crate::ast::{nodes::TypeQualifier, utils::extract_identifier, *};
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
-use crate::lexer::TokenKind;
 use crate::semantic::const_eval::{self, ConstEvalCtx};
 use crate::semantic::symbol_table::{DefinitionState, SymbolRef, SymbolTableError};
 use crate::semantic::{
@@ -261,11 +260,10 @@ fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: Sour
 
             DeclSpecifier::TypeQualifier(q) => {
                 let qualifier = match q {
-                    TokenKind::Const => TypeQualifiers::CONST,
-                    TokenKind::Volatile => TypeQualifiers::VOLATILE,
-                    TokenKind::Restrict => TypeQualifiers::RESTRICT,
-                    TokenKind::Atomic => TypeQualifiers::ATOMIC,
-                    _ => TypeQualifiers::empty(),
+                    TypeQualifier::Const => TypeQualifiers::CONST,
+                    TypeQualifier::Volatile => TypeQualifiers::VOLATILE,
+                    TypeQualifier::Restrict => TypeQualifiers::RESTRICT,
+                    TypeQualifier::Atomic => TypeQualifiers::ATOMIC,
                 };
                 info.qualifiers |= qualifier;
             }

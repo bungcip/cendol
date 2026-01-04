@@ -401,7 +401,14 @@ impl OutputHandler {
                 crate::ast::nodes::StorageClass::Register => "register".to_string(),
                 crate::ast::nodes::StorageClass::ThreadLocal => "_Thread_local".to_string(),
             },
-            crate::ast::nodes::DeclSpecifier::TypeQualifier(qual) => format!("{:?}", qual).to_lowercase(),
+            crate::ast::nodes::DeclSpecifier::TypeQualifier(qual) => {
+                let s = format!("{:?}", qual);
+                if s == "Atomic" {
+                    "_Atomic".to_string()
+                } else {
+                    s.to_lowercase()
+                }
+            }
             crate::ast::nodes::DeclSpecifier::FunctionSpecifiers(func_spec) => {
                 let mut parts = Vec::new();
                 if func_spec.contains(crate::ast::nodes::FunctionSpecifiers::INLINE) {

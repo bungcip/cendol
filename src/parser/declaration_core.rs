@@ -4,7 +4,7 @@
 //! declaration specifiers, initializers, and coordination between
 //! different declaration components.
 
-use crate::ast::*;
+use crate::ast::{nodes::TypeQualifier, *};
 use crate::diagnostic::ParseError;
 use crate::lexer::TokenKind;
 use log::debug;
@@ -54,28 +54,31 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
             }
 
             // Type qualifiers
-            TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict => {
+            TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Atomic => {
+                let qualifier = match token.kind {
+                    TokenKind::Const => TypeQualifier::Const,
+                    TokenKind::Volatile => TypeQualifier::Volatile,
+                    TokenKind::Restrict => TypeQualifier::Restrict,
+                    TokenKind::Atomic => {
+                        if parser.peek_token(0).is_some_and(|t| t.kind == TokenKind::LeftParen) {
+                            // This is the `_Atomic(type-name)` form.
+                            parser.advance(); // consume `_Atomic`
+                            parser.expect(TokenKind::LeftParen)?;
+
+                            let parsed_type = super::parsed_type_builder::parse_parsed_type_name(parser)?;
+
+                            parser.expect(TokenKind::RightParen)?;
+                            let type_specifier = TypeSpecifier::Atomic(parsed_type);
+                            specifiers.push(DeclSpecifier::TypeSpecifier(type_specifier));
+                            has_type_specifier = true;
+                            continue;
+                        }
+                        TypeQualifier::Atomic
+                    }
+                    _ => unreachable!(),
+                };
                 parser.advance();
-                specifiers.push(DeclSpecifier::TypeQualifier(token.kind));
-            }
-
-            TokenKind::Atomic => {
-                if parser.peek_token(0).is_some_and(|t| t.kind == TokenKind::LeftParen) {
-                    // This is the `_Atomic(type-name)` form.
-                    parser.advance(); // consume `_Atomic`
-                    parser.expect(TokenKind::LeftParen)?;
-
-                    let parsed_type = super::parsed_type_builder::parse_parsed_type_name(parser)?;
-
-                    parser.expect(TokenKind::RightParen)?;
-                    let type_specifier = TypeSpecifier::Atomic(parsed_type);
-                    specifiers.push(DeclSpecifier::TypeSpecifier(type_specifier));
-                    has_type_specifier = true;
-                } else {
-                    // This is the `_Atomic` qualifier form.
-                    parser.advance(); // consume `_Atomic`
-                    specifiers.push(DeclSpecifier::TypeQualifier(TokenKind::Atomic));
-                }
+                specifiers.push(DeclSpecifier::TypeQualifier(qualifier));
             }
 
             // Function specifiers
@@ -356,4 +359,3 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<(), ParseError> {
     debug!("parse_attribute: successfully parsed __attribute__ construct");
     Ok(())
 }
-

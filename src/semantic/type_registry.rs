@@ -48,6 +48,12 @@ pub struct TypeRegistry {
     pub type_error: TypeRef,
 }
 
+impl Default for TypeRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TypeRegistry {
     /// Create a new TypeRegistry with builtin types initialized.
     pub fn new() -> Self {

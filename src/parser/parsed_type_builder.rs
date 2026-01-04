@@ -52,11 +52,10 @@ fn parse_base_type_and_qualifiers(
             }
             DeclSpecifier::TypeQualifier(q) => {
                 let qualifier = match q {
-                    crate::lexer::TokenKind::Const => TypeQualifiers::CONST,
-                    crate::lexer::TokenKind::Volatile => TypeQualifiers::VOLATILE,
-                    crate::lexer::TokenKind::Restrict => TypeQualifiers::RESTRICT,
-                    crate::lexer::TokenKind::Atomic => TypeQualifiers::ATOMIC,
-                    _ => TypeQualifiers::empty(),
+                    crate::ast::nodes::TypeQualifier::Const => TypeQualifiers::CONST,
+                    crate::ast::nodes::TypeQualifier::Volatile => TypeQualifiers::VOLATILE,
+                    crate::ast::nodes::TypeQualifier::Restrict => TypeQualifiers::RESTRICT,
+                    crate::ast::nodes::TypeQualifier::Atomic => TypeQualifiers::ATOMIC,
                 };
                 qualifiers |= qualifier;
             }

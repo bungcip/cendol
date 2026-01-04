@@ -7,7 +7,6 @@
 use crate::ast::*;
 use crate::diagnostic::ParseError;
 use crate::lexer::TokenKind;
-use crate::semantic::TypeQualifiers;
 use log::debug;
 use thin_vec::ThinVec;
 
@@ -56,7 +55,8 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
 
             // Type qualifiers
             TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict => {
-                specifiers.push(DeclSpecifier::TypeQualifiers(parse_type_qualifiers(parser)));
+                parser.advance();
+                specifiers.push(DeclSpecifier::TypeQualifier(token.kind));
             }
 
             TokenKind::Atomic => {
@@ -74,7 +74,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                 } else {
                     // This is the `_Atomic` qualifier form.
                     parser.advance(); // consume `_Atomic`
-                    specifiers.push(DeclSpecifier::TypeQualifiers(TypeQualifiers::ATOMIC));
+                    specifiers.push(DeclSpecifier::TypeQualifier(TokenKind::Atomic));
                 }
             }
 
@@ -357,16 +357,3 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<(), ParseError> {
     Ok(())
 }
 
-fn parse_type_qualifiers(parser: &mut Parser) -> TypeQualifiers {
-    let mut qualifiers = TypeQualifiers::empty();
-    while let Some(token) = parser.try_current_token() {
-        match token.kind {
-            TokenKind::Const => qualifiers.insert(TypeQualifiers::CONST),
-            TokenKind::Volatile => qualifiers.insert(TypeQualifiers::VOLATILE),
-            TokenKind::Restrict => qualifiers.insert(TypeQualifiers::RESTRICT),
-            _ => break,
-        }
-        parser.advance();
-    }
-    qualifiers
-}

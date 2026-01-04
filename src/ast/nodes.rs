@@ -12,6 +12,7 @@ use crate::{
     ast::{NameId, NodeRef, ParsedType, SymbolRef, TypeRef},
     semantic::QualType,
 };
+use crate::lexer::TokenKind;
 
 /// The core enum defining all possible AST node types for C11.
 /// Variants use NodeIndex for child references, enabling flattened storage.
@@ -216,7 +217,7 @@ pub struct FieldDeclData {
 #[derive(Debug, Clone, Serialize)]
 pub enum DeclSpecifier {
     StorageClass(StorageClass),
-    TypeQualifiers(TypeQualifiers),
+    TypeQualifier(TokenKind),
     FunctionSpecifiers(FunctionSpecifiers),
     AlignmentSpecifier(AlignmentSpecifier),
     TypeSpecifier(TypeSpecifier),

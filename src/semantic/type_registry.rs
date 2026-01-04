@@ -247,7 +247,10 @@ impl TypeRegistry {
 
     pub fn get_layout(&self, ty: TypeRef) -> &TypeLayout {
         let idx = ty.index();
-        self.types[idx].layout.as_ref().unwrap()
+        self.types[idx]
+            .layout
+            .as_ref()
+            .expect("ICE: layout not computed. make sure layout is computed in previous phase")
     }
 
     pub fn get_array_layout(&self, ty: TypeRef) -> (u16, u16, TypeRef, u64) {

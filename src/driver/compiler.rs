@@ -52,14 +52,15 @@ pub struct PipelineOutputs {
 }
 
 /// outputs for a single compilation unit
+#[derive(Default)]
 pub struct CompileArtifact {
     pub preprocessed: Option<Vec<PPToken>>,
     pub lexed: Option<Vec<Token>>,
     pub ast: Option<Ast>,
-    pub mir: Option<MirModule>,
     pub sema_output: Option<SemaOutput>,
     pub clif_dump: Option<String>,
     pub object_file: Option<Vec<u8>>,
+    pub type_registry: Option<TypeRegistry>,
 }
 
 /// Complete semantic analysis output containing all MIR data structures
@@ -154,15 +155,7 @@ impl CompilerDriver {
         source_id: SourceId,
         stop_after: CompilePhase,
     ) -> Result<CompileArtifact, PipelineError> {
-        let mut out = CompileArtifact {
-            preprocessed: None,
-            lexed: None,
-            ast: None,
-            mir: None,
-            sema_output: None,
-            clif_dump: None,
-            object_file: None,
-        };
+        let mut out = CompileArtifact::default();
 
         // Preprocessing phase
         let pp_tokens = self.run_preprocessor(source_id)?;
@@ -171,28 +164,32 @@ impl CompilerDriver {
             return Ok(out);
         }
 
-        // Lexing & Parsing phase
+        // Lexing phase
         let tokens = self.run_lexer(&pp_tokens)?;
         if stop_after == CompilePhase::Lex {
             out.lexed = Some(tokens);
             return Ok(out);
         }
 
+        // parsing phase
         let ast = self.run_parser(&tokens)?;
         if stop_after == CompilePhase::Parse {
             out.ast = Some(ast);
             return Ok(out);
         }
 
-        // semantic lowering and MIR generation phase
-        let sema_output_with_ast = self.run_mir(ast)?;
+        // semantic lowering
+        let (ast, symbol_table, registry) = self.run_symbol_resolver(ast)?;
         if stop_after == CompilePhase::SymbolResolver {
-            out.ast = Some(sema_output_with_ast.ast_with_scope);
+            out.ast = Some(ast);
+            out.type_registry = Some(registry);
             return Ok(out);
         }
+
+        // semantic analyzer & MIR generation phase
+        let sema_output_with_ast = self.run_semantic(ast, symbol_table, registry)?;
         let sema_output = sema_output_with_ast.sema_output;
         if stop_after == CompilePhase::Mir {
-            out.mir = Some(sema_output.module.clone());
             out.sema_output = Some(sema_output);
             return Ok(out);
         }
@@ -259,15 +256,15 @@ impl CompilerDriver {
         }
     }
 
-    fn run_mir(&mut self, mut ast: Ast) -> Result<SemaOutputWithAst, PipelineError> {
+    fn run_symbol_resolver(&mut self, mut ast: Ast) -> Result<(Ast, SymbolTable, TypeRegistry), PipelineError> {
         let mut symbol_table = SymbolTable::new();
         let mut registry = TypeRegistry::new();
         registry.create_builtin();
 
         use crate::semantic::symbol_resolver::run_symbol_resolver;
-
         let scope_map = run_symbol_resolver(&mut ast, &mut self.diagnostics, &mut symbol_table, &mut registry);
         ast.attach_scope_map(scope_map);
+
         // eprintln!("Symbol table entries after symbol resolver:");
         // for (i, _entry) in symbol_table.entries.iter().enumerate() {
         //     let s = &symbol_table.entries[i];
@@ -275,10 +272,6 @@ impl CompilerDriver {
         // }
         self.check_diagnostics_and_return_if_error()?;
 
-        // invariant validation after symbol resolver
-        // for (i, entry) in symbol_table.entries.iter().enumerate() {
-        //     debug!("symbol[{}]: {:?}", i, entry.name);
-        // }
         // Validate that parsing-only node kinds have been lowered by the symbol resolver
         for node in &ast.nodes {
             match &node.kind {
@@ -303,6 +296,16 @@ impl CompilerDriver {
         //     }
         // }
 
+        Ok((ast, symbol_table, registry))
+    }
+
+    fn run_semantic(
+        &mut self,
+        mut ast: Ast,
+        symbol_table: SymbolTable,
+        mut registry: TypeRegistry,
+    ) -> Result<SemaOutputWithAst, PipelineError> {
+        /// phase to make sure that NameId in NodeKind::Ident resolved to some Symbol
         use crate::semantic::name_resolver::run_name_resolver;
         run_name_resolver(&ast, &mut self.diagnostics, &symbol_table);
         self.check_diagnostics_and_return_if_error()?;
@@ -504,6 +507,9 @@ impl CompilerDriver {
                         }
                     } else if let Some(ast) = artifact.ast {
                         self.output_handler.dump_parser(&ast);
+                        if let Some(registry) = artifact.type_registry {
+                            self.output_handler.dump_type_registry(&ast, &registry);
+                        }
                     } else if let Some(preprocessed) = artifact.preprocessed {
                         self.output_handler.dump_preprocessed_output(
                             &preprocessed,

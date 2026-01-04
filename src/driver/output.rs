@@ -3,11 +3,12 @@
 //! This module handles various output formats including preprocessed source,
 //! parser AST dumps, and HTML AST dumps.
 
+use hashbrown::HashSet;
 use itertools::Itertools;
 
 use crate::ast::{Ast, NodeKind};
 use crate::pp::PPToken;
-use crate::semantic::{SymbolRef, TypeQualifiers};
+use crate::semantic::{SymbolRef, TypeQualifiers, TypeRegistry};
 use crate::source_manager::SourceManager;
 
 use super::compiler::DriverError;
@@ -128,6 +129,257 @@ impl OutputHandler {
             }
             print!("{}: ", i + 1);
             self.dump_parser_kind(&node.kind);
+        }
+    }
+
+    /// Dump TypeRegistry information for used TypeRefs in the AST
+    pub(crate) fn dump_type_registry(&self, ast: &Ast, registry: &TypeRegistry) {
+        // Collect all TypeRefs used in the AST
+        let mut used_type_refs = HashSet::new();
+
+        for node in &ast.nodes {
+            self.collect_type_refs_from_node(&node.kind, &mut used_type_refs);
+        }
+
+        if used_type_refs.is_empty() {
+            return;
+        }
+
+        // Print header
+        println!("\n=== TypeRegistry (Used TypeRefs) ===");
+
+        // Sort TypeRefs for consistent output
+        let mut sorted_type_refs: Vec<_> = used_type_refs.into_iter().collect();
+        sorted_type_refs.sort_by_key(|ty_ref| ty_ref.get());
+
+        // Dump each used TypeRef with user-friendly formatting
+        for ty_ref in sorted_type_refs {
+            let ty = registry.get(ty_ref);
+            let formatted_type = self.format_type_kind_user_friendly(&ty.kind, registry);
+            println!("TypeRef({}): {}", ty_ref.get(), formatted_type);
+        }
+    }
+
+    /// Format TypeKind in a user-friendly way for TypeRegistry dump
+    fn format_type_kind_user_friendly(&self, kind: &crate::semantic::TypeKind, registry: &TypeRegistry) -> String {
+        use crate::semantic::TypeKind;
+
+        match kind {
+            // Basic types - use the existing dump format
+            TypeKind::Void => "void".to_string(),
+            TypeKind::Bool => "_Bool".to_string(),
+            TypeKind::Char { is_signed } => {
+                if *is_signed {
+                    "char".to_string()
+                } else {
+                    "unsigned char".to_string()
+                }
+            }
+            TypeKind::Short { is_signed } => {
+                if *is_signed {
+                    "short".to_string()
+                } else {
+                    "unsigned short".to_string()
+                }
+            }
+            TypeKind::Int { is_signed } => {
+                if *is_signed {
+                    "int".to_string()
+                } else {
+                    "unsigned int".to_string()
+                }
+            }
+            TypeKind::Long {
+                is_signed,
+                is_long_long,
+            } => {
+                if *is_long_long {
+                    if *is_signed {
+                        "long long".to_string()
+                    } else {
+                        "unsigned long long".to_string()
+                    }
+                } else if *is_signed {
+                    "long".to_string()
+                } else {
+                    "unsigned long".to_string()
+                }
+            }
+            TypeKind::Float => "float".to_string(),
+            TypeKind::Double { is_long_double } => {
+                if *is_long_double {
+                    "long double".to_string()
+                } else {
+                    "double".to_string()
+                }
+            }
+            TypeKind::Complex { .. } => "_Complex".to_string(),
+            TypeKind::Error => "<error>".to_string(),
+
+            // Complex types - provide more detailed information
+            TypeKind::Pointer { pointee } => {
+                let pointee_type = registry.get(*pointee);
+                format!("{}*", self.format_type_kind_user_friendly(&pointee_type.kind, registry))
+            }
+            TypeKind::Array { element_type, size } => {
+                let element_str = self.format_type_kind_user_friendly(&registry.get(*element_type).kind, registry);
+                match size {
+                    crate::semantic::ArraySizeType::Constant(len) => format!("{}[{}]", element_str, len),
+                    crate::semantic::ArraySizeType::Incomplete => format!("{}[]", element_str),
+                    crate::semantic::ArraySizeType::Variable(_) => "<VLA>".to_string(),
+                    crate::semantic::ArraySizeType::Star => format!("{}[*]", element_str),
+                }
+            }
+            TypeKind::Function {
+                return_type,
+                parameters,
+                is_variadic,
+            } => {
+                let return_str = self.format_type_kind_user_friendly(&registry.get(*return_type).kind, registry);
+                let mut param_strs = Vec::new();
+                for param in parameters {
+                    let param_str =
+                        self.format_type_kind_user_friendly(&registry.get(param.param_type.ty).kind, registry);
+                    param_strs.push(param_str);
+                }
+                let params = param_strs.join(", ");
+                let variadic = if *is_variadic { ", ..." } else { "" };
+                format!("{}({}{})", return_str, params, variadic)
+            }
+            TypeKind::Record { tag, is_union, .. } => {
+                let kind_str = if *is_union { "union" } else { "struct" };
+                if let Some(tag_name) = tag {
+                    format!("{} {}", kind_str, tag_name)
+                } else {
+                    format!("{} (anonymous)", kind_str)
+                }
+            }
+            TypeKind::Enum { tag, .. } => {
+                if let Some(tag_name) = tag {
+                    format!("enum {}", tag_name)
+                } else {
+                    "enum (anonymous)".to_string()
+                }
+            }
+        }
+    }
+
+    /// Collect TypeRefs from a NodeKind
+    fn collect_type_refs_from_node(&self, kind: &NodeKind, type_refs: &mut HashSet<crate::semantic::TypeRef>) {
+        match kind {
+            // Direct TypeRef usage
+            NodeKind::VaArg(_, ty_ref) => {
+                type_refs.insert(*ty_ref);
+            }
+            NodeKind::Function(func_data) => {
+                type_refs.insert(func_data.ty);
+                // Also collect from function parameters
+                for param in &func_data.params {
+                    type_refs.insert(param.ty.ty);
+                }
+            }
+            NodeKind::FunctionDecl(func_decl) => {
+                type_refs.insert(func_decl.ty);
+            }
+            NodeKind::RecordDecl(record_decl) => {
+                type_refs.insert(record_decl.ty);
+                // Also collect from record members
+                for member in &record_decl.members {
+                    type_refs.insert(member.ty.ty);
+                }
+            }
+
+            // QualType usage (contains TypeRef)
+            NodeKind::Cast(qual_type, _) => {
+                type_refs.insert(qual_type.ty);
+            }
+            NodeKind::SizeOfType(qual_type) => {
+                type_refs.insert(qual_type.ty);
+            }
+            NodeKind::AlignOf(qual_type) => {
+                type_refs.insert(qual_type.ty);
+            }
+            NodeKind::CompoundLiteral(qual_type, _) => {
+                type_refs.insert(qual_type.ty);
+            }
+            NodeKind::VarDecl(var_decl) => {
+                type_refs.insert(var_decl.ty.ty);
+            }
+            NodeKind::TypedefDecl(typedef_decl) => {
+                type_refs.insert(typedef_decl.ty.ty);
+            }
+            NodeKind::GenericSelection(_, assocs) => {
+                for assoc in assocs {
+                    if let Some(qual_type) = assoc.ty {
+                        type_refs.insert(qual_type.ty);
+                    }
+                }
+            }
+
+            // Literal nodes - don't contain TypeRefs
+            NodeKind::LiteralInt(_)
+            | NodeKind::LiteralFloat(_)
+            | NodeKind::LiteralString(_)
+            | NodeKind::LiteralChar(_)
+            | NodeKind::Ident(_, _) => {
+                // These don't contain TypeRefs
+            }
+
+            // Statement types that don't directly contain TypeRefs
+            NodeKind::TranslationUnit(_)
+            | NodeKind::CompoundStatement(_)
+            | NodeKind::If(_)
+            | NodeKind::While(_)
+            | NodeKind::DoWhile(_, _)
+            | NodeKind::For(_)
+            | NodeKind::Return(_)
+            | NodeKind::Break
+            | NodeKind::Continue
+            | NodeKind::Goto(_, _)
+            | NodeKind::Label(_, _, _)
+            | NodeKind::Switch(_, _)
+            | NodeKind::Case(_, _)
+            | NodeKind::CaseRange(_, _, _)
+            | NodeKind::Default(_)
+            | NodeKind::ExpressionStatement(_)
+            | NodeKind::EmptyStatement
+            | NodeKind::DeclarationList(_)
+            | NodeKind::InitializerList(_)
+            | NodeKind::StaticAssert(_, _)
+            | NodeKind::EnumConstant(_, _)
+            | NodeKind::Declaration(_)
+            | NodeKind::FunctionDef(_)
+            | NodeKind::Dummy => {
+                // These don't directly contain TypeRefs
+            }
+
+            // Parser-specific nodes that use ParsedType (not semantic TypeRef)
+            NodeKind::ParsedCast(_, _)
+            | NodeKind::ParsedSizeOfType(_)
+            | NodeKind::ParsedAlignOf(_)
+            | NodeKind::ParsedCompoundLiteral(_, _)
+            | NodeKind::ParsedGenericSelection(_, _) => {
+                // These use ParsedType, not semantic TypeRef
+            }
+
+            // GNU extensions
+            NodeKind::GnuStatementExpression(_, _) => {
+                // Doesn't directly contain TypeRef
+            }
+
+            // Expression nodes with NodeRef children - types handled during traversal
+            NodeKind::FunctionCall(_, _)
+            | NodeKind::BinaryOp(_, _, _)
+            | NodeKind::UnaryOp(_, _)
+            | NodeKind::TernaryOp(_, _, _)
+            | NodeKind::PostIncrement(_)
+            | NodeKind::PostDecrement(_)
+            | NodeKind::Assignment(_, _, _)
+            | NodeKind::MemberAccess(_, _, _)
+            | NodeKind::IndexAccess(_, _)
+            | NodeKind::SizeOfExpr(_) => {
+                // These don't directly contain TypeRefs, they will be handled when we process child nodes
+            }
         }
     }
 
@@ -364,7 +616,7 @@ impl OutputHandler {
                 println!(
                     "Function(name={}, ty={}, body={})",
                     func_name,
-                    function_data.ty.get(),
+                    function_data.ty,
                     function_data.body.get()
                 )
             }

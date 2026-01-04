@@ -78,7 +78,7 @@ fn test_simple_macro_definition_and_expansion() {
 int x = TEN;
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r###"
+    insta::assert_yaml_snapshot!(tokens, @r#"
     - kind: Identifier
       text: int
     - kind: Identifier
@@ -89,7 +89,7 @@ int x = TEN;
       text: "10"
     - kind: Semicolon
       text: ;
-    "###);
+    "#);
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn test_parameter_macro_definition_and_expansion() {
 int x = ADD(3, 4);
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r###"
+    insta::assert_yaml_snapshot!(tokens, @r#"
     - kind: Identifier
       text: int
     - kind: Identifier
@@ -126,7 +126,7 @@ int x = ADD(3, 4);
       text: )
     - kind: Semicolon
       text: ;
-    "###);
+    "#);
 }
 
 #[test]
@@ -138,7 +138,7 @@ const char* s = STR(hello_world);
 LOG("value=%d\n", 5);
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r###"
+    insta::assert_yaml_snapshot!(tokens, @r#"
     - kind: Identifier
       text: const
     - kind: Identifier
@@ -167,7 +167,7 @@ LOG("value=%d\n", 5);
       text: )
     - kind: Semicolon
       text: ;
-    "###);
+    "#);
 }
 
 #[test]
@@ -185,7 +185,7 @@ int x = 0;
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r###"
+    insta::assert_yaml_snapshot!(tokens, @r#"
     - kind: Identifier
       text: int
     - kind: Identifier
@@ -196,7 +196,7 @@ int x = 0;
       text: "1"
     - kind: Semicolon
       text: ;
-    "###);
+    "#);
 }
 
 #[test]
@@ -212,7 +212,7 @@ fn test_arithmetic_in_if_expression_and_elif() {
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r###"
+    insta::assert_yaml_snapshot!(tokens, @r#"
     - kind: Identifier
       text: int
     - kind: Identifier
@@ -223,7 +223,7 @@ fn test_arithmetic_in_if_expression_and_elif() {
       text: "8"
     - kind: Semicolon
       text: ;
-    "###);
+    "#);
 }
 
 #[test]
@@ -234,7 +234,7 @@ fn test_macro_redefinition_warning_or_override() {
 int x = X;
 "#;
     let (tokens, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!((tokens, diags), @r###"
+    insta::assert_yaml_snapshot!((tokens, diags), @r#"
     - - kind: Identifier
         text: int
       - kind: Identifier
@@ -246,7 +246,7 @@ int x = X;
       - kind: Semicolon
         text: ;
     - - "Warning: Redefinition of macro 'X'"
-    "###);
+    "#);
 }
 
 #[test]
@@ -255,7 +255,7 @@ fn test_predefined_macros_present() {
 const int a = __STDC__;
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r###"
+    insta::assert_yaml_snapshot!(tokens, @r#"
     - kind: Identifier
       text: const
     - kind: Identifier
@@ -268,7 +268,7 @@ const int a = __STDC__;
       text: "1"
     - kind: Semicolon
       text: ;
-    "###);
+    "#);
 }
 
 #[test]
@@ -280,9 +280,7 @@ fn test_error_directive_produces_failure() {
 #endif
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r###"
-    - "Fatal Error: ErrorDirective(\"\\\"this should be reported\\\"\")"
-    "###);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: ErrorDirective(\"\\\"this should be reported\\\"\")""#);
 }
 
 #[test]
@@ -293,7 +291,7 @@ fn test_complex_macro_expansion_and_recursion_limit() {
 int x = A;
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r###"
+    insta::assert_yaml_snapshot!(tokens, @r#"
     - kind: Identifier
       text: int
     - kind: Identifier
@@ -304,7 +302,7 @@ int x = A;
       text: "1"
     - kind: Semicolon
       text: ;
-    "###);
+    "#);
 }
 
 #[test]
@@ -315,7 +313,7 @@ int foobar = 1;
 int x = PASTE(foo, bar);
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r###"
+    insta::assert_yaml_snapshot!(tokens, @r#"
     - kind: Identifier
       text: int
     - kind: Identifier
@@ -336,7 +334,7 @@ int x = PASTE(foo, bar);
       text: foobar
     - kind: Semicolon
       text: ;
-    "###);
+    "#);
 }
 
 #[test]
@@ -353,7 +351,7 @@ X;
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r###"
+    insta::assert_yaml_snapshot!(tokens, @r#"
     - kind: Identifier
       text: int
     - kind: Identifier
@@ -364,7 +362,7 @@ X;
       text: "0"
     - kind: Semicolon
       text: ;
-    "###);
+    "#);
 }
 
 #[test]
@@ -406,7 +404,7 @@ fn test_complex_arithmetic_expressions() {
 int result = 42;
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r###"
+    insta::assert_yaml_snapshot!(tokens, @r#"
     - kind: Identifier
       text: int
     - kind: Identifier
@@ -417,7 +415,7 @@ int result = 42;
       text: "42"
     - kind: Semicolon
       text: ;
-    "###);
+    "#);
 }
 
 #[test]
@@ -427,7 +425,7 @@ const char* f = __FILE__;
 "#;
     let tokens = setup_pp_snapshot(src);
     // Note: setup_preprocessor_test uses "<test>" as the filename
-    insta::assert_yaml_snapshot!(tokens, @r###"
+    insta::assert_yaml_snapshot!(tokens, @r#"
     - kind: Identifier
       text: const
     - kind: Identifier
@@ -442,7 +440,7 @@ const char* f = __FILE__;
       text: "\"<test>\""
     - kind: Semicolon
       text: ;
-    "###);
+    "#);
 }
 
 #[test]
@@ -452,7 +450,7 @@ _Pragma("STDC FP_CONTRACT ON")
 int x = 1;
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r###"
+    insta::assert_yaml_snapshot!(tokens, @r#"
     - kind: Identifier
       text: int
     - kind: Identifier
@@ -463,7 +461,7 @@ int x = 1;
       text: "1"
     - kind: Semicolon
       text: ;
-    "###);
+    "#);
 }
 
 #[test]
@@ -493,7 +491,7 @@ int a = 1;
 
     let debug_tokens: Vec<DebugToken> = significant_tokens.iter().map(DebugToken::from).collect();
 
-    insta::assert_yaml_snapshot!(debug_tokens, @r###"
+    insta::assert_yaml_snapshot!(debug_tokens, @r#"
     - kind: Identifier
       text: int
     - kind: Identifier
@@ -504,7 +502,7 @@ int a = 1;
       text: "1"
     - kind: Semicolon
       text: ;
-    "###);
+    "#);
 }
 
 #[test]
@@ -531,7 +529,7 @@ fn test_include_same_file_twice_without_pragma_once() {
 
     let debug_tokens: Vec<DebugToken> = significant_tokens.iter().map(DebugToken::from).collect();
 
-    insta::assert_yaml_snapshot!(debug_tokens, @r###"
+    insta::assert_yaml_snapshot!(debug_tokens, @r#"
     - kind: Identifier
       text: int
     - kind: Identifier
@@ -552,7 +550,7 @@ fn test_include_same_file_twice_without_pragma_once() {
       text: "1"
     - kind: Semicolon
       text: ;
-    "###);
+    "#);
 }
 
 #[test]
@@ -605,7 +603,7 @@ fn test_function_like_macro_not_expanded_when_not_followed_by_paren() {
 int x = x(0);
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r###"
+    insta::assert_yaml_snapshot!(tokens, @r#"
     - kind: Identifier
       text: int
     - kind: Identifier
@@ -628,7 +626,7 @@ int x = x(0);
       text: )
     - kind: Semicolon
       text: ;
-    "###);
+    "#);
 }
 
 #[test]
@@ -638,7 +636,7 @@ fn test_object_macro_with_parentheses_in_replacement() {
 int x = NULL;
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r###"
+    insta::assert_yaml_snapshot!(tokens, @r#"
     - kind: Identifier
       text: int
     - kind: Identifier
@@ -659,7 +657,7 @@ int x = NULL;
       text: )
     - kind: Semicolon
       text: ;
-    "###);
+    "#);
 }
 
 #[test]
@@ -673,7 +671,7 @@ int x = 1;
 int y = 2;
 "#;
     let (tokens, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!((tokens, diags), @r###"
+    insta::assert_yaml_snapshot!((tokens, diags), @r#"
     - - kind: Identifier
         text: int
       - kind: Identifier
@@ -695,7 +693,7 @@ int y = 2;
       - kind: Semicolon
         text: ;
     - []
-    "###);
+    "#);
 }
 
 #[test]
@@ -715,9 +713,7 @@ fn test_invalid_line_directive() {
 int x = 1;
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r###"
-    - "Fatal Error: InvalidLineDirective"
-    "###);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: InvalidLineDirective""#);
 }
 
 #[test]
@@ -727,9 +723,7 @@ fn test_line_directive_zero_line_number() {
 int x = 1;
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r###"
-    - "Fatal Error: InvalidLineDirective"
-    "###);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: InvalidLineDirective""#);
 }
 
 #[test]
@@ -739,9 +733,7 @@ fn test_line_directive_malformed_filename() {
 int x = 1;
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r###"
-    - "Fatal Error: InvalidLineDirective"
-    "###);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: InvalidLineDirective""#);
 }
 
 #[test]
@@ -762,7 +754,7 @@ fn test_token_pasting_with_empty_argument() {
 int x = P(foo,);
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r###"
+    insta::assert_yaml_snapshot!(tokens, @r#"
     - kind: Identifier
       text: int
     - kind: Identifier
@@ -773,7 +765,7 @@ int x = P(foo,);
       text: foo
     - kind: Semicolon
       text: ;
-    "###);
+    "#);
 }
 
 #[test]
@@ -785,7 +777,7 @@ fn test_macro_argument_prescan_bug() {
 const char* s = XSTR(FOO);
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r###"
+    insta::assert_yaml_snapshot!(tokens, @r#"
     - kind: Identifier
       text: const
     - kind: Identifier
@@ -800,7 +792,7 @@ const char* s = XSTR(FOO);
       text: "\"42\""
     - kind: Semicolon
       text: ;
-    "###);
+    "#);
 }
 
 // New test for __FILE__ and __LINE__ dynamic behavior
@@ -812,7 +804,7 @@ int line = __LINE__;
 char* file = __FILE__;
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r###"
+    insta::assert_yaml_snapshot!(tokens, @r#"
     - kind: Identifier
       text: int
     - kind: Identifier
@@ -835,7 +827,7 @@ char* file = __FILE__;
       text: "\"foo.c\""
     - kind: Semicolon
       text: ;
-    "###);
+    "#);
 }
 
 #[test]
@@ -844,7 +836,5 @@ fn test_missing_include_file() {
 #include "nonexistent.h"
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r###"
-    - "Fatal Error: FileNotFound"
-    "###);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: FileNotFound""#);
 }

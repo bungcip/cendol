@@ -395,7 +395,7 @@ fn test_alloc_dealloc_codegen() {
 
     match result {
         Ok(ClifOutput::ClifDump(clif_ir)) => {
-            insta::assert_snapshot!(clif_ir, @"
+            insta::assert_snapshot!(clif_ir, @r"
             ; Function: main
             function u0:0() system_v {
                 ss0 = explicit_slot 8

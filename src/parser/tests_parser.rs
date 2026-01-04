@@ -518,7 +518,7 @@ fn test_simple_addition() {
 #[test]
 fn test_generic_selection_with_assignment() {
     let resolved = setup_expr("_Generic(x = 10, int: 1, default: 0)");
-    insta::assert_yaml_snapshot!(&resolved, @"
+    insta::assert_yaml_snapshot!(&resolved, @r"
     GenericSelection:
       - Assignment:
           - Assign
@@ -632,7 +632,7 @@ fn test_parenthesized_expression() {
 #[test]
 fn test_assignment() {
     let resolved = setup_expr("a = 1");
-    insta::assert_yaml_snapshot!(&resolved, @"
+    insta::assert_yaml_snapshot!(&resolved, @r"
     Assignment:
       - Assign
       - Ident: a
@@ -1369,7 +1369,7 @@ fn test_generic_selection_with_pointer_types() {
 #[test]
 fn test_chained_assignment() {
     let resolved = setup_expr("a = b = c");
-    insta::assert_yaml_snapshot!(&resolved, @"
+    insta::assert_yaml_snapshot!(&resolved, @r"
     Assignment:
       - Assign
       - Ident: a
@@ -1383,7 +1383,7 @@ fn test_chained_assignment() {
 #[test]
 fn test_ternary_with_assignment() {
     let resolved = setup_expr("a ? b : c = 1");
-    insta::assert_yaml_snapshot!(&resolved, @"
+    insta::assert_yaml_snapshot!(&resolved, @r"
     Assignment:
       - Assign
       - TernaryOp:
@@ -1397,7 +1397,7 @@ fn test_ternary_with_assignment() {
 #[test]
 fn test_ternary_with_assignment_in_middle_operand() {
     let resolved = setup_expr("a ? b = 1 : c");
-    insta::assert_yaml_snapshot!(&resolved, @"
+    insta::assert_yaml_snapshot!(&resolved, @r"
     TernaryOp:
       - Ident: a
       - Assignment:
@@ -1440,7 +1440,7 @@ fn test_array_indexing_with_expression() {
 #[test]
 fn test_label_with_expression_statement() {
     let resolved = setup_statement("start: x = 1;");
-    insta::assert_yaml_snapshot!(&resolved, @"
+    insta::assert_yaml_snapshot!(&resolved, @r"
     Label:
       - start
       - ExpressionStatement:
@@ -1471,7 +1471,7 @@ fn test_label_with_compound_statement() {
 #[test]
 fn test_label_with_if_statement() {
     let resolved = setup_statement("if_label: if (x) y = 1;");
-    insta::assert_yaml_snapshot!(&resolved, @"
+    insta::assert_yaml_snapshot!(&resolved, @r"
     Label:
       - if_label
       - If:
@@ -1573,7 +1573,7 @@ fn test_duplicate_typedef_no_panic() {
 #[test]
 fn test_atomic_type_qualifier() {
     let resolved = setup_declaration("_Atomic int x;");
-    insta::assert_yaml_snapshot!(&resolved, @"
+    insta::assert_yaml_snapshot!(&resolved, @r"
     Declaration:
       specifiers:
         - TypeQualifier(Atomic)
@@ -1587,7 +1587,7 @@ fn test_atomic_type_qualifier() {
 fn test_postfix_operator_precedence() {
     // Test that postfix operators bind tighter than binary operators
     let resolved = setup_expr("a.b + c");
-    insta::assert_yaml_snapshot!(&resolved, @r#"
+    insta::assert_yaml_snapshot!(&resolved, @r"
     BinaryOp:
       - Add
       - MemberAccess:
@@ -1595,11 +1595,11 @@ fn test_postfix_operator_precedence() {
           - b
           - false
       - Ident: c
-    "#);
+    ");
 
     // Test chaining of postfix operators
     let resolved = setup_expr("foo()->bar[0]++");
-    insta::assert_yaml_snapshot!(&resolved, @r#"
+    insta::assert_yaml_snapshot!(&resolved, @r"
     PostIncrement:
       IndexAccess:
         - MemberAccess:
@@ -1609,11 +1609,11 @@ fn test_postfix_operator_precedence() {
             - bar
             - true
         - LiteralInt: 0
-    "#);
+    ");
 
     // Test a complex expression with mixed operators
     let resolved = setup_expr("++a * b.c[d--] + foo(1, 2)");
-    insta::assert_yaml_snapshot!(&resolved, @r#"
+    insta::assert_yaml_snapshot!(&resolved, @r"
     BinaryOp:
       - Add
       - BinaryOp:
@@ -1632,7 +1632,7 @@ fn test_postfix_operator_precedence() {
           - Ident: foo
           - - LiteralInt: 1
             - LiteralInt: 2
-    "#);
+    ");
 }
 
 #[test]

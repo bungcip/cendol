@@ -1,11 +1,46 @@
 use super::*;
 use crate::diagnostic::DiagnosticEngine;
-use crate::intern::StringId;
 use crate::source_manager::SourceManager;
+use serde::Serialize;
 
-/// Helper function to set up preprocessor testing
-fn setup_preprocessor_test(src: &str) -> Vec<PPToken> {
-    setup_preprocessor_test_with_diagnostics(src).unwrap().0
+#[derive(Serialize)]
+struct DebugToken {
+    kind: String,
+    text: String,
+}
+
+impl From<&PPToken> for DebugToken {
+    fn from(token: &PPToken) -> Self {
+        let kind_str = match &token.kind {
+            PPTokenKind::Identifier(_) => "Identifier".to_string(),
+            PPTokenKind::StringLiteral(_) => "StringLiteral".to_string(),
+            PPTokenKind::Number(_) => "Number".to_string(),
+            PPTokenKind::CharLiteral(_, _) => "CharLiteral".to_string(),
+            k => format!("{:?}", k),
+        };
+
+        DebugToken {
+            kind: kind_str,
+            text: token.get_text().to_string(),
+        }
+    }
+}
+
+fn setup_pp_snapshot(src: &str) -> Vec<DebugToken> {
+    let (tokens, _) = setup_preprocessor_test_with_diagnostics(src).unwrap();
+    tokens.iter().map(DebugToken::from).collect()
+}
+
+fn setup_pp_snapshot_with_diags(src: &str) -> (Vec<DebugToken>, Vec<String>) {
+    // Return a Result-like structure for the snapshot
+    match setup_preprocessor_test_with_diagnostics(src) {
+        Ok((tokens, diags)) => {
+            let debug_tokens = tokens.iter().map(DebugToken::from).collect();
+            let debug_diags = diags.iter().map(|d| format!("{:?}: {}", d.level, d.message)).collect();
+            (debug_tokens, debug_diags)
+        }
+        Err(e) => (vec![], vec![format!("Fatal Error: {:?}", e)]),
+    }
 }
 
 /// Helper function to set up preprocessor testing and return diagnostics
@@ -36,42 +71,25 @@ fn setup_preprocessor_test_with_diagnostics(
     Ok((significant_tokens, diagnostics.diagnostics().to_vec()))
 }
 
-/// Helper macro to assert token sequence kinds
-macro_rules! assert_token_kinds {
-    ($tokens:expr, $( $expected:expr ),* $(,)?) => {{
-        let expected_kinds = vec![$($expected),*];
-        assert_eq!($tokens.len(), expected_kinds.len(), "Token count mismatch");
-        for (i, (token, expected)) in $tokens.iter().zip(expected_kinds.iter()).enumerate() {
-            assert_eq!(token.kind, *expected, "Token {} kind mismatch: expected {:?}, got {:?}", i, expected, token.kind);
-        }
-    }};
-}
-
 #[test]
 fn test_simple_macro_definition_and_expansion() {
     let src = r#"
 #define TEN 10
 int x = TEN;
 "#;
-
-    let significant_tokens = setup_preprocessor_test(src);
-
-    // Expected kinds: Identifier("int"), Identifier("x"), Assign, Number("10"), Semicolon
-    assert_token_kinds!(
-        significant_tokens,
-        PPTokenKind::Identifier(StringId::new("int")),
-        PPTokenKind::Identifier(StringId::new("x")),
-        PPTokenKind::Assign,
-        PPTokenKind::Number(StringId::new("10")),
-        PPTokenKind::Semicolon
-    );
-
-    // Ensure TEN was not present (it should have been expanded)
-    for token in &significant_tokens {
-        if let PPTokenKind::Identifier(sym) = &token.kind {
-            assert_ne!(sym.as_str(), "TEN", "TEN should have been expanded");
-        }
-    }
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r###"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: x
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "10"
+    - kind: Semicolon
+      text: ;
+    "###);
 }
 
 #[test]
@@ -80,33 +98,35 @@ fn test_parameter_macro_definition_and_expansion() {
 #define ADD(a,b) ( (a) + (b) )
 int x = ADD(3, 4);
 "#;
-
-    let significant_tokens = setup_preprocessor_test(src);
-
-    // Expected: int, x, =, (, (, 3, ), +, (, 4, ), ), ;
-    assert_token_kinds!(
-        significant_tokens,
-        PPTokenKind::Identifier(StringId::new("int")),
-        PPTokenKind::Identifier(StringId::new("x")),
-        PPTokenKind::Assign,
-        PPTokenKind::LeftParen,
-        PPTokenKind::LeftParen,
-        PPTokenKind::Number(StringId::new("3")),
-        PPTokenKind::RightParen,
-        PPTokenKind::Plus,
-        PPTokenKind::LeftParen,
-        PPTokenKind::Number(StringId::new("4")),
-        PPTokenKind::RightParen,
-        PPTokenKind::RightParen,
-        PPTokenKind::Semicolon
-    );
-
-    // Ensure ADD was not present (it should have been expanded)
-    for token in &significant_tokens {
-        if let PPTokenKind::Identifier(sym) = &token.kind {
-            assert_ne!(sym.as_str(), "ADD", "ADD should have been expanded");
-        }
-    }
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r###"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: x
+    - kind: Assign
+      text: "="
+    - kind: LeftParen
+      text: (
+    - kind: LeftParen
+      text: (
+    - kind: Number
+      text: "3"
+    - kind: RightParen
+      text: )
+    - kind: Plus
+      text: +
+    - kind: LeftParen
+      text: (
+    - kind: Number
+      text: "4"
+    - kind: RightParen
+      text: )
+    - kind: RightParen
+      text: )
+    - kind: Semicolon
+      text: ;
+    "###);
 }
 
 #[test]
@@ -117,37 +137,37 @@ fn test_variadic_macro_and_stringification() {
 const char* s = STR(hello_world);
 LOG("value=%d\n", 5);
 "#;
-
-    let significant_tokens = setup_preprocessor_test(src);
-
-    // Expected: const, char*, s, =, "hello_world", ;, printf, (, "value=%d\n", ,, 5, ), ;
-    assert_token_kinds!(
-        significant_tokens,
-        PPTokenKind::Identifier(StringId::new("const")),
-        PPTokenKind::Identifier(StringId::new("char")),
-        PPTokenKind::Star,
-        PPTokenKind::Identifier(StringId::new("s")),
-        PPTokenKind::Assign,
-        PPTokenKind::StringLiteral(StringId::new("\"hello_world\"")),
-        PPTokenKind::Semicolon,
-        PPTokenKind::Identifier(StringId::new("printf")),
-        PPTokenKind::LeftParen,
-        PPTokenKind::StringLiteral(StringId::new("\"value=%d\\n\"")),
-        PPTokenKind::Comma,
-        PPTokenKind::Number(StringId::new("5")),
-        PPTokenKind::RightParen,
-        PPTokenKind::Semicolon
-    );
-
-    // Ensure macros were expanded
-    for token in &significant_tokens {
-        if let PPTokenKind::Identifier(sym) = &token.kind {
-            let name = sym.as_str();
-            assert_ne!(name, "LOG", "LOG should have been expanded");
-            assert_ne!(name, "STR", "STR should have been expanded");
-            assert_ne!(name, "__VA_ARGS__", "__VA_ARGS__ should have been expanded");
-        }
-    }
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r###"
+    - kind: Identifier
+      text: const
+    - kind: Identifier
+      text: char
+    - kind: Star
+      text: "*"
+    - kind: Identifier
+      text: s
+    - kind: Assign
+      text: "="
+    - kind: StringLiteral
+      text: "\"hello_world\""
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: printf
+    - kind: LeftParen
+      text: (
+    - kind: StringLiteral
+      text: "\"value=%d\\n\""
+    - kind: Comma
+      text: ","
+    - kind: Number
+      text: "5"
+    - kind: RightParen
+      text: )
+    - kind: Semicolon
+      text: ;
+    "###);
 }
 
 #[test]
@@ -164,26 +184,19 @@ int x = 1;
 int x = 0;
 #endif
 "#;
-
-    let significant_tokens = setup_preprocessor_test(src);
-
-    // Expected: int, x, =, 1, ;
-    // Since A is defined and B is not defined, it should take the #else branch
-    assert_token_kinds!(
-        significant_tokens,
-        PPTokenKind::Identifier(StringId::new("int")),
-        PPTokenKind::Identifier(StringId::new("x")),
-        PPTokenKind::Assign,
-        PPTokenKind::Number(StringId::new("1")),
-        PPTokenKind::Semicolon
-    );
-
-    // Ensure A was not expanded (it's used in conditional)
-    for token in &significant_tokens {
-        if let PPTokenKind::Identifier(sym) = &token.kind {
-            assert_ne!(sym.as_str(), "A", "A should not appear in output");
-        }
-    }
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r###"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: x
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    "###);
 }
 
 #[test]
@@ -198,26 +211,19 @@ fn test_arithmetic_in_if_expression_and_elif() {
   int x = 0;
 #endif
 "#;
-
-    let significant_tokens = setup_preprocessor_test(src);
-
-    // Expected: int, x, =, 8, ;
-    // Since VAL is 8, VAL > 10 is false, VAL >= 8 is true
-    assert_token_kinds!(
-        significant_tokens,
-        PPTokenKind::Identifier(StringId::new("int")),
-        PPTokenKind::Identifier(StringId::new("x")),
-        PPTokenKind::Assign,
-        PPTokenKind::Number(StringId::new("8")),
-        PPTokenKind::Semicolon
-    );
-
-    // Ensure VAL was expanded in the conditional but not in output
-    for token in &significant_tokens {
-        if let PPTokenKind::Identifier(sym) = &token.kind {
-            assert_ne!(sym.as_str(), "VAL", "VAL should not appear in output");
-        }
-    }
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r###"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: x
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "8"
+    - kind: Semicolon
+      text: ;
+    "###);
 }
 
 #[test]
@@ -227,32 +233,20 @@ fn test_macro_redefinition_warning_or_override() {
 #define X 2
 int x = X;
 "#;
-
-    let (significant_tokens, diagnostics) = setup_preprocessor_test_with_diagnostics(src).unwrap();
-
-    // Expected: int, x, =, 2, ;
-    // Since X is redefined from 1 to 2, the final value should be 2
-    assert_token_kinds!(
-        significant_tokens,
-        PPTokenKind::Identifier(StringId::new("int")),
-        PPTokenKind::Identifier(StringId::new("x")),
-        PPTokenKind::Assign,
-        PPTokenKind::Number(StringId::new("2")),
-        PPTokenKind::Semicolon
-    );
-
-    // Ensure X was expanded to the final definition
-    for token in &significant_tokens {
-        if let PPTokenKind::Identifier(sym) = &token.kind {
-            assert_ne!(sym.as_str(), "X", "X should not appear in output");
-        }
-    }
-
-    // Check that a macro redefinition warning was emitted
-    assert_eq!(diagnostics.len(), 1, "Should have exactly one diagnostic");
-    assert_eq!(diagnostics[0].level, crate::diagnostic::DiagnosticLevel::Warning);
-    assert!(diagnostics[0].message.contains("Redefinition of macro 'X'"));
-    assert_eq!(diagnostics[0].code, Some("macro_redefinition".to_string()));
+    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!((tokens, diags), @r###"
+    - - kind: Identifier
+        text: int
+      - kind: Identifier
+        text: x
+      - kind: Assign
+        text: "="
+      - kind: Number
+        text: "2"
+      - kind: Semicolon
+        text: ;
+    - - "Warning: Redefinition of macro 'X'"
+    "###);
 }
 
 #[test]
@@ -260,26 +254,21 @@ fn test_predefined_macros_present() {
     let src = r#"
 const int a = __STDC__;
 "#;
-
-    let significant_tokens = setup_preprocessor_test(src);
-
-    // Expected: const, int, a, =, 1, ;
-    assert_token_kinds!(
-        significant_tokens,
-        PPTokenKind::Identifier(StringId::new("const")),
-        PPTokenKind::Identifier(StringId::new("int")),
-        PPTokenKind::Identifier(StringId::new("a")),
-        PPTokenKind::Assign,
-        PPTokenKind::Number(StringId::new("1")),
-        PPTokenKind::Semicolon
-    );
-
-    // Ensure __STDC__ was expanded
-    for token in &significant_tokens {
-        if let PPTokenKind::Identifier(sym) = &token.kind {
-            assert_ne!(sym.as_str(), "__STDC__", "__STDC__ should have been expanded");
-        }
-    }
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r###"
+    - kind: Identifier
+      text: const
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: a
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    "###);
 }
 
 #[test]
@@ -290,16 +279,10 @@ fn test_error_directive_produces_failure() {
 #error "this should be reported"
 #endif
 "#;
-
-    // This should fail due to #error directive
-    let result = setup_preprocessor_test_with_diagnostics(src);
-    assert!(result.is_err(), "Preprocessor should fail on #error directive");
-
-    if let Err(PPError::ErrorDirective(message)) = result {
-        assert_eq!(message, "\"this should be reported\"");
-    } else {
-        panic!("Expected ErrorDirective error");
-    }
+    let (_, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!(diags, @r###"
+    - "Fatal Error: ErrorDirective(\"\\\"this should be reported\\\"\")"
+    "###);
 }
 
 #[test]
@@ -309,28 +292,19 @@ fn test_complex_macro_expansion_and_recursion_limit() {
 #define A ID(ID(ID(1)))
 int x = A;
 "#;
-
-    let significant_tokens = setup_preprocessor_test(src);
-
-    // Expected: int, x, =, 1, ;
-    // A should expand to ID(ID(ID(1))) -> ID(ID(1)) -> ID(1) -> 1
-    assert_token_kinds!(
-        significant_tokens,
-        PPTokenKind::Identifier(StringId::new("int")),
-        PPTokenKind::Identifier(StringId::new("x")),
-        PPTokenKind::Assign,
-        PPTokenKind::Number(StringId::new("1")),
-        PPTokenKind::Semicolon
-    );
-
-    // Ensure all macros were expanded
-    for token in &significant_tokens {
-        if let PPTokenKind::Identifier(sym) = &token.kind {
-            let name = sym.as_str();
-            assert_ne!(name, "ID", "ID should have been expanded");
-            assert_ne!(name, "A", "A should have been expanded");
-        }
-    }
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r###"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: x
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    "###);
 }
 
 #[test]
@@ -340,30 +314,29 @@ fn test_token_pasting() {
 int foobar = 1;
 int x = PASTE(foo, bar);
 "#;
-
-    let significant_tokens = setup_preprocessor_test(src);
-
-    // Expected: int, foobar, =, 1, ;, int, x, =, foobar, ;
-    assert_token_kinds!(
-        significant_tokens,
-        PPTokenKind::Identifier(StringId::new("int")),
-        PPTokenKind::Identifier(StringId::new("foobar")),
-        PPTokenKind::Assign,
-        PPTokenKind::Number(StringId::new("1")),
-        PPTokenKind::Semicolon,
-        PPTokenKind::Identifier(StringId::new("int")),
-        PPTokenKind::Identifier(StringId::new("x")),
-        PPTokenKind::Assign,
-        PPTokenKind::Identifier(StringId::new("foobar")),
-        PPTokenKind::Semicolon
-    );
-
-    // Ensure PASTE was expanded
-    for token in &significant_tokens {
-        if let PPTokenKind::Identifier(sym) = &token.kind {
-            assert_ne!(sym.as_str(), "PASTE", "PASTE should have been expanded");
-        }
-    }
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r###"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: foobar
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: x
+    - kind: Assign
+      text: "="
+    - kind: Identifier
+      text: foobar
+    - kind: Semicolon
+      text: ;
+    "###);
 }
 
 #[test]
@@ -379,25 +352,19 @@ int x = 0;
 X;
 #endif
 "#;
-
-    let significant_tokens = setup_preprocessor_test(src);
-
-    // Expected: int, x, =, 0, ;
-    assert_token_kinds!(
-        significant_tokens,
-        PPTokenKind::Identifier(StringId::new("int")),
-        PPTokenKind::Identifier(StringId::new("x")),
-        PPTokenKind::Assign,
-        PPTokenKind::Number(StringId::new("0")),
-        PPTokenKind::Semicolon
-    );
-
-    // Ensure X was not included (since DEF is defined)
-    for token in &significant_tokens {
-        if let PPTokenKind::Identifier(sym) = &token.kind {
-            assert_ne!(sym.as_str(), "X", "X should not appear in output");
-        }
-    }
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r###"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: x
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "0"
+    - kind: Semicolon
+      text: ;
+    "###);
 }
 
 #[test]
@@ -438,19 +405,19 @@ fn test_complex_arithmetic_expressions() {
 
 int result = 42;
 "#;
-
-    let significant_tokens = setup_preprocessor_test(src);
-
-    // Expected: int, result, =, 42, ;
-    // All conditionals should evaluate to false, so no #error should trigger
-    assert_token_kinds!(
-        significant_tokens,
-        PPTokenKind::Identifier(StringId::new("int")),
-        PPTokenKind::Identifier(StringId::new("result")),
-        PPTokenKind::Assign,
-        PPTokenKind::Number(StringId::new("42")),
-        PPTokenKind::Semicolon
-    );
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r###"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: result
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "42"
+    - kind: Semicolon
+      text: ;
+    "###);
 }
 
 #[test]
@@ -458,28 +425,24 @@ fn test_file_macro() {
     let src = r#"
 const char* f = __FILE__;
 "#;
-
-    let significant_tokens = setup_preprocessor_test(src);
-
-    // Expected: const, char*, f, =, "<test>", ;
+    let tokens = setup_pp_snapshot(src);
     // Note: setup_preprocessor_test uses "<test>" as the filename
-    assert_token_kinds!(
-        significant_tokens,
-        PPTokenKind::Identifier(StringId::new("const")),
-        PPTokenKind::Identifier(StringId::new("char")),
-        PPTokenKind::Star,
-        PPTokenKind::Identifier(StringId::new("f")),
-        PPTokenKind::Assign,
-        PPTokenKind::StringLiteral(StringId::new("\"<test>\"")),
-        PPTokenKind::Semicolon
-    );
-
-    // Ensure __FILE__ was expanded
-    for token in &significant_tokens {
-        if let PPTokenKind::Identifier(sym) = &token.kind {
-            assert_ne!(sym.as_str(), "__FILE__", "__FILE__ should have been expanded");
-        }
-    }
+    insta::assert_yaml_snapshot!(tokens, @r###"
+    - kind: Identifier
+      text: const
+    - kind: Identifier
+      text: char
+    - kind: Star
+      text: "*"
+    - kind: Identifier
+      text: f
+    - kind: Assign
+      text: "="
+    - kind: StringLiteral
+      text: "\"<test>\""
+    - kind: Semicolon
+      text: ;
+    "###);
 }
 
 #[test]
@@ -488,16 +451,19 @@ fn test_pragma_operator_removes_tokens() {
 _Pragma("STDC FP_CONTRACT ON")
 int x = 1;
 "#;
-    let significant_tokens = setup_preprocessor_test(src);
-
-    assert_token_kinds!(
-        significant_tokens,
-        PPTokenKind::Identifier(StringId::new("int")),
-        PPTokenKind::Identifier(StringId::new("x")),
-        PPTokenKind::Assign,
-        PPTokenKind::Number(StringId::new("1")),
-        PPTokenKind::Semicolon
-    );
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r###"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: x
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    "###);
 }
 
 #[test]
@@ -525,15 +491,20 @@ int a = 1;
         .filter(|t| !matches!(t.kind, PPTokenKind::Eof | PPTokenKind::Eod))
         .collect();
 
-    // The tokens from "header.h" should only appear once.
-    assert_token_kinds!(
-        significant_tokens,
-        PPTokenKind::Identifier(StringId::new("int")),
-        PPTokenKind::Identifier(StringId::new("a")),
-        PPTokenKind::Assign,
-        PPTokenKind::Number(StringId::new("1")),
-        PPTokenKind::Semicolon
-    );
+    let debug_tokens: Vec<DebugToken> = significant_tokens.iter().map(DebugToken::from).collect();
+
+    insta::assert_yaml_snapshot!(debug_tokens, @r###"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: a
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    "###);
 }
 
 #[test]
@@ -558,20 +529,30 @@ fn test_include_same_file_twice_without_pragma_once() {
         .filter(|t| !matches!(t.kind, PPTokenKind::Eof | PPTokenKind::Eod))
         .collect();
 
-    // The tokens from "header.h" should appear twice.
-    assert_token_kinds!(
-        significant_tokens,
-        PPTokenKind::Identifier(StringId::new("int")),
-        PPTokenKind::Identifier(StringId::new("a")),
-        PPTokenKind::Assign,
-        PPTokenKind::Number(StringId::new("1")),
-        PPTokenKind::Semicolon,
-        PPTokenKind::Identifier(StringId::new("int")),
-        PPTokenKind::Identifier(StringId::new("a")),
-        PPTokenKind::Assign,
-        PPTokenKind::Number(StringId::new("1")),
-        PPTokenKind::Semicolon
-    );
+    let debug_tokens: Vec<DebugToken> = significant_tokens.iter().map(DebugToken::from).collect();
+
+    insta::assert_yaml_snapshot!(debug_tokens, @r###"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: a
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: a
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    "###);
 }
 
 #[test]
@@ -623,24 +604,31 @@ fn test_function_like_macro_not_expanded_when_not_followed_by_paren() {
 #define x(y) ((y) + 1)
 int x = x(0);
 "#;
-
-    let significant_tokens = setup_preprocessor_test(src);
-
-    // Expected: int, x, =, (, (, 0, ), +, 1, ), ;
-    assert_token_kinds!(
-        significant_tokens,
-        PPTokenKind::Identifier(StringId::new("int")),
-        PPTokenKind::Identifier(StringId::new("x")),
-        PPTokenKind::Assign,
-        PPTokenKind::LeftParen,
-        PPTokenKind::LeftParen,
-        PPTokenKind::Number(StringId::new("0")),
-        PPTokenKind::RightParen,
-        PPTokenKind::Plus,
-        PPTokenKind::Number(StringId::new("1")),
-        PPTokenKind::RightParen,
-        PPTokenKind::Semicolon
-    );
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r###"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: x
+    - kind: Assign
+      text: "="
+    - kind: LeftParen
+      text: (
+    - kind: LeftParen
+      text: (
+    - kind: Number
+      text: "0"
+    - kind: RightParen
+      text: )
+    - kind: Plus
+      text: +
+    - kind: Number
+      text: "1"
+    - kind: RightParen
+      text: )
+    - kind: Semicolon
+      text: ;
+    "###);
 }
 
 #[test]
@@ -649,30 +637,29 @@ fn test_object_macro_with_parentheses_in_replacement() {
 #define NULL ((void*)0)
 int x = NULL;
 "#;
-
-    let significant_tokens = setup_preprocessor_test(src);
-
-    // Expected: int, x, =, (, void, *, ), 0, ), ;
-    assert_token_kinds!(
-        significant_tokens,
-        PPTokenKind::Identifier(StringId::new("int")),
-        PPTokenKind::Identifier(StringId::new("x")),
-        PPTokenKind::Assign,
-        PPTokenKind::LeftParen,
-        PPTokenKind::Identifier(StringId::new("void")),
-        PPTokenKind::Star,
-        PPTokenKind::RightParen,
-        PPTokenKind::Number(StringId::new("0")),
-        PPTokenKind::RightParen,
-        PPTokenKind::Semicolon
-    );
-
-    // Ensure NULL was expanded
-    for token in &significant_tokens {
-        if let PPTokenKind::Identifier(sym) = &token.kind {
-            assert_ne!(sym.as_str(), "NULL", "NULL should have been expanded");
-        }
-    }
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r###"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: x
+    - kind: Assign
+      text: "="
+    - kind: LeftParen
+      text: (
+    - kind: Identifier
+      text: void
+    - kind: Star
+      text: "*"
+    - kind: RightParen
+      text: )
+    - kind: Number
+      text: "0"
+    - kind: RightParen
+      text: )
+    - kind: Semicolon
+      text: ;
+    "###);
 }
 
 #[test]
@@ -685,26 +672,30 @@ int x = 1;
 // This is logical line 102
 int y = 2;
 "#;
-
-    let (significant_tokens, diagnostics) = setup_preprocessor_test_with_diagnostics(src).unwrap();
-
-    // Expected tokens: int, x, =, 1, ;, int, y, =, 2, ;
-    assert_token_kinds!(
-        significant_tokens,
-        PPTokenKind::Identifier(StringId::new("int")),
-        PPTokenKind::Identifier(StringId::new("x")),
-        PPTokenKind::Assign,
-        PPTokenKind::Number(StringId::new("1")),
-        PPTokenKind::Semicolon,
-        PPTokenKind::Identifier(StringId::new("int")),
-        PPTokenKind::Identifier(StringId::new("y")),
-        PPTokenKind::Assign,
-        PPTokenKind::Number(StringId::new("2")),
-        PPTokenKind::Semicolon
-    );
-
-    // No diagnostics expected
-    assert_eq!(diagnostics.len(), 0);
+    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!((tokens, diags), @r###"
+    - - kind: Identifier
+        text: int
+      - kind: Identifier
+        text: x
+      - kind: Assign
+        text: "="
+      - kind: Number
+        text: "1"
+      - kind: Semicolon
+        text: ;
+      - kind: Identifier
+        text: int
+      - kind: Identifier
+        text: y
+      - kind: Assign
+        text: "="
+      - kind: Number
+        text: "2"
+      - kind: Semicolon
+        text: ;
+    - []
+    "###);
 }
 
 #[test]
@@ -713,11 +704,7 @@ fn test_line_directive_with_diagnostics() {
 #line 50 "test.c"
 invalid syntax here
 "#;
-
     let result = setup_preprocessor_test_with_diagnostics(src);
-
-    // This should succeed at preprocessor level (we're not testing parsing here)
-    // but the test demonstrates that line directives are processed
     assert!(result.is_ok());
 }
 
@@ -727,15 +714,10 @@ fn test_invalid_line_directive() {
 #line invalid
 int x = 1;
 "#;
-
-    let result = setup_preprocessor_test_with_diagnostics(src);
-    assert!(result.is_err());
-
-    if let Err(PPError::InvalidLineDirective) = result {
-        // Expected error
-    } else {
-        panic!("Expected InvalidLineDirective error");
-    }
+    let (_, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!(diags, @r###"
+    - "Fatal Error: InvalidLineDirective"
+    "###);
 }
 
 #[test]
@@ -744,15 +726,10 @@ fn test_line_directive_zero_line_number() {
 #line 0
 int x = 1;
 "#;
-
-    let result = setup_preprocessor_test_with_diagnostics(src);
-    assert!(result.is_err());
-
-    if let Err(PPError::InvalidLineDirective) = result {
-        // Expected error
-    } else {
-        panic!("Expected InvalidLineDirective error");
-    }
+    let (_, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!(diags, @r###"
+    - "Fatal Error: InvalidLineDirective"
+    "###);
 }
 
 #[test]
@@ -761,15 +738,10 @@ fn test_line_directive_malformed_filename() {
 #line 100 invalid_filename
 int x = 1;
 "#;
-
-    let result = setup_preprocessor_test_with_diagnostics(src);
-    assert!(result.is_err());
-
-    if let Err(PPError::InvalidLineDirective) = result {
-        // Expected error
-    } else {
-        panic!("Expected InvalidLineDirective error");
-    }
+    let (_, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!(diags, @r###"
+    - "Fatal Error: InvalidLineDirective"
+    "###);
 }
 
 #[test]
@@ -779,11 +751,8 @@ fn test_multiline_macro_definition_only() {
   X               \
   X
 "#;
-
-    let significant_tokens = setup_preprocessor_test(src);
-
-    // Should produce no output since macro is defined but not used
-    assert_eq!(significant_tokens.len(), 0);
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @"[]");
 }
 
 #[test]
@@ -792,17 +761,19 @@ fn test_token_pasting_with_empty_argument() {
 #define P(A,B) A ## B
 int x = P(foo,);
 "#;
-
-    let significant_tokens = setup_preprocessor_test(src);
-
-    assert_token_kinds!(
-        significant_tokens,
-        PPTokenKind::Identifier(StringId::new("int")),
-        PPTokenKind::Identifier(StringId::new("x")),
-        PPTokenKind::Assign,
-        PPTokenKind::Identifier(StringId::new("foo")),
-        PPTokenKind::Semicolon
-    );
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r###"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: x
+    - kind: Assign
+      text: "="
+    - kind: Identifier
+      text: foo
+    - kind: Semicolon
+      text: ;
+    "###);
 }
 
 #[test]
@@ -813,19 +784,67 @@ fn test_macro_argument_prescan_bug() {
 #define FOO 42
 const char* s = XSTR(FOO);
 "#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r###"
+    - kind: Identifier
+      text: const
+    - kind: Identifier
+      text: char
+    - kind: Star
+      text: "*"
+    - kind: Identifier
+      text: s
+    - kind: Assign
+      text: "="
+    - kind: StringLiteral
+      text: "\"42\""
+    - kind: Semicolon
+      text: ;
+    "###);
+}
 
-    let significant_tokens = setup_preprocessor_test(src);
+// New test for __FILE__ and __LINE__ dynamic behavior
+#[test]
+fn test_dynamic_file_and_line_macros() {
+    let src = r#"
+#line 10 "foo.c"
+int line = __LINE__;
+char* file = __FILE__;
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r###"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: line
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "10"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: char
+    - kind: Star
+      text: "*"
+    - kind: Identifier
+      text: file
+    - kind: Assign
+      text: "="
+    - kind: StringLiteral
+      text: "\"foo.c\""
+    - kind: Semicolon
+      text: ;
+    "###);
+}
 
-    // Expected: const, char*, s, =, "42", ;
-    // Currently, it likely produces "FOO" because of the bug
-    assert_token_kinds!(
-        significant_tokens,
-        PPTokenKind::Identifier(StringId::new("const")),
-        PPTokenKind::Identifier(StringId::new("char")),
-        PPTokenKind::Star,
-        PPTokenKind::Identifier(StringId::new("s")),
-        PPTokenKind::Assign,
-        PPTokenKind::StringLiteral(StringId::new("\"42\"")), // Use explicit quotes as in the impl
-        PPTokenKind::Semicolon
-    );
+#[test]
+fn test_missing_include_file() {
+    let src = r#"
+#include "nonexistent.h"
+"#;
+    let (_, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!(diags, @r###"
+    - "Fatal Error: FileNotFound"
+    "###);
 }

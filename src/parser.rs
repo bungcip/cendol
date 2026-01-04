@@ -301,6 +301,43 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         expressions::is_cast_expression_start(self)
     }
 
+    /// Check if the current token can start a type name.
+    /// This is a lightweight check used for disambiguation.
+    pub(crate) fn is_type_name_start(&self) -> bool {
+        if let Some(token) = self.try_current_token() {
+            match token.kind {
+                // Basic type specifiers
+                TokenKind::Void
+                | TokenKind::Char
+                | TokenKind::Short
+                | TokenKind::Int
+                | TokenKind::Long
+                | TokenKind::Float
+                | TokenKind::Double
+                | TokenKind::Signed
+                | TokenKind::Unsigned
+                | TokenKind::Bool
+                | TokenKind::Complex
+                // Struct/union/enum specifiers
+                | TokenKind::Struct
+                | TokenKind::Union
+                | TokenKind::Enum
+                // Type qualifiers that can start a type name
+                | TokenKind::Const
+                | TokenKind::Volatile
+                | TokenKind::Restrict
+                | TokenKind::Atomic
+                // GCC attribute extension
+                | TokenKind::Attribute => true,
+                // Check for typedef'd identifiers
+                TokenKind::Identifier(symbol) => self.is_type_name(symbol),
+                _ => false,
+            }
+        } else {
+            false
+        }
+    }
+
     /// Parse cast expression given the already parsed type and right paren token
     fn parse_cast_expression_from_type_and_paren(
         &mut self,

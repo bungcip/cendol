@@ -10,7 +10,7 @@ use crate::source_manager::{SourceLoc, SourceSpan};
 use log::{debug, trace};
 use std::cell::Cell;
 
-use super::{Parser, utils::ParserExt};
+use super::Parser;
 
 /// Binding power for Pratt parser operator precedence
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -620,42 +620,11 @@ pub(crate) fn parse_alignof(parser: &mut Parser) -> Result<NodeRef, ParseError> 
 /// Check if a cast expression starts at the current position
 /// This is called after consuming an opening parenthesis
 pub(crate) fn is_cast_expression_start(parser: &Parser) -> bool {
-    // Look ahead to see if we have a type pattern
-    let mut idx = parser.current_idx;
-    // Skip stars (pointers) and qualifiers
-    while let Some(token) = parser.tokens.get(idx) {
-        match token.kind {
-            TokenKind::Star | TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Atomic => {
-                idx += 1;
-            }
-            _ => break,
-        }
-    }
-
-    // Finally, check for a type name
-    if let Some(token) = parser.tokens.get(idx) {
-        match token.kind {
-            TokenKind::Void
-            | TokenKind::Char
-            | TokenKind::Short
-            | TokenKind::Int
-            | TokenKind::Long
-            | TokenKind::Float
-            | TokenKind::Double
-            | TokenKind::Signed
-            | TokenKind::Unsigned
-            | TokenKind::Bool
-            | TokenKind::Complex
-            | TokenKind::Struct
-            | TokenKind::Union
-            | TokenKind::Enum
-            | TokenKind::Attribute => true,
-            TokenKind::Identifier(symbol) => parser.is_type_name(symbol),
-            _ => false,
-        }
-    } else {
-        false
-    }
+    // ⚡ Bolt: This is much more efficient than the old lookahead implementation.
+    // It avoids a manual loop over the token stream by using the centralized
+    // `is_type_name_start` helper, which performs a simple and fast check
+    // on the current token.
+    parser.is_type_name_start()
 }
 
 /// Parse cast expression given the already parsed type and right paren token

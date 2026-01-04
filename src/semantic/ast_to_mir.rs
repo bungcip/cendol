@@ -684,12 +684,52 @@ impl<'a> AstToMirLowerer<'a> {
         let callee = self.lower_expression(scope_id, func_ref, true);
 
         let mut arg_operands = Vec::new();
-        for arg in args.iter() {
+
+        // Get the function type to determine parameter types for conversions
+        let func_node = self.ast.get_node(func_ref);
+        let func_type = if let NodeKind::Ident(_, symbol_ref) = &func_node.kind
+            && let Some(resolved_symbol) = symbol_ref.get()
+        {
+            let func_entry = self.symbol_table.get_symbol(resolved_symbol);
+            Some(self.registry.get(func_entry.type_info))
+        } else {
+            None
+        };
+
+        let param_types = if let Some(func_type) = func_type {
+            if let TypeKind::Function { parameters, .. } = &func_type.kind {
+                Some(
+                    parameters
+                        .iter()
+                        .map(|param| self.lower_type_to_mir(param.param_type.ty))
+                        .collect::<Vec<_>>(),
+                )
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        for (i, arg) in args.iter().enumerate() {
             let arg_operand = self.lower_expression(scope_id, *arg, true);
             // Apply conversions for function arguments if needed
             let arg_ty = self.ast.get_resolved_type(*arg).unwrap();
             let arg_mir_ty = self.lower_type_to_mir(arg_ty.ty);
-            let converted_arg = self.apply_conversions(arg_operand, *arg, arg_mir_ty);
+
+            // Use the parameter type as the target type for conversions, if available
+            let target_mir_ty = if let Some(ref param_types_vec) = param_types {
+                if i < param_types_vec.len() {
+                    param_types_vec[i]
+                } else {
+                    // For variadic arguments, use the argument's own type
+                    arg_mir_ty
+                }
+            } else {
+                arg_mir_ty
+            };
+
+            let converted_arg = self.apply_conversions(arg_operand, *arg, target_mir_ty);
             arg_operands.push(converted_arg);
         }
 

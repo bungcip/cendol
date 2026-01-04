@@ -982,6 +982,80 @@ mod tests {
     }
 
     #[test]
+    fn test_array_to_pointer_decay_in_function_call() {
+        let source = r#"
+            int printf(const char* format);
+
+            int main()
+            {
+                return printf("Hello, World!\n");
+            }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @r#"
+        type %t0 = i32
+        type %t1 = ptr<%t2>
+        type %t2 = i8
+        type %t3 = fn(%t1) -> %t0
+        type %t4 = [16]%t2
+
+        global @.L.str0: [16]i8 = const "Hello, World!\n"
+
+        fn main() -> i32
+        {
+          locals {
+            %2: i32
+          }
+
+          bb1:
+            %2 = call printf(cast<ptr<i8>>(const @.L.str0))
+            return %2
+        }
+
+        extern fn printf(%param0: ptr<i8>) -> i32
+        "#);
+    }
+
+    #[test]
+    fn test_array_to_pointer_decay_in_variadic_function_call() {
+        let source = r#"
+            int printf(const char* format, ...);
+
+            int main()
+            {
+                return printf("Value: %d, %s\n", 42, "test");
+            }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @r#"
+        type %t0 = i32
+        type %t1 = ptr<%t2>
+        type %t2 = i8
+        type %t3 = fn(%t1) -> %t0
+        type %t4 = [16]%t2
+        type %t5 = [5]%t2
+
+        global @.L.str0: [16]i8 = const "Value: %d, %s\n"
+        global @.L.str1: [5]i8 = const "test"
+
+        fn main() -> i32
+        {
+          locals {
+            %2: i32
+          }
+
+          bb1:
+            %2 = call printf(cast<ptr<i8>>(const @.L.str0), const 42, const @.L.str1)
+            return %2
+        }
+
+        extern fn printf(%param0: ptr<i8>) -> i32
+        "#);
+    }
+
+    #[test]
     fn test_increment_decrement() {
         let source = r#"
             int main()

@@ -260,17 +260,6 @@ fn emit_function_call_impl(
             // Get the return type for this function
             let return_type = convert_type(mir.get_type(func.return_type));
 
-            // Resolve function arguments to Cranelift values
-            let mut arg_values = Vec::new();
-            for (arg, &param_id) in args.iter().zip(func.params.iter()) {
-                let param_local = mir.get_local(param_id);
-                let param_type = convert_type(mir.get_type(param_local.type_id)).unwrap_or(types::I64);
-                match resolve_operand_to_value(arg, builder, param_type, cranelift_stack_slots, mir, module) {
-                    Ok(value) => arg_values.push(value),
-                    Err(e) => return Err(format!("Failed to resolve function argument: {}", e)),
-                }
-            }
-
             // Create a function signature by building it directly
             let mut sig = Signature::new(builder.func.signature.call_conv);
 
@@ -282,12 +271,20 @@ fn emit_function_call_impl(
             // For variadic functions, we need to create a signature that matches the actual arguments
             // being passed, not just the fixed parameters
             if func.is_variadic {
-                // For variadic functions, add all the arguments to the signature
-                // This allows the call to pass more arguments than just the fixed parameters
-                for _arg_value in &arg_values {
-                    // Use i32 as a generic type for variadic arguments
-                    // In a more complete implementation, we'd need to infer the actual types
-                    sig.params.push(AbiParam::new(types::I32));
+                // For variadic functions, use the actual types of the arguments
+                // Fixed parameters should have their declared types, variadic args should have their actual types
+                for (i, arg) in args.iter().enumerate() {
+                    if i < func.params.len() {
+                        // This is a fixed parameter, use its declared type
+                        let param_id = func.params[i];
+                        let param_local = mir.get_local(param_id);
+                        let param_type = convert_type(mir.get_type(param_local.type_id)).unwrap();
+                        sig.params.push(AbiParam::new(param_type));
+                    } else {
+                        // This is a variadic argument, determine its type from the operand
+                        let arg_type = get_operand_cranelift_type(arg, mir).unwrap_or(types::I32);
+                        sig.params.push(AbiParam::new(arg_type));
+                    }
                 }
             } else {
                 // For non-variadic functions, use the fixed parameter types from the function signature
@@ -295,6 +292,16 @@ fn emit_function_call_impl(
                     let param_local = mir.get_local(param_id);
                     let param_type = convert_type(mir.get_type(param_local.type_id)).unwrap();
                     sig.params.push(AbiParam::new(param_type));
+                }
+            }
+
+            // Resolve function arguments to Cranelift values based on the signature we just built
+            let mut arg_values = Vec::new();
+            for (i, arg) in args.iter().enumerate() {
+                let param_type = sig.params[i].value_type;
+                match resolve_operand_to_value(arg, builder, param_type, cranelift_stack_slots, mir, module) {
+                    Ok(value) => arg_values.push(value),
+                    Err(e) => return Err(format!("Failed to resolve function argument: {}", e)),
                 }
             }
 

@@ -30,6 +30,13 @@ pub enum ValidationError {
     InvalidPointerArithmetic,
     /// Invalid cast operation
     InvalidCast(TypeId, TypeId),
+    /// Function call argument type mismatch
+    FunctionCallArgTypeMismatch {
+        func_name: String,
+        arg_index: usize,
+        expected_type: TypeId,
+        actual_type: TypeId,
+    },
 }
 
 impl std::fmt::Display for ValidationError {
@@ -45,6 +52,21 @@ impl std::fmt::Display for ValidationError {
             ValidationError::InvalidPointerArithmetic => write!(f, "Invalid pointer arithmetic operation"),
             ValidationError::InvalidCast(from, to) => {
                 write!(f, "Invalid cast from type {} to type {}", from.get(), to.get())
+            }
+            ValidationError::FunctionCallArgTypeMismatch {
+                func_name,
+                arg_index,
+                expected_type,
+                actual_type,
+            } => {
+                write!(
+                    f,
+                    "Function '{}' argument {} type mismatch: expected type {}, got type {}",
+                    func_name,
+                    arg_index,
+                    expected_type.get(),
+                    actual_type.get()
+                )
             }
         }
     }
@@ -262,7 +284,12 @@ impl MirValidator {
                                         && let Some(arg_ty) = self.validate_operand(sema_output, arg)
                                         && arg_ty != param.type_id
                                     {
-                                        self.errors.push(ValidationError::InvalidCast(arg_ty, param.type_id));
+                                        self.errors.push(ValidationError::FunctionCallArgTypeMismatch {
+                                            func_name: func.name.to_string(),
+                                            arg_index: i,
+                                            expected_type: param.type_id,
+                                            actual_type: arg_ty,
+                                        });
                                     }
                                 }
                             }
@@ -282,7 +309,12 @@ impl MirValidator {
                                     if let Some(arg_ty) = self.validate_operand(sema_output, arg)
                                         && arg_ty != params[i]
                                     {
-                                        self.errors.push(ValidationError::InvalidCast(arg_ty, params[i]));
+                                        self.errors.push(ValidationError::FunctionCallArgTypeMismatch {
+                                            func_name: "indirect function".to_string(),
+                                            arg_index: i,
+                                            expected_type: params[i],
+                                            actual_type: arg_ty,
+                                        });
                                     }
                                 }
                             }

@@ -347,6 +347,14 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
+    fn lower_condition(&mut self, scope_id: ScopeId, condition: NodeRef) -> Operand {
+        let cond_operand = self.lower_expression(scope_id, condition, true);
+        // Apply conversions for condition (should be boolean)
+        let cond_ty = self.ast.get_resolved_type(condition).unwrap();
+        let cond_mir_ty = self.lower_type_to_mir(cond_ty.ty);
+        self.apply_conversions(cond_operand, condition, cond_mir_ty)
+    }
+
     fn lower_initializer(&mut self, scope_id: ScopeId, init_ref: NodeRef, target_ty: QualType) -> Operand {
         let init_node_kind = self.ast.get_node(init_ref).kind.clone();
         let target_ty_kind = self.registry.get(target_ty.ty).kind.clone();
@@ -863,11 +871,7 @@ impl<'a> AstToMirLowerer<'a> {
         let else_block = self.mir_builder.create_block();
         let merge_block = self.mir_builder.create_block();
 
-        let cond_operand = self.lower_expression(scope_id, if_stmt.condition, true);
-        // Apply conversions for condition (should be boolean)
-        let cond_ty = self.ast.get_resolved_type(if_stmt.condition).unwrap();
-        let cond_mir_ty = self.lower_type_to_mir(cond_ty.ty);
-        let cond_converted = self.apply_conversions(cond_operand, if_stmt.condition, cond_mir_ty);
+        let cond_converted = self.lower_condition(scope_id, if_stmt.condition);
         self.mir_builder
             .set_terminator(Terminator::If(cond_converted, then_block, else_block));
 
@@ -889,106 +893,119 @@ impl<'a> AstToMirLowerer<'a> {
         self.current_block = Some(merge_block);
     }
 
-    fn lower_while_statement(&mut self, scope_id: ScopeId, while_stmt: &WhileStmt) {
+    fn lower_loop_generic<I, C, B, Inc>(
+        &mut self,
+        init_fn: Option<I>,
+        cond_fn: Option<C>,
+        body_fn: B,
+        inc_fn: Option<Inc>,
+        is_do_while: bool,
+    ) where
+        I: FnOnce(&mut Self),
+        C: FnOnce(&mut Self) -> Operand,
+        B: FnOnce(&mut Self),
+        Inc: FnOnce(&mut Self),
+    {
         let cond_block = self.mir_builder.create_block();
         let body_block = self.mir_builder.create_block();
+        let increment_block = if inc_fn.is_some() {
+            self.mir_builder.create_block()
+        } else {
+            // If there's no increment block (e.g. while/do-while), "continue" goes to condition
+            cond_block
+        };
         let exit_block = self.mir_builder.create_block();
 
-        self.with_loop_targets(exit_block, cond_block, |this| {
-            this.mir_builder.set_terminator(Terminator::Goto(cond_block));
-            this.mir_builder.set_current_block(cond_block);
+        // Continue target depends on whether we have an increment step
+        let continue_target = increment_block;
 
-            let cond_operand = this.lower_expression(scope_id, while_stmt.condition, true);
-            // Apply conversions for condition (should be boolean)
-            let cond_ty = this.ast.get_resolved_type(while_stmt.condition).unwrap();
-            let cond_mir_ty = this.lower_type_to_mir(cond_ty.ty);
-            let cond_converted = this.apply_conversions(cond_operand, while_stmt.condition, cond_mir_ty);
-            this.mir_builder
-                .set_terminator(Terminator::If(cond_converted, body_block, exit_block));
-
-            this.mir_builder.set_current_block(body_block);
-            this.lower_node_ref(while_stmt.body, scope_id);
-            if !this.mir_builder.current_block_has_terminator() {
-                this.mir_builder.set_terminator(Terminator::Goto(cond_block));
-            }
-        });
-
-        self.mir_builder.set_current_block(exit_block);
-        self.current_block = Some(exit_block);
-    }
-
-    fn lower_do_while_statement(&mut self, scope_id: ScopeId, body: NodeRef, condition: NodeRef) {
-        let body_block = self.mir_builder.create_block();
-        let cond_block = self.mir_builder.create_block();
-        let exit_block = self.mir_builder.create_block();
-
-        self.with_loop_targets(exit_block, cond_block, |this| {
-            // Unconditionally enter the loop body first
-            this.mir_builder.set_terminator(Terminator::Goto(body_block));
-            this.mir_builder.set_current_block(body_block);
-
-            // Lower the loop body
-            this.lower_node_ref(body, scope_id);
-            if !this.mir_builder.current_block_has_terminator() {
-                this.mir_builder.set_terminator(Terminator::Goto(cond_block));
+        self.with_loop_targets(exit_block, continue_target, |this| {
+            if let Some(init) = init_fn {
+                init(this);
             }
 
-            // After the body, evaluate the condition
-            this.mir_builder.set_current_block(cond_block);
-            let cond_operand = this.lower_expression(scope_id, condition, true);
-            let cond_ty = this.ast.get_resolved_type(condition).unwrap();
-            let cond_mir_ty = this.lower_type_to_mir(cond_ty.ty);
-            let cond_converted = this.apply_conversions(cond_operand, condition, cond_mir_ty);
-            this.mir_builder
-                .set_terminator(Terminator::If(cond_converted, body_block, exit_block));
-        });
-
-        // Set current block to the exit block
-        self.mir_builder.set_current_block(exit_block);
-        self.current_block = Some(exit_block);
-    }
-
-    fn lower_for_statement(&mut self, scope_id: ScopeId, for_stmt: &ForStmt) {
-        let cond_block = self.mir_builder.create_block();
-        let body_block = self.mir_builder.create_block();
-        let increment_block = self.mir_builder.create_block();
-        let exit_block = self.mir_builder.create_block();
-
-        self.with_loop_targets(exit_block, increment_block, |this| {
-            if let Some(init_ref) = for_stmt.init {
-                this.lower_node_ref(init_ref, scope_id);
-            }
-            this.mir_builder.set_terminator(Terminator::Goto(cond_block));
-            this.mir_builder.set_current_block(cond_block);
-
-            if let Some(cond_ref) = for_stmt.condition {
-                let cond_operand = this.lower_expression(scope_id, cond_ref, true);
-                // Apply conversions for condition (should be boolean)
-                let cond_ty = this.ast.get_resolved_type(cond_ref).unwrap();
-                let cond_mir_ty = this.lower_type_to_mir(cond_ty.ty);
-                let cond_converted = this.apply_conversions(cond_operand, cond_ref, cond_mir_ty);
-                this.mir_builder
-                    .set_terminator(Terminator::If(cond_converted, body_block, exit_block));
+            if is_do_while {
+                // do-while: jump straight to body
+                this.mir_builder.set_terminator(Terminator::Goto(body_block));
             } else {
+                // for/while: jump to condition
+                this.mir_builder.set_terminator(Terminator::Goto(cond_block));
+            }
+
+            // Condition block
+            this.mir_builder.set_current_block(cond_block);
+            if let Some(cond) = cond_fn {
+                let cond_val = cond(this);
+                this.mir_builder
+                    .set_terminator(Terminator::If(cond_val, body_block, exit_block));
+            } else {
+                // No condition (e.g. for(;;)) -> infinite loop
                 this.mir_builder.set_terminator(Terminator::Goto(body_block));
             }
 
+            // Body block
             this.mir_builder.set_current_block(body_block);
-            this.lower_node_ref(for_stmt.body, scope_id);
+            body_fn(this);
+
+            // After body, jump to increment (or condition if no increment)
             if !this.mir_builder.current_block_has_terminator() {
                 this.mir_builder.set_terminator(Terminator::Goto(increment_block));
             }
 
-            this.mir_builder.set_current_block(increment_block);
-            if let Some(inc_ref) = for_stmt.increment {
-                // increment used as expression-statement: value not needed
-                this.lower_expression(scope_id, inc_ref, false);
+            // Increment block (only if it exists and is distinct from cond_block)
+            if let Some(inc) = inc_fn {
+                this.mir_builder.set_current_block(increment_block);
+                inc(this);
+                this.mir_builder.set_terminator(Terminator::Goto(cond_block));
             }
-            this.mir_builder.set_terminator(Terminator::Goto(cond_block));
         });
 
         self.mir_builder.set_current_block(exit_block);
         self.current_block = Some(exit_block);
+    }
+
+    fn lower_while_statement(&mut self, scope_id: ScopeId, while_stmt: &WhileStmt) {
+        self.lower_loop_generic(
+            None::<fn(&mut Self)>,
+            Some(|this: &mut Self| this.lower_condition(scope_id, while_stmt.condition)),
+            |this| this.lower_node_ref(while_stmt.body, scope_id),
+            None::<fn(&mut Self)>,
+            false,
+        );
+    }
+
+    fn lower_do_while_statement(&mut self, scope_id: ScopeId, body: NodeRef, condition: NodeRef) {
+        self.lower_loop_generic(
+            None::<fn(&mut Self)>,
+            Some(|this: &mut Self| this.lower_condition(scope_id, condition)),
+            |this| this.lower_node_ref(body, scope_id),
+            None::<fn(&mut Self)>,
+            true,
+        );
+    }
+
+    fn lower_for_statement(&mut self, scope_id: ScopeId, for_stmt: &ForStmt) {
+        let init_fn = for_stmt
+            .init
+            .map(|init| move |this: &mut Self| this.lower_node_ref(init, scope_id));
+
+        let cond_fn = for_stmt
+            .condition
+            .map(|cond| move |this: &mut Self| this.lower_condition(scope_id, cond));
+
+        let inc_fn = for_stmt.increment.map(|inc| {
+            move |this: &mut Self| {
+                this.lower_expression(scope_id, inc, false);
+            }
+        });
+
+        self.lower_loop_generic(
+            init_fn,
+            cond_fn,
+            |this| this.lower_node_ref(for_stmt.body, scope_id),
+            inc_fn,
+            false,
+        );
     }
 
     fn emit_assignment(&mut self, place: Place, operand: Operand) {

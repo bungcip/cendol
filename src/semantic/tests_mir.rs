@@ -178,17 +178,14 @@ mod tests {
             br bb2
 
           bb2:
-            cond_br %steins, bb3, bb5
+            cond_br %steins, bb3, bb4
 
           bb3:
             %3 = %steins - %gate
             %steins = %3
-            br bb4
-
-          bb4:
             br bb2
 
-          bb5:
+          bb4:
             return %steins
         }
         ");

@@ -39,9 +39,7 @@ fn setup_pp_snapshot_with_diags(src: &str) -> (Vec<DebugToken>, Vec<String>) {
             let debug_diags = diags.iter().map(|d| format!("{:?}: {}", d.level, d.message)).collect();
             (debug_tokens, debug_diags)
         }
-        Err(e) => {
-            (vec![], vec![format!("Fatal Error: {:?}", e)])
-        }
+        Err(e) => (vec![], vec![format!("Fatal Error: {:?}", e)]),
     }
 }
 

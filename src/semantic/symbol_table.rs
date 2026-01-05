@@ -283,9 +283,189 @@ impl SymbolTable {
         &mut self.entries[(index.get() - 1) as usize]
     }
 
+    /// Define a new variable in the current scope.
+    /// Handles global variable merging and local variable insertion.
+    pub fn define_variable(
+        &mut self,
+        name: NameId,
+        ty: TypeRef,
+        storage: Option<StorageClass>,
+        initializer: Option<NodeRef>,
+        alignment: Option<u32>,
+        span: SourceSpan,
+    ) -> Result<SymbolRef, SymbolTableError> {
+        let is_global = self.current_scope_id == ScopeId::GLOBAL;
+
+        let def_state = if initializer.is_some() {
+            DefinitionState::Defined
+        } else {
+            DefinitionState::Tentative
+        };
+
+        let symbol_entry = Symbol {
+            name,
+            kind: SymbolKind::Variable {
+                is_global,
+                initializer,
+                alignment,
+            },
+            type_info: ty,
+            storage_class: storage,
+            scope_id: self.current_scope_id,
+            def_span: span,
+            def_state,
+            is_completed: true,
+        };
+
+        if is_global {
+            self.merge_global_symbol(name, symbol_entry)
+        } else {
+            Ok(self.add_symbol(name, symbol_entry))
+        }
+    }
+
+    /// Define a new function in the current scope.
+    /// Handles global function merging (declarations/definitions).
+    pub fn define_function(
+        &mut self,
+        name: NameId,
+        ty: TypeRef,
+        storage: Option<StorageClass>,
+        is_definition: bool,
+        span: SourceSpan,
+    ) -> Result<SymbolRef, SymbolTableError> {
+        // Function declarations are "DeclaredOnly" by default, or "Defined" if it's a function definition
+        let def_state = if is_definition {
+            DefinitionState::Defined
+        } else {
+            DefinitionState::DeclaredOnly
+        };
+
+        let symbol_entry = Symbol {
+            name,
+            kind: SymbolKind::Function,
+            type_info: ty,
+            storage_class: storage,
+            scope_id: self.current_scope_id,
+            def_span: span,
+            def_state,
+            is_completed: true,
+        };
+
+        if self.current_scope_id == ScopeId::GLOBAL {
+            self.merge_global_symbol(name, symbol_entry)
+        } else {
+            Ok(self.add_symbol(name, symbol_entry))
+        }
+    }
+
+    /// Define a typedef in the current scope.
+    pub fn define_typedef(
+        &mut self,
+        name: NameId,
+        ty: TypeRef,
+        span: SourceSpan,
+    ) -> Result<SymbolRef, SymbolTableError> {
+        let symbol_entry = Symbol {
+            name,
+            kind: SymbolKind::Typedef { aliased_type: ty },
+            type_info: ty,
+            storage_class: Some(StorageClass::Typedef),
+            scope_id: self.current_scope_id,
+            def_span: span,
+            def_state: DefinitionState::Defined,
+            is_completed: true,
+        };
+
+        // Check for redefinition in the SAME scope
+        if let Some(existing_ref) = self.fetch(name, self.current_scope_id, Namespace::Ordinary) {
+            return Err(SymbolTableError::InvalidRedefinition {
+                name,
+                existing: existing_ref,
+            });
+        }
+
+        Ok(self.add_symbol(name, symbol_entry))
+    }
+
+    /// Define an enum constant in the current scope.
+    pub fn define_enum_constant(
+        &mut self,
+        name: NameId,
+        value: i64,
+        ty: TypeRef,
+        span: SourceSpan,
+    ) -> Result<SymbolRef, SymbolTableError> {
+        let symbol_entry = Symbol {
+            name,
+            kind: SymbolKind::EnumConstant { value },
+            type_info: ty,
+            storage_class: None,
+            scope_id: self.current_scope_id,
+            def_span: span,
+            def_state: DefinitionState::Defined,
+            is_completed: true,
+        };
+
+        Ok(self.add_symbol(name, symbol_entry))
+    }
+
+    /// Define a record (struct/union) tag in the current scope.
+    pub fn define_record(&mut self, name: NameId, ty: TypeRef, is_complete: bool, span: SourceSpan) -> SymbolRef {
+        let symbol_entry = Symbol {
+            name,
+            kind: SymbolKind::Record {
+                is_complete,
+                members: Vec::new(),
+                size: None,
+                alignment: None,
+            },
+            type_info: ty,
+            storage_class: None,
+            scope_id: self.current_scope_id,
+            def_span: span,
+            def_state: DefinitionState::Defined,
+            is_completed: false,
+        };
+        self.add_symbol_in_namespace(name, symbol_entry, Namespace::Tag)
+    }
+
+    /// Define an enum tag in the current scope.
+    pub fn define_enum(&mut self, name: NameId, ty: TypeRef, span: SourceSpan) -> SymbolRef {
+        let symbol_entry = Symbol {
+            name,
+            kind: SymbolKind::EnumTag { is_complete: false },
+            type_info: ty,
+            storage_class: None,
+            scope_id: self.current_scope_id,
+            def_span: span,
+            def_state: DefinitionState::Defined,
+            is_completed: false,
+        };
+        self.add_symbol_in_namespace(name, symbol_entry, Namespace::Tag)
+    }
+
+    /// Define a label in the current scope.
+    pub fn define_label(&mut self, name: NameId, ty: TypeRef, span: SourceSpan) -> Result<SymbolRef, SymbolTableError> {
+        let symbol_entry = Symbol {
+            name,
+            kind: SymbolKind::Label {
+                is_defined: true,
+                is_used: false,
+            },
+            type_info: ty,
+            storage_class: None,
+            scope_id: self.current_scope_id,
+            def_span: span,
+            def_state: DefinitionState::Defined,
+            is_completed: true,
+        };
+        Ok(self.add_symbol_in_namespace(name, symbol_entry, Namespace::Label))
+    }
+
     /// Merge a new symbol entry with an existing one in the global scope.
     /// This implements C11 6.9.2 for handling tentative definitions, extern declarations, and actual definitions.
-    pub fn merge_global_symbol(&mut self, name: NameId, mut new_entry: Symbol) -> Result<SymbolRef, SymbolTableError> {
+    fn merge_global_symbol(&mut self, name: NameId, mut new_entry: Symbol) -> Result<SymbolRef, SymbolTableError> {
         let global_scope = ScopeId::GLOBAL;
 
         // Check if symbol already exists in global scope

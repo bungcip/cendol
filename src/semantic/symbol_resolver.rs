@@ -16,8 +16,8 @@ use crate::semantic::const_eval::{self, ConstEvalCtx};
 use crate::semantic::struct_lowering::lower_struct_members;
 use crate::semantic::symbol_table::{DefinitionState, SymbolRef, SymbolTableError};
 use crate::semantic::{
-    ArraySizeType, EnumConstant, Namespace, ScopeId, StructMember, Symbol, SymbolKind, SymbolTable, TypeKind,
-    TypeQualifiers, TypeRef, TypeRegistry,
+    ArraySizeType, EnumConstant, ScopeId, StructMember, SymbolKind, SymbolTable, TypeKind, TypeQualifiers, TypeRef,
+    TypeRegistry,
 };
 use crate::semantic::{FunctionParameter, QualType};
 use crate::source_manager::SourceSpan;
@@ -419,23 +419,7 @@ fn convert_parsed_base_type_to_qual_type(
                         let new_type_ref = ctx.registry.declare_record(Some(*tag_name), *is_union);
 
                         // Add it to the symbol table in the current scope
-                        let symbol_entry = Symbol {
-                            name: *tag_name,
-                            kind: SymbolKind::Record {
-                                is_complete: false,
-                                members: Vec::new(),
-                                size: None,
-                                alignment: None,
-                            },
-                            type_info: new_type_ref,
-                            storage_class: None,
-                            scope_id: ctx.symbol_table.current_scope(),
-                            def_span: span,
-                            def_state: DefinitionState::Defined,
-                            is_completed: false,
-                        };
-                        ctx.symbol_table
-                            .add_symbol_in_namespace(*tag_name, symbol_entry, Namespace::Tag);
+                        ctx.symbol_table.define_record(*tag_name, new_type_ref, false, span);
                         new_type_ref
                     }
                 } else {
@@ -448,23 +432,7 @@ fn convert_parsed_base_type_to_qual_type(
                         // Not found anywhere, create an implicit forward declaration in current scope
                         let forward_ref = ctx.registry.declare_record(Some(*tag_name), *is_union);
 
-                        let symbol_entry = Symbol {
-                            name: *tag_name,
-                            kind: SymbolKind::Record {
-                                is_complete: false,
-                                members: Vec::new(),
-                                size: None,
-                                alignment: None,
-                            },
-                            type_info: forward_ref,
-                            storage_class: None,
-                            scope_id: ctx.symbol_table.current_scope(),
-                            def_span: span,
-                            def_state: DefinitionState::Defined,
-                            is_completed: false,
-                        };
-                        ctx.symbol_table
-                            .add_symbol_in_namespace(*tag_name, symbol_entry, Namespace::Tag);
+                        ctx.symbol_table.define_record(*tag_name, forward_ref, false, span);
                         forward_ref
                     }
                 }
@@ -543,18 +511,7 @@ fn convert_parsed_base_type_to_qual_type(
                     } else {
                         // Not found in current scope, create new entry
                         let new_type_ref = ctx.registry.declare_enum(Some(*tag_name), ctx.registry.type_int);
-                        let symbol_entry = Symbol {
-                            name: *tag_name,
-                            kind: SymbolKind::EnumTag { is_complete: false },
-                            type_info: new_type_ref,
-                            storage_class: None,
-                            scope_id: ctx.symbol_table.current_scope(),
-                            def_span: span,
-                            def_state: DefinitionState::Defined,
-                            is_completed: false,
-                        };
-                        ctx.symbol_table
-                            .add_symbol_in_namespace(*tag_name, symbol_entry, Namespace::Tag);
+                        ctx.symbol_table.define_enum(*tag_name, new_type_ref, span);
                         new_type_ref
                     }
                 } else {
@@ -566,18 +523,7 @@ fn convert_parsed_base_type_to_qual_type(
                         // Implicit forward declaration
                         let forward_ref = ctx.registry.declare_enum(Some(*tag_name), ctx.registry.type_int);
 
-                        let symbol = Symbol {
-                            name: *tag_name,
-                            kind: SymbolKind::EnumTag { is_complete: false },
-                            storage_class: None,
-                            scope_id: ctx.symbol_table.current_scope(),
-                            def_span: span,
-                            def_state: DefinitionState::Defined,
-                            type_info: forward_ref,
-                            is_completed: false,
-                        };
-                        ctx.symbol_table
-                            .add_symbol_in_namespace(*tag_name, symbol, Namespace::Tag);
+                        ctx.symbol_table.define_enum(*tag_name, forward_ref, span);
                         forward_ref
                     }
                 }
@@ -604,17 +550,12 @@ fn convert_parsed_base_type_to_qual_type(
                     enumerators_list.push(enum_constant);
 
                     // Register constant in symbol table
-                    let entry = Symbol {
-                        name: parsed_enum.name,
-                        kind: SymbolKind::EnumConstant { value },
-                        type_info: type_ref_to_use,
-                        storage_class: None,
-                        scope_id: ctx.symbol_table.current_scope(),
-                        def_span: parsed_enum.span,
-                        def_state: DefinitionState::Defined,
-                        is_completed: true,
-                    };
-                    ctx.symbol_table.add_symbol(parsed_enum.name, entry);
+                    let _ = ctx.symbol_table.define_enum_constant(
+                        parsed_enum.name,
+                        value,
+                        type_ref_to_use,
+                        parsed_enum.span,
+                    );
                 }
 
                 // Update the type in AST and SymbolTable using the proper completion function
@@ -747,23 +688,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                         let new_type_ref = ctx.registry.declare_record(Some(*tag_name), *is_union);
 
                         // Add it to the symbol table in the current scope
-                        let symbol_entry = Symbol {
-                            name: *tag_name,
-                            kind: SymbolKind::Record {
-                                is_complete: false,
-                                members: Vec::new(),
-                                size: None,
-                                alignment: None,
-                            },
-                            type_info: new_type_ref,
-                            storage_class: None,
-                            scope_id: ctx.symbol_table.current_scope(),
-                            def_span: span,
-                            def_state: DefinitionState::Defined,
-                            is_completed: false,
-                        };
-                        ctx.symbol_table
-                            .add_symbol_in_namespace(*tag_name, symbol_entry, Namespace::Tag);
+                        ctx.symbol_table.define_record(*tag_name, new_type_ref, false, span);
                         new_type_ref
                     }
                 } else {
@@ -776,23 +701,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                         // Not found anywhere, create an implicit forward declaration in current scope
                         let forward_ref = ctx.registry.declare_record(Some(*tag_name), *is_union);
 
-                        let symbol_entry = Symbol {
-                            name: *tag_name,
-                            kind: SymbolKind::Record {
-                                is_complete: false,
-                                members: Vec::new(),
-                                size: None,
-                                alignment: None,
-                            },
-                            type_info: forward_ref,
-                            storage_class: None,
-                            scope_id: ctx.symbol_table.current_scope(),
-                            def_span: span,
-                            def_state: DefinitionState::Defined,
-                            is_completed: false,
-                        };
-                        ctx.symbol_table
-                            .add_symbol_in_namespace(*tag_name, symbol_entry, Namespace::Tag);
+                        ctx.symbol_table.define_record(*tag_name, forward_ref, false, span);
                         forward_ref
                     }
                 }
@@ -856,18 +765,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     } else {
                         // Not found in current scope, create new entry
                         let new_type_ref = ctx.registry.declare_enum(Some(*tag_name), ctx.registry.type_int);
-                        let symbol_entry = Symbol {
-                            name: *tag_name,
-                            kind: SymbolKind::EnumTag { is_complete: false },
-                            type_info: new_type_ref,
-                            storage_class: None,
-                            scope_id: ctx.symbol_table.current_scope(),
-                            def_span: span,
-                            def_state: DefinitionState::Defined,
-                            is_completed: false,
-                        };
-                        ctx.symbol_table
-                            .add_symbol_in_namespace(*tag_name, symbol_entry, Namespace::Tag);
+                        ctx.symbol_table.define_enum(*tag_name, new_type_ref, span);
                         new_type_ref
                     }
                 } else {
@@ -878,18 +776,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     } else {
                         // Implicit forward declaration
                         let forward_ref = ctx.registry.declare_enum(Some(*tag_name), ctx.registry.type_int);
-                        let symbol = Symbol {
-                            name: *tag_name,
-                            kind: SymbolKind::EnumTag { is_complete: false },
-                            type_info: forward_ref,
-                            storage_class: None,
-                            scope_id: ctx.symbol_table.current_scope(),
-                            def_span: span,
-                            def_state: DefinitionState::Defined,
-                            is_completed: false,
-                        };
-                        ctx.symbol_table
-                            .add_symbol_in_namespace(*tag_name, symbol, Namespace::Tag);
+                        ctx.symbol_table.define_enum(*tag_name, forward_ref, span);
                         forward_ref
                     }
                 }
@@ -926,17 +813,9 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                         enumerators_list.push(enum_constant);
 
                         // Register constant in symbol table
-                        let entry = Symbol {
-                            name: *name,
-                            kind: SymbolKind::EnumConstant { value },
-                            type_info: type_ref_to_use,
-                            storage_class: None,
-                            scope_id: ctx.symbol_table.current_scope(),
-                            def_span: enum_node.span,
-                            def_state: DefinitionState::Defined,
-                            is_completed: true,
-                        };
-                        ctx.symbol_table.add_symbol(*name, entry);
+                        let _ = ctx
+                            .symbol_table
+                            .define_enum_constant(*name, value, type_ref_to_use, enum_node.span);
                     }
                 }
 
@@ -1206,33 +1085,14 @@ fn create_semantic_node_data(
         let typedef_decl = TypedefDeclData { name, ty: final_ty };
 
         // Add typedef to symbol table to resolve forward references
-        let symbol_entry = Symbol {
-            name: name.as_str().into(),
-            kind: SymbolKind::Typedef {
-                aliased_type: final_ty.ty,
-            },
-            type_info: final_ty.ty,
-            storage_class: Some(StorageClass::Typedef),
-            scope_id: ctx.symbol_table.current_scope(),
-            def_span: span,
-            def_state: DefinitionState::Defined,
-            is_completed: true,
-        };
-
-        // Check for redefinition
-        if let Some(existing_ref) = ctx
-            .symbol_table
-            .fetch(name, ctx.symbol_table.current_scope(), Namespace::Ordinary)
-        {
-            let existing_symbol = ctx.symbol_table.get_symbol(existing_ref);
+        if let Err(e) = ctx.symbol_table.define_typedef(name, final_ty.ty, span) {
+            let SymbolTableError::InvalidRedefinition { name, existing } = e;
+            let existing_symbol = ctx.symbol_table.get_symbol(existing);
             ctx.report_error(SemanticError::Redefinition {
                 name,
                 first_def: existing_symbol.def_span,
                 span,
             });
-        } else {
-            // Add typedef to symbol table if it's a new symbol
-            ctx.symbol_table.add_symbol(name, symbol_entry);
         }
 
         return NodeKind::TypedefDecl(typedef_decl);
@@ -1263,42 +1123,21 @@ fn create_semantic_node_data(
                     alignment: spec.alignment,
                 };
 
-                let def_state = if var_decl.init.is_some() {
-                    DefinitionState::Defined
-                } else {
-                    DefinitionState::Tentative
-                };
-
-                let symbol_entry = Symbol {
-                    name: name.as_str().into(),
-                    kind: SymbolKind::Variable {
-                        is_global: ctx.symbol_table.current_scope() == ScopeId::GLOBAL,
-                        initializer: init.initializer,
-                        alignment: spec.alignment,
-                    },
-                    type_info: final_ty.ty,
-                    storage_class: spec.storage,
-                    scope_id: ctx.symbol_table.current_scope(),
-                    def_span: span,
-                    def_state,
-                    is_completed: true,
-                };
-
-                if ctx.symbol_table.current_scope() == ScopeId::GLOBAL {
-                    match ctx.symbol_table.merge_global_symbol(name, symbol_entry) {
-                        Ok(_) => {}
-                        Err(e) => {
-                            let SymbolTableError::InvalidRedefinition { name, existing } = e;
-                            let existing = ctx.symbol_table.get_symbol(existing);
-                            ctx.diag.report(SemanticError::Redefinition {
-                                name,
-                                first_def: existing.def_span,
-                                span,
-                            });
-                        }
-                    }
-                } else {
-                    ctx.symbol_table.add_symbol(name, symbol_entry);
+                if let Err(e) = ctx.symbol_table.define_variable(
+                    name,
+                    final_ty.ty,
+                    spec.storage,
+                    init.initializer,
+                    spec.alignment,
+                    span,
+                ) {
+                    let SymbolTableError::InvalidRedefinition { name, existing } = e;
+                    let existing = ctx.symbol_table.get_symbol(existing);
+                    ctx.diag.report(SemanticError::Redefinition {
+                        name,
+                        first_def: existing.def_span,
+                        span,
+                    });
                 }
 
                 return NodeKind::VarDecl(var_decl);
@@ -1313,42 +1152,21 @@ fn create_semantic_node_data(
                 alignment: spec.alignment,
             };
 
-            let def_state = if var_decl.init.is_some() {
-                DefinitionState::Defined
-            } else {
-                DefinitionState::Tentative
-            };
-
-            let symbol_entry = Symbol {
-                name: name.as_str().into(),
-                kind: SymbolKind::Variable {
-                    is_global: ctx.symbol_table.current_scope() == ScopeId::GLOBAL,
-                    initializer: init.initializer,
-                    alignment: spec.alignment,
-                },
-                type_info: final_ty.ty,
-                storage_class: spec.storage,
-                scope_id: ctx.symbol_table.current_scope(),
-                def_span: span,
-                def_state,
-                is_completed: true,
-            };
-
-            if ctx.symbol_table.current_scope() == ScopeId::GLOBAL {
-                match ctx.symbol_table.merge_global_symbol(name, symbol_entry) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        let SymbolTableError::InvalidRedefinition { name, existing } = e;
-                        let existing = ctx.symbol_table.get_symbol(existing);
-                        ctx.diag.report(SemanticError::Redefinition {
-                            name,
-                            first_def: existing.def_span,
-                            span,
-                        });
-                    }
-                }
-            } else {
-                ctx.symbol_table.add_symbol(name, symbol_entry);
+            if let Err(e) = ctx.symbol_table.define_variable(
+                name,
+                final_ty.ty,
+                spec.storage,
+                init.initializer,
+                spec.alignment,
+                span,
+            ) {
+                let SymbolTableError::InvalidRedefinition { name, existing } = e;
+                let existing = ctx.symbol_table.get_symbol(existing);
+                ctx.diag.report(SemanticError::Redefinition {
+                    name,
+                    first_def: existing.def_span,
+                    span,
+                });
             }
 
             return NodeKind::VarDecl(var_decl);
@@ -1361,32 +1179,17 @@ fn create_semantic_node_data(
             body: None,
         };
 
-        let symbol_entry = Symbol {
-            name: name.as_str().into(),
-            kind: SymbolKind::Function,
-            type_info: function_type_ref, // Use the function type, not the pointer to function type
-            storage_class: spec.storage,
-            scope_id: ctx.symbol_table.current_scope(),
-            def_span: span,
-            def_state: DefinitionState::DeclaredOnly,
-            is_completed: true, // A declaration is a "complete" concept here
-        };
-
-        if ctx.symbol_table.current_scope() == ScopeId::GLOBAL {
-            match ctx.symbol_table.merge_global_symbol(name, symbol_entry) {
-                Ok(_) => {}
-                Err(e) => {
-                    let SymbolTableError::InvalidRedefinition { name, existing } = e;
-                    let existing = ctx.symbol_table.get_symbol(existing);
-                    ctx.diag.report(SemanticError::Redefinition {
-                        name,
-                        first_def: existing.def_span,
-                        span,
-                    });
-                }
-            }
-        } else {
-            ctx.symbol_table.add_symbol(name, symbol_entry);
+        if let Err(e) = ctx
+            .symbol_table
+            .define_function(name, function_type_ref, spec.storage, false, span)
+        {
+            let SymbolTableError::InvalidRedefinition { name, existing } = e;
+            let existing = ctx.symbol_table.get_symbol(existing);
+            ctx.diag.report(SemanticError::Redefinition {
+                name,
+                first_def: existing.def_span,
+                span,
+            });
         }
 
         NodeKind::FunctionDecl(func_decl)
@@ -1399,42 +1202,17 @@ fn create_semantic_node_data(
             alignment: spec.alignment,
         };
 
-        let def_state = if var_decl.init.is_some() {
-            DefinitionState::Defined
-        } else {
-            DefinitionState::Tentative
-        };
-
-        let symbol_entry = Symbol {
-            name: name.as_str().into(),
-            kind: SymbolKind::Variable {
-                is_global: ctx.symbol_table.current_scope() == ScopeId::GLOBAL,
-                initializer: init.initializer,
-                alignment: spec.alignment,
-            },
-            type_info: final_ty.ty,
-            storage_class: spec.storage,
-            scope_id: ctx.symbol_table.current_scope(),
-            def_span: span,
-            def_state,
-            is_completed: true,
-        };
-
-        if ctx.symbol_table.current_scope() == ScopeId::GLOBAL {
-            match ctx.symbol_table.merge_global_symbol(name, symbol_entry) {
-                Ok(_) => {}
-                Err(e) => {
-                    let SymbolTableError::InvalidRedefinition { name, existing } = e;
-                    let existing = ctx.symbol_table.get_symbol(existing);
-                    ctx.diag.report(SemanticError::Redefinition {
-                        name,
-                        first_def: existing.def_span,
-                        span,
-                    });
-                }
-            }
-        } else {
-            ctx.symbol_table.add_symbol(name, symbol_entry);
+        if let Err(e) =
+            ctx.symbol_table
+                .define_variable(name, final_ty.ty, spec.storage, init.initializer, spec.alignment, span)
+        {
+            let SymbolTableError::InvalidRedefinition { name, existing } = e;
+            let existing = ctx.symbol_table.get_symbol(existing);
+            ctx.diag.report(SemanticError::Redefinition {
+                name,
+                first_def: existing.def_span,
+                span,
+            });
         }
 
         NodeKind::VarDecl(var_decl)
@@ -1644,18 +1422,16 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                 Vec::new()
             };
 
-            let symbol_entry = Symbol {
-                name: func_name,
-                kind: SymbolKind::Function,
-                type_info: function_type_ref,
-                storage_class: None,
-                scope_id: ScopeId::GLOBAL,
-                def_span: ctx.ast.get_node(node_ref).span,
-                def_state: DefinitionState::Defined,
-                is_completed: true,
-            };
-
-            let symbol_entry_ref = ctx.symbol_table.add_symbol(func_name, symbol_entry);
+            let symbol_entry_ref = ctx
+                .symbol_table
+                .define_function(
+                    func_name,
+                    function_type_ref,
+                    None, // Storage class not extracted in original code
+                    true, // is_definition
+                    ctx.ast.get_node(node_ref).span,
+                )
+                .expect("Function definition failed");
 
             let param_scope_id = ctx.symbol_table.push_scope();
             ctx.set_scope(node_ref, param_scope_id);
@@ -1665,22 +1441,17 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                 .into_iter()
                 .map(|param| {
                     // Create a symbol entry for the parameter
-                    let param_symbol_entry = Symbol {
-                        name: param.name.unwrap_or_else(|| NameId::new("unnamed_param")),
-                        kind: SymbolKind::Variable {
-                            is_global: false,
-                            initializer: None,
-                            alignment: None, // Parameters cannot have alignment specifiers (C11 6.7.5.2)
-                        },
-                        type_info: param.param_type.ty,
-                        storage_class: None,
-                        scope_id: ctx.symbol_table.current_scope(),
-                        def_span: ctx.ast.get_node(node_ref).span,
-                        def_state: DefinitionState::Defined,
-                        is_completed: true,
-                    };
-
-                    let param_symbol_ref = ctx.symbol_table.add_symbol(param_symbol_entry.name, param_symbol_entry);
+                    let param_symbol_ref = ctx
+                        .symbol_table
+                        .define_variable(
+                            param.name.unwrap_or_else(|| NameId::new("unnamed_param")),
+                            param.param_type.ty,
+                            None, // Params have no storage class in C
+                            None, // No initializer
+                            None, // No alignment
+                            ctx.ast.get_node(node_ref).span,
+                        )
+                        .unwrap();
 
                     crate::ast::ParamDecl {
                         symbol: param_symbol_ref,
@@ -1776,20 +1547,9 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
         }
         NodeKind::Label(name, stmt, _) => {
             let label_ty = ctx.registry.type_void; // void for now
-            let entry = Symbol {
-                name,
-                kind: SymbolKind::Label {
-                    is_defined: true,
-                    is_used: true,
-                },
-                type_info: label_ty,
-                storage_class: None,
-                scope_id: ctx.symbol_table.current_scope(),
-                def_span: ctx.ast.get_node(node_ref).span,
-                def_state: DefinitionState::Defined,
-                is_completed: true,
-            };
-            ctx.symbol_table.add_symbol_in_namespace(name, entry, Namespace::Label);
+            let _ = ctx
+                .symbol_table
+                .define_label(name, label_ty, ctx.ast.get_node(node_ref).span);
             lower_node_recursive(ctx, stmt);
         }
         NodeKind::ParsedCast(parsed_type, expr_node) => {

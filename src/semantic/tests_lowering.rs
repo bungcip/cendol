@@ -1,6 +1,6 @@
+use crate::ast::NodeKind;
 use crate::driver::compiler::CompilePhase;
 use crate::driver::{cli::CompileConfig, compiler::CompilerDriver};
-use crate::ast::NodeKind;
 
 #[test]
 fn test_record_decl_members_populated() {

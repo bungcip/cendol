@@ -154,18 +154,24 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
             TokenKind::Alignas => {
                 parser.advance(); // consume _Alignas
                 let alignment = if parser.accept(TokenKind::LeftParen).is_some() {
-                    if parser.is_token(TokenKind::Identifier(symbol_table::GlobalSymbol::new(""))) {
-                        // _Alignas(type-name)
+                    let next_token = parser.current_token()?;
+
+                    let is_type_start = if let TokenKind::Identifier(symbol) = next_token.kind {
+                         parser.is_type_name(symbol)
+                    } else {
+                         next_token.kind.is_declaration_specifier_start()
+                    };
+
+                    if is_type_start {
+                         // _Alignas(type-name)
                         let parsed_type = super::parsed_type_builder::parse_parsed_type_name(parser)?;
                         parser.expect(TokenKind::RightParen)?;
-                        // TODO: Consider creating a ParsedAlignmentSpecifier variant
-                        // For now, store the parsed type and let the symbol resolver handle it
-                        AlignmentSpecifier::Type(parsed_type)
+                        ParsedAlignmentSpecifier::Type(parsed_type)
                     } else {
-                        // _Alignas(constant-expression)
-                        let expr = parser.parse_expr_min()?;
-                        parser.expect(TokenKind::RightParen)?;
-                        AlignmentSpecifier::Expr(expr)
+                         // _Alignas(constant-expression)
+                         let expr = parser.parse_expr_min()?;
+                         parser.expect(TokenKind::RightParen)?;
+                         ParsedAlignmentSpecifier::Expr(expr)
                     }
                 } else {
                     return Err(ParseError::UnexpectedToken {

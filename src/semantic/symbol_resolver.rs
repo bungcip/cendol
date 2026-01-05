@@ -1125,8 +1125,23 @@ fn lower_type_definition(specifiers: &[DeclSpecifier], ctx: &mut LowerCtx, span:
             let record_decl = RecordDeclData {
                 name: *tag,
                 ty: enum_type.ty,
-                members: Vec::new(), // TODO: Extract enumerators
-                is_union: false,     // enums are not unions
+                members: if let TypeKind::Enum {
+                    base_type,
+                    enumerators,
+                    ..
+                } = &ctx.registry.get(enum_type.ty).kind
+                {
+                    enumerators
+                        .iter()
+                        .map(|e| FieldDeclData {
+                            name: Some(e.name),
+                            ty: QualType::unqualified(*base_type),
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                },
+                is_union: false, // enums are not unions
             };
 
             let record_node = Node::new(NodeKind::RecordDecl(record_decl), span);

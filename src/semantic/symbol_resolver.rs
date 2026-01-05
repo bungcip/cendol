@@ -1126,9 +1126,7 @@ fn lower_type_definition(specifiers: &[DeclSpecifier], ctx: &mut LowerCtx, span:
                 name: *tag,
                 ty: enum_type.ty,
                 members: if let TypeKind::Enum {
-                    base_type,
-                    enumerators,
-                    ..
+                    base_type, enumerators, ..
                 } = &ctx.registry.get(enum_type.ty).kind
                 {
                     enumerators

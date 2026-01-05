@@ -41,3 +41,50 @@ fn test_record_decl_members_populated() {
 
     assert!(found_record_decl, "Did not find RecordDecl for 'Point'");
 }
+
+#[test]
+fn test_enum_decl_members_populated() {
+    let source = r#"
+        enum Color {
+            RED,
+            GREEN,
+            BLUE
+        };
+    "#;
+
+    // Use SymbolResolver phase to get the AST right after lowering
+    let phase = CompilePhase::SymbolResolver;
+    let config = CompileConfig::from_virtual_file(source.to_string(), phase);
+    let mut driver = CompilerDriver::from_config(config);
+
+    let out = driver.run_pipeline(phase).unwrap();
+    let unit = out.units.values().next().unwrap();
+    let ast = unit.ast.as_ref().unwrap();
+
+    // Find the EnumDecl node
+    let mut found_enum_decl = false;
+    for node in &ast.nodes {
+        if let NodeKind::EnumDecl(enum_decl) = &node.kind {
+            if enum_decl.name.map(|n| n.as_str()) == Some("Color") {
+                found_enum_decl = true;
+
+                // Assert that members are populated
+                assert_eq!(enum_decl.members.len(), 3, "EnumDecl should have 3 members");
+
+                let red = &enum_decl.members[0];
+                assert_eq!(red.name.as_str(), "RED");
+                assert_eq!(red.value, 0);
+
+                let green = &enum_decl.members[1];
+                assert_eq!(green.name.as_str(), "GREEN");
+                assert_eq!(green.value, 1);
+
+                let blue = &enum_decl.members[2];
+                assert_eq!(blue.name.as_str(), "BLUE");
+                assert_eq!(blue.value, 2);
+            }
+        }
+    }
+
+    assert!(found_enum_decl, "Did not find EnumDecl for 'Color'");
+}

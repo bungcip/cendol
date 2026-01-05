@@ -103,6 +103,7 @@ pub enum NodeKind {
     FunctionDecl(FunctionDeclData),
     TypedefDecl(TypedefDeclData),
     RecordDecl(RecordDeclData),
+    EnumDecl(EnumDeclData),
     Function(FunctionData),
 
     // --- Top Level ---
@@ -211,6 +212,20 @@ pub struct RecordDeclData {
 pub struct FieldDeclData {
     pub name: Option<NameId>,
     pub ty: QualType, // object type
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EnumDeclData {
+    pub name: Option<NameId>,
+    pub ty: TypeRef,
+    pub members: Vec<EnumMember>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EnumMember {
+    pub name: NameId,
+    pub value: i64,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]

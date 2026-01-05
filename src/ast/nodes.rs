@@ -9,7 +9,7 @@ use std::cell::Cell;
 use thin_vec::ThinVec;
 
 use crate::{
-    ast::{NameId, NodeRef, ParsedType, SymbolRef, TypeRef},
+    ast::{NameId, NodeRef, ParsedType, SymbolRef, TypeRef, SourceSpan},
     semantic::QualType,
 };
 
@@ -380,6 +380,7 @@ pub enum Declarator {
 pub struct ParamData {
     pub specifiers: ThinVec<DeclSpecifier>,
     pub declarator: Option<Declarator>, // Optional name for abstract declarator
+    pub span: SourceSpan,
 }
 
 // Array sizes

@@ -1,8 +1,9 @@
 use hashbrown::HashMap;
+use serde::Serialize;
 use std::{cmp::Ordering, num::NonZeroU32, path::PathBuf};
 
 /// Source ID for identifying source files
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct SourceId(NonZeroU32);
 
 impl std::fmt::Display for SourceId {
@@ -25,7 +26,7 @@ impl SourceId {
 /// Packed file ID and byte offset in a single u32.
 /// - Bits 0-21: Byte Offset (max 4 MiB file size)
 /// - Bits 22-31: Source ID Index (max 1023 unique source files)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct SourceLoc(u32);
 
 impl Default for SourceLoc {
@@ -71,7 +72,7 @@ impl std::fmt::Display for SourceLoc {
 }
 
 /// Represents a range in the source file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 pub struct SourceSpan {
     pub start: SourceLoc,
     pub end: SourceLoc,
@@ -99,6 +100,29 @@ impl SourceSpan {
 
     pub fn is_source_id_builtin(&self) -> bool {
         self.start.source_id().to_u32() == 1
+    }
+
+    /// Merge two source spans into a single span covering both
+    pub fn merge(self, other: SourceSpan) -> SourceSpan {
+        if self.source_id() != other.source_id() {
+            // If from different files, just return self (or handle differently)
+            // For now assuming spans from same file in parser context
+            return self;
+        }
+
+        let start = if self.start.offset() < other.start.offset() {
+            self.start
+        } else {
+            other.start
+        };
+
+        let end = if self.end.offset() > other.end.offset() {
+            self.end
+        } else {
+            other.end
+        };
+
+        SourceSpan { start, end }
     }
 }
 

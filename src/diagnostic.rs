@@ -218,6 +218,8 @@ pub enum SemanticError {
     RecursiveType { ty: TypeRef },
     #[error("controlling expression type does not match any generic association")]
     GenericNoMatch { span: SourceSpan },
+    #[error("{message}")]
+    Generic { message: String, span: SourceSpan },
 }
 
 impl SemanticError {
@@ -242,6 +244,7 @@ impl SemanticError {
                 SourceSpan::dummy()
             }
             SemanticError::GenericNoMatch { span } => *span,
+            SemanticError::Generic { span, .. } => *span,
         }
     }
 }

@@ -3,7 +3,6 @@
 //! This module defines the semantic type system used during analysis,
 //! distinct from the syntactic TypeSpecifier constructs used in parsing.
 
-use std::num::NonZeroU16;
 use std::{fmt::Display, num::NonZeroU32};
 
 use bitflags::bitflags;
@@ -315,7 +314,7 @@ pub struct FunctionParameter {
 pub struct StructMember {
     pub name: Option<NameId>,
     pub member_type: QualType,
-    pub bit_field_size: Option<NonZeroU16>,
+    pub bit_field_size: Option<u32>,
     pub span: SourceSpan, // for diagnostic
 }
 

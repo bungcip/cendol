@@ -308,6 +308,47 @@ fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: Sour
     info
 }
 
+/// Helper function to evaluate bitfield width
+fn evaluate_bitfield_width(
+    ctx: &mut LowerCtx,
+    expr_ref: Option<NodeRef>,
+    span: SourceSpan,
+) -> Option<u32> {
+    if let Some(expr) = expr_ref {
+        let const_eval_ctx = ConstEvalCtx { ast: ctx.ast };
+        if let Some(val) = const_eval::eval_const_expr(&const_eval_ctx, expr) {
+            if val < 0 {
+                ctx.report_error(SemanticError::Generic {
+                    message: "Bit-field width must be non-negative".to_string(),
+                    span,
+                });
+                None
+            } else {
+                Some(val as u32)
+            }
+        } else {
+            ctx.report_error(SemanticError::Generic {
+                message: "Bit-field width must be an integer constant expression".to_string(),
+                span,
+            });
+            None
+        }
+    } else {
+        None
+    }
+}
+
+/// Helper function to extract bitfield width from declarator
+fn extract_bitfield_width(declarator: &Declarator) -> Option<NodeRef> {
+    match declarator {
+        Declarator::BitField(_, width) => Some(*width),
+        Declarator::Pointer(_, next) => next.as_ref().and_then(|d| extract_bitfield_width(d)),
+        Declarator::Array(base, _) => extract_bitfield_width(base),
+        Declarator::Function { inner, .. } => extract_bitfield_width(inner),
+        _ => None,
+    }
+}
+
 /// Convert a ParsedBaseTypeNode to a QualType
 fn convert_parsed_base_type_to_qual_type(
     ctx: &mut LowerCtx,
@@ -415,10 +456,12 @@ fn convert_parsed_base_type_to_qual_type(
                 // Now create struct members with the processed types
                 let mut struct_members = Vec::new();
                 for (i, parsed_member) in parsed_members.iter().enumerate() {
+                    let bit_field_size = evaluate_bitfield_width(ctx, parsed_member.bit_field_width, parsed_member.span);
+
                     struct_members.push(StructMember {
                         name: parsed_member.name,
                         member_type: member_types[i],
-                        bit_field_size: parsed_member.bit_field_size,
+                        bit_field_size,
                         span: parsed_member.span,
                     });
                 }
@@ -762,7 +805,10 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                             }
 
                             for init_declarator in &decl.init_declarators {
-                                if let Some(member_name) = extract_identifier(&init_declarator.declarator) {
+                                let member_name = extract_identifier(&init_declarator.declarator);
+                                let bit_field_width = extract_bitfield_width(&init_declarator.declarator);
+
+                                if member_name.is_some() || bit_field_width.is_some() {
                                     let member_type = if let Some(base_type_ref) =
                                         lower_decl_specifiers_for_member(&decl.specifiers, ctx, span)
                                     {
@@ -776,10 +822,12 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                                         ctx.registry.type_int
                                     };
 
+                                    let bit_field_size = evaluate_bitfield_width(ctx, bit_field_width, span);
+
                                     struct_members.push(StructMember {
-                                        name: Some(member_name),
+                                        name: member_name,
                                         member_type: QualType::unqualified(member_type),
-                                        bit_field_size: None,
+                                        bit_field_size,
                                         span,
                                     });
                                 }
@@ -1551,7 +1599,8 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
             QualType::unqualified(base_type)
         }
         Declarator::BitField(base, _) => {
-            // TODO: Handle bit fields
+            // Bit-field logic is handled in the struct member loop.
+            // Here we just recurse to the base declarator to get the type.
             apply_declarator(base_type, base, ctx)
         }
         Declarator::Abstract => QualType::unqualified(base_type),
@@ -2070,6 +2119,9 @@ fn apply_declarator_for_member(base_type: TypeRef, declarator: &Declarator, ctx:
             let array_type_ref = ctx.registry.array_of(element_type.ty, array_size);
             QualType::unqualified(array_type_ref)
         }
+        Declarator::BitField(base, _) => {
+            apply_declarator_for_member(base_type, base, ctx)
+        }
         // For other declarator types, just return the base type
         _ => QualType::unqualified(base_type),
     }
@@ -2110,7 +2162,10 @@ fn process_anonymous_struct_members(
         } else {
             // This is a regular member - process it normally
             for init_declarator in &decl.init_declarators {
-                if let Some(member_name) = extract_identifier(&init_declarator.declarator) {
+                let member_name = extract_identifier(&init_declarator.declarator);
+                let bit_field_width = extract_bitfield_width(&init_declarator.declarator);
+
+                if member_name.is_some() || bit_field_width.is_some() {
                     // Get the member type from declaration specifiers
                     let member_type =
                         if let Some(base_type_ref) = lower_decl_specifiers_for_member(&decl.specifiers, ctx, span) {
@@ -2120,10 +2175,12 @@ fn process_anonymous_struct_members(
                             QualType::unqualified(ctx.registry.type_int)
                         };
 
+                    let bit_field_size = evaluate_bitfield_width(ctx, bit_field_width, span);
+
                     flattened_members.push(StructMember {
-                        name: Some(member_name),
+                        name: member_name,
                         member_type,
-                        bit_field_size: None,
+                        bit_field_size,
                         span,
                     });
                 }

@@ -77,6 +77,17 @@ fn parse_base_type_and_qualifiers(
     Ok((base_type_ref, qualifiers))
 }
 
+/// Helper function to extract bitfield width from declarator
+fn extract_bitfield_width(declarator: &Declarator) -> Option<NodeRef> {
+    match declarator {
+        Declarator::BitField(_, width) => Some(*width),
+        Declarator::Pointer(_, next) => next.as_ref().and_then(|d| extract_bitfield_width(d)),
+        Declarator::Array(base, _) => extract_bitfield_width(base),
+        Declarator::Function { inner, .. } => extract_bitfield_width(inner),
+        _ => None,
+    }
+}
+
 /// Convert a TypeSpecifier to a ParsedBaseTypeNode
 fn parse_type_specifier_to_parsed_base(
     parser: &mut Parser,
@@ -149,7 +160,11 @@ fn parse_type_specifier_to_parsed_base(
                     for decl in member_decls {
                         // Parse each member declaration
                         for init_decl in &decl.init_declarators {
-                            if let Some(member_name) = extract_identifier(&init_decl.declarator) {
+                            let member_name = extract_identifier(&init_decl.declarator);
+                            let bit_field_width = extract_bitfield_width(&init_decl.declarator);
+
+                            // Process if it has a name OR is a bitfield (anonymous bitfields are allowed)
+                            if member_name.is_some() || bit_field_width.is_some() {
                                 let member_parsed_type = build_parsed_type_from_specifiers(
                                     parser,
                                     &decl.specifiers,
@@ -157,9 +172,9 @@ fn parse_type_specifier_to_parsed_base(
                                 )?;
 
                                 parsed_members.push(ParsedStructMember {
-                                    name: Some(member_name),
+                                    name: member_name,
                                     ty: member_parsed_type,
-                                    bit_field_size: None,
+                                    bit_field_width,
                                     span: init_decl.span,
                                 });
                             }
@@ -291,6 +306,10 @@ fn build_parsed_declarator(parser: &mut Parser, declarator: &Declarator) -> Resu
                 },
                 inner: inner_ref,
             }))
+        }
+        Declarator::BitField(base, _) => {
+            // BitFields don't affect the type structure, so just recurse to base
+            build_parsed_declarator(parser, base)
         }
         Declarator::Abstract => Ok(parser
             .ast

@@ -320,11 +320,10 @@ fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: Sour
             DeclSpecifier::AlignmentSpecifier(spec) => {
                 let align = match spec {
                     ParsedAlignmentSpecifier::Type(parsed_type) => {
-                        let ty =
-                            convert_parsed_type_to_qual_type(ctx, parsed_type.clone(), span).unwrap_or_else(|_| {
-                                // Error already reported by convert_parsed_type_to_qual_type if it failed
-                                QualType::unqualified(ctx.registry.type_int) // Default fallback
-                            });
+                        let ty = convert_parsed_type_to_qual_type(ctx, *parsed_type, span).unwrap_or_else(|_| {
+                            // Error already reported by convert_parsed_type_to_qual_type if it failed
+                            QualType::unqualified(ctx.registry.type_int) // Default fallback
+                        });
 
                         // Layout must be complete to get alignment
                         match ctx.registry.ensure_layout(ty.ty) {
@@ -433,7 +432,6 @@ fn convert_parsed_base_type_to_qual_type(
                             scope_id: ctx.symbol_table.current_scope(),
                             def_span: span,
                             def_state: DefinitionState::Defined,
-                            is_referenced: false,
                             is_completed: false,
                         };
                         ctx.symbol_table
@@ -463,7 +461,6 @@ fn convert_parsed_base_type_to_qual_type(
                             scope_id: ctx.symbol_table.current_scope(),
                             def_span: span,
                             def_state: DefinitionState::Defined,
-                            is_referenced: false,
                             is_completed: false,
                         };
                         ctx.symbol_table
@@ -554,7 +551,6 @@ fn convert_parsed_base_type_to_qual_type(
                             scope_id: ctx.symbol_table.current_scope(),
                             def_span: span,
                             def_state: DefinitionState::Defined,
-                            is_referenced: false,
                             is_completed: false,
                         };
                         ctx.symbol_table
@@ -578,7 +574,6 @@ fn convert_parsed_base_type_to_qual_type(
                             def_span: span,
                             def_state: DefinitionState::Defined,
                             type_info: forward_ref,
-                            is_referenced: false,
                             is_completed: false,
                         };
                         ctx.symbol_table
@@ -617,7 +612,6 @@ fn convert_parsed_base_type_to_qual_type(
                         scope_id: ctx.symbol_table.current_scope(),
                         def_span: parsed_enum.span,
                         def_state: DefinitionState::Defined,
-                        is_referenced: false,
                         is_completed: true,
                     };
                     ctx.symbol_table.add_symbol(parsed_enum.name, entry);
@@ -766,7 +760,6 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                             scope_id: ctx.symbol_table.current_scope(),
                             def_span: span,
                             def_state: DefinitionState::Defined,
-                            is_referenced: false,
                             is_completed: false,
                         };
                         ctx.symbol_table
@@ -796,7 +789,6 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                             scope_id: ctx.symbol_table.current_scope(),
                             def_span: span,
                             def_state: DefinitionState::Defined,
-                            is_referenced: false,
                             is_completed: false,
                         };
                         ctx.symbol_table
@@ -872,7 +864,6 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                             scope_id: ctx.symbol_table.current_scope(),
                             def_span: span,
                             def_state: DefinitionState::Defined,
-                            is_referenced: false,
                             is_completed: false,
                         };
                         ctx.symbol_table
@@ -895,7 +886,6 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                             scope_id: ctx.symbol_table.current_scope(),
                             def_span: span,
                             def_state: DefinitionState::Defined,
-                            is_referenced: false,
                             is_completed: false,
                         };
                         ctx.symbol_table
@@ -944,7 +934,6 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                             scope_id: ctx.symbol_table.current_scope(),
                             def_span: enum_node.span,
                             def_state: DefinitionState::Defined,
-                            is_referenced: false,
                             is_completed: true,
                         };
                         ctx.symbol_table.add_symbol(*name, entry);
@@ -1227,7 +1216,6 @@ fn create_semantic_node_data(
             scope_id: ctx.symbol_table.current_scope(),
             def_span: span,
             def_state: DefinitionState::Defined,
-            is_referenced: false,
             is_completed: true,
         };
 
@@ -1257,24 +1245,14 @@ fn create_semantic_node_data(
     if is_function {
         // Extract function type information
         let type_info = ctx.registry.get(final_ty.ty).clone();
-        let (function_type_ref, parameters, is_variadic) = if let TypeKind::Function {
-            parameters,
-            is_variadic,
-            ..
-        } = &type_info.kind
-        {
+        let function_type_ref = if let TypeKind::Function { .. } = &type_info.kind {
             // Direct function type
-            (final_ty.ty, parameters.clone(), *is_variadic)
+            final_ty.ty
         } else if let TypeKind::Pointer { pointee } = &type_info.kind {
             // Pointer to function type - get the function type from the pointee
             let pointee_type = ctx.registry.get(*pointee);
-            if let TypeKind::Function {
-                parameters,
-                is_variadic,
-                ..
-            } = &pointee_type.kind
-            {
-                (*pointee, parameters.clone(), *is_variadic)
+            if let TypeKind::Function { .. } = &pointee_type.kind {
+                *pointee
             } else {
                 // Not a function pointer, treat as variable
                 let var_decl = VarDeclData {
@@ -1303,7 +1281,6 @@ fn create_semantic_node_data(
                     scope_id: ctx.symbol_table.current_scope(),
                     def_span: span,
                     def_state,
-                    is_referenced: false,
                     is_completed: true,
                 };
 
@@ -1354,7 +1331,6 @@ fn create_semantic_node_data(
                 scope_id: ctx.symbol_table.current_scope(),
                 def_span: span,
                 def_state,
-                is_referenced: false,
                 is_completed: true,
             };
 
@@ -1387,17 +1363,12 @@ fn create_semantic_node_data(
 
         let symbol_entry = Symbol {
             name: name.as_str().into(),
-            kind: SymbolKind::Function {
-                is_inline: spec.is_inline,
-                is_variadic,
-                parameters,
-            },
+            kind: SymbolKind::Function,
             type_info: function_type_ref, // Use the function type, not the pointer to function type
             storage_class: spec.storage,
             scope_id: ctx.symbol_table.current_scope(),
             def_span: span,
             def_state: DefinitionState::DeclaredOnly,
-            is_referenced: false,
             is_completed: true, // A declaration is a "complete" concept here
         };
 
@@ -1446,7 +1417,6 @@ fn create_semantic_node_data(
             scope_id: ctx.symbol_table.current_scope(),
             def_span: span,
             def_state,
-            is_referenced: false,
             is_completed: true,
         };
 
@@ -1676,17 +1646,12 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
 
             let symbol_entry = Symbol {
                 name: func_name,
-                kind: SymbolKind::Function {
-                    is_inline: false,
-                    is_variadic: false,
-                    parameters: parameters.clone(),
-                },
+                kind: SymbolKind::Function,
                 type_info: function_type_ref,
                 storage_class: None,
                 scope_id: ScopeId::GLOBAL,
                 def_span: ctx.ast.get_node(node_ref).span,
                 def_state: DefinitionState::Defined,
-                is_referenced: false,
                 is_completed: true,
             };
 
@@ -1712,7 +1677,6 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                         scope_id: ctx.symbol_table.current_scope(),
                         def_span: ctx.ast.get_node(node_ref).span,
                         def_state: DefinitionState::Defined,
-                        is_referenced: false,
                         is_completed: true,
                     };
 
@@ -1823,7 +1787,6 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                 scope_id: ctx.symbol_table.current_scope(),
                 def_span: ctx.ast.get_node(node_ref).span,
                 def_state: DefinitionState::Defined,
-                is_referenced: false,
                 is_completed: true,
             };
             ctx.symbol_table.add_symbol_in_namespace(name, entry, Namespace::Label);

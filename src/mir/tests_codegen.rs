@@ -49,7 +49,7 @@ fn test_emit_const_struct_literal() {
     constants.insert(struct_const_id, struct_const);
 
     // 3. Setup SemaOutput context
-    let mut mir_module = MirModule::new(MirModuleId::new(1).unwrap());
+    let mir_module = MirModule::new(MirModuleId::new(1).unwrap());
 
     let sema_output = SemaOutput {
         module: mir_module,

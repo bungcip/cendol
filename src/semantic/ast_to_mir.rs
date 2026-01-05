@@ -106,7 +106,7 @@ impl<'a> AstToMirLowerer<'a> {
                         (
                             symbol.name,
                             symbol.type_info,
-                            matches!(symbol.kind, SymbolKind::Function { .. }),
+                            matches!(symbol.kind, SymbolKind::Function),
                             symbol.def_state == DefinitionState::Defined,
                         )
                     };
@@ -607,7 +607,7 @@ impl<'a> AstToMirLowerer<'a> {
                     Operand::Copy(Box::new(Place::Local(*local_id)))
                 }
             }
-            SymbolKind::Function { .. } => {
+            SymbolKind::Function => {
                 let func_id = self
                     .mir_builder
                     .get_functions()
@@ -635,22 +635,8 @@ impl<'a> AstToMirLowerer<'a> {
         let rhs = self.lower_expression(scope_id, right_ref, true);
 
         // Handle pointer arithmetic
-        let lhs_type = self.ast.get_resolved_type(left_ref).unwrap();
-        let rhs_type = self.ast.get_resolved_type(right_ref).unwrap();
-        let lhs_kind = &self.registry.get(lhs_type.ty).kind;
-        let rhs_kind = &self.registry.get(rhs_type.ty).kind;
 
-        if let Some(rval) = self.lower_pointer_arithmetic(
-            op,
-            lhs.clone(),
-            rhs.clone(),
-            left_ref,
-            right_ref,
-            &lhs_type,
-            &rhs_type,
-            lhs_kind,
-            rhs_kind,
-        ) {
+        if let Some(rval) = self.lower_pointer_arithmetic(op, lhs.clone(), rhs.clone(), left_ref, right_ref) {
             return self.emit_rvalue_to_operand(rval, mir_ty);
         }
 
@@ -670,11 +656,12 @@ impl<'a> AstToMirLowerer<'a> {
         rhs: Operand,
         left_ref: NodeRef,
         right_ref: NodeRef,
-        lhs_type: &QualType,
-        rhs_type: &QualType,
-        lhs_kind: &TypeKind,
-        rhs_kind: &TypeKind,
     ) -> Option<Rvalue> {
+        let lhs_type = self.ast.get_resolved_type(left_ref).unwrap();
+        let rhs_type = self.ast.get_resolved_type(right_ref).unwrap();
+        let lhs_kind = &self.registry.get(lhs_type.ty).kind;
+        let rhs_kind = &self.registry.get(rhs_type.ty).kind;
+
         match (op, lhs_kind, rhs_kind) {
             (BinaryOp::Add, TypeKind::Pointer { .. }, _) => {
                 let rhs_mir_ty = self.lower_type_to_mir(rhs_type.ty);

@@ -12,7 +12,7 @@ use thiserror::Error;
 
 use crate::{
     ast::*,
-    semantic::{FunctionParameter, StructMember, TypeRef},
+    semantic::{StructMember, TypeRef},
 };
 
 pub type SymbolRef = NonZeroU32;
@@ -39,8 +39,6 @@ pub struct Symbol {
     pub scope_id: ScopeId, // Reference to the scope where it's defined
     pub def_span: SourceSpan,
     pub def_state: DefinitionState,
-    #[allow(unused)]
-    pub is_referenced: bool,
     pub is_completed: bool,
 }
 
@@ -54,14 +52,7 @@ pub enum SymbolKind {
         initializer: Option<NodeRef>,
         alignment: Option<u32>, // Max alignment in bytes
     },
-    Function {
-        #[allow(unused)]
-        is_inline: bool,
-        #[allow(unused)]
-        is_variadic: bool,
-        #[allow(unused)]
-        parameters: Vec<FunctionParameter>,
-    },
+    Function,
     Typedef {
         aliased_type: TypeRef,
     },

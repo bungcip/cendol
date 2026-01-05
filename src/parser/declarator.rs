@@ -270,8 +270,10 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParamData>,
                     break;
                 }
 
-                // Parse declaration specifiers for this parameter
                 let start_idx = parser.current_idx;
+
+                // Parse declaration specifiers for this parameter
+                let specifiers_start_idx = parser.current_idx;
                 let saved_diagnostic_count = parser.diag.diagnostics.len();
 
                 debug!(
@@ -302,7 +304,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParamData>,
                             parser.current_token_kind(),
                             _e
                         );
-                        parser.current_idx = start_idx;
+                        parser.current_idx = specifiers_start_idx;
                         parser.diag.diagnostics.truncate(saved_diagnostic_count);
 
                         // Create a simple default specifier
@@ -374,7 +376,18 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParamData>,
                     None
                 };
 
-                params.push(ParamData { specifiers, declarator });
+                // Calculate span for the parameter
+                let end_span = parser
+                    .last_token_span()
+                    .unwrap_or_else(|| parser.current_token_span_or_empty());
+                let start_token_span = parser.get_token_span(start_idx).unwrap_or(SourceSpan::empty());
+                let span = start_token_span.merge(end_span);
+
+                params.push(ParamData {
+                    specifiers,
+                    declarator,
+                    span,
+                });
 
                 debug!(
                     "parse_function_parameters: pushed parameter, current token: {:?}, position: {}",

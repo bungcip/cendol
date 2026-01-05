@@ -278,7 +278,7 @@ fn build_parsed_declarator(parser: &mut Parser, declarator: &Declarator) -> Resu
                 parsed_params.push(ParsedFunctionParam {
                     name: param.declarator.as_ref().and_then(extract_identifier),
                     ty: param_parsed_type,
-                    span: SourceSpan::empty(), // TODO: Get proper span
+                    span: param.span,
                 });
             }
 

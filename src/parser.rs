@@ -127,8 +127,13 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Get the current token location
-    fn current_token_span(&self) -> Result<SourceSpan, ParseError> {
+    pub(crate) fn current_token_span(&self) -> Result<SourceSpan, ParseError> {
         Ok(self.current_token()?.span)
+    }
+
+    /// Get the current token location (infallible, returns empty span on EOF)
+    pub(crate) fn current_token_span_or_empty(&self) -> SourceSpan {
+        self.try_current_token().map(|t| t.span).unwrap_or(SourceSpan::empty())
     }
 
     /// Get the location of the previous token, or an empty span if not available.
@@ -140,6 +145,20 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         } else {
             SourceSpan::empty()
         }
+    }
+
+    /// Get the span of the last token (synonym for previous_token_span)
+    pub(crate) fn last_token_span(&self) -> Option<SourceSpan> {
+        if self.current_idx > 0 {
+            self.tokens.get(self.current_idx - 1).map(|token| token.span)
+        } else {
+            None
+        }
+    }
+
+    /// Get the span of a token at a specific index
+    pub(crate) fn get_token_span(&self, index: usize) -> Option<SourceSpan> {
+        self.tokens.get(index).map(|token| token.span)
     }
 
     /// Peek at the next token without consuming it

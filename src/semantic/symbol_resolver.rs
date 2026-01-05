@@ -1412,7 +1412,7 @@ fn lower_function_parameters(params: &[ParamData], ctx: &mut LowerCtx) -> Vec<Fu
     params
         .iter()
         .map(|param| {
-            let span = SourceSpan::empty(); // FIXME: Get a proper span for parameter declarations
+            let span = param.span;
             let spec_info = lower_decl_specifiers(&param.specifiers, ctx, span);
 
             // C standard: if type specifier is missing in a parameter, it defaults to int.

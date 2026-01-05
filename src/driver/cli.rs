@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use crate::{
     driver::compiler::CompilePhase,
-    lang_options::{CStandard, LangOptions},
+    lang_options::{CStandard, LangFlags, LangOptions},
 };
 
 /// CLI interface using clap
@@ -175,11 +175,13 @@ impl Cli {
         }
 
         // Build language options
+        let mut flags = LangFlags::empty();
+        if self.pedantic {
+            flags |= LangFlags::PEDANTIC;
+        }
+
         let lang_options = LangOptions {
-            c11: false, // Default to false, will be overridden by -std flag
-            gnu_mode: false,
-            ms_extensions: false,
-            pedantic: self.pedantic,
+            flags,
             c_standard: self.c_standard,
         };
 

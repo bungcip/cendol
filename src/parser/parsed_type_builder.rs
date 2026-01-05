@@ -160,7 +160,7 @@ fn parse_type_specifier_to_parsed_base(
                                     name: Some(member_name),
                                     ty: member_parsed_type,
                                     bit_field_size: None,
-                                    span: SourceSpan::empty(), // TODO: Get proper span
+                                    span: init_decl.span,
                                 });
                             }
                         }

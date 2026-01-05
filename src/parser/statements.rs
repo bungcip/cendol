@@ -244,6 +244,7 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         debug!("parse_for_statement: parsing declaration in init");
         // Parse declaration specifiers
         let specifiers = parse_declaration_specifiers(parser)?;
+        let declarator_start_span = parser.current_token_span_or_empty();
         // Parse declarator
         let declarator = parse_declarator(parser, None)?;
         // Parse initializer if present
@@ -253,9 +254,13 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
             None
         };
 
+        let end_span = parser.last_token_span().unwrap_or(declarator_start_span);
+        let span = declarator_start_span.merge(end_span);
+
         let init_declarator = InitDeclarator {
             declarator,
             initializer,
+            span,
         };
 
         let declaration_data = DeclarationData {

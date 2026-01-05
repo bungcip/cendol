@@ -150,6 +150,8 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseErr
 
     loop {
         let declarator_start_idx = trx.parser.current_idx;
+        let start_span = trx.parser.current_token_span_or_empty();
+
         debug!(
             "parse_declaration: parsing declarator at position {}, token {:?}",
             declarator_start_idx,
@@ -191,9 +193,13 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseErr
             None
         };
 
+        let end_span = trx.parser.last_token_span().unwrap_or(start_span);
+        let span = start_span.merge(end_span);
+
         init_declarators.push(InitDeclarator {
             declarator,
             initializer,
+            span,
         });
 
         if !trx.parser.is_token(TokenKind::Comma) {

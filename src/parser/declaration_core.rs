@@ -157,21 +157,21 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                     let next_token = parser.current_token()?;
 
                     let is_type_start = if let TokenKind::Identifier(symbol) = next_token.kind {
-                         parser.is_type_name(symbol)
+                        parser.is_type_name(symbol)
                     } else {
-                         next_token.kind.is_declaration_specifier_start()
+                        next_token.kind.is_declaration_specifier_start()
                     };
 
                     if is_type_start {
-                         // _Alignas(type-name)
+                        // _Alignas(type-name)
                         let parsed_type = super::parsed_type_builder::parse_parsed_type_name(parser)?;
                         parser.expect(TokenKind::RightParen)?;
                         ParsedAlignmentSpecifier::Type(parsed_type)
                     } else {
-                         // _Alignas(constant-expression)
-                         let expr = parser.parse_expr_min()?;
-                         parser.expect(TokenKind::RightParen)?;
-                         ParsedAlignmentSpecifier::Expr(expr)
+                        // _Alignas(constant-expression)
+                        let expr = parser.parse_expr_min()?;
+                        parser.expect(TokenKind::RightParen)?;
+                        ParsedAlignmentSpecifier::Expr(expr)
                     }
                 } else {
                     return Err(ParseError::UnexpectedToken {

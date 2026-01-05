@@ -306,8 +306,7 @@ impl<'a> AstToMirLowerer<'a> {
         } else {
             let rval = Rvalue::StructLiteral(field_operands);
             let mir_ty = self.lower_type_to_mir(target_ty.ty);
-            let (_, place) = self.create_temp_local_with_assignment(rval, mir_ty);
-            Operand::Copy(Box::new(place))
+            self.emit_rvalue_to_operand(rval, mir_ty)
         }
     }
 
@@ -342,8 +341,7 @@ impl<'a> AstToMirLowerer<'a> {
         } else {
             let rval = Rvalue::ArrayLiteral(elements);
             let mir_ty = self.lower_type_to_mir(target_ty.ty);
-            let (_, place) = self.create_temp_local_with_assignment(rval, mir_ty);
-            Operand::Copy(Box::new(place))
+            self.emit_rvalue_to_operand(rval, mir_ty)
         }
     }
 
@@ -442,38 +440,58 @@ impl<'a> AstToMirLowerer<'a> {
         let is_global = self.current_function.is_none();
 
         if is_global {
-            let initial_value_id = var_decl.init.and_then(|init_ref| {
-                let operand = self.lower_initializer(scope_id, init_ref, var_decl.ty);
-                self.operand_to_const_id(operand)
-            });
+            self.lower_global_var_declaration(scope_id, var_decl, entry_ref, mir_type_id);
+        } else {
+            self.lower_local_var_declaration(scope_id, var_decl, entry_ref, mir_type_id);
+        }
+    }
 
-            if let Some(global_id) = self.global_map.get(&entry_ref) {
-                if let Some(init_id) = initial_value_id {
-                    self.mir_builder.set_global_initializer(*global_id, init_id);
-                }
-            } else {
-                let symbol = self.symbol_table.get_symbol(entry_ref);
-                let final_init = if initial_value_id.is_some() {
-                    initial_value_id
-                } else if symbol.def_state == DefinitionState::Tentative {
-                    Some(self.create_constant(ConstValue::Zero))
-                } else {
-                    None
-                };
+    fn lower_global_var_declaration(
+        &mut self,
+        scope_id: ScopeId,
+        var_decl: &VarDeclData,
+        entry_ref: SymbolRef,
+        mir_type_id: TypeId,
+    ) {
+        let initial_value_id = var_decl.init.and_then(|init_ref| {
+            let operand = self.lower_initializer(scope_id, init_ref, var_decl.ty);
+            self.operand_to_const_id(operand)
+        });
 
-                let global_id = self
-                    .mir_builder
-                    .create_global_with_init(var_decl.name, mir_type_id, false, final_init);
-                self.global_map.insert(entry_ref, global_id);
+        if let Some(global_id) = self.global_map.get(&entry_ref) {
+            if let Some(init_id) = initial_value_id {
+                self.mir_builder.set_global_initializer(*global_id, init_id);
             }
         } else {
-            let local_id = self.mir_builder.create_local(Some(var_decl.name), mir_type_id, false);
-            self.local_map.insert(entry_ref, local_id);
+            let symbol = self.symbol_table.get_symbol(entry_ref);
+            let final_init = if initial_value_id.is_some() {
+                initial_value_id
+            } else if symbol.def_state == DefinitionState::Tentative {
+                Some(self.create_constant(ConstValue::Zero))
+            } else {
+                None
+            };
 
-            if let Some(initializer) = var_decl.init {
-                let init_operand = self.lower_initializer(scope_id, initializer, var_decl.ty);
-                self.emit_assignment(Place::Local(local_id), init_operand);
-            }
+            let global_id = self
+                .mir_builder
+                .create_global_with_init(var_decl.name, mir_type_id, false, final_init);
+            self.global_map.insert(entry_ref, global_id);
+        }
+    }
+
+    fn lower_local_var_declaration(
+        &mut self,
+        scope_id: ScopeId,
+        var_decl: &VarDeclData,
+        entry_ref: SymbolRef,
+        mir_type_id: TypeId,
+    ) {
+        let local_id = self.mir_builder.create_local(Some(var_decl.name), mir_type_id, false);
+        self.local_map.insert(entry_ref, local_id);
+
+        if let Some(initializer) = var_decl.init {
+            let init_operand = self.lower_initializer(scope_id, initializer, var_decl.ty);
+            self.emit_assignment(Place::Local(local_id), init_operand);
         }
     }
 
@@ -510,8 +528,7 @@ impl<'a> AstToMirLowerer<'a> {
                     let operand = self.lower_expression(scope_id, *operand_ref, true);
                     let mir_op = self.map_ast_unary_op_to_mir(op);
                     let rval = Rvalue::UnaryOp(mir_op, operand);
-                    let (_, place) = self.create_temp_local_with_assignment(rval, mir_ty);
-                    Operand::Copy(Box::new(place))
+                    self.emit_rvalue_to_operand(rval, mir_ty)
                 }
             },
             NodeKind::PostIncrement(operand_ref) => self.lower_post_incdec(scope_id, *operand_ref, true, need_value),
@@ -613,34 +630,18 @@ impl<'a> AstToMirLowerer<'a> {
         let lhs_kind = &self.registry.get(lhs_type.ty).kind;
         let rhs_kind = &self.registry.get(rhs_type.ty).kind;
 
-        match (op, lhs_kind, rhs_kind) {
-            (BinaryOp::Add, TypeKind::Pointer { .. }, _) => {
-                let rhs_mir_ty = self.lower_type_to_mir(rhs_type.ty);
-                let rhs_converted = self.apply_conversions(rhs, right_ref, rhs_mir_ty);
-                let rval = Rvalue::PtrAdd(lhs, rhs_converted);
-                let (_, place) = self.create_temp_local_with_assignment(rval, mir_ty);
-                return Operand::Copy(Box::new(place));
-            }
-            (BinaryOp::Add, _, TypeKind::Pointer { .. }) => {
-                let lhs_mir_ty = self.lower_type_to_mir(lhs_type.ty);
-                let lhs_converted = self.apply_conversions(lhs, left_ref, lhs_mir_ty);
-                let rval = Rvalue::PtrAdd(rhs, lhs_converted);
-                let (_, place) = self.create_temp_local_with_assignment(rval, mir_ty);
-                return Operand::Copy(Box::new(place));
-            }
-            (BinaryOp::Sub, TypeKind::Pointer { .. }, TypeKind::Int { .. }) => {
-                let rhs_mir_ty = self.lower_type_to_mir(rhs_type.ty);
-                let rhs_converted = self.apply_conversions(rhs, right_ref, rhs_mir_ty);
-                let rval = Rvalue::PtrSub(lhs, rhs_converted);
-                let (_, place) = self.create_temp_local_with_assignment(rval, mir_ty);
-                return Operand::Copy(Box::new(place));
-            }
-            (BinaryOp::Sub, TypeKind::Pointer { .. }, TypeKind::Pointer { .. }) => {
-                let rval = Rvalue::PtrDiff(lhs, rhs);
-                let (_, place) = self.create_temp_local_with_assignment(rval, mir_ty);
-                return Operand::Copy(Box::new(place));
-            }
-            _ => {}
+        if let Some(rval) = self.lower_pointer_arithmetic(
+            op,
+            lhs.clone(),
+            rhs.clone(),
+            left_ref,
+            right_ref,
+            &lhs_type,
+            &rhs_type,
+            lhs_kind,
+            rhs_kind,
+        ) {
+            return self.emit_rvalue_to_operand(rval, mir_ty);
         }
 
         // Apply any recorded implicit conversions (e.g., integer promotions)
@@ -649,8 +650,40 @@ impl<'a> AstToMirLowerer<'a> {
 
         let mir_op = self.map_ast_binary_op_to_mir(op);
         let rval = Rvalue::BinaryOp(mir_op, lhs_converted, rhs_converted);
-        let (_, place) = self.create_temp_local_with_assignment(rval, mir_ty);
-        Operand::Copy(Box::new(place))
+        self.emit_rvalue_to_operand(rval, mir_ty)
+    }
+
+    fn lower_pointer_arithmetic(
+        &mut self,
+        op: &BinaryOp,
+        lhs: Operand,
+        rhs: Operand,
+        left_ref: NodeRef,
+        right_ref: NodeRef,
+        lhs_type: &QualType,
+        rhs_type: &QualType,
+        lhs_kind: &TypeKind,
+        rhs_kind: &TypeKind,
+    ) -> Option<Rvalue> {
+        match (op, lhs_kind, rhs_kind) {
+            (BinaryOp::Add, TypeKind::Pointer { .. }, _) => {
+                let rhs_mir_ty = self.lower_type_to_mir(rhs_type.ty);
+                let rhs_converted = self.apply_conversions(rhs, right_ref, rhs_mir_ty);
+                Some(Rvalue::PtrAdd(lhs, rhs_converted))
+            }
+            (BinaryOp::Add, _, TypeKind::Pointer { .. }) => {
+                let lhs_mir_ty = self.lower_type_to_mir(lhs_type.ty);
+                let lhs_converted = self.apply_conversions(lhs, left_ref, lhs_mir_ty);
+                Some(Rvalue::PtrAdd(rhs, lhs_converted))
+            }
+            (BinaryOp::Sub, TypeKind::Pointer { .. }, TypeKind::Int { .. }) => {
+                let rhs_mir_ty = self.lower_type_to_mir(rhs_type.ty);
+                let rhs_converted = self.apply_conversions(rhs, right_ref, rhs_mir_ty);
+                Some(Rvalue::PtrSub(lhs, rhs_converted))
+            }
+            (BinaryOp::Sub, TypeKind::Pointer { .. }, TypeKind::Pointer { .. }) => Some(Rvalue::PtrDiff(lhs, rhs)),
+            _ => None,
+        }
     }
 
     fn lower_assignment_expr(
@@ -765,8 +798,7 @@ impl<'a> AstToMirLowerer<'a> {
 
         // Non-void function call - use Rvalue::Call and store result
         let rval = Rvalue::Call(call_target, arg_operands);
-        let (_, place) = self.create_temp_local_with_assignment(rval, mir_ty);
-        Operand::Copy(Box::new(place))
+        self.emit_rvalue_to_operand(rval, mir_ty)
     }
 
     fn lower_member_access(
@@ -1232,6 +1264,11 @@ impl<'a> AstToMirLowerer<'a> {
         let assign_stmt = MirStmt::Assign(place.clone(), rvalue);
         self.mir_builder.add_statement(assign_stmt);
         (local_id, place)
+    }
+
+    fn emit_rvalue_to_operand(&mut self, rvalue: Rvalue, type_id: TypeId) -> Operand {
+        let (_, place) = self.create_temp_local_with_assignment(rvalue, type_id);
+        Operand::Copy(Box::new(place))
     }
 
     fn operand_to_const_id(&mut self, operand: Operand) -> Option<ConstValueId> {

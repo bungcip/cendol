@@ -744,6 +744,11 @@ impl<'a> SemanticAnalyzer<'a> {
         // First, visit the controlling expression to determine its type.
         let ctrl_ty = self.visit_node(ctrl_ref)?;
 
+        // C11 6.5.1.1p3: The controlling expression of a generic selection is not evaluated.
+        // C11 6.5.1.1p2: The type name in a generic association specifies a type compatible with the
+        // controlling expression's type, after removing any top-level qualifiers.
+        let unqualified_ctrl_ty = self.registry.strip_all(ctrl_ty);
+
         // It's crucial to visit *all* result expressions to ensure they are
         // fully type-checked, even if they are not the selected branch.
         // This resolves all identifier types within them.
@@ -753,18 +758,24 @@ impl<'a> SemanticAnalyzer<'a> {
 
         // Now, find the selected expression based on type compatibility.
         let mut selected_expr_ref = None;
+        let mut default_expr_ref = None;
+
         for assoc in assocs {
             if let Some(assoc_ty) = assoc.ty {
                 // This is a type association.
-                if self.registry.is_compatible(ctrl_ty, assoc_ty) {
+                if self.registry.is_compatible(unqualified_ctrl_ty, assoc_ty) {
                     selected_expr_ref = Some(assoc.result_expr);
                     break;
                 }
             } else {
                 // This is the 'default' association.
-                selected_expr_ref = Some(assoc.result_expr);
-                break;
+                default_expr_ref = Some(assoc.result_expr);
             }
+        }
+
+        // If no specific type matches, use the default association if it exists.
+        if selected_expr_ref.is_none() {
+            selected_expr_ref = default_expr_ref;
         }
 
         // The type of the _Generic expression is the type of the selected result expression.

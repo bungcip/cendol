@@ -838,16 +838,16 @@ mod tests {
         "#;
 
         let output = setup_diagnostics_output(source);
-        insta::assert_snapshot!(output, @r"
+        insta::assert_snapshot!(output, @"
         Diagnostics count: 2
 
         Level: Error
         Message: redefinition of 'x'
-        Span: SourceSpan(source_id=SourceId(2), start=36, end=46)
+        Span: SourceSpan(source_id=SourceId(2), start=40, end=45)
 
         Level: Note
         Message: previous definition is here
-        Span: SourceSpan(source_id=SourceId(2), start=13, end=23)
+        Span: SourceSpan(source_id=SourceId(2), start=17, end=22)
         ");
     }
 

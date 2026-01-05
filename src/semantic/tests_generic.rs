@@ -98,3 +98,29 @@ fn test_generic_selection_no_match() {
             .contains("controlling expression type does not match any generic association")
     );
 }
+
+#[test]
+fn test_generic_selection_strips_qualifiers_and_handles_default_correctly() {
+    let source = r#"
+    struct A { int a; };
+    struct B { int b; };
+    int main() {
+        const int x = 0;
+        struct A my_a;
+        struct B my_b;
+        // The controlling expression 'x' has type 'const int'.
+        // C11 requires stripping the top-level 'const' qualifier, so it should match 'int'.
+        // The 'default' case is listed first to ensure that the type-based match is still preferred.
+        // The result of the _Generic expression should be of type 'A'.
+        int val = (_Generic(x, default: my_b, int: my_a)).a;
+        return 0;
+    }
+    "#;
+
+    let phase = CompilePhase::Mir;
+    let config = CompileConfig::from_virtual_file(source.to_string(), phase);
+    let mut driver = CompilerDriver::from_config(config);
+
+    // This should now succeed. If it fails, it means the qualifier stripping and default handling are incorrect.
+    driver.run_pipeline(phase).expect("Compilation failed unexpectedly");
+}

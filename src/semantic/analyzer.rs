@@ -479,7 +479,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 Some(QualType::unqualified(self.registry.type_int))
             }
-            NodeKind::RecordDecl(_) | NodeKind::TypedefDecl(_) => None,
+            NodeKind::RecordDecl(_) | NodeKind::EnumDecl(_) | NodeKind::TypedefDecl(_) => None,
             NodeKind::FunctionDecl(data) => {
                 let func_type = self.registry.get(data.ty).kind.clone();
                 if let TypeKind::Function { parameters, .. } = func_type {

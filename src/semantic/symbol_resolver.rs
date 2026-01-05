@@ -1074,29 +1074,26 @@ fn lower_type_definition(specifiers: &[DeclSpecifier], ctx: &mut LowerCtx, span:
                 }
             };
 
-            // Create RecordDecl semantic node (reuse for enums)
-            let record_decl = RecordDeclData {
+            // Create EnumDecl semantic node
+            let enum_decl = EnumDeclData {
                 name: *tag,
                 ty: enum_type.ty,
-                members: if let TypeKind::Enum {
-                    base_type, enumerators, ..
-                } = &ctx.registry.get(enum_type.ty).kind
-                {
+                members: if let TypeKind::Enum { enumerators, .. } = &ctx.registry.get(enum_type.ty).kind {
                     enumerators
                         .iter()
-                        .map(|e| FieldDeclData {
-                            name: Some(e.name),
-                            ty: QualType::unqualified(*base_type),
+                        .map(|e| EnumMember {
+                            name: e.name,
+                            value: e.value,
+                            span: e.span,
                         })
                         .collect()
                 } else {
                     Vec::new()
                 },
-                is_union: false, // enums are not unions
             };
 
-            let record_node = Node::new(NodeKind::RecordDecl(record_decl), span);
-            Some(ctx.ast.push_node(record_node))
+            let enum_node = Node::new(NodeKind::EnumDecl(enum_decl), span);
+            Some(ctx.ast.push_node(enum_node))
         }
         _ => None,
     }
@@ -1943,7 +1940,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                 lower_node_recursive(ctx, init_expr);
             }
         }
-        NodeKind::FunctionDecl(_) | NodeKind::TypedefDecl(_) | NodeKind::RecordDecl(_) => {
+        NodeKind::FunctionDecl(_) | NodeKind::TypedefDecl(_) | NodeKind::RecordDecl(_) | NodeKind::EnumDecl(_) => {
             // These semantic nodes don't have child expressions to lower
         }
         _ => {}

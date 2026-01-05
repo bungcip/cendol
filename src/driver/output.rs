@@ -288,6 +288,9 @@ impl OutputHandler {
                     type_refs.insert(member.ty.ty);
                 }
             }
+            NodeKind::EnumDecl(enum_decl) => {
+                type_refs.insert(enum_decl.ty);
+            }
 
             // QualType usage (contains TypeRef)
             NodeKind::Cast(qual_type, _) => {
@@ -664,6 +667,18 @@ impl OutputHandler {
                     record_decl.name,
                     record_decl.ty.get(),
                     record_decl.is_union
+                )
+            }
+            NodeKind::EnumDecl(enum_decl) => {
+                println!(
+                    "EnumDecl(name={:?}, ty={}, members=[{}])",
+                    enum_decl.name,
+                    enum_decl.ty.get(),
+                    enum_decl
+                        .members
+                        .iter()
+                        .map(|m| format!("{}={}", m.name, m.value))
+                        .join(", ")
                 )
             }
             NodeKind::DeclarationList(stmts) => println!(

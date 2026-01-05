@@ -995,7 +995,11 @@ impl MirToCraneliftLowerer {
         }
 
         // Lower all functions that have definitions (not just declarations)
-        for func_id in self.mir.module.functions.clone() {
+        // We can't iterate on `&self.mir.module.functions` directly because `lower_function`
+        // needs a mutable borrow of `self`. Instead, we iterate by index to avoid cloning the
+        // function list, which would cause a heap allocation.
+        for i in 0..self.mir.module.functions.len() {
+            let func_id = self.mir.module.functions[i];
             // Only lower functions that are defined (have bodies)
             if let Some(func) = self.mir.functions.get(&func_id)
                 && matches!(func.kind, MirFunctionKind::Defined)

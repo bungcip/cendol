@@ -351,10 +351,93 @@ fn emit_function_call_impl(
                 Ok(builder.ins().iconst(types::I32, 0))
             }
         }
-        CallTarget::Indirect(_func_operand) => {
-            // For indirect calls (function pointers), return 0 for now
-            // TODO: Implement proper indirect function calls using call_indirect
-            Ok(builder.ins().iconst(types::I32, 0))
+        CallTarget::Indirect(func_operand) => {
+            // 1. Get the type of the function pointer
+            let func_ptr_type_id = get_operand_type_id(func_operand, mir)
+                .map_err(|e| format!("Failed to get function pointer type: {}", e))?;
+
+            let func_ptr_type = mir.get_type(func_ptr_type_id);
+
+            // 2. It must be a pointer to a function
+            let (return_type_id, param_type_ids) = match func_ptr_type {
+                MirType::Pointer { pointee } => match mir.get_type(*pointee) {
+                    MirType::Function { return_type, params } => (*return_type, params),
+                    _ => {
+                        return Err(format!(
+                            "Indirect call operand points to non-function type: {:?}",
+                            mir.get_type(*pointee)
+                        ))
+                    }
+                },
+                _ => return Err(format!("Indirect call operand is not a pointer: {:?}", func_ptr_type)),
+            };
+
+            // 3. Construct the signature
+            let mut sig = Signature::new(builder.func.signature.call_conv);
+
+            // Return type
+            let return_type_opt = convert_type(mir.get_type(return_type_id));
+            if let Some(ret_type) = return_type_opt {
+                sig.returns.push(AbiParam::new(ret_type));
+            }
+
+            // Params
+            // First add fixed parameters from the function type
+            for &param_type_id in param_type_ids {
+                let param_type = convert_type(mir.get_type(param_type_id)).unwrap();
+                sig.params.push(AbiParam::new(param_type));
+            }
+
+            // If there are more arguments than parameters, it's a variadic call.
+            // Add the extra arguments to the signature.
+            for arg in args.iter().skip(param_type_ids.len()) {
+                let arg_type = get_operand_cranelift_type(arg, mir).unwrap_or(types::I32);
+                sig.params.push(AbiParam::new(arg_type));
+            }
+
+            // 4. Resolve the function pointer operand to a value
+            let callee_val = resolve_operand_to_value(
+                func_operand,
+                builder,
+                types::I64, // Function pointers are I64
+                cranelift_stack_slots,
+                mir,
+                module,
+            )?;
+
+            // 5. Resolve arguments
+            let mut arg_values = Vec::new();
+            for (i, arg) in args.iter().enumerate() {
+                // Ensure we have a parameter type for this argument
+                // This handles both fixed and variadic arguments because we extended sig.params above
+                if i >= sig.params.len() {
+                    return Err(format!(
+                        "Argument count mismatch: expected at most {}, got {}",
+                        sig.params.len(),
+                        args.len()
+                    ));
+                }
+
+                let param_type = sig.params[i].value_type;
+                match resolve_operand_to_value(arg, builder, param_type, cranelift_stack_slots, mir, module) {
+                    Ok(value) => arg_values.push(value),
+                    Err(e) => return Err(format!("Failed to resolve indirect call argument: {}", e)),
+                }
+            }
+
+            // 6. Import signature
+            let sig_ref = builder.import_signature(sig);
+
+            // 7. Call indirect
+            let call_inst = builder.ins().call_indirect(sig_ref, callee_val, &arg_values);
+
+            // Extract the return value from the call instruction
+            let call_results = builder.inst_results(call_inst);
+            if !call_results.is_empty() {
+                Ok(call_results[0])
+            } else {
+                Ok(builder.ins().iconst(types::I32, 0))
+            }
         }
     }
 }

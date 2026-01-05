@@ -488,3 +488,138 @@ fn test_alloc_dealloc_codegen() {
         Err(e) => panic!("MIR to Cranelift lowering failed: {}", e),
     }
 }
+#[cfg(test)]
+mod tests {
+    use crate::ast::NameId;
+    use crate::driver::compiler::SemaOutput;
+    use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer};
+    use crate::mir::{
+        CallTarget, ConstValue, ConstValueId, Local, LocalId, MirBlock, MirBlockId, MirFunction,
+        MirFunctionId, MirModule, MirModuleId, MirStmt, MirStmtId, MirType, Operand, Place,
+        Terminator, TypeId,
+    };
+    use hashbrown::HashMap;
+
+    #[test]
+    fn test_indirect_function_call() {
+        // Setup Types
+        let mut types = HashMap::new();
+        let int_type_id = TypeId::new(1).unwrap();
+        types.insert(int_type_id, MirType::Int { width: 32, is_signed: true });
+
+        // fn(i32) -> i32
+        let func_type_id = TypeId::new(2).unwrap();
+        types.insert(func_type_id, MirType::Function {
+            return_type: int_type_id,
+            params: vec![int_type_id],
+        });
+
+        // *fn(i32) -> i32
+        let func_ptr_type_id = TypeId::new(3).unwrap();
+        types.insert(func_ptr_type_id, MirType::Pointer { pointee: func_type_id });
+
+        // Setup Function 1 (Target): fn target(x: i32) -> i32 { return x; }
+        let target_func_id = MirFunctionId::new(1).unwrap();
+        let mut target_func = MirFunction::new_defined(target_func_id, NameId::new("target"), int_type_id);
+        let param_id = LocalId::new(1).unwrap();
+        target_func.params.push(param_id);
+
+        let target_block_id = MirBlockId::new(1).unwrap();
+        let mut target_block = MirBlock::new(target_block_id);
+        // return param
+        target_block.terminator = Terminator::Return(Some(Operand::Copy(Box::new(Place::Local(param_id)))));
+        target_func.blocks.push(target_block_id);
+        target_func.entry_block = Some(target_block_id);
+
+        // Setup Function 2 (Main): fn main() -> i32
+        let main_func_id = MirFunctionId::new(2).unwrap();
+        let mut main_func = MirFunction::new_defined(main_func_id, NameId::new("main"), int_type_id);
+
+        // Local: ptr: *fn(i32) -> i32
+        let ptr_local_id = LocalId::new(2).unwrap();
+        let ptr_local = Local::new(ptr_local_id, Some(NameId::new("ptr")), func_ptr_type_id, false);
+        main_func.locals.push(ptr_local_id);
+
+        // Constants
+        let mut constants = HashMap::new();
+        let func_addr_const_id = ConstValueId::new(1).unwrap();
+        constants.insert(func_addr_const_id, ConstValue::FunctionAddress(target_func_id));
+        let arg_const_id = ConstValueId::new(2).unwrap();
+        constants.insert(arg_const_id, ConstValue::Int(42));
+
+        // Statements
+        let mut statements = HashMap::new();
+
+        // 1. ptr = &target
+        let stmt1_id = MirStmtId::new(1).unwrap();
+        statements.insert(stmt1_id, MirStmt::Assign(
+            Place::Local(ptr_local_id),
+            crate::mir::Rvalue::Use(Operand::Constant(func_addr_const_id))
+        ));
+
+        // 2. call(*ptr)(42)
+        let temp_local_id = LocalId::new(3).unwrap();
+        let temp_local = Local::new(temp_local_id, Some(NameId::new("temp")), int_type_id, false);
+        main_func.locals.push(temp_local_id);
+
+        let stmt2_id = MirStmtId::new(2).unwrap();
+        statements.insert(stmt2_id, MirStmt::Assign(
+            Place::Local(temp_local_id),
+            crate::mir::Rvalue::Call(
+                CallTarget::Indirect(Operand::Copy(Box::new(Place::Local(ptr_local_id)))),
+                vec![Operand::Constant(arg_const_id)]
+            )
+        ));
+
+        let main_block_id = MirBlockId::new(2).unwrap();
+        let mut main_block = MirBlock::new(main_block_id);
+        main_block.statements.push(stmt1_id);
+        main_block.statements.push(stmt2_id);
+        main_block.terminator = Terminator::Return(Some(Operand::Copy(Box::new(Place::Local(temp_local_id)))));
+
+        main_func.blocks.push(main_block_id);
+        main_func.entry_block = Some(main_block_id);
+
+        // Module
+        let mut mir_module = MirModule::new(MirModuleId::new(1).unwrap());
+        mir_module.functions.push(target_func_id);
+        mir_module.functions.push(main_func_id);
+
+        let mut locals_map = HashMap::new();
+        locals_map.insert(param_id, Local::new(param_id, Some(NameId::new("p")), int_type_id, true));
+        locals_map.insert(ptr_local_id, ptr_local);
+        locals_map.insert(temp_local_id, temp_local);
+
+        let mut functions = HashMap::new();
+        functions.insert(target_func_id, target_func);
+        functions.insert(main_func_id, main_func);
+
+        let mut blocks = HashMap::new();
+        blocks.insert(target_block_id, target_block);
+        blocks.insert(main_block_id, main_block);
+
+        let sema_output = SemaOutput {
+            module: mir_module,
+            functions,
+            blocks,
+            locals: locals_map,
+            globals: HashMap::new(),
+            types,
+            constants,
+            statements,
+        };
+
+        // Compile
+        let lowerer = MirToCraneliftLowerer::new(sema_output);
+        let result = lowerer.compile_module(EmitKind::Clif);
+
+        match result {
+            Ok(ClifOutput::ClifDump(clif_ir)) => {
+                println!("{}", clif_ir);
+                assert!(clif_ir.contains("call_indirect"), "Expected call_indirect instruction");
+            }
+            Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump"),
+            Err(e) => panic!("Error: {}", e),
+        }
+    }
+}

@@ -445,7 +445,7 @@ impl<'src> Preprocessor<'src> {
             )],
         );
 
-        if self.lang_opts.c11 {
+        if self.lang_opts.is_c11() {
             self.define_builtin_macro(
                 "__STDC_VERSION__",
                 vec![PPToken::new(

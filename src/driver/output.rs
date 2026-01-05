@@ -458,6 +458,31 @@ impl OutputHandler {
         }
     }
 
+    /// Format a DesignatedInitializer for display
+    fn format_designated_initializer(&self, init: &crate::ast::nodes::DesignatedInitializer) -> String {
+        let mut result = String::new();
+        for designator in &init.designation {
+            match designator {
+                crate::ast::nodes::Designator::FieldName(name) => {
+                    result.push_str(&format!(".{}", name));
+                }
+                crate::ast::nodes::Designator::ArrayIndex(index) => {
+                    result.push_str(&format!("[{}]", index.get()));
+                }
+                crate::ast::nodes::Designator::GnuArrayRange(start, end) => {
+                    result.push_str(&format!("[{} ... {}]", start.get(), end.get()));
+                }
+            }
+        }
+
+        if !init.designation.is_empty() {
+            result.push_str(" = ");
+        }
+
+        result.push_str(&init.initializer.get().to_string());
+        result
+    }
+
     /// Dump a single AST node kind
     fn dump_parser_kind(&self, kind: &NodeKind) {
         match kind {
@@ -645,10 +670,11 @@ impl OutputHandler {
                 "DeclarationList([{}])",
                 stmts.iter().map(|&r| r.get().to_string()).join(", ")
             ),
-            // TODO: make it more good
             NodeKind::InitializerList(list) => println!(
                 "InitializerList([{}])",
-                list.iter().map(|r| { r.initializer.to_string() }).join(", ")
+                list.iter()
+                    .map(|r| self.format_designated_initializer(r))
+                    .join(", ")
             ),
             NodeKind::Dummy => println!("DUMMY"),
         }

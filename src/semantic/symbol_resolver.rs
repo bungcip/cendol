@@ -63,7 +63,7 @@ fn apply_parsed_declarator(base_type: TypeRef, parsed_type: &ParsedType, ctx: &m
 
 /// Recursively apply parsed declarator to base type
 fn apply_parsed_declarator_recursive(
-    base_type: TypeRef,
+    current_type: TypeRef,
     declarator_ref: ParsedDeclRef,
     ctx: &mut LowerCtx,
 ) -> QualType {
@@ -71,7 +71,7 @@ fn apply_parsed_declarator_recursive(
     let (decl_type, qualifiers, inner, size, params, flags) = {
         match ctx.ast.parsed_types.get_decl(declarator_ref) {
             ParsedDeclaratorNode::Identifier { .. } => {
-                return QualType::unqualified(base_type);
+                return QualType::unqualified(current_type);
             }
             ParsedDeclaratorNode::Pointer { qualifiers, inner } => (0, Some(qualifiers), Some(inner), None, None, None),
             ParsedDeclaratorNode::Array { size, inner } => (1, None, Some(inner), Some(size.clone()), None, None),
@@ -84,23 +84,59 @@ fn apply_parsed_declarator_recursive(
     match decl_type {
         0 => {
             // Pointer
-            let inner_type = apply_parsed_declarator_recursive(base_type, inner.unwrap(), ctx);
-            let pointer_type = ctx.registry.pointer_to(inner_type.ty);
-            QualType::new(pointer_type, qualifiers.unwrap())
+            // Apply Pointer modifier to the current type first (Top-Down)
+            let pointer_type = ctx.registry.pointer_to(current_type);
+            // Qualifiers apply to the pointer itself? No, in C declarators,
+            // * const p -> p is const pointer.
+            // But we are returning the final type.
+            // The qualifiers here are for the POINTER level.
+            // However, apply_parsed_declarator_recursive logic is:
+            // recursively wrap.
+            // If we wrap first: Pointer(current).
+            // Then recursive: apply(Pointer(current), inner).
+            // Result is T_final.
+            // Where do qualifiers go?
+            // If inner is Identifier, it returns Type.
+            // If we have `int * const p`.
+            // Pointer(int). Qualifier `const`.
+            // Helper `apply` should return QualType.
+            // But we pass TypeRef.
+            // If we assume `apply` returns the fully wrapped type.
+            // The `qualifiers` on THIS pointer level should apply to the RESULT of the wrap?
+            // No. `* const p`. `const` applies to `*`.
+            // The resulting type `Pointer` is qualified.
+            // But we pass `TypeRef` to inner.
+            // If we pass `Pointer` (unqualified) to inner.
+            // Inner returns `QualType`.
+            // We need to attach our qualifiers to... what?
+            // Wait. `int * const p`.
+            // Ptr(int).
+            // Inner is `p` (Identifier).
+            // Identifier returns its input type `Ptr(int)` as QualType.
+            // But `p` itself introduces NO qualifiers.
+            // So where do `const` go?
+            // Current typesystem: `QualType` has qualifiers.
+            // If `apply` returns `QualType` for `p`.
+            // We need to ADD `const` to that result?
+            // Yes.
+
+            let pointer_qualifiers = qualifiers.unwrap();
+
+            let modified_current = pointer_type;
+            let mut result = apply_parsed_declarator_recursive(modified_current, inner.unwrap(), ctx);
+            result.qualifiers |= pointer_qualifiers;
+            result
         }
         1 => {
             // Array
-            let element_type = apply_parsed_declarator_recursive(base_type, inner.unwrap(), ctx);
             let array_size = convert_parsed_array_size(&size.unwrap(), ctx);
-            let array_type_ref = ctx.registry.array_of(element_type.ty, array_size);
-            QualType::unqualified(array_type_ref)
+            let array_type_ref = ctx.registry.array_of(current_type, array_size);
+
+            apply_parsed_declarator_recursive(array_type_ref, inner.unwrap(), ctx)
         }
         2 => {
             // Function
-            let return_type = apply_parsed_declarator_recursive(base_type, inner.unwrap(), ctx);
-            let return_type_ref = return_type.ty;
-
-            // Process parameters separately to avoid borrowing conflicts in the closure
+            // Process parameters separately
             let parsed_params: Vec<_> = ctx.ast.parsed_types.get_params(params.unwrap()).to_vec();
             let mut processed_params = Vec::new();
             for param in parsed_params {
@@ -108,7 +144,7 @@ fn apply_parsed_declarator_recursive(
                     // Create an error type if conversion fails
                     QualType::unqualified(ctx.registry.type_int));
 
-                // Apply array-to-pointer decay for function parameters (C11 6.7.6.3)
+                // Apply array-to-pointer decay for function parameters
                 let decayed_param_type = ctx.registry.decay(param_type);
 
                 processed_params.push(FunctionParameter {
@@ -119,12 +155,13 @@ fn apply_parsed_declarator_recursive(
 
             let function_type_ref =
                 ctx.registry
-                    .function_type(return_type_ref, processed_params, flags.unwrap().is_variadic);
-            QualType::unqualified(function_type_ref)
+                    .function_type(current_type, processed_params, flags.unwrap().is_variadic);
+
+            apply_parsed_declarator_recursive(function_type_ref, inner.unwrap(), ctx)
         }
         _ => {
             // This should never happen
-            QualType::unqualified(base_type)
+            QualType::unqualified(current_type)
         }
     }
 }
@@ -1774,24 +1811,25 @@ pub(crate) fn lower_decl_specifiers_for_member(
 }
 
 /// Apply declarator for struct members (simplified version)
-pub(crate) fn apply_declarator_for_member(base_type: TypeRef, declarator: &Declarator, ctx: &mut LowerCtx) -> QualType {
+pub(crate) fn apply_declarator_for_member(
+    current_type: TypeRef,
+    declarator: &Declarator,
+    ctx: &mut LowerCtx,
+) -> QualType {
     match declarator {
-        Declarator::Identifier(_, qualifiers) => {
-            let base_type_ref = base_type;
-            QualType::new(base_type_ref, *qualifiers)
-        }
+        Declarator::Identifier(_, qualifiers) => QualType::new(current_type, *qualifiers),
         Declarator::Pointer(qualifiers, next) => {
-            let pointee_type = if let Some(next_decl) = next {
-                apply_declarator_for_member(base_type, next_decl, ctx)
-            } else {
-                QualType::unqualified(base_type)
-            };
+            let pointer_type_ref = ctx.registry.pointer_to(current_type);
 
-            let pointer_type_ref = ctx.registry.pointer_to(pointee_type.ty);
-            QualType::new(pointer_type_ref, *qualifiers)
+            if let Some(next_decl) = next {
+                let mut result = apply_declarator_for_member(pointer_type_ref, next_decl, ctx);
+                result.qualifiers |= *qualifiers;
+                result
+            } else {
+                QualType::new(pointer_type_ref, *qualifiers)
+            }
         }
         Declarator::Array(base, size) => {
-            let element_type = apply_declarator_for_member(base_type, base, ctx);
             let array_size = match size {
                 ArraySize::Expression { expr, qualifiers: _ } => resolve_array_size(Some(*expr), ctx),
                 ArraySize::Star { qualifiers: _ } => ArraySizeType::Star,
@@ -1803,11 +1841,51 @@ pub(crate) fn apply_declarator_for_member(base_type: TypeRef, declarator: &Decla
                 } => resolve_array_size(*size, ctx),
             };
 
-            let array_type_ref = ctx.registry.array_of(element_type.ty, array_size);
-            QualType::unqualified(array_type_ref)
+            let array_type_ref = ctx.registry.array_of(current_type, array_size);
+            apply_declarator_for_member(array_type_ref, base, ctx)
         }
-        // For other declarator types, just return the base type
-        _ => QualType::unqualified(base_type),
+        Declarator::Function {
+            inner,
+            params,
+            is_variadic,
+        } => {
+            // Convert params to FunctionParameter
+            let mut processed_params = Vec::new();
+            for param in params {
+                let param_type = lower_decl_specifiers_for_member(&param.specifiers, ctx, param.span)
+                    .unwrap_or_else(|| QualType::unqualified(ctx.registry.type_int));
+
+                // For abstract declarators (common in function ptrs like `int (*f)(int)`),
+                // we need to apply the parameter declarator if present.
+                let final_param_type = if let Some(decl) = &param.declarator {
+                    apply_declarator_for_member(param_type.ty, decl, ctx)
+                } else {
+                    param_type
+                };
+
+                let decayed = ctx.registry.decay(final_param_type);
+
+                let param_name = if let Some(d) = &param.declarator {
+                    extract_identifier(d)
+                } else {
+                    None
+                };
+
+                processed_params.push(FunctionParameter {
+                    param_type: decayed,
+                    name: param_name,
+                });
+            }
+
+            let function_type_ref = ctx.registry.function_type(current_type, processed_params, *is_variadic);
+            apply_declarator_for_member(function_type_ref, inner, ctx)
+        }
+        Declarator::BitField(inner, _) => {
+            // Bitfield width is handled during member collection, not type construction
+            apply_declarator_for_member(current_type, inner, ctx)
+        }
+        // For other declarator types, just return the current type
+        _ => QualType::unqualified(current_type),
     }
 }
 

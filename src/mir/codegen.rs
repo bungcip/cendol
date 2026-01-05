@@ -366,7 +366,7 @@ fn emit_function_call_impl(
                         return Err(format!(
                             "Indirect call operand points to non-function type: {:?}",
                             mir.get_type(*pointee)
-                        ))
+                        ));
                     }
                 },
                 _ => return Err(format!("Indirect call operand is not a pointer: {:?}", func_ptr_type)),

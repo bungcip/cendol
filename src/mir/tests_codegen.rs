@@ -494,9 +494,8 @@ mod tests {
     use crate::driver::compiler::SemaOutput;
     use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer};
     use crate::mir::{
-        CallTarget, ConstValue, ConstValueId, Local, LocalId, MirBlock, MirBlockId, MirFunction,
-        MirFunctionId, MirModule, MirModuleId, MirStmt, MirStmtId, MirType, Operand, Place,
-        Terminator, TypeId,
+        CallTarget, ConstValue, ConstValueId, Local, LocalId, MirBlock, MirBlockId, MirFunction, MirFunctionId,
+        MirModule, MirModuleId, MirStmt, MirStmtId, MirType, Operand, Place, Terminator, TypeId,
     };
     use hashbrown::HashMap;
 
@@ -505,14 +504,23 @@ mod tests {
         // Setup Types
         let mut types = HashMap::new();
         let int_type_id = TypeId::new(1).unwrap();
-        types.insert(int_type_id, MirType::Int { width: 32, is_signed: true });
+        types.insert(
+            int_type_id,
+            MirType::Int {
+                width: 32,
+                is_signed: true,
+            },
+        );
 
         // fn(i32) -> i32
         let func_type_id = TypeId::new(2).unwrap();
-        types.insert(func_type_id, MirType::Function {
-            return_type: int_type_id,
-            params: vec![int_type_id],
-        });
+        types.insert(
+            func_type_id,
+            MirType::Function {
+                return_type: int_type_id,
+                params: vec![int_type_id],
+            },
+        );
 
         // *fn(i32) -> i32
         let func_ptr_type_id = TypeId::new(3).unwrap();
@@ -552,10 +560,13 @@ mod tests {
 
         // 1. ptr = &target
         let stmt1_id = MirStmtId::new(1).unwrap();
-        statements.insert(stmt1_id, MirStmt::Assign(
-            Place::Local(ptr_local_id),
-            crate::mir::Rvalue::Use(Operand::Constant(func_addr_const_id))
-        ));
+        statements.insert(
+            stmt1_id,
+            MirStmt::Assign(
+                Place::Local(ptr_local_id),
+                crate::mir::Rvalue::Use(Operand::Constant(func_addr_const_id)),
+            ),
+        );
 
         // 2. call(*ptr)(42)
         let temp_local_id = LocalId::new(3).unwrap();
@@ -563,13 +574,16 @@ mod tests {
         main_func.locals.push(temp_local_id);
 
         let stmt2_id = MirStmtId::new(2).unwrap();
-        statements.insert(stmt2_id, MirStmt::Assign(
-            Place::Local(temp_local_id),
-            crate::mir::Rvalue::Call(
-                CallTarget::Indirect(Operand::Copy(Box::new(Place::Local(ptr_local_id)))),
-                vec![Operand::Constant(arg_const_id)]
-            )
-        ));
+        statements.insert(
+            stmt2_id,
+            MirStmt::Assign(
+                Place::Local(temp_local_id),
+                crate::mir::Rvalue::Call(
+                    CallTarget::Indirect(Operand::Copy(Box::new(Place::Local(ptr_local_id)))),
+                    vec![Operand::Constant(arg_const_id)],
+                ),
+            ),
+        );
 
         let main_block_id = MirBlockId::new(2).unwrap();
         let mut main_block = MirBlock::new(main_block_id);
@@ -586,7 +600,10 @@ mod tests {
         mir_module.functions.push(main_func_id);
 
         let mut locals_map = HashMap::new();
-        locals_map.insert(param_id, Local::new(param_id, Some(NameId::new("p")), int_type_id, true));
+        locals_map.insert(
+            param_id,
+            Local::new(param_id, Some(NameId::new("p")), int_type_id, true),
+        );
         locals_map.insert(ptr_local_id, ptr_local);
         locals_map.insert(temp_local_id, temp_local);
 

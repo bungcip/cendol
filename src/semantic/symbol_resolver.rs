@@ -1092,7 +1092,19 @@ fn lower_type_definition(specifiers: &[DeclSpecifier], ctx: &mut LowerCtx, span:
             let record_decl = RecordDeclData {
                 name: *tag,
                 ty: record_type.ty,
-                members: Vec::new(), // TODO: Extract members from definition
+                members: {
+                    if let TypeKind::Record { members, .. } = &ctx.registry.get(record_type.ty).kind {
+                        members
+                            .iter()
+                            .map(|m| FieldDeclData {
+                                name: m.name,
+                                ty: m.member_type,
+                            })
+                            .collect()
+                    } else {
+                        Vec::new()
+                    }
+                },
                 is_union: *is_union,
             };
 

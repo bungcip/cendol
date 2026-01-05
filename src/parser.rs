@@ -76,7 +76,7 @@ impl TypeDefContext {
 }
 
 #[derive(Debug, Clone)]
-pub struct ParserState {
+pub(crate) struct ParserState {
     current_idx: usize,
     diag_len: usize,
 }

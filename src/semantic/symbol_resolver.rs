@@ -18,6 +18,7 @@ use crate::semantic::{
     ArraySizeType, EnumConstant, Namespace, ScopeId, StructMember, Symbol, SymbolKind, SymbolTable, TypeKind,
     TypeQualifiers, TypeRef, TypeRegistry,
 };
+use crate::semantic::struct_lowering::lower_struct_members;
 use crate::semantic::{FunctionParameter, QualType};
 use crate::source_manager::SourceSpan;
 
@@ -738,55 +739,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                 let members = def
                     .members
                     .as_ref()
-                    .map(|decls| {
-                        let mut struct_members = Vec::new();
-                        for decl in decls {
-                            // Process anonymous struct/union members
-                            if decl.init_declarators.is_empty()
-                                && let Some((child_is_union, _, child_def)) = decl.specifiers.iter().find_map(|spec| {
-                                    if let DeclSpecifier::TypeSpecifier(TypeSpecifier::Record(u, t, d)) = spec {
-                                        Some((*u, *t, d))
-                                    } else {
-                                        None
-                                    }
-                                })
-                            {
-                                if let Some(d) = child_def
-                                    && let Some(member_decls) = &d.members
-                                {
-                                    let anonymous_members =
-                                        process_anonymous_struct_members(member_decls, child_is_union, ctx, span);
-                                    struct_members.extend(anonymous_members);
-                                }
-                                continue;
-                            }
-
-                            for init_declarator in &decl.init_declarators {
-                                if let Some(member_name) = extract_identifier(&init_declarator.declarator) {
-                                    let member_type = if let Some(base_type_ref) =
-                                        lower_decl_specifiers_for_member(&decl.specifiers, ctx, span)
-                                    {
-                                        let ty = apply_declarator_for_member(
-                                            base_type_ref.ty,
-                                            &init_declarator.declarator,
-                                            ctx,
-                                        );
-                                        ty.ty
-                                    } else {
-                                        ctx.registry.type_int
-                                    };
-
-                                    struct_members.push(StructMember {
-                                        name: Some(member_name),
-                                        member_type: QualType::unqualified(member_type),
-                                        bit_field_size: None,
-                                        span,
-                                    });
-                                }
-                            }
-                        }
-                        struct_members
-                    })
+                    .map(|decls| lower_struct_members(decls, ctx, span))
                     .unwrap_or_default();
 
                 // Update the type in AST and SymbolTable
@@ -1546,9 +1499,22 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
             let function_type_ref = ctx.registry.function_type(return_type.ty, parameters, *is_variadic);
             QualType::unqualified(function_type_ref)
         }
-        Declarator::AnonymousRecord(_, _) => {
-            // TODO: Handle anonymous struct/union
-            QualType::unqualified(base_type)
+        Declarator::AnonymousRecord(is_union, members) => {
+            // Create a new record type for the anonymous struct/union
+            let record_type_ref = ctx.registry.declare_record(None, *is_union);
+
+            // Process members using the extracted logic
+            // Use the current node's span if available (we don't have it directly here, so we rely on members' spans mostly)
+            // But we need a span for lower_struct_members. We can use SourceSpan::empty() if we don't have one,
+            // or pass it down. apply_declarator doesn't take span.
+            // However, members themselves have spans in DeclarationData.
+            let struct_members = lower_struct_members(members, ctx, SourceSpan::empty());
+
+            // Complete the record type
+            ctx.registry.complete_record(record_type_ref, struct_members);
+
+            // Return the new record type
+            QualType::unqualified(record_type_ref)
         }
         Declarator::BitField(base, _) => {
             // TODO: Handle bit fields
@@ -2007,7 +1973,11 @@ fn lower_decl_specifiers_for_function_return(
 }
 
 /// Lower declaration specifiers for struct members (simplified version)
-fn lower_decl_specifiers_for_member(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: SourceSpan) -> Option<QualType> {
+pub(crate) fn lower_decl_specifiers_for_member(
+    specs: &[DeclSpecifier],
+    ctx: &mut LowerCtx,
+    span: SourceSpan,
+) -> Option<QualType> {
     for spec in specs {
         if let DeclSpecifier::TypeSpecifier(ts) = spec {
             match resolve_type_specifier(ts, ctx, span) {
@@ -2020,7 +1990,11 @@ fn lower_decl_specifiers_for_member(specs: &[DeclSpecifier], ctx: &mut LowerCtx,
 }
 
 /// Apply declarator for struct members (simplified version)
-fn apply_declarator_for_member(base_type: TypeRef, declarator: &Declarator, ctx: &mut LowerCtx) -> QualType {
+pub(crate) fn apply_declarator_for_member(
+    base_type: TypeRef,
+    declarator: &Declarator,
+    ctx: &mut LowerCtx,
+) -> QualType {
     match declarator {
         Declarator::Identifier(_, qualifiers) => {
             let base_type_ref = base_type;
@@ -2076,7 +2050,7 @@ fn apply_declarator_for_member(base_type: TypeRef, declarator: &Declarator, ctx:
 }
 
 /// Process anonymous struct/union members by flattening them into the containing struct
-fn process_anonymous_struct_members(
+pub(crate) fn process_anonymous_struct_members(
     member_decls: &[DeclarationData],
     _is_union: bool,
     ctx: &mut LowerCtx,

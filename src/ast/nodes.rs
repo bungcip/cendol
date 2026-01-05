@@ -183,7 +183,8 @@ pub struct VarDeclData {
     pub name: NameId,
     pub ty: QualType,
     pub storage: Option<StorageClass>,
-    pub init: Option<NodeRef>, // InitializerList or Expression
+    pub init: Option<NodeRef>,  // InitializerList or Expression
+    pub alignment: Option<u32>, // Max alignment in bytes
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -52,6 +52,7 @@ pub enum SymbolKind {
         #[allow(unused)]
         // Initializer might be an AST node or a constant value
         initializer: Option<NodeRef>,
+        alignment: Option<u32>, // Max alignment in bytes
     },
     Function {
         #[allow(unused)]
@@ -312,6 +313,34 @@ impl SymbolTable {
                     });
                 }
             };
+
+            // Check alignment compatibility
+            // "The strictness of the alignment specified by the alignment specifiers shall be the same for all declarations of the same object"
+            // We interpret this as: if both have alignment, they must match.
+            if let SymbolKind::Variable {
+                alignment: new_align, ..
+            } = &new_var.kind
+                && let SymbolKind::Variable {
+                    alignment: existing_align,
+                    ..
+                } = &existing_var.kind
+            {
+                match (existing_align, new_align) {
+                    (Some(a), Some(b)) if a != b => {
+                        return Err(SymbolTableError::InvalidRedefinition {
+                            name,
+                            existing: existing_ref,
+                        });
+                    }
+                    (None, Some(b)) => {
+                        // Inherit alignment from new declaration
+                        if let SymbolKind::Variable { alignment, .. } = &mut existing_var.kind {
+                            *alignment = Some(*b);
+                        }
+                    }
+                    _ => {}
+                }
+            }
 
             // Apply C11 6.9.2 merging rules
             match (existing_var.def_state, new_var.def_state) {

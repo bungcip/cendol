@@ -195,6 +195,7 @@ pub(crate) struct DeclSpecInfo {
     pub(crate) is_typedef: bool,
     pub(crate) is_inline: bool,
     pub(crate) is_noreturn: bool,
+    pub(crate) alignment: Option<u32>,
 }
 
 /// Main entry point for lowering a declaration
@@ -293,8 +294,59 @@ fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: Sour
                 }
             }
 
-            DeclSpecifier::AlignmentSpecifier(_) => {
-                // TODO: Handle alignment specifiers
+            DeclSpecifier::AlignmentSpecifier(spec) => {
+                let align = match spec {
+                    ParsedAlignmentSpecifier::Type(parsed_type) => {
+                        let ty =
+                            convert_parsed_type_to_qual_type(ctx, parsed_type.clone(), span).unwrap_or_else(|_| {
+                                // Error already reported by convert_parsed_type_to_qual_type if it failed
+                                QualType::unqualified(ctx.registry.type_int) // Default fallback
+                            });
+
+                        // Layout must be complete to get alignment
+                        match ctx.registry.ensure_layout(ty.ty) {
+                            Ok(layout) => layout.alignment as u32,
+                            Err(e) => {
+                                ctx.report_error(e);
+                                1 // Default
+                            }
+                        }
+                    }
+                    ParsedAlignmentSpecifier::Expr(expr_ref) => {
+                        let const_ctx = ConstEvalCtx { ast: ctx.ast };
+                        if let Some(val) = const_eval::eval_const_expr(&const_ctx, *expr_ref) {
+                            if val == 0 {
+                                // "If the constant expression evaluates to zero, the alignment specifier shall have no effect."
+                                0 // Return 0 to indicate no effect
+                            } else if val < 0 {
+                                ctx.report_error(SemanticError::InvalidAlignment {
+                                    value: val,
+                                    span: ctx.ast.get_node(*expr_ref).span,
+                                });
+                                1
+                            } else {
+                                // Must be power of 2
+                                if (val & (val - 1)) != 0 {
+                                    ctx.report_error(SemanticError::InvalidAlignment {
+                                        value: val,
+                                        span: ctx.ast.get_node(*expr_ref).span,
+                                    });
+                                    1
+                                } else {
+                                    val as u32
+                                }
+                            }
+                        } else {
+                            ctx.report_error(SemanticError::NonConstantAlignment {
+                                span: ctx.ast.get_node(*expr_ref).span,
+                            });
+                            1
+                        }
+                    }
+                };
+
+                // "The alignment of the object is that of the strictest alignment specified"
+                info.alignment = Some(info.alignment.unwrap_or(0).max(align));
             }
 
             DeclSpecifier::Attribute => {
@@ -1207,6 +1259,7 @@ fn create_semantic_node_data(
                     ty: final_ty,
                     storage: spec.storage,
                     init: init.initializer,
+                    alignment: spec.alignment,
                 };
 
                 let def_state = if var_decl.init.is_some() {
@@ -1220,6 +1273,7 @@ fn create_semantic_node_data(
                     kind: SymbolKind::Variable {
                         is_global: ctx.symbol_table.current_scope() == ScopeId::GLOBAL,
                         initializer: init.initializer,
+                        alignment: spec.alignment,
                     },
                     type_info: final_ty.ty,
                     storage_class: spec.storage,
@@ -1256,6 +1310,7 @@ fn create_semantic_node_data(
                 ty: final_ty,
                 storage: spec.storage,
                 init: init.initializer,
+                alignment: spec.alignment,
             };
 
             let def_state = if var_decl.init.is_some() {
@@ -1269,6 +1324,7 @@ fn create_semantic_node_data(
                 kind: SymbolKind::Variable {
                     is_global: ctx.symbol_table.current_scope() == ScopeId::GLOBAL,
                     initializer: init.initializer,
+                    alignment: spec.alignment,
                 },
                 type_info: final_ty.ty,
                 storage_class: spec.storage,
@@ -1346,6 +1402,7 @@ fn create_semantic_node_data(
             ty: final_ty,
             storage: spec.storage,
             init: init.initializer,
+            alignment: spec.alignment,
         };
 
         let def_state = if var_decl.init.is_some() {
@@ -1359,6 +1416,7 @@ fn create_semantic_node_data(
             kind: SymbolKind::Variable {
                 is_global: ctx.symbol_table.current_scope() == ScopeId::GLOBAL,
                 initializer: init.initializer,
+                alignment: spec.alignment,
             },
             type_info: final_ty.ty,
             storage_class: spec.storage,
@@ -1642,6 +1700,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                         kind: SymbolKind::Variable {
                             is_global: false,
                             initializer: None,
+                            alignment: None, // Parameters cannot have alignment specifiers (C11 6.7.5.2)
                         },
                         type_info: param.param_type.ty,
                         storage_class: None,

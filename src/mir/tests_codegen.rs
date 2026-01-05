@@ -3,12 +3,80 @@
 //! This module contains tests for the `MirToCraneliftLowerer` implementation.
 use crate::ast::NameId;
 use crate::driver::compiler::SemaOutput;
-use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer};
+use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer, emit_const};
 use crate::mir::{
     ConstValue, ConstValueId, Local, LocalId, MirBlock, MirBlockId, MirFunction, MirFunctionId, MirModule, MirModuleId,
-    MirStmt, MirStmtId, MirType, Operand, Place, Terminator, TypeId,
+    MirRecordLayout, MirStmt, MirStmtId, MirType, Operand, Place, Terminator, TypeId,
 };
 use hashbrown::HashMap;
+
+#[test]
+fn test_emit_const_struct_literal() {
+    // 1. Setup Types
+    let mut types = HashMap::new();
+    let int_type_id = TypeId::new(1).unwrap();
+    types.insert(
+        int_type_id,
+        MirType::Int {
+            width: 32,
+            is_signed: true,
+        },
+    );
+
+    let struct_type_id = TypeId::new(2).unwrap();
+    let record_layout = MirRecordLayout {
+        size: 8,
+        alignment: 4,
+        field_offsets: vec![0, 4],
+    };
+    let struct_type = MirType::Record {
+        name: NameId::new("MyStruct"),
+        fields: vec![(NameId::new("a"), int_type_id), (NameId::new("b"), int_type_id)],
+        is_union: false,
+        layout: record_layout,
+    };
+    types.insert(struct_type_id, struct_type.clone());
+
+    // 2. Setup Constants
+    let mut constants = HashMap::new();
+    let const_1_id = ConstValueId::new(1).unwrap();
+    constants.insert(const_1_id, ConstValue::Int(0x11111111));
+    let const_2_id = ConstValueId::new(2).unwrap();
+    constants.insert(const_2_id, ConstValue::Int(0x22222222));
+
+    let struct_const_id = ConstValueId::new(3).unwrap();
+    let struct_const = ConstValue::StructLiteral(vec![(0, const_1_id), (1, const_2_id)]);
+    constants.insert(struct_const_id, struct_const);
+
+    // 3. Setup SemaOutput context
+    let mut mir_module = MirModule::new(MirModuleId::new(1).unwrap());
+
+    let sema_output = SemaOutput {
+        module: mir_module,
+        functions: HashMap::new(),
+        blocks: HashMap::new(),
+        locals: HashMap::new(),
+        globals: HashMap::new(),
+        types,
+        constants,
+        statements: HashMap::new(),
+    };
+
+    // 4. Emit Constant
+    let mut output = Vec::new();
+    emit_const(struct_const_id, struct_type_id, &struct_type, &mut output, &sema_output).expect("emit_const failed");
+
+    // 5. Verify Output
+    let expected = vec![0x11, 0x11, 0x11, 0x11, 0x22, 0x22, 0x22, 0x22];
+
+    assert_eq!(
+        output.len(),
+        8,
+        "Output size mismatch. Expected 8 bytes, got {}",
+        output.len()
+    );
+    assert_eq!(output, expected, "Output content mismatch");
+}
 
 #[test]
 fn test_mir_to_cranelift_basic() {

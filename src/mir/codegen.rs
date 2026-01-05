@@ -67,7 +67,7 @@ fn convert_type(mir_type: &MirType) -> Option<Type> {
 }
 
 /// Helper function to get the size of a MIR type in bytes
-fn mir_type_size(mir_type: &MirType, _mir: &SemaOutput) -> Result<u32, String> {
+pub(crate) fn mir_type_size(mir_type: &MirType, _mir: &SemaOutput) -> Result<u32, String> {
     match mir_type {
         MirType::Int { width, .. } => Ok((*width / 8) as u32),
         MirType::Float { width } => Ok((*width / 8) as u32),
@@ -82,12 +82,12 @@ fn mir_type_size(mir_type: &MirType, _mir: &SemaOutput) -> Result<u32, String> {
 }
 
 /// Helper function to get type layout information for emit_const
-fn get_type_layout(mir_type: &MirType, _mir: &SemaOutput) -> Result<MirType, String> {
+pub(crate) fn get_type_layout(mir_type: &MirType, _mir: &SemaOutput) -> Result<MirType, String> {
     Ok(mir_type.clone())
 }
 
 /// Emit a constant value to the output buffer based on its type layout
-fn emit_const(
+pub(crate) fn emit_const(
     const_id: ConstValueId,
     _type_id: TypeId,
     layout: &MirType,
@@ -179,23 +179,44 @@ fn emit_const(
         ConstValue::StructLiteral(fields) => {
             match layout {
                 MirType::Record {
-                    layout: record_layout, ..
+                    layout: record_layout,
+                    fields: type_fields,
+                    ..
                 } => {
                     // Initialize the entire struct with zeros
                     let struct_size = record_layout.size as usize;
-                    output.extend_from_slice(&vec![0u8; struct_size]);
+                    let mut struct_bytes = vec![0u8; struct_size];
 
                     // Emit each field at its proper offset
-                    for (field_index, _field_const_id) in fields {
+                    for (field_index, field_const_id) in fields {
                         if *field_index < record_layout.field_offsets.len() {
-                            let _field_offset = record_layout.field_offsets[*field_index] as usize;
+                            let field_offset = record_layout.field_offsets[*field_index] as usize;
 
-                            // For now, we'll emit zeros for struct fields
-                            // TODO: Get the actual field type and emit the constant value
-                            let field_size = 4; // Default field size
-                            output.extend_from_slice(&vec![0u8; field_size]);
+                            let (_field_name, field_type_id) = type_fields
+                                .get(*field_index)
+                                .ok_or_else(|| format!("Field index {} out of bounds", field_index))?;
+
+                            let field_type = mir.get_type(*field_type_id);
+
+                            let mut field_bytes = Vec::new();
+                            emit_const(*field_const_id, *field_type_id, field_type, &mut field_bytes, mir)?;
+
+                            // Copy the field bytes into the struct buffer
+                            // Make sure we don't overflow the struct buffer
+                            if field_offset + field_bytes.len() <= struct_size {
+                                struct_bytes[field_offset..field_offset + field_bytes.len()]
+                                    .copy_from_slice(&field_bytes);
+                            } else {
+                                return Err(format!(
+                                    "Field emission overflow: offset {} + size {} > struct size {}",
+                                    field_offset,
+                                    field_bytes.len(),
+                                    struct_size
+                                ));
+                            }
                         }
                     }
+                    output.extend_from_slice(&struct_bytes);
                 }
                 _ => return Err("StructLiteral with non-record type".to_string()),
             }

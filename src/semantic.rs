@@ -15,6 +15,7 @@ pub mod ast_to_mir;
 pub mod const_eval;
 pub mod conversions;
 pub mod name_resolver;
+pub mod struct_lowering;
 pub mod symbol_resolver;
 pub mod symbol_table;
 pub mod type_registry;

@@ -322,6 +322,54 @@ mod tests {
     }
 
     #[test]
+    fn test_long_long_comparison_crash() {
+        // Regression test for issue where usual arithmetic conversions
+        // were not correctly applied in MIR lowering for binary operators
+        let source = r#"
+            int main() {
+                long long x;
+                x = 0;
+                x = x + 1;
+                if (x != 1)
+                    return 1;
+                return 0;
+            }
+        "#;
+        let mir_dump = setup_mir(source);
+        // Verify that the constant 1 is cast to i64 (matching x) before comparison
+        // and that the comparison result is used for the branch
+        insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = i32
+        type %t1 = i64
+
+        fn main() -> i32
+        {
+          locals {
+            %x: i64
+            %2: i64
+            %3: i32
+          }
+
+          bb1:
+            %x = cast<i64>(const 0)
+            %2 = %x + cast<i64>(const 1)
+            %x = %2
+            %3 = %x != cast<i64>(const 1)
+            cond_br %3, bb2, bb3
+
+          bb2:
+            return cast<i32>(const 1)
+
+          bb3:
+            br bb4
+
+          bb4:
+            return cast<i32>(const 0)
+        }
+        ");
+    }
+
+    #[test]
     fn test_designated_initializer_global() {
         let source = r#"
             struct S { int a; int b; };

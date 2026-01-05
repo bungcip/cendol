@@ -455,39 +455,26 @@ impl CompilerDriver {
         let result = self.run_pipeline(self.config.stop_after);
         match result {
             Ok(outputs) => {
+                let mut object_files_to_link = Vec::new();
+                // We need to keep the temp files alive until the linking process is complete
+                let mut temp_files = Vec::new();
+
                 // Process outputs if needed
                 for (_source_id, artifact) in outputs.units {
                     if let Some(object_file) = artifact.object_file {
-                        // Determine the output path
-                        let output_path = if let Some(output_path) = &self.config.output_path {
-                            output_path.clone()
-                        } else {
-                            // Default to a.out if no output path is specified
-                            "a.out".into()
-                        };
                         // Write the object file to a temporary file
-                        let temp_object_path = format!("{}.o", output_path.display());
-                        std::fs::write(&temp_object_path, object_file).unwrap();
+                        let mut temp_file = tempfile::Builder::new()
+                            .suffix(".o")
+                            .tempfile()
+                            .map_err(|e| DriverError::IoError(format!("Failed to create temp file: {}", e)))?;
 
-                        // TODO: handle linking after all input files are compiled, for now its okay because we only handle single input file
+                        use std::io::Write;
+                        temp_file
+                            .write_all(&object_file)
+                            .map_err(|e| DriverError::IoError(format!("Failed to write object file: {}", e)))?;
 
-                        // Link the object file into an executable using clang
-                        let _status = std::process::Command::new("clang")
-                            .arg(&temp_object_path)
-                            .arg("-o")
-                            .arg(&output_path)
-                            .status()
-                            .expect("Failed to execute clang for linking");
-
-                        // Set executable permissions on the output file
-                        use std::os::unix::fs::PermissionsExt;
-                        if let Ok(metadata) = std::fs::metadata(&output_path) {
-                            let mut permissions = metadata.permissions();
-                            permissions.set_mode(0o755); // rwxr-xr-x
-                            if let Err(e) = std::fs::set_permissions(&output_path, permissions) {
-                                eprintln!("Warning: Failed to set executable permissions: {}", e);
-                            }
-                        }
+                        object_files_to_link.push(temp_file.path().to_path_buf());
+                        temp_files.push(temp_file);
                     } else if let Some(clif_dump) = artifact.clif_dump {
                         // Output Cranelift IR dump to console
                         println!("{}", clif_dump);
@@ -516,6 +503,39 @@ impl CompilerDriver {
                             self.config.suppress_line_markers,
                             &self.source_manager,
                         )?;
+                    }
+                }
+
+                // Link if we have object files
+                if !object_files_to_link.is_empty() {
+                    // Determine the output path
+                    let output_path = if let Some(output_path) = &self.config.output_path {
+                        output_path.clone()
+                    } else {
+                        // Default to a.out if no output path is specified
+                        "a.out".into()
+                    };
+
+                    // Link the object file into an executable using clang
+                    let status = std::process::Command::new("clang")
+                        .args(&object_files_to_link)
+                        .arg("-o")
+                        .arg(&output_path)
+                        .status()
+                        .map_err(|e| DriverError::IoError(format!("Failed to execute clang for linking: {}", e)))?;
+
+                    if !status.success() {
+                        return Err(DriverError::CompilationFailed);
+                    }
+
+                    // Set executable permissions on the output file
+                    use std::os::unix::fs::PermissionsExt;
+                    if let Ok(metadata) = std::fs::metadata(&output_path) {
+                        let mut permissions = metadata.permissions();
+                        permissions.set_mode(0o755); // rwxr-xr-x
+                        if let Err(e) = std::fs::set_permissions(&output_path, permissions) {
+                            eprintln!("Warning: Failed to set executable permissions: {}", e);
+                        }
                     }
                 }
             }

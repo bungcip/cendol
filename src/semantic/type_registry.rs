@@ -25,6 +25,7 @@ pub struct TypeRegistry {
     pointer_cache: HashMap<TypeRef, TypeRef>,
     array_cache: HashMap<(TypeRef, ArraySizeType), TypeRef>,
     function_cache: HashMap<FnSigKey, TypeRef>,
+    complex_cache: HashMap<TypeRef, TypeRef>,
 
     // --- Layout computation tracking ---
     layout_in_progress: HashSet<TypeRef>,
@@ -62,6 +63,7 @@ impl TypeRegistry {
             pointer_cache: HashMap::new(),
             array_cache: HashMap::new(),
             function_cache: HashMap::new(),
+            complex_cache: HashMap::new(),
             layout_in_progress: HashSet::new(),
 
             // temporary placeholders, overwritten below
@@ -188,8 +190,13 @@ impl TypeRegistry {
     }
 
     pub fn complex_type(&mut self, base_type: TypeRef) -> TypeRef {
-        // TODO: cache it
-        self.alloc(Type::new(TypeKind::Complex { base_type }))
+        if let Some(&complex) = self.complex_cache.get(&base_type) {
+            return complex;
+        }
+
+        let complex = self.alloc(Type::new(TypeKind::Complex { base_type }));
+        self.complex_cache.insert(base_type, complex);
+        complex
     }
 
     // ============================================================

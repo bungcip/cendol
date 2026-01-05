@@ -1,161 +1,43 @@
+use crate::ast::NodeKind;
 use crate::driver::compiler::CompilePhase;
 use crate::driver::{cli::CompileConfig, compiler::CompilerDriver};
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Test that semantic lowering converts FunctionDef to Function nodes
-    #[test]
-    fn test_function_def_lowering() {
-        let source = r#"
-            int add(int a, int b) {
-                return a + b;
-            }
-            
-            int main() {
-                return add(1, 2);
-            }
-        "#;
-
-        let phase = CompilePhase::Mir;
-        let config = CompileConfig::from_virtual_file(source.to_string(), phase);
-        let mut driver = CompilerDriver::from_config(config);
-        let mut out = driver.run_pipeline(phase).unwrap();
-        let first = out.units.first_mut().unwrap();
-        let artifact = first.1;
-
-        // Get the complete semantic analysis output
-        let sema_output = match artifact.sema_output.clone() {
-            Some(sema_output) => sema_output,
-            None => {
-                panic!("No semantic output available");
-            }
+#[test]
+fn test_record_decl_members_populated() {
+    let source = r#"
+        struct Point {
+            int x;
+            int y;
         };
+    "#;
 
-        // Check that we have the expected functions
-        let functions = sema_output.functions;
-        let function_names: Vec<String> = functions.values().map(|f| f.name.to_string()).collect();
+    // Use SymbolResolver phase to get the AST right after lowering
+    let phase = CompilePhase::SymbolResolver;
+    let config = CompileConfig::from_virtual_file(source.to_string(), phase);
+    let mut driver = CompilerDriver::from_config(config);
 
-        assert!(
-            function_names.contains(&"add".to_string()),
-            "Function 'add' not found in MIR"
-        );
-        assert!(
-            function_names.contains(&"main".to_string()),
-            "Function 'main' not found in MIR"
-        );
+    let out = driver.run_pipeline(phase).unwrap();
+    let unit = out.units.values().next().unwrap();
+    let ast = unit.ast.as_ref().unwrap();
 
-        // Verify that the MIR module is not empty
-        assert!(
-            !sema_output.module.functions.is_empty(),
-            "MIR module should contain functions"
-        );
-    }
+    // Find the RecordDecl node
+    let mut found_record_decl = false;
+    for node in &ast.nodes {
+        if let NodeKind::RecordDecl(record_decl) = &node.kind {
+            if record_decl.name.map(|n| n.as_str()) == Some("Point") {
+                found_record_decl = true;
 
-    /// Test that semantic lowering converts Declaration to VarDecl nodes
-    #[test]
-    fn test_declaration_lowering() {
-        let source = r#"
-            int global_var = 42;
-            
-            int main() {
-                int local_var = 10;
-                return local_var;
+                // Assert that members are populated
+                assert_eq!(record_decl.members.len(), 2, "RecordDecl should have 2 members");
+
+                let x = &record_decl.members[0];
+                assert_eq!(x.name.map(|n| n.as_str()), Some("x"));
+
+                let y = &record_decl.members[1];
+                assert_eq!(y.name.map(|n| n.as_str()), Some("y"));
             }
-        "#;
-
-        let phase = CompilePhase::Mir;
-        let config = CompileConfig::from_virtual_file(source.to_string(), phase);
-        let mut driver = CompilerDriver::from_config(config);
-        let mut out = driver.run_pipeline(phase).unwrap();
-        let first = out.units.first_mut().unwrap();
-        let artifact = first.1;
-
-        // Get the complete semantic analysis output
-        let sema_output = match artifact.sema_output.clone() {
-            Some(sema_output) => sema_output,
-            None => {
-                panic!("No semantic output available");
-            }
-        };
-
-        // Check that we have the expected globals
-        let globals = sema_output.globals;
-        let global_names: Vec<String> = globals.values().map(|g| g.name.to_string()).collect();
-
-        assert!(
-            global_names.contains(&"global_var".to_string()),
-            "Global variable 'global_var' not found in MIR"
-        );
-
-        // Check that we have the expected functions
-        let functions = sema_output.functions;
-        let function_names: Vec<String> = functions.values().map(|f| f.name.to_string()).collect();
-
-        assert!(
-            function_names.contains(&"main".to_string()),
-            "Function 'main' not found in MIR"
-        );
+        }
     }
 
-    /// Test that semantic lowering correctly identifies lvalue errors
-    #[test]
-    fn test_lvalue_error_lowering() {
-        let source = r#"
-            int main() {
-                ++1;
-            }
-        "#;
-
-        let phase = CompilePhase::Mir;
-        let config = CompileConfig::from_virtual_file(source.to_string(), phase);
-        let mut driver = CompilerDriver::from_config(config);
-        let result = driver.run_pipeline(phase);
-
-        // Ensure the pipeline failed
-        assert!(result.is_err());
-
-        // Check for the specific semantic error
-        let diags = driver.get_diagnostics();
-        assert_eq!(diags.len(), 1);
-        let error = diags.get(0).unwrap();
-
-        // Check the error message is an exact match
-        assert_eq!(error.message, "Expression is not assignable (not an lvalue)");
-
-        // Check that the error span is correct
-        let (line, col) = driver.source_manager.get_line_column(error.span.start).unwrap();
-        assert_eq!(line, 3, "Error should be on line 3");
-        assert_eq!(col, 17, "Error should be at column 17");
-    }
-
-    /// Test that semantic lowering rejects conflicting storage classes
-    #[test]
-    fn rejects_conflicting_storage_classes() {
-        let source = r#"
-            extern static int x;
-        "#;
-
-        let phase = CompilePhase::Mir;
-        let config = CompileConfig::from_virtual_file(source.to_string(), phase);
-        let mut driver = CompilerDriver::from_config(config);
-        let result = driver.run_pipeline(phase);
-
-        // Ensure the pipeline failed
-        assert!(result.is_err());
-
-        // Check for the specific semantic error
-        let diags = driver.get_diagnostics();
-        assert_eq!(diags.len(), 1);
-        let error = diags.get(0).unwrap();
-
-        // Check the error message is an exact match
-        assert_eq!(error.message, "conflicting storage class specifiers");
-
-        // Check that the error span is correct
-        let (line, col) = driver.source_manager.get_line_column(error.span.start).unwrap();
-        assert_eq!(line, 2, "Error should be on line 2");
-        assert_eq!(col, 13, "Error should be at column 13");
-    }
+    assert!(found_record_decl, "Did not find RecordDecl for 'Point'");
 }

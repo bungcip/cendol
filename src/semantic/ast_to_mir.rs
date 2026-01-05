@@ -1220,12 +1220,20 @@ impl<'a> AstToMirLowerer<'a> {
         self.mir_builder.create_constant(value)
     }
 
-    fn emit_conversion(&mut self, operand: Operand, _conv: &ImplicitConversion, target_type_id: TypeId) -> Operand {
+    fn emit_conversion(&mut self, operand: Operand, conv: &ImplicitConversion, target_type_id: TypeId) -> Operand {
         // Represent the conversion as an Operand::Cast instead of creating
         // a temporary local. This allows consumers to emit the cast
         // directly into the final assignment, avoiding an extra temp
         // instruction (e.g. avoid `%tmp = cast(...); dest = %tmp`).
-        Operand::Cast(target_type_id, Box::new(operand))
+        match conv {
+            ImplicitConversion::IntegerCast { to, .. }
+            | ImplicitConversion::IntegerPromotion { to, .. }
+            | ImplicitConversion::PointerCast { to, .. } => {
+                let to_mir_type = self.lower_type_to_mir(*to);
+                Operand::Cast(to_mir_type, Box::new(operand))
+            }
+            _ => Operand::Cast(target_type_id, Box::new(operand)),
+        }
     }
 
     fn apply_conversions(&mut self, operand: Operand, node_ref: NodeRef, target_type_id: TypeId) -> Operand {

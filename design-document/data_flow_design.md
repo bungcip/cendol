@@ -1,122 +1,110 @@
-# Data Flow and Integration Design Document
+# Data Flow and Integration
 
-## Compiler Pipeline Overview
+## Overview
 
-The Cendol compiler follows a traditional multi-phase architecture with clear data flow between phases. Each phase processes input from the previous phase and produces structured output for the next phase.
+This document describes how data flows between different phases of the compiler pipeline. It covers the interfaces between phases and the data structures used for communication. The compiler follows a multi-phase architecture with clear data boundaries between each phase.
 
-```mermaid
-graph TD
-    Source[Source Files] --> Preprocessor
-    Preprocessor --> PPTokenStream[PPToken Stream]
-    PPTokenStream --> Lexer
-    Lexer --> TokenStream[Token Stream]
-    TokenStream --> Parser
-    Parser --> FlattenedAST[Flattened AST]
-    FlattenedAST --> SemanticAnalyzer[Semantic Analysis]
-    SemanticAnalyzer --> AnnotatedAST[Annotated AST + Symbol Table]
-    AnnotatedAST --> ASTDumper[AST Dumper]
-    ASTDumper --> HTML[HTML Output]
-```
+## Phase Interfaces
 
-## Phase Inputs and Outputs
+The compiler phases communicate through well-defined interfaces:
 
-### Preprocessor Phase
-**Input:**
-- Source files and include paths
-- Compiler configuration (macros, feature flags)
+### 1. Preprocessor → Lexer
+- **Input**: `Vec<PPToken>` (preprocessing token stream)
+- **Output**: `Vec<Token>` (lexical token stream)
+- **Data Transformation**: Converts preprocessing tokens to lexical tokens, performs string literal concatenation, keyword recognition, and literal parsing
 
-**Output:**
-- `PPToken` stream with preprocessing directives resolved
-- Source location mappings preserved
-- Built-in macros initialized
+### 2. Lexer → Parser
+- **Input**: `&[Token]` (token slice)
+- **Output**: `Ast` (flattened Abstract Syntax Tree)
+- **Data Transformation**: Parses token stream into structured AST with index-based references
 
-### Lexer Phase
-**Input:**
-- `PPToken` stream from preprocessor
-- Source manager for location tracking
+### 3. Parser → Symbol Resolver
+- **Input**: `Ast` (raw AST with parser-specific nodes)
+- **Output**: `Ast` (transformed AST with semantic nodes), `SymbolTable`, `TypeRegistry`
+- **Data Transformation**: Transforms parser-specific nodes to semantic nodes, establishes scopes, builds symbol table
 
-**Output:**
-- `Token` stream with keywords pre-interned
-- Symbol table with global symbol interning
-- Source spans for error reporting
+### 4. Symbol Resolver → Name Resolver
+- **Input**: `Ast` (transformed AST), `SymbolTable`
+- **Output**: `Ast` (with resolved symbol references)
+- **Data Transformation**: Resolves identifier names to symbol table entries, validates scoping rules
 
-### Parser Phase
-**Input:**
-- `Token` stream from lexer
-- Diagnostic engine for error reporting
+### 5. Name Resolver → Semantic Analyzer
+- **Input**: `Ast` (with resolved symbols), `SymbolTable`, `TypeRegistry`
+- **Output**: `Ast` (with semantic annotations), `SemanticInfo` (side table)
+- **Data Transformation**: Performs type checking, implicit conversion analysis, value categorization
 
-**Output:**
-- Flattened AST (`Ast` struct with contiguous node storage)
-- Initial symbol table with declarations
-- Parse errors and warnings
+### 6. Semantic Analyzer → MIR Generation
+- **Input**: `Ast` (fully annotated), `SymbolTable`, `TypeRegistry`
+- **Output**: `SemaOutput` (complete MIR data structures)
+- **Data Transformation**: Converts AST to typed MIR representation with explicit control flow
 
-### Semantic Analysis Phase
-**Input:**
-- Flattened AST from parser
-- Symbol table from parser
-- Type system definitions
+### 7. MIR Generation → Code Generation
+- **Input**: `SemaOutput` (MIR data structures)
+- **Output**: `ClifOutput` (Cranelift IR or object file)
+- **Data Transformation**: Maps MIR constructs to Cranelift instructions, generates target code
 
-**Output:**
-- Annotated AST with resolved types and symbols
-- Complete symbol table with all bindings
-- Type table with canonicalized types
-- Semantic errors and warnings
+## Data Structures
 
-### AST Dumper Phase
-**Input:**
-- Annotated AST and symbol table
-- Source manager for code snippets
-- Dump configuration
+### PPToken (Preprocessing Token)
+- Represents tokens after preprocessing (macro expansion, include resolution)
+- Contains raw text and location information
+- Used as input to the lexer
 
-**Output:**
-- Interactive HTML visualization
-- Cross-referenced tables (symbols, types, scopes)
-- Source code integration
+### Token (Lexical Token)
+- Represents syntactic elements of C11 (keywords, identifiers, literals, operators)
+- Contains token kind and source span
+- Used as input to the parser
 
-## Key Data Structures
+### Ast (Abstract Syntax Tree)
+- Flattened storage of AST nodes in contiguous vectors
+- Uses `NodeRef` (index-based references) instead of pointers
+- Contains `Vec<Node>` for AST nodes and `ParsedTypeArena` for syntactic types
+- Augmented with semantic information after analysis phases
 
-```rust
-/// Global symbol interning (from symbol_table crate)
-pub type Symbol = symbol_table::GlobalSymbol;
+### SymbolTable
+- Flattened storage of symbol entries with hierarchical scope management
+- Uses `SymbolRef` (index-based references) for efficient access
+- Contains mappings between names and declarations
 
-/// Source location tracking (imported from source_manager)
-pub use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
+### TypeRegistry
+- Manages canonical types with flattened storage
+- Provides type interning and comparison
+- Uses `TypeRef` (index-based references)
 
-/// Flattened AST storage
-pub struct Ast {
-    pub nodes: Vec<Node>,
-    pub types: Vec<Type>,
-    pub symbol_entries: Vec<SymbolEntry>,
-    pub initializers: Vec<Initializer>,
-}
+### SemanticInfo
+- Side table with parallel vectors indexed by node index
+- Contains resolved types, implicit conversions, and value categories
+- Attached to AST after semantic analysis
 
-/// Token structures
-pub struct PPToken { /* Preprocessor tokens */ }
-pub struct Token { /* Lexer tokens with pre-interned keywords */ }
+### SemaOutput
+- Complete MIR data structures including functions, blocks, locals, globals, types, and constants
+- Contains all information needed for code generation
+- Flattened storage with index-based references
 
-/// Analysis results
-pub struct SemanticOutput {
-    pub errors: Vec<SemanticError>,
-    pub warnings: Vec<SemanticWarning>,
-}
-```
+## Error Handling in Data Flow
 
-## Memory Management Strategy
+Each phase can produce diagnostics that are accumulated and reported:
 
-- **Direct File Reading**: Files read as raw bytes (`std::fs::read`) assuming UTF-8 validity
-- **Unsafe UTF-8 Conversion**: `String::from_utf8_unchecked()` and `str::from_utf8_unchecked()` for performance
-- **Flattened Storage**: All AST data in contiguous vectors for spatial locality
-- **Index-based References**: `NodeRef`, `TypeRef`, `SymbolEntryRef` for efficient access
-- **Panic on Invalid SourceId**: SourceManager methods panic on invalid IDs for performance
+- **DiagnosticEngine**: Centralized diagnostic collection across all phases
+- **Non-blocking compilation**: Phases continue despite errors to provide comprehensive diagnostics
+- **Phase-specific error recovery**: Each phase has appropriate recovery strategies
+- **Rich error reporting**: Detailed error messages with source location information
 
-## Error Propagation
+## Memory Management
 
-Each phase can produce errors that are collected and reported:
+The compiler uses efficient memory management strategies:
 
-1. **Preprocessor**: Include errors, macro definition issues
-2. **Lexer**: Invalid tokens, encoding problems
-3. **Parser**: Syntax errors, missing tokens
-4. **Semantic**: Type errors, undefined symbols, scope violations
-5. **Dumper**: Output generation issues
+- **Flattened storage**: All major data structures use contiguous vectors for cache efficiency
+- **Index-based references**: Eliminate pointer indirection and improve cache locality
+- **Arena allocation**: Efficient allocation patterns for AST and other structures
+- **Symbol interning**: Global symbol table for memory efficiency and fast comparison
 
-Errors include source locations for precise reporting and IDE integration.
+## Pipeline Coordination
+
+The `CompilerDriver` orchestrates the entire pipeline:
+
+- **Phase execution**: Manages execution of each phase in sequence
+- **Data passing**: Coordinates data flow between phases
+- **Error propagation**: Handles error conditions and reporting
+- **Output generation**: Manages final output based on compilation goals
+- **Stop-after control**: Allows stopping compilation at specific phases for debugging

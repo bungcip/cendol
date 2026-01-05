@@ -10,14 +10,16 @@
 5. [Parser Phase](parser_design.md)
 6. [Abstract Syntax Tree (AST) Design](ast_design.md)
 7. [Semantic Analysis Phase](semantic_analysis_design.md)
-8. [AST Dumper Phase](ast_dumper_design.md)
-9. [Data Flow and Integration](data_flow_design.md)
-10. [Performance Considerations](performance_design.md)
-11. [Error Handling Strategy](error_handling_design.md)
+8. [MIR Generation](mir_design.md)
+9. [Code Generation](codegen_design.md)
+10. [AST Dumper Phase](ast_dumper_design.md)
+11. [Data Flow and Integration](data_flow_design.md)
+12. [Performance Considerations](performance_design.md)
+13. [Error Handling Strategy](error_handling_design.md)
 
 ## Overview
 
-This document outlines the design for Cendol, a high-performance C11 compiler written in Rust. The compiler follows a traditional multi-phase architecture optimized for performance, cache efficiency, and comprehensive C11 standard compliance, with a future focus on using Cranelift for code generation.
+This document outlines the design for Cendol, a high-performance C11 compiler written in Rust. The compiler follows a modern multi-phase architecture optimized for performance, cache efficiency, and comprehensive C11 standard compliance. The design features a flattened AST representation, a dedicated MIR (Middle Intermediate Representation) for semantic analysis and optimization, and Cranelift-based code generation.
 
 ### Design Goals
 - **Performance**: Minimize memory allocations and maximize cache locality
@@ -36,13 +38,12 @@ graph TD
     Lexer --> TokenStream[Token Stream]
     TokenStream --> Parser
     Parser --> FlattenedAST[Flattened AST]
-    FlattenedAST --> SymbolCollection[Symbol Collection]
-    SymbolCollection --> NameResolution[Name Resolution]
-    NameResolution --> TypeResolution[Type Resolution]
-    TypeResolution --> TypeChecking[Type Checking]
-    TypeChecking --> AnnotatedAST[Annotated AST + Symbol Table]
-    AnnotatedAST --> ASTDumper[AST Dumper]
-    ASTDumper --> HTML[HTML Output]
+    FlattenedAST --> SymbolResolver[Symbol Resolver]
+    SymbolResolver --> NameResolver[Name Resolver]
+    NameResolver --> SemanticAnalyzer[Semantic Analyzer]
+    SemanticAnalyzer --> MIRGen[MIR Generation]
+    MIRGen --> CodeGen[Code Generation]
+    CodeGen --> ObjectFile[Object File]
 ```
 
 ### Key Design Decisions
@@ -50,9 +51,11 @@ graph TD
 1. **Flattened AST Storage**: All AST nodes in contiguous vectors for superior cache performance
 2. **Global Symbol Interning**: Thread-safe symbol interning using `symbol_table` crate
 3. **Packed Source Locations**: Efficient `SourceLoc` (4 bytes) and `SourceSpan` (8 bytes)
-4. **Index-based References**: `NodeRef`, `TypeRef`, `SymbolEntryRef` for fast access
+4. **Index-based References**: `NodeRef`, `TypeRef`, `SymbolRef` for fast access
 5. **Bit Flags**: Compact boolean storage using `bitflags` crate for flags
 6. **Rich Diagnostics**: IDE-quality error reporting with `annotate_snippets`
+7. **MIR-based Design**: Dedicated Mid-level Intermediate Representation for semantic analysis and optimization
+8. **Cranelift Integration**: Efficient code generation through Cranelift backend
 
 ## Compiler Pipeline Phases
 
@@ -89,28 +92,57 @@ Constructs a flattened Abstract Syntax Tree from the token stream using Pratt pa
 - Comprehensive error recovery with synchronization points
 - Support for all C11 syntax including generics, atomics, and compound literals
 
-### 4. Semantic Analysis Phase
-Performs comprehensive analysis of the AST to ensure semantic correctness, building symbol tables and resolving types.
+### 4. Symbol Resolver Phase
+Performs initial symbol collection and resolution, transforming parser-specific nodes to semantic nodes with resolved types.
 
 **Key Features:**
-- Four-phase analysis: symbol collection, name resolution, type resolution, and type checking
-- Hierarchical scope management with `ScopeId` for efficient scope references
-- Symbol table with flattened storage (`Vec<SymbolEntry>`, `Vec<Scope>`)
+- Symbol collection and scope establishment
+- Transformation of parser-only nodes to semantic nodes
+- Initial type resolution for basic types
+- Preparation of AST for full semantic analysis
+- Generation of scope mapping for each AST node
+
+### 5. Name Resolution Phase
+Resolves identifier names to their corresponding symbol table entries, handling C's complex scoping rules.
+
+**Key Features:**
+- Identifier-to-symbol mapping
+- Proper handling of C's scoping rules (block scope, function scope, etc.)
+- Resolution of function, variable, and type names
+- Handling of forward declarations and definitions
+- Validation of name uniqueness within scopes
+
+### 6. Semantic Analysis Phase
+Performs comprehensive type checking and semantic validation of the AST.
+
+**Key Features:**
 - Type checking and compatibility validation
-- Identifier resolution with proper scope rules
-- Declaration validation and redeclaration checking
-- Modular design with separate `NameResolver`, `TypeResolver`, and `TypeChecker` components
+- Expression type resolution
+- Implicit conversion analysis
+- LValue/RValue categorization
+- Semantic validation of all C constructs
+- Generation of semantic information side table
 
-### 5. AST Dumper Phase
-Generates interactive HTML visualization of the compiler's internal state for debugging and analysis.
+### 7. MIR Generation Phase
+Transforms the annotated AST into a typed, explicit Mid-level Intermediate Representation suitable for optimization and code generation.
 
 **Key Features:**
-- Interactive HTML output with collapsible AST trees
-- Cross-referenced tables for symbols, types, and scopes
-- Source code integration with syntax highlighting
-- Comprehensive debugging information including semantic annotations
-- Search and navigation functionality
-- Responsive design for different screen sizes
+- Typed MIR with explicit control flow
+- Non-SSA basic block structure
+- Explicit memory operations and type conversions
+- Cranelift-friendly representation
+- Comprehensive type information preserved
+- Validation of MIR correctness before code generation
+
+### 8. Code Generation Phase
+Generates target code using the Cranelift backend, producing optimized object files.
+
+**Key Features:**
+- Cranelift-based code generation
+- Target-specific optimization
+- Object file generation
+- Linker integration for executable creation
+- Support for multiple target architectures
 
 ## Supporting Infrastructure
 
@@ -126,6 +158,7 @@ Generates interactive HTML visualization of the compiler's internal state for de
 - Efficient memory management with arena-style allocation patterns
 - Global symbol interning for fast identifier comparison across phases
 - Packed data structures for optimal cache usage and memory efficiency
+- Semantic information side tables for post-analysis data
 
 ### Performance Optimizations
 - Flattened data structures for cache-friendly access patterns
@@ -133,3 +166,4 @@ Generates interactive HTML visualization of the compiler's internal state for de
 - Bit flags for compact boolean storage using `bitflags` crate
 - Streaming processing to minimize memory pressure
 - Pre-interned symbols and keywords for fast lookups
+- MIR validation to catch errors early in the pipeline

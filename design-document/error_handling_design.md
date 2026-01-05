@@ -1,227 +1,137 @@
-# Error Handling Strategy Design Document
+# Error Handling Strategy
 
 ## Overview
 
-The Cendol compiler implements a comprehensive error handling strategy that ensures robust compilation even in the presence of errors. Errors are collected throughout the pipeline and reported with precise source locations, enabling good developer experience and IDE integration.
+This document describes the error handling strategy used throughout the C11 compiler. It covers how errors are reported, recovered from, and presented to users. The system provides rich diagnostics with detailed source location information and supports non-blocking compilation to provide comprehensive feedback.
 
-## Error Classification
+## Key Principles
 
-### Error Severity Levels
-- **Errors**: Fatal issues that prevent successful compilation
-- **Warnings**: Potential issues that should be addressed but don't block compilation
-- **Notes**: Additional information to help understand errors/warnings
+### 1. Rich Diagnostics
+- **Detailed Error Messages**: Provide context-rich error messages with clear explanations
+- **Source Location Information**: Include precise source file, line, and column information
+- **Visual Error Display**: Use `annotate_snippets` crate for beautiful error formatting
+- **Contextual Information**: Include relevant code snippets and highlighting
 
-### Error Categories by Phase
+### 2. Error Recovery
+- **Phase-Specific Recovery**: Each phase has appropriate recovery strategies
+- **Synchronization Points**: Use statement boundaries and control flow constructs as recovery points
+- **Continue Compilation**: Resume processing after errors to find additional issues
+- **Graceful Degradation**: Maintain functionality despite error conditions
 
-#### Preprocessor Errors
-```rust
-#[derive(Debug, thiserror::Error)]
-pub enum PreprocessorError {
-    #[error("Macro '{name}' redefined")]
-    MacroRedefinition {
-        name: Symbol,
-        first_def: SourceSpan,
-        second_def: SourceSpan
-    },
-    #[error("Undefined macro '{name}'")]
-    UndefinedMacro { name: Symbol, location: SourceSpan },
-    #[error("Include file not found: {path}")]
-    IncludeFileNotFound { path: String, location: SourceSpan },
-    #[error("Recursive include detected")]
-    RecursiveInclude { file: SourceId, location: SourceSpan },
-    #[error("Invalid pragma directive: {directive}")]
-    InvalidPragma { directive: String, location: SourceSpan },
-}
-```
+### 3. Non-blocking Compilation
+- **Accumulate Errors**: Collect all errors during compilation rather than stopping at first
+- **Continue Processing**: Continue to subsequent phases even with errors in earlier phases
+- **Comprehensive Feedback**: Provide users with all issues in a single compilation run
+- **Error Threshold**: Stop compilation only when error count exceeds reasonable threshold
 
-#### Lexer Errors
-```rust
-#[derive(Debug, thiserror::Error)]
-pub enum LexerError {
-    #[error("Invalid character '{ch}' in source")]
-    InvalidCharacter { ch: char, location: SourceSpan },
-    #[error("Unterminated string literal")]
-    UnterminatedString { location: SourceSpan },
-    #[error("Unterminated comment")]
-    UnterminatedComment { location: SourceSpan },
-    #[error("Invalid number literal: {text}")]
-    InvalidNumber { text: String, location: SourceSpan },
-}
-```
+### 4. Diagnostic System Architecture
+- **Diagnostic Engine**: Centralized system for collecting and managing diagnostics
+- **Diagnostic Levels**: Support for errors, warnings, and notes with different severity levels
+- **Structured Output**: Organized diagnostic information for tool integration
+- **IDE Integration**: Structured error output suitable for IDE integration
 
-#### Parser Errors
-```rust
-#[derive(Debug, thiserror::Error)]
-pub enum ParserError {
-    #[error("Unexpected token")]
-    UnexpectedToken {
-        expected: Vec<TokenKind>,
-        found: Token,
-        location: SourceSpan
-    },
-    #[error("Missing token: expected {expected}")]
-    MissingToken { expected: TokenKind, location: SourceSpan },
-    #[error("Syntax error: {message}")]
-    SyntaxError { message: String, location: SourceSpan },
-}
-```
+## Diagnostic Levels
 
-#### Semantic Errors
-```rust
-#[derive(Debug, thiserror::Error)]
-pub enum SemanticError {
-    #[error("Undeclared identifier '{name}'")]
-    UndeclaredIdentifier { name: Symbol, location: SourceSpan },
-    #[error("Redefinition of '{name}'")]
-    Redefinition {
-        name: Symbol,
-        first_def: SourceSpan,
-        second_def: SourceSpan
-    },
-    #[error("Type mismatch: expected {expected}, found {found}")]
-    TypeMismatch {
-        expected: String,
-        found: String,
-        location: SourceSpan
-    },
-    #[error("Incomplete type '{name}'")]
-    IncompleteType { name: Symbol, location: SourceSpan },
-}
-```
+### Error
+- **Severity**: High - compilation cannot proceed
+- **Action**: Compilation stops after error threshold exceeded
+- **Examples**: Syntax errors, type mismatches, undefined identifiers
 
-#### Warnings
-```rust
-#[derive(Debug, thiserror::Error)]
-pub enum SemanticWarning {
-    #[error("Unused declaration '{name}'")]
-    UnusedDeclaration { name: Symbol, location: SourceSpan },
-    #[error("Implicit conversion from {from_type} to {to_type}")]
-    ImplicitConversion {
-        from_type: String,
-        to_type: String,
-        location: SourceSpan
-    },
-    #[error("Unreachable code")]
-    UnreachableCode { location: SourceSpan },
-}
-```
+### Warning
+- **Severity**: Medium - compilation continues
+- **Action**: Compilation continues, warning reported
+- **Examples**: Unused variables, implicit conversions, deprecated features
+
+### Note
+- **Severity**: Low - informational only
+- **Action**: Additional context for errors/warnings
+- **Examples**: Related information, suggestions, hints
 
 ## Error Recovery Strategies
 
-### Preprocessor Recovery
-- **Include Errors**: Skip failed includes, continue with next tokens
-- **Macro Errors**: Treat undefined macros as empty, report warnings
-- **Pragma Errors**: Skip invalid pragmas, continue processing
-
-### Lexer Recovery
-- **Invalid Characters**: Skip and report, continue tokenization
-- **Unterminated Literals**: Close at end of line, report error
-- **Encoding Issues**: Replace invalid UTF-8 with replacement character
-
 ### Parser Recovery
-- **Unexpected Tokens**: Skip to synchronization points (semicolons, braces)
-- **Missing Tokens**: Insert synthetic tokens, continue parsing
-- **Declaration Errors**: Skip to next declaration or statement boundary
+- **Synchronization Points**: Use semicolons, braces, and control flow keywords as recovery points
+- **Brace Matching**: Recover from unmatched braces and parentheses
+- **Statement Recovery**: Resume parsing at next valid statement boundary
+- **Token Skipping**: Skip invalid tokens until synchronization point reached
 
 ### Semantic Recovery
-- **Undefined Symbols**: Create error entries, continue analysis
-- **Type Errors**: Use error types, propagate through expressions
-- **Scope Errors**: Maintain scope stack, report violations
+- **Symbol Resolution**: Continue with partial symbol resolution
+- **Type Checking**: Continue with type errors, report all violations
+- **Scope Recovery**: Continue with incomplete scope information
+- **Declaration Recovery**: Process remaining declarations despite errors
 
-## Error Reporting System
+## Implementation Components
 
 ### Diagnostic Engine
-```rust
-/// Central diagnostic collection and reporting
-pub struct DiagnosticEngine {
-    errors: Vec<Diagnostic>,
-    warnings: Vec<Diagnostic>,
-    notes: Vec<Diagnostic>,
-}
+- **Central Collection**: Single point for all diagnostic accumulation
+- **Thread Safety**: Safe for potential multi-threaded compilation
+- **Filtering**: Support for warning levels and filtering
+- **Reporting**: Unified interface for diagnostic reporting
 
-/// Individual diagnostic with rich context
-pub struct Diagnostic {
-    pub level: DiagnosticLevel,
-    pub message: String,
-    pub location: SourceSpan,
-    pub code: Option<String>, // Error code like "E001"
-    pub hints: Vec<String>, // Suggestions for fixing
-    pub related: Vec<SourceSpan>, // Related locations
-}
+### Diagnostic Structure
+- **Level**: Error, warning, or note classification
+- **Message**: Human-readable diagnostic message
+- **Location**: Source location information (file, line, column)
+- **Span**: Source span for highlighting
+- **Notes**: Additional contextual information
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DiagnosticLevel {
-    Error,
-    Warning,
-    Note,
-}
-```
+### Error Formatting
+- **Visual Highlighting**: Use `annotate_snippets` for visual error display
+- **Multi-line Support**: Handle diagnostics spanning multiple lines
+- **Color Support**: Optional color formatting for terminal output
+- **Plain Text Fallback**: Support for plain text output
 
-### Error Formatting with annotate_snippets
-```rust
-/// Configurable error formatter using annotate_snippets
-pub struct ErrorFormatter {
-    pub show_source: bool,
-    pub show_hints: bool,
-    pub use_colors: bool,
-    pub max_context: usize,
-}
+## Phase-Specific Error Handling
 
-impl ErrorFormatter {
-    /// Format a single diagnostic with rich source code context
-    pub fn format_diagnostic(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
-        let level_str = match diag.level {
-            DiagnosticLevel::Error => "error",
-            DiagnosticLevel::Warning => "warning",
-            DiagnosticLevel::Note => "note",
-        };
+### Preprocessor Phase
+- **Include Errors**: Handle missing include files gracefully
+- **Macro Errors**: Report macro definition and expansion issues
+- **Directive Errors**: Handle invalid preprocessing directives
 
-        let mut result = format!("{}: {}", level_str, diag.message);
+### Lexer Phase
+- **Invalid Tokens**: Handle unrecognized characters and tokens
+- **Literal Errors**: Report malformed literals (numbers, strings, chars)
+- **Encoding Issues**: Handle invalid UTF-8 sequences
 
-        // Add source location if available
-        if let Some(file_info) = source_manager.get_file_info(diag.location.source_id()) {
-            if let Some((line, col)) = source_manager.get_line_column(diag.location.start) {
-                result.push_str(&format!(" at {}:{}:{}", file_info.path.display(), line, col));
-            }
-        }
+### Parser Phase
+- **Syntax Errors**: Report missing tokens, unexpected tokens
+- **Recovery**: Use synchronization points to resume parsing
+- **Incomplete Constructs**: Handle incomplete statements and expressions
 
-        // Add hints if enabled
-        if self.show_hints && !diag.hints.is_empty() {
-            for hint in &diag.hints {
-                result.push_str(&format!("\n  hint: {}", hint));
-            }
-        }
+### Semantic Analysis Phase
+- **Type Errors**: Report type mismatches and incompatibilities
+- **Symbol Errors**: Report undefined identifiers and redeclarations
+- **Scope Errors**: Report invalid scope usage and access
 
-        // Add source code snippet if enabled
-        if self.show_source {
-            let source_text = source_manager.get_source_text(diag.location);
-            result.push_str(&format!("\n  |\n  | {}\n  |", source_text.replace('\n', "\n  | ")));
-        }
+### Code Generation Phase
+- **MIR Validation Errors**: Report MIR validation failures
+- **Backend Errors**: Handle Cranelift code generation issues
+- **Target Errors**: Report target-specific code generation issues
 
-        result
-    }
-}
-```
+## Error Reporting Interface
 
-## Integration with Compiler Pipeline
+### Diagnostic Creation
+- **Structured Creation**: Use builder pattern for creating diagnostics
+- **Source Location**: Automatic source location capture
+- **Contextual Information**: Include relevant contextual data
 
-### Error Collection
-Each phase contributes to the global diagnostic collection:
+### Diagnostic Output
+- **Console Output**: Formatted output to console with highlighting
+- **Structured Output**: JSON or other structured formats for tools
+- **File Output**: Option to write diagnostics to files
+- **IDE Protocol**: Support for LSP or other IDE protocols
 
-1. **Preprocessor**: Include path resolution, macro validation
-2. **Lexer**: Token validity, encoding issues
-3. **Parser**: Syntax correctness, grammar violations
-4. **Semantic**: Type safety, symbol resolution, scope rules
-5. **Dumper**: Output generation issues
+## Performance Considerations
 
-### Error Propagation
-- **Non-blocking**: Errors don't stop compilation unless fatal
-- **Accumulation**: All errors collected and reported together
-- **Context Preservation**: Source locations maintained throughout pipeline
-- **Cross-phase References**: Errors can reference locations from earlier phases
+### Error Handling Overhead
+- **Minimal Overhead**: Error handling should not significantly impact performance
+- **Lazy Evaluation**: Defer expensive error formatting until needed
+- **Batch Processing**: Process diagnostics in batches when possible
 
-### IDE Integration
-- **Structured Output**: JSON format available for tools
-- **Source Maps**: Precise location mapping for editors
-- **Error Codes**: Standardized codes for tool integration
-- **Recovery Hints**: Suggestions for common error patterns
+### Memory Management
+- **Efficient Storage**: Store diagnostics efficiently to minimize memory impact
+- **Cleanup**: Proper cleanup of diagnostic information after reporting
+- **Caching**: Cache formatted diagnostics when appropriate
+
+This error handling strategy ensures that users receive comprehensive, helpful feedback while maintaining compiler performance and usability.

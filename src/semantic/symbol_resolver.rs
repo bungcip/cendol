@@ -13,12 +13,12 @@
 use crate::ast::{nodes::TypeQualifier, utils::extract_identifier, *};
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::semantic::const_eval::{self, ConstEvalCtx};
+use crate::semantic::struct_lowering::lower_struct_members;
 use crate::semantic::symbol_table::{DefinitionState, SymbolRef, SymbolTableError};
 use crate::semantic::{
     ArraySizeType, EnumConstant, Namespace, ScopeId, StructMember, Symbol, SymbolKind, SymbolTable, TypeKind,
     TypeQualifiers, TypeRef, TypeRegistry,
 };
-use crate::semantic::struct_lowering::lower_struct_members;
 use crate::semantic::{FunctionParameter, QualType};
 use crate::source_manager::SourceSpan;
 
@@ -1990,11 +1990,7 @@ pub(crate) fn lower_decl_specifiers_for_member(
 }
 
 /// Apply declarator for struct members (simplified version)
-pub(crate) fn apply_declarator_for_member(
-    base_type: TypeRef,
-    declarator: &Declarator,
-    ctx: &mut LowerCtx,
-) -> QualType {
+pub(crate) fn apply_declarator_for_member(base_type: TypeRef, declarator: &Declarator, ctx: &mut LowerCtx) -> QualType {
     match declarator {
         Declarator::Identifier(_, qualifiers) => {
             let base_type_ref = base_type;

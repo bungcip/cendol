@@ -1,7 +1,9 @@
 use crate::ast::nodes::*;
-use crate::semantic::{QualType, StructMember};
-use crate::semantic::symbol_resolver::{LowerCtx, apply_declarator_for_member, lower_decl_specifiers_for_member, process_anonymous_struct_members};
 use crate::ast::utils::extract_identifier;
+use crate::semantic::symbol_resolver::{
+    LowerCtx, apply_declarator_for_member, lower_decl_specifiers_for_member, process_anonymous_struct_members,
+};
+use crate::semantic::{QualType, StructMember};
 
 /// Common logic for lowering struct members, used by both TypeSpecifier::Record lowering
 /// and Declarator::AnonymousRecord handling.
@@ -25,8 +27,7 @@ pub(crate) fn lower_struct_members(
             if let Some(d) = child_def
                 && let Some(member_decls) = &d.members
             {
-                let anonymous_members =
-                    process_anonymous_struct_members(member_decls, child_is_union, ctx, span);
+                let anonymous_members = process_anonymous_struct_members(member_decls, child_is_union, ctx, span);
                 struct_members.extend(anonymous_members);
             }
             continue;
@@ -34,18 +35,13 @@ pub(crate) fn lower_struct_members(
 
         for init_declarator in &decl.init_declarators {
             if let Some(member_name) = extract_identifier(&init_declarator.declarator) {
-                let member_type = if let Some(base_type_ref) =
-                    lower_decl_specifiers_for_member(&decl.specifiers, ctx, span)
-                {
-                    let ty = apply_declarator_for_member(
-                        base_type_ref.ty,
-                        &init_declarator.declarator,
-                        ctx,
-                    );
-                    ty.ty
-                } else {
-                    ctx.registry.type_int
-                };
+                let member_type =
+                    if let Some(base_type_ref) = lower_decl_specifiers_for_member(&decl.specifiers, ctx, span) {
+                        let ty = apply_declarator_for_member(base_type_ref.ty, &init_declarator.declarator, ctx);
+                        ty.ty
+                    } else {
+                        ctx.registry.type_int
+                    };
 
                 struct_members.push(StructMember {
                     name: Some(member_name),

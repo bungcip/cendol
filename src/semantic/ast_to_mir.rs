@@ -475,6 +475,11 @@ impl<'a> AstToMirLowerer<'a> {
             let global_id = self
                 .mir_builder
                 .create_global_with_init(var_decl.name, mir_type_id, false, final_init);
+
+            if let Some(alignment) = var_decl.alignment {
+                self.mir_builder.set_global_alignment(global_id, alignment);
+            }
+
             self.global_map.insert(entry_ref, global_id);
         }
     }
@@ -487,6 +492,11 @@ impl<'a> AstToMirLowerer<'a> {
         mir_type_id: TypeId,
     ) {
         let local_id = self.mir_builder.create_local(Some(var_decl.name), mir_type_id, false);
+
+        if let Some(alignment) = var_decl.alignment {
+            self.mir_builder.set_local_alignment(local_id, alignment);
+        }
+
         self.local_map.insert(entry_ref, local_id);
 
         if let Some(initializer) = var_decl.init {

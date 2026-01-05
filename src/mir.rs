@@ -336,6 +336,7 @@ pub struct Local {
     pub name: Option<NameId>,
     pub type_id: TypeId,
     pub is_param: bool,
+    pub alignment: Option<u32>, // Alignment in bytes
 }
 
 impl Local {
@@ -345,6 +346,7 @@ impl Local {
             name,
             type_id,
             is_param,
+            alignment: None,
         }
     }
 }
@@ -357,6 +359,7 @@ pub struct Global {
     pub type_id: TypeId,
     pub is_constant: bool,
     pub initial_value: Option<ConstValueId>,
+    pub alignment: Option<u32>, // Max alignment in bytes
 }
 
 impl Global {
@@ -367,6 +370,7 @@ impl Global {
             type_id,
             is_constant,
             initial_value: None,
+            alignment: None,
         }
     }
 }
@@ -449,6 +453,12 @@ impl MirBuilder {
         }
 
         local_id
+    }
+
+    pub fn set_local_alignment(&mut self, local_id: LocalId, alignment: u32) {
+        if let Some(local) = self.locals.get_mut(&local_id) {
+            local.alignment = Some(alignment);
+        }
     }
 
     /// Create a new basic block
@@ -611,6 +621,12 @@ impl MirBuilder {
     pub fn set_global_initializer(&mut self, global_id: GlobalId, init_id: ConstValueId) {
         if let Some(global) = self.globals.get_mut(&global_id) {
             global.initial_value = Some(init_id);
+        }
+    }
+
+    pub fn set_global_alignment(&mut self, global_id: GlobalId, alignment: u32) {
+        if let Some(global) = self.globals.get_mut(&global_id) {
+            global.alignment = Some(alignment);
         }
     }
 

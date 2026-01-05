@@ -218,6 +218,12 @@ pub enum SemanticError {
     RecursiveType { ty: TypeRef },
     #[error("controlling expression type does not match any generic association")]
     GenericNoMatch { span: SourceSpan },
+
+    #[error("requested alignment {value} is not a power of 2")]
+    InvalidAlignment { value: i64, span: SourceSpan },
+
+    #[error("requested alignment is not a constant expression")]
+    NonConstantAlignment { span: SourceSpan },
 }
 
 impl SemanticError {
@@ -242,6 +248,8 @@ impl SemanticError {
                 SourceSpan::dummy()
             }
             SemanticError::GenericNoMatch { span } => *span,
+            SemanticError::InvalidAlignment { span, .. } => *span,
+            SemanticError::NonConstantAlignment { span } => *span,
         }
     }
 }

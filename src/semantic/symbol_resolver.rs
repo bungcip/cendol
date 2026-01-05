@@ -141,6 +141,29 @@ fn convert_parsed_array_size(size: &ParsedArraySize, _ctx: &mut LowerCtx) -> Arr
     }
 }
 
+/// Helper function to resolve array size logic
+fn resolve_array_size(size: Option<NodeRef>, ctx: &mut LowerCtx) -> ArraySizeType {
+    if let Some(expr) = size {
+        let const_eval_ctx = ConstEvalCtx { ast: ctx.ast };
+        if let Some(const_val) = const_eval::eval_const_expr(&const_eval_ctx, expr) {
+            if const_val > 0 {
+                ArraySizeType::Constant(const_val as usize)
+            } else {
+                ctx.report_error(SemanticError::InvalidArraySize {
+                    span: ctx.ast.get_node(expr).span,
+                });
+                ArraySizeType::Incomplete
+            }
+        } else {
+            // TODO: Handle non-constant array sizes (VLAs)
+            ArraySizeType::Incomplete
+        }
+    } else {
+        // Should not happen as parser ensures size is Some
+        ArraySizeType::Incomplete
+    }
+}
+
 /// Context for the semantic lowering phase
 pub(crate) struct LowerCtx<'a, 'src> {
     pub(crate) ast: &'a mut Ast,
@@ -1497,32 +1520,14 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
         Declarator::Array(base, size) => {
             let element_type = apply_declarator(base_type, base, ctx);
             let array_size = match size {
-                ArraySize::Expression { expr, qualifiers: _ } => {
-                    let const_eval_ctx = ConstEvalCtx { ast: ctx.ast };
-                    if let Some(const_val) = const_eval::eval_const_expr(&const_eval_ctx, *expr) {
-                        if const_val > 0 {
-                            ArraySizeType::Constant(const_val as usize)
-                        } else {
-                            ctx.report_error(SemanticError::InvalidArraySize {
-                                span: ctx.ast.get_node(*expr).span,
-                            });
-                            ArraySizeType::Incomplete
-                        }
-                    } else {
-                        // TODO: Handle non-constant array sizes (VLAs)
-                        ArraySizeType::Incomplete
-                    }
-                }
+                ArraySize::Expression { expr, qualifiers: _ } => resolve_array_size(Some(*expr), ctx),
                 ArraySize::Star { qualifiers: _ } => ArraySizeType::Star,
                 ArraySize::Incomplete => ArraySizeType::Incomplete,
                 ArraySize::VlaSpecifier {
                     is_static: _,
                     qualifiers: _,
-                    size: _,
-                } => {
-                    // TODO: Handle VLA specifiers
-                    ArraySizeType::Incomplete
-                }
+                    size,
+                } => resolve_array_size(*size, ctx),
             };
 
             let array_type_ref = ctx.registry.array_of(element_type.ty, array_size);
@@ -2065,32 +2070,14 @@ pub(crate) fn apply_declarator_for_member(base_type: TypeRef, declarator: &Decla
         Declarator::Array(base, size) => {
             let element_type = apply_declarator_for_member(base_type, base, ctx);
             let array_size = match size {
-                ArraySize::Expression { expr, qualifiers: _ } => {
-                    let const_eval_ctx = ConstEvalCtx { ast: ctx.ast };
-                    if let Some(const_val) = const_eval::eval_const_expr(&const_eval_ctx, *expr) {
-                        if const_val > 0 {
-                            ArraySizeType::Constant(const_val as usize)
-                        } else {
-                            ctx.report_error(SemanticError::InvalidArraySize {
-                                span: ctx.ast.get_node(*expr).span,
-                            });
-                            ArraySizeType::Incomplete
-                        }
-                    } else {
-                        // VLA in struct is a GNU extension, not supported yet
-                        ArraySizeType::Incomplete
-                    }
-                }
+                ArraySize::Expression { expr, qualifiers: _ } => resolve_array_size(Some(*expr), ctx),
                 ArraySize::Star { qualifiers: _ } => ArraySizeType::Star,
                 ArraySize::Incomplete => ArraySizeType::Incomplete,
                 ArraySize::VlaSpecifier {
                     is_static: _,
                     qualifiers: _,
-                    size: _,
-                } => {
-                    // TODO: Handle VLA specifiers
-                    ArraySizeType::Incomplete
-                }
+                    size,
+                } => resolve_array_size(*size, ctx),
             };
 
             let array_type_ref = ctx.registry.array_of(element_type.ty, array_size);

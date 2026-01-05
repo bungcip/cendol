@@ -672,9 +672,7 @@ impl OutputHandler {
             ),
             NodeKind::InitializerList(list) => println!(
                 "InitializerList([{}])",
-                list.iter()
-                    .map(|r| self.format_designated_initializer(r))
-                    .join(", ")
+                list.iter().map(|r| self.format_designated_initializer(r)).join(", ")
             ),
             NodeKind::Dummy => println!("DUMMY"),
         }

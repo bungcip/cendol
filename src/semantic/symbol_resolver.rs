@@ -1940,10 +1940,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                 lower_node_recursive(ctx, init_expr);
             }
         }
-        NodeKind::FunctionDecl(_)
-        | NodeKind::TypedefDecl(_)
-        | NodeKind::RecordDecl(_)
-        | NodeKind::EnumDecl(_) => {
+        NodeKind::FunctionDecl(_) | NodeKind::TypedefDecl(_) | NodeKind::RecordDecl(_) | NodeKind::EnumDecl(_) => {
             // These semantic nodes don't have child expressions to lower
         }
         _ => {}

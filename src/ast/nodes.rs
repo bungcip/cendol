@@ -9,7 +9,7 @@ use std::cell::Cell;
 use thin_vec::ThinVec;
 
 use crate::{
-    ast::{NameId, NodeRef, ParsedType, SymbolRef, TypeRef, SourceSpan},
+    ast::{NameId, NodeRef, ParsedType, SourceSpan, SymbolRef, TypeRef},
     semantic::QualType,
 };
 

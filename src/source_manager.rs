@@ -102,6 +102,13 @@ impl SourceSpan {
         self.start.source_id().to_u32() == 1
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.start.offset() == 0
+            && self.end.offset() == 0
+            && self.start.source_id().to_u32() == 1
+            && self.end.source_id().to_u32() == 1
+    }
+
     /// Merge two source spans into a single span covering both
     pub fn merge(self, other: SourceSpan) -> SourceSpan {
         if self.source_id() != other.source_id() {

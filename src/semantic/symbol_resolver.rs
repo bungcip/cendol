@@ -234,7 +234,14 @@ pub(crate) fn lower_declaration(ctx: &mut LowerCtx, decl_node: NodeRef) -> Vec<N
     let semantic_nodes: Vec<NodeKind> = decl
         .init_declarators
         .into_iter()
-        .map(|init| create_semantic_node_data(ctx, &spec, init, declaration_span))
+        .map(|init| {
+            let span = if init.span.is_empty() {
+                declaration_span
+            } else {
+                init.span
+            };
+            create_semantic_node_data(ctx, &spec, init, span)
+        })
         .collect();
 
     semantic_nodes

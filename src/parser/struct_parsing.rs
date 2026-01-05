@@ -91,10 +91,15 @@ pub(crate) fn parse_struct_declaration(parser: &mut Parser) -> Result<Declaratio
                 // Variable declaration with anonymous struct type: struct { members } variable;
                 let mut init_declarators = ThinVec::new();
                 loop {
+                    let start_span = parser.current_token_span_or_empty();
                     let declarator = super::declarator::parse_declarator(parser, None)?;
+                    let end_span = parser.last_token_span().unwrap_or(start_span);
+                    let span = start_span.merge(end_span);
+
                     init_declarators.push(InitDeclarator {
                         declarator,
                         initializer: None,
+                        span,
                     });
 
                     if parser.accept(TokenKind::Comma).is_none() {
@@ -145,10 +150,15 @@ pub(crate) fn parse_struct_declaration(parser: &mut Parser) -> Result<Declaratio
                     // Variable declaration with named struct type: struct tag { members } variable;
                     let mut init_declarators = ThinVec::new();
                     loop {
+                        let start_span = parser.current_token_span_or_empty();
                         let declarator = super::declarator::parse_declarator(parser, None)?;
+                        let end_span = parser.last_token_span().unwrap_or(start_span);
+                        let span = start_span.merge(end_span);
+
                         init_declarators.push(InitDeclarator {
                             declarator,
                             initializer: None,
+                            span,
                         });
 
                         if parser.accept(TokenKind::Comma).is_none() {
@@ -199,10 +209,15 @@ pub(crate) fn parse_struct_declaration(parser: &mut Parser) -> Result<Declaratio
                     // Named struct type with declarators: struct tag declarator1, declarator2;
                     let mut init_declarators = ThinVec::new();
                     loop {
+                        let start_span = parser.current_token_span_or_empty();
                         let declarator = super::declarator::parse_declarator(parser, None)?;
+                        let end_span = parser.last_token_span().unwrap_or(start_span);
+                        let span = start_span.merge(end_span);
+
                         init_declarators.push(InitDeclarator {
                             declarator,
                             initializer: None,
+                            span,
                         });
 
                         if parser.accept(TokenKind::Comma).is_none() {
@@ -225,10 +240,15 @@ pub(crate) fn parse_struct_declaration(parser: &mut Parser) -> Result<Declaratio
 
         let mut init_declarators = ThinVec::new();
         loop {
+            let start_span = parser.current_token_span_or_empty();
             let declarator = super::declarator::parse_declarator(parser, None)?;
+            let end_span = parser.last_token_span().unwrap_or(start_span);
+            let span = start_span.merge(end_span);
+
             init_declarators.push(InitDeclarator {
                 declarator,
                 initializer: None,
+                span,
             });
 
             if parser.accept(TokenKind::Comma).is_none() {

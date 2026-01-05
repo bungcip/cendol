@@ -151,6 +151,7 @@ pub struct DeclarationData {
 pub struct InitDeclarator {
     pub declarator: Declarator,
     pub initializer: Option<NodeRef>, // Initializer or Expr
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, Serialize)]

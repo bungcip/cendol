@@ -1149,22 +1149,6 @@ impl<'src> Preprocessor<'src> {
             _ => return Err(PPError::ExpectedIdentifier),
         };
 
-        // Check for macro redefinition
-        if let Some(existing) = self.macros.get(&name)
-            && !existing.flags.contains(MacroFlags::BUILTIN)
-        {
-            // Emit warning for redefinition
-            let diag = Diagnostic {
-                level: DiagnosticLevel::Warning,
-                message: format!("Redefinition of macro '{}'", name.as_str()),
-                span: SourceSpan::new(name_token.location, name_token.location),
-                code: Some("macro_redefinition".to_string()),
-                hints: Vec::new(),
-                related: vec![SourceSpan::new(existing.location, existing.location)],
-            };
-            self.diag.report_diagnostic(diag);
-        }
-
         let mut flags = MacroFlags::empty();
         let mut params = Vec::new();
         let mut variadic = None;
@@ -1297,6 +1281,39 @@ impl<'src> Preprocessor<'src> {
             parameter_list: params,
             variadic_arg: variadic,
         };
+
+        // Check for macro redefinition
+        if let Some(existing) = self.macros.get(&name) {
+            let is_builtin = existing.flags.contains(MacroFlags::BUILTIN);
+
+            // Check if definition is different
+            // Two macro definitions are distinct if they have different parameter lists,
+            // different variadic arguments, different flags, or different token sequences.
+            // For token sequences, we check kind and flags (ignoring location).
+            let is_different = existing.flags != macro_info.flags
+                || existing.parameter_list != macro_info.parameter_list
+                || existing.variadic_arg != macro_info.variadic_arg
+                || existing.tokens.len() != macro_info.tokens.len()
+                || existing
+                    .tokens
+                    .iter()
+                    .zip(macro_info.tokens.iter())
+                    .any(|(a, b)| a.kind != b.kind || a.flags != b.flags);
+
+            if !is_builtin && is_different {
+                // Emit warning for redefinition
+                let diag = Diagnostic {
+                    level: DiagnosticLevel::Warning,
+                    message: format!("Redefinition of macro '{}'", name.as_str()),
+                    span: SourceSpan::new(name_token.location, name_token.location),
+                    code: Some("macro_redefinition".to_string()),
+                    hints: Vec::new(),
+                    related: vec![SourceSpan::new(existing.location, existing.location)],
+                };
+                self.diag.report_diagnostic(diag);
+            }
+        }
+
         self.macros.insert(name, macro_info);
         Ok(())
     }
@@ -2423,6 +2440,34 @@ impl<'src> Preprocessor<'src> {
                             continue;
                         }
                     };
+
+                    // Fix: Map substituted tokens to a virtual buffer to prevent leakage of internal locations
+                    // (e.g. <pasted-tokens>) into the output stream.
+                    let replacement_text = self.tokens_to_string(&substituted);
+                    let virtual_buffer = replacement_text.into_bytes();
+                    let virtual_id = self
+                        .source_manager
+                        .add_virtual_buffer(virtual_buffer, &format!("macro_{}", symbol.as_str()));
+
+                    let mut remapped_tokens = Vec::with_capacity(substituted.len());
+                    let mut offset = 0u32;
+
+                    for original_token in &substituted {
+                        let token_text = original_token.get_text();
+                        let token_len = token_text.len() as u16;
+
+                        let new_token = PPToken::new(
+                            original_token.kind,
+                            original_token.flags | PPTokenFlags::MACRO_EXPANDED,
+                            SourceLoc::new(virtual_id, offset),
+                            token_len,
+                        );
+                        remapped_tokens.push(new_token);
+                        offset += token_len as u32;
+                    }
+
+                    // Use remapped tokens for subsequent processing
+                    let substituted = remapped_tokens;
 
                     // Safety check for excessive expansions
                     let expansion_count = substituted.len();

@@ -861,3 +861,26 @@ int x = 1;
       text: ;
     "#);
 }
+
+#[test]
+fn test_macro_redefinition_identical_no_warning() {
+    let src = r#"
+#define M 1
+#define M 1
+int x = M;
+"#;
+    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!((tokens, diags), @r#"
+    - - kind: Identifier
+        text: int
+      - kind: Identifier
+        text: x
+      - kind: Assign
+        text: "="
+      - kind: Number
+        text: "1"
+      - kind: Semicolon
+        text: ;
+    - []
+    "#);
+}

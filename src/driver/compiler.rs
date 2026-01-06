@@ -457,6 +457,7 @@ impl CompilerDriver {
         let result = self.run_pipeline(self.config.stop_after);
         match result {
             Ok(outputs) => {
+                self.print_diagnostics();
                 let mut object_files_to_link = Vec::new();
                 // We need to keep the temp files alive until the linking process is complete
                 let mut temp_files = Vec::new();

@@ -1160,14 +1160,10 @@ fn create_semantic_node_data(
                     alignment: spec.alignment,
                 };
 
-                if let Err(e) = ctx.symbol_table.define_variable(
-                    name,
-                    final_ty.ty,
-                    spec.storage,
-                    init.initializer,
-                    spec.alignment,
-                    span,
-                ) {
+                if let Err(e) =
+                    ctx.symbol_table
+                        .define_variable(name, final_ty.ty, init.initializer, spec.alignment, span)
+                {
                     let SymbolTableError::InvalidRedefinition { name, existing } = e;
                     let existing = ctx.symbol_table.get_symbol(existing);
                     ctx.diag.report(SemanticError::Redefinition {
@@ -1189,14 +1185,10 @@ fn create_semantic_node_data(
                 alignment: spec.alignment,
             };
 
-            if let Err(e) = ctx.symbol_table.define_variable(
-                name,
-                final_ty.ty,
-                spec.storage,
-                init.initializer,
-                spec.alignment,
-                span,
-            ) {
+            if let Err(e) = ctx
+                .symbol_table
+                .define_variable(name, final_ty.ty, init.initializer, spec.alignment, span)
+            {
                 let SymbolTableError::InvalidRedefinition { name, existing } = e;
                 let existing = ctx.symbol_table.get_symbol(existing);
                 ctx.diag.report(SemanticError::Redefinition {
@@ -1216,10 +1208,7 @@ fn create_semantic_node_data(
             body: None,
         };
 
-        if let Err(e) = ctx
-            .symbol_table
-            .define_function(name, function_type_ref, spec.storage, false, span)
-        {
+        if let Err(e) = ctx.symbol_table.define_function(name, function_type_ref, false, span) {
             let SymbolTableError::InvalidRedefinition { name, existing } = e;
             let existing = ctx.symbol_table.get_symbol(existing);
             ctx.diag.report(SemanticError::Redefinition {
@@ -1239,9 +1228,9 @@ fn create_semantic_node_data(
             alignment: spec.alignment,
         };
 
-        if let Err(e) =
-            ctx.symbol_table
-                .define_variable(name, final_ty.ty, spec.storage, init.initializer, spec.alignment, span)
+        if let Err(e) = ctx
+            .symbol_table
+            .define_variable(name, final_ty.ty, init.initializer, spec.alignment, span)
         {
             let SymbolTableError::InvalidRedefinition { name, existing } = e;
             let existing = ctx.symbol_table.get_symbol(existing);
@@ -1488,7 +1477,6 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                 .define_function(
                     func_name,
                     function_type_ref,
-                    None, // Storage class not extracted in original code
                     true, // is_definition
                     ctx.ast.get_node(node_ref).span,
                 )
@@ -1507,7 +1495,6 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                         .define_variable(
                             param.name.unwrap_or_else(|| NameId::new("unnamed_param")),
                             param.param_type.ty,
-                            None, // Params have no storage class in C
                             None, // No initializer
                             None, // No alignment
                             ctx.ast.get_node(node_ref).span,

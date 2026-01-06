@@ -1264,9 +1264,7 @@ impl<'a> AstToMirLowerer<'a> {
 
                     let mut fields = Vec::new();
                     for (idx, m) in members.iter().enumerate() {
-                        let name = m
-                            .name
-                            .unwrap_or_else(|| NameId::new(format!("__anon_{}", idx)));
+                        let name = m.name.unwrap_or_else(|| NameId::new(format!("__anon_{}", idx)));
                         fields.push((name, self.lower_type_to_mir(m.member_type.ty)));
                     }
                     (size, alignment, field_offsets, fields)

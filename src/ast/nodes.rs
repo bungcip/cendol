@@ -343,7 +343,7 @@ pub enum BinaryOp {
 }
 
 impl BinaryOp {
-    pub fn is_assignment(&self) -> bool {
+    pub(crate) fn is_assignment(&self) -> bool {
         matches!(
             self,
             BinaryOp::Assign
@@ -431,15 +431,6 @@ pub struct RecordDefData {
 pub enum Initializer {
     Expression(NodeRef),              // = 5
     List(Vec<DesignatedInitializer>), // = { .x = 1, [0] = 2 }
-}
-
-impl Initializer {
-    pub fn get_expression(&self) -> NodeRef {
-        match self {
-            Initializer::Expression(node_ref) => *node_ref,
-            _ => panic!("Initializer is not an expression"),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -365,7 +365,11 @@ impl From<PPError> for Diagnostic {
 
 impl<'src> Preprocessor<'src> {
     /// Create a new preprocessor
-    pub fn new(source_manager: &'src mut SourceManager, diag: &'src mut DiagnosticEngine, config: &PPConfig) -> Self {
+    pub(crate) fn new(
+        source_manager: &'src mut SourceManager,
+        diag: &'src mut DiagnosticEngine,
+        config: &PPConfig,
+    ) -> Self {
         let mut header_search = HeaderSearch {
             search_path: config
                 .system_include_paths
@@ -575,12 +579,12 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Check if a macro is defined
-    pub fn is_macro_defined(&self, symbol: &StringId) -> bool {
+    pub(crate) fn is_macro_defined(&self, symbol: &StringId) -> bool {
         self.macros.contains_key(symbol)
     }
 
     /// Get the interned symbol for the "defined" operator
-    pub fn defined_symbol(&self) -> StringId {
+    pub(crate) fn defined_symbol(&self) -> StringId {
         self.directive_keywords.defined_symbol()
     }
 
@@ -594,7 +598,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Process source file and return preprocessed tokens
-    pub fn process(&mut self, source_id: SourceId, _config: &PPConfig) -> Result<Vec<PPToken>, PPError> {
+    pub(crate) fn process(&mut self, source_id: SourceId, _config: &PPConfig) -> Result<Vec<PPToken>, PPError> {
         // Initialize lexer for main file
         let buffer = self.source_manager.get_buffer(source_id);
         let buffer_len = buffer.len() as u32;

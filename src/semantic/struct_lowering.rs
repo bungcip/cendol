@@ -2,7 +2,7 @@ use crate::ast::nodes::*;
 use crate::ast::utils::extract_identifier;
 use crate::diagnostic::SemanticError;
 use crate::semantic::const_eval::{self, ConstEvalCtx};
-use crate::semantic::symbol_resolver::{LowerCtx, apply_declarator_for_member, lower_decl_specifiers_for_member};
+use crate::semantic::symbol_resolver::{LowerCtx, apply_declarator, lower_decl_specifiers};
 use crate::semantic::{QualType, StructMember, TypeKind};
 use std::num::NonZeroU16;
 
@@ -43,7 +43,16 @@ pub(crate) fn lower_struct_members(
         // Handle anonymous struct/union members (C11 6.7.2.1p13)
         // "An unnamed member of structure or union type with no tag is called an anonymous structure or anonymous union"
         if decl.init_declarators.is_empty() {
-            if let Some(type_ref) = lower_decl_specifiers_for_member(&decl.specifiers, ctx, span) {
+            let spec_info = lower_decl_specifiers(&decl.specifiers, ctx, span);
+
+            // Check for illegal storage classes
+            if spec_info.storage.is_some() {
+                ctx.report_error(SemanticError::ConflictingStorageClasses { span });
+            }
+
+            if let Some(mut type_ref) = spec_info.base_type {
+                type_ref.qualifiers |= spec_info.qualifiers;
+
                 // Check if it is a Record type (struct or union)
                 let ty = ctx.registry.get(type_ref.ty);
                 if let TypeKind::Record { tag, .. } = &ty.kind {
@@ -61,14 +70,28 @@ pub(crate) fn lower_struct_members(
             continue;
         }
 
+        // Hoist declaration specifier processing out of the loop
+        let spec_info = lower_decl_specifiers(&decl.specifiers, ctx, span);
+
+        // Check for illegal storage classes
+        if spec_info.storage.is_some() {
+            ctx.report_error(SemanticError::ConflictingStorageClasses { span });
+        }
+
         for init_declarator in &decl.init_declarators {
             let (bit_field_size, base_declarator) = extract_bit_field_width(&init_declarator.declarator, ctx);
 
             let member_name = extract_identifier(base_declarator);
 
-            let member_type = if let Some(base_type_ref) = lower_decl_specifiers_for_member(&decl.specifiers, ctx, span)
-            {
-                apply_declarator_for_member(base_type_ref.ty, base_declarator, ctx)
+            let member_type = if let Some(base_type_ref) = spec_info.base_type {
+                // Manually re-apply qualifiers from the base type.
+                // This is necessary because apply_declarator takes TypeRef (unqualified)
+                // and effectively strips the qualifiers from the base type during type construction.
+                // By re-applying them here, we ensure that qualifiers like `const` in `const int x;`
+                // are preserved on the final struct member type.
+                let mut ty = apply_declarator(base_type_ref.ty, base_declarator, ctx);
+                ty.qualifiers |= spec_info.qualifiers;
+                ty
             } else {
                 QualType::unqualified(ctx.registry.type_int)
             };

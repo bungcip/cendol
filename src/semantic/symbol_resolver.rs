@@ -1160,13 +1160,10 @@ fn create_semantic_node_data(
                     alignment: spec.alignment,
                 };
 
-                if let Err(e) = ctx.symbol_table.define_variable(
-                    name,
-                    final_ty.ty,
-                    init.initializer,
-                    spec.alignment,
-                    span,
-                ) {
+                if let Err(e) =
+                    ctx.symbol_table
+                        .define_variable(name, final_ty.ty, init.initializer, spec.alignment, span)
+                {
                     let SymbolTableError::InvalidRedefinition { name, existing } = e;
                     let existing = ctx.symbol_table.get_symbol(existing);
                     ctx.diag.report(SemanticError::Redefinition {
@@ -1188,13 +1185,10 @@ fn create_semantic_node_data(
                 alignment: spec.alignment,
             };
 
-            if let Err(e) = ctx.symbol_table.define_variable(
-                name,
-                final_ty.ty,
-                init.initializer,
-                spec.alignment,
-                span,
-            ) {
+            if let Err(e) = ctx
+                .symbol_table
+                .define_variable(name, final_ty.ty, init.initializer, spec.alignment, span)
+            {
                 let SymbolTableError::InvalidRedefinition { name, existing } = e;
                 let existing = ctx.symbol_table.get_symbol(existing);
                 ctx.diag.report(SemanticError::Redefinition {
@@ -1214,10 +1208,7 @@ fn create_semantic_node_data(
             body: None,
         };
 
-        if let Err(e) = ctx
-            .symbol_table
-            .define_function(name, function_type_ref, false, span)
-        {
+        if let Err(e) = ctx.symbol_table.define_function(name, function_type_ref, false, span) {
             let SymbolTableError::InvalidRedefinition { name, existing } = e;
             let existing = ctx.symbol_table.get_symbol(existing);
             ctx.diag.report(SemanticError::Redefinition {
@@ -1237,9 +1228,9 @@ fn create_semantic_node_data(
             alignment: spec.alignment,
         };
 
-        if let Err(e) =
-            ctx.symbol_table
-                .define_variable(name, final_ty.ty, init.initializer, spec.alignment, span)
+        if let Err(e) = ctx
+            .symbol_table
+            .define_variable(name, final_ty.ty, init.initializer, spec.alignment, span)
         {
             let SymbolTableError::InvalidRedefinition { name, existing } = e;
             let existing = ctx.symbol_table.get_symbol(existing);

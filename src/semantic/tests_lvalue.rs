@@ -122,4 +122,17 @@ fn rejects_invalid_lvalue_assignments() {
         4,
         13,
     );
+
+    // Assignment to a member of a struct returned by value (rvalue)
+    run_lvalue_test(
+        r#"
+        struct S { int x; };
+        struct S f() { struct S s; return s; }
+        int main() {
+            f().x = 1;
+        }
+    "#,
+        5,
+        13,
+    );
 }

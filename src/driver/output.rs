@@ -64,7 +64,7 @@ impl OutputHandler {
                         }
                     }
                 } else {
-                     // Add space between consecutive macro-expanded tokens (linearization)
+                    // Add space between consecutive macro-expanded tokens (linearization)
                     print!(" ");
                 }
 

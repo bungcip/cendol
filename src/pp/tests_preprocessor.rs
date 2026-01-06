@@ -471,11 +471,11 @@ fn test_pragma_once_via_pragma_operator() {
 _Pragma("once")
 int a = 1;
 "#;
-    sm.add_buffer(header_content.as_bytes().to_vec(), "header.h");
+    sm.add_buffer(header_content.as_bytes().to_vec(), "header_test_pragma.h");
 
     let main_content = r#"
-#include "header.h"
-#include "header.h"
+#include "header_test_pragma.h"
+#include "header_test_pragma.h"
 "#;
     let main_id = sm.add_buffer(main_content.as_bytes().to_vec(), "main.c");
 
@@ -509,11 +509,11 @@ int a = 1;
 fn test_include_same_file_twice_without_pragma_once() {
     let mut sm = SourceManager::new();
     let header_content = "int a = 1;";
-    sm.add_buffer(header_content.as_bytes().to_vec(), "header.h");
+    sm.add_buffer(header_content.as_bytes().to_vec(), "header_test_twice.h");
 
     let main_content = r#"
-#include "header.h"
-#include "header.h"
+#include "header_test_twice.h"
+#include "header_test_twice.h"
 "#;
     let main_id = sm.add_buffer(main_content.as_bytes().to_vec(), "main.c");
 

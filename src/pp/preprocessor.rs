@@ -697,6 +697,27 @@ impl<'src> Preprocessor<'src> {
             0,
         ));
 
+        if !self.conditional_stack.is_empty() {
+            let start_loc = if let Some(_info) = self.conditional_stack.last() {
+                // Ideally we would have the location of the #if that started this
+                // For now, use current location
+                self.get_current_location()
+            } else {
+                self.get_current_location()
+            };
+
+            let diag = Diagnostic {
+                level: DiagnosticLevel::Error,
+                message: "Unclosed preprocessor conditional directive".to_string(),
+                span: SourceSpan::new(start_loc, start_loc),
+                code: Some("unclosed_conditional".to_string()),
+                hints: vec!["Expected #endif before end of file".to_string()],
+                related: Vec::new(),
+            };
+            self.diag.report_diagnostic(diag);
+            return Err(PPError::UnexpectedEndOfFile);
+        }
+
         Ok(result_tokens)
     }
 
@@ -913,13 +934,13 @@ impl<'src> Preprocessor<'src> {
                     Some(DirectiveKind::Elif) => {
                         let expr_tokens = self.parse_conditional_expression().unwrap_or_default();
                         let condition = self.evaluate_conditional_expression(&expr_tokens).unwrap_or(false);
-                        self.handle_elif_directive(condition)?;
+                        self.handle_elif_directive(condition, token.location)?;
                     }
                     Some(DirectiveKind::Else) => {
-                        self.handle_else()?;
+                        self.handle_else(token.location)?;
                     }
                     Some(DirectiveKind::Endif) => {
-                        self.handle_endif()?;
+                        self.handle_endif(token.location)?;
                     }
                     Some(DirectiveKind::Line) => self.handle_line()?,
                     Some(DirectiveKind::Pragma) => self.handle_pragma()?,
@@ -1426,13 +1447,31 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    fn handle_elif_directive(&mut self, condition: bool) -> Result<(), PPError> {
+    fn handle_elif_directive(&mut self, condition: bool, location: SourceLoc) -> Result<(), PPError> {
         if self.conditional_stack.is_empty() {
+            let diag = Diagnostic {
+                level: DiagnosticLevel::Error,
+                message: "#elif without #if".to_string(),
+                span: SourceSpan::new(location, location),
+                code: Some("elif_without_if".to_string()),
+                hints: vec!["#elif must be preceded by #if, #ifdef, or #ifndef".to_string()],
+                related: Vec::new(),
+            };
+            self.diag.report_diagnostic(diag);
             return Err(PPError::ElifWithoutIf);
         }
 
         let current = self.conditional_stack.last_mut().unwrap();
         if current.found_else {
+            let diag = Diagnostic {
+                level: DiagnosticLevel::Error,
+                message: "#elif after #else".to_string(),
+                span: SourceSpan::new(location, location),
+                code: Some("elif_after_else".to_string()),
+                hints: vec!["#else must be the last directive in a conditional block".to_string()],
+                related: Vec::new(),
+            };
+            self.diag.report_diagnostic(diag);
             return Err(PPError::UnmatchedElif);
         }
 
@@ -1449,13 +1488,31 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    fn handle_else(&mut self) -> Result<(), PPError> {
+    fn handle_else(&mut self, location: SourceLoc) -> Result<(), PPError> {
         if self.conditional_stack.is_empty() {
+            let diag = Diagnostic {
+                level: DiagnosticLevel::Error,
+                message: "#else without #if".to_string(),
+                span: SourceSpan::new(location, location),
+                code: Some("else_without_if".to_string()),
+                hints: vec!["#else must be preceded by #if, #ifdef, or #ifndef".to_string()],
+                related: Vec::new(),
+            };
+            self.diag.report_diagnostic(diag);
             return Err(PPError::ElseWithoutIf);
         }
 
         let current = self.conditional_stack.last_mut().unwrap();
         if current.found_else {
+            let diag = Diagnostic {
+                level: DiagnosticLevel::Error,
+                message: "Multiple #else directives".to_string(),
+                span: SourceSpan::new(location, location),
+                code: Some("multiple_else".to_string()),
+                hints: vec!["A conditional block can only have one #else".to_string()],
+                related: Vec::new(),
+            };
+            self.diag.report_diagnostic(diag);
             return Err(PPError::UnmatchedElse);
         }
         current.found_else = true;
@@ -1471,8 +1528,17 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    fn handle_endif(&mut self) -> Result<(), PPError> {
+    fn handle_endif(&mut self, location: SourceLoc) -> Result<(), PPError> {
         if self.conditional_stack.is_empty() {
+            let diag = Diagnostic {
+                level: DiagnosticLevel::Error,
+                message: "Unmatched #endif".to_string(),
+                span: SourceSpan::new(location, location),
+                code: Some("unmatched_endif".to_string()),
+                hints: vec!["#endif must be preceded by #if, #ifdef, or #ifndef".to_string()],
+                related: Vec::new(),
+            };
+            self.diag.report_diagnostic(diag);
             return Err(PPError::UnmatchedEndif);
         }
 

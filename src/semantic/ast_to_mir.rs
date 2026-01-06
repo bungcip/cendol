@@ -15,6 +15,7 @@ use crate::semantic::SymbolKind;
 use crate::semantic::SymbolRef;
 use crate::semantic::SymbolTable;
 use crate::semantic::TypeKind;
+use crate::semantic::ValueCategory;
 use crate::semantic::{DefinitionState, TypeRef, TypeRegistry};
 use crate::semantic::{ImplicitConversion, Namespace, ScopeId};
 use crate::source_manager::SourceSpan;
@@ -160,6 +161,21 @@ impl<'a> AstToMirLowerer<'a> {
                                 self.mir_builder
                                     .declare_function(symbol_name, vec![], return_mir_type, false);
                             }
+                        }
+                    } else if let SymbolKind::Variable { is_global: true, .. } =
+                        self.symbol_table.get_symbol(sym_ref).kind
+                    {
+                        // Pre-declare global variables to handle forward references and self-references
+                        if !self.global_map.contains_key(&sym_ref) {
+                            let mir_type_id = self.lower_type_to_mir(symbol_type_info);
+                            let global_id = self.mir_builder.create_global(
+                                symbol_name,
+                                mir_type_id,
+                                false, // is_constant, hard to know without full decl analysis, default to false
+                            );
+                            // We can update is_constant later if needed, or assume it's mutable for now.
+                            // The VarDecl lowering will set the initializer and other properties.
+                            self.global_map.insert(sym_ref, global_id);
                         }
                     }
                 }
@@ -458,9 +474,17 @@ impl<'a> AstToMirLowerer<'a> {
             self.operand_to_const_id(operand)
         });
 
-        if let Some(global_id) = self.global_map.get(&entry_ref) {
+        let pre_existing_global = self.global_map.get(&entry_ref).copied();
+
+        if let Some(global_id) = pre_existing_global {
             if let Some(init_id) = initial_value_id {
-                self.mir_builder.set_global_initializer(*global_id, init_id);
+                self.mir_builder.set_global_initializer(global_id, init_id);
+            } else {
+                let symbol = self.symbol_table.get_symbol(entry_ref);
+                if symbol.def_state == DefinitionState::Tentative {
+                    let zero_init = self.create_constant(ConstValue::Zero);
+                    self.mir_builder.set_global_initializer(global_id, zero_init);
+                }
             }
         } else {
             let symbol = self.symbol_table.get_symbol(entry_ref);
@@ -525,6 +549,15 @@ impl<'a> AstToMirLowerer<'a> {
                     let operand = self.lower_expression(scope_id, *operand_ref, true);
                     if let Operand::Copy(place) = operand {
                         Operand::AddressOf(place)
+                    } else if let Operand::Constant(const_id) = operand
+                        && let Some(info) = &self.ast.semantic_info
+                        && info.value_categories[(operand_ref.get() - 1) as usize] == ValueCategory::LValue
+                        && matches!(
+                            self.mir_builder.get_constants().get(&const_id),
+                            Some(ConstValue::FunctionAddress(_))
+                        )
+                    {
+                        Operand::Constant(const_id)
                     } else {
                         panic!("Cannot take address of a non-lvalue");
                     }
@@ -600,7 +633,23 @@ impl<'a> AstToMirLowerer<'a> {
         match &entry.kind {
             SymbolKind::Variable { is_global, .. } => {
                 if *is_global {
-                    let global_id = self.global_map.get(&resolved_ref).unwrap();
+                    // Global variables should have been lowered already if we are visiting in order.
+                    // However, if we are in an initializer of a global variable that refers to itself (or forward ref),
+                    // or if there is a bug in ordering, this might fail.
+                    // For now, let's assume valid C code where globals are defined before use (or tentatively defined).
+                    let global_id = match self.global_map.get(&resolved_ref) {
+                        Some(id) => id,
+                        None => {
+                            // Fallback: If not yet in map, it might be a forward reference or we missed it.
+                            // But in this specific crash case, 's' is defined before 'anon'.
+                            // Let's print debug info to diagnose.
+                            panic!(
+                                "Global variable '{}' not found in MIR map. Visited? {:?}",
+                                entry.name,
+                                self.global_map.keys()
+                            );
+                        }
+                    };
                     Operand::Copy(Box::new(Place::Global(*global_id)))
                 } else {
                     let local_id = self.local_map.get(&resolved_ref).unwrap();

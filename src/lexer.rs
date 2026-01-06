@@ -383,7 +383,7 @@ pub struct Lexer<'src> {
 
 impl<'src> Lexer<'src> {
     /// Create a new lexer with the given preprocessor token stream
-    pub(crate) fn new(tokens: &'src [PPToken]) -> Self {
+    pub fn new(tokens: &'src [PPToken]) -> Self {
         Lexer {
             tokens,
             // current_index: 0,
@@ -523,7 +523,7 @@ impl<'src> Lexer<'src> {
     }
 
     /// Get all tokens from the stream
-    pub(crate) fn tokenize_all(&mut self) -> Vec<Token> {
+    pub fn tokenize_all(&mut self) -> Vec<Token> {
         let mut tokens = Vec::new();
         let mut current_token_iter = self.tokens.iter().peekable();
 

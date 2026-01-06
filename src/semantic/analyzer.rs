@@ -11,7 +11,7 @@ use crate::{
 
 /// Run Semantic Analyzer in our AST and return analysist result in SemanticInfo
 /// which contains resolved type, conversion table, and value category
-pub(crate) fn run_semantic_analyzer(
+pub fn run_semantic_analyzer(
     ast: &Ast,
     diag: &mut DiagnosticEngine,
     symbol_table: &SymbolTable,
@@ -58,7 +58,7 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::Ident(_, symbol) => {
                 if let Some(symbol_ref) = symbol.get() {
                     let symbol = self.symbol_table.get_symbol(symbol_ref);
-                    matches!(symbol.kind, SymbolKind::Variable { .. })
+                    matches!(symbol.kind, SymbolKind::Variable { .. } | SymbolKind::Function { .. })
                 } else {
                     false
                 }

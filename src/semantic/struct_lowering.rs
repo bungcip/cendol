@@ -3,7 +3,7 @@ use crate::ast::utils::extract_identifier;
 use crate::diagnostic::SemanticError;
 use crate::semantic::const_eval::{self, ConstEvalCtx};
 use crate::semantic::symbol_resolver::{LowerCtx, apply_declarator_for_member, lower_decl_specifiers_for_member};
-use crate::semantic::{QualType, StructMember};
+use crate::semantic::{QualType, StructMember, TypeKind};
 use std::num::NonZeroU16;
 
 /// Extracts the bit-field width from a declarator if it exists.
@@ -40,6 +40,27 @@ pub(crate) fn lower_struct_members(
 ) -> Vec<StructMember> {
     let mut struct_members = Vec::new();
     for decl in members {
+        // Handle anonymous struct/union members (C11 6.7.2.1p13)
+        // "An unnamed member of structure or union type with no tag is called an anonymous structure or anonymous union"
+        if decl.init_declarators.is_empty() {
+            if let Some(type_ref) = lower_decl_specifiers_for_member(&decl.specifiers, ctx, span) {
+                // Check if it is a Record type (struct or union)
+                let ty = ctx.registry.get(type_ref.ty);
+                if let TypeKind::Record { tag, .. } = &ty.kind {
+                    // It must have no tag to be an anonymous member
+                    if tag.is_none() {
+                        struct_members.push(StructMember {
+                            name: None,
+                            member_type: type_ref,
+                            bit_field_size: None,
+                            span, // Use the parent span since DeclarationData doesn't have one
+                        });
+                    }
+                }
+            }
+            continue;
+        }
+
         for init_declarator in &decl.init_declarators {
             let (bit_field_size, base_declarator) = extract_bit_field_width(&init_declarator.declarator, ctx);
 

@@ -5,7 +5,7 @@ use crate::{
         ArraySizeType, ImplicitConversion, QualType, SemanticInfo, SymbolKind, SymbolTable, TypeKind, TypeRegistry,
         ValueCategory,
         conversions::{integer_promotion, usual_arithmetic_conversions},
-        utils::is_scalar_type,
+        utils::{is_integer_type, is_scalar_type},
     },
 };
 
@@ -175,7 +175,14 @@ impl<'a> SemanticAnalyzer<'a> {
                 // Logical NOT always returns bool type
                 Some(QualType::unqualified(self.registry.type_bool))
             }
-            _ => None,
+            UnaryOp::BitNot => {
+                if is_integer_type(operand_ty, self.registry) {
+                    Some(self.apply_and_record_integer_promotion(operand_ref, operand_ty))
+                } else {
+                    // TODO: Report error for invalid operand type
+                    None
+                }
+            }
         }
     }
 

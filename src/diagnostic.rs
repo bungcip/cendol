@@ -230,6 +230,12 @@ pub enum SemanticError {
 
     #[error("requested alignment is not a constant expression")]
     NonConstantAlignment { span: SourceSpan },
+
+    #[error("variable length array member in structure or union")]
+    VlaInStruct { span: SourceSpan },
+
+    #[error("static or type qualifiers in array declarator only allowed in function parameters")]
+    StaticOrQualifiersInNonParamArray { span: SourceSpan },
 }
 
 impl SemanticError {
@@ -258,6 +264,8 @@ impl SemanticError {
             SemanticError::GenericNoMatch { span } => *span,
             SemanticError::InvalidAlignment { span, .. } => *span,
             SemanticError::NonConstantAlignment { span } => *span,
+            SemanticError::VlaInStruct { span } => *span,
+            SemanticError::StaticOrQualifiersInNonParamArray { span } => *span,
         }
     }
 }

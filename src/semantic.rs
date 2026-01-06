@@ -95,3 +95,5 @@ pub use types::{
     ArraySizeType, EnumConstant, FunctionParameter, QualType, StructMember, Type, TypeKind, TypeLayout, TypeQualifiers,
     TypeRef,
 };
+
+#[cfg(test)]

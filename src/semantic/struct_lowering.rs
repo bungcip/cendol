@@ -68,7 +68,7 @@ pub(crate) fn lower_struct_members(
 
             let member_type = if let Some(base_type_ref) = lower_decl_specifiers_for_member(&decl.specifiers, ctx, span)
             {
-                apply_declarator_for_member(base_type_ref.ty, base_declarator, ctx)
+                apply_declarator_for_member(base_type_ref.ty, base_declarator, ctx, init_declarator.span)
             } else {
                 QualType::unqualified(ctx.registry.type_int)
             };

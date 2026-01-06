@@ -192,8 +192,8 @@ fn resolve_array_size(size: Option<NodeRef>, ctx: &mut LowerCtx) -> ArraySizeTyp
                 ArraySizeType::Incomplete
             }
         } else {
-            // TODO: Handle non-constant array sizes (VLAs)
-            ArraySizeType::Incomplete
+            // Non-constant size -> VLA
+            ArraySizeType::Variable(expr)
         }
     } else {
         // Should not happen as parser ensures size is Some
@@ -1826,6 +1826,7 @@ pub(crate) fn apply_declarator_for_member(
     current_type: TypeRef,
     declarator: &Declarator,
     ctx: &mut LowerCtx,
+    span: SourceSpan,
 ) -> QualType {
     match declarator {
         Declarator::Identifier(_, qualifiers) => QualType::new(current_type, *qualifiers),
@@ -1833,7 +1834,7 @@ pub(crate) fn apply_declarator_for_member(
             let pointer_type_ref = ctx.registry.pointer_to(current_type);
 
             if let Some(next_decl) = next {
-                let mut result = apply_declarator_for_member(pointer_type_ref, next_decl, ctx);
+                let mut result = apply_declarator_for_member(pointer_type_ref, next_decl, ctx, span);
                 result.qualifiers |= *qualifiers;
                 result
             } else {
@@ -1842,18 +1843,43 @@ pub(crate) fn apply_declarator_for_member(
         }
         Declarator::Array(base, size) => {
             let array_size = match size {
-                ArraySize::Expression { expr, qualifiers: _ } => resolve_array_size(Some(*expr), ctx),
-                ArraySize::Star { qualifiers: _ } => ArraySizeType::Star,
+                ArraySize::Expression { expr, qualifiers } => {
+                    // Check qualifiers in array declarator [const 10]
+                    if !qualifiers.is_empty() {
+                        ctx.report_error(SemanticError::StaticOrQualifiersInNonParamArray { span });
+                    }
+
+                    let size_type = resolve_array_size(Some(*expr), ctx);
+                    if let ArraySizeType::Variable(_) = size_type {
+                        ctx.report_error(SemanticError::VlaInStruct {
+                            span: ctx.ast.get_node(*expr).span,
+                        });
+                        // Fallback to Incomplete to avoid cascading errors
+                        ArraySizeType::Incomplete
+                    } else {
+                        size_type
+                    }
+                }
+                ArraySize::Star { qualifiers: _ } => {
+                    // [*] VLA specifier is not allowed in struct
+                    ctx.report_error(SemanticError::StaticOrQualifiersInNonParamArray { span });
+                    ArraySizeType::Incomplete
+                }
                 ArraySize::Incomplete => ArraySizeType::Incomplete,
                 ArraySize::VlaSpecifier {
-                    is_static: _,
-                    qualifiers: _,
+                    is_static,
+                    qualifiers,
                     size,
-                } => resolve_array_size(*size, ctx),
+                } => {
+                    if *is_static || !qualifiers.is_empty() {
+                        ctx.report_error(SemanticError::StaticOrQualifiersInNonParamArray { span });
+                    }
+                    resolve_array_size(*size, ctx)
+                }
             };
 
             let array_type_ref = ctx.registry.array_of(current_type, array_size);
-            apply_declarator_for_member(array_type_ref, base, ctx)
+            apply_declarator_for_member(array_type_ref, base, ctx, span)
         }
         Declarator::Function {
             inner,
@@ -1869,7 +1895,7 @@ pub(crate) fn apply_declarator_for_member(
                 // For abstract declarators (common in function ptrs like `int (*f)(int)`),
                 // we need to apply the parameter declarator if present.
                 let final_param_type = if let Some(decl) = &param.declarator {
-                    apply_declarator_for_member(param_type.ty, decl, ctx)
+                    apply_declarator_for_member(param_type.ty, decl, ctx, param.span)
                 } else {
                     param_type
                 };
@@ -1889,11 +1915,11 @@ pub(crate) fn apply_declarator_for_member(
             }
 
             let function_type_ref = ctx.registry.function_type(current_type, processed_params, *is_variadic);
-            apply_declarator_for_member(function_type_ref, inner, ctx)
+            apply_declarator_for_member(function_type_ref, inner, ctx, span)
         }
         Declarator::BitField(inner, _) => {
             // Bitfield width is handled during member collection, not type construction
-            apply_declarator_for_member(current_type, inner, ctx)
+            apply_declarator_for_member(current_type, inner, ctx, span)
         }
         // For other declarator types, just return the current type
         _ => QualType::unqualified(current_type),

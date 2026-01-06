@@ -249,7 +249,7 @@ pub struct IncludeStackInfo {
 }
 
 /// Configuration for preprocessor
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PPConfig {
     pub max_include_depth: usize,
     pub system_include_paths: Vec<PathBuf>,
@@ -257,6 +257,19 @@ pub struct PPConfig {
     pub angled_include_paths: Vec<PathBuf>,
     pub framework_paths: Vec<PathBuf>,
     pub lang_options: LangOptions,
+}
+
+impl Default for PPConfig {
+    fn default() -> Self {
+        Self {
+            max_include_depth: 200,
+            system_include_paths: Vec::new(),
+            quoted_include_paths: Vec::new(),
+            angled_include_paths: Vec::new(),
+            framework_paths: Vec::new(),
+            lang_options: LangOptions::default(),
+        }
+    }
 }
 
 /// Main preprocessor structure
@@ -287,6 +300,7 @@ pub struct Preprocessor<'src> {
 
     // State
     include_depth: usize,
+    max_include_depth: usize,
 }
 
 /// Preprocessor errors
@@ -414,6 +428,7 @@ impl<'src> Preprocessor<'src> {
             built_in_headers,
             lexer_stack: Vec::new(),
             include_depth: 0,
+            max_include_depth: config.max_include_depth,
         };
 
         preprocessor.initialize_builtin_macros();
@@ -920,24 +935,77 @@ impl<'src> Preprocessor<'src> {
             PPTokenKind::Identifier(sym) => {
                 // Use O(1) interned keyword comparison
                 match self.directive_keywords.is_directive(sym) {
-                    Some(DirectiveKind::Define) => self.handle_define()?,
-                    Some(DirectiveKind::Undef) => self.handle_undef()?,
-                    Some(DirectiveKind::Include) => self.handle_include()?,
+                    Some(DirectiveKind::Define) => {
+                        if !self.is_currently_skipping() {
+                            self.handle_define()?;
+                        } else {
+                            self.skip_directive()?;
+                        }
+                    }
+                    Some(DirectiveKind::Undef) => {
+                        if !self.is_currently_skipping() {
+                            self.handle_undef()?;
+                        } else {
+                            self.skip_directive()?;
+                        }
+                    }
+                    Some(DirectiveKind::Include) => {
+                        if !self.is_currently_skipping() {
+                            self.handle_include()?;
+                        } else {
+                            self.skip_directive()?;
+                        }
+                    }
                     Some(DirectiveKind::If) => {
-                        let expr_tokens = self.parse_conditional_expression().unwrap_or_default();
-                        let condition = self.evaluate_conditional_expression(&expr_tokens).unwrap_or(false);
-                        self.handle_if_directive(condition)?;
+                        // Always process #if to track nesting
+                        if self.is_currently_skipping() {
+                            self.push_skipped_conditional();
+                            self.skip_directive()?;
+                        } else {
+                            let expr_tokens = self.parse_conditional_expression().unwrap_or_default();
+                            let condition = self.evaluate_conditional_expression(&expr_tokens).unwrap_or(false);
+                            self.handle_if_directive(condition)?;
+                        }
                     }
                     Some(DirectiveKind::Ifdef) => {
-                        self.handle_ifdef()?;
+                        if self.is_currently_skipping() {
+                            self.push_skipped_conditional();
+                            self.skip_directive()?;
+                        } else {
+                            self.handle_ifdef()?;
+                        }
                     }
                     Some(DirectiveKind::Ifndef) => {
-                        self.handle_ifndef()?;
+                        if self.is_currently_skipping() {
+                            self.push_skipped_conditional();
+                            self.skip_directive()?;
+                        } else {
+                            self.handle_ifndef()?;
+                        }
                     }
                     Some(DirectiveKind::Elif) => {
-                        let expr_tokens = self.parse_conditional_expression().unwrap_or_default();
-                        let condition = self.evaluate_conditional_expression(&expr_tokens).unwrap_or(false);
-                        self.handle_elif_directive(condition, token.location)?;
+                        // Elif is tricky when skipping.
+                        // If we are skipping because a previous branch was taken (found_non_skipping=true), we continue skipping.
+                        // If we are skipping because the parent is skipping, we continue skipping.
+                        // If we are skipping because we haven't found a true branch yet, we might evaluate this.
+
+                        // However, my `is_currently_skipping` just checks `any`.
+                        // We need to know if the *current* conditional level allows us to evaluate.
+
+                        // BUT, if we are in a "deeply nested" skip (parent is skipping), we shouldn't even evaluate the expression.
+                        // `handle_elif_directive` will handle the logic if we pass it correctly.
+                        // But wait, if parent is skipping, `handle_elif` shouldn't do anything except maybe update internal state?
+                        // Actually, if parent is skipping, this whole block is dead.
+
+                        // Let's defer to `handle_elif_directive` but maybe we need to be careful about not evaluating expression if parent is skipped.
+                        if self.should_evaluate_conditional() {
+                            let expr_tokens = self.parse_conditional_expression().unwrap_or_default();
+                            let condition = self.evaluate_conditional_expression(&expr_tokens).unwrap_or(false);
+                            self.handle_elif_directive(condition, token.location)?;
+                        } else {
+                            // Just update state to keep skipping
+                            self.handle_elif_directive(false, token.location)?;
+                        }
                     }
                     Some(DirectiveKind::Else) => {
                         self.handle_else(token.location)?;
@@ -945,10 +1013,34 @@ impl<'src> Preprocessor<'src> {
                     Some(DirectiveKind::Endif) => {
                         self.handle_endif(token.location)?;
                     }
-                    Some(DirectiveKind::Line) => self.handle_line()?,
-                    Some(DirectiveKind::Pragma) => self.handle_pragma()?,
-                    Some(DirectiveKind::Error) => self.handle_error()?,
-                    Some(DirectiveKind::Warning) => self.handle_warning()?,
+                    Some(DirectiveKind::Line) => {
+                        if !self.is_currently_skipping() {
+                            self.handle_line()?;
+                        } else {
+                            self.skip_directive()?;
+                        }
+                    }
+                    Some(DirectiveKind::Pragma) => {
+                        if !self.is_currently_skipping() {
+                            self.handle_pragma()?;
+                        } else {
+                            self.skip_directive()?;
+                        }
+                    }
+                    Some(DirectiveKind::Error) => {
+                        if !self.is_currently_skipping() {
+                            self.handle_error()?;
+                        } else {
+                            self.skip_directive()?;
+                        }
+                    }
+                    Some(DirectiveKind::Warning) => {
+                        if !self.is_currently_skipping() {
+                            self.handle_warning()?;
+                        } else {
+                            self.skip_directive()?;
+                        }
+                    }
                     None => {
                         let name = sym.as_str();
                         let diag = Diagnostic {
@@ -1264,38 +1356,9 @@ impl<'src> Preprocessor<'src> {
         };
 
         // Check include depth
-        if self.include_depth >= 200 {
+        if self.include_depth >= self.max_include_depth {
             // Arbitrary limit
             return Err(PPError::IncludeDepthExceeded);
-        }
-
-        // Check for circular includes
-        let path_to_check = if self.built_in_headers.contains_key(path_str.as_str()) {
-            PathBuf::from(&path_str)
-        } else {
-            let current_file_id = self.lexer_stack.last().unwrap().source_id;
-            let current_file_info = self.source_manager.get_file_info(current_file_id).unwrap();
-            let current_dir = current_file_info.path.parent().unwrap_or(Path::new("."));
-            self.header_search
-                .resolve_path(&path_str, is_angled, current_dir)
-                .unwrap_or_else(|| PathBuf::from(&path_str))
-        };
-
-        // Try to canonicalize, fall back to the given path if it fails.
-        // This handles both non-existent files and in-memory buffers.
-        let comparable_path_for_new_include = path_to_check.canonicalize().unwrap_or_else(|_| path_to_check.clone());
-
-        if self.include_stack.iter().any(|info| {
-            if let Some(file_info) = self.source_manager.get_file_info(info.file_id) {
-                let existing_path = &file_info.path;
-                let comparable_existing_path = existing_path.canonicalize().unwrap_or_else(|_| existing_path.clone());
-
-                comparable_existing_path == comparable_path_for_new_include
-            } else {
-                false
-            }
-        }) {
-            return Err(PPError::CircularInclude);
         }
 
         // Check for built-in headers first for angled includes
@@ -1326,30 +1389,21 @@ impl<'src> Preprocessor<'src> {
                         PPError::FileNotFound
                     })?
                 } else {
-                    // For angled includes, if not found, emit warning and skip
-                    let diag = Diagnostic {
-                        level: DiagnosticLevel::Warning,
-                        message: format!("Include file '{}' not found, skipping", path_str),
-                        span: SourceSpan::new(token.location, token.location),
-                        code: Some("include_file_not_found".to_string()),
-                        hints: vec!["Check the include path and ensure the file exists".to_string()],
-                        related: Vec::new(),
-                    };
-                    self.diag.report_diagnostic(diag);
-                    return Ok(());
+                    return Err(PPError::FileNotFound);
                 }
             }
         } else {
             // For quoted includes, resolve as before
-            let current_file_id = self.lexer_stack.last().unwrap().source_id;
-            let current_file_info = self.source_manager.get_file_info(current_file_id).unwrap();
-            let current_dir = current_file_info.path.parent().unwrap_or(Path::new("."));
-
-            // Resolve the path
-            let resolved_path = self.header_search.resolve_path(&path_str, is_angled, current_dir);
+            let resolved_path = if is_angled {
+                self.header_search.resolve_path(&path_str, true, Path::new("."))
+            } else {
+                let current_file_id = self.lexer_stack.last().unwrap().source_id;
+                let current_file_info = self.source_manager.get_file_info(current_file_id).unwrap();
+                let current_dir = current_file_info.path.parent().unwrap_or(Path::new("."));
+                self.header_search.resolve_path(&path_str, false, current_dir)
+            };
 
             if let Some(resolved_path) = resolved_path {
-                // Load the file
                 self.source_manager
                     .add_file_from_path(&resolved_path)
                     .map_err(|_| PPError::FileNotFound)?
@@ -1545,9 +1599,8 @@ impl<'src> Preprocessor<'src> {
             return Err(PPError::UnmatchedEndif);
         }
 
-        let info = self.conditional_stack.pop().unwrap();
-        // Restore previous skipping state
-        self.set_skipping(info.was_skipping);
+        let _info = self.conditional_stack.pop().unwrap();
+        // Restore previous skipping state - checking the stack implicitly restores it
 
         self.expect_eod()?;
 
@@ -2410,5 +2463,49 @@ impl<'src> Preprocessor<'src> {
         }
 
         Ok(())
+    }
+
+    /// Skip current directive tokens until EOD
+    fn skip_directive(&mut self) -> Result<(), PPError> {
+        while let Some(token) = self.lex_token() {
+            if token.kind == PPTokenKind::Eod {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// Push a conditional that is lazily skipped (nested in a skipped block)
+    fn push_skipped_conditional(&mut self) {
+        // Equivalent to handle_if_directive(false)
+        let info = PPConditionalInfo {
+            was_skipping: self.is_currently_skipping(),
+            found_else: false,
+            found_non_skipping: false, // Condition treated as false
+        };
+        self.conditional_stack.push(info);
+        // Force skipping for this level
+        self.set_skipping(true);
+    }
+
+    /// Check if we should evaluate conditional expression (e.g. for #elif)
+    fn should_evaluate_conditional(&self) -> bool {
+        // We should evaluate ONLY if no parent is skipping
+        // The current level (which we are about to replace with elif) is at index len()-1.
+        // The parent is at index len()-2.
+        if self.conditional_stack.len() > 1 {
+            let parent_index = self.conditional_stack.len() - 2;
+            let parent_skipping = self.conditional_stack[parent_index].was_skipping;
+            if parent_skipping {
+                return false;
+            }
+        }
+
+        // And if we haven't found a true branch in this level yet
+        if let Some(current) = self.conditional_stack.last() {
+            !current.found_non_skipping
+        } else {
+            false
+        }
     }
 }

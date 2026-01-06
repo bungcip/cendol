@@ -556,9 +556,9 @@ fn test_include_same_file_twice_without_pragma_once() {
 #[test]
 fn test_circular_include_in_memory() {
     let mut sm = SourceManager::new();
-    sm.add_buffer("#include \"b.h\"".as_bytes().to_vec(), "a.h");
-    sm.add_buffer("#include \"a.h\"".as_bytes().to_vec(), "b.h");
-    let main_id = sm.add_buffer("#include \"a.h\"".as_bytes().to_vec(), "main.c");
+    sm.add_buffer("#include \"mem_b.h\"".as_bytes().to_vec(), "mem_a.h");
+    sm.add_buffer("#include \"mem_a.h\"".as_bytes().to_vec(), "mem_b.h");
+    let main_id = sm.add_buffer("#include \"mem_a.h\"".as_bytes().to_vec(), "mem_main.c");
 
     let mut diag = DiagnosticEngine::new();
     let config = PPConfig {
@@ -568,7 +568,7 @@ fn test_circular_include_in_memory() {
     let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
     let result = pp.process(main_id, &config);
 
-    assert!(matches!(result, Err(PPError::CircularInclude)));
+    assert!(matches!(result, Err(PPError::IncludeDepthExceeded)));
 }
 
 #[test]
@@ -593,7 +593,7 @@ fn test_circular_include_error_with_temp_files() {
     let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
     let result = pp.process(source_id_main, &config);
 
-    assert!(matches!(result, Err(PPError::CircularInclude)));
+    assert!(matches!(result, Err(PPError::IncludeDepthExceeded)));
 }
 
 #[test]

@@ -5,8 +5,8 @@ use crate::semantic::{QualType, TypeKind, TypeRegistry};
 
 /// Performs the "usual arithmetic conversions" as specified in C11 6.3.1.8.
 pub(crate) fn usual_arithmetic_conversions(ctx: &TypeRegistry, lhs: QualType, rhs: QualType) -> Option<QualType> {
-    let lhs_kind = &ctx.get(lhs.ty).kind;
-    let rhs_kind = &ctx.get(rhs.ty).kind;
+    let lhs_kind = &ctx.get(lhs.ty()).kind;
+    let rhs_kind = &ctx.get(rhs.ty()).kind;
 
     match (lhs_kind, rhs_kind) {
         (TypeKind::Double { is_long_double: true }, _) | (_, TypeKind::Double { is_long_double: true }) => {
@@ -18,10 +18,10 @@ pub(crate) fn usual_arithmetic_conversions(ctx: &TypeRegistry, lhs: QualType, rh
             let lhs_promoted = integer_promotion(ctx, lhs);
             let rhs_promoted = integer_promotion(ctx, rhs);
 
-            let lhs_promoted_kind = &ctx.get(lhs_promoted.ty).kind;
-            let rhs_promoted_kind = &ctx.get(rhs_promoted.ty).kind;
+            let lhs_promoted_kind = &ctx.get(lhs_promoted.ty()).kind;
+            let rhs_promoted_kind = &ctx.get(rhs_promoted.ty()).kind;
 
-            if lhs_promoted.ty == rhs_promoted.ty {
+            if lhs_promoted.ty() == rhs_promoted.ty() {
                 return Some(lhs_promoted);
             }
 
@@ -52,7 +52,7 @@ pub(crate) fn usual_arithmetic_conversions(ctx: &TypeRegistry, lhs: QualType, rh
 
 /// Performs integer promotions as specified in C11 6.3.1.1.
 pub(crate) fn integer_promotion(ctx: &TypeRegistry, ty: QualType) -> QualType {
-    let kind = &ctx.get(ty.ty).kind;
+    let kind = &ctx.get(ty.ty()).kind;
     match kind {
         TypeKind::Bool | TypeKind::Char { .. } | TypeKind::Short { .. } => QualType::unqualified(ctx.type_int),
         _ => ty,

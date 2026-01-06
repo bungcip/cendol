@@ -50,11 +50,11 @@ pub(crate) fn lower_struct_members(
                 ctx.report_error(SemanticError::ConflictingStorageClasses { span });
             }
 
-            if let Some(mut type_ref) = spec_info.base_type {
-                type_ref.qualifiers |= spec_info.qualifiers;
+            if let Some(type_ref) = spec_info.base_type {
+                let type_ref = QualType::new(type_ref.ty(), type_ref.qualifiers() | spec_info.qualifiers);
 
                 // Check if it is a Record type (struct or union)
-                let ty = ctx.registry.get(type_ref.ty);
+                let ty = ctx.registry.get(type_ref.ty());
                 if let TypeKind::Record { tag, .. } = &ty.kind {
                     // It must have no tag to be an anonymous member
                     if tag.is_none() {
@@ -89,9 +89,8 @@ pub(crate) fn lower_struct_members(
                 // and effectively strips the qualifiers from the base type during type construction.
                 // By re-applying them here, we ensure that qualifiers like `const` in `const int x;`
                 // are preserved on the final struct member type.
-                let mut ty = apply_declarator(base_type_ref.ty, base_declarator, ctx);
-                ty.qualifiers |= spec_info.qualifiers;
-                ty
+                let ty = apply_declarator(base_type_ref.ty(), base_declarator, ctx);
+                QualType::new(ty.ty(), ty.qualifiers() | spec_info.qualifiers)
             } else {
                 QualType::unqualified(ctx.registry.type_int)
             };

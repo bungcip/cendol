@@ -72,6 +72,17 @@ impl TypeRef {
     pub fn get(self) -> u32 {
         self.0.get()
     }
+
+    #[inline]
+    pub fn raw(self) -> u32 {
+        self.0.get()
+    }
+
+    #[inline]
+    pub unsafe fn from_raw(n: u32) -> Self {
+        // SAFETY: The caller must guarantee n corresponds to a valid NonZeroU32.
+        unsafe { TypeRef(NonZeroU32::new_unchecked(n)) }
+    }
 }
 
 impl Display for TypeRef {
@@ -81,38 +92,64 @@ impl Display for TypeRef {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize)]
-pub struct QualType {
-    pub ty: TypeRef,
-    pub qualifiers: TypeQualifiers,
-}
+#[repr(transparent)]
+pub struct QualType(u32);
+
+// bits  0..=27  → TypeRef (28 bit)
+// bits 28..=31  → qualifiers (4 bit)
 
 impl QualType {
+    const QUAL_BITS: u32 = 4;
+    const QUAL_SHIFT: u32 = 28;
+    const TY_MASK: u32 = (1 << Self::QUAL_SHIFT) - 1;
+
     #[inline]
-    pub fn new(ty: TypeRef, qualifiers: TypeQualifiers) -> Self {
-        Self { ty, qualifiers }
+    pub fn new(ty: TypeRef, quals: TypeQualifiers) -> Self {
+        debug_assert!(quals.bits() < (1 << Self::QUAL_BITS));
+        debug_assert!(ty.raw() < Self::TY_MASK);
+
+        QualType((ty.raw() & Self::TY_MASK) | ((quals.bits() as u32) << Self::QUAL_SHIFT))
     }
 
     #[inline]
     pub fn unqualified(ty: TypeRef) -> Self {
-        Self {
-            ty,
-            qualifiers: TypeQualifiers::empty(),
-        }
+        Self::new(ty, TypeQualifiers::empty())
+    }
+
+    #[inline]
+    pub fn ty(self) -> TypeRef {
+        // SAFETY: self.0 & TY_MASK is guaranteed to be a valid TypeRef
+        // because QualType is constructed with a valid TypeRef which is NonZeroU32
+        // and fits in TY_MASK.
+        unsafe { TypeRef::from_raw(self.0 & Self::TY_MASK) }
+    }
+
+    #[inline]
+    pub fn qualifiers(self) -> TypeQualifiers {
+        TypeQualifiers::from_bits_truncate((self.0 >> Self::QUAL_SHIFT) as u8)
+    }
+
+    #[inline]
+    pub fn is_const(self) -> bool {
+        self.qualifiers().contains(TypeQualifiers::CONST)
     }
 }
 
 impl Display for QualType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Format qualifiers
-        if !self.qualifiers.is_empty() {
-            write!(f, "{} ", self.qualifiers)?;
+        let quals = self.qualifiers();
+        if !quals.is_empty() {
+            write!(f, "{} ", quals)?;
         }
 
         // Note: For complete type formatting, this would need access to a TypeRegistry
         // to resolve the TypeRef to the actual Type. For now, just show the type ref.
-        write!(f, "TypeRef({})", self.ty.get())
+        write!(f, "TypeRef({})", self.ty().get())
     }
 }
+
+const _: () = assert!(std::mem::size_of::<QualType>() == 4);
 
 /// The kind of type
 #[derive(Debug, Clone, PartialEq, Default)]

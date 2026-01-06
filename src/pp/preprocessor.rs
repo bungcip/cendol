@@ -789,6 +789,9 @@ impl<'src> Preprocessor<'src> {
 
     /// Evaluate a conditional expression (simplified - handle defined and basic arithmetic)
     fn evaluate_conditional_expression(&mut self, tokens: &[PPToken]) -> Result<bool, PPError> {
+        // Filter out Eod tokens
+        let tokens: Vec<PPToken> = tokens.iter().filter(|t| t.kind != PPTokenKind::Eod).cloned().collect();
+
         if tokens.is_empty() {
             // For empty expressions, treat as false
             return Ok(false);

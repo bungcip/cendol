@@ -41,7 +41,17 @@ impl OutputHandler {
 
         // Get the source buffer for the first token
         let first_token = &pp_tokens[0];
+
+        // Initial heuristic: try to find the first non-macro-expanded token
+        // to establish the "current file" context. This prevents line markers
+        // generally being emitted for the file itself if it starts with a macro.
         let mut current_file_id = first_token.location.source_id();
+        for token in pp_tokens {
+            if !token.flags.contains(crate::pp::PPTokenFlags::MACRO_EXPANDED) {
+                current_file_id = token.location.source_id();
+                break;
+            }
+        }
         let mut current_buffer = source_manager.get_buffer(current_file_id);
         let mut last_pos = 0u32;
         let mut last_was_macro_expanded = false;
@@ -58,10 +68,10 @@ impl OutputHandler {
                 // This preserves separation like "return FOO" -> "return 123".
                 if !last_was_macro_expanded {
                     // Check if char at last_pos is whitespace
-                    if let Some(&byte) = current_buffer.get(last_pos as usize) {
-                        if (byte as char).is_whitespace() {
-                            print!(" ");
-                        }
+                    if let Some(&byte) = current_buffer.get(last_pos as usize)
+                        && (byte as char).is_whitespace()
+                    {
+                        print!(" ");
                     }
                 } else {
                     // Add space between consecutive macro-expanded tokens (linearization)
@@ -80,22 +90,22 @@ impl OutputHandler {
             // Check for file transitions and emit line markers
             if token.location.source_id() != current_file_id {
                 // Emit line marker for file transition (unless suppressed)
-                if !suppress_line_markers {
-                    if let Some(file_info) = source_manager.get_file_info(token.location.source_id()) {
-                        let line = source_manager
-                            .get_line_column(token.location)
-                            .map(|(l, _)| l)
-                            .unwrap_or(1);
-                        let filename = file_info
-                            .path
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("<unknown>");
+                if !suppress_line_markers
+                    && let Some(file_info) = source_manager.get_file_info(token.location.source_id())
+                {
+                    let line = source_manager
+                        .get_line_column(token.location)
+                        .map(|(l, _)| l)
+                        .unwrap_or(1);
+                    let filename = file_info
+                        .path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("<unknown>");
 
-                        // Ensure we start on a new line
-                        println!();
-                        println!("# {} \"{}\" 1", line, filename);
-                    }
+                    // Ensure we start on a new line
+                    println!();
+                    println!("# {} \"{}\" 1", line, filename);
                 }
 
                 current_file_id = token.location.source_id();

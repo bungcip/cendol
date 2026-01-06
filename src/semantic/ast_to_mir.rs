@@ -551,8 +551,7 @@ impl<'a> AstToMirLowerer<'a> {
                         Operand::AddressOf(place)
                     } else if let Operand::Constant(const_id) = operand
                         && let Some(info) = &self.ast.semantic_info
-                        && info.value_categories[(operand_ref.get() - 1) as usize]
-                            == ValueCategory::LValue
+                        && info.value_categories[(operand_ref.get() - 1) as usize] == ValueCategory::LValue
                         && matches!(
                             self.mir_builder.get_constants().get(&const_id),
                             Some(ConstValue::FunctionAddress(_))
@@ -641,10 +640,14 @@ impl<'a> AstToMirLowerer<'a> {
                     let global_id = match self.global_map.get(&resolved_ref) {
                         Some(id) => id,
                         None => {
-                             // Fallback: If not yet in map, it might be a forward reference or we missed it.
-                             // But in this specific crash case, 's' is defined before 'anon'.
-                             // Let's print debug info to diagnose.
-                             panic!("Global variable '{}' not found in MIR map. Visited? {:?}", entry.name, self.global_map.keys());
+                            // Fallback: If not yet in map, it might be a forward reference or we missed it.
+                            // But in this specific crash case, 's' is defined before 'anon'.
+                            // Let's print debug info to diagnose.
+                            panic!(
+                                "Global variable '{}' not found in MIR map. Visited? {:?}",
+                                entry.name,
+                                self.global_map.keys()
+                            );
                         }
                     };
                     Operand::Copy(Box::new(Place::Global(*global_id)))

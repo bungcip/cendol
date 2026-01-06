@@ -838,3 +838,26 @@ fn test_missing_include_file() {
     let (_, diags) = setup_pp_snapshot_with_diags(src);
     insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: FileNotFound""#);
 }
+
+#[test]
+fn test_defined_with_trailing_tokens() {
+    let src = r#"
+#define FOO 1
+#if defined FOO
+int x = 1;
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: x
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    "#);
+}

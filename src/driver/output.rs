@@ -41,7 +41,17 @@ impl OutputHandler {
 
         // Get the source buffer for the first token
         let first_token = &pp_tokens[0];
+
+        // Initial heuristic: try to find the first non-macro-expanded token
+        // to establish the "current file" context. This prevents line markers
+        // generally being emitted for the file itself if it starts with a macro.
         let mut current_file_id = first_token.location.source_id();
+        for token in pp_tokens {
+            if !token.flags.contains(crate::pp::PPTokenFlags::MACRO_EXPANDED) {
+                current_file_id = token.location.source_id();
+                break;
+            }
+        }
         let mut current_buffer = source_manager.get_buffer(current_file_id);
         let mut last_pos = 0u32;
         let mut last_was_macro_expanded = false;

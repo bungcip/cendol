@@ -445,29 +445,28 @@ impl SymbolTable {
         if let Some(existing_ref) = self.fetch(name, global_scope, Namespace::Ordinary) {
             let existing = self.get_symbol_mut(existing_ref);
 
-            // Both must be variables to merge
-            let (existing_var, new_var) = match (&mut existing.kind, &mut new_entry.kind) {
-                (SymbolKind::Variable { .. }, SymbolKind::Variable { .. }) => (existing, &mut new_entry),
+            // Verify kinds match
+            match (&existing.kind, &new_entry.kind) {
+                (SymbolKind::Variable { .. }, SymbolKind::Variable { .. }) => {}
+                (SymbolKind::Function, SymbolKind::Function) => {}
                 _ => {
-                    // Not both variables, this is a real redefinition
+                    // Mismatched kinds
                     debug!("Symbol '{}' redefinition: different kinds", name);
                     return Err(SymbolTableError::InvalidRedefinition {
                         name,
                         existing: existing_ref,
                     });
                 }
-            };
+            }
 
-            // Check alignment compatibility
-            // "The strictness of the alignment specified by the alignment specifiers shall be the same for all declarations of the same object"
-            // We interpret this as: if both have alignment, they must match.
+            // Check alignment compatibility (Variables only)
             if let SymbolKind::Variable {
                 alignment: new_align, ..
-            } = &new_var.kind
+            } = &new_entry.kind
                 && let SymbolKind::Variable {
                     alignment: existing_align,
                     ..
-                } = &existing_var.kind
+                } = &existing.kind
             {
                 match (existing_align, new_align) {
                     (Some(a), Some(b)) if a != b => {
@@ -478,7 +477,7 @@ impl SymbolTable {
                     }
                     (None, Some(b)) => {
                         // Inherit alignment from new declaration
-                        if let SymbolKind::Variable { alignment, .. } = &mut existing_var.kind {
+                        if let SymbolKind::Variable { alignment, .. } = &mut existing.kind {
                             *alignment = Some(*b);
                         }
                     }
@@ -487,7 +486,7 @@ impl SymbolTable {
             }
 
             // Apply C11 6.9.2 merging rules
-            match (existing_var.def_state, new_var.def_state) {
+            match (existing.def_state, new_entry.def_state) {
                 (DefinitionState::Tentative, DefinitionState::Tentative) => {
                     // Multiple tentative definitions - OK
                     debug!("Merging tentative definitions for '{}'", name);
@@ -496,12 +495,12 @@ impl SymbolTable {
                 (DefinitionState::Tentative, DefinitionState::Defined) => {
                     // Tentative definition followed by actual definition
                     debug!("Converting tentative definition to defined for '{}'", name);
-                    existing_var.def_state = DefinitionState::Defined;
-                    if let SymbolKind::Variable { initializer, .. } = &mut new_var.kind
+                    existing.def_state = DefinitionState::Defined;
+                    if let SymbolKind::Variable { initializer, .. } = &mut new_entry.kind
                         && let SymbolKind::Variable {
                             initializer: existing_init,
                             ..
-                        } = &mut existing_var.kind
+                        } = &mut existing.kind
                     {
                         *existing_init = *initializer;
                     }
@@ -510,12 +509,12 @@ impl SymbolTable {
                 (DefinitionState::DeclaredOnly, DefinitionState::Defined) => {
                     // Extern declaration followed by actual definition
                     debug!("Converting extern declaration to defined for '{}'", name);
-                    existing_var.def_state = DefinitionState::Defined;
-                    if let SymbolKind::Variable { initializer, .. } = &mut new_var.kind
+                    existing.def_state = DefinitionState::Defined;
+                    if let SymbolKind::Variable { initializer, .. } = &mut new_entry.kind
                         && let SymbolKind::Variable {
                             initializer: existing_init,
                             ..
-                        } = &mut existing_var.kind
+                        } = &mut existing.kind
                     {
                         *existing_init = *initializer;
                     }
@@ -524,7 +523,7 @@ impl SymbolTable {
                 (DefinitionState::Tentative, DefinitionState::DeclaredOnly) => {
                     // Tentative definition followed by extern declaration - OK
                     debug!("Merging tentative definition with extern declaration for '{}'", name);
-                    existing_var.def_state = DefinitionState::DeclaredOnly;
+                    existing.def_state = DefinitionState::DeclaredOnly;
                 }
 
                 (DefinitionState::Defined, DefinitionState::Defined) => {

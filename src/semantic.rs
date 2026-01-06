@@ -33,6 +33,8 @@ mod tests_lvalue;
 #[cfg(test)]
 pub mod tests_mir;
 #[cfg(test)]
+mod tests_symbol_redefinition;
+#[cfg(test)]
 pub mod tests_validation;
 
 /// Side table containing semantic information for AST nodes.

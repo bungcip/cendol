@@ -1205,15 +1205,16 @@ fn create_semantic_node_data(
 
     if let Some(element_type) = array_deduction_info
         && let Some(init_node) = init.initializer
-            && let Some(new_size) = deduce_array_size(ctx, init_node) {
-                let new_ty_ref = ctx.registry.array_of(element_type, ArraySizeType::Constant(new_size));
+        && let Some(new_size) = deduce_array_size(ctx, init_node)
+    {
+        let new_ty_ref = ctx.registry.array_of(element_type, ArraySizeType::Constant(new_size));
 
-                // Preserve qualifiers from the original type
-                final_ty = QualType::new(new_ty_ref, final_ty.qualifiers);
+        // Preserve qualifiers from the original type
+        final_ty = QualType::new(new_ty_ref, final_ty.qualifiers);
 
-                // Ensure layout is computed for the new type so sizeof() works
-                let _ = ctx.registry.ensure_layout(new_ty_ref);
-            }
+        // Ensure layout is computed for the new type so sizeof() works
+        let _ = ctx.registry.ensure_layout(new_ty_ref);
+    }
 
     // 2. Handle typedefs
     if spec.is_typedef {

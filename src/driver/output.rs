@@ -69,9 +69,10 @@ impl OutputHandler {
                 if !last_was_macro_expanded {
                     // Check if char at last_pos is whitespace
                     if let Some(&byte) = current_buffer.get(last_pos as usize)
-                        && (byte as char).is_whitespace() {
-                            print!(" ");
-                        }
+                        && (byte as char).is_whitespace()
+                    {
+                        print!(" ");
+                    }
                 } else {
                     // Add space between consecutive macro-expanded tokens (linearization)
                     print!(" ");
@@ -90,21 +91,22 @@ impl OutputHandler {
             if token.location.source_id() != current_file_id {
                 // Emit line marker for file transition (unless suppressed)
                 if !suppress_line_markers
-                    && let Some(file_info) = source_manager.get_file_info(token.location.source_id()) {
-                        let line = source_manager
-                            .get_line_column(token.location)
-                            .map(|(l, _)| l)
-                            .unwrap_or(1);
-                        let filename = file_info
-                            .path
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("<unknown>");
+                    && let Some(file_info) = source_manager.get_file_info(token.location.source_id())
+                {
+                    let line = source_manager
+                        .get_line_column(token.location)
+                        .map(|(l, _)| l)
+                        .unwrap_or(1);
+                    let filename = file_info
+                        .path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("<unknown>");
 
-                        // Ensure we start on a new line
-                        println!();
-                        println!("# {} \"{}\" 1", line, filename);
-                    }
+                    // Ensure we start on a new line
+                    println!();
+                    println!("# {} \"{}\" 1", line, filename);
+                }
 
                 current_file_id = token.location.source_id();
                 current_buffer = source_manager.get_buffer(current_file_id);

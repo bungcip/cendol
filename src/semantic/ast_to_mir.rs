@@ -290,6 +290,14 @@ impl<'a> AstToMirLowerer<'a> {
             }
         }
 
+        self.finalize_struct_initializer(field_operands, target_ty)
+    }
+
+    fn finalize_struct_initializer(
+        &mut self,
+        field_operands: Vec<(usize, Operand)>,
+        target_ty: QualType,
+    ) -> Operand {
         let is_global = self.current_function.is_none();
         if is_global {
             let const_fields = field_operands
@@ -326,6 +334,10 @@ impl<'a> AstToMirLowerer<'a> {
             elements.push(operand);
         }
 
+        self.finalize_array_initializer(elements, target_ty)
+    }
+
+    fn finalize_array_initializer(&mut self, elements: Vec<Operand>, target_ty: QualType) -> Operand {
         let is_global = self.current_function.is_none();
         if is_global {
             let mut const_elements = Vec::new();
@@ -512,35 +524,12 @@ impl<'a> AstToMirLowerer<'a> {
         let mir_ty = self.lower_type_to_mir(ty.ty);
 
         match &node_kind {
-            NodeKind::LiteralInt(val) => Operand::Constant(self.create_constant(ConstValue::Int(*val))),
-            NodeKind::LiteralFloat(val) => Operand::Constant(self.create_constant(ConstValue::Float(*val))),
-            NodeKind::LiteralChar(val) => Operand::Constant(self.create_constant(ConstValue::Int(*val as i64))),
+            NodeKind::LiteralInt(val) => self.make_constant_operand(ConstValue::Int(*val)),
+            NodeKind::LiteralFloat(val) => self.make_constant_operand(ConstValue::Float(*val)),
+            NodeKind::LiteralChar(val) => self.make_constant_operand(ConstValue::Int(*val as i64)),
             NodeKind::LiteralString(val) => self.lower_literal_string(val, &ty),
             NodeKind::Ident(_, symbol_ref) => self.lower_ident(symbol_ref),
-            NodeKind::UnaryOp(op, operand_ref) => match *op {
-                UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
-                    self.lower_compound_assignment(scope_id, op, *operand_ref, *operand_ref)
-                }
-                UnaryOp::AddrOf => {
-                    let operand = self.lower_expression(scope_id, *operand_ref, true);
-                    if let Operand::Copy(place) = operand {
-                        Operand::AddressOf(place)
-                    } else {
-                        panic!("Cannot take address of a non-lvalue");
-                    }
-                }
-                UnaryOp::Deref => {
-                    let operand = self.lower_expression(scope_id, *operand_ref, true);
-                    let place = Place::Deref(Box::new(operand));
-                    Operand::Copy(Box::new(place))
-                }
-                _ => {
-                    let operand = self.lower_expression(scope_id, *operand_ref, true);
-                    let mir_op = self.map_ast_unary_op_to_mir(op);
-                    let rval = Rvalue::UnaryOp(mir_op, operand);
-                    self.emit_rvalue_to_operand(rval, mir_ty)
-                }
-            },
+            NodeKind::UnaryOp(op, operand_ref) => self.lower_unary_op(scope_id, op, *operand_ref, mir_ty),
             NodeKind::PostIncrement(operand_ref) => self.lower_post_incdec(scope_id, *operand_ref, true, need_value),
             NodeKind::PostDecrement(operand_ref) => self.lower_post_incdec(scope_id, *operand_ref, false, need_value),
             NodeKind::BinaryOp(op, left_ref, right_ref) => {
@@ -558,7 +547,38 @@ impl<'a> AstToMirLowerer<'a> {
                 let operand = self.lower_expression(scope_id, *operand_ref, true);
                 Operand::Cast(mir_ty, Box::new(operand))
             }
-            _ => Operand::Constant(self.create_constant(ConstValue::Int(0))),
+            _ => self.make_constant_operand(ConstValue::Int(0)),
+        }
+    }
+
+    fn make_constant_operand(&mut self, val: ConstValue) -> Operand {
+        Operand::Constant(self.create_constant(val))
+    }
+
+    fn lower_unary_op(&mut self, scope_id: ScopeId, op: &UnaryOp, operand_ref: NodeRef, mir_ty: TypeId) -> Operand {
+        match *op {
+            UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
+                self.lower_compound_assignment(scope_id, op, operand_ref, operand_ref)
+            }
+            UnaryOp::AddrOf => {
+                let operand = self.lower_expression(scope_id, operand_ref, true);
+                if let Operand::Copy(place) = operand {
+                    Operand::AddressOf(place)
+                } else {
+                    panic!("Cannot take address of a non-lvalue");
+                }
+            }
+            UnaryOp::Deref => {
+                let operand = self.lower_expression(scope_id, operand_ref, true);
+                let place = Place::Deref(Box::new(operand));
+                Operand::Copy(Box::new(place))
+            }
+            _ => {
+                let operand = self.lower_expression(scope_id, operand_ref, true);
+                let mir_op = self.map_ast_unary_op_to_mir(op);
+                let rval = Rvalue::UnaryOp(mir_op, operand);
+                self.emit_rvalue_to_operand(rval, mir_ty)
+            }
         }
     }
 

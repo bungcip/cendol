@@ -137,7 +137,7 @@ impl Default for SymbolTable {
 }
 
 impl SymbolTable {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let mut table = SymbolTable {
             entries: Vec::new(),
             scopes: Vec::new(),
@@ -157,7 +157,7 @@ impl SymbolTable {
         table
     }
 
-    pub fn push_scope(&mut self) -> ScopeId {
+    pub(crate) fn push_scope(&mut self) -> ScopeId {
         let new_scope_id = ScopeId::new(self.next_scope_id).unwrap();
         self.next_scope_id += 1;
 
@@ -178,7 +178,7 @@ impl SymbolTable {
         new_scope_id
     }
 
-    pub fn pop_scope(&mut self) -> Option<ScopeId> {
+    pub(crate) fn pop_scope(&mut self) -> Option<ScopeId> {
         let current_scope_id_before_pop = self.current_scope_id;
         let current_scope = &self.scopes[current_scope_id_before_pop.get() as usize - 1];
         if let Some(parent) = current_scope.parent {
@@ -195,31 +195,31 @@ impl SymbolTable {
         }
     }
 
-    pub fn current_scope(&self) -> ScopeId {
+    pub(crate) fn current_scope(&self) -> ScopeId {
         self.current_scope_id
     }
 
-    pub fn set_current_scope(&mut self, scope_id: ScopeId) {
+    pub(crate) fn set_current_scope(&mut self, scope_id: ScopeId) {
         self.current_scope_id = scope_id;
         debug!("SymbolTable: Set current_scope_id to {}", self.current_scope_id.get());
     }
 
-    pub fn get_scope(&self, scope_id: ScopeId) -> &Scope {
+    pub(crate) fn get_scope(&self, scope_id: ScopeId) -> &Scope {
         &self.scopes[scope_id.get() as usize - 1]
     }
 
-    pub fn get_scope_mut(&mut self, scope_id: ScopeId) -> &mut Scope {
+    pub(crate) fn get_scope_mut(&mut self, scope_id: ScopeId) -> &mut Scope {
         &mut self.scopes[scope_id.get() as usize - 1]
     }
 
-    pub fn add_symbol(&mut self, name: NameId, entry: Symbol) -> SymbolRef {
+    pub(crate) fn add_symbol(&mut self, name: NameId, entry: Symbol) -> SymbolRef {
         let entry_ref = self.push_symbol(entry);
         let current_scope = self.get_scope_mut(self.current_scope_id);
         current_scope.symbols.insert(name, entry_ref);
         entry_ref
     }
 
-    pub fn add_symbol_in_namespace(&mut self, name: NameId, entry: Symbol, ns: Namespace) -> SymbolRef {
+    pub(crate) fn add_symbol_in_namespace(&mut self, name: NameId, entry: Symbol, ns: Namespace) -> SymbolRef {
         let entry_ref = self.push_symbol(entry);
         let current_scope = self.get_scope_mut(self.current_scope_id);
         match ns {
@@ -230,15 +230,15 @@ impl SymbolTable {
         entry_ref
     }
 
-    pub fn lookup_symbol(&self, name: NameId) -> Option<(SymbolRef, ScopeId)> {
+    pub(crate) fn lookup_symbol(&self, name: NameId) -> Option<(SymbolRef, ScopeId)> {
         self.lookup(name, self.current_scope_id, Namespace::Ordinary)
     }
 
-    pub fn lookup_tag(&self, name: NameId) -> Option<(SymbolRef, ScopeId)> {
+    pub(crate) fn lookup_tag(&self, name: NameId) -> Option<(SymbolRef, ScopeId)> {
         self.lookup(name, self.current_scope_id, Namespace::Tag)
     }
 
-    pub fn lookup(&self, name: NameId, start_scope: ScopeId, ns: Namespace) -> Option<(SymbolRef, ScopeId)> {
+    pub(crate) fn lookup(&self, name: NameId, start_scope: ScopeId, ns: Namespace) -> Option<(SymbolRef, ScopeId)> {
         let mut scope_id = start_scope;
         loop {
             let scope = self.get_scope(scope_id);
@@ -260,7 +260,7 @@ impl SymbolTable {
     }
 
     /// find a symbol in exact scope without looking to parent scope if not exist
-    pub fn fetch(&self, name: NameId, scope_id: ScopeId, ns: Namespace) -> Option<SymbolRef> {
+    pub(crate) fn fetch(&self, name: NameId, scope_id: ScopeId, ns: Namespace) -> Option<SymbolRef> {
         let scope = self.get_scope(scope_id);
         match ns {
             Namespace::Ordinary => scope.symbols.get(&name).copied(),
@@ -275,17 +275,17 @@ impl SymbolTable {
         SymbolRef::new(index).expect("SymbolEntryRef overflow")
     }
 
-    pub fn get_symbol(&self, index: SymbolRef) -> &Symbol {
+    pub(crate) fn get_symbol(&self, index: SymbolRef) -> &Symbol {
         &self.entries[(index.get() - 1) as usize]
     }
 
-    pub fn get_symbol_mut(&mut self, index: SymbolRef) -> &mut Symbol {
+    pub(crate) fn get_symbol_mut(&mut self, index: SymbolRef) -> &mut Symbol {
         &mut self.entries[(index.get() - 1) as usize]
     }
 
     /// Define a new variable in the current scope.
     /// Handles global variable merging and local variable insertion.
-    pub fn define_variable(
+    pub(crate) fn define_variable(
         &mut self,
         name: NameId,
         ty: TypeRef,
@@ -326,7 +326,7 @@ impl SymbolTable {
 
     /// Define a new function in the current scope.
     /// Handles global function merging (declarations/definitions).
-    pub fn define_function(
+    pub(crate) fn define_function(
         &mut self,
         name: NameId,
         ty: TypeRef,
@@ -360,7 +360,7 @@ impl SymbolTable {
     }
 
     /// Define a typedef in the current scope.
-    pub fn define_typedef(
+    pub(crate) fn define_typedef(
         &mut self,
         name: NameId,
         ty: TypeRef,
@@ -389,7 +389,7 @@ impl SymbolTable {
     }
 
     /// Define an enum constant in the current scope.
-    pub fn define_enum_constant(
+    pub(crate) fn define_enum_constant(
         &mut self,
         name: NameId,
         value: i64,
@@ -411,7 +411,13 @@ impl SymbolTable {
     }
 
     /// Define a record (struct/union) tag in the current scope.
-    pub fn define_record(&mut self, name: NameId, ty: TypeRef, is_complete: bool, span: SourceSpan) -> SymbolRef {
+    pub(crate) fn define_record(
+        &mut self,
+        name: NameId,
+        ty: TypeRef,
+        is_complete: bool,
+        span: SourceSpan,
+    ) -> SymbolRef {
         let symbol_entry = Symbol {
             name,
             kind: SymbolKind::Record {
@@ -431,7 +437,7 @@ impl SymbolTable {
     }
 
     /// Define an enum tag in the current scope.
-    pub fn define_enum(&mut self, name: NameId, ty: TypeRef, span: SourceSpan) -> SymbolRef {
+    pub(crate) fn define_enum(&mut self, name: NameId, ty: TypeRef, span: SourceSpan) -> SymbolRef {
         let symbol_entry = Symbol {
             name,
             kind: SymbolKind::EnumTag { is_complete: false },
@@ -446,7 +452,12 @@ impl SymbolTable {
     }
 
     /// Define a label in the current scope.
-    pub fn define_label(&mut self, name: NameId, ty: TypeRef, span: SourceSpan) -> Result<SymbolRef, SymbolTableError> {
+    pub(crate) fn define_label(
+        &mut self,
+        name: NameId,
+        ty: TypeRef,
+        span: SourceSpan,
+    ) -> Result<SymbolRef, SymbolTableError> {
         let symbol_entry = Symbol {
             name,
             kind: SymbolKind::Label {

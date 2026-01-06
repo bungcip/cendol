@@ -77,20 +77,20 @@ impl std::fmt::Display for ValidationError {
 /// This pass validates that MIR is well-formed and ready for code generation.
 /// It performs comprehensive checks but does not modify the MIR.
 #[derive(Default)]
-pub struct MirValidator {
+pub(crate) struct MirValidator {
     errors: Vec<ValidationError>,
 }
 
 impl MirValidator {
     /// Create a new MIR validator
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { errors: Vec::new() }
     }
 
     /// Validate a MIR module
     ///
     /// Returns Ok(()) if validation passes, or Err(Vec<ValidationError>) if errors are found
-    pub fn validate(&mut self, sema_output: &SemaOutput) -> Result<(), Vec<ValidationError>> {
+    pub(crate) fn validate(&mut self, sema_output: &SemaOutput) -> Result<(), Vec<ValidationError>> {
         self.errors.clear();
 
         // Validate the module structure

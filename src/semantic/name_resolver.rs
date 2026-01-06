@@ -18,7 +18,7 @@ struct NameResolverCtx<'ast, 'diag> {
     deferred_static_asserts: Vec<NodeRef>,
 }
 
-pub fn run_name_resolver(ast: &Ast, diag: &mut DiagnosticEngine, symbol_table: &SymbolTable) {
+pub(crate) fn run_name_resolver(ast: &Ast, diag: &mut DiagnosticEngine, symbol_table: &SymbolTable) {
     let mut ctx = NameResolverCtx {
         diag,
         ast,

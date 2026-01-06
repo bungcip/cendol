@@ -57,7 +57,7 @@ impl Default for TypeRegistry {
 
 impl TypeRegistry {
     /// Create a new TypeRegistry with builtin types initialized.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         TypeRegistry {
             types: Vec::new(),
             pointer_cache: HashMap::new(),
@@ -86,7 +86,7 @@ impl TypeRegistry {
         }
     }
 
-    pub fn create_builtin(&mut self) {
+    pub(crate) fn create_builtin(&mut self) {
         self.type_void = self.alloc(Type::new(TypeKind::Void));
         self.type_bool = self.alloc(Type::new(TypeKind::Bool));
         self.type_int = self.alloc(Type::new(TypeKind::Int { is_signed: true }));
@@ -126,20 +126,20 @@ impl TypeRegistry {
 
     /// Immutable access to a type.
     #[inline]
-    pub fn get(&self, r: TypeRef) -> &Type {
+    pub(crate) fn get(&self, r: TypeRef) -> &Type {
         &self.types[r.index()]
     }
 
     /// Mutable access to a type (ONLY for completion).
     #[inline]
-    pub fn get_mut(&mut self, r: TypeRef) -> &mut Type {
+    pub(crate) fn get_mut(&mut self, r: TypeRef) -> &mut Type {
         &mut self.types[r.index()]
     }
 
     // ============================================================
     // Canonical type constructors
     // ============================================================
-    pub fn pointer_to(&mut self, base: TypeRef) -> TypeRef {
+    pub(crate) fn pointer_to(&mut self, base: TypeRef) -> TypeRef {
         if let Some(&ptr) = self.pointer_cache.get(&base) {
             return ptr;
         }
@@ -149,7 +149,7 @@ impl TypeRegistry {
         ptr
     }
 
-    pub fn array_of(&mut self, elem: TypeRef, size: ArraySizeType) -> TypeRef {
+    pub(crate) fn array_of(&mut self, elem: TypeRef, size: ArraySizeType) -> TypeRef {
         let key = (elem, size.clone());
         if let Some(&arr) = self.array_cache.get(&key) {
             return arr;
@@ -163,7 +163,7 @@ impl TypeRegistry {
         arr
     }
 
-    pub fn function_type(
+    pub(crate) fn function_type(
         &mut self,
         return_type: TypeRef,
         params: Vec<FunctionParameter>,
@@ -189,7 +189,7 @@ impl TypeRegistry {
         f
     }
 
-    pub fn complex_type(&mut self, base_type: TypeRef) -> TypeRef {
+    pub(crate) fn complex_type(&mut self, base_type: TypeRef) -> TypeRef {
         if let Some(&complex) = self.complex_cache.get(&base_type) {
             return complex;
         }
@@ -205,7 +205,7 @@ impl TypeRegistry {
 
     /// create new record type. this is still inclompete, need to call complete_record()
     /// to mark it as complete
-    pub fn declare_record(&mut self, tag: Option<NameId>, is_union: bool) -> TypeRef {
+    pub(crate) fn declare_record(&mut self, tag: Option<NameId>, is_union: bool) -> TypeRef {
         self.alloc(Type::new(TypeKind::Record {
             tag,
             members: Vec::new(),
@@ -217,7 +217,7 @@ impl TypeRegistry {
     /// marks record as complete
     /// - does NOT compute layout
     /// - layout is computed lazily via ensure_layout
-    pub fn complete_record(&mut self, record: TypeRef, members: Vec<StructMember>) {
+    pub(crate) fn complete_record(&mut self, record: TypeRef, members: Vec<StructMember>) {
         let ty = self.get_mut(record);
         match &mut ty.kind {
             TypeKind::Record {
@@ -234,7 +234,7 @@ impl TypeRegistry {
 
     /// create new enum type. this is still inclompete, need to call complete_enum()
     /// to mark it as complete
-    pub fn declare_enum(&mut self, tag: Option<NameId>, base_type: TypeRef) -> TypeRef {
+    pub(crate) fn declare_enum(&mut self, tag: Option<NameId>, base_type: TypeRef) -> TypeRef {
         self.alloc(Type::new(TypeKind::Enum {
             tag,
             base_type,
@@ -243,7 +243,7 @@ impl TypeRegistry {
         }))
     }
 
-    pub fn complete_enum(&mut self, enum_ty: TypeRef, enumerators: Vec<EnumConstant>) {
+    pub(crate) fn complete_enum(&mut self, enum_ty: TypeRef, enumerators: Vec<EnumConstant>) {
         let ty = self.get_mut(enum_ty);
         match &mut ty.kind {
             TypeKind::Enum {
@@ -258,7 +258,7 @@ impl TypeRegistry {
         }
     }
 
-    pub fn get_layout(&self, ty: TypeRef) -> &TypeLayout {
+    pub(crate) fn get_layout(&self, ty: TypeRef) -> &TypeLayout {
         let idx = ty.index();
         match self.types[idx].layout.as_ref() {
             Some(x) => x,
@@ -266,7 +266,7 @@ impl TypeRegistry {
         }
     }
 
-    pub fn get_array_layout(&self, ty: TypeRef) -> (u16, u16, TypeRef, u64) {
+    pub(crate) fn get_array_layout(&self, ty: TypeRef) -> (u16, u16, TypeRef, u64) {
         let layout = self.get_layout(ty);
         match layout.kind {
             LayoutKind::Array { element, len } => (layout.size, layout.alignment, element, len),
@@ -274,7 +274,7 @@ impl TypeRegistry {
         }
     }
 
-    pub fn get_record_layout(&self, ty: TypeRef) -> (u16, u16, &[FieldLayout], bool) {
+    pub(crate) fn get_record_layout(&self, ty: TypeRef) -> (u16, u16, &[FieldLayout], bool) {
         let layout = self.get_layout(ty);
         match &layout.kind {
             LayoutKind::Record { fields, is_union } => (layout.size, layout.alignment, fields.as_ref(), *is_union),
@@ -282,7 +282,7 @@ impl TypeRegistry {
         }
     }
 
-    pub fn ensure_layout(&mut self, ty: TypeRef) -> Result<&TypeLayout, SemanticError> {
+    pub(crate) fn ensure_layout(&mut self, ty: TypeRef) -> Result<&TypeLayout, SemanticError> {
         let idx = ty.index();
         if self.types[idx].layout.is_some() {
             return Ok(self.types[idx].layout.as_ref().unwrap());
@@ -505,7 +505,7 @@ impl TypeRegistry {
         })
     }
 
-    pub fn decay(&mut self, qt: QualType) -> QualType {
+    pub(crate) fn decay(&mut self, qt: QualType) -> QualType {
         match &self.get(qt.ty).kind {
             TypeKind::Array { element_type, .. } => {
                 let ptr = self.pointer_to(*element_type);
@@ -519,18 +519,18 @@ impl TypeRegistry {
         }
     }
 
-    pub fn strip_all(&self, qt: QualType) -> QualType {
+    pub(crate) fn strip_all(&self, qt: QualType) -> QualType {
         QualType::unqualified(qt.ty)
     }
 
-    pub fn merge_qualifiers(&self, base: QualType, add: TypeQualifiers) -> QualType {
+    pub(crate) fn merge_qualifiers(&self, base: QualType, add: TypeQualifiers) -> QualType {
         QualType {
             ty: base.ty,
             qualifiers: base.qualifiers | add,
         }
     }
 
-    pub fn is_compatible(&self, a: QualType, b: QualType) -> bool {
+    pub(crate) fn is_compatible(&self, a: QualType, b: QualType) -> bool {
         // C11 6.7.6.1p2: For two type names to be compatible, ...
         // This is a simplified check. A full implementation would handle
         // qualifiers, array sizes, function parameter compatibility, etc.

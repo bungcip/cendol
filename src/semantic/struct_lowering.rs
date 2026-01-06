@@ -47,7 +47,7 @@ pub(crate) fn lower_struct_members(
 
             // Check for illegal storage classes
             if spec_info.storage.is_some() {
-                 ctx.report_error(SemanticError::ConflictingStorageClasses { span });
+                ctx.report_error(SemanticError::ConflictingStorageClasses { span });
             }
 
             if let Some(mut type_ref) = spec_info.base_type {

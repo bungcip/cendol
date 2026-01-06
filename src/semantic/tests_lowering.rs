@@ -92,7 +92,7 @@ fn test_enum_decl_members_populated() {
 #[test]
 fn test_struct_member_qualifiers_preserved() {
     // This test demonstrates that qualifiers on struct members are preserved.
-    use crate::semantic::{TypeQualifiers, TypeKind};
+    use crate::semantic::{TypeKind, TypeQualifiers};
 
     let source = r#"
         struct S {
@@ -120,14 +120,20 @@ fn test_struct_member_qualifiers_preserved() {
                 if let TypeKind::Record { members, .. } = &registry.get(decl.ty).kind {
                     let x_mem = &members[0];
                     // We expect CONST.
-                    assert!(x_mem.member_type.qualifiers.contains(TypeQualifiers::CONST),
-                            "Struct member 'x' should be const, but has qualifiers: {:?}", x_mem.member_type.qualifiers);
+                    assert!(
+                        x_mem.member_type.qualifiers.contains(TypeQualifiers::CONST),
+                        "Struct member 'x' should be const, but has qualifiers: {:?}",
+                        x_mem.member_type.qualifiers
+                    );
 
                     let y_mem = &members[1];
                     // 'y' is volatile pointer to int.
                     // My fix makes it `volatile pointer`.
-                    assert!(y_mem.member_type.qualifiers.contains(TypeQualifiers::VOLATILE),
-                             "Struct member 'y' should be volatile, but has qualifiers: {:?}", y_mem.member_type.qualifiers);
+                    assert!(
+                        y_mem.member_type.qualifiers.contains(TypeQualifiers::VOLATILE),
+                        "Struct member 'y' should be volatile, but has qualifiers: {:?}",
+                        y_mem.member_type.qualifiers
+                    );
                 }
             }
         }

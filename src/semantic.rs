@@ -23,6 +23,8 @@ pub mod types;
 pub mod utils;
 
 #[cfg(test)]
+mod tests_array_init_bug;
+#[cfg(test)]
 mod tests_generic;
 #[cfg(test)]
 pub mod tests_lowering;

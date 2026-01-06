@@ -58,11 +58,10 @@ impl OutputHandler {
                 // This preserves separation like "return FOO" -> "return 123".
                 if !last_was_macro_expanded {
                     // Check if char at last_pos is whitespace
-                    if let Some(&byte) = current_buffer.get(last_pos as usize) {
-                        if (byte as char).is_whitespace() {
+                    if let Some(&byte) = current_buffer.get(last_pos as usize)
+                        && (byte as char).is_whitespace() {
                             print!(" ");
                         }
-                    }
                 } else {
                     // Add space between consecutive macro-expanded tokens (linearization)
                     print!(" ");
@@ -80,8 +79,8 @@ impl OutputHandler {
             // Check for file transitions and emit line markers
             if token.location.source_id() != current_file_id {
                 // Emit line marker for file transition (unless suppressed)
-                if !suppress_line_markers {
-                    if let Some(file_info) = source_manager.get_file_info(token.location.source_id()) {
+                if !suppress_line_markers
+                    && let Some(file_info) = source_manager.get_file_info(token.location.source_id()) {
                         let line = source_manager
                             .get_line_column(token.location)
                             .map(|(l, _)| l)
@@ -96,7 +95,6 @@ impl OutputHandler {
                         println!();
                         println!("# {} \"{}\" 1", line, filename);
                     }
-                }
 
                 current_file_id = token.location.source_id();
                 current_buffer = source_manager.get_buffer(current_file_id);
@@ -172,6 +170,7 @@ impl OutputHandler {
     }
 
     /// Format TypeKind in a user-friendly way for TypeRegistry dump
+    #[allow(clippy::only_used_in_recursion)]
     fn format_type_kind_user_friendly(&self, kind: &crate::semantic::TypeKind, registry: &TypeRegistry) -> String {
         use crate::semantic::TypeKind;
 

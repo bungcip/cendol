@@ -178,6 +178,77 @@ fn convert_parsed_array_size(size: &ParsedArraySize, _ctx: &mut LowerCtx) -> Arr
     }
 }
 
+/// Helper function to deduce array size from initializer
+fn deduce_array_size(ctx: &LowerCtx, init_node: NodeRef) -> Option<usize> {
+    let node = ctx.ast.get_node(init_node);
+    match &node.kind {
+        NodeKind::InitializerList(inits) => {
+            let mut max_index: i64 = -1;
+            let mut current_index: i64 = 0;
+
+            // If list is empty (GCC extension), size is 0
+            if inits.is_empty() {
+                return Some(0);
+            }
+
+            for init in inits {
+                // Check for array index designator
+                if let Some(first_designator) = init.designation.first() {
+                    match first_designator {
+                        crate::ast::Designator::ArrayIndex(expr_ref) => {
+                            let const_ctx = ConstEvalCtx { ast: ctx.ast };
+                            if let Some(val) = const_eval::eval_const_expr(&const_ctx, *expr_ref) {
+                                current_index = val;
+                            } else {
+                                // Non-constant index in initializer -> can't deduce size
+                                return None;
+                            }
+                        }
+                        crate::ast::Designator::GnuArrayRange(start, end) => {
+                            let const_ctx = ConstEvalCtx { ast: ctx.ast };
+                            if let (Some(start_val), Some(end_val)) = (
+                                const_eval::eval_const_expr(&const_ctx, *start),
+                                const_eval::eval_const_expr(&const_ctx, *end),
+                            ) {
+                                if start_val > end_val {
+                                    return None;
+                                }
+                                current_index = end_val;
+                            } else {
+                                return None;
+                            }
+                        }
+                        crate::ast::Designator::FieldName(_) => {
+                            // Field designator on array element -> applies to current element
+                            // No change to current_index
+                        }
+                    }
+                }
+
+                if current_index > max_index {
+                    max_index = current_index;
+                }
+
+                // Advance current_index for next element
+                current_index += 1;
+            }
+
+            if max_index < 0 {
+                Some(0)
+            } else {
+                Some((max_index + 1) as usize)
+            }
+        }
+        NodeKind::LiteralString(name_id) => {
+            // String literal initialization: char a[] = "foo";
+            // Size is len + 1 (including null terminator)
+            let s = name_id.to_string();
+            Some(s.len() + 1)
+        }
+        _ => None,
+    }
+}
+
 /// Helper function to resolve array size logic
 fn resolve_array_size(size: Option<NodeRef>, ctx: &mut LowerCtx) -> ArraySizeType {
     if let Some(expr) = size {
@@ -1104,7 +1175,7 @@ fn create_semantic_node_data(
     let name = extract_identifier(&init.declarator).expect("Anonymous declarations unsupported");
 
     // For simple identifiers without qualifiers, don't create a new type entry
-    let final_ty = if let Declarator::Identifier(_, qualifiers) = &init.declarator {
+    let mut final_ty = if let Declarator::Identifier(_, qualifiers) = &init.declarator {
         if qualifiers.is_empty() {
             // Simple case: just use the base type directly
             base_ty
@@ -1116,6 +1187,33 @@ fn create_semantic_node_data(
         // Complex case: apply declarator transformations and create new type
         apply_declarator(base_ty.ty, &init.declarator, ctx)
     };
+
+    // Check for incomplete array with initializer and deduce size
+    // We need to extract info first to avoid borrow conflicts with ctx.registry
+    let array_deduction_info = {
+        let ty = ctx.registry.get(final_ty.ty);
+        if let TypeKind::Array {
+            element_type,
+            size: ArraySizeType::Incomplete,
+        } = &ty.kind
+        {
+            Some(*element_type)
+        } else {
+            None
+        }
+    };
+
+    if let Some(element_type) = array_deduction_info
+        && let Some(init_node) = init.initializer
+            && let Some(new_size) = deduce_array_size(ctx, init_node) {
+                let new_ty_ref = ctx.registry.array_of(element_type, ArraySizeType::Constant(new_size));
+
+                // Preserve qualifiers from the original type
+                final_ty = QualType::new(new_ty_ref, final_ty.qualifiers);
+
+                // Ensure layout is computed for the new type so sizeof() works
+                let _ = ctx.registry.ensure_layout(new_ty_ref);
+            }
 
     // 2. Handle typedefs
     if spec.is_typedef {

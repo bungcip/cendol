@@ -27,9 +27,7 @@ pub struct Type {
 
 #[derive(Debug, Clone)]
 pub struct TypeLayout {
-    #[allow(unused)]
     pub size: u16,
-    #[allow(unused)]
     pub alignment: u16,
     pub kind: LayoutKind,
 }
@@ -185,7 +183,6 @@ pub enum TypeKind {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ArraySizeType {
     Constant(usize),
-    #[allow(unused)]
     Variable(NodeRef), // VLA with size expression type
     Incomplete,
     Star, // [*] for function parameters

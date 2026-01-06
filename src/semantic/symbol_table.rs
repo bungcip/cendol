@@ -34,8 +34,6 @@ pub struct Symbol {
     pub kind: SymbolKind, // e.g., Variable, Function, Typedef
     pub type_info: TypeRef,
     #[allow(unused)]
-    pub storage_class: Option<StorageClass>,
-    #[allow(unused)]
     pub scope_id: ScopeId, // Reference to the scope where it's defined
     pub def_span: SourceSpan,
     pub def_state: DefinitionState,
@@ -47,7 +45,6 @@ pub struct Symbol {
 pub enum SymbolKind {
     Variable {
         is_global: bool,
-        #[allow(unused)]
         // Initializer might be an AST node or a constant value
         initializer: Option<NodeRef>,
         alignment: Option<u32>, // Max alignment in bytes
@@ -57,22 +54,12 @@ pub enum SymbolKind {
         aliased_type: TypeRef,
     },
     EnumConstant {
-        #[allow(unused)]
         value: i64, // Resolved constant value
     },
-    Label {
-        #[allow(unused)]
-        is_defined: bool,
-        #[allow(unused)]
-        is_used: bool,
-    },
+    Label,
     Record {
         is_complete: bool,
         members: Vec<StructMember>,
-        #[allow(unused)]
-        size: Option<usize>,
-        #[allow(unused)]
-        alignment: Option<usize>,
     },
     EnumTag {
         is_complete: bool,
@@ -289,7 +276,6 @@ impl SymbolTable {
         &mut self,
         name: NameId,
         ty: TypeRef,
-        storage: Option<StorageClass>,
         initializer: Option<NodeRef>,
         alignment: Option<u32>,
         span: SourceSpan,
@@ -310,7 +296,6 @@ impl SymbolTable {
                 alignment,
             },
             type_info: ty,
-            storage_class: storage,
             scope_id: self.current_scope_id,
             def_span: span,
             def_state,
@@ -330,7 +315,6 @@ impl SymbolTable {
         &mut self,
         name: NameId,
         ty: TypeRef,
-        storage: Option<StorageClass>,
         is_definition: bool,
         span: SourceSpan,
     ) -> Result<SymbolRef, SymbolTableError> {
@@ -345,7 +329,6 @@ impl SymbolTable {
             name,
             kind: SymbolKind::Function,
             type_info: ty,
-            storage_class: storage,
             scope_id: self.current_scope_id,
             def_span: span,
             def_state,
@@ -370,7 +353,6 @@ impl SymbolTable {
             name,
             kind: SymbolKind::Typedef { aliased_type: ty },
             type_info: ty,
-            storage_class: Some(StorageClass::Typedef),
             scope_id: self.current_scope_id,
             def_span: span,
             def_state: DefinitionState::Defined,
@@ -400,7 +382,6 @@ impl SymbolTable {
             name,
             kind: SymbolKind::EnumConstant { value },
             type_info: ty,
-            storage_class: None,
             scope_id: self.current_scope_id,
             def_span: span,
             def_state: DefinitionState::Defined,
@@ -417,11 +398,8 @@ impl SymbolTable {
             kind: SymbolKind::Record {
                 is_complete,
                 members: Vec::new(),
-                size: None,
-                alignment: None,
             },
             type_info: ty,
-            storage_class: None,
             scope_id: self.current_scope_id,
             def_span: span,
             def_state: DefinitionState::Defined,
@@ -436,7 +414,6 @@ impl SymbolTable {
             name,
             kind: SymbolKind::EnumTag { is_complete: false },
             type_info: ty,
-            storage_class: None,
             scope_id: self.current_scope_id,
             def_span: span,
             def_state: DefinitionState::Defined,
@@ -449,12 +426,8 @@ impl SymbolTable {
     pub fn define_label(&mut self, name: NameId, ty: TypeRef, span: SourceSpan) -> Result<SymbolRef, SymbolTableError> {
         let symbol_entry = Symbol {
             name,
-            kind: SymbolKind::Label {
-                is_defined: true,
-                is_used: false,
-            },
+            kind: SymbolKind::Label,
             type_info: ty,
-            storage_class: None,
             scope_id: self.current_scope_id,
             def_span: span,
             def_state: DefinitionState::Defined,

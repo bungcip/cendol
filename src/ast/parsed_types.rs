@@ -156,7 +156,7 @@ impl Default for ParsedTypeArena {
 
 impl ParsedTypeArena {
     /// Create a new empty parsed type arena
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             base_types: Vec::new(),
             declarators: Vec::new(),
@@ -167,21 +167,21 @@ impl ParsedTypeArena {
     }
 
     /// Allocate a new base type and return its reference
-    pub(crate) fn alloc_base_type(&mut self, base_type: ParsedBaseTypeNode) -> ParsedBaseTypeRef {
+    pub fn alloc_base_type(&mut self, base_type: ParsedBaseTypeNode) -> ParsedBaseTypeRef {
         let index = self.base_types.len() as u32 + 1; // Start from 1 for NonZeroU32
         self.base_types.push(base_type);
         ParsedBaseTypeRef::new(index).expect("ParsedBaseTypeRef overflow")
     }
 
     /// Allocate a new declarator and return its reference
-    pub(crate) fn alloc_decl(&mut self, declarator: ParsedDeclaratorNode) -> ParsedDeclRef {
+    pub fn alloc_decl(&mut self, declarator: ParsedDeclaratorNode) -> ParsedDeclRef {
         let index = self.declarators.len() as u32 + 1; // Start from 1 for NonZeroU32
         self.declarators.push(declarator);
         ParsedDeclRef::new(index).expect("ParsedDeclRef overflow")
     }
 
     /// Allocate function parameters and return the range
-    pub(crate) fn alloc_params(&mut self, params: Vec<ParsedFunctionParam>) -> ParsedParamRange {
+    pub fn alloc_params(&mut self, params: Vec<ParsedFunctionParam>) -> ParsedParamRange {
         let start = self.params.len() as u32;
         self.params.extend(params);
         let len = self.params.len() as u32 - start;
@@ -189,7 +189,7 @@ impl ParsedTypeArena {
     }
 
     /// Allocate struct members and return the range
-    pub(crate) fn alloc_struct_members(&mut self, members: Vec<ParsedStructMember>) -> ParsedStructMemberRange {
+    pub fn alloc_struct_members(&mut self, members: Vec<ParsedStructMember>) -> ParsedStructMemberRange {
         let start = self.struct_members.len() as u32;
         self.struct_members.extend(members);
         let len = self.struct_members.len() as u32 - start;
@@ -197,7 +197,7 @@ impl ParsedTypeArena {
     }
 
     /// Allocate enum constants and return the range
-    pub(crate) fn alloc_enum_constants(&mut self, enumerators: Vec<ParsedEnumConstant>) -> ParsedEnumRange {
+    pub fn alloc_enum_constants(&mut self, enumerators: Vec<ParsedEnumConstant>) -> ParsedEnumRange {
         let start = self.enum_constants.len() as u32;
         self.enum_constants.extend(enumerators);
         let len = self.enum_constants.len() as u32 - start;
@@ -205,33 +205,33 @@ impl ParsedTypeArena {
     }
 
     /// Get a base type by reference
-    pub(crate) fn get_base_type(&self, base_ref: ParsedBaseTypeRef) -> ParsedBaseTypeNode {
+    pub fn get_base_type(&self, base_ref: ParsedBaseTypeRef) -> ParsedBaseTypeNode {
         let index = (base_ref.get() - 1) as usize;
         self.base_types[index].clone()
     }
 
     /// Get a declarator by reference
-    pub(crate) fn get_decl(&self, decl_ref: ParsedDeclRef) -> ParsedDeclaratorNode {
+    pub fn get_decl(&self, decl_ref: ParsedDeclRef) -> ParsedDeclaratorNode {
         let index = (decl_ref.get() - 1) as usize;
         self.declarators[index].clone()
     }
 
     /// Get function parameters by range
-    pub(crate) fn get_params(&self, range: ParsedParamRange) -> &[ParsedFunctionParam] {
+    pub fn get_params(&self, range: ParsedParamRange) -> &[ParsedFunctionParam] {
         let start = range.start as usize;
         let end = start + range.len as usize;
         &self.params[start..end]
     }
 
     /// Get struct members by range
-    pub(crate) fn get_struct_members(&self, range: ParsedStructMemberRange) -> &[ParsedStructMember] {
+    pub fn get_struct_members(&self, range: ParsedStructMemberRange) -> &[ParsedStructMember] {
         let start = range.start as usize;
         let end = start + range.len as usize;
         &self.struct_members[start..end]
     }
 
     /// Get enum constants by range
-    pub(crate) fn get_enum_constants(&self, range: ParsedEnumRange) -> &[ParsedEnumConstant] {
+    pub fn get_enum_constants(&self, range: ParsedEnumRange) -> &[ParsedEnumConstant] {
         let start = range.start as usize;
         let end = start + range.len as usize;
         &self.enum_constants[start..end]

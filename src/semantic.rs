@@ -89,9 +89,8 @@ pub enum ImplicitConversion {
 // Re-export key types for public API
 pub(crate) use ast_to_mir::AstToMirLowerer;
 use smallvec::SmallVec;
-pub(crate) use symbol_table::SymbolTable;
-pub use symbol_table::{DefinitionState, Namespace, ScopeId, SymbolKind, SymbolRef};
-pub(crate) use type_registry::TypeRegistry;
+pub use symbol_table::{DefinitionState, Namespace, ScopeId, SymbolKind, SymbolRef, SymbolTable};
+pub use type_registry::TypeRegistry;
 pub use types::{
     ArraySizeType, EnumConstant, FunctionParameter, QualType, StructMember, Type, TypeKind, TypeLayout, TypeQualifiers,
     TypeRef,

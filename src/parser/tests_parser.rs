@@ -1558,7 +1558,7 @@ fn parse_test(source: &str) -> Ast {
 fn test_parse_bitfield() {
     let source = "struct S { int a : 4; unsigned b : 2; };";
     let ast = parse_test(source);
-    let root = ast.get_root_node();
+    let root = &ast.nodes[0];
 
     let decl = match &root.kind {
         NodeKind::TranslationUnit(decls) => ast.get_node(decls[0]),

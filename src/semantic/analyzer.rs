@@ -58,7 +58,10 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::Ident(_, symbol) => {
                 if let Some(symbol_ref) = symbol.get() {
                     let symbol = self.symbol_table.get_symbol(symbol_ref);
-                    matches!(symbol.kind, SymbolKind::Variable { .. })
+                    matches!(
+                        symbol.kind,
+                        SymbolKind::Variable { .. } | SymbolKind::Function { .. }
+                    )
                 } else {
                     false
                 }

@@ -1289,14 +1289,15 @@ fn lower_function_parameters(params: &[ParamData], ctx: &mut LowerCtx) -> Vec<Fu
 fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut LowerCtx) -> QualType {
     match declarator {
         Declarator::Pointer(qualifiers, next) => {
-            let pointee_type = if let Some(next_decl) = next {
-                apply_declarator(base_type, next_decl, ctx)
-            } else {
-                QualType::unqualified(base_type)
-            };
+            let pointer_type_ref = ctx.registry.pointer_to(base_type);
 
-            let pointer_type_ref = ctx.registry.pointer_to(pointee_type.ty);
-            QualType::new(pointer_type_ref, *qualifiers)
+            if let Some(next_decl) = next {
+                let mut result = apply_declarator(pointer_type_ref, next_decl, ctx);
+                result.qualifiers |= *qualifiers;
+                result
+            } else {
+                QualType::new(pointer_type_ref, *qualifiers)
+            }
         }
         Declarator::Identifier(_, qualifiers) => {
             let base_type_ref = base_type;
@@ -1324,9 +1325,18 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
             is_variadic,
         } => {
             // Check for function pointer: a pointer declarator inside the function base
+            // Handle (*f)() which parses as Function(Pointer(Identifier))
             if let Declarator::Pointer(qualifiers, Some(inner_base)) = &**base {
                 // This is a pointer to a function.
                 // The `base_type` applies to the return type of the function.
+                // Reconstruct the inner declarator properly:
+                // If we have `(*f)()`, `f` is the inner base. `base_type` is the return type.
+
+                // However, apply_declarator calls recursively.
+                // If we treat this as a Pointer to Function:
+                // The Pointer applies to the Function type we build here.
+                // The Function's return type is determined by applying `base_type` to `inner_base`.
+
                 let return_type = apply_declarator(base_type, inner_base, ctx);
 
                 let parameters = lower_function_parameters(params, ctx);
@@ -1337,7 +1347,21 @@ fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut Lower
                 return QualType::new(pointer_type_ref, *qualifiers);
             }
 
-            // This is a regular function declaration.
+            // This is a regular function declaration (or function returning pointer).
+            // E.g. `*f()` -> Function(Pointer(Identifier)).
+            // But wait, `*f()` parses as Pointer(Function(Identifier)).
+            // So `Function` base is `Identifier`.
+            // The case where base is `Pointer` happens ONLY when parens are used: `(*f)()`.
+            // So the `if` block above is correct for `(*f)()`.
+
+            // Wait, what if `inner_base` is NOT Identifier?
+            // `(**f)()` -> Function(Pointer(Pointer(f))).
+            // The `if` matches `Pointer`. `inner` is `Pointer(f)`.
+            // Recursive `apply` handles `inner`.
+
+            // So logic seems correct. I will add debug print to confirm it enters.
+            // println!("DEBUG: Function declarator base: {:?}", base);
+
             let return_type = apply_declarator(base_type, base, ctx);
             let parameters = lower_function_parameters(params, ctx);
 

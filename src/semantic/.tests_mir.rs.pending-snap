@@ -1,0 +1,28 @@
+{"run_id":"1767676265-576128147","line":479,"new":{"module_name":"cendol__semantic__tests_mir__tests","snapshot_name":"struct_tag_shadowing","metadata":{"source":"src/semantic/tests_mir.rs","assertion_line":479,"expression":"mir_dump"},"snapshot":"type %t0 = i32\ntype %t1 = struct T { x: %t0 }\ntype %t2 = struct T { y: %t0 }\n\nglobal @s1: %t1\n\nfn main() -> i32\n{\n  locals {\n    %s2: %t2\n  }\n\n  bb1:\n    @s1.field_0 = cast<i32>(const 1)\n    %s2.field_0 = cast<i32>(const 2)\n    return @s1.field_0\n}"},"old":{"module_name":"cendol__semantic__tests_mir__tests","metadata":{},"snapshot":"type %t0 = i32\ntype %t1 = struct T { x: %t0 }\ntype %t2 = struct T { y: %t0 }\n\nglobal @s1: %t1 = const zero\n\nfn main() -> i32\n{\n  locals {\n    %s2: %t2\n  }\n\n  bb1:\n    @s1.field_0 = cast<i32>(const 1)\n    %s2.field_0 = cast<i32>(const 2)\n    return @s1.field_0\n}"}}
+{"run_id":"1767676265-576128147","line":863,"new":{"module_name":"cendol__semantic__tests_mir__tests","snapshot_name":"duplicate_global_declaration","metadata":{"source":"src/semantic/tests_mir.rs","assertion_line":863,"expression":"mir_dump"},"snapshot":"type %t0 = i32\n\nglobal @x: i32\n\nfn main() -> i32\n{\n\n  bb1:\n    return @x\n}"},"old":{"module_name":"cendol__semantic__tests_mir__tests","metadata":{},"snapshot":"type %t0 = i32\n\nglobal @x: i32 = const zero\n\nfn main() -> i32\n{\n\n  bb1:\n    return @x\n}"}}
+{"run_id":"1767676349-587858553","line":1044,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":913,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":259,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":1080,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":889,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":863,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":383,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":1204,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":1004,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":164,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":410,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":81,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":230,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":684,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":341,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":940,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":1123,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":970,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":607,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":449,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":1174,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":204,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":296,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":479,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":516,"new":null,"old":null}
+{"run_id":"1767676349-587858553","line":122,"new":null,"old":null}

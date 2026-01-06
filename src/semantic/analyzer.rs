@@ -8,6 +8,7 @@ use crate::{
         utils::is_scalar_type,
     },
 };
+use hashbrown::HashSet;
 
 /// Run Semantic Analyzer in our AST and return analysist result in SemanticInfo
 /// which contains resolved type, conversion table, and value category
@@ -456,6 +457,10 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::VarDecl(data) => {
                 let _ = self.registry.ensure_layout(data.ty.ty);
+
+                // Recursively visit the type to handle VLA sizes
+                self.visit_type_expressions(data.ty.ty);
+
                 if let Some(init_ref) = data.init {
                     if let Some(init_ty) = self.visit_node(init_ref) {
                         self.record_implicit_conversions(data.ty, init_ty, init_ref);
@@ -733,6 +738,53 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 _ => {}
             }
+        }
+    }
+
+    fn visit_type_expressions(&mut self, type_ref: crate::semantic::TypeRef) {
+        let mut visited = HashSet::new();
+        self.visit_type_expressions_recursive(type_ref, &mut visited);
+    }
+
+    fn visit_type_expressions_recursive(
+        &mut self,
+        type_ref: crate::semantic::TypeRef,
+        visited: &mut HashSet<crate::semantic::TypeRef>,
+    ) {
+        if !visited.insert(type_ref) {
+            return;
+        }
+
+        let ty = self.registry.get(type_ref);
+        // clone kind to avoid borrowing issues
+        let kind = ty.kind.clone();
+
+        match kind {
+            TypeKind::Array { element_type, size } => {
+                self.visit_type_expressions_recursive(element_type, visited);
+                if let ArraySizeType::Variable(expr_ref) = size {
+                    self.check_scalar_condition(expr_ref);
+                }
+            }
+            TypeKind::Pointer { pointee } => {
+                self.visit_type_expressions_recursive(pointee, visited);
+            }
+            TypeKind::Function {
+                return_type,
+                parameters,
+                ..
+            } => {
+                self.visit_type_expressions_recursive(return_type, visited);
+                for param in parameters {
+                    self.visit_type_expressions_recursive(param.param_type.ty, visited);
+                }
+            }
+            TypeKind::Record { members, .. } => {
+                for member in members {
+                    self.visit_type_expressions_recursive(member.member_type.ty, visited);
+                }
+            }
+            _ => {}
         }
     }
 

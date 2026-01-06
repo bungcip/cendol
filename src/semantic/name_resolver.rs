@@ -8,23 +8,33 @@ use log::debug;
 
 use crate::ast::{Ast, FunctionData, NodeKind, NodeRef, VarDeclData};
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
-use crate::semantic::{Namespace, ScopeId, SymbolTable};
+use crate::semantic::{ArraySizeType, Namespace, ScopeId, SymbolTable, TypeKind, TypeRef, TypeRegistry};
+use hashbrown::HashSet;
 
 struct NameResolverCtx<'ast, 'diag> {
     diag: &'diag mut DiagnosticEngine,
     ast: &'ast Ast,
     symbol_table: &'ast SymbolTable,
+    registry: &'ast TypeRegistry,
     scope_id: ScopeId,
     deferred_static_asserts: Vec<NodeRef>,
+    visited_types: HashSet<TypeRef>,
 }
 
-pub fn run_name_resolver(ast: &Ast, diag: &mut DiagnosticEngine, symbol_table: &SymbolTable) {
+pub fn run_name_resolver(
+    ast: &Ast,
+    diag: &mut DiagnosticEngine,
+    symbol_table: &SymbolTable,
+    registry: &TypeRegistry,
+) {
     let mut ctx = NameResolverCtx {
         diag,
         ast,
         symbol_table,
+        registry,
         scope_id: ScopeId::GLOBAL,
         deferred_static_asserts: Vec::new(),
+        visited_types: HashSet::new(),
     };
     let root = ast.get_root();
     visit_node(&mut ctx, root);
@@ -34,6 +44,45 @@ pub fn run_name_resolver(ast: &Ast, diag: &mut DiagnosticEngine, symbol_table: &
         if let NodeKind::StaticAssert(cond, _) = ctx.ast.get_node(assert_ref).kind.clone() {
             visit_node(&mut ctx, cond);
         }
+    }
+}
+
+fn visit_type(ctx: &mut NameResolverCtx, type_ref: TypeRef) {
+    if !ctx.visited_types.insert(type_ref) {
+        return;
+    }
+
+    let ty = ctx.registry.get(type_ref);
+    // clone kind to avoid borrowing issues if we need to recurse
+    let kind = ty.kind.clone();
+
+    match kind {
+        TypeKind::Array { element_type, size } => {
+            visit_type(ctx, element_type);
+            if let ArraySizeType::Variable(expr_ref) = size {
+                visit_node(ctx, expr_ref);
+            }
+        }
+        TypeKind::Pointer { pointee } => {
+            visit_type(ctx, pointee);
+        }
+        TypeKind::Function {
+            return_type,
+            parameters,
+            ..
+        } => {
+            visit_type(ctx, return_type);
+            for param in parameters {
+                visit_type(ctx, param.param_type.ty);
+            }
+        }
+        TypeKind::Record { members, .. } => {
+            for member in members {
+                visit_type(ctx, member.member_type.ty);
+            }
+        }
+        // Other types don't contain expressions
+        _ => {}
     }
 }
 
@@ -47,7 +96,9 @@ fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
             }
         }
         NodeKind::Function(data) => {
-            let FunctionData { body, .. } = data;
+            let FunctionData { body, ty, .. } = data;
+            // Visit function type (to handle VLA in parameters)
+            visit_type(ctx, *ty);
             visit_node(ctx, *body);
         }
         NodeKind::CompoundStatement(stmts) => {
@@ -164,16 +215,19 @@ fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
         NodeKind::SizeOfExpr(expr) => {
             visit_node(ctx, *expr);
         }
-        NodeKind::SizeOfType(_) => {
-            // Already resolved
+        NodeKind::SizeOfType(ty) => {
+            // Visit type for VLAs
+            visit_type(ctx, ty.ty);
         }
-        NodeKind::AlignOf(_) => {
-            // Already resolved
+        NodeKind::AlignOf(ty) => {
+            visit_type(ctx, ty.ty);
         }
-        NodeKind::Cast(_, expr) => {
+        NodeKind::Cast(ty, expr) => {
+            visit_type(ctx, ty.ty);
             visit_node(ctx, *expr);
         }
-        NodeKind::CompoundLiteral(_, init) => {
+        NodeKind::CompoundLiteral(ty, init) => {
+            visit_type(ctx, ty.ty);
             visit_node(ctx, *init);
         }
         NodeKind::TernaryOp(cond, then_branch, else_branch) => {
@@ -185,17 +239,23 @@ fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
             visit_node(ctx, *ctrl);
             for assoc in assocs {
                 visit_node(ctx, assoc.result_expr);
+                if let Some(ty) = assoc.ty {
+                    visit_type(ctx, ty.ty);
+                }
             }
         }
         NodeKind::GnuStatementExpression(compound, result) => {
             visit_node(ctx, *compound);
             visit_node(ctx, *result);
         }
-        NodeKind::VaArg(expr, _) => {
+        NodeKind::VaArg(expr, ty) => {
             visit_node(ctx, *expr);
+            visit_type(ctx, *ty);
         }
         NodeKind::VarDecl(data) => {
-            let VarDeclData { init, .. } = data;
+            let VarDeclData { init, ty, .. } = data;
+            // Visit type to handle VLA sizes
+            visit_type(ctx, ty.ty);
             if let Some(init) = init {
                 visit_node(ctx, *init);
             }

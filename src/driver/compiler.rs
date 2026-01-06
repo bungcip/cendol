@@ -307,7 +307,7 @@ impl CompilerDriver {
     ) -> Result<SemaOutputWithAst, PipelineError> {
         /// phase to make sure that NameId in NodeKind::Ident resolved to some Symbol
         use crate::semantic::name_resolver::run_name_resolver;
-        run_name_resolver(&ast, &mut self.diagnostics, &symbol_table);
+        run_name_resolver(&ast, &mut self.diagnostics, &symbol_table, &registry);
         self.check_diagnostics_and_return_if_error()?;
 
         // validations

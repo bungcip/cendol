@@ -402,10 +402,19 @@ impl TypeRegistry {
                     });
                 }
                 ArraySizeType::Variable(_) | ArraySizeType::Star => {
-                    return Err(SemanticError::UnsupportedFeature {
-                        feature: "variable length array type layout".to_string(),
-                        span: SourceSpan::dummy(),
-                    });
+                    let element_layout = self.ensure_layout(element_type)?;
+                    // For VLA, the size is not known at compile time.
+                    // We return a placeholder layout with 0 size.
+                    // Note: This is only for the type system. Code generation
+                    // must handle VLA allocation dynamically.
+                    TypeLayout {
+                        size: 0,
+                        alignment: element_layout.alignment,
+                        kind: LayoutKind::Array {
+                            element: element_type,
+                            len: 0,
+                        },
+                    }
                 }
             },
 

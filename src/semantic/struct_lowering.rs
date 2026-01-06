@@ -1,9 +1,10 @@
 use crate::ast::nodes::*;
 use crate::ast::utils::extract_identifier;
+use crate::diagnostic::SemanticError;
 use crate::semantic::symbol_resolver::{
     LowerCtx, apply_declarator_for_member, lower_decl_specifiers_for_member, process_anonymous_struct_members,
 };
-use crate::semantic::{QualType, StructMember};
+use crate::semantic::{ArraySizeType, QualType, StructMember, TypeKind};
 
 /// Common logic for lowering struct members, used by both TypeSpecifier::Record lowering
 /// and Declarator::AnonymousRecord handling.
@@ -42,6 +43,16 @@ pub(crate) fn lower_struct_members(
                     } else {
                         ctx.registry.type_int
                     };
+
+                // Check for VLA in struct member
+                if let TypeKind::Array { size, .. } = &ctx.registry.get(member_type).kind {
+                    if let ArraySizeType::Variable(_) = size {
+                        ctx.report_error(SemanticError::UnsupportedFeature {
+                            feature: "VLA in struct/union".to_string(),
+                            span: init_declarator.span,
+                        });
+                    }
+                }
 
                 struct_members.push(StructMember {
                     name: Some(member_name),

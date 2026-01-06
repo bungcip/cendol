@@ -192,8 +192,8 @@ fn resolve_array_size(size: Option<NodeRef>, ctx: &mut LowerCtx) -> ArraySizeTyp
                 ArraySizeType::Incomplete
             }
         } else {
-            // TODO: Handle non-constant array sizes (VLAs)
-            ArraySizeType::Incomplete
+            // Handle non-constant array sizes (VLAs)
+            ArraySizeType::Variable(expr)
         }
     } else {
         // Should not happen as parser ensures size is Some

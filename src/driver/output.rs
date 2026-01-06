@@ -51,38 +51,23 @@ impl OutputHandler {
                 break;
             }
 
-            // Check for file transitions and emit line markers
-            if token.location.source_id() != current_file_id {
-                // Emit line marker for file transition (unless suppressed)
-                if !suppress_line_markers
-                    && let Some(file_info) = source_manager.get_file_info(token.location.source_id())
-                {
-                    let line = source_manager
-                        .get_line_column(token.location)
-                        .map(|(l, _)| l)
-                        .unwrap_or(1);
-                    let filename = file_info
-                        .path
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("<unknown>");
-
-                    // For now, use flag "1" for entering file (simplified)
-                    println!("# {} \"{}\" 1", line, filename);
-                }
-
-                current_file_id = token.location.source_id();
-                current_buffer = source_manager.get_buffer(current_file_id);
-                last_pos = token.location.offset();
-                last_was_macro_expanded = false;
-            }
-
             // Handle macro-expanded tokens (Level A: use canonical spelling)
             if token.flags.contains(crate::pp::PPTokenFlags::MACRO_EXPANDED) {
-                // Add space between consecutive macro-expanded tokens
-                if last_was_macro_expanded {
+                // Heuristic: if we are entering a macro expansion (previous was not macro),
+                // and there was whitespace at the current position in the source, print a space.
+                // This preserves separation like "return FOO" -> "return 123".
+                if !last_was_macro_expanded {
+                    // Check if char at last_pos is whitespace
+                    if let Some(&byte) = current_buffer.get(last_pos as usize) {
+                        if (byte as char).is_whitespace() {
+                            print!(" ");
+                        }
+                    }
+                } else {
+                     // Add space between consecutive macro-expanded tokens (linearization)
                     print!(" ");
                 }
+
                 // For macro-expanded tokens, just print the canonical spelling
                 // No whitespace reconstruction for Level A - these tokens don't have
                 // meaningful source locations for whitespace calculation
@@ -90,6 +75,32 @@ impl OutputHandler {
                 last_was_macro_expanded = true;
                 // Don't update last_pos for macro-expanded tokens
                 continue;
+            }
+
+            // Check for file transitions and emit line markers
+            if token.location.source_id() != current_file_id {
+                // Emit line marker for file transition (unless suppressed)
+                if !suppress_line_markers {
+                    if let Some(file_info) = source_manager.get_file_info(token.location.source_id()) {
+                        let line = source_manager
+                            .get_line_column(token.location)
+                            .map(|(l, _)| l)
+                            .unwrap_or(1);
+                        let filename = file_info
+                            .path
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("<unknown>");
+
+                        // Ensure we start on a new line
+                        println!();
+                        println!("# {} \"{}\" 1", line, filename);
+                    }
+                }
+
+                current_file_id = token.location.source_id();
+                current_buffer = source_manager.get_buffer(current_file_id);
+                last_pos = token.location.offset();
             }
 
             let token_start = token.location.offset();

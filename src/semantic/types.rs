@@ -50,17 +50,6 @@ impl Type {
     pub(crate) fn new(kind: TypeKind) -> Self {
         Type { kind, layout: None }
     }
-
-    /// get record layout. panic if not found
-    pub(crate) fn get_record_layout(&self) -> (&[FieldLayout], bool) {
-        match &self.layout {
-            None => panic!("ICE: type.layout is not set"),
-            Some(layout) => match &layout.kind {
-                LayoutKind::Record { fields, is_union } => (fields.as_ref(), *is_union),
-                _ => panic!("ICE: type.layout.kind is not Record"),
-            },
-        }
-    }
 }
 
 /// Opaque reference to a canonical type.

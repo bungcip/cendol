@@ -1543,6 +1543,63 @@ fn test_label_with_numeric_suffix() {
     ");
 }
 
+fn parse_test(source: &str) -> Ast {
+    let phase = CompilePhase::Parse;
+    let config = CompileConfig::from_virtual_file(source.to_string(), phase);
+    let mut driver = CompilerDriver::from_config(config);
+    let mut out = driver.run_pipeline(phase).unwrap();
+    let first = out.units.first_mut().unwrap();
+    let artifact = first.1;
+    let ast = artifact.ast.clone().unwrap();
+    ast
+}
+
+#[test]
+fn test_parse_bitfield() {
+    let source = "struct S { int a : 4; unsigned b : 2; };";
+    let ast = parse_test(source);
+    let root = ast.get_root_node();
+
+    let decl = match &root.kind {
+        NodeKind::TranslationUnit(decls) => ast.get_node(decls[0]),
+        _ => panic!("Expected TranslationUnit"),
+    };
+
+    let type_spec = match &decl.kind {
+        NodeKind::Declaration(d) => &d.specifiers[0],
+        _ => panic!("Expected Declaration"),
+    };
+
+    let members = match type_spec {
+        DeclSpecifier::TypeSpecifier(TypeSpecifier::Record(_, _, Some(def))) => def.members.as_ref().unwrap(),
+        _ => panic!("Expected Record"),
+    };
+
+    // Check first member: int a : 4;
+    let member1_decl = &members[0];
+    let init_declarator1 = &member1_decl.init_declarators[0];
+    match &init_declarator1.declarator {
+        Declarator::BitField(base, width_expr_ref) => {
+            assert!(matches!(**base, Declarator::Identifier(name, _) if name.to_string() == "a"));
+            let width_expr = ast.get_node(*width_expr_ref);
+            assert!(matches!(width_expr.kind, NodeKind::LiteralInt(4)));
+        }
+        _ => panic!("Expected BitField declarator for 'a'"),
+    }
+
+    // Check second member: unsigned b : 2;
+    let member2_decl = &members[1];
+    let init_declarator2 = &member2_decl.init_declarators[0];
+    match &init_declarator2.declarator {
+        Declarator::BitField(base, width_expr_ref) => {
+            assert!(matches!(**base, Declarator::Identifier(name, _) if name.to_string() == "b"));
+            let width_expr = ast.get_node(*width_expr_ref);
+            assert!(matches!(width_expr.kind, NodeKind::LiteralInt(2)));
+        }
+        _ => panic!("Expected BitField declarator for 'b'"),
+    }
+}
+
 #[test]
 fn test_duplicate_typedef_no_panic() {
     let source = "typedef int my_int; typedef int my_int;";

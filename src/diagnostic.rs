@@ -203,6 +203,12 @@ pub enum SemanticError {
     #[error("size of array has non-positive value")]
     InvalidArraySize { span: SourceSpan },
 
+    #[error("bit-field has non-positive width")]
+    InvalidBitfieldWidth { span: SourceSpan },
+
+    #[error("bit-field width is not a constant expression")]
+    NonConstantBitfieldWidth { span: SourceSpan },
+
     // Errors related to declaration specifiers
     #[error("conflicting storage class specifiers")]
     ConflictingStorageClasses { span: SourceSpan },
@@ -238,6 +244,8 @@ impl SemanticError {
             SemanticError::InvalidUseOfVoid { span } => *span,
             SemanticError::UnsupportedFeature { span, .. } => *span,
             SemanticError::InvalidArraySize { span } => *span,
+            SemanticError::InvalidBitfieldWidth { span } => *span,
+            SemanticError::NonConstantBitfieldWidth { span } => *span,
             SemanticError::ConflictingStorageClasses { span } => *span,
             SemanticError::ExpectedTypedefName { span, .. } => *span,
             SemanticError::MissingTypeSpecifier { span } => *span,

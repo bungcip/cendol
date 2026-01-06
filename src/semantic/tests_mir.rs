@@ -1259,4 +1259,31 @@ mod tests {
         // Just verify it lowers to MIR without panic
         let _ = setup_mir(source);
     }
+
+    #[test]
+    fn test_incomplete_record_type() {
+        let source = r#"
+            typedef struct I FILE;
+            extern struct I *p;
+            int main() {
+                return 0;
+            }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = i32
+        type %t1 = ptr<%t2>
+        type %t2 = struct I {  }
+
+        global @p: ptr<%t2> = const zero
+
+        fn main() -> i32
+        {
+
+          bb1:
+            return cast<i32>(const 0)
+        }
+        ");
+    }
 }

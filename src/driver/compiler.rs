@@ -61,6 +61,7 @@ pub struct CompileArtifact {
     pub clif_dump: Option<String>,
     pub object_file: Option<Vec<u8>>,
     pub type_registry: Option<TypeRegistry>,
+    pub symbol_table: Option<SymbolTable>,
 }
 
 /// Complete semantic analysis output containing all MIR data structures
@@ -183,6 +184,7 @@ impl CompilerDriver {
         if stop_after == CompilePhase::SymbolResolver {
             out.ast = Some(ast);
             out.type_registry = Some(registry);
+            out.symbol_table = Some(symbol_table);
             return Ok(out);
         }
 
@@ -493,7 +495,7 @@ impl CompilerDriver {
                             }
                         }
                     } else if let Some(ast) = artifact.ast {
-                        self.output_handler.dump_parser(&ast);
+                        self.output_handler.dump_parser(&ast, artifact.symbol_table.as_ref());
                         if let Some(registry) = artifact.type_registry {
                             self.output_handler.dump_type_registry(&ast, &registry);
                         }

@@ -122,13 +122,13 @@ impl OutputHandler {
     }
 
     /// Dump parser AST to stdout
-    pub(crate) fn dump_parser(&self, ast: &Ast) {
+    pub(crate) fn dump_parser(&self, ast: &Ast, symbol_table: Option<&crate::semantic::SymbolTable>) {
         for (i, node) in ast.nodes.iter().enumerate() {
             if matches!(node.kind, NodeKind::Dummy) {
                 continue;
             }
             print!("{}: ", i + 1);
-            self.dump_parser_kind(&node.kind);
+            self.dump_parser_kind(&node.kind, symbol_table);
         }
     }
 
@@ -387,9 +387,11 @@ impl OutputHandler {
     }
 
     /// Get function name from symbol entry reference
-    fn get_function_name(&self, symbol_ref: SymbolRef) -> String {
-        // For now, return a placeholder since we don't have access to the symbol table here
-        // In a real implementation, we would need access to the symbol table
+    fn get_function_name(&self, symbol_ref: SymbolRef, symbol_table: Option<&crate::semantic::SymbolTable>) -> String {
+        if let Some(table) = symbol_table {
+            let entry = table.get_symbol(symbol_ref);
+            return entry.name.to_string();
+        }
         format!("func_{}", symbol_ref.get())
     }
 
@@ -487,7 +489,7 @@ impl OutputHandler {
     }
 
     /// Dump a single AST node kind
-    fn dump_parser_kind(&self, kind: &NodeKind) {
+    fn dump_parser_kind(&self, kind: &NodeKind, symbol_table: Option<&crate::semantic::SymbolTable>) {
         match kind {
             NodeKind::TranslationUnit(tu) => {
                 println!(
@@ -628,7 +630,7 @@ impl OutputHandler {
             }
             NodeKind::Function(function_data) => {
                 // Get the function name from the symbol table
-                let func_name = self.get_function_name(function_data.symbol);
+                let func_name = self.get_function_name(function_data.symbol, symbol_table);
                 println!(
                     "Function(name={}, ty={}, body={})",
                     func_name,

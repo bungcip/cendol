@@ -1226,19 +1226,28 @@ impl<'a> AstToMirLowerer<'a> {
                 MirType::Function { return_type, params }
             }
             TypeKind::Record {
-                tag, members, is_union, ..
+                tag,
+                members,
+                is_union,
+                is_complete,
             } => {
                 let name = tag.unwrap_or_else(|| NameId::new("anonymous"));
 
-                let (size, alignment, field_layouts, _) = self.registry.get_record_layout(type_ref);
-                let field_offsets = field_layouts.iter().map(|f| f.offset).collect();
+                let (size, alignment, field_offsets, fields) = if *is_complete {
+                    let (size, alignment, field_layouts, _) = self.registry.get_record_layout(type_ref);
+                    let field_offsets = field_layouts.iter().map(|f| f.offset).collect();
 
-                let mut fields = Vec::new();
-                for m in members {
-                    if let Some(name) = m.name {
-                        fields.push((name, self.lower_type_to_mir(m.member_type.ty)));
+                    let mut fields = Vec::new();
+                    for m in members {
+                        if let Some(name) = m.name {
+                            fields.push((name, self.lower_type_to_mir(m.member_type.ty)));
+                        }
                     }
-                }
+                    (size, alignment, field_offsets, fields)
+                } else {
+                    (0, 1, Vec::new(), Vec::new())
+                };
+
                 MirType::Record {
                     name,
                     fields,

@@ -88,3 +88,48 @@ fn test_enum_decl_members_populated() {
 
     assert!(found_enum_decl, "Did not find EnumDecl for 'Color'");
 }
+
+#[test]
+fn test_struct_member_qualifiers_preserved() {
+    // This test demonstrates that qualifiers on struct members are preserved.
+    use crate::semantic::{TypeQualifiers, TypeKind};
+
+    let source = r#"
+        struct S {
+            const int x;
+            volatile int *y;
+        };
+    "#;
+
+    let phase = CompilePhase::SymbolResolver;
+    let config = CompileConfig::from_virtual_file(source.to_string(), phase);
+    let mut driver = CompilerDriver::from_config(config);
+
+    let out = driver.run_pipeline(phase).unwrap();
+    let unit = out.units.values().next().unwrap();
+    let ast = unit.ast.as_ref().unwrap();
+    let registry = unit.type_registry.as_ref().unwrap();
+
+    // Find RecordDecl
+    for node in &ast.nodes {
+        if let NodeKind::RecordDecl(decl) = &node.kind {
+            if decl.name.map(|n| n.as_str()) == Some("S") {
+                let members = &decl.members;
+                assert_eq!(members.len(), 2);
+
+                if let TypeKind::Record { members, .. } = &registry.get(decl.ty).kind {
+                    let x_mem = &members[0];
+                    // We expect CONST.
+                    assert!(x_mem.member_type.qualifiers.contains(TypeQualifiers::CONST),
+                            "Struct member 'x' should be const, but has qualifiers: {:?}", x_mem.member_type.qualifiers);
+
+                    let y_mem = &members[1];
+                    // 'y' is volatile pointer to int.
+                    // My fix makes it `volatile pointer`.
+                    assert!(y_mem.member_type.qualifiers.contains(TypeQualifiers::VOLATILE),
+                             "Struct member 'y' should be volatile, but has qualifiers: {:?}", y_mem.member_type.qualifiers);
+                }
+            }
+        }
+    }
+}

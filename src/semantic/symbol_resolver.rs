@@ -381,7 +381,7 @@ pub(crate) fn lower_declaration(ctx: &mut LowerCtx, decl_node: NodeRef) -> Vec<N
 }
 
 /// Process declaration specifiers into consolidated information
-fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: SourceSpan) -> DeclSpecInfo {
+pub(crate) fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: SourceSpan) -> DeclSpecInfo {
     let mut info = DeclSpecInfo::default();
 
     for spec in specs {
@@ -1374,7 +1374,7 @@ fn lower_function_parameters(params: &[ParamData], ctx: &mut LowerCtx) -> Vec<Fu
 }
 
 /// Apply declarator transformations to a base type
-fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut LowerCtx) -> QualType {
+pub(crate) fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut LowerCtx) -> QualType {
     match declarator {
         Declarator::Pointer(qualifiers, next) => {
             let pointer_type_ref = ctx.registry.pointer_to(base_type);
@@ -1887,114 +1887,12 @@ fn lower_decl_specifiers_for_function_return(
     ctx: &mut LowerCtx,
     span: SourceSpan,
 ) -> Option<QualType> {
-    let mut merged_type = None;
-
-    for spec in specs {
-        if let DeclSpecifier::TypeSpecifier(ts) = spec {
-            match resolve_type_specifier(ts, ctx, span) {
-                Ok(ty) => {
-                    merged_type = merge_base_type(merged_type, ty, ctx);
-                }
-                Err(_) => continue,
-            }
-        }
-    }
-
-    merged_type
-}
-
-/// Lower declaration specifiers for struct members (simplified version)
-pub(crate) fn lower_decl_specifiers_for_member(
-    specs: &[DeclSpecifier],
-    ctx: &mut LowerCtx,
-    span: SourceSpan,
-) -> Option<QualType> {
-    for spec in specs {
-        if let DeclSpecifier::TypeSpecifier(ts) = spec {
-            match resolve_type_specifier(ts, ctx, span) {
-                Ok(ty) => return Some(ty),
-                Err(_) => continue,
-            }
-        }
-    }
-    None
-}
-
-/// Apply declarator for struct members (simplified version)
-pub(crate) fn apply_declarator_for_member(
-    current_type: TypeRef,
-    declarator: &Declarator,
-    ctx: &mut LowerCtx,
-) -> QualType {
-    match declarator {
-        Declarator::Identifier(_, qualifiers) => QualType::new(current_type, *qualifiers),
-        Declarator::Pointer(qualifiers, next) => {
-            let pointer_type_ref = ctx.registry.pointer_to(current_type);
-
-            if let Some(next_decl) = next {
-                let mut result = apply_declarator_for_member(pointer_type_ref, next_decl, ctx);
-                result.qualifiers |= *qualifiers;
-                result
-            } else {
-                QualType::new(pointer_type_ref, *qualifiers)
-            }
-        }
-        Declarator::Array(base, size) => {
-            let array_size = match size {
-                ArraySize::Expression { expr, qualifiers: _ } => resolve_array_size(Some(*expr), ctx),
-                ArraySize::Star { qualifiers: _ } => ArraySizeType::Star,
-                ArraySize::Incomplete => ArraySizeType::Incomplete,
-                ArraySize::VlaSpecifier {
-                    is_static: _,
-                    qualifiers: _,
-                    size,
-                } => resolve_array_size(*size, ctx),
-            };
-
-            let array_type_ref = ctx.registry.array_of(current_type, array_size);
-            apply_declarator_for_member(array_type_ref, base, ctx)
-        }
-        Declarator::Function {
-            inner,
-            params,
-            is_variadic,
-        } => {
-            // Convert params to FunctionParameter
-            let mut processed_params = Vec::new();
-            for param in params {
-                let param_type = lower_decl_specifiers_for_member(&param.specifiers, ctx, param.span)
-                    .unwrap_or_else(|| QualType::unqualified(ctx.registry.type_int));
-
-                // For abstract declarators (common in function ptrs like `int (*f)(int)`),
-                // we need to apply the parameter declarator if present.
-                let final_param_type = if let Some(decl) = &param.declarator {
-                    apply_declarator_for_member(param_type.ty, decl, ctx)
-                } else {
-                    param_type
-                };
-
-                let decayed = ctx.registry.decay(final_param_type);
-
-                let param_name = if let Some(d) = &param.declarator {
-                    extract_identifier(d)
-                } else {
-                    None
-                };
-
-                processed_params.push(FunctionParameter {
-                    param_type: decayed,
-                    name: param_name,
-                });
-            }
-
-            let function_type_ref = ctx.registry.function_type(current_type, processed_params, *is_variadic);
-            apply_declarator_for_member(function_type_ref, inner, ctx)
-        }
-        Declarator::BitField(inner, _) => {
-            // Bitfield width is handled during member collection, not type construction
-            apply_declarator_for_member(current_type, inner, ctx)
-        }
-        // For other declarator types, just return the current type
-        _ => QualType::unqualified(current_type),
+    let info = lower_decl_specifiers(specs, ctx, span);
+    // Return types shouldn't have storage classes usually, but here we just want the type.
+    if let Some(mut base) = info.base_type {
+        base.qualifiers |= info.qualifiers;
+        Some(base)
+    } else {
+        None
     }
 }

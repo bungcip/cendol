@@ -861,12 +861,11 @@ impl<'a> AstToMirLowerer<'a> {
                     let member_ty = member.member_type.ty;
                     // Only recurse if it's a record
                     if matches!(self.registry.get(member_ty).kind, TypeKind::Record { .. })
-                        && let Some(mut sub_path) = self.find_member_path(member_ty, field_name)
-                    {
-                        let mut full_path = vec![idx];
-                        full_path.append(&mut sub_path);
-                        return Some(full_path);
-                    }
+                        && let Some(mut sub_path) = self.find_member_path(member_ty, field_name) {
+                            let mut full_path = vec![idx];
+                            full_path.append(&mut sub_path);
+                            return Some(full_path);
+                        }
                 }
             }
         }

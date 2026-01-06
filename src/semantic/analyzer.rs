@@ -411,11 +411,31 @@ impl<'a> SemanticAnalyzer<'a> {
         // Ensure layout is computed for the record type
         let _ = self.registry.ensure_layout(record_ty_ref);
 
-        if let TypeKind::Record { members, .. } = &self.registry.get(record_ty_ref).kind {
-            // Find the member
-            if let Some(member) = members.iter().find(|m| m.name == Some(field_name)) {
-                return Some(member.member_type);
+        // Recursive helper to find member (handling anonymous structs/unions)
+        fn find_member(registry: &TypeRegistry, record_ty: crate::semantic::TypeRef, name: NameId) -> Option<QualType> {
+            if let TypeKind::Record { members, .. } = &registry.get(record_ty).kind {
+                // 1. Check direct members
+                if let Some(member) = members.iter().find(|m| m.name == Some(name)) {
+                    return Some(member.member_type);
+                }
+
+                // 2. Check anonymous members
+                for member in members {
+                    if member.name.is_none() {
+                        let member_ty = registry.get(member.member_type.ty);
+                        if let TypeKind::Record { .. } = &member_ty.kind {
+                            if let Some(found_ty) = find_member(registry, member.member_type.ty, name) {
+                                return Some(found_ty);
+                            }
+                        }
+                    }
+                }
             }
+            None
+        }
+
+        if let Some(ty) = find_member(self.registry, record_ty_ref, field_name) {
+            return Some(ty);
         }
 
         None // Error: field not found or not a struct/union

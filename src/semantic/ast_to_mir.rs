@@ -847,6 +847,32 @@ impl<'a> AstToMirLowerer<'a> {
         self.emit_rvalue_to_operand(rval, mir_ty)
     }
 
+    fn find_member_path(&self, record_ty: TypeRef, field_name: NameId) -> Option<Vec<usize>> {
+        let ty = self.registry.get(record_ty);
+        if let TypeKind::Record { members, .. } = &ty.kind {
+            // 1. Check direct members
+            if let Some(idx) = members.iter().position(|m| m.name == Some(field_name)) {
+                return Some(vec![idx]);
+            }
+
+            // 2. Check anonymous members
+            for (idx, member) in members.iter().enumerate() {
+                if member.name.is_none() {
+                    let member_ty = member.member_type.ty;
+                    // Only recurse if it's a record
+                    if matches!(self.registry.get(member_ty).kind, TypeKind::Record { .. }) {
+                        if let Some(mut sub_path) = self.find_member_path(member_ty, field_name) {
+                            let mut full_path = vec![idx];
+                            full_path.append(&mut sub_path);
+                            return Some(full_path);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
     fn lower_member_access(
         &mut self,
         scope_id: ScopeId,
@@ -867,35 +893,34 @@ impl<'a> AstToMirLowerer<'a> {
         };
 
         let record_ty_info = self.registry.get(record_ty);
-        if let TypeKind::Record { members, .. } = &record_ty_info.kind {
+        if let TypeKind::Record { .. } = &record_ty_info.kind {
             // Validate that the field exists and get its layout information
-            let field_idx = members
-                .iter()
-                .position(|m| m.name == Some(*field_name))
+            let path = self
+                .find_member_path(record_ty, *field_name)
                 .expect("Field not found - should be caught by semantic analysis");
 
-            let (fields, _is_union) = record_ty_info.get_record_layout();
+            // Apply the chain of field accesses
 
-            // Ensure the field index is valid
-            assert!(field_idx < fields.len(), "Field index out of bounds");
-
-            // For unions, all fields are at offset 0, but we still track the field index
-            // for type information purposes
-            let place = if let Operand::Copy(place) = obj_operand {
-                let place_box = place;
-                if is_arrow {
-                    let deref_operand = Operand::Copy(place_box.clone());
-                    let deref_place = Place::Deref(Box::new(deref_operand));
-                    Place::StructField(Box::new(deref_place), field_idx)
-                } else {
-                    Place::StructField(place_box, field_idx)
-                }
+            // Resolve base place
+            let mut current_place = if let Operand::Copy(place) = obj_operand {
+                *place
             } else {
                 let mir_type = self.lower_type_to_mir(obj_ty.ty);
                 let (_, temp_place) = self.create_temp_local_with_assignment(Rvalue::Use(obj_operand), mir_type);
-                Place::StructField(Box::new(temp_place), field_idx)
+                temp_place
             };
-            Operand::Copy(Box::new(place))
+
+            if is_arrow {
+                // Dereference: *ptr
+                let deref_op = Operand::Copy(Box::new(current_place));
+                current_place = Place::Deref(Box::new(deref_op));
+            }
+
+            for field_idx in path {
+                current_place = Place::StructField(Box::new(current_place), field_idx);
+            }
+
+            Operand::Copy(Box::new(current_place))
         } else {
             panic!("Member access on non-record type");
         }

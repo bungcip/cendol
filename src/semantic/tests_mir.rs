@@ -1286,4 +1286,55 @@ mod tests {
         }
         ");
     }
+    #[test]
+    fn test_anonymous_struct_union_field_indices() {
+        let source = r#"
+            typedef struct {
+                int a;
+                union {
+                    int b1;
+                    int b2;
+                };
+                struct { union { struct { int c; }; }; };
+                struct {
+                    int d;
+                };
+            } s;
+
+            int main()
+            {
+                s v;
+                v.a = 1;
+                v.b1 = 2;
+                v.c = 3;
+                v.d = 4;
+                return 0;
+            }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @"
+        type %t0 = i32
+        type %t1 = struct anonymous { a: %t0, __anon_1: %t2, __anon_2: %t3, __anon_3: %t6 }
+        type %t2 = union anonymous { b1: %t0, b2: %t0 }
+        type %t3 = struct anonymous { __anon_0: %t4 }
+        type %t4 = union anonymous { __anon_0: %t5 }
+        type %t5 = struct anonymous { c: %t0 }
+        type %t6 = struct anonymous { d: %t0 }
+
+        fn main() -> i32
+        {
+          locals {
+            %v: %t1
+          }
+
+          bb1:
+            %v.field_0 = cast<i32>(const 1)
+            %v.field_1.field_0 = cast<i32>(const 2)
+            %v.field_2.field_0.field_0.field_0 = cast<i32>(const 3)
+            %v.field_3.field_0 = cast<i32>(const 4)
+            return cast<i32>(const 0)
+        }
+        ");
+    }
 }

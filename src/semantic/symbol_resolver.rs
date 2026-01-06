@@ -574,6 +574,7 @@ fn convert_parsed_base_type_to_qual_type(
 
                 // Update the type in AST and SymbolTable
                 ctx.registry.complete_record(type_ref_to_use, struct_members.clone());
+                ctx.registry.ensure_layout(type_ref_to_use)?;
 
                 if let Some(tag_name) = *tag
                     && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(tag_name)
@@ -828,6 +829,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
 
                 // Update the type in AST and SymbolTable
                 ctx.registry.complete_record(type_ref_to_use, members.clone());
+                ctx.registry.ensure_layout(type_ref_to_use)?;
 
                 if let Some(tag_name) = tag
                     && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(*tag_name)
@@ -1470,8 +1472,13 @@ pub(crate) fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx:
             // Complete the record type
             ctx.registry.complete_record(record_type_ref, struct_members);
 
-            // Return the new record type
-            QualType::unqualified(record_type_ref)
+            if let Err(e) = ctx.registry.ensure_layout(record_type_ref) {
+                ctx.report_error(e);
+                QualType::unqualified(ctx.registry.type_error)
+            } else {
+                // Return the new record type
+                QualType::unqualified(record_type_ref)
+            }
         }
         Declarator::BitField(base, _) => {
             // TODO: Handle bit fields

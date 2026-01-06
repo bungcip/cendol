@@ -1,0 +1,18 @@
+---
+source: src/pp/tests_preprocessor.rs
+expression: tokens
+---
+- kind: Identifier
+  text: int
+- kind: Identifier
+  text: res
+- kind: Assign
+  text: "="
+- kind: Number
+  text: "1"
+- kind: Plus
+  text: +
+- kind: Number
+  text: "2"
+- kind: Semicolon
+  text: ;

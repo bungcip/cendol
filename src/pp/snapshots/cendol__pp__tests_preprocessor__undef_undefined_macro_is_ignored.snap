@@ -1,0 +1,15 @@
+---
+source: src/pp/tests_preprocessor.rs
+expression: "(tokens, diags)"
+---
+- - kind: Identifier
+    text: int
+  - kind: Identifier
+    text: x
+  - kind: Assign
+    text: "="
+  - kind: Number
+    text: "1"
+  - kind: Semicolon
+    text: ;
+- []

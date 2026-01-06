@@ -838,3 +838,88 @@ fn test_missing_include_file() {
     let (_, diags) = setup_pp_snapshot_with_diags(src);
     insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: FileNotFound""#);
 }
+
+#[test]
+fn test_undef_macro() {
+    let src = r#"
+#define A 1
+int x = A;
+#undef A
+int y = A; // Should be Identifier A, not replaced
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens);
+}
+
+#[test]
+fn test_undef_undefined_macro_is_ignored() {
+    let src = r#"
+#undef NOT_DEFINED
+int x = 1;
+"#;
+    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!((tokens, diags));
+}
+
+#[test]
+fn test_include_syntax_variations() {
+    let mut sm = SourceManager::new();
+    sm.add_buffer("int a = 1;".as_bytes().to_vec(), "a.h");
+
+    // Test various valid include syntaxes including comments and whitespace
+    let src = r#"
+#include "a.h"
+#include   "a.h"
+#include/**/"a.h"
+"#;
+    let main_id = sm.add_buffer(src.as_bytes().to_vec(), "main.c");
+    let mut diags = DiagnosticEngine::new();
+    let config = PPConfig::default();
+    let mut pp = Preprocessor::new(&mut sm, &mut diags, &config);
+
+    let tokens = pp.process(main_id, &config).unwrap();
+    let significant_tokens: Vec<_> = tokens
+        .into_iter()
+        .filter(|t| !matches!(t.kind, PPTokenKind::Eof | PPTokenKind::Eod))
+        .collect();
+
+    let debug_tokens: Vec<DebugToken> = significant_tokens.iter().map(DebugToken::from).collect();
+    insta::assert_yaml_snapshot!(debug_tokens);
+}
+
+#[test]
+fn test_if_directive_complex_spacing() {
+    let src = r#"
+#define A 1
+#  if  A
+int x = 1;
+#  endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens);
+}
+
+#[test]
+fn test_macro_arguments_with_newlines_and_comments() {
+    let src = r#"
+#define CALL(x, y) x + y
+int res = CALL(
+    1, // First arg
+    2  // Second arg
+);
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens);
+}
+
+#[test]
+fn test_macro_empty_arguments_behavior() {
+    // C99/C11 allows empty arguments if the macro expects them
+    let src = r#"
+#define F(x, y) x + y
+int a = F(1, );
+int b = F(, 2);
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens);
+}

@@ -1,0 +1,34 @@
+---
+source: src/pp/tests_preprocessor.rs
+expression: debug_tokens
+---
+- kind: Identifier
+  text: int
+- kind: Identifier
+  text: a
+- kind: Assign
+  text: "="
+- kind: Number
+  text: "1"
+- kind: Semicolon
+  text: ;
+- kind: Identifier
+  text: int
+- kind: Identifier
+  text: a
+- kind: Assign
+  text: "="
+- kind: Number
+  text: "1"
+- kind: Semicolon
+  text: ;
+- kind: Identifier
+  text: int
+- kind: Identifier
+  text: a
+- kind: Assign
+  text: "="
+- kind: Number
+  text: "1"
+- kind: Semicolon
+  text: ;

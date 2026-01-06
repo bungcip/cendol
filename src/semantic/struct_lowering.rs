@@ -7,10 +7,7 @@ use crate::semantic::{QualType, StructMember};
 use std::num::NonZeroU16;
 
 /// Extracts the bit-field width from a declarator if it exists.
-fn extract_bit_field_width<'a>(
-    declarator: &'a Declarator,
-    ctx: &mut LowerCtx,
-) -> (Option<NonZeroU16>, &'a Declarator) {
+fn extract_bit_field_width<'a>(declarator: &'a Declarator, ctx: &mut LowerCtx) -> (Option<NonZeroU16>, &'a Declarator) {
     if let Declarator::BitField(base, expr) = declarator {
         let const_eval_ctx = ConstEvalCtx { ast: ctx.ast };
         let width = if let Some(const_val) = const_eval::eval_const_expr(&const_eval_ctx, *expr) {

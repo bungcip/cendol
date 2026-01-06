@@ -2115,7 +2115,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Paste tokens for ## operator
-    fn paste_tokens(&self, left: &PPToken, right: &PPToken) -> Result<Vec<PPToken>, PPError> {
+    fn paste_tokens(&mut self, left: &PPToken, right: &PPToken) -> Result<Vec<PPToken>, PPError> {
         // Get text of both tokens
         let left_buffer = self.source_manager.get_buffer(left.location.source_id());
         let left_start = left.location.offset() as usize;
@@ -2137,17 +2137,27 @@ impl<'src> Preprocessor<'src> {
 
         let pasted_text = format!("{}{}", left_text, right_text);
 
-        // Try to lex the pasted text as a single token
-        // For simplicity, we'll create an identifier token
-        // In a full implementation, this would need proper lexing
-        let symbol = StringId::new(&pasted_text);
+        // Create a virtual buffer containing the pasted text
+        let virtual_buffer = pasted_text.clone().into_bytes();
+        let virtual_id = self
+            .source_manager
+            .add_virtual_buffer(virtual_buffer, "<pasted-tokens>");
 
-        Ok(vec![PPToken::new(
-            PPTokenKind::Identifier(symbol),
-            PPTokenFlags::empty(),
-            left.location, // Use left token's location
-            pasted_text.len() as u16,
-        )])
+        // Create a temporary lexer to lex the pasted text
+        let buffer = self.source_manager.get_buffer(virtual_id);
+        let mut lexer = PPLexer::new(virtual_id, buffer.to_vec());
+
+        let mut tokens = Vec::new();
+        while let Some(token) = lexer.next_token() {
+            if matches!(token.kind, PPTokenKind::Eod | PPTokenKind::Eof) {
+                continue;
+            }
+            tokens.push(token);
+        }
+
+        // If the result is not a valid preprocessing token, the behavior is undefined.
+        // We will return whatever tokens we got.
+        Ok(tokens)
     }
 
     /// Expand tokens by rescanning for further macro expansion

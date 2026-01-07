@@ -154,11 +154,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 if !self.is_lvalue(operand_ref) {
                     self.report_error(SemanticError::NotAnLvalue { span: full_span });
                 }
-                if operand_ty.is_scalar() {
-                    Some(operand_ty)
-                } else {
-                    None
-                }
+                if operand_ty.is_scalar() { Some(operand_ty) } else { None }
             }
             UnaryOp::Plus | UnaryOp::Minus => {
                 if operand_ty.is_scalar() {

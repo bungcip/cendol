@@ -1215,42 +1215,8 @@ fn create_semantic_node_data(
 
         let function_type_ref = if final_ty_ref.is_function() {
             final_ty_ref
-        } else if final_ty_ref.is_pointer() {
-            // Pointer to function type - get the function type from the pointee
-            let pointee_type = match &ctx.registry.get(final_ty_ref).kind {
-                TypeKind::Pointer { pointee } => *pointee,
-                _ => unreachable!(),
-            };
-
-            if pointee_type.is_function() {
-                pointee_type
-            } else {
-                // Not a function pointer, treat as variable
-                let var_decl = VarDeclData {
-                    name,
-                    ty: final_ty,
-                    storage: spec.storage,
-                    init: init.initializer,
-                    alignment: spec.alignment,
-                };
-
-                if let Err(e) =
-                    ctx.symbol_table
-                        .define_variable(name, final_ty.ty(), init.initializer, spec.alignment, span)
-                {
-                    let SymbolTableError::InvalidRedefinition { name, existing } = e;
-                    let existing = ctx.symbol_table.get_symbol(existing);
-                    ctx.diag.report(SemanticError::Redefinition {
-                        name,
-                        first_def: existing.def_span,
-                        span,
-                    });
-                }
-
-                return NodeKind::VarDecl(var_decl);
-            }
         } else {
-            // Not a function type, treat as variable
+            // Not a function type (variable, pointer, function pointer, etc.)
             let var_decl = VarDeclData {
                 name,
                 ty: final_ty,

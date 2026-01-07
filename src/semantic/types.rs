@@ -260,12 +260,21 @@ impl TypeRef {
 
     #[inline]
     pub fn is_integer(self) -> bool {
-         match self.builtin() {
-             Some(BuiltinType::Bool) | Some(BuiltinType::Char) | Some(BuiltinType::SChar) | Some(BuiltinType::UChar) |
-             Some(BuiltinType::Short) | Some(BuiltinType::UShort) | Some(BuiltinType::Int) | Some(BuiltinType::UInt) |
-             Some(BuiltinType::Long) | Some(BuiltinType::ULong) | Some(BuiltinType::LongLong) | Some(BuiltinType::ULongLong) => true,
-             _ => false,
-         }
+        match self.builtin() {
+            Some(BuiltinType::Bool)
+            | Some(BuiltinType::Char)
+            | Some(BuiltinType::SChar)
+            | Some(BuiltinType::UChar)
+            | Some(BuiltinType::Short)
+            | Some(BuiltinType::UShort)
+            | Some(BuiltinType::Int)
+            | Some(BuiltinType::UInt)
+            | Some(BuiltinType::Long)
+            | Some(BuiltinType::ULong)
+            | Some(BuiltinType::LongLong)
+            | Some(BuiltinType::ULongLong) => true,
+            _ => false,
+        }
     }
 
     #[inline]
@@ -289,7 +298,13 @@ impl TypeRef {
 
 impl Display for TypeRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "TypeRef(idx={}, class={:?}, builtin={:?})", self.index(), self.class(), self.builtin())
+        write!(
+            f,
+            "TypeRef(idx={}, class={:?}, builtin={:?})",
+            self.index(),
+            self.class(),
+            self.builtin()
+        )
     }
 }
 
@@ -337,18 +352,54 @@ impl QualType {
     }
 
     // Delegate to TypeRef
-    #[inline] pub fn is_pointer(self) -> bool { self.ty().is_pointer() }
-    #[inline] pub fn is_array(self) -> bool { self.ty().is_array() }
-    #[inline] pub fn is_function(self) -> bool { self.ty().is_function() }
-    #[inline] pub fn is_record(self) -> bool { self.ty().is_record() }
-    #[inline] pub fn is_enum(self) -> bool { self.ty().is_enum() }
-    #[inline] pub fn is_complex(self) -> bool { self.ty().is_complex() }
-    #[inline] pub fn is_builtin(self) -> bool { self.ty().is_builtin() }
-    #[inline] pub fn is_void(self) -> bool { self.ty().is_void() }
-    #[inline] pub fn is_integer(self) -> bool { self.ty().is_integer() }
-    #[inline] pub fn is_floating(self) -> bool { self.ty().is_floating() }
-    #[inline] pub fn is_arithmetic(self) -> bool { self.ty().is_arithmetic() }
-    #[inline] pub fn is_scalar(self) -> bool { self.ty().is_scalar() }
+    #[inline]
+    pub fn is_pointer(self) -> bool {
+        self.ty().is_pointer()
+    }
+    #[inline]
+    pub fn is_array(self) -> bool {
+        self.ty().is_array()
+    }
+    #[inline]
+    pub fn is_function(self) -> bool {
+        self.ty().is_function()
+    }
+    #[inline]
+    pub fn is_record(self) -> bool {
+        self.ty().is_record()
+    }
+    #[inline]
+    pub fn is_enum(self) -> bool {
+        self.ty().is_enum()
+    }
+    #[inline]
+    pub fn is_complex(self) -> bool {
+        self.ty().is_complex()
+    }
+    #[inline]
+    pub fn is_builtin(self) -> bool {
+        self.ty().is_builtin()
+    }
+    #[inline]
+    pub fn is_void(self) -> bool {
+        self.ty().is_void()
+    }
+    #[inline]
+    pub fn is_integer(self) -> bool {
+        self.ty().is_integer()
+    }
+    #[inline]
+    pub fn is_floating(self) -> bool {
+        self.ty().is_floating()
+    }
+    #[inline]
+    pub fn is_arithmetic(self) -> bool {
+        self.ty().is_arithmetic()
+    }
+    #[inline]
+    pub fn is_scalar(self) -> bool {
+        self.ty().is_scalar()
+    }
 }
 
 impl Display for QualType {
@@ -424,9 +475,15 @@ pub enum TypeKind {
 impl TypeKind {
     pub fn to_class(&self) -> TypeClass {
         match self {
-            TypeKind::Void | TypeKind::Bool | TypeKind::Char { .. } |
-            TypeKind::Short { .. } | TypeKind::Int { .. } | TypeKind::Long { .. } |
-            TypeKind::Float | TypeKind::Double { .. } | TypeKind::Error => TypeClass::Builtin,
+            TypeKind::Void
+            | TypeKind::Bool
+            | TypeKind::Char { .. }
+            | TypeKind::Short { .. }
+            | TypeKind::Int { .. }
+            | TypeKind::Long { .. }
+            | TypeKind::Float
+            | TypeKind::Double { .. }
+            | TypeKind::Error => TypeClass::Builtin,
             TypeKind::Complex { .. } => TypeClass::Complex,
             TypeKind::Pointer { .. } => TypeClass::Pointer,
             TypeKind::Array { .. } => TypeClass::Array,
@@ -437,7 +494,7 @@ impl TypeKind {
     }
 
     pub fn to_builtin(&self) -> Option<BuiltinType> {
-         match self {
+        match self {
             TypeKind::Void | TypeKind::Error => Some(BuiltinType::Void),
             TypeKind::Bool => Some(BuiltinType::Bool),
             TypeKind::Char { is_signed: true } => Some(BuiltinType::Char),
@@ -446,10 +503,22 @@ impl TypeKind {
             TypeKind::Short { is_signed: false } => Some(BuiltinType::UShort),
             TypeKind::Int { is_signed: true } => Some(BuiltinType::Int),
             TypeKind::Int { is_signed: false } => Some(BuiltinType::UInt),
-            TypeKind::Long { is_signed: true, is_long_long: false } => Some(BuiltinType::Long),
-            TypeKind::Long { is_signed: false, is_long_long: false } => Some(BuiltinType::ULong),
-            TypeKind::Long { is_signed: true, is_long_long: true } => Some(BuiltinType::LongLong),
-            TypeKind::Long { is_signed: false, is_long_long: true } => Some(BuiltinType::ULongLong),
+            TypeKind::Long {
+                is_signed: true,
+                is_long_long: false,
+            } => Some(BuiltinType::Long),
+            TypeKind::Long {
+                is_signed: false,
+                is_long_long: false,
+            } => Some(BuiltinType::ULong),
+            TypeKind::Long {
+                is_signed: true,
+                is_long_long: true,
+            } => Some(BuiltinType::LongLong),
+            TypeKind::Long {
+                is_signed: false,
+                is_long_long: true,
+            } => Some(BuiltinType::ULongLong),
             TypeKind::Float => Some(BuiltinType::Float),
             TypeKind::Double { is_long_double: false } => Some(BuiltinType::Double),
             TypeKind::Double { is_long_double: true } => Some(BuiltinType::LongDouble),

@@ -143,10 +143,10 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             UnaryOp::Deref => {
                 if operand_ty.is_pointer() {
-                     match &self.registry.get(operand_ty.ty()).kind {
+                    match &self.registry.get(operand_ty.ty()).kind {
                         TypeKind::Pointer { pointee } => Some(QualType::unqualified(*pointee)),
                         _ => unreachable!("is_pointer() is true but kind is not Pointer"),
-                     }
+                    }
                 } else {
                     None
                 }
@@ -248,9 +248,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
 
             // Logical operations
-            BinaryOp::LogicAnd | BinaryOp::LogicOr => {
-                (QualType::unqualified(self.registry.type_bool), lhs_promoted)
-            }
+            BinaryOp::LogicAnd | BinaryOp::LogicOr => (QualType::unqualified(self.registry.type_bool), lhs_promoted),
 
             // For other operations, use usual arithmetic conversions
             _ => {
@@ -328,24 +326,24 @@ impl<'a> SemanticAnalyzer<'a> {
         );
 
         if (lhs_ty.is_arithmetic() && rhs_ty.is_arithmetic()) || (lhs_ty.is_pointer() && rhs_ty.is_pointer()) {
-             if lhs_ty.ty() != rhs_ty.ty() || is_literal {
-                  // For pointers, it's pointer cast. For arithmetic, integer/float cast.
-                  // We can distinguish if needed, but ImplicitConversion::IntegerCast naming might be misleading for floats.
-                  // However, check if PointerCast is distinct.
-                  if lhs_ty.is_pointer() && rhs_ty.is_pointer() {
-                     let idx = (rhs_ref.get() - 1) as usize;
-                     self.semantic_info.conversions[idx].push(ImplicitConversion::PointerCast {
-                         from: rhs_ty.ty(),
-                         to: lhs_ty.ty(),
-                     });
-                  } else if lhs_ty.is_arithmetic() && rhs_ty.is_arithmetic() {
-                     let idx = (rhs_ref.get() - 1) as usize;
-                     self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerCast {
-                         from: rhs_ty.ty(),
-                         to: lhs_ty.ty(),
-                     });
-                  }
-             }
+            if lhs_ty.ty() != rhs_ty.ty() || is_literal {
+                // For pointers, it's pointer cast. For arithmetic, integer/float cast.
+                // We can distinguish if needed, but ImplicitConversion::IntegerCast naming might be misleading for floats.
+                // However, check if PointerCast is distinct.
+                if lhs_ty.is_pointer() && rhs_ty.is_pointer() {
+                    let idx = (rhs_ref.get() - 1) as usize;
+                    self.semantic_info.conversions[idx].push(ImplicitConversion::PointerCast {
+                        from: rhs_ty.ty(),
+                        to: lhs_ty.ty(),
+                    });
+                } else if lhs_ty.is_arithmetic() && rhs_ty.is_arithmetic() {
+                    let idx = (rhs_ref.get() - 1) as usize;
+                    self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerCast {
+                        from: rhs_ty.ty(),
+                        to: lhs_ty.ty(),
+                    });
+                }
+            }
         }
     }
 
@@ -355,11 +353,11 @@ impl<'a> SemanticAnalyzer<'a> {
         let func_ty_ref = func_ty.ty();
         // Resolve function type (might be pointer to function)
         let actual_func_ty_ref = if func_ty.is_pointer() {
-             // Check if it's pointer to function
-             match &self.registry.get(func_ty_ref).kind {
-                 TypeKind::Pointer { pointee } => *pointee,
-                 _ => func_ty_ref,
-             }
+            // Check if it's pointer to function
+            match &self.registry.get(func_ty_ref).kind {
+                TypeKind::Pointer { pointee } => *pointee,
+                _ => func_ty_ref,
+            }
         } else {
             func_ty_ref
         };
@@ -390,12 +388,12 @@ impl<'a> SemanticAnalyzer<'a> {
 
         match func_kind {
             TypeKind::Function { return_type, .. } => Some(QualType::unqualified(return_type)),
-             // The pointer logic was already handled by resolving to actual_func_ty_ref above?
-             // Wait, the original code returned `return_type` if `func_kind` was `Function`,
-             // or checked `pointee` if `func_kind` was `Pointer`.
-             // But I resolved `actual_func_ty_ref` to be the Function type.
-             // So `func_kind` is the Function kind (or something else if invalid).
-             _ => None,
+            // The pointer logic was already handled by resolving to actual_func_ty_ref above?
+            // Wait, the original code returned `return_type` if `func_kind` was `Function`,
+            // or checked `pointee` if `func_kind` was `Pointer`.
+            // But I resolved `actual_func_ty_ref` to be the Function type.
+            // So `func_kind` is the Function kind (or something else if invalid).
+            _ => None,
         }
     }
 
@@ -420,7 +418,9 @@ impl<'a> SemanticAnalyzer<'a> {
 
         // Recursive helper to find member (handling anonymous structs/unions)
         fn find_member(registry: &TypeRegistry, record_ty: crate::semantic::TypeRef, name: NameId) -> Option<QualType> {
-             if !record_ty.is_record() { return None; }
+            if !record_ty.is_record() {
+                return None;
+            }
 
             if let TypeKind::Record { members, .. } = &registry.get(record_ty).kind {
                 // 1. Check direct members
@@ -456,16 +456,16 @@ impl<'a> SemanticAnalyzer<'a> {
 
         if arr_ty.is_array() {
             // Ensure layout is computed for array type
-             let _ = self.registry.ensure_layout(arr_ty.ty());
-             match &self.registry.get(arr_ty.ty()).kind {
-                 TypeKind::Array { element_type, .. } => Some(QualType::unqualified(*element_type)),
-                 _ => unreachable!(),
-             }
+            let _ = self.registry.ensure_layout(arr_ty.ty());
+            match &self.registry.get(arr_ty.ty()).kind {
+                TypeKind::Array { element_type, .. } => Some(QualType::unqualified(*element_type)),
+                _ => unreachable!(),
+            }
         } else if arr_ty.is_pointer() {
-             match &self.registry.get(arr_ty.ty()).kind {
-                 TypeKind::Pointer { pointee } => Some(QualType::unqualified(*pointee)),
-                 _ => unreachable!(),
-             }
+            match &self.registry.get(arr_ty.ty()).kind {
+                TypeKind::Pointer { pointee } => Some(QualType::unqualified(*pointee)),
+                _ => unreachable!(),
+            }
         } else {
             None
         }

@@ -1157,7 +1157,7 @@ fn create_semantic_node_data(
     // Check for incomplete array with initializer and deduce size
     // We need to extract info first to avoid borrow conflicts with ctx.registry
     let array_deduction_info = {
-         if final_ty.is_array() {
+        if final_ty.is_array() {
             let ty = ctx.registry.get(final_ty.ty());
             if let TypeKind::Array {
                 element_type,
@@ -1168,9 +1168,9 @@ fn create_semantic_node_data(
             } else {
                 None
             }
-         } else {
-             None
-         }
+        } else {
+            None
+        }
     };
 
     if let Some(element_type) = array_deduction_info
@@ -1214,7 +1214,7 @@ fn create_semantic_node_data(
         let final_ty_ref = final_ty.ty();
 
         let function_type_ref = if final_ty_ref.is_function() {
-             final_ty_ref
+            final_ty_ref
         } else if final_ty_ref.is_pointer() {
             // Pointer to function type - get the function type from the pointee
             let pointee_type = match &ctx.registry.get(final_ty_ref).kind {
@@ -1250,7 +1250,7 @@ fn create_semantic_node_data(
                 return NodeKind::VarDecl(var_decl);
             }
         } else {
-             // Not a function type, treat as variable
+            // Not a function type, treat as variable
             let var_decl = VarDeclData {
                 name,
                 ty: final_ty,

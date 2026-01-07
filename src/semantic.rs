@@ -36,6 +36,8 @@ pub mod tests_mir;
 mod tests_symbol_redefinition;
 #[cfg(test)]
 pub mod tests_validation;
+#[cfg(test)]
+mod tests_types;
 
 /// Side table containing semantic information for AST nodes.
 /// Parallel vectors indexed by node index (NodeRef.get() - 1).

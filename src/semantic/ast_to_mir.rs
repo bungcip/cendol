@@ -1190,7 +1190,7 @@ impl<'a> AstToMirLowerer<'a> {
         self.type_cache.insert(type_ref, placeholder_id);
 
         let ast_type = self.registry.get(type_ref).clone();
-        let ast_type_kind = ast_type.kind;
+        let ast_type_kind = ast_type.kind.clone();
 
         let mir_type = match &ast_type_kind {
             TypeKind::Void => MirType::Void,

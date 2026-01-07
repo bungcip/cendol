@@ -261,7 +261,7 @@ impl OutputHandler {
                 let mut param_strs = Vec::new();
                 for param in parameters {
                     let param_str =
-                        self.format_type_kind_user_friendly(&registry.get(param.param_type.ty).kind, registry);
+                        self.format_type_kind_user_friendly(&registry.get(param.param_type.ty()).kind, registry);
                     param_strs.push(param_str);
                 }
                 let params = param_strs.join(", ");
@@ -297,7 +297,7 @@ impl OutputHandler {
                 type_refs.insert(func_data.ty);
                 // Also collect from function parameters
                 for param in &func_data.params {
-                    type_refs.insert(param.ty.ty);
+                    type_refs.insert(param.ty.ty());
                 }
             }
             NodeKind::FunctionDecl(func_decl) => {
@@ -307,7 +307,7 @@ impl OutputHandler {
                 type_refs.insert(record_decl.ty);
                 // Also collect from record members
                 for member in &record_decl.members {
-                    type_refs.insert(member.ty.ty);
+                    type_refs.insert(member.ty.ty());
                 }
             }
             NodeKind::EnumDecl(enum_decl) => {
@@ -316,27 +316,27 @@ impl OutputHandler {
 
             // QualType usage (contains TypeRef)
             NodeKind::Cast(qual_type, _) => {
-                type_refs.insert(qual_type.ty);
+                type_refs.insert(qual_type.ty());
             }
             NodeKind::SizeOfType(qual_type) => {
-                type_refs.insert(qual_type.ty);
+                type_refs.insert(qual_type.ty());
             }
             NodeKind::AlignOf(qual_type) => {
-                type_refs.insert(qual_type.ty);
+                type_refs.insert(qual_type.ty());
             }
             NodeKind::CompoundLiteral(qual_type, _) => {
-                type_refs.insert(qual_type.ty);
+                type_refs.insert(qual_type.ty());
             }
             NodeKind::VarDecl(var_decl) => {
-                type_refs.insert(var_decl.ty.ty);
+                type_refs.insert(var_decl.ty.ty());
             }
             NodeKind::TypedefDecl(typedef_decl) => {
-                type_refs.insert(typedef_decl.ty.ty);
+                type_refs.insert(typedef_decl.ty.ty());
             }
             NodeKind::GenericSelection(_, assocs) => {
                 for assoc in assocs {
                     if let Some(qual_type) = assoc.ty {
-                        type_refs.insert(qual_type.ty);
+                        type_refs.insert(qual_type.ty());
                     }
                 }
             }

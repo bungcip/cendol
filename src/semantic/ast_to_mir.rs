@@ -132,7 +132,7 @@ impl<'a> AstToMirLowerer<'a> {
                             let return_mir_type = self.lower_type_to_mir(*return_type);
                             let param_mir_types = parameters
                                 .iter()
-                                .map(|p| self.lower_type_to_mir(p.param_type.ty))
+                                .map(|p| self.lower_type_to_mir(p.param_type.ty()))
                                 .collect();
 
                             // Use declare_function for declarations, define_function for definitions
@@ -243,7 +243,7 @@ impl<'a> AstToMirLowerer<'a> {
         // same offset. If multiple consecutive members have the same offset,
         // they form an (anonymous) union and should be initialized by a single
         // initializer.
-        let (_rec_size, _rec_align, field_layouts, _) = self.registry.get_record_layout(target_ty.ty);
+        let (_rec_size, _rec_align, field_layouts, _) = self.registry.get_record_layout(target_ty.ty());
 
         for init in inits {
             let field_idx = if let Some(designator) = init.designation.first() {
@@ -264,7 +264,7 @@ impl<'a> AstToMirLowerer<'a> {
                         let mut found = None;
                         for (j, item) in members.iter().enumerate().skip(idx) {
                             let mty = item.member_type;
-                            if let TypeKind::Record { .. } = &self.registry.get(mty.ty).kind {
+                            if let TypeKind::Record { .. } = &self.registry.get(mty.ty()).kind {
                                 found = Some(j);
                                 break;
                             }
@@ -321,7 +321,7 @@ impl<'a> AstToMirLowerer<'a> {
             Operand::Constant(self.create_constant(const_val))
         } else {
             let rval = Rvalue::StructLiteral(field_operands);
-            let mir_ty = self.lower_type_to_mir(target_ty.ty);
+            let mir_ty = self.lower_type_to_mir(target_ty.ty());
             self.emit_rvalue_to_operand(rval, mir_ty)
         }
     }
@@ -356,7 +356,7 @@ impl<'a> AstToMirLowerer<'a> {
             Operand::Constant(self.create_constant(const_val))
         } else {
             let rval = Rvalue::ArrayLiteral(elements);
-            let mir_ty = self.lower_type_to_mir(target_ty.ty);
+            let mir_ty = self.lower_type_to_mir(target_ty.ty());
             self.emit_rvalue_to_operand(rval, mir_ty)
         }
     }
@@ -365,13 +365,13 @@ impl<'a> AstToMirLowerer<'a> {
         let cond_operand = self.lower_expression(scope_id, condition, true);
         // Apply conversions for condition (should be boolean)
         let cond_ty = self.ast.get_resolved_type(condition).unwrap();
-        let cond_mir_ty = self.lower_type_to_mir(cond_ty.ty);
+        let cond_mir_ty = self.lower_type_to_mir(cond_ty.ty());
         self.apply_conversions(cond_operand, condition, cond_mir_ty)
     }
 
     fn lower_initializer(&mut self, scope_id: ScopeId, init_ref: NodeRef, target_ty: QualType) -> Operand {
         let init_node_kind = self.ast.get_node(init_ref).kind.clone();
-        let target_ty_kind = self.registry.get(target_ty.ty).kind.clone();
+        let target_ty_kind = self.registry.get(target_ty.ty()).kind.clone();
 
         match (init_node_kind, target_ty_kind) {
             (NodeKind::InitializerList(inits), TypeKind::Record { members, .. }) => {
@@ -385,7 +385,7 @@ impl<'a> AstToMirLowerer<'a> {
             _ => {
                 // It's a simple expression initializer.
                 let operand = self.lower_expression(scope_id, init_ref, true);
-                let mir_target_ty = self.lower_type_to_mir(target_ty.ty);
+                let mir_target_ty = self.lower_type_to_mir(target_ty.ty());
                 self.apply_conversions(operand, init_ref, mir_target_ty)
             }
         }
@@ -447,7 +447,7 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn lower_var_declaration(&mut self, scope_id: ScopeId, var_decl: &VarDeclData, _span: SourceSpan) {
-        let mir_type_id = self.lower_type_to_mir(var_decl.ty.ty);
+        let mir_type_id = self.lower_type_to_mir(var_decl.ty.ty());
         let (entry_ref, _) = self
             .symbol_table
             .lookup(var_decl.name, scope_id, Namespace::Ordinary)
@@ -533,7 +533,7 @@ impl<'a> AstToMirLowerer<'a> {
         let ty = self.ast.get_resolved_type(expr_ref).expect("Type not resolved");
         let node_kind = self.ast.get_node(expr_ref).kind.clone();
 
-        let mir_ty = self.lower_type_to_mir(ty.ty);
+        let mir_ty = self.lower_type_to_mir(ty.ty());
 
         match &node_kind {
             NodeKind::LiteralInt(val) => Operand::Constant(self.create_constant(ConstValue::Int(*val))),
@@ -596,7 +596,7 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn lower_literal_string(&mut self, val: &NameId, ty: &QualType) -> Operand {
-        let string_type = self.lower_type_to_mir(ty.ty);
+        let string_type = self.lower_type_to_mir(ty.ty());
 
         // Convert string literal to array of character constants
         let string_content = val.as_str();
@@ -708,22 +708,22 @@ impl<'a> AstToMirLowerer<'a> {
     ) -> Option<Rvalue> {
         let lhs_type = self.ast.get_resolved_type(left_ref).unwrap();
         let rhs_type = self.ast.get_resolved_type(right_ref).unwrap();
-        let lhs_kind = &self.registry.get(lhs_type.ty).kind;
-        let rhs_kind = &self.registry.get(rhs_type.ty).kind;
+        let lhs_kind = &self.registry.get(lhs_type.ty()).kind;
+        let rhs_kind = &self.registry.get(rhs_type.ty()).kind;
 
         match (op, lhs_kind, rhs_kind) {
             (BinaryOp::Add, TypeKind::Pointer { .. }, _) => {
-                let rhs_mir_ty = self.lower_type_to_mir(rhs_type.ty);
+                let rhs_mir_ty = self.lower_type_to_mir(rhs_type.ty());
                 let rhs_converted = self.apply_conversions(rhs, right_ref, rhs_mir_ty);
                 Some(Rvalue::PtrAdd(lhs, rhs_converted))
             }
             (BinaryOp::Add, _, TypeKind::Pointer { .. }) => {
-                let lhs_mir_ty = self.lower_type_to_mir(lhs_type.ty);
+                let lhs_mir_ty = self.lower_type_to_mir(lhs_type.ty());
                 let lhs_converted = self.apply_conversions(lhs, left_ref, lhs_mir_ty);
                 Some(Rvalue::PtrAdd(rhs, lhs_converted))
             }
             (BinaryOp::Sub, TypeKind::Pointer { .. }, TypeKind::Int { .. }) => {
-                let rhs_mir_ty = self.lower_type_to_mir(rhs_type.ty);
+                let rhs_mir_ty = self.lower_type_to_mir(rhs_type.ty());
                 let rhs_converted = self.apply_conversions(rhs, right_ref, rhs_mir_ty);
                 Some(Rvalue::PtrSub(lhs, rhs_converted))
             }
@@ -780,7 +780,7 @@ impl<'a> AstToMirLowerer<'a> {
                 Some(
                     parameters
                         .iter()
-                        .map(|param| self.lower_type_to_mir(param.param_type.ty))
+                        .map(|param| self.lower_type_to_mir(param.param_type.ty()))
                         .collect::<Vec<_>>(),
                 )
             } else {
@@ -794,7 +794,7 @@ impl<'a> AstToMirLowerer<'a> {
             let arg_operand = self.lower_expression(scope_id, *arg, true);
             // Apply conversions for function arguments if needed
             let arg_ty = self.ast.get_resolved_type(*arg).unwrap();
-            let arg_mir_ty = self.lower_type_to_mir(arg_ty.ty);
+            let arg_mir_ty = self.lower_type_to_mir(arg_ty.ty());
 
             // Use the parameter type as the target type for conversions, if available
             let target_mir_ty = if let Some(ref param_types_vec) = param_types {
@@ -858,7 +858,7 @@ impl<'a> AstToMirLowerer<'a> {
             // 2. Check anonymous members
             for (idx, member) in members.iter().enumerate() {
                 if member.name.is_none() {
-                    let member_ty = member.member_type.ty;
+                    let member_ty = member.member_type.ty();
                     // Only recurse if it's a record
                     if matches!(self.registry.get(member_ty).kind, TypeKind::Record { .. })
                         && let Some(mut sub_path) = self.find_member_path(member_ty, field_name)
@@ -883,13 +883,13 @@ impl<'a> AstToMirLowerer<'a> {
         let obj_operand = self.lower_expression(scope_id, obj_ref, true);
         let obj_ty = self.ast.get_resolved_type(obj_ref).unwrap();
         let record_ty = if is_arrow {
-            if let TypeKind::Pointer { pointee } = &self.registry.get(obj_ty.ty).kind {
+            if let TypeKind::Pointer { pointee } = &self.registry.get(obj_ty.ty()).kind {
                 *pointee
             } else {
                 panic!("Arrow access on non-pointer type");
             }
         } else {
-            obj_ty.ty
+            obj_ty.ty()
         };
 
         let record_ty_info = self.registry.get(record_ty);
@@ -905,7 +905,7 @@ impl<'a> AstToMirLowerer<'a> {
             let mut current_place = if let Operand::Copy(place) = obj_operand {
                 *place
             } else {
-                let mir_type = self.lower_type_to_mir(obj_ty.ty);
+                let mir_type = self.lower_type_to_mir(obj_ty.ty());
                 let (_, temp_place) = self.create_temp_local_with_assignment(Rvalue::Use(obj_operand), mir_type);
                 temp_place
             };
@@ -933,12 +933,12 @@ impl<'a> AstToMirLowerer<'a> {
 
         // Handle both array and pointer types for index access
         // In C, arr[idx] is equivalent to *(arr + idx)
-        let arr_ty_kind = self.registry.get(arr_ty.ty).kind.clone();
+        let arr_ty_kind = self.registry.get(arr_ty.ty()).kind.clone();
 
         match &arr_ty_kind {
             TypeKind::Array { element_type: _, .. } => {
                 // Array indexing - use ArrayIndex place
-                let arr_ty_info = self.registry.get(arr_ty.ty);
+                let arr_ty_info = self.registry.get(arr_ty.ty());
                 let layout = arr_ty_info
                     .layout
                     .as_ref()
@@ -959,7 +959,7 @@ impl<'a> AstToMirLowerer<'a> {
                         let arr_place = if let Operand::Copy(place) = arr_operand {
                             *place
                         } else {
-                            let mir_type = self.lower_type_to_mir(arr_ty.ty);
+                            let mir_type = self.lower_type_to_mir(arr_ty.ty());
                             let (_, temp_place) =
                                 self.create_temp_local_with_assignment(Rvalue::Use(arr_operand), mir_type);
                             temp_place
@@ -980,7 +980,7 @@ impl<'a> AstToMirLowerer<'a> {
                     *place
                 } else {
                     // If it's not a Copy, create a temporary
-                    let mir_type = self.lower_type_to_mir(arr_ty.ty);
+                    let mir_type = self.lower_type_to_mir(arr_ty.ty());
                     let (_, temp_place) = self.create_temp_local_with_assignment(Rvalue::Use(arr_operand), mir_type);
                     temp_place
                 };
@@ -1246,7 +1246,7 @@ impl<'a> AstToMirLowerer<'a> {
                 let return_type = self.lower_type_to_mir(*return_type);
                 let mut params = Vec::new();
                 for p in parameters {
-                    params.push(self.lower_type_to_mir(p.param_type.ty));
+                    params.push(self.lower_type_to_mir(p.param_type.ty()));
                 }
                 MirType::Function { return_type, params }
             }
@@ -1265,7 +1265,7 @@ impl<'a> AstToMirLowerer<'a> {
                     let mut fields = Vec::new();
                     for (idx, m) in members.iter().enumerate() {
                         let name = m.name.unwrap_or_else(|| NameId::new(format!("__anon_{}", idx)));
-                        fields.push((name, self.lower_type_to_mir(m.member_type.ty)));
+                        fields.push((name, self.lower_type_to_mir(m.member_type.ty())));
                     }
                     (size, alignment, field_offsets, fields)
                 } else {
@@ -1447,10 +1447,10 @@ impl<'a> AstToMirLowerer<'a> {
     ) -> Operand {
         let operand = self.lower_expression(scope_id, operand_ref, true);
         let operand_ty = self.ast.get_resolved_type(operand_ref).unwrap();
-        let mir_ty = self.lower_type_to_mir(operand_ty.ty);
+        let mir_ty = self.lower_type_to_mir(operand_ty.ty());
 
         if let Operand::Copy(place) = operand.clone() {
-            let type_info = self.registry.get(operand_ty.ty);
+            let type_info = self.registry.get(operand_ty.ty());
             let one_const = Operand::Constant(self.create_constant(ConstValue::Int(1)));
             let minus_one_const = Operand::Constant(self.create_constant(ConstValue::Int(-1)));
 

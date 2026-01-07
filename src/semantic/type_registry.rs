@@ -171,7 +171,7 @@ impl TypeRegistry {
     ) -> TypeRef {
         let key = FnSigKey {
             return_type,
-            params: params.iter().map(|p| p.param_type.ty).collect(), // canonical type only
+            params: params.iter().map(|p| p.param_type.ty()).collect(), // canonical type only
             is_variadic,
         };
 
@@ -468,7 +468,7 @@ impl TypeRegistry {
         if is_union {
             // Union layout: size = max field size, alignment = max field alignment
             for member in members {
-                let member_layout = self.ensure_layout(member.member_type.ty)?;
+                let member_layout = self.ensure_layout(member.member_type.ty())?;
                 max_size = max_size.max(member_layout.size);
                 max_align = max_align.max(member_layout.alignment);
 
@@ -479,7 +479,7 @@ impl TypeRegistry {
         } else {
             // Struct layout: sequential field placement with padding
             for member in members {
-                let member_layout = self.ensure_layout(member.member_type.ty)?;
+                let member_layout = self.ensure_layout(member.member_type.ty())?;
                 max_align = max_align.max(member_layout.alignment);
 
                 // Add padding to align the field
@@ -506,28 +506,25 @@ impl TypeRegistry {
     }
 
     pub fn decay(&mut self, qt: QualType) -> QualType {
-        match &self.get(qt.ty).kind {
+        match &self.get(qt.ty()).kind {
             TypeKind::Array { element_type, .. } => {
                 let ptr = self.pointer_to(*element_type);
-                QualType::new(ptr, qt.qualifiers)
+                QualType::new(ptr, qt.qualifiers())
             }
             TypeKind::Function { .. } => {
-                let ptr = self.pointer_to(qt.ty); // TypeRef canonical
-                QualType::new(ptr, qt.qualifiers)
+                let ptr = self.pointer_to(qt.ty()); // TypeRef canonical
+                QualType::new(ptr, qt.qualifiers())
             }
             _ => qt,
         }
     }
 
     pub fn strip_all(&self, qt: QualType) -> QualType {
-        QualType::unqualified(qt.ty)
+        QualType::unqualified(qt.ty())
     }
 
     pub fn merge_qualifiers(&self, base: QualType, add: TypeQualifiers) -> QualType {
-        QualType {
-            ty: base.ty,
-            qualifiers: base.qualifiers | add,
-        }
+        QualType::new(base.ty(), base.qualifiers() | add)
     }
 
     pub fn is_compatible(&self, a: QualType, b: QualType) -> bool {

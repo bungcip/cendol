@@ -58,7 +58,7 @@ fn apply_parsed_declarator(base_type: TypeRef, parsed_type: &ParsedType, ctx: &m
     let result_type = apply_parsed_declarator_recursive(base_type, parsed_type.declarator, ctx);
     // Combine the declarator result qualifiers with the parsed type qualifiers
     let combined_type = ctx.registry.merge_qualifiers(result_type, parsed_type.qualifiers);
-    QualType::new(combined_type.ty, combined_type.qualifiers)
+    QualType::new(combined_type.ty(), combined_type.qualifiers())
 }
 
 /// Recursively apply parsed declarator to base type
@@ -123,9 +123,8 @@ fn apply_parsed_declarator_recursive(
             let pointer_qualifiers = qualifiers.unwrap();
 
             let modified_current = pointer_type;
-            let mut result = apply_parsed_declarator_recursive(modified_current, inner.unwrap(), ctx);
-            result.qualifiers |= pointer_qualifiers;
-            result
+            let result = apply_parsed_declarator_recursive(modified_current, inner.unwrap(), ctx);
+            QualType::new(result.ty(), result.qualifiers() | pointer_qualifiers)
         }
         1 => {
             // Array
@@ -434,7 +433,7 @@ pub(crate) fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx,
                         });
 
                         // Layout must be complete to get alignment
-                        match ctx.registry.ensure_layout(ty.ty) {
+                        match ctx.registry.ensure_layout(ty.ty()) {
                             Ok(layout) => layout.alignment as u32,
                             Err(e) => {
                                 ctx.report_error(e);
@@ -730,10 +729,8 @@ fn convert_parsed_type_to_qual_type(
 
     let base_type_ref = convert_parsed_base_type_to_qual_type(ctx, &base_type_node, span)?;
 
-    let mut final_type = apply_parsed_declarator_recursive(base_type_ref.ty, declarator_ref, ctx);
-    final_type.qualifiers |= qualifiers;
-
-    Ok(final_type)
+    let final_type = apply_parsed_declarator_recursive(base_type_ref.ty(), declarator_ref, ctx);
+    Ok(QualType::new(final_type.ty(), final_type.qualifiers() | qualifiers))
 }
 
 /// Resolve a type specifier to a QualType
@@ -979,8 +976,8 @@ fn merge_base_type(existing: Option<QualType>, new_type: QualType, ctx: &mut Low
     match existing {
         None => Some(new_type),
         Some(existing_ref) => {
-            let existing_type = ctx.registry.get(existing_ref.ty);
-            let new_type_info = ctx.registry.get(new_type.ty);
+            let existing_type = ctx.registry.get(existing_ref.ty());
+            let new_type_info = ctx.registry.get(new_type.ty());
 
             // Handle signed/unsigned merging
             match (&existing_type.kind, &new_type_info.kind) {
@@ -1097,9 +1094,9 @@ fn lower_type_definition(specifiers: &[DeclSpecifier], ctx: &mut LowerCtx, span:
             // Create RecordDecl semantic node
             let record_decl = RecordDeclData {
                 name: *tag,
-                ty: record_type.ty,
+                ty: record_type.ty(),
                 members: {
-                    if let TypeKind::Record { members, .. } = &ctx.registry.get(record_type.ty).kind {
+                    if let TypeKind::Record { members, .. } = &ctx.registry.get(record_type.ty()).kind {
                         members
                             .iter()
                             .map(|m| FieldDeclData {
@@ -1130,8 +1127,8 @@ fn lower_type_definition(specifiers: &[DeclSpecifier], ctx: &mut LowerCtx, span:
             // Create EnumDecl semantic node
             let enum_decl = EnumDeclData {
                 name: *tag,
-                ty: enum_type.ty,
-                members: if let TypeKind::Enum { enumerators, .. } = &ctx.registry.get(enum_type.ty).kind {
+                ty: enum_type.ty(),
+                members: if let TypeKind::Enum { enumerators, .. } = &ctx.registry.get(enum_type.ty()).kind {
                     enumerators
                         .iter()
                         .map(|e| EnumMember {
@@ -1183,17 +1180,17 @@ fn create_semantic_node_data(
             base_ty
         } else {
             // Has qualifiers, need to apply declarator
-            apply_declarator(base_ty.ty, &init.declarator, ctx)
+            apply_declarator(base_ty.ty(), &init.declarator, ctx)
         }
     } else {
         // Complex case: apply declarator transformations and create new type
-        apply_declarator(base_ty.ty, &init.declarator, ctx)
+        apply_declarator(base_ty.ty(), &init.declarator, ctx)
     };
 
     // Check for incomplete array with initializer and deduce size
     // We need to extract info first to avoid borrow conflicts with ctx.registry
     let array_deduction_info = {
-        let ty = ctx.registry.get(final_ty.ty);
+        let ty = ctx.registry.get(final_ty.ty());
         if let TypeKind::Array {
             element_type,
             size: ArraySizeType::Incomplete,
@@ -1212,7 +1209,7 @@ fn create_semantic_node_data(
         let new_ty_ref = ctx.registry.array_of(element_type, ArraySizeType::Constant(new_size));
 
         // Preserve qualifiers from the original type
-        final_ty = QualType::new(new_ty_ref, final_ty.qualifiers);
+        final_ty = QualType::new(new_ty_ref, final_ty.qualifiers());
 
         // Ensure layout is computed for the new type so sizeof() works
         let _ = ctx.registry.ensure_layout(new_ty_ref);
@@ -1223,7 +1220,7 @@ fn create_semantic_node_data(
         let typedef_decl = TypedefDeclData { name, ty: final_ty };
 
         // Add typedef to symbol table to resolve forward references
-        if let Err(e) = ctx.symbol_table.define_typedef(name, final_ty.ty, span) {
+        if let Err(e) = ctx.symbol_table.define_typedef(name, final_ty.ty(), span) {
             let SymbolTableError::InvalidRedefinition { name, existing } = e;
             let existing_symbol = ctx.symbol_table.get_symbol(existing);
             ctx.report_error(SemanticError::Redefinition {
@@ -1242,10 +1239,10 @@ fn create_semantic_node_data(
 
     if is_function {
         // Extract function type information
-        let type_info = ctx.registry.get(final_ty.ty).clone();
+        let type_info = ctx.registry.get(final_ty.ty()).clone();
         let function_type_ref = if let TypeKind::Function { .. } = &type_info.kind {
             // Direct function type
-            final_ty.ty
+            final_ty.ty()
         } else if let TypeKind::Pointer { pointee } = &type_info.kind {
             // Pointer to function type - get the function type from the pointee
             let pointee_type = ctx.registry.get(*pointee);
@@ -1263,7 +1260,7 @@ fn create_semantic_node_data(
 
                 if let Err(e) =
                     ctx.symbol_table
-                        .define_variable(name, final_ty.ty, init.initializer, spec.alignment, span)
+                        .define_variable(name, final_ty.ty(), init.initializer, spec.alignment, span)
                 {
                     let SymbolTableError::InvalidRedefinition { name, existing } = e;
                     let existing = ctx.symbol_table.get_symbol(existing);
@@ -1286,9 +1283,9 @@ fn create_semantic_node_data(
                 alignment: spec.alignment,
             };
 
-            if let Err(e) = ctx
-                .symbol_table
-                .define_variable(name, final_ty.ty, init.initializer, spec.alignment, span)
+            if let Err(e) =
+                ctx.symbol_table
+                    .define_variable(name, final_ty.ty(), init.initializer, spec.alignment, span)
             {
                 let SymbolTableError::InvalidRedefinition { name, existing } = e;
                 let existing = ctx.symbol_table.get_symbol(existing);
@@ -1331,7 +1328,7 @@ fn create_semantic_node_data(
 
         if let Err(e) = ctx
             .symbol_table
-            .define_variable(name, final_ty.ty, init.initializer, spec.alignment, span)
+            .define_variable(name, final_ty.ty(), init.initializer, spec.alignment, span)
         {
             let SymbolTableError::InvalidRedefinition { name, existing } = e;
             let existing = ctx.symbol_table.get_symbol(existing);
@@ -1359,7 +1356,7 @@ fn lower_function_parameters(params: &[ParamData], ctx: &mut LowerCtx) -> Vec<Fu
                 .unwrap_or_else(|| QualType::unqualified(ctx.registry.type_int));
 
             let final_ty = if let Some(declarator) = &param.declarator {
-                apply_declarator(base_ty.ty, declarator, ctx)
+                apply_declarator(base_ty.ty(), declarator, ctx)
             } else {
                 base_ty
             };
@@ -1382,9 +1379,8 @@ pub(crate) fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx:
             let pointer_type_ref = ctx.registry.pointer_to(base_type);
 
             if let Some(next_decl) = next {
-                let mut result = apply_declarator(pointer_type_ref, next_decl, ctx);
-                result.qualifiers |= *qualifiers;
-                result
+                let result = apply_declarator(pointer_type_ref, next_decl, ctx);
+                QualType::new(result.ty(), result.qualifiers() | *qualifiers)
             } else {
                 QualType::new(pointer_type_ref, *qualifiers)
             }
@@ -1406,7 +1402,7 @@ pub(crate) fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx:
                 } => resolve_array_size(*size, ctx),
             };
 
-            let array_type_ref = ctx.registry.array_of(element_type.ty, array_size);
+            let array_type_ref = ctx.registry.array_of(element_type.ty(), array_size);
             QualType::unqualified(array_type_ref)
         }
         Declarator::Function {
@@ -1432,7 +1428,7 @@ pub(crate) fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx:
                 let parameters = lower_function_parameters(params, ctx);
 
                 // Build the function type first
-                let function_type_ref = ctx.registry.function_type(return_type.ty, parameters, *is_variadic);
+                let function_type_ref = ctx.registry.function_type(return_type.ty(), parameters, *is_variadic);
                 let pointer_type_ref = ctx.registry.pointer_to(function_type_ref);
                 return QualType::new(pointer_type_ref, *qualifiers);
             }
@@ -1455,7 +1451,7 @@ pub(crate) fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx:
             let return_type = apply_declarator(base_type, base, ctx);
             let parameters = lower_function_parameters(params, ctx);
 
-            let function_type_ref = ctx.registry.function_type(return_type.ty, parameters, *is_variadic);
+            let function_type_ref = ctx.registry.function_type(return_type.ty(), parameters, *is_variadic);
             QualType::unqualified(function_type_ref)
         }
         Declarator::AnonymousRecord(is_union, members) => {
@@ -1568,8 +1564,8 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                     .unwrap_or_else(|| QualType::unqualified(ctx.registry.type_int));
 
             // Create the function type with the correct return type by applying the declarator
-            let declarator_type = apply_parsed_declarator(return_type_ref.ty, &func_def.declarator, ctx);
-            let function_type_ref = declarator_type.ty;
+            let declarator_type = apply_parsed_declarator(return_type_ref.ty(), &func_def.declarator, ctx);
+            let function_type_ref = declarator_type.ty();
 
             // Extract parameters from the function type for the symbol entry
             let parameters = if let TypeKind::Function { parameters, .. } = &ctx.registry.get(function_type_ref).kind {
@@ -1600,7 +1596,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                         .symbol_table
                         .define_variable(
                             param.name.unwrap_or_else(|| NameId::new("unnamed_param")),
-                            param.param_type.ty,
+                            param.param_type.ty(),
                             None, // No initializer
                             None, // No alignment
                             ctx.ast.get_node(node_ref).span,
@@ -1896,9 +1892,8 @@ fn lower_decl_specifiers_for_function_return(
 ) -> Option<QualType> {
     let info = lower_decl_specifiers(specs, ctx, span);
     // Return types shouldn't have storage classes usually, but here we just want the type.
-    if let Some(mut base) = info.base_type {
-        base.qualifiers |= info.qualifiers;
-        Some(base)
+    if let Some(base) = info.base_type {
+        Some(QualType::new(base.ty(), base.qualifiers() | info.qualifiers))
     } else {
         None
     }

@@ -121,18 +121,18 @@ fn test_struct_member_qualifiers_preserved() {
                     let x_mem = &members[0];
                     // We expect CONST.
                     assert!(
-                        x_mem.member_type.qualifiers.contains(TypeQualifiers::CONST),
+                        x_mem.member_type.qualifiers().contains(TypeQualifiers::CONST),
                         "Struct member 'x' should be const, but has qualifiers: {:?}",
-                        x_mem.member_type.qualifiers
+                        x_mem.member_type.qualifiers()
                     );
 
                     let y_mem = &members[1];
                     // 'y' is volatile pointer to int.
                     // My fix makes it `volatile pointer`.
                     assert!(
-                        y_mem.member_type.qualifiers.contains(TypeQualifiers::VOLATILE),
+                        y_mem.member_type.qualifiers().contains(TypeQualifiers::VOLATILE),
                         "Struct member 'y' should be volatile, but has qualifiers: {:?}",
-                        y_mem.member_type.qualifiers
+                        y_mem.member_type.qualifiers()
                     );
                 }
             }

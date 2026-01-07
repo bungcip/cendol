@@ -1,6 +1,6 @@
 //! Semantic validation tests for lvalue constraints.
-use super::tests_common::{check_diagnostic, run_fail};
-use crate::driver::compiler::CompilePhase;
+use super::semantic_common::{check_diagnostic, run_fail};
+use crate::driver::artifact::CompilePhase;
 
 fn run_lvalue_test(source: &str, expected_line: u32, expected_col: u32) {
     let driver = run_fail(source, CompilePhase::Mir);

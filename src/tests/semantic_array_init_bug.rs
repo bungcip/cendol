@@ -1,4 +1,4 @@
-use super::tests_common::run_full_pass;
+use super::semantic_common::run_full_pass;
 
 #[test]
 fn test_array_init_bug() {

@@ -8,11 +8,11 @@
 //! - 1:1 mapping from MIR to Cranelift
 
 use crate::ast::NameId;
-use crate::driver::compiler::SemaOutput;
 use crate::mir::{
     BinaryOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlock, MirBlockId, MirFunction, MirFunctionId,
     MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryOp,
 };
+use crate::semantic::output::SemaOutput;
 use cranelift::codegen::ir::{StackSlot, StackSlotData, StackSlotKind};
 use cranelift::prelude::{
     AbiParam, FloatCC, FunctionBuilderContext, InstBuilder, IntCC, MemFlags, Signature, Type, Value, types,

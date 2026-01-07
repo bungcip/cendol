@@ -4,7 +4,7 @@ use std::{cmp::Ordering, num::NonZeroU32, path::PathBuf};
 
 /// Source ID for identifying source files
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
-pub struct SourceId(NonZeroU32);
+pub struct SourceId(pub(crate) NonZeroU32);
 
 impl std::fmt::Display for SourceId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -178,7 +178,7 @@ impl PartialOrd for LineDirective {
 /// Stores all #line directives for a single file, sorted by physical line
 #[derive(Debug, Clone, Default)]
 pub struct LineMap {
-    entries: Vec<LineDirective>,
+    pub(crate) entries: Vec<LineDirective>,
 }
 
 impl LineMap {
@@ -431,5 +431,4 @@ impl Default for SourceManager {
     }
 }
 
-#[cfg(test)]
-mod tests_source_manager;
+

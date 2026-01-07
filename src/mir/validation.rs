@@ -7,7 +7,7 @@
 //! - No illegal operations remain
 //! - MIR is Cranelift-safe
 
-use crate::{driver::compiler::SemaOutput, mir::*};
+use crate::{mir::*, semantic::output::SemaOutput};
 
 /// MIR Validation Error
 #[derive(Debug, PartialEq, Clone)]

@@ -11,11 +11,11 @@
 use std::fmt::Write;
 
 use crate::{
-    driver::compiler::SemaOutput,
     mir::{
         BinaryOp, CallTarget, ConstValue, ConstValueId, Global, GlobalId, LocalId, MirBlock, MirBlockId, MirFunction,
         MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryOp,
     },
+    semantic::output::SemaOutput,
 };
 
 /// Configuration for MIR dump output

@@ -15,32 +15,13 @@ pub mod ast_to_mir;
 pub mod const_eval;
 pub mod conversions;
 pub mod name_resolver;
+pub mod output;
 pub mod struct_lowering;
 pub mod symbol_resolver;
 pub mod symbol_table;
 pub mod type_registry;
 pub mod types;
 
-#[cfg(test)]
-mod tests_common;
-
-#[cfg(test)]
-mod tests_array_init_bug;
-
-#[cfg(test)]
-mod tests_generic;
-#[cfg(test)]
-pub mod tests_lowering;
-#[cfg(test)]
-mod tests_lvalue;
-#[cfg(test)]
-pub mod tests_mir;
-#[cfg(test)]
-mod tests_symbol_redefinition;
-#[cfg(test)]
-mod tests_types;
-#[cfg(test)]
-pub mod tests_validation;
 
 /// Side table containing semantic information for AST nodes.
 /// Parallel vectors indexed by node index (NodeRef.get() - 1).

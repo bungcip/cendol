@@ -4,8 +4,8 @@
 //! It verifies that the type resolver correctly determines the type of a
 //! _Generic expression based on the type of its controlling expression.
 
-use super::tests_common::{run_fail, run_pass};
-use crate::driver::compiler::CompilePhase;
+use super::semantic_common::{run_fail, run_pass};
+use crate::driver::artifact::CompilePhase;
 
 #[test]
 fn test_generic_selection_correct_type_is_chosen() {

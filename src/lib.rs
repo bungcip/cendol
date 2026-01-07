@@ -9,4 +9,6 @@ mod mir_dumper;
 mod parser;
 mod pp;
 mod semantic;
-mod source_manager;
+pub mod source_manager;
+#[cfg(test)]
+pub mod tests;

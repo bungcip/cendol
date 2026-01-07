@@ -1,4 +1,4 @@
-use super::*;
+use crate::source_manager::*;
 
 #[test]
 fn test_source_loc_packing() {

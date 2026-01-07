@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use target_lexicon::Triple;
 
 use crate::{
-    driver::compiler::CompilePhase,
+    driver::artifact::CompilePhase,
     lang_options::{CStandard, LangFlags, LangOptions},
 };
 

@@ -1,8 +1,9 @@
-use super::tests_common::{setup_diagnostics_output, setup_mir};
+use super::semantic_common::{setup_diagnostics_output, setup_mir};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::semantic::*;
 
     #[test]
     fn test_if_else_statement() {

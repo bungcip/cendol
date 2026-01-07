@@ -1,4 +1,4 @@
-use super::*;
+use crate::pp::*;
 use crate::source_manager::SourceId;
 
 /// Helper function to create a PPLexer for testing

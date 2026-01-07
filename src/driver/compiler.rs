@@ -4,7 +4,6 @@
 //! the compilation pipeline including preprocessing, lexing, parsing,
 //! semantic analysis, and output generation.
 
-use hashbrown::HashMap;
 use indexmap::IndexMap;
 
 use crate::ast::{Ast, NodeKind, NodeRef, SourceId};
@@ -13,13 +12,12 @@ use crate::driver::cli::PathOrBuffer;
 use crate::lexer::{Lexer, Token};
 use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer};
 use crate::mir::validation::MirValidator;
-use crate::mir::{
-    ConstValue, ConstValueId, Global, GlobalId, Local, LocalId, MirBlock, MirBlockId, MirFunction, MirFunctionId,
-    MirModule, MirStmt, MirStmtId, MirType, TypeId,
-};
+
+use super::artifact::{CompileArtifact, CompilePhase, PipelineOutputs};
 use crate::mir_dumper::{MirDumpConfig, MirDumper};
 use crate::parser::Parser;
 use crate::pp::{PPToken, Preprocessor};
+use crate::semantic::output::{SemaOutput, SemaOutputWithAst};
 use crate::semantic::{AstToMirLowerer, SymbolTable, TypeRegistry};
 use crate::source_manager::SourceManager;
 
@@ -32,85 +30,6 @@ pub struct CompilerDriver {
     diagnostics: DiagnosticEngine,
     pub(crate) source_manager: SourceManager,
     output_handler: OutputHandler,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub enum CompilePhase {
-    Preprocess,
-    Lex,
-    Parse,
-    SymbolResolver,
-    Mir,
-    Cranelift,
-    #[default]
-    EmitObject,
-}
-
-/// compilation outputs for all source files
-pub struct PipelineOutputs {
-    pub units: indexmap::IndexMap<SourceId, CompileArtifact>,
-}
-
-/// outputs for a single compilation unit
-#[derive(Default)]
-pub struct CompileArtifact {
-    pub preprocessed: Option<Vec<PPToken>>,
-    pub lexed: Option<Vec<Token>>,
-    pub ast: Option<Ast>,
-    pub sema_output: Option<SemaOutput>,
-    pub clif_dump: Option<String>,
-    pub object_file: Option<Vec<u8>>,
-    pub type_registry: Option<TypeRegistry>,
-    pub symbol_table: Option<SymbolTable>,
-}
-
-/// Complete semantic analysis output containing all MIR data structures
-/// NOTE: need better name
-#[derive(Clone)]
-pub struct SemaOutput {
-    pub module: MirModule,
-    pub functions: HashMap<MirFunctionId, MirFunction>,
-    pub blocks: HashMap<MirBlockId, MirBlock>,
-    pub locals: HashMap<LocalId, Local>,
-    pub globals: HashMap<GlobalId, Global>,
-    pub types: HashMap<TypeId, MirType>,
-    pub constants: HashMap<ConstValueId, ConstValue>,
-    pub statements: HashMap<MirStmtId, MirStmt>,
-}
-
-/// Semantic analysis output with AST for symbol resolver dumping
-#[derive(Clone)]
-pub struct SemaOutputWithAst {
-    pub sema_output: SemaOutput,
-    pub ast_with_scope: Ast,
-}
-
-impl SemaOutput {
-    /// get type or panic if not found
-    pub(crate) fn get_type(&self, id: TypeId) -> &MirType {
-        match self.types.get(&id) {
-            Some(id) => id,
-            None => panic!("ICE: Type ID {id} not found"),
-        }
-    }
-    pub(crate) fn get_local(&self, id: LocalId) -> &Local {
-        match self.locals.get(&id) {
-            Some(id) => id,
-            None => panic!("ICE: Local ID {id} not found"),
-        }
-    }
-    pub(crate) fn get_function(&self, id: MirFunctionId) -> &MirFunction {
-        match self.functions.get(&id) {
-            Some(id) => id,
-            None => panic!("ICE: Function ID {id} not found"),
-        }
-    }
-    pub(crate) fn get_global(&self, id: GlobalId) -> &Global {
-        match self.globals.get(&id) {
-            Some(id) => id,
-            None => panic!("ICE: Global ID {id} not found"),
-        }
-    }
 }
 
 impl CompilerDriver {

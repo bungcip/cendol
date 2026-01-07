@@ -1,6 +1,6 @@
-use super::ArraySizeType;
-use super::type_registry::TypeRegistry;
-use super::types::{TypeClass, TypeRef};
+use crate::semantic::ArraySizeType;
+use crate::semantic::type_registry::TypeRegistry;
+use crate::semantic::types::{TypeClass, TypeRef};
 
 #[test]
 fn test_typeref_encoding_primitive() {

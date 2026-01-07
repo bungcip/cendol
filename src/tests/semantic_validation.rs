@@ -1,7 +1,7 @@
 //! Semantic validation tests
-use super::tests_common::{run_fail, run_pass};
+use super::semantic_common::{run_fail, run_pass};
 use crate::diagnostic::DiagnosticLevel;
-use crate::driver::compiler::CompilePhase;
+use crate::driver::artifact::CompilePhase;
 
 #[test]
 fn test_static_assert_pass() {

@@ -1,4 +1,4 @@
-use super::tests_common::setup_lowering;
+use super::semantic_common::setup_lowering;
 use crate::ast::NodeKind;
 use crate::semantic::{TypeKind, TypeQualifiers};
 

@@ -316,7 +316,7 @@ fn classify_punctuation(pp_token_kind: PPTokenKind) -> TokenKind {
 // pre-interns all keywords and stores them in a lazily-initialized `HashMap`.
 /// Subsequent lookups use the `StringId` directly, resulting in a much faster
 /// integer comparison instead of a string comparison.
-fn is_keyword(symbol: StringId) -> Option<TokenKind> {
+pub(crate) fn is_keyword(symbol: StringId) -> Option<TokenKind> {
     keyword_map().get(&symbol).copied()
 }
 
@@ -761,5 +761,4 @@ impl<'src> Lexer<'src> {
     }
 }
 
-#[cfg(test)]
-mod tests_lexer;
+

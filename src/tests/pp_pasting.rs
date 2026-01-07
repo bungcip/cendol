@@ -1,4 +1,4 @@
-use super::*;
+use crate::pp::*;
 use crate::diagnostic::DiagnosticEngine;
 use crate::source_manager::SourceManager;
 use serde::Serialize;

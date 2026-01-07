@@ -454,4 +454,3 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         self.ast.replace_node(old_ref, Node::new(kind, span))
     }
 }
-mod tests_parser;

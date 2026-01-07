@@ -2,12 +2,12 @@
 //!
 //! This module contains tests for the `MirToCraneliftLowerer` implementation.
 use crate::ast::NameId;
-use crate::driver::compiler::SemaOutput;
 use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer, emit_const};
 use crate::mir::{
     ConstValue, ConstValueId, Local, LocalId, MirBlock, MirBlockId, MirFunction, MirFunctionId, MirModule, MirModuleId,
     MirRecordLayout, MirStmt, MirStmtId, MirType, Operand, Place, Terminator, TypeId,
 };
+use crate::semantic::output::SemaOutput;
 use hashbrown::HashMap;
 
 #[test]
@@ -276,7 +276,7 @@ fn test_store_deref_pointer() {
     }
 }
 
-use crate::driver::{CompilerDriver, cli::CompileConfig, compiler::CompilePhase};
+use crate::driver::{CompilerDriver, artifact::CompilePhase, cli::CompileConfig};
 
 /// setup test with output is cranelift ir
 fn setup_cranelift(c_code: &str) -> String {
@@ -491,12 +491,12 @@ fn test_alloc_dealloc_codegen() {
 #[cfg(test)]
 mod tests {
     use crate::ast::NameId;
-    use crate::driver::compiler::SemaOutput;
     use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer};
     use crate::mir::{
         CallTarget, ConstValue, ConstValueId, Local, LocalId, MirBlock, MirBlockId, MirFunction, MirFunctionId,
         MirModule, MirModuleId, MirStmt, MirStmtId, MirType, Operand, Place, Terminator, TypeId,
     };
+    use crate::semantic::output::SemaOutput;
     use hashbrown::HashMap;
 
     #[test]

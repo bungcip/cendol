@@ -2,8 +2,8 @@
 use crate::ast::{Ast, BinaryOp, DeclSpecifier, Declarator, NodeKind, NodeRef, TypeSpecifier, UnaryOp};
 use crate::diagnostic::{DiagnosticEngine, ParseError};
 use crate::driver::CompilerDriver;
+use crate::driver::artifact::CompilePhase;
 use crate::driver::cli::CompileConfig;
-use crate::driver::compiler::CompilePhase;
 use crate::parser::statements::parse_compound_statement;
 use crate::parser::{Parser, declarations, statements};
 use serde::Serialize;

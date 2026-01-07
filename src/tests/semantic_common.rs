@@ -1,7 +1,8 @@
 //! Common utilities for semantic analysis tests.
 use crate::ast::Ast;
+use crate::driver::artifact::{CompilePhase, PipelineOutputs};
 use crate::driver::cli::CompileConfig;
-use crate::driver::compiler::{CompilePhase, CompilerDriver, PipelineOutputs};
+use crate::driver::compiler::CompilerDriver;
 use crate::mir_dumper::{MirDumpConfig, MirDumper};
 use crate::semantic::TypeRegistry;
 

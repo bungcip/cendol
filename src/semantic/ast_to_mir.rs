@@ -1,7 +1,6 @@
 use crate::ast::BinaryOp;
 use crate::ast::nodes;
 use crate::ast::*;
-use crate::driver::compiler::SemaOutput;
 use crate::mir::MirArrayLayout;
 use crate::mir::MirRecordLayout;
 use crate::mir::{
@@ -16,6 +15,7 @@ use crate::semantic::SymbolRef;
 use crate::semantic::SymbolTable;
 use crate::semantic::TypeKind;
 use crate::semantic::ValueCategory;
+use crate::semantic::output::SemaOutput;
 use crate::semantic::{DefinitionState, TypeRef, TypeRegistry};
 use crate::semantic::{ImplicitConversion, Namespace, ScopeId};
 use crate::source_manager::SourceSpan;

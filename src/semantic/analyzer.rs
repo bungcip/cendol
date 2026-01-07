@@ -180,7 +180,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 if operand_ty.is_integer() {
                     Some(self.apply_and_record_integer_promotion(operand_ref, operand_ty))
                 } else {
-                    // TODO: Report error for invalid operand type
+                    let type_kind = &self.registry.get(operand_ty.ty()).kind;
+                    self.report_error(SemanticError::InvalidUnaryOperand {
+                        ty: type_kind.to_string(),
+                        span: full_span,
+                    });
                     None
                 }
             }

@@ -193,6 +193,8 @@ pub enum SemanticError {
         right_ty: String,
         span: SourceSpan,
     },
+    #[error("Invalid operand for unary operation: have '{ty}'")]
+    InvalidUnaryOperand { ty: String, span: SourceSpan },
     #[error("Initializer element is not a compile-time constant")]
     NonConstantInitializer { span: SourceSpan },
     #[error("Invalid use of void type in expression")]
@@ -240,6 +242,7 @@ impl SemanticError {
             SemanticError::TypeMismatch { span, .. } => *span,
             SemanticError::NotAnLvalue { span } => *span,
             SemanticError::InvalidBinaryOperands { span, .. } => *span,
+            SemanticError::InvalidUnaryOperand { span, .. } => *span,
             SemanticError::NonConstantInitializer { span } => *span,
             SemanticError::InvalidUseOfVoid { span } => *span,
             SemanticError::UnsupportedFeature { span, .. } => *span,

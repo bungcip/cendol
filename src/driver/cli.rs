@@ -5,6 +5,7 @@
 
 use clap::{Args, Parser as CliParser};
 use std::path::PathBuf;
+use target_lexicon::Triple;
 
 use crate::{
     driver::compiler::CompilePhase,
@@ -82,6 +83,10 @@ pub struct Cli {
     /// Set C language standard (e.g., c99, c11)
     #[clap(long = "std", value_name = "STANDARD")]
     pub c_standard: Option<CStandard>,
+
+    /// Target triple (e.g. x86_64-unknown-linux-gnu)
+    #[clap(long = "target", value_name = "TRIPLE")]
+    pub target: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -232,6 +237,12 @@ impl Cli {
             preprocessor: crate::pp::PPConfig {
                 max_include_depth: self.preprocessor.max_include_depth,
                 system_include_paths,
+                target: if let Some(t) = self.target {
+                    t.parse::<Triple>()
+                        .map_err(|e| format!("Invalid target triple: {}", e))?
+                } else {
+                    Triple::host()
+                },
                 ..Default::default()
             },
             suppress_line_markers: self.suppress_line_markers,

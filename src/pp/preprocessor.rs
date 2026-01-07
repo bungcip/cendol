@@ -9,6 +9,7 @@ use std::collections::HashSet;
 use crate::pp::interpreter::Interpreter;
 use crate::pp::{PPLexer, PPToken, PPTokenFlags, PPTokenKind};
 use std::path::{Path, PathBuf};
+use target_lexicon::{Architecture, OperatingSystem, Triple};
 
 /// Preprocessor directive kinds
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -257,6 +258,7 @@ pub struct PPConfig {
     pub angled_include_paths: Vec<PathBuf>,
     pub framework_paths: Vec<PathBuf>,
     pub lang_options: LangOptions,
+    pub target: Triple,
 }
 
 impl Default for PPConfig {
@@ -268,6 +270,7 @@ impl Default for PPConfig {
             angled_include_paths: Vec::new(),
             framework_paths: Vec::new(),
             lang_options: LangOptions::default(),
+            target: Triple::host(),
         }
     }
 }
@@ -277,6 +280,7 @@ pub struct Preprocessor<'src> {
     source_manager: &'src mut SourceManager,
     diag: &'src mut DiagnosticEngine,
     lang_opts: LangOptions,
+    target: Triple,
 
     // Pre-interned directive keywords for fast comparison
     directive_keywords: DirectiveKeywordTable,
@@ -411,9 +415,13 @@ impl<'src> Preprocessor<'src> {
 
         let mut built_in_headers = HashMap::new();
         built_in_headers.insert("stddef.h", include_str!("../../custom-include/stddef.h"));
+        built_in_headers.insert("stdint.h", include_str!("../../custom-include/stdint.h"));
         built_in_headers.insert("stdarg.h", include_str!("../../custom-include/stdarg.h"));
-        built_in_headers.insert("stdio.h", include_str!("../../custom-include/stdio.h"));
-        built_in_headers.insert("wchar.h", include_str!("../../custom-include/wchar.h"));
+        built_in_headers.insert("stdbool.h", include_str!("../../custom-include/stdbool.h"));
+
+        // built_in_headers.insert("stdlib.h", include_str!("../../custom-include/stdlib.h"));
+        // built_in_headers.insert("wchar.h", include_str!("../../custom-include/wchar.h"));
+        // built_in_headers.insert("stdio.h", include_str!("../../custom-include/stdio.h"));
 
         let mut preprocessor = Preprocessor {
             source_manager,
@@ -429,6 +437,7 @@ impl<'src> Preprocessor<'src> {
             lexer_stack: Vec::new(),
             include_depth: 0,
             max_include_depth: config.max_include_depth,
+            target: config.target.clone(),
         };
 
         preprocessor.initialize_builtin_macros();
@@ -459,6 +468,60 @@ impl<'src> Preprocessor<'src> {
                 1,
             )],
         );
+
+        // Target specific macros
+        // Architecture
+        match self.target.architecture {
+            Architecture::X86_64 => {
+                self.define_builtin_macro_simple("__x86_64__", "1");
+                self.define_builtin_macro_simple("__x86_64", "1");
+                self.define_builtin_macro_simple("__amd64__", "1");
+                self.define_builtin_macro_simple("__amd64", "1");
+            }
+            Architecture::X86_32(_) => {
+                self.define_builtin_macro_simple("__i386__", "1");
+                self.define_builtin_macro_simple("__i386", "1");
+            }
+            Architecture::Aarch64(_) => {
+                self.define_builtin_macro_simple("__aarch64__", "1");
+            }
+            Architecture::Arm(_) => {
+                self.define_builtin_macro_simple("__arm__", "1");
+            }
+            _ => {}
+        }
+
+        // Pointer width
+        if self.target.pointer_width().ok().map(|w| w.bits()).unwrap_or(64) == 64 {
+            self.define_builtin_macro_simple("__LP64__", "1");
+            self.define_builtin_macro_simple("_LP64", "1");
+        } else {
+            self.define_builtin_macro_simple("__ILP32__", "1");
+            self.define_builtin_macro_simple("_ILP32", "1");
+        }
+
+        // OS
+        match self.target.operating_system {
+            OperatingSystem::Linux => {
+                self.define_builtin_macro_simple("__linux__", "1");
+                self.define_builtin_macro_simple("__linux", "1");
+                self.define_builtin_macro_simple("__unix__", "1");
+                self.define_builtin_macro_simple("__unix", "1");
+                self.define_builtin_macro_simple("__ELF__", "1");
+                self.define_builtin_macro_simple("__gnu_linux__", "1");
+            }
+            OperatingSystem::Darwin(_) => {
+                self.define_builtin_macro_simple("__APPLE__", "1");
+                self.define_builtin_macro_simple("__MACH__", "1");
+            }
+            OperatingSystem::Windows => {
+                self.define_builtin_macro_simple("_WIN32", "1");
+                if self.target.pointer_width().ok().map(|w| w.bits()).unwrap_or(32) == 64 {
+                    self.define_builtin_macro_simple("_WIN64", "1");
+                }
+            }
+            _ => {}
+        }
 
         if self.lang_opts.is_c11() {
             self.define_builtin_macro(
@@ -551,6 +614,17 @@ impl<'src> Preprocessor<'src> {
                 6,
             )],
         );
+    }
+
+    /// Helper to define a simple macro with a value
+    fn define_builtin_macro_simple(&mut self, name: &str, value: &str) {
+        let tokens = vec![PPToken::new(
+            PPTokenKind::Number(StringId::new(value)),
+            PPTokenFlags::empty(),
+            SourceLoc::builtin(),
+            value.len() as u16,
+        )];
+        self.define_builtin_macro(name, tokens);
     }
 
     /// Define a built-in macro

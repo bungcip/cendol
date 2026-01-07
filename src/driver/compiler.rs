@@ -7,7 +7,7 @@
 use hashbrown::HashMap;
 use indexmap::IndexMap;
 
-use crate::ast::{Ast, NodeKind, SourceId};
+use crate::ast::{Ast, NodeKind, NodeRef, SourceId};
 use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
 use crate::driver::cli::PathOrBuffer;
 use crate::lexer::{Lexer, Token};
@@ -319,13 +319,13 @@ impl CompilerDriver {
         let mut unresolved_labels = Vec::new();
         for (i, node) in ast.nodes.iter().enumerate() {
             match &node.kind {
-                crate::ast::NodeKind::Ident(name, resolved_symbol) if resolved_symbol.get().is_none() => {
+                NodeKind::Ident(name, resolved_symbol) if resolved_symbol.get().is_none() => {
                     unresolved_idents.push((i, *name, node.span));
                 }
-                crate::ast::NodeKind::Goto(name, resolved_symbol) if resolved_symbol.get().is_none() => {
+                NodeKind::Goto(name, resolved_symbol) if resolved_symbol.get().is_none() => {
                     unresolved_gotos.push((i, *name, node.span));
                 }
-                crate::ast::NodeKind::Label(name, _, resolved_symbol) if resolved_symbol.get().is_none() => {
+                NodeKind::Label(name, _, resolved_symbol) if resolved_symbol.get().is_none() => {
                     unresolved_labels.push((i, *name, node.span));
                 }
                 _ => {}
@@ -389,7 +389,7 @@ impl CompilerDriver {
         // invariant validations
         // all expression must have resolved_type set
         for (i, node) in ast.nodes.iter().enumerate() {
-            let node_ref = crate::ast::NodeRef::new((i as u32) + 1).unwrap();
+            let node_ref = NodeRef::new((i as u32) + 1).unwrap();
             match &node.kind {
                 NodeKind::Ident(name, ..) if ast.get_resolved_type(node_ref).is_none() => {
                     eprintln!(

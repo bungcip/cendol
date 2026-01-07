@@ -1,3 +1,19 @@
+# Reno's Log of Fixed C-TestSuite Files
+
+This file tracks the `.c` files from the c-testsuite that "Reno" has successfully compiled and verified.
+
 c-testsuite/tests/single-exec/00005.c
 c-testsuite/tests/single-exec/00008.c
 c-testsuite/tests/single-exec/00010.c
+c-testsuite/tests/single-exec/00001.c
+c-testsuite/tests/single-exec/00002.c
+c-testsuite/tests/single-exec/00003.c
+c-testsuite/tests/single-exec/00004.c
+c-testsuite/tests/single-exec/00006.c
+c-testsuite/tests/single-exec/00007.c
+c-testsuite/tests/single-exec/00009.c
+c-testsuite/tests/single-exec/00011.c
+c-testsuite/tests/single-exec/00012.c
+c-testsuite/tests/single-exec/00013.c
+c-testsuite/tests/single-exec/00014.c
+c-testsuite/tests/single-exec/00015.c

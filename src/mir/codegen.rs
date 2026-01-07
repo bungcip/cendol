@@ -15,7 +15,7 @@ use crate::mir::{
 };
 use cranelift::codegen::ir::{StackSlot, StackSlotData, StackSlotKind};
 use cranelift::prelude::{
-    AbiParam, FunctionBuilderContext, InstBuilder, IntCC, MemFlags, Signature, Type, Value, types,
+    AbiParam, FloatCC, FunctionBuilderContext, InstBuilder, IntCC, MemFlags, Signature, Type, Value, types,
 };
 use cranelift_frontend::FunctionBuilder;
 use cranelift_module::{DataDescription, Linkage, Module};
@@ -448,6 +448,55 @@ fn emit_type_conversion(val: Value, from: Type, to: Type, is_signed: bool, build
         return val;
     }
 
+    // Integer to Integer
+    if from.is_int() && to.is_int() {
+        let from_width = from.bits();
+        let to_width = to.bits();
+        if from_width < to_width {
+            return if is_signed {
+                builder.ins().sextend(to, val)
+            } else {
+                builder.ins().uextend(to, val)
+            };
+        } else if from_width > to_width {
+            return builder.ins().ireduce(to, val);
+        } else {
+            return builder.ins().bitcast(to, MemFlags::new(), val);
+        }
+    }
+
+    // Float to Float
+    if from.is_float() && to.is_float() {
+        let from_width = from.bits();
+        let to_width = to.bits();
+        if from_width < to_width {
+            return builder.ins().fpromote(to, val);
+        } else if from_width > to_width {
+            return builder.ins().fdemote(to, val);
+        } else {
+            return val;
+        }
+    }
+
+    // Integer to Float
+    if from.is_int() && to.is_float() {
+        return if is_signed {
+            builder.ins().fcvt_from_sint(to, val)
+        } else {
+            builder.ins().fcvt_from_uint(to, val)
+        };
+    }
+
+    // Float to Integer
+    if from.is_float() && to.is_int() {
+        return if is_signed {
+            builder.ins().fcvt_to_sint(to, val)
+        } else {
+            builder.ins().fcvt_to_uint(to, val)
+        };
+    }
+
+    // Fallback logic for other cases (e.g. pointers treated as integers)
     let from_width = from.bits();
     let to_width = to.bits();
 
@@ -462,9 +511,8 @@ fn emit_type_conversion(val: Value, from: Type, to: Type, is_signed: bool, build
         // Reduction
         builder.ins().ireduce(to, val)
     } else {
-        // Same width, diff types (e.g. i32 and f32) - not fully handled yet
-        // Bitcast for now if they have same size
-        val
+        // Same width, diff types
+        builder.ins().bitcast(to, MemFlags::new(), val)
     }
 }
 
@@ -1429,29 +1477,51 @@ impl MirToCraneliftLowerer {
                                     BinaryOp::LShift => builder.ins().ishl(left_val, right_val),
                                     BinaryOp::RShift => builder.ins().sshr(left_val, right_val),
                                     BinaryOp::Equal => {
-                                        let cmp_val = builder.ins().icmp(IntCC::Equal, left_val, right_val);
+                                        let cmp_val = if final_left_type.is_float() {
+                                            builder.ins().fcmp(FloatCC::Equal, left_val, right_val)
+                                        } else {
+                                            builder.ins().icmp(IntCC::Equal, left_val, right_val)
+                                        };
                                         builder.ins().uextend(types::I32, cmp_val)
                                     }
                                     BinaryOp::NotEqual => {
-                                        let cmp_val = builder.ins().icmp(IntCC::NotEqual, left_val, right_val);
+                                        let cmp_val = if final_left_type.is_float() {
+                                            builder.ins().fcmp(FloatCC::NotEqual, left_val, right_val)
+                                        } else {
+                                            builder.ins().icmp(IntCC::NotEqual, left_val, right_val)
+                                        };
                                         builder.ins().uextend(types::I32, cmp_val)
                                     }
                                     BinaryOp::Less => {
-                                        let cmp_val = builder.ins().icmp(IntCC::SignedLessThan, left_val, right_val);
+                                        let cmp_val = if final_left_type.is_float() {
+                                            builder.ins().fcmp(FloatCC::LessThan, left_val, right_val)
+                                        } else {
+                                            builder.ins().icmp(IntCC::SignedLessThan, left_val, right_val)
+                                        };
                                         builder.ins().uextend(types::I32, cmp_val)
                                     }
                                     BinaryOp::LessEqual => {
-                                        let cmp_val =
-                                            builder.ins().icmp(IntCC::SignedLessThanOrEqual, left_val, right_val);
+                                        let cmp_val = if final_left_type.is_float() {
+                                            builder.ins().fcmp(FloatCC::LessThanOrEqual, left_val, right_val)
+                                        } else {
+                                            builder.ins().icmp(IntCC::SignedLessThanOrEqual, left_val, right_val)
+                                        };
                                         builder.ins().uextend(types::I32, cmp_val)
                                     }
                                     BinaryOp::Greater => {
-                                        let cmp_val = builder.ins().icmp(IntCC::SignedGreaterThan, left_val, right_val);
+                                        let cmp_val = if final_left_type.is_float() {
+                                            builder.ins().fcmp(FloatCC::GreaterThan, left_val, right_val)
+                                        } else {
+                                            builder.ins().icmp(IntCC::SignedGreaterThan, left_val, right_val)
+                                        };
                                         builder.ins().uextend(types::I32, cmp_val)
                                     }
                                     BinaryOp::GreaterEqual => {
-                                        let cmp_val =
-                                            builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, left_val, right_val);
+                                        let cmp_val = if final_left_type.is_float() {
+                                            builder.ins().fcmp(FloatCC::GreaterThanOrEqual, left_val, right_val)
+                                        } else {
+                                            builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, left_val, right_val)
+                                        };
                                         builder.ins().uextend(types::I32, cmp_val)
                                     }
                                     BinaryOp::LogicAnd | BinaryOp::LogicOr => builder.ins().band(left_val, right_val),

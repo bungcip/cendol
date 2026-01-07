@@ -327,19 +327,19 @@ impl<'a> SemanticAnalyzer<'a> {
             // We can distinguish if needed, but ImplicitConversion::IntegerCast naming might be misleading for floats.
             // However, check if PointerCast is distinct.
             if lhs_ty.is_pointer() && rhs_ty.is_pointer() {
-                    let idx = (rhs_ref.get() - 1) as usize;
-                    self.semantic_info.conversions[idx].push(ImplicitConversion::PointerCast {
-                        from: rhs_ty.ty(),
-                        to: lhs_ty.ty(),
-                    });
-                } else if lhs_ty.is_arithmetic() && rhs_ty.is_arithmetic() {
-                    let idx = (rhs_ref.get() - 1) as usize;
-                    self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerCast {
-                        from: rhs_ty.ty(),
-                        to: lhs_ty.ty(),
-                    });
-                }
+                let idx = (rhs_ref.get() - 1) as usize;
+                self.semantic_info.conversions[idx].push(ImplicitConversion::PointerCast {
+                    from: rhs_ty.ty(),
+                    to: lhs_ty.ty(),
+                });
+            } else if lhs_ty.is_arithmetic() && rhs_ty.is_arithmetic() {
+                let idx = (rhs_ref.get() - 1) as usize;
+                self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerCast {
+                    from: rhs_ty.ty(),
+                    to: lhs_ty.ty(),
+                });
             }
+        }
     }
 
     fn visit_function_call(&mut self, func_ref: NodeRef, args: &[NodeRef]) -> Option<QualType> {

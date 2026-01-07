@@ -91,98 +91,7 @@ impl<'a> AstToMirLowerer<'a> {
         let node_span = self.ast.get_node(node_ref).span;
 
         match node_kind {
-            NodeKind::TranslationUnit(nodes) => {
-                // Ensure all global functions (including declarations) have a MIR representation.
-                // This is done before traversing the AST to ensure that function calls
-                // can be resolved even if the function is defined later in the file or is external.
-                let global_scope = self.symbol_table.get_scope(ScopeId::GLOBAL);
-                let mut global_symbols: Vec<_> = global_scope.symbols.values().copied().collect();
-
-                // Sort by symbol name to ensure deterministic order for snapshot tests
-                global_symbols.sort_by_key(|s| self.symbol_table.get_symbol(*s).name);
-
-                for sym_ref in global_symbols {
-                    let (symbol_name, symbol_type_info, is_function, has_definition) = {
-                        let symbol = self.symbol_table.get_symbol(sym_ref);
-                        (
-                            symbol.name,
-                            symbol.type_info,
-                            matches!(symbol.kind, SymbolKind::Function),
-                            symbol.def_state == DefinitionState::Defined,
-                        )
-                    };
-
-                    if is_function {
-                        if self
-                            .mir_builder
-                            .get_functions()
-                            .iter()
-                            .any(|(_, f)| f.name == symbol_name)
-                        {
-                            continue;
-                        }
-
-                        let func_type = self.registry.get(symbol_type_info).clone();
-                        if let TypeKind::Function {
-                            return_type,
-                            parameters,
-                            is_variadic,
-                        } = &func_type.kind
-                        {
-                            let return_mir_type = self.lower_type_to_mir(*return_type);
-                            let param_mir_types = parameters
-                                .iter()
-                                .map(|p| self.lower_type_to_mir(p.param_type.ty()))
-                                .collect();
-
-                            // Use declare_function for declarations, define_function for definitions
-                            if has_definition {
-                                self.mir_builder.define_function(
-                                    symbol_name,
-                                    param_mir_types,
-                                    return_mir_type,
-                                    *is_variadic,
-                                );
-                            } else {
-                                self.mir_builder.declare_function(
-                                    symbol_name,
-                                    param_mir_types,
-                                    return_mir_type,
-                                    *is_variadic,
-                                );
-                            }
-                        } else {
-                            // This case should ideally not be reached for a SymbolKind::Function
-                            let return_mir_type = self.get_int_type();
-                            if has_definition {
-                                self.mir_builder
-                                    .define_function(symbol_name, vec![], return_mir_type, false);
-                            } else {
-                                self.mir_builder
-                                    .declare_function(symbol_name, vec![], return_mir_type, false);
-                            }
-                        }
-                    } else if let SymbolKind::Variable { is_global: true, .. } =
-                        self.symbol_table.get_symbol(sym_ref).kind
-                    {
-                        // Pre-declare global variables to handle forward references and self-references
-                        if !self.global_map.contains_key(&sym_ref) {
-                            let mir_type_id = self.lower_type_to_mir(symbol_type_info);
-                            let global_id = self.mir_builder.create_global(
-                                symbol_name,
-                                mir_type_id,
-                                false, // is_constant, hard to know without full decl analysis, default to false
-                            );
-                            // We can update is_constant later if needed, or assume it's mutable for now.
-                            // The VarDecl lowering will set the initializer and other properties.
-                            self.global_map.insert(sym_ref, global_id);
-                        }
-                    }
-                }
-                for child_ref in nodes {
-                    self.lower_node_ref(child_ref, ScopeId::GLOBAL);
-                }
-            }
+            NodeKind::TranslationUnit(nodes) => self.lower_translation_unit(&nodes),
             NodeKind::Function(function_data) => self.lower_function(node_ref, &function_data),
             NodeKind::VarDecl(var_decl) => self.lower_var_declaration(scope_id, &var_decl, node_span),
             NodeKind::CompoundStatement(nodes) => self.lower_compound_statement(node_ref, &nodes),
@@ -192,6 +101,99 @@ impl<'a> AstToMirLowerer<'a> {
                 }
             }
             _ => self.try_lower_as_statement(scope_id, node_ref),
+        }
+    }
+
+    fn lower_translation_unit(&mut self, nodes: &[NodeRef]) {
+        // Ensure all global functions (including declarations) have a MIR representation.
+        // This is done before traversing the AST to ensure that function calls
+        // can be resolved even if the function is defined later in the file or is external.
+        let global_scope = self.symbol_table.get_scope(ScopeId::GLOBAL);
+        let mut global_symbols: Vec<_> = global_scope.symbols.values().copied().collect();
+
+        // Sort by symbol name to ensure deterministic order for snapshot tests
+        global_symbols.sort_by_key(|s| self.symbol_table.get_symbol(*s).name);
+
+        for sym_ref in global_symbols {
+            let (symbol_name, symbol_type_info, is_function, has_definition) = {
+                let symbol = self.symbol_table.get_symbol(sym_ref);
+                (
+                    symbol.name,
+                    symbol.type_info,
+                    matches!(symbol.kind, SymbolKind::Function),
+                    symbol.def_state == DefinitionState::Defined,
+                )
+            };
+
+            if is_function {
+                if self
+                    .mir_builder
+                    .get_functions()
+                    .iter()
+                    .any(|(_, f)| f.name == symbol_name)
+                {
+                    continue;
+                }
+
+                let func_type = self.registry.get(symbol_type_info).clone();
+                if let TypeKind::Function {
+                    return_type,
+                    parameters,
+                    is_variadic,
+                } = &func_type.kind
+                {
+                    let return_mir_type = self.lower_type_to_mir(*return_type);
+                    let param_mir_types = parameters
+                        .iter()
+                        .map(|p| self.lower_type_to_mir(p.param_type.ty()))
+                        .collect();
+
+                    // Use declare_function for declarations, define_function for definitions
+                    if has_definition {
+                        self.mir_builder.define_function(
+                            symbol_name,
+                            param_mir_types,
+                            return_mir_type,
+                            *is_variadic,
+                        );
+                    } else {
+                        self.mir_builder.declare_function(
+                            symbol_name,
+                            param_mir_types,
+                            return_mir_type,
+                            *is_variadic,
+                        );
+                    }
+                } else {
+                    // This case should ideally not be reached for a SymbolKind::Function
+                    let return_mir_type = self.get_int_type();
+                    if has_definition {
+                        self.mir_builder
+                            .define_function(symbol_name, vec![], return_mir_type, false);
+                    } else {
+                        self.mir_builder
+                            .declare_function(symbol_name, vec![], return_mir_type, false);
+                    }
+                }
+            } else if let SymbolKind::Variable { is_global: true, .. } =
+                self.symbol_table.get_symbol(sym_ref).kind
+            {
+                // Pre-declare global variables to handle forward references and self-references
+                if !self.global_map.contains_key(&sym_ref) {
+                    let mir_type_id = self.lower_type_to_mir(symbol_type_info);
+                    let global_id = self.mir_builder.create_global(
+                        symbol_name,
+                        mir_type_id,
+                        false, // is_constant, hard to know without full decl analysis, default to false
+                    );
+                    // We can update is_constant later if needed, or assume it's mutable for now.
+                    // The VarDecl lowering will set the initializer and other properties.
+                    self.global_map.insert(sym_ref, global_id);
+                }
+            }
+        }
+        for child_ref in nodes {
+            self.lower_node_ref(*child_ref, ScopeId::GLOBAL);
         }
     }
 
@@ -306,8 +308,15 @@ impl<'a> AstToMirLowerer<'a> {
             }
         }
 
-        let is_global = self.current_function.is_none();
-        if is_global {
+        self.finalize_struct_initializer(field_operands, target_ty)
+    }
+
+    fn finalize_struct_initializer(
+        &mut self,
+        field_operands: Vec<(usize, Operand)>,
+        target_ty: QualType,
+    ) -> Operand {
+        if self.current_function.is_none() {
             let const_fields = field_operands
                 .into_iter()
                 .map(|(idx, op)| {
@@ -342,8 +351,11 @@ impl<'a> AstToMirLowerer<'a> {
             elements.push(operand);
         }
 
-        let is_global = self.current_function.is_none();
-        if is_global {
+        self.finalize_array_initializer(elements, target_ty)
+    }
+
+    fn finalize_array_initializer(&mut self, elements: Vec<Operand>, target_ty: QualType) -> Operand {
+        if self.current_function.is_none() {
             let mut const_elements = Vec::new();
             for op in elements {
                 if let Some(const_id) = self.operand_to_const_id(op) {
@@ -541,39 +553,7 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::LiteralChar(val) => Operand::Constant(self.create_constant(ConstValue::Int(*val as i64))),
             NodeKind::LiteralString(val) => self.lower_literal_string(val, &ty),
             NodeKind::Ident(_, symbol_ref) => self.lower_ident(symbol_ref),
-            NodeKind::UnaryOp(op, operand_ref) => match *op {
-                UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
-                    self.lower_compound_assignment(scope_id, op, *operand_ref, *operand_ref)
-                }
-                UnaryOp::AddrOf => {
-                    let operand = self.lower_expression(scope_id, *operand_ref, true);
-                    if let Operand::Copy(place) = operand {
-                        Operand::AddressOf(place)
-                    } else if let Operand::Constant(const_id) = operand
-                        && let Some(info) = &self.ast.semantic_info
-                        && info.value_categories[(operand_ref.get() - 1) as usize] == ValueCategory::LValue
-                        && matches!(
-                            self.mir_builder.get_constants().get(&const_id),
-                            Some(ConstValue::FunctionAddress(_))
-                        )
-                    {
-                        Operand::Constant(const_id)
-                    } else {
-                        panic!("Cannot take address of a non-lvalue");
-                    }
-                }
-                UnaryOp::Deref => {
-                    let operand = self.lower_expression(scope_id, *operand_ref, true);
-                    let place = Place::Deref(Box::new(operand));
-                    Operand::Copy(Box::new(place))
-                }
-                _ => {
-                    let operand = self.lower_expression(scope_id, *operand_ref, true);
-                    let mir_op = self.map_ast_unary_op_to_mir(op);
-                    let rval = Rvalue::UnaryOp(mir_op, operand);
-                    self.emit_rvalue_to_operand(rval, mir_ty)
-                }
-            },
+            NodeKind::UnaryOp(op, operand_ref) => self.lower_unary_op_expr(scope_id, op, *operand_ref, mir_ty),
             NodeKind::PostIncrement(operand_ref) => self.lower_post_incdec(scope_id, *operand_ref, true, need_value),
             NodeKind::PostDecrement(operand_ref) => self.lower_post_incdec(scope_id, *operand_ref, false, need_value),
             NodeKind::BinaryOp(op, left_ref, right_ref) => {
@@ -592,6 +572,48 @@ impl<'a> AstToMirLowerer<'a> {
                 Operand::Cast(mir_ty, Box::new(operand))
             }
             _ => Operand::Constant(self.create_constant(ConstValue::Int(0))),
+        }
+    }
+
+    fn lower_unary_op_expr(
+        &mut self,
+        scope_id: ScopeId,
+        op: &UnaryOp,
+        operand_ref: NodeRef,
+        mir_ty: TypeId,
+    ) -> Operand {
+        match *op {
+            UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
+                self.lower_compound_assignment(scope_id, op, operand_ref, operand_ref)
+            }
+            UnaryOp::AddrOf => {
+                let operand = self.lower_expression(scope_id, operand_ref, true);
+                if let Operand::Copy(place) = operand {
+                    Operand::AddressOf(place)
+                } else if let Operand::Constant(const_id) = operand
+                    && let Some(info) = &self.ast.semantic_info
+                    && info.value_categories[(operand_ref.get() - 1) as usize] == ValueCategory::LValue
+                    && matches!(
+                        self.mir_builder.get_constants().get(&const_id),
+                        Some(ConstValue::FunctionAddress(_))
+                    )
+                {
+                    Operand::Constant(const_id)
+                } else {
+                    panic!("Cannot take address of a non-lvalue");
+                }
+            }
+            UnaryOp::Deref => {
+                let operand = self.lower_expression(scope_id, operand_ref, true);
+                let place = Place::Deref(Box::new(operand));
+                Operand::Copy(Box::new(place))
+            }
+            _ => {
+                let operand = self.lower_expression(scope_id, operand_ref, true);
+                let mir_op = self.map_ast_unary_op_to_mir(op);
+                let rval = Rvalue::UnaryOp(mir_op, operand);
+                self.emit_rvalue_to_operand(rval, mir_ty)
+            }
         }
     }
 

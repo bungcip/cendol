@@ -576,7 +576,6 @@ impl<'src> Lexer<'src> {
                     }
                 }
 
-
                 // Create a single concatenated token
                 let concatenated_token = Token {
                     kind: TokenKind::StringLiteral(StringId::new(content)),

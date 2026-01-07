@@ -316,29 +316,29 @@ impl TypeRef {
 
     #[inline]
     pub fn is_integer(self) -> bool {
-        match self.builtin() {
+        matches!(
+            self.builtin(),
             Some(BuiltinType::Bool)
-            | Some(BuiltinType::Char)
-            | Some(BuiltinType::SChar)
-            | Some(BuiltinType::UChar)
-            | Some(BuiltinType::Short)
-            | Some(BuiltinType::UShort)
-            | Some(BuiltinType::Int)
-            | Some(BuiltinType::UInt)
-            | Some(BuiltinType::Long)
-            | Some(BuiltinType::ULong)
-            | Some(BuiltinType::LongLong)
-            | Some(BuiltinType::ULongLong) => true,
-            _ => false,
-        }
+                | Some(BuiltinType::Char)
+                | Some(BuiltinType::SChar)
+                | Some(BuiltinType::UChar)
+                | Some(BuiltinType::Short)
+                | Some(BuiltinType::UShort)
+                | Some(BuiltinType::Int)
+                | Some(BuiltinType::UInt)
+                | Some(BuiltinType::Long)
+                | Some(BuiltinType::ULong)
+                | Some(BuiltinType::LongLong)
+                | Some(BuiltinType::ULongLong)
+        )
     }
 
     #[inline]
     pub fn is_floating(self) -> bool {
-        match self.builtin() {
-            Some(BuiltinType::Float) | Some(BuiltinType::Double) | Some(BuiltinType::LongDouble) => true,
-            _ => false,
-        }
+        matches!(
+            self.builtin(),
+            Some(BuiltinType::Float) | Some(BuiltinType::Double) | Some(BuiltinType::LongDouble)
+        )
     }
 
     #[inline]

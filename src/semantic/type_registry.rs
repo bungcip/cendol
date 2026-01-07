@@ -72,8 +72,8 @@ impl TypeRegistry {
             complex_cache: HashMap::new(),
             layout_in_progress: HashSet::new(),
 
-            // temporary placeholders
-            type_void: unsafe { TypeRef::from_raw_unchecked(1) }, // Will be valid after create_builtin
+            // temporary placeholders - will be overwritten by create_builtin
+            type_void: unsafe { TypeRef::from_raw_unchecked(1) },
             type_bool: unsafe { TypeRef::from_raw_unchecked(1) },
             type_int: unsafe { TypeRef::from_raw_unchecked(1) },
             type_int_unsigned: unsafe { TypeRef::from_raw_unchecked(1) },
@@ -99,64 +99,77 @@ impl TypeRegistry {
     }
 
     pub fn create_builtin(&mut self) {
-        // Must match BuiltinType enum values 1..16
-        // Void = 1
-        self.type_void = self.alloc_builtin(TypeKind::Void);
-        // Bool = 2
-        self.type_bool = self.alloc_builtin(TypeKind::Bool);
-        // Char = 3
-        self.type_char = self.alloc_builtin(TypeKind::Char { is_signed: true });
-        // SChar = 4
-        self.type_char = self.alloc_builtin(TypeKind::Char { is_signed: true }); // Wait, SChar enum is 4. Char is 3.
-        // User map: CHAR -> 2? No, user said "VOID -> 1, CHAR -> 2".
-        // My BuiltinType enum: Void=1, Bool=2, Char=3.
-        // Let's strict match the enum order in alloc calls.
-
         // Reset types to just dummy to ensure order
         self.types.truncate(1);
 
-        self.type_void = self.alloc_builtin(TypeKind::Void); // 1
-        self.type_bool = self.alloc_builtin(TypeKind::Bool); // 2
-        self.type_char = self.alloc_builtin(TypeKind::Char { is_signed: true }); // 3 (char)
-        let _schar = self.alloc_builtin(TypeKind::Char { is_signed: true }); // 4 (schar - explicit signed char? No, SChar in enum)
-        // Wait, TypeKind only has Char { is_signed }.
-        // BuiltinType has Char, SChar, UChar.
-        // C standard: char is distinct type. signed char is distinct.
-        // TypeKind::Char represents both?
-        // TypeKind::Char { is_signed: true } maps to BuiltinType::Char usually?
-        // Let's look at TypeKind::to_builtin():
-        // Char { signed: true } -> Char.
-        // Char { signed: false } -> UChar.
-        // Where is SChar?
-        // Existing code: SChar = 3 (enum value).
-        // I need to allocate types that MATCH the BuiltinType enum indices.
+        // Must match BuiltinType enum values 1..16 sequentially
 
-        // Let's look at existing TypeKind mapping in types.rs
-        // BuiltinType::SChar is 4.
-        // But TypeKind doesn't seem to have SChar variant?
-        // It has Char { is_signed }.
-        // If I use TypeKind::Char { is_signed: true }, it is `char`.
-        // I should probably stick to what I have in TypeKind.
-        // But I MUST fill indices 1..16.
+        // 1: Void
+        self.type_void = self.alloc_builtin(TypeKind::Void);
 
-        // 1 Void
-        // 2 Bool
-        // 3 Char
-        // 4 SChar (Placeholder if not used, or aliased?)
-        // 5 UChar
-        // 6 Short
-        // 7 UShort
-        // 8 Int
-        // 9 UInt
-        // 10 Long
-        // 11 ULong
-        // 12 LongLong
-        // 13 ULongLong
-        // 14 Float
-        // 15 Double
-        // 16 LongDouble
+        // 2: Bool
+        self.type_bool = self.alloc_builtin(TypeKind::Bool);
 
-        // I'll re-assign fields correctly.
+        // 3: Char (signed)
+        self.type_char = self.alloc_builtin(TypeKind::Char { is_signed: true });
+
+        // 4: SChar (explicit signed char) - reuse Char{signed} kind, but unique TypeRef index
+        // Note: we don't expose a separate public field for SChar as it maps to type_char logic often,
+        // but we must allocate it to keep indices correct.
+        // We can just discard the returned TypeRef if we don't store it specially,
+        // OR we can store it in a temp if needed. C11: char != signed char.
+        let _type_schar = self.alloc_builtin(TypeKind::Char { is_signed: true });
+
+        // 5: UChar
+        self.type_char_unsigned = self.alloc_builtin(TypeKind::Char { is_signed: false });
+
+        // 6: Short
+        self.type_short = self.alloc_builtin(TypeKind::Short { is_signed: true });
+
+        // 7: UShort
+        self.type_short_unsigned = self.alloc_builtin(TypeKind::Short { is_signed: false });
+
+        // 8: Int
+        self.type_int = self.alloc_builtin(TypeKind::Int { is_signed: true });
+
+        // 9: UInt
+        self.type_int_unsigned = self.alloc_builtin(TypeKind::Int { is_signed: false });
+
+        // 10: Long
+        self.type_long = self.alloc_builtin(TypeKind::Long {
+            is_signed: true,
+            is_long_long: false,
+        });
+
+        // 11: ULong
+        self.type_long_unsigned = self.alloc_builtin(TypeKind::Long {
+            is_signed: false,
+            is_long_long: false,
+        });
+
+        // 12: LongLong
+        self.type_long_long = self.alloc_builtin(TypeKind::Long {
+            is_signed: true,
+            is_long_long: true,
+        });
+
+        // 13: ULongLong
+        self.type_long_long_unsigned = self.alloc_builtin(TypeKind::Long {
+            is_signed: false,
+            is_long_long: true,
+        });
+
+        // 14: Float
+        self.type_float = self.alloc_builtin(TypeKind::Float);
+
+        // 15: Double
+        self.type_double = self.alloc_builtin(TypeKind::Double { is_long_double: false });
+
+        // 16: LongDouble
+        self.type_long_double = self.alloc_builtin(TypeKind::Double { is_long_double: true });
+
+        // We can assert that the last allocated index was 16
+        debug_assert_eq!(self.types.len() - 1, 16, "Builtin types allocation mismatch");
     }
 
     fn alloc_builtin(&mut self, kind: TypeKind) -> TypeRef {
@@ -303,13 +316,13 @@ impl TypeRegistry {
 
     pub fn array_of(&mut self, elem: TypeRef, size: ArraySizeType) -> TypeRef {
         // Try inline
-        if let ArraySizeType::Constant(len) = size {
-            if len <= 31 {
-                // Check if elem is Simple
-                if elem.pointer_depth() == 0 && elem.array_len().is_none() {
-                    return TypeRef::new(elem.base(), TypeClass::Array, 0, len as u32).unwrap();
-                }
-            }
+        if let ArraySizeType::Constant(len) = size
+            && len <= 31
+            && elem.pointer_depth() == 0
+            && elem.array_len().is_none()
+        {
+            // Check if elem is Simple
+            return TypeRef::new(elem.base(), TypeClass::Array, 0, len as u32).unwrap();
         }
 
         let key = (elem, size.clone());

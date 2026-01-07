@@ -1869,9 +1869,6 @@ fn lower_decl_specifiers_for_function_return(
 ) -> Option<QualType> {
     let info = lower_decl_specifiers(specs, ctx, span);
     // Return types shouldn't have storage classes usually, but here we just want the type.
-    if let Some(base) = info.base_type {
-        Some(QualType::new(base.ty(), base.qualifiers() | info.qualifiers))
-    } else {
-        None
-    }
+    info.base_type
+        .map(|base| QualType::new(base.ty(), base.qualifiers() | info.qualifiers))
 }

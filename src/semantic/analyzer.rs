@@ -320,24 +320,24 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::LiteralInt(_) | NodeKind::LiteralChar(_) | NodeKind::LiteralFloat(_)
         );
 
-        if (lhs_ty.is_arithmetic() && rhs_ty.is_arithmetic()) || (lhs_ty.is_pointer() && rhs_ty.is_pointer()) {
-            if lhs_ty.ty() != rhs_ty.ty() || is_literal {
-                // For pointers, it's pointer cast. For arithmetic, integer/float cast.
-                // We can distinguish if needed, but ImplicitConversion::IntegerCast naming might be misleading for floats.
-                // However, check if PointerCast is distinct.
-                if lhs_ty.is_pointer() && rhs_ty.is_pointer() {
-                    let idx = (rhs_ref.get() - 1) as usize;
-                    self.semantic_info.conversions[idx].push(ImplicitConversion::PointerCast {
-                        from: rhs_ty.ty(),
-                        to: lhs_ty.ty(),
-                    });
-                } else if lhs_ty.is_arithmetic() && rhs_ty.is_arithmetic() {
-                    let idx = (rhs_ref.get() - 1) as usize;
-                    self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerCast {
-                        from: rhs_ty.ty(),
-                        to: lhs_ty.ty(),
-                    });
-                }
+        if ((lhs_ty.is_arithmetic() && rhs_ty.is_arithmetic()) || (lhs_ty.is_pointer() && rhs_ty.is_pointer()))
+            && (lhs_ty.ty() != rhs_ty.ty() || is_literal)
+        {
+            // For pointers, it's pointer cast. For arithmetic, integer/float cast.
+            // We can distinguish if needed, but ImplicitConversion::IntegerCast naming might be misleading for floats.
+            // However, check if PointerCast is distinct.
+            if lhs_ty.is_pointer() && rhs_ty.is_pointer() {
+                let idx = (rhs_ref.get() - 1) as usize;
+                self.semantic_info.conversions[idx].push(ImplicitConversion::PointerCast {
+                    from: rhs_ty.ty(),
+                    to: lhs_ty.ty(),
+                });
+            } else if lhs_ty.is_arithmetic() && rhs_ty.is_arithmetic() {
+                let idx = (rhs_ref.get() - 1) as usize;
+                self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerCast {
+                    from: rhs_ty.ty(),
+                    to: lhs_ty.ty(),
+                });
             }
         }
     }

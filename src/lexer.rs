@@ -529,12 +529,12 @@ impl<'src> Lexer<'src> {
 
         while let Some(pptoken) = current_token_iter.next() {
             // ⚡ Bolt: Optimized string literal concatenation.
-            // This implementation avoids intermediate allocations and multiple passes.
-            // When a string literal is found, it initializes a buffer and immediately
-            // starts consuming subsequent adjacent string literals, appending their
-            // content in a single pass. This is more efficient than the previous
-            // method of collecting tokens into a vector and iterating over it multiple
-            // times.
+            // This implementation avoids repeated reallocations when concatenating
+            // adjacent string literals. It performs a quick scan to calculate the
+            // total required size, allocates a single buffer with the exact capacity,
+            // and then appends the content of each literal. This reduces allocations
+            // from N to 1 in the case of concatenated strings, which is a significant
+            // performance win.
             if let PPTokenKind::StringLiteral(symbol) = pptoken.kind {
                 let start_location = pptoken.location;
                 let mut end_location = SourceLoc::new(
@@ -542,14 +542,30 @@ impl<'src> Lexer<'src> {
                     pptoken.location.offset() + pptoken.length as u32,
                 );
 
-                // Initialize content with the first string literal's content
-                let mut content = Self::extract_string_content(&symbol).unwrap_or("").to_string();
+                // --- Phase 1: Calculate total size ---
+                let mut total_size = Self::extract_string_content(&symbol).unwrap_or("").len();
+                let mut adjacent_literals = 0;
 
-                // Peek ahead and consume all adjacent string literals
-                while let Some(next_pptoken) = current_token_iter.peek() {
+                let next_token_idx = self.tokens.len() - current_token_iter.len();
+
+                // Peek ahead to find all adjacent string literals and sum their sizes.
+                while let Some(next_pptoken) = self.tokens.get(next_token_idx + adjacent_literals) {
                     if let PPTokenKind::StringLiteral(next_symbol) = next_pptoken.kind {
-                        // It's a string literal, so consume it
-                        let consumed_pptoken = current_token_iter.next().unwrap();
+                        total_size += Self::extract_string_content(&next_symbol).unwrap_or("").len();
+                        adjacent_literals += 1;
+                    } else {
+                        break;
+                    }
+                }
+
+                // --- Phase 2: Allocate and append ---
+                let mut content = String::with_capacity(total_size);
+                content.push_str(Self::extract_string_content(&symbol).unwrap_or(""));
+
+                // Consume and append the adjacent literals found in phase 1.
+                for _ in 0..adjacent_literals {
+                    let consumed_pptoken = current_token_iter.next().unwrap();
+                    if let PPTokenKind::StringLiteral(next_symbol) = consumed_pptoken.kind {
                         if let Some(s_content) = Self::extract_string_content(&next_symbol) {
                             content.push_str(s_content);
                         }
@@ -557,9 +573,6 @@ impl<'src> Lexer<'src> {
                             consumed_pptoken.location.source_id(),
                             consumed_pptoken.location.offset() + consumed_pptoken.length as u32,
                         );
-                    } else {
-                        // Not a string literal, stop concatenating
-                        break;
                     }
                 }
 

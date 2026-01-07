@@ -136,16 +136,28 @@ impl TypeRegistry {
         self.type_int_unsigned = self.alloc_builtin(TypeKind::Int { is_signed: false });
 
         // 10: Long
-        self.type_long = self.alloc_builtin(TypeKind::Long { is_signed: true, is_long_long: false });
+        self.type_long = self.alloc_builtin(TypeKind::Long {
+            is_signed: true,
+            is_long_long: false,
+        });
 
         // 11: ULong
-        self.type_long_unsigned = self.alloc_builtin(TypeKind::Long { is_signed: false, is_long_long: false });
+        self.type_long_unsigned = self.alloc_builtin(TypeKind::Long {
+            is_signed: false,
+            is_long_long: false,
+        });
 
         // 12: LongLong
-        self.type_long_long = self.alloc_builtin(TypeKind::Long { is_signed: true, is_long_long: true });
+        self.type_long_long = self.alloc_builtin(TypeKind::Long {
+            is_signed: true,
+            is_long_long: true,
+        });
 
         // 13: ULongLong
-        self.type_long_long_unsigned = self.alloc_builtin(TypeKind::Long { is_signed: false, is_long_long: true });
+        self.type_long_long_unsigned = self.alloc_builtin(TypeKind::Long {
+            is_signed: false,
+            is_long_long: true,
+        });
 
         // 14: Float
         self.type_float = self.alloc_builtin(TypeKind::Float);
@@ -304,13 +316,13 @@ impl TypeRegistry {
 
     pub fn array_of(&mut self, elem: TypeRef, size: ArraySizeType) -> TypeRef {
         // Try inline
-        if let ArraySizeType::Constant(len) = size {
-            if len <= 31 {
-                // Check if elem is Simple
-                if elem.pointer_depth() == 0 && elem.array_len().is_none() {
-                    return TypeRef::new(elem.base(), TypeClass::Array, 0, len as u32).unwrap();
-                }
-            }
+        if let ArraySizeType::Constant(len) = size
+            && len <= 31
+            && elem.pointer_depth() == 0
+            && elem.array_len().is_none()
+        {
+            // Check if elem is Simple
+            return TypeRef::new(elem.base(), TypeClass::Array, 0, len as u32).unwrap();
         }
 
         let key = (elem, size.clone());

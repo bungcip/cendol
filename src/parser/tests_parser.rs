@@ -46,11 +46,7 @@ enum ResolvedNodeKind {
     Continue,                               // Continue statement
     Switch(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // Switch statement
     Case(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // Case statement
-    CaseRange(
-        Box<ResolvedNodeKind>,
-        Box<ResolvedNodeKind>,
-        Box<ResolvedNodeKind>,
-    ), // GNU Case range statement
+    CaseRange(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // GNU Case range statement
     Default(Box<ResolvedNodeKind>),         // Default statement
     If(
         Box<ResolvedNodeKind>,
@@ -1835,7 +1831,7 @@ fn test_ambiguous_compound_statement_with_typedef() {
     // Inside the block, `T x;` should be parsed as a declaration.
     let source = "typedef int T; { T x; }";
     let (ast, stmt_result) = setup_source(source, |mut parser| {
-         // Parse the typedef first
+        // Parse the typedef first
         let _ = declarations::parse_declaration(&mut parser).unwrap();
         // Then parse the compound statement
         parse_compound_statement(&mut parser)

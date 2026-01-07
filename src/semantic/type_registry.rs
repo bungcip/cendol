@@ -119,9 +119,21 @@ impl TypeRegistry {
 
     /// Allocate a new canonical type and return its TypeRef.
     fn alloc(&mut self, ty: Type) -> TypeRef {
-        let idx = self.types.len() as u32 + 1;
+        let idx = self.types.len() as u32; // 0-based index
+        // Extract properties for TypeRef encoding
+        let class = ty.kind.to_class();
+        let builtin = ty.kind.to_builtin();
+        let canonical = true; // All types allocated in registry are canonical, unless they are non-canonical aliases (e.g. typedefs, but we resolve typedefs).
+        // Wait, typedefs are resolved in symbol resolver, TypeRegistry stores canonical types mainly.
+        // However, if we support non-canonical types in registry, we might need a flag.
+        // For now, assume true.
+
+        // Create TypeRef first to ensure it's valid
+        let type_ref = TypeRef::new_full(idx, class, builtin, canonical)
+            .expect("Type index overflow or invalid TypeRef construction");
+
         self.types.push(ty);
-        TypeRef::new(idx).unwrap()
+        type_ref
     }
 
     /// Immutable access to a type.
@@ -548,5 +560,6 @@ struct FnSigKey {
 
 fn dummy() -> TypeRef {
     // Temporary placeholder before real initialization
-    TypeRef::new(1).unwrap()
+    // We must use unsafe raw construction because we don't have valid info
+    unsafe { TypeRef::from_raw_unchecked(1) }
 }

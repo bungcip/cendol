@@ -54,16 +54,18 @@ pub(crate) fn lower_struct_members(
                 let type_ref = QualType::new(type_ref.ty(), type_ref.qualifiers() | spec_info.qualifiers);
 
                 // Check if it is a Record type (struct or union)
-                let ty = ctx.registry.get(type_ref.ty());
-                if let TypeKind::Record { tag, .. } = &ty.kind {
-                    // It must have no tag to be an anonymous member
-                    if tag.is_none() {
-                        struct_members.push(StructMember {
-                            name: None,
-                            member_type: type_ref,
-                            bit_field_size: None,
-                            span, // Use the parent span since DeclarationData doesn't have one
-                        });
+                if type_ref.is_record() {
+                    let ty = ctx.registry.get(type_ref.ty());
+                    if let TypeKind::Record { tag, .. } = &ty.kind {
+                        // It must have no tag to be an anonymous member
+                        if tag.is_none() {
+                            struct_members.push(StructMember {
+                                name: None,
+                                member_type: type_ref,
+                                bit_field_size: None,
+                                span, // Use the parent span since DeclarationData doesn't have one
+                            });
+                        }
                     }
                 }
             }

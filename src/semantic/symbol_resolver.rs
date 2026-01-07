@@ -86,39 +86,6 @@ fn apply_parsed_declarator_recursive(
             // Pointer
             // Apply Pointer modifier to the current type first (Top-Down)
             let pointer_type = ctx.registry.pointer_to(current_type);
-            // Qualifiers apply to the pointer itself? No, in C declarators,
-            // * const p -> p is const pointer.
-            // But we are returning the final type.
-            // The qualifiers here are for the POINTER level.
-            // However, apply_parsed_declarator_recursive logic is:
-            // recursively wrap.
-            // If we wrap first: Pointer(current).
-            // Then recursive: apply(Pointer(current), inner).
-            // Result is T_final.
-            // Where do qualifiers go?
-            // If inner is Identifier, it returns Type.
-            // If we have `int * const p`.
-            // Pointer(int). Qualifier `const`.
-            // Helper `apply` should return QualType.
-            // But we pass TypeRef.
-            // If we assume `apply` returns the fully wrapped type.
-            // The `qualifiers` on THIS pointer level should apply to the RESULT of the wrap?
-            // No. `* const p`. `const` applies to `*`.
-            // The resulting type `Pointer` is qualified.
-            // But we pass `TypeRef` to inner.
-            // If we pass `Pointer` (unqualified) to inner.
-            // Inner returns `QualType`.
-            // We need to attach our qualifiers to... what?
-            // Wait. `int * const p`.
-            // Ptr(int).
-            // Inner is `p` (Identifier).
-            // Identifier returns its input type `Ptr(int)` as QualType.
-            // But `p` itself introduces NO qualifiers.
-            // So where do `const` go?
-            // Current typesystem: `QualType` has qualifiers.
-            // If `apply` returns `QualType` for `p`.
-            // We need to ADD `const` to that result?
-            // Yes.
 
             let pointer_qualifiers = qualifiers.unwrap();
 
@@ -1190,16 +1157,20 @@ fn create_semantic_node_data(
     // Check for incomplete array with initializer and deduce size
     // We need to extract info first to avoid borrow conflicts with ctx.registry
     let array_deduction_info = {
-        let ty = ctx.registry.get(final_ty.ty());
-        if let TypeKind::Array {
-            element_type,
-            size: ArraySizeType::Incomplete,
-        } = &ty.kind
-        {
-            Some(*element_type)
-        } else {
-            None
-        }
+         if final_ty.is_array() {
+            let ty = ctx.registry.get(final_ty.ty());
+            if let TypeKind::Array {
+                element_type,
+                size: ArraySizeType::Incomplete,
+            } = &ty.kind
+            {
+                Some(*element_type)
+            } else {
+                None
+            }
+         } else {
+             None
+         }
     };
 
     if let Some(element_type) = array_deduction_info
@@ -1239,15 +1210,20 @@ fn create_semantic_node_data(
 
     if is_function {
         // Extract function type information
-        let type_info = ctx.registry.get(final_ty.ty()).clone();
-        let function_type_ref = if let TypeKind::Function { .. } = &type_info.kind {
-            // Direct function type
-            final_ty.ty()
-        } else if let TypeKind::Pointer { pointee } = &type_info.kind {
+        // Optimization: avoid cloning Type if possible, use TypeRef checks
+        let final_ty_ref = final_ty.ty();
+
+        let function_type_ref = if final_ty_ref.is_function() {
+             final_ty_ref
+        } else if final_ty_ref.is_pointer() {
             // Pointer to function type - get the function type from the pointee
-            let pointee_type = ctx.registry.get(*pointee);
-            if let TypeKind::Function { .. } = &pointee_type.kind {
-                *pointee
+            let pointee_type = match &ctx.registry.get(final_ty_ref).kind {
+                TypeKind::Pointer { pointee } => *pointee,
+                _ => unreachable!(),
+            };
+
+            if pointee_type.is_function() {
+                pointee_type
             } else {
                 // Not a function pointer, treat as variable
                 let var_decl = VarDeclData {
@@ -1274,7 +1250,7 @@ fn create_semantic_node_data(
                 return NodeKind::VarDecl(var_decl);
             }
         } else {
-            // Not a function type, treat as variable
+             // Not a function type, treat as variable
             let var_decl = VarDeclData {
                 name,
                 ty: final_ty,
@@ -1568,6 +1544,7 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
             let function_type_ref = declarator_type.ty();
 
             // Extract parameters from the function type for the symbol entry
+            // This still requires accessing the registry because params are stored in TypeKind::Function
             let parameters = if let TypeKind::Function { parameters, .. } = &ctx.registry.get(function_type_ref).kind {
                 parameters.clone()
             } else {

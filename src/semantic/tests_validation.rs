@@ -27,6 +27,35 @@ fn test_static_assert_pass() {
 }
 
 #[test]
+fn rejects_bitnot_on_non_integer() {
+    let config = CompileConfig::from_virtual_file(
+        r#"
+        int main() {
+            double x = 1.0;
+            ~x;
+            return 0;
+        }
+    "#
+        .to_string(),
+        crate::driver::compiler::CompilePhase::Mir,
+    );
+    let mut driver = CompilerDriver::from_config(config);
+    let result = driver.run_pipeline(crate::driver::compiler::CompilePhase::Mir);
+    assert!(driver.get_diagnostics().iter().any(|d| {
+        if d.level == DiagnosticLevel::Error && d.message.contains("Invalid operand for unary operation: have 'double'")
+        {
+            let (line, col) = driver.source_manager.get_line_column(d.span.start).unwrap();
+            assert_eq!(line, 4);
+            assert_eq!(col, 13);
+            true
+        } else {
+            false
+        }
+    }));
+    assert!(result.is_err());
+}
+
+#[test]
 fn rejects_conflicting_storage_classes() {
     let config = CompileConfig::from_virtual_file(
         r#"

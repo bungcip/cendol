@@ -1,39 +1,8 @@
-use crate::driver::compiler::CompilePhase;
-use crate::driver::{cli::CompileConfig, compiler::CompilerDriver};
+use super::tests_common::setup_mir;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mir_dumper::{MirDumpConfig, MirDumper};
-
-    /// helper function to setup compiler driver with given source code
-    fn setup_mir(source: &str) -> String {
-        let phase = CompilePhase::Mir;
-        let config = CompileConfig::from_virtual_file(source.to_string(), phase);
-        let mut driver = CompilerDriver::from_config(config);
-        let mut out = match driver.run_pipeline(phase) {
-            Ok(out) => out,
-            Err(_) => panic!("failed to run: {:?}", driver.get_diagnostics()),
-        };
-        let first = out.units.first_mut().unwrap();
-        let artifact = first.1;
-
-        // Get the complete semantic analysis output
-        let sema_output = match artifact.sema_output.clone() {
-            Some(sema_output) => sema_output,
-            None => {
-                let d = driver.get_diagnostics();
-                println!("{:?}", d);
-                panic!("No semantic output available");
-            }
-        };
-
-        // Output MIR dump to string
-        let dump_config = MirDumpConfig { include_header: false };
-        let dumper = MirDumper::new(&sema_output, &dump_config);
-
-        dumper.generate_mir_dump().unwrap()
-    }
 
     #[test]
     fn test_function_redefinition_with_prototype() {

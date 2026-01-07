@@ -1,24 +1,17 @@
+use super::tests_common::setup_lowering;
 use crate::ast::NodeKind;
-use crate::driver::compiler::CompilePhase;
-use crate::driver::{cli::CompileConfig, compiler::CompilerDriver};
+use crate::semantic::{TypeKind, TypeQualifiers};
 
 #[test]
 fn test_record_decl_members_populated() {
-    let source = r#"
+    let (ast, _) = setup_lowering(
+        r#"
         struct Point {
             int x;
             int y;
         };
-    "#;
-
-    // Use SymbolResolver phase to get the AST right after lowering
-    let phase = CompilePhase::SymbolResolver;
-    let config = CompileConfig::from_virtual_file(source.to_string(), phase);
-    let mut driver = CompilerDriver::from_config(config);
-
-    let out = driver.run_pipeline(phase).unwrap();
-    let unit = out.units.values().next().unwrap();
-    let ast = unit.ast.as_ref().unwrap();
+    "#,
+    );
 
     // Find the RecordDecl node
     let mut found_record_decl = false;
@@ -44,22 +37,15 @@ fn test_record_decl_members_populated() {
 
 #[test]
 fn test_enum_decl_members_populated() {
-    let source = r#"
+    let (ast, _) = setup_lowering(
+        r#"
         enum Color {
             RED,
             GREEN,
             BLUE
         };
-    "#;
-
-    // Use SymbolResolver phase to get the AST right after lowering
-    let phase = CompilePhase::SymbolResolver;
-    let config = CompileConfig::from_virtual_file(source.to_string(), phase);
-    let mut driver = CompilerDriver::from_config(config);
-
-    let out = driver.run_pipeline(phase).unwrap();
-    let unit = out.units.values().next().unwrap();
-    let ast = unit.ast.as_ref().unwrap();
+    "#,
+    );
 
     // Find the EnumDecl node
     let mut found_enum_decl = false;
@@ -91,29 +77,21 @@ fn test_enum_decl_members_populated() {
 
 #[test]
 fn test_struct_member_qualifiers_preserved() {
-    // This test demonstrates that qualifiers on struct members are preserved.
-    use crate::semantic::{TypeKind, TypeQualifiers};
-
-    let source = r#"
+    let (ast, registry) = setup_lowering(
+        r#"
         struct S {
             const int x;
             volatile int *y;
         };
-    "#;
-
-    let phase = CompilePhase::SymbolResolver;
-    let config = CompileConfig::from_virtual_file(source.to_string(), phase);
-    let mut driver = CompilerDriver::from_config(config);
-
-    let out = driver.run_pipeline(phase).unwrap();
-    let unit = out.units.values().next().unwrap();
-    let ast = unit.ast.as_ref().unwrap();
-    let registry = unit.type_registry.as_ref().unwrap();
+    "#,
+    );
 
     // Find RecordDecl
+    let mut found = false;
     for node in &ast.nodes {
         if let NodeKind::RecordDecl(decl) = &node.kind {
             if decl.name.map(|n| n.as_str()) == Some("S") {
+                found = true;
                 let members = &decl.members;
                 assert_eq!(members.len(), 2);
 
@@ -128,7 +106,6 @@ fn test_struct_member_qualifiers_preserved() {
 
                     let y_mem = &members[1];
                     // 'y' is volatile pointer to int.
-                    // My fix makes it `volatile pointer`.
                     assert!(
                         y_mem.member_type.qualifiers().contains(TypeQualifiers::VOLATILE),
                         "Struct member 'y' should be volatile, but has qualifiers: {:?}",
@@ -138,4 +115,5 @@ fn test_struct_member_qualifiers_preserved() {
             }
         }
     }
+    assert!(found, "Did not find RecordDecl for 'S'");
 }

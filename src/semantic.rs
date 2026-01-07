@@ -22,7 +22,11 @@ pub mod type_registry;
 pub mod types;
 
 #[cfg(test)]
+mod tests_common;
+
+#[cfg(test)]
 mod tests_array_init_bug;
+
 #[cfg(test)]
 mod tests_generic;
 #[cfg(test)]

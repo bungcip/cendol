@@ -4,14 +4,13 @@
 //! It verifies that the type resolver correctly determines the type of a
 //! _Generic expression based on the type of its controlling expression.
 
-use crate::driver::{
-    cli::CompileConfig,
-    compiler::{CompilePhase, CompilerDriver},
-};
+use super::tests_common::{run_fail, run_pass};
+use crate::driver::compiler::CompilePhase;
 
 #[test]
 fn test_generic_selection_correct_type_is_chosen() {
-    let source = r#"
+    run_pass(
+        r#"
     struct A { int a_field; };
     struct B { int b_field; };
     int main() {
@@ -24,50 +23,39 @@ fn test_generic_selection_correct_type_is_chosen() {
         int val = (_Generic(x, int: my_b_instance, long: my_a_instance, default: my_b_instance)).a_field;
         return 0;
     }
-    "#;
-
-    let phase = CompilePhase::Mir;
-    let config = CompileConfig::from_virtual_file(source.to_string(), phase);
-    let mut driver = CompilerDriver::from_config(config);
-
-    // This should now succeed without errors.
-    driver.run_pipeline(phase).expect("Compilation failed unexpectedly");
+    "#,
+        CompilePhase::Mir,
+    );
 }
 
 #[test]
 fn test_generic_selection_with_user_defined_type() {
-    let source = r#"
+    run_pass(
+        r#"
     struct MyStruct { int x; };
     int main() {
         struct MyStruct s;
         _Generic(s, struct MyStruct: 1, default: 0);
         return 0;
     }
-    "#;
-
-    let phase = CompilePhase::Mir;
-    let config = CompileConfig::from_virtual_file(source.to_string(), phase);
-    let mut driver = CompilerDriver::from_config(config);
-    driver.run_pipeline(phase).expect("Compilation failed unexpectedly");
+    "#,
+        CompilePhase::Mir,
+    );
 }
 
 #[test]
 fn test_generic_selection_invalid_type_name() {
-    let source = r#"
+    let driver = run_fail(
+        r#"
     int main() {
         int x = 0;
         // 'NotARealType' is not a valid type.
         _Generic(x, int: 1, NotARealType: 2, default: 3);
         return 0;
     }
-    "#;
-
-    let phase = CompilePhase::Mir;
-    let config = CompileConfig::from_virtual_file(source.to_string(), phase);
-    let mut driver = CompilerDriver::from_config(config);
-    let result = driver.run_pipeline(phase);
-
-    assert!(result.is_err(), "Compilation should have failed");
+    "#,
+        CompilePhase::Mir,
+    );
 
     let diags = driver.get_diagnostics();
     assert!(!diags.is_empty(), "Expected at least one diagnostic");
@@ -75,20 +63,16 @@ fn test_generic_selection_invalid_type_name() {
 
 #[test]
 fn test_generic_selection_no_match() {
-    let source = r#"
+    let driver = run_fail(
+        r#"
     int main() {
         float f = 0.0;
         _Generic(f, int: 1, long: 2);
         return 0;
     }
-    "#;
-
-    let phase = CompilePhase::Mir;
-    let config = CompileConfig::from_virtual_file(source.to_string(), phase);
-    let mut driver = CompilerDriver::from_config(config);
-    let result = driver.run_pipeline(phase);
-
-    assert!(result.is_err(), "Compilation should have failed");
+    "#,
+        CompilePhase::Mir,
+    );
 
     let diags = driver.get_diagnostics();
     assert_eq!(diags.len(), 1);
@@ -101,7 +85,8 @@ fn test_generic_selection_no_match() {
 
 #[test]
 fn test_generic_selection_strips_qualifiers_and_handles_default_correctly() {
-    let source = r#"
+    run_pass(
+        r#"
     struct A { int a; };
     struct B { int b; };
     int main() {
@@ -115,12 +100,7 @@ fn test_generic_selection_strips_qualifiers_and_handles_default_correctly() {
         int val = (_Generic(x, default: my_b, int: my_a)).a;
         return 0;
     }
-    "#;
-
-    let phase = CompilePhase::Mir;
-    let config = CompileConfig::from_virtual_file(source.to_string(), phase);
-    let mut driver = CompilerDriver::from_config(config);
-
-    // This should now succeed. If it fails, it means the qualifier stripping and default handling are incorrect.
-    driver.run_pipeline(phase).expect("Compilation failed unexpectedly");
+    "#,
+        CompilePhase::Mir,
+    );
 }

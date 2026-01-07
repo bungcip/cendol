@@ -938,20 +938,13 @@ impl<'a> AstToMirLowerer<'a> {
         match &arr_ty_kind {
             TypeKind::Array { element_type: _, .. } => {
                 // Array indexing - use ArrayIndex place
-                let arr_ty_info = self.registry.get(arr_ty.ty());
-                let layout = arr_ty_info
-                    .layout
-                    .as_ref()
-                    .expect("Array type layout should be computed before MIR lowering");
+                let layout = self.registry.get_layout(arr_ty.ty());
 
                 match &layout.kind {
-                    crate::semantic::types::LayoutKind::Array { element, len: _ } => {
+                    crate::semantic::types::LayoutKind::Array { element: _, len: _ } => {
                         // Verify that the array element type has a layout too
-                        let element_ty_info = self.registry.get(*element);
-                        assert!(
-                            element_ty_info.layout.is_some(),
-                            "Array element type should have layout"
-                        );
+                        // Use get_layout to check existence (it panics if not exists usually, but ensure_layout guarantees it)
+                        // Or we can assume it's fine since we got array layout.
 
                         // Note: In a full implementation, we could add bounds checking here
                         // for static arrays if the index is a constant

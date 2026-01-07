@@ -20,7 +20,6 @@ pub mod symbol_resolver;
 pub mod symbol_table;
 pub mod type_registry;
 pub mod types;
-pub mod utils;
 
 #[cfg(test)]
 mod tests_array_init_bug;

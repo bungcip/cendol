@@ -5,7 +5,6 @@ use crate::{
         ArraySizeType, ImplicitConversion, QualType, SemanticInfo, SymbolKind, SymbolTable, TypeKind, TypeRegistry,
         ValueCategory,
         conversions::{integer_promotion, usual_arithmetic_conversions},
-        utils::{is_integer_type, is_scalar_type},
     },
 };
 
@@ -74,7 +73,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn check_scalar_condition(&mut self, condition: NodeRef) {
         if let Some(cond_ty) = self.visit_node(condition)
-            && !is_scalar_type(cond_ty, self.registry)
+            && !cond_ty.is_scalar()
         {
             // report error
         }
@@ -155,14 +154,10 @@ impl<'a> SemanticAnalyzer<'a> {
                 if !self.is_lvalue(operand_ref) {
                     self.report_error(SemanticError::NotAnLvalue { span: full_span });
                 }
-                if is_scalar_type(operand_ty, self.registry) {
-                    Some(operand_ty)
-                } else {
-                    None
-                }
+                if operand_ty.is_scalar() { Some(operand_ty) } else { None }
             }
             UnaryOp::Plus | UnaryOp::Minus => {
-                if is_scalar_type(operand_ty, self.registry) {
+                if operand_ty.is_scalar() {
                     // Strip all qualifiers for unary plus/minus operations
                     let stripped = self.registry.strip_all(operand_ty);
                     if stripped.qualifiers() != operand_ty.qualifiers() {
@@ -182,7 +177,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(QualType::unqualified(self.registry.type_bool))
             }
             UnaryOp::BitNot => {
-                if is_integer_type(operand_ty, self.registry) {
+                if operand_ty.is_integer() {
                     Some(self.apply_and_record_integer_promotion(operand_ref, operand_ty))
                 } else {
                     // TODO: Report error for invalid operand type

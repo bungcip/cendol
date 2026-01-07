@@ -167,20 +167,28 @@ impl TypeRef {
         // Validate combinations
         match class {
             TypeClass::Builtin => {
-                if ptr_depth != 0 || arr_len != 0 { return None; }
+                if ptr_depth != 0 || arr_len != 0 {
+                    return None;
+                }
             }
             TypeClass::Pointer => {
-                if arr_len != 0 { return None; }
+                if arr_len != 0 {
+                    return None;
+                }
                 // Pointer depth 0 means "Registry Pointer" (valid)
                 // Pointer depth 1..3 means "Inline Pointer" (valid)
             }
             TypeClass::Array => {
                 // Array len 0 means "Registry Array" (valid)
                 // Array len 1..31 means "Inline Array" (valid)
-                if ptr_depth != 0 { return None; }
+                if ptr_depth != 0 {
+                    return None;
+                }
             }
             TypeClass::Function | TypeClass::Record | TypeClass::Enum | TypeClass::Typedef => {
-                if ptr_depth != 0 || arr_len != 0 { return None; }
+                if ptr_depth != 0 || arr_len != 0 {
+                    return None;
+                }
             }
         }
 
@@ -282,7 +290,7 @@ impl TypeRef {
     #[inline]
     pub fn builtin(self) -> Option<BuiltinType> {
         if self.is_builtin() {
-             BuiltinType::from_u32(self.base())
+            BuiltinType::from_u32(self.base())
         } else {
             None
         }
@@ -341,13 +349,13 @@ impl TypeRef {
 
     #[inline]
     pub fn is_complex(self) -> bool {
-         // Complex is handled as a separate kind in Registry now, likely Record or custom logic.
-         // Or if TypeClass::Complex existed. User removed TypeClass::Complex.
-         // We assume it's handled via TypeKind::Complex in registry.
-         // So if class == Builtin/Pointer/Array etc it's not complex (unless Complex is Builtin).
-         // If stored in registry, we can't know without looking up.
-         // For now, return false. This might need fix if is_complex is critical without lookup.
-         false
+        // Complex is handled as a separate kind in Registry now, likely Record or custom logic.
+        // Or if TypeClass::Complex existed. User removed TypeClass::Complex.
+        // We assume it's handled via TypeKind::Complex in registry.
+        // So if class == Builtin/Pointer/Array etc it's not complex (unless Complex is Builtin).
+        // If stored in registry, we can't know without looking up.
+        // For now, return false. This might need fix if is_complex is critical without lookup.
+        false
     }
 
     #[inline]
@@ -359,9 +367,9 @@ impl TypeRef {
 impl Display for TypeRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.is_builtin() {
-             write!(f, "{:?}", self.builtin().unwrap())
+            write!(f, "{:?}", self.builtin().unwrap())
         } else {
-             write!(
+            write!(
                 f,
                 "TypeRef(base={}, class={:?}, ptr={}, arr={:?})",
                 self.base(),
@@ -594,17 +602,36 @@ impl TypeKind {
             TypeKind::Void => "void".to_string(),
             TypeKind::Bool => "_Bool".to_string(),
             TypeKind::Char { is_signed } => {
-                if *is_signed { "char".to_string() } else { "unsigned char".to_string() }
+                if *is_signed {
+                    "char".to_string()
+                } else {
+                    "unsigned char".to_string()
+                }
             }
             TypeKind::Short { is_signed } => {
-                if *is_signed { "short".to_string() } else { "unsigned short".to_string() }
+                if *is_signed {
+                    "short".to_string()
+                } else {
+                    "unsigned short".to_string()
+                }
             }
             TypeKind::Int { is_signed } => {
-                if *is_signed { "int".to_string() } else { "unsigned int".to_string() }
+                if *is_signed {
+                    "int".to_string()
+                } else {
+                    "unsigned int".to_string()
+                }
             }
-            TypeKind::Long { is_signed, is_long_long } => {
+            TypeKind::Long {
+                is_signed,
+                is_long_long,
+            } => {
                 if *is_long_long {
-                    if *is_signed { "long long".to_string() } else { "unsigned long long".to_string() }
+                    if *is_signed {
+                        "long long".to_string()
+                    } else {
+                        "unsigned long long".to_string()
+                    }
                 } else if *is_signed {
                     "long".to_string()
                 } else {
@@ -613,7 +640,11 @@ impl TypeKind {
             }
             TypeKind::Float => "float".to_string(),
             TypeKind::Double { is_long_double } => {
-                if *is_long_double { "long double".to_string() } else { "double".to_string() }
+                if *is_long_double {
+                    "long double".to_string()
+                } else {
+                    "double".to_string()
+                }
             }
             TypeKind::Complex { .. } => "_Complex".to_string(),
             TypeKind::Pointer { .. } => "<pointer>".to_string(),

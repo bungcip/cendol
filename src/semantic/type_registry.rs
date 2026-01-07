@@ -9,11 +9,10 @@ use crate::source_manager::SourceSpan;
 use crate::{ast::NameId, diagnostic::SemanticError, semantic::QualType};
 use hashbrown::{HashMap, HashSet};
 
-use super::types::{FieldLayout, LayoutKind};
 use super::types::TypeClass;
+use super::types::{FieldLayout, LayoutKind};
 use super::{
-    ArraySizeType, EnumConstant, FunctionParameter, StructMember, Type,
-    TypeKind, TypeLayout, TypeQualifiers, TypeRef,
+    ArraySizeType, EnumConstant, FunctionParameter, StructMember, Type, TypeKind, TypeLayout, TypeQualifiers, TypeRef,
 };
 
 /// Central arena & factory for semantic types.
@@ -161,8 +160,8 @@ impl TypeRegistry {
     }
 
     fn alloc_builtin(&mut self, kind: TypeKind) -> TypeRef {
-         let ty = Type::new(kind);
-         self.alloc_internal(ty)
+        let ty = Type::new(kind);
+        self.alloc_internal(ty)
     }
 
     /// Internal allocation without checks
@@ -308,7 +307,7 @@ impl TypeRegistry {
             if len <= 31 {
                 // Check if elem is Simple
                 if elem.pointer_depth() == 0 && elem.array_len().is_none() {
-                     return TypeRef::new(elem.base(), TypeClass::Array, 0, len as u32).unwrap();
+                    return TypeRef::new(elem.base(), TypeClass::Array, 0, len as u32).unwrap();
                 }
             }
         }
@@ -426,7 +425,9 @@ impl TypeRegistry {
 
         if ty.is_inline_pointer() {
             return Cow::Owned(TypeLayout {
-                size: 8, alignment: 8, kind: LayoutKind::Scalar
+                size: 8,
+                alignment: 8,
+                kind: LayoutKind::Scalar,
             });
         }
 
@@ -439,10 +440,10 @@ impl TypeRegistry {
             let elem = self.reconstruct_element(ty);
             let elem_layout = self.get_layout(elem);
             let len = ty.array_len().unwrap() as u64;
-             return Cow::Owned(TypeLayout {
+            return Cow::Owned(TypeLayout {
                 size: elem_layout.size * (len as u16), // Potential overflow if not careful, but C rules apply
                 alignment: elem_layout.alignment,
-                kind: LayoutKind::Array { element: elem, len }
+                kind: LayoutKind::Array { element: elem, len },
             });
         }
 
@@ -471,22 +472,24 @@ impl TypeRegistry {
 
     pub fn ensure_layout(&mut self, ty: TypeRef) -> Result<Cow<'_, TypeLayout>, SemanticError> {
         if ty.is_inline_pointer() {
-             return Ok(Cow::Owned(TypeLayout {
-                size: 8, alignment: 8, kind: LayoutKind::Scalar
+            return Ok(Cow::Owned(TypeLayout {
+                size: 8,
+                alignment: 8,
+                kind: LayoutKind::Scalar,
             }));
         }
 
         if ty.is_inline_array() {
-             // Recursive check
-             let elem = self.reconstruct_element(ty);
-             let elem_layout = self.ensure_layout(elem)?; // returns Cow
-             let len = ty.array_len().unwrap() as u64;
-             let size = (elem_layout.size as u64 * len) as u16;
+            // Recursive check
+            let elem = self.reconstruct_element(ty);
+            let elem_layout = self.ensure_layout(elem)?; // returns Cow
+            let len = ty.array_len().unwrap() as u64;
+            let size = (elem_layout.size as u64 * len) as u16;
 
-             return Ok(Cow::Owned(TypeLayout {
+            return Ok(Cow::Owned(TypeLayout {
                 size,
                 alignment: elem_layout.alignment,
-                kind: LayoutKind::Array { element: elem, len }
+                kind: LayoutKind::Array { element: elem, len },
             }));
         }
 
@@ -497,7 +500,7 @@ impl TypeRegistry {
             // However, the borrow checker might complain if we return borrow derived from self
             // while we hold mut ref? No, standard borrow rules apply.
             // We can return reference to self.types[idx].layout
-             return Ok(Cow::Borrowed(self.types[idx].layout.as_ref().unwrap()));
+            return Ok(Cow::Borrowed(self.types[idx].layout.as_ref().unwrap()));
         }
 
         let layout = self.compute_layout(ty)?;
@@ -517,14 +520,38 @@ impl TypeRegistry {
         self.layout_in_progress.insert(ty);
 
         let layout = match type_kind {
-            TypeKind::Void => TypeLayout { size: 0, alignment: 1, kind: LayoutKind::Scalar },
-            TypeKind::Bool | TypeKind::Char { .. } => TypeLayout { size: 1, alignment: 1, kind: LayoutKind::Scalar },
-            TypeKind::Short { .. } => TypeLayout { size: 2, alignment: 2, kind: LayoutKind::Scalar },
-            TypeKind::Int { .. } | TypeKind::Float => TypeLayout { size: 4, alignment: 4, kind: LayoutKind::Scalar },
-            TypeKind::Long { .. } | TypeKind::Double { is_long_double: false } | TypeKind::Pointer { .. } =>
-                TypeLayout { size: 8, alignment: 8, kind: LayoutKind::Scalar },
-            TypeKind::Double { is_long_double: true } =>
-                TypeLayout { size: 16, alignment: 16, kind: LayoutKind::Scalar },
+            TypeKind::Void => TypeLayout {
+                size: 0,
+                alignment: 1,
+                kind: LayoutKind::Scalar,
+            },
+            TypeKind::Bool | TypeKind::Char { .. } => TypeLayout {
+                size: 1,
+                alignment: 1,
+                kind: LayoutKind::Scalar,
+            },
+            TypeKind::Short { .. } => TypeLayout {
+                size: 2,
+                alignment: 2,
+                kind: LayoutKind::Scalar,
+            },
+            TypeKind::Int { .. } | TypeKind::Float => TypeLayout {
+                size: 4,
+                alignment: 4,
+                kind: LayoutKind::Scalar,
+            },
+            TypeKind::Long { .. } | TypeKind::Double { is_long_double: false } | TypeKind::Pointer { .. } => {
+                TypeLayout {
+                    size: 8,
+                    alignment: 8,
+                    kind: LayoutKind::Scalar,
+                }
+            }
+            TypeKind::Double { is_long_double: true } => TypeLayout {
+                size: 16,
+                alignment: 16,
+                kind: LayoutKind::Scalar,
+            },
 
             TypeKind::Complex { base_type } => {
                 let base_layout = self.ensure_layout(base_type)?;
@@ -548,15 +575,26 @@ impl TypeRegistry {
                         },
                     }
                 }
-                _ => return Err(SemanticError::UnsupportedFeature {
+                _ => {
+                    return Err(SemanticError::UnsupportedFeature {
                         feature: "incomplete/VLA array layout".to_string(),
                         span: SourceSpan::dummy(),
-                    }),
+                    });
+                }
             },
 
-            TypeKind::Function { .. } => TypeLayout { size: 0, alignment: 1, kind: LayoutKind::Scalar },
+            TypeKind::Function { .. } => TypeLayout {
+                size: 0,
+                alignment: 1,
+                kind: LayoutKind::Scalar,
+            },
 
-            TypeKind::Record { members, is_complete, is_union, .. } => {
+            TypeKind::Record {
+                members,
+                is_complete,
+                is_union,
+                ..
+            } => {
                 if !is_complete {
                     return Err(SemanticError::UnsupportedFeature {
                         feature: "incomplete record type layout".to_string(),
@@ -566,7 +604,9 @@ impl TypeRegistry {
                 self.compute_record_layout(&members, is_union)?
             }
 
-            TypeKind::Enum { base_type, is_complete, .. } => {
+            TypeKind::Enum {
+                base_type, is_complete, ..
+            } => {
                 if !is_complete {
                     return Err(SemanticError::UnsupportedFeature {
                         feature: "incomplete enum type layout".to_string(),
@@ -576,10 +616,12 @@ impl TypeRegistry {
                 self.ensure_layout(base_type)?.into_owned()
             }
 
-            TypeKind::Error => return Err(SemanticError::UnsupportedFeature {
+            TypeKind::Error => {
+                return Err(SemanticError::UnsupportedFeature {
                     feature: "error layout".to_string(),
                     span: SourceSpan::dummy(),
-                }),
+                });
+            }
         };
 
         self.layout_in_progress.remove(&ty);

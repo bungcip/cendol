@@ -1,7 +1,6 @@
-
+use super::ArraySizeType;
 use super::type_registry::TypeRegistry;
 use super::types::{TypeClass, TypeRef};
-use super::ArraySizeType;
 
 #[test]
 fn test_typeref_encoding_primitive() {

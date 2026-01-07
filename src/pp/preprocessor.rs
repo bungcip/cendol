@@ -1406,6 +1406,16 @@ impl<'src> Preprocessor<'src> {
                         PPError::FileNotFound
                     })?
                 } else {
+                    // Emit diagnostic for file not found
+                    let diag = Diagnostic {
+                        level: DiagnosticLevel::Error,
+                        message: format!("Include file '{}' not found", path_str),
+                        span: SourceSpan::new(token.location, token.location),
+                        code: Some("include_file_not_found".to_string()),
+                        hints: vec!["Check the include path and ensure the file exists".to_string()],
+                        related: Vec::new(),
+                    };
+                    self.diag.report_diagnostic(diag);
                     return Err(PPError::FileNotFound);
                 }
             }
@@ -1421,12 +1431,32 @@ impl<'src> Preprocessor<'src> {
             };
 
             if let Some(resolved_path) = resolved_path {
-                self.source_manager
-                    .add_file_from_path(&resolved_path)
-                    .map_err(|_| PPError::FileNotFound)?
+                self.source_manager.add_file_from_path(&resolved_path).map_err(|_| {
+                    // Emit diagnostic for file not found
+                    let diag = Diagnostic {
+                        level: DiagnosticLevel::Error,
+                        message: format!("Include file '{}' not found", path_str),
+                        span: SourceSpan::new(token.location, token.location),
+                        code: Some("include_file_not_found".to_string()),
+                        hints: vec!["Check the include path and ensure the file exists".to_string()],
+                        related: Vec::new(),
+                    };
+                    self.diag.report_diagnostic(diag);
+                    PPError::FileNotFound
+                })?
             } else if let Some(file_id) = self.source_manager.get_file_id(&path_str) {
                 file_id
             } else {
+                // Emit diagnostic for file not found
+                let diag = Diagnostic {
+                    level: DiagnosticLevel::Error,
+                    message: format!("Include file '{}' not found", path_str),
+                    span: SourceSpan::new(token.location, token.location),
+                    code: Some("include_file_not_found".to_string()),
+                    hints: vec!["Check the include path and ensure the file exists".to_string()],
+                    related: Vec::new(),
+                };
+                self.diag.report_diagnostic(diag);
                 return Err(PPError::FileNotFound);
             }
         };
@@ -2348,6 +2378,31 @@ impl<'src> Preprocessor<'src> {
                     );
                     tokens[i] = string_token;
                     i += 1;
+                    continue;
+                }
+                PPTokenKind::Identifier(symbol) if symbol == &self.directive_keywords.defined => {
+                    // Skip 'defined'
+                    i += 1;
+                    // Skip the next token(s) which is the macro name, possibly in parens
+                    if i < tokens.len() {
+                        if tokens[i].kind == PPTokenKind::LeftParen {
+                            // defined(MACRO)
+                            // Skip until matching RightParen
+                            let mut depth = 1;
+                            i += 1;
+                            while i < tokens.len() && depth > 0 {
+                                match tokens[i].kind {
+                                    PPTokenKind::LeftParen => depth += 1,
+                                    PPTokenKind::RightParen => depth -= 1,
+                                    _ => {}
+                                }
+                                i += 1;
+                            }
+                        } else {
+                            // defined MACRO
+                            i += 1;
+                        }
+                    }
                     continue;
                 }
                 _ => {}

@@ -46,6 +46,11 @@ enum ResolvedNodeKind {
     Continue,                               // Continue statement
     Switch(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // Switch statement
     Case(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // Case statement
+    CaseRange(
+        Box<ResolvedNodeKind>,
+        Box<ResolvedNodeKind>,
+        Box<ResolvedNodeKind>,
+    ), // GNU Case range statement
     Default(Box<ResolvedNodeKind>),         // Default statement
     If(
         Box<ResolvedNodeKind>,
@@ -155,6 +160,7 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
                         TypeSpecifier::Signed => "signed".to_string(),
                         TypeSpecifier::Unsigned => "unsigned".to_string(),
                         TypeSpecifier::Complex => "_Complex".to_string(),
+                        TypeSpecifier::TypedefName(name) => format!("TypedefName({:?})", name.to_string()),
                         TypeSpecifier::Enum(tag, enumerators) => {
                             let tag_str = tag.as_ref().map(|s| s.as_str()).unwrap_or("");
                             if let Some(enums) = enumerators {
@@ -268,6 +274,11 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
         ),
         NodeKind::Case(expr, statement) => ResolvedNodeKind::Case(
             Box::new(resolve_node(ast, *expr)),
+            Box::new(resolve_node(ast, *statement)),
+        ),
+        NodeKind::CaseRange(start, end, statement) => ResolvedNodeKind::CaseRange(
+            Box::new(resolve_node(ast, *start)),
+            Box::new(resolve_node(ast, *end)),
             Box::new(resolve_node(ast, *statement)),
         ),
         NodeKind::Default(statement) => ResolvedNodeKind::Default(Box::new(resolve_node(ast, *statement))),
@@ -1783,4 +1794,64 @@ fn test_multiple_statements_with_labels() {
       - Return:
           LiteralInt: 1
     ");
+}
+
+#[test]
+fn test_case_range_statement() {
+    let resolved = setup_statement("case 1 ... 10: x = 1;");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    CaseRange:
+      - LiteralInt: 1
+      - LiteralInt: 10
+      - ExpressionStatement:
+          Assignment:
+            - Assign
+            - Ident: x
+            - LiteralInt: 1
+    ");
+}
+
+#[test]
+fn test_ambiguous_compound_statement() {
+    // This looks like it could be a declaration `T x;` if T is a typedef,
+    // or a multiplication `T * x;` if T is an identifier.
+    // However, since T is not defined as a typedef, it should be parsed as an expression statement.
+    // The `parse_compound_statement` logic tries declaration first, fails, then tries statement.
+    let source = "T * x;";
+    let resolved = setup_compound(source);
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    CompoundStatement:
+      - ExpressionStatement:
+          BinaryOp:
+            - Mul
+            - Ident: T
+            - Ident: x
+    ");
+}
+
+#[test]
+fn test_ambiguous_compound_statement_with_typedef() {
+    // Here we define T as a typedef.
+    // Inside the block, `T x;` should be parsed as a declaration.
+    let source = "typedef int T; { T x; }";
+    let (ast, stmt_result) = setup_source(source, |mut parser| {
+         // Parse the typedef first
+        let _ = declarations::parse_declaration(&mut parser).unwrap();
+        // Then parse the compound statement
+        parse_compound_statement(&mut parser)
+    });
+
+    let resolved = match stmt_result {
+        Ok((node_ref, _)) => resolve_node(&ast, node_ref),
+        _ => panic!("Expected multi statement block"),
+    };
+
+    insta::assert_yaml_snapshot!(&resolved, @r#"
+    CompoundStatement:
+      - Declaration:
+          specifiers:
+            - "TypedefName(\"T\")"
+          init_declarators:
+            - name: x
+    "#);
 }

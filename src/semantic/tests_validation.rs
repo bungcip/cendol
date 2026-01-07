@@ -42,7 +42,8 @@ fn rejects_bitnot_on_non_integer() {
     let mut driver = CompilerDriver::from_config(config);
     let result = driver.run_pipeline(crate::driver::compiler::CompilePhase::Mir);
     assert!(driver.get_diagnostics().iter().any(|d| {
-        if d.level == DiagnosticLevel::Error && d.message.contains("Invalid operand for unary operation: have 'double'") {
+        if d.level == DiagnosticLevel::Error && d.message.contains("Invalid operand for unary operation: have 'double'")
+        {
             let (line, col) = driver.source_manager.get_line_column(d.span.start).unwrap();
             assert_eq!(line, 4);
             assert_eq!(col, 13);

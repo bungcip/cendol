@@ -48,17 +48,6 @@ pub enum ParseError {
     InfiniteLoop { span: SourceSpan },
 }
 
-impl ParseError {
-    pub fn span(&self) -> SourceSpan {
-        match self {
-            ParseError::UnexpectedToken { span, .. } => *span,
-            ParseError::UnexpectedEof { span } => *span,
-            ParseError::InvalidUnaryOperator { span } => *span,
-            ParseError::DeclarationNotAllowed { span } => *span,
-            ParseError::InfiniteLoop { span } => *span,
-        }
-    }
-}
 /// Diagnostic engine for collecting and reporting semantic errors and warnings
 pub struct DiagnosticEngine {
     pub diagnostics: Vec<Diagnostic>,
@@ -139,10 +128,17 @@ pub trait IntoDiagnostic {
 
 impl IntoDiagnostic for ParseError {
     fn into_diagnostic(self) -> Vec<Diagnostic> {
+        let span = match &self {
+            ParseError::UnexpectedToken { span, .. } => *span,
+            ParseError::UnexpectedEof { span } => *span,
+            ParseError::InvalidUnaryOperator { span } => *span,
+            ParseError::DeclarationNotAllowed { span } => *span,
+            ParseError::InfiniteLoop { span } => *span,
+        };
         vec![Diagnostic {
             level: DiagnosticLevel::Error,
             message: self.to_string(),
-            span: self.span(),
+            span,
             ..Default::default()
         }]
     }
@@ -150,10 +146,35 @@ impl IntoDiagnostic for ParseError {
 
 impl IntoDiagnostic for SemanticError {
     fn into_diagnostic(self) -> Vec<Diagnostic> {
+        let span = match &self {
+            SemanticError::UndeclaredIdentifier { span, .. } => *span,
+            SemanticError::Redefinition { span, .. } => *span,
+            SemanticError::TypeMismatch { span, .. } => *span,
+            SemanticError::NotAnLvalue { span } => *span,
+            SemanticError::InvalidBinaryOperands { span, .. } => *span,
+            SemanticError::NonConstantInitializer { span } => *span,
+            SemanticError::InvalidUseOfVoid { span } => *span,
+            SemanticError::UnsupportedFeature { span, .. } => *span,
+            SemanticError::InvalidArraySize { span } => *span,
+            SemanticError::InvalidBitfieldWidth { span } => *span,
+            SemanticError::NonConstantBitfieldWidth { span } => *span,
+            SemanticError::ConflictingStorageClasses { span } => *span,
+            SemanticError::ExpectedTypedefName { span, .. } => *span,
+            SemanticError::MissingTypeSpecifier { span } => *span,
+            SemanticError::StaticAssertFailed { span, .. } => *span,
+            SemanticError::StaticAssertNotConstant { span } => *span,
+            SemanticError::RecursiveType { .. } => {
+                // For recursive types, we don't have a specific span, so use a dummy span
+                SourceSpan::dummy()
+            }
+            SemanticError::GenericNoMatch { span } => *span,
+            SemanticError::InvalidAlignment { span, .. } => *span,
+            SemanticError::NonConstantAlignment { span } => *span,
+        };
         let mut diagnostics = vec![Diagnostic {
             level: DiagnosticLevel::Error,
             message: self.to_string(),
-            span: self.span(),
+            span,
             ..Default::default()
         }];
 
@@ -230,36 +251,6 @@ pub enum SemanticError {
 
     #[error("requested alignment is not a constant expression")]
     NonConstantAlignment { span: SourceSpan },
-}
-
-impl SemanticError {
-    pub fn span(&self) -> SourceSpan {
-        match self {
-            SemanticError::UndeclaredIdentifier { span, .. } => *span,
-            SemanticError::Redefinition { span, .. } => *span,
-            SemanticError::TypeMismatch { span, .. } => *span,
-            SemanticError::NotAnLvalue { span } => *span,
-            SemanticError::InvalidBinaryOperands { span, .. } => *span,
-            SemanticError::NonConstantInitializer { span } => *span,
-            SemanticError::InvalidUseOfVoid { span } => *span,
-            SemanticError::UnsupportedFeature { span, .. } => *span,
-            SemanticError::InvalidArraySize { span } => *span,
-            SemanticError::InvalidBitfieldWidth { span } => *span,
-            SemanticError::NonConstantBitfieldWidth { span } => *span,
-            SemanticError::ConflictingStorageClasses { span } => *span,
-            SemanticError::ExpectedTypedefName { span, .. } => *span,
-            SemanticError::MissingTypeSpecifier { span } => *span,
-            SemanticError::StaticAssertFailed { span, .. } => *span,
-            SemanticError::StaticAssertNotConstant { span } => *span,
-            SemanticError::RecursiveType { .. } => {
-                // For recursive types, we don't have a specific span, so use a dummy span
-                SourceSpan::dummy()
-            }
-            SemanticError::GenericNoMatch { span } => *span,
-            SemanticError::InvalidAlignment { span, .. } => *span,
-            SemanticError::NonConstantAlignment { span } => *span,
-        }
-    }
 }
 
 /// Configurable error formatter using annotate_snippets

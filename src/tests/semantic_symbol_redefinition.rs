@@ -4,6 +4,7 @@ use super::semantic_common::setup_mir;
 mod tests {
     use super::*;
 
+
     #[test]
     fn test_function_redefinition_with_prototype() {
         let source = r#"

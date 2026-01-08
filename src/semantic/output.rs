@@ -18,12 +18,6 @@ pub struct SemaOutput {
     pub statements: HashMap<MirStmtId, MirStmt>,
 }
 
-/// Semantic analysis output with AST for symbol resolver dumping
-#[derive(Clone)]
-pub struct SemaOutputWithAst {
-    pub sema_output: SemaOutput,
-}
-
 impl SemaOutput {
     /// get type or panic if not found
     pub(crate) fn get_type(&self, id: TypeId) -> &MirType {

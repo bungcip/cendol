@@ -10,7 +10,7 @@ use crate::{
 
 /// Run Semantic Analyzer in our AST and return analysist result in SemanticInfo
 /// which contains resolved type, conversion table, and value category
-pub fn run_semantic_analyzer(
+pub(crate) fn run_semantic_analyzer(
     ast: &Ast,
     diag: &mut DiagnosticEngine,
     symbol_table: &SymbolTable,

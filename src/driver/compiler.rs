@@ -18,7 +18,7 @@ use super::artifact::{CompileArtifact, CompilePhase, PipelineOutputs};
 use crate::mir::dumper::{MirDumpConfig, MirDumper};
 use crate::parser::Parser;
 use crate::pp::{PPToken, Preprocessor};
-use crate::semantic::output::{SemaOutput, SemaOutputWithAst};
+use crate::semantic::output::SemaOutput;
 use crate::semantic::{AstToMirLowerer, SymbolTable, TypeRegistry};
 use crate::source_manager::SourceManager;
 
@@ -109,8 +109,7 @@ impl CompilerDriver {
         }
 
         // semantic analyzer & MIR generation phase
-        let sema_output_with_ast = self.run_semantic(ast, symbol_table, registry)?;
-        let sema_output = sema_output_with_ast.sema_output;
+        let sema_output = self.run_semantic(ast, symbol_table, registry)?;
         if stop_after == CompilePhase::Mir {
             out.sema_output = Some(sema_output);
             return Ok(out);
@@ -181,7 +180,6 @@ impl CompilerDriver {
     fn run_symbol_resolver(&mut self, mut ast: Ast) -> Result<(Ast, SymbolTable, TypeRegistry), PipelineError> {
         let mut symbol_table = SymbolTable::new();
         let mut registry = TypeRegistry::new();
-        registry.create_builtin();
 
         use crate::semantic::symbol_resolver::run_symbol_resolver;
         let scope_map = run_symbol_resolver(&mut ast, &mut self.diagnostics, &mut symbol_table, &mut registry);
@@ -226,7 +224,7 @@ impl CompilerDriver {
         mut ast: Ast,
         symbol_table: SymbolTable,
         mut registry: TypeRegistry,
-    ) -> Result<SemaOutputWithAst, PipelineError> {
+    ) -> Result<SemaOutput, PipelineError> {
         /// phase to make sure that NameId in NodeKind::Ident resolved to some Symbol
         use crate::semantic::name_resolver::run_name_resolver;
         run_name_resolver(&ast, &mut self.diagnostics, &symbol_table);
@@ -332,7 +330,7 @@ impl CompilerDriver {
         let sema_output = sema.lower_module_complete();
         self.check_diagnostics_and_return_if_error()?;
 
-        Ok(SemaOutputWithAst { sema_output })
+        Ok(sema_output)
     }
 
     fn run_codegen(&mut self, sema_output: SemaOutput, emit_kind: EmitKind) -> Result<ClifOutput, PipelineError> {

@@ -970,7 +970,7 @@ fn resolve_place_to_addr(
     }
 }
 /// MIR to Cranelift IR Lowerer
-pub struct MirToCraneliftLowerer {
+pub(crate) struct MirToCraneliftLowerer {
     builder_context: FunctionBuilderContext,
     module: ObjectModule,
     mir: SemaOutput, // NOTE: need better nama
@@ -983,7 +983,7 @@ pub struct MirToCraneliftLowerer {
 
 /// NOTE: we use panic!() to ICE because codegen rely on correct MIR, so if we give invalid MIR, then problem is in previous phase
 impl MirToCraneliftLowerer {
-    pub fn new(mir: SemaOutput) -> Self {
+    pub(crate) fn new(mir: SemaOutput) -> Self {
         let triple = Triple::host();
         let builder = ObjectBuilder::new(
             cranelift::prelude::isa::lookup(triple)

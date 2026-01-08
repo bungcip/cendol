@@ -41,16 +41,19 @@ fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
     let node = ctx.ast.get_node(node_ref);
     match &node.kind {
         NodeKind::TranslationUnit(decls) => {
+            let prev_scope = ctx.scope_id;
             ctx.scope_id = ctx.ast.scope_of(node_ref);
             for decl in decls {
                 visit_node(ctx, *decl);
             }
+            ctx.scope_id = prev_scope;
         }
         NodeKind::Function(data) => {
             let FunctionData { body, .. } = data;
             visit_node(ctx, *body);
         }
         NodeKind::CompoundStatement(stmts) => {
+            let prev_scope = ctx.scope_id;
             ctx.scope_id = ctx.ast.scope_of(node_ref);
             let deferred_count = ctx.deferred_static_asserts.len();
             for stmt in stmts {
@@ -64,8 +67,10 @@ fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
                     visit_node(ctx, cond);
                 }
             }
+            ctx.scope_id = prev_scope;
         }
         NodeKind::For(stmt) => {
+            let prev_scope = ctx.scope_id;
             ctx.scope_id = ctx.ast.scope_of(node_ref);
             if let Some(init) = stmt.init {
                 visit_node(ctx, init)
@@ -77,6 +82,7 @@ fn visit_node(ctx: &mut NameResolverCtx, node_ref: NodeRef) {
                 visit_node(ctx, incr);
             }
             visit_node(ctx, stmt.body);
+            ctx.scope_id = prev_scope;
         }
         // Other nodes that might contain statements/declarations
         NodeKind::If(if_stmt) => {

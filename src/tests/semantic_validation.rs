@@ -31,7 +31,7 @@ fn rejects_bitnot_on_non_integer() {
     assert!(driver.get_diagnostics().iter().any(|d| {
         if d.level == DiagnosticLevel::Error && d.message.contains("Invalid operand for unary operation: have 'double'")
         {
-            let (line, col) = driver.source_manager.get_line_column(d.span.start).unwrap();
+            let (line, col) = driver.source_manager.get_line_column(d.span.start()).unwrap();
             assert_eq!(line, 4);
             assert_eq!(col, 13);
             true
@@ -51,7 +51,7 @@ fn rejects_conflicting_storage_classes() {
     );
     assert!(driver.get_diagnostics().iter().any(|d| {
         if d.level == DiagnosticLevel::Error && d.message.contains("conflicting storage class specifiers") {
-            let (line, col) = driver.source_manager.get_line_column(d.span.start).unwrap();
+            let (line, col) = driver.source_manager.get_line_column(d.span.start()).unwrap();
             assert_eq!(line, 2);
             assert_eq!(col, 9);
             true

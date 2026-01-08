@@ -14,18 +14,10 @@ fn test_source_loc_packing() {
 #[test]
 fn test_source_loc_max_offset() {
     let source_id = SourceId::new(1);
-    let max_offset = (1 << 22) - 1; // 4 MiB - 1
+    let max_offset = (1 << 24) - 1; // 16 MiB - 1
     let loc = SourceLoc::new(source_id, max_offset);
 
     assert_eq!(loc.offset(), max_offset);
-}
-
-#[test]
-#[should_panic(expected = "Offset exceeds 4 MiB limit")]
-fn test_source_loc_offset_overflow() {
-    let source_id = SourceId::new(1);
-    let overflow_offset = 1 << 22; // 4 MiB
-    SourceLoc::new(source_id, overflow_offset);
 }
 
 #[test]
@@ -39,30 +31,21 @@ fn test_source_loc_max_file_id() {
 }
 
 #[test]
-#[should_panic(expected = "SourceId exceeds 1023 limit")]
-fn test_source_loc_file_id_overflow() {
-    let overflow_id = 1024;
-    let source_id = SourceId::new(overflow_id);
-    let offset = 0;
-    SourceLoc::new(source_id, offset);
-}
-
-#[test]
 fn test_source_span_new() {
     let start = SourceLoc::new(SourceId::new(1), 10);
     let end = SourceLoc::new(SourceId::new(1), 20);
     let span = SourceSpan::new(start, end);
 
-    assert_eq!(span.start, start);
-    assert_eq!(span.end, end);
+    assert_eq!(span.start(), start);
+    assert_eq!(span.end(), end);
 }
 
 #[test]
 fn test_source_span_empty() {
     let empty = SourceSpan::empty();
-    assert_eq!(empty.start.source_id(), SourceId::new(1));
-    assert_eq!(empty.start.offset(), 0);
-    assert_eq!(empty.end.offset(), 0);
+    assert_eq!(empty.start().source_id(), SourceId::new(1));
+    assert_eq!(empty.start().offset(), 0);
+    assert_eq!(empty.end().offset(), 0);
 }
 
 #[test]
@@ -336,4 +319,63 @@ fn test_line_map_performance_many_lookups() {
 
     // Test should complete quickly (binary search is O(log n))
     assert!(line_map.entries.len() == 100);
+}
+
+#[test]
+fn test_struct_sizes() {
+    assert_eq!(std::mem::size_of::<SourceLoc>(), 8);
+    assert_eq!(std::mem::size_of::<SourceSpan>(), 8);
+}
+
+#[test]
+#[should_panic(expected = "SourceSpan offset exceeds 16 MiB limit")]
+fn test_source_span_offset_overflow() {
+    let source_id = SourceId::new(1);
+    let start = SourceLoc::new(source_id, 1 << 24); // 16 MiB
+    let end = SourceLoc::new(source_id, (1 << 24) + 10);
+    SourceSpan::new(start, end);
+}
+
+#[test]
+fn test_source_span_length_limit() {
+    let source_id = SourceId::new(1);
+    // Length 70000 > 65535
+    let start = SourceLoc::new(source_id, 0);
+    let end = SourceLoc::new(source_id, 70000);
+    let span = SourceSpan::new(start, end);
+
+    // Should be capped at 65535
+    assert_eq!(span.end().offset() - span.start().offset(), 65535);
+}
+
+#[test]
+fn test_source_span_new_with_length() {
+    let source_id = SourceId::new(1);
+    let offset = 100;
+    let length = 50;
+    let span = SourceSpan::new_with_length(source_id, offset, length);
+
+    assert_eq!(span.source_id(), source_id);
+    assert_eq!(span.start().offset(), offset);
+    assert_eq!(span.end().offset(), offset + length);
+}
+
+#[test]
+fn test_source_span_new_with_length_limit() {
+    let source_id = SourceId::new(1);
+    let offset = 100;
+    let length = 70000; // > 65535
+    let span = SourceSpan::new_with_length(source_id, offset, length);
+
+    // Should be capped at 65535
+    assert_eq!(span.end().offset() - span.start().offset(), 65535);
+}
+
+#[test]
+#[should_panic(expected = "SourceSpan offset exceeds 16 MiB limit")]
+fn test_source_span_new_with_length_offset_overflow() {
+    let source_id = SourceId::new(1);
+    let offset = 1 << 24; // 16 MiB
+    let length = 10;
+    SourceSpan::new_with_length(source_id, offset, length);
 }

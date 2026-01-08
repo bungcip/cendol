@@ -17,7 +17,7 @@ use super::Parser;
 /// Parse a declaration
 pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let trx = parser.start_transaction();
-    let start_loc = trx.parser.current_token_span()?.start;
+    let start_loc = trx.parser.current_token_span()?.start();
 
     let dummy = trx.parser.push_dummy();
 
@@ -91,7 +91,7 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseErr
                 init_declarators: ThinVec::new(),
             };
 
-            let end_loc = semi.span.end;
+            let end_loc = semi.span.end();
             let span = SourceSpan::new(start_loc, end_loc);
 
             let node = trx.parser.push_node(NodeKind::Declaration(declaration_data), span);
@@ -232,7 +232,7 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseErr
         });
     };
 
-    let end_loc = semicolon_token.span.end;
+    let end_loc = semicolon_token.span.end();
 
     let span = SourceSpan::new(start_loc, end_loc);
 
@@ -269,7 +269,7 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseErr
 
 /// Parse function definition
 pub(crate) fn parse_function_definition(parser: &mut Parser) -> Result<NodeRef, ParseError> {
-    let start_loc = parser.current_token()?.span.start;
+    let start_loc = parser.current_token()?.span.start();
     let dummy = parser.push_dummy();
 
     // Parse declaration specifiers
@@ -299,7 +299,7 @@ pub(crate) fn parse_function_definition(parser: &mut Parser) -> Result<NodeRef, 
 
 /// Parse translation unit (top level)
 pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError> {
-    let start_loc = parser.current_token()?.span.start;
+    let start_loc = parser.current_token()?.span.start();
     let mut end_loc = SourceLoc::builtin();
 
     let mut top_level_declarations = Vec::new();
@@ -311,7 +311,7 @@ pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, Par
 
     while let Some(token) = parser.try_current_token() {
         if token.kind == TokenKind::EndOfFile {
-            end_loc = token.span.end;
+            end_loc = token.span.end();
             break;
         }
 
@@ -358,7 +358,7 @@ pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, Par
 /// Parse static assert (C11)
 pub(crate) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<NodeRef, ParseError> {
     // already consumed `_Static_assert`
-    let start_loc = start_token.span.start;
+    let start_loc = start_token.span.start();
     parser.expect(TokenKind::LeftParen)?;
 
     let condition = parser.parse_expr_assignment()?;
@@ -380,7 +380,7 @@ pub(crate) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Re
     parser.advance();
     parser.expect(TokenKind::RightParen)?;
     let semicolon_token = parser.expect(TokenKind::Semicolon)?;
-    let end_loc = semicolon_token.span.end;
+    let end_loc = semicolon_token.span.end();
     let span = SourceSpan::new(start_loc, end_loc);
     let node = parser.push_node(NodeKind::StaticAssert(condition, message), span);
     Ok(node)

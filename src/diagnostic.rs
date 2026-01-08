@@ -328,7 +328,7 @@ impl ErrorFormatter {
             .unwrap_or("<unknown>");
 
         // Get line and column information
-        let line_col = source_manager.get_line_column(diag.span.start);
+        let line_col = source_manager.get_line_column(diag.span.start());
         if let Some((line, col)) = line_col {
             format!("{}:{}:{}", path, line, col)
         } else {
@@ -361,7 +361,7 @@ impl ErrorFormatter {
         let annotation_kind = AnnotationKind::Primary;
 
         snippet = snippet
-            .annotation(annotation_kind.span(diag.span.start.offset() as usize..diag.span.end.offset() as usize));
+            .annotation(annotation_kind.span(diag.span.start().offset() as usize..diag.span.end().offset() as usize));
 
         snippet
     }

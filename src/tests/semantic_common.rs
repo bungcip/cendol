@@ -75,7 +75,7 @@ pub fn check_diagnostic(driver: &CompilerDriver, message: &str, line: u32, col: 
     let diagnostics = driver.get_diagnostics();
     let found = diagnostics.iter().any(|d| {
         if d.message.contains(message) {
-            let (l, c) = driver.source_manager.get_line_column(d.span.start).unwrap();
+            let (l, c) = driver.source_manager.get_line_column(d.span.start()).unwrap();
             if l == line && c == col {
                 return true;
             }

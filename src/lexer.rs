@@ -537,10 +537,6 @@ impl<'src> Lexer<'src> {
             // performance win.
             if let PPTokenKind::StringLiteral(symbol) = pptoken.kind {
                 let start_location = pptoken.location;
-                let mut end_location = SourceLoc::new(
-                    pptoken.location.source_id(),
-                    pptoken.location.offset() + pptoken.length as u32,
-                );
 
                 // --- Phase 1: Calculate total size ---
                 let mut total_size = Self::extract_string_content(&symbol).unwrap_or("").len();
@@ -569,20 +565,17 @@ impl<'src> Lexer<'src> {
                         if let Some(s_content) = Self::extract_string_content(&next_symbol) {
                             content.push_str(s_content);
                         }
-                        end_location = SourceLoc::new(
-                            consumed_pptoken.location.source_id(),
-                            consumed_pptoken.location.offset() + consumed_pptoken.length as u32,
-                        );
                     }
                 }
 
                 // Create a single concatenated token
                 let concatenated_token = Token {
                     kind: TokenKind::StringLiteral(StringId::new(content)),
-                    span: SourceSpan {
-                        start: start_location,
-                        end: end_location,
-                    },
+                    span: SourceSpan::new_with_length(
+                        start_location.source_id(),
+                        start_location.offset(),
+                        total_size as u32,
+                    ),
                 };
 
                 tokens.push(concatenated_token);
@@ -592,13 +585,11 @@ impl<'src> Lexer<'src> {
             // For all other tokens, process normally
             let token = Token {
                 kind: self.classify_token(pptoken),
-                span: SourceSpan {
-                    start: pptoken.location,
-                    end: SourceLoc::new(
-                        pptoken.location.source_id(),
-                        pptoken.location.offset() + pptoken.length as u32,
-                    ),
-                },
+                span: SourceSpan::new_with_length(
+                    pptoken.location.source_id(),
+                    pptoken.location.offset(),
+                    pptoken.length as u32,
+                ),
             };
 
             let is_eof = matches!(token.kind, TokenKind::EndOfFile);

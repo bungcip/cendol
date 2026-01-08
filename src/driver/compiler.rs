@@ -262,7 +262,7 @@ impl CompilerDriver {
                     "  ident idx={} name={:?} pos={:?} scope={}",
                     i,
                     name,
-                    self.source_manager.get_line_column(span.start),
+                    self.source_manager.get_line_column(span.start()),
                     scope_str
                 );
             }
@@ -276,7 +276,7 @@ impl CompilerDriver {
                     "  goto  idx={} name={:?} pos={:?} scope={}",
                     i,
                     name,
-                    self.source_manager.get_line_column(span.start),
+                    self.source_manager.get_line_column(span.start()),
                     scope_str
                 );
             }
@@ -290,7 +290,7 @@ impl CompilerDriver {
                     "  label idx={} name={:?} pos={:?} scope={}",
                     i,
                     name,
-                    self.source_manager.get_line_column(span.start),
+                    self.source_manager.get_line_column(span.start()),
                     scope_str
                 );
             }
@@ -314,12 +314,12 @@ impl CompilerDriver {
                         "ICE: unresolved ident node idx={} name={:?} span={:?}",
                         i + 1,
                         name,
-                        self.source_manager.get_line_column(node.span.start)
+                        self.source_manager.get_line_column(node.span.start())
                     );
                     panic!(
                         "ICE: ident '{}' still not have resolved type: {:?}",
                         name,
-                        self.source_manager.get_line_column(node.span.start)
+                        self.source_manager.get_line_column(node.span.start())
                     );
                 }
                 _ => {}

@@ -49,7 +49,7 @@ pub(crate) fn parse_enumerator(parser: &mut Parser) -> Result<NodeRef, ParseErro
     let (name, mut span) = parser.expect_name()?;
     let value = if parser.accept(TokenKind::Assign).is_some() {
         let expr = parser.parse_expr_assignment()?;
-        span.end = parser.ast.get_node(expr).span.end;
+        span = SourceSpan::new(span.start(), parser.ast.get_node(expr).span.end());
         Some(expr)
     } else {
         None

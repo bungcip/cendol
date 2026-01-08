@@ -404,10 +404,10 @@ fn emit_function_call_impl(
 
             let func_ptr_type = mir.get_type(func_ptr_type_id);
 
-            // 2. It must be a pointer to a function
-            let (return_type_id, param_type_ids) = match func_ptr_type {
+            // 2. It must be a pointer to a function OR a function type (if it was dereferenced)
+            let ((return_type_id, param_type_ids), is_function_type) = match func_ptr_type {
                 MirType::Pointer { pointee } => match mir.get_type(*pointee) {
-                    MirType::Function { return_type, params } => (*return_type, params),
+                    MirType::Function { return_type, params } => ((*return_type, params), false),
                     _ => {
                         return Err(format!(
                             "Indirect call operand points to non-function type: {:?}",
@@ -415,6 +415,7 @@ fn emit_function_call_impl(
                         ));
                     }
                 },
+                MirType::Function { return_type, params } => ((*return_type, params), true),
                 _ => return Err(format!("Indirect call operand is not a pointer: {:?}", func_ptr_type)),
             };
 
@@ -442,14 +443,30 @@ fn emit_function_call_impl(
             }
 
             // 4. Resolve the function pointer operand to a value
-            let callee_val = resolve_operand_to_value(
-                func_operand,
-                builder,
-                types::I64, // Function pointers are I64
-                cranelift_stack_slots,
-                mir,
-                module,
-            )?;
+            let callee_val = if is_function_type {
+                // If the operand has Function type, it means it's an l-value representing the function (like *ptr).
+                // We need its address.
+                match func_operand {
+                    Operand::Copy(place) => resolve_place_to_addr(place, builder, cranelift_stack_slots, mir, module)?,
+                    _ => resolve_operand_to_value(
+                        func_operand,
+                        builder,
+                        types::I64,
+                        cranelift_stack_slots,
+                        mir,
+                        module,
+                    )?,
+                }
+            } else {
+                resolve_operand_to_value(
+                    func_operand,
+                    builder,
+                    types::I64, // Function pointers are I64
+                    cranelift_stack_slots,
+                    mir,
+                    module,
+                )?
+            };
 
             // 5. Resolve arguments
             let mut arg_values = Vec::new();
@@ -599,6 +616,36 @@ fn resolve_operand_to_value(
                     let local_id = module.declare_data_in_func(global_val, builder.func);
                     // Global addresses are always pointer-sized (i64)
                     let addr = builder.ins().global_value(types::I64, local_id);
+                    Ok(emit_type_conversion(addr, types::I64, expected_type, false, builder))
+                }
+                ConstValue::FunctionAddress(func_id) => {
+                    let func = mir.get_function(*func_id);
+
+                    let mut sig = Signature::new(builder.func.signature.call_conv);
+
+                    // Return type
+                    if let Some(ret_type) = convert_type(mir.get_type(func.return_type)) {
+                        sig.returns.push(AbiParam::new(ret_type));
+                    }
+
+                    // Params
+                    for &param_id in &func.params {
+                        let param_local = mir.get_local(param_id);
+                        let param_type = convert_type(mir.get_type(param_local.type_id)).unwrap();
+                        sig.params.push(AbiParam::new(param_type));
+                    }
+
+                    let linkage = match func.kind {
+                        MirFunctionKind::Extern => Linkage::Import,
+                        MirFunctionKind::Defined => Linkage::Export,
+                    };
+
+                    let func_decl = module
+                        .declare_function(func.name.as_str(), linkage, &sig)
+                        .map_err(|e| format!("Failed to declare function {}: {:?}", func.name, e))?;
+
+                    let func_ref = module.declare_func_in_func(func_decl, builder.func);
+                    let addr = builder.ins().func_addr(types::I64, func_ref);
                     Ok(emit_type_conversion(addr, types::I64, expected_type, false, builder))
                 }
                 ConstValue::Cast(type_id, inner_id) => {

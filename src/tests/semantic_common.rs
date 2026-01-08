@@ -1,33 +1,29 @@
 //! Common utilities for semantic analysis tests.
 use crate::ast::Ast;
-use crate::driver::artifact::{CompilePhase, PipelineOutputs};
+use crate::driver::artifact::CompilePhase;
 use crate::driver::cli::CompileConfig;
 use crate::driver::compiler::CompilerDriver;
 use crate::mir::dumper::{MirDumpConfig, MirDumper};
 use crate::semantic::TypeRegistry;
+use crate::tests::test_utils;
 
-pub fn run_pipeline(source: &str, phase: CompilePhase) -> (CompilerDriver, Result<PipelineOutputs, String>) {
-    let config = CompileConfig::from_virtual_file(source.to_string(), phase);
-    let mut driver = CompilerDriver::from_config(config);
-    let result = driver.run_pipeline(phase).map_err(|e| format!("{:?}", e));
-    (driver, result)
-}
+pub use crate::tests::test_utils::run_pipeline;
 
 pub fn run_pass(source: &str, phase: CompilePhase) {
-    let (driver, result) = run_pipeline(source, phase);
+    let (driver, result) = test_utils::run_pipeline(source, phase);
     if result.is_err() {
         panic!("Compilation failed unexpectedly: {:?}", driver.get_diagnostics());
     }
 }
 
 pub fn run_fail(source: &str, phase: CompilePhase) -> CompilerDriver {
-    let (driver, result) = run_pipeline(source, phase);
+    let (driver, result) = test_utils::run_pipeline(source, phase);
     assert!(result.is_err(), "Compilation should have failed");
     driver
 }
 
 pub fn setup_mir(source: &str) -> String {
-    let (driver, result) = run_pipeline(source, CompilePhase::Mir);
+    let (driver, result) = test_utils::run_pipeline(source, CompilePhase::Mir);
     let mut out = match result {
         Ok(out) => out,
         Err(_) => panic!("failed to run: {:?}", driver.get_diagnostics()),
@@ -44,7 +40,7 @@ pub fn setup_mir(source: &str) -> String {
 }
 
 pub fn setup_lowering(source: &str) -> (Ast, TypeRegistry) {
-    let (driver, result) = run_pipeline(source, CompilePhase::SymbolResolver);
+    let (driver, result) = test_utils::run_pipeline(source, CompilePhase::SymbolResolver);
     let out = match result {
         Ok(out) => out,
         Err(_) => panic!("failed to run: {:?}", driver.get_diagnostics()),
@@ -58,7 +54,7 @@ pub fn setup_lowering(source: &str) -> (Ast, TypeRegistry) {
 }
 
 pub fn setup_diagnostics_output(source: &str) -> String {
-    let (driver, _) = run_pipeline(source, CompilePhase::Mir);
+    let (driver, _) = test_utils::run_pipeline(source, CompilePhase::Mir);
     let diagnostics = driver.get_diagnostics();
 
     format!(

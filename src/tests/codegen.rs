@@ -276,14 +276,12 @@ fn test_store_deref_pointer() {
     }
 }
 
-use crate::driver::{CompilerDriver, artifact::CompilePhase, cli::CompileConfig};
+use crate::driver::artifact::CompilePhase;
+use crate::tests::test_utils;
 
 /// setup test with output is cranelift ir
 fn setup_cranelift(c_code: &str) -> String {
-    let config = CompileConfig::from_virtual_file(c_code.to_string(), CompilePhase::Cranelift);
-    let mut driver = CompilerDriver::from_config(config);
-
-    let pipeline_result = driver.run_pipeline(CompilePhase::Cranelift);
+    let (driver, pipeline_result) = test_utils::run_pipeline(c_code, CompilePhase::Cranelift);
     match pipeline_result {
         Err(_) => {
             driver.print_diagnostics();

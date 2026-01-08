@@ -1009,27 +1009,9 @@ impl<'src> Preprocessor<'src> {
             PPTokenKind::Identifier(sym) => {
                 // Use O(1) interned keyword comparison
                 match self.directive_keywords.is_directive(sym) {
-                    Some(DirectiveKind::Define) => {
-                        if !self.is_currently_skipping() {
-                            self.handle_define()?;
-                        } else {
-                            self.skip_directive()?;
-                        }
-                    }
-                    Some(DirectiveKind::Undef) => {
-                        if !self.is_currently_skipping() {
-                            self.handle_undef()?;
-                        } else {
-                            self.skip_directive()?;
-                        }
-                    }
-                    Some(DirectiveKind::Include) => {
-                        if !self.is_currently_skipping() {
-                            self.handle_include()?;
-                        } else {
-                            self.skip_directive()?;
-                        }
-                    }
+                    Some(DirectiveKind::Define) => self.check_skipping_and_execute(|this| this.handle_define()),
+                    Some(DirectiveKind::Undef) => self.check_skipping_and_execute(|this| this.handle_undef()),
+                    Some(DirectiveKind::Include) => self.check_skipping_and_execute(|this| this.handle_include()),
                     Some(DirectiveKind::If) => {
                         // Always process #if to track nesting
                         if self.is_currently_skipping() {
@@ -1040,6 +1022,7 @@ impl<'src> Preprocessor<'src> {
                             let condition = self.evaluate_conditional_expression(&expr_tokens).unwrap_or(false);
                             self.handle_if_directive(condition)?;
                         }
+                        Ok(())
                     }
                     Some(DirectiveKind::Ifdef) => {
                         if self.is_currently_skipping() {
@@ -1048,6 +1031,7 @@ impl<'src> Preprocessor<'src> {
                         } else {
                             self.handle_ifdef()?;
                         }
+                        Ok(())
                     }
                     Some(DirectiveKind::Ifndef) => {
                         if self.is_currently_skipping() {
@@ -1056,6 +1040,7 @@ impl<'src> Preprocessor<'src> {
                         } else {
                             self.handle_ifndef()?;
                         }
+                        Ok(())
                     }
                     Some(DirectiveKind::Elif) => {
                         // Elif is tricky when skipping.
@@ -1080,41 +1065,14 @@ impl<'src> Preprocessor<'src> {
                             // Just update state to keep skipping
                             self.handle_elif_directive(false, token.location)?;
                         }
+                        Ok(())
                     }
-                    Some(DirectiveKind::Else) => {
-                        self.handle_else(token.location)?;
-                    }
-                    Some(DirectiveKind::Endif) => {
-                        self.handle_endif(token.location)?;
-                    }
-                    Some(DirectiveKind::Line) => {
-                        if !self.is_currently_skipping() {
-                            self.handle_line()?;
-                        } else {
-                            self.skip_directive()?;
-                        }
-                    }
-                    Some(DirectiveKind::Pragma) => {
-                        if !self.is_currently_skipping() {
-                            self.handle_pragma()?;
-                        } else {
-                            self.skip_directive()?;
-                        }
-                    }
-                    Some(DirectiveKind::Error) => {
-                        if !self.is_currently_skipping() {
-                            self.handle_error()?;
-                        } else {
-                            self.skip_directive()?;
-                        }
-                    }
-                    Some(DirectiveKind::Warning) => {
-                        if !self.is_currently_skipping() {
-                            self.handle_warning()?;
-                        } else {
-                            self.skip_directive()?;
-                        }
-                    }
+                    Some(DirectiveKind::Else) => self.handle_else(token.location),
+                    Some(DirectiveKind::Endif) => self.handle_endif(token.location),
+                    Some(DirectiveKind::Line) => self.check_skipping_and_execute(|this| this.handle_line()),
+                    Some(DirectiveKind::Pragma) => self.check_skipping_and_execute(|this| this.handle_pragma()),
+                    Some(DirectiveKind::Error) => self.check_skipping_and_execute(|this| this.handle_error()),
+                    Some(DirectiveKind::Warning) => self.check_skipping_and_execute(|this| this.handle_warning()),
                     None => {
                         let name = sym.as_str();
                         let diag = Diagnostic {
@@ -1126,7 +1084,7 @@ impl<'src> Preprocessor<'src> {
                             related: Vec::new(),
                         };
                         self.diag.report_diagnostic(diag);
-                        return Err(PPError::InvalidDirective);
+                        Err(PPError::InvalidDirective)
                     }
                 }
             }
@@ -1140,11 +1098,21 @@ impl<'src> Preprocessor<'src> {
                     related: Vec::new(),
                 };
                 self.diag.report_diagnostic(diag);
-                return Err(PPError::InvalidDirective);
+                Err(PPError::InvalidDirective)
             }
         }
+    }
 
-        Ok(())
+    /// Check if skipping is active, and if so, skip the directive. Otherwise, execute the action.
+    fn check_skipping_and_execute<F>(&mut self, action: F) -> Result<(), PPError>
+    where
+        F: FnOnce(&mut Self) -> Result<(), PPError>,
+    {
+        if self.is_currently_skipping() {
+            self.skip_directive()
+        } else {
+            action(self)
+        }
     }
 
     /// Handle _Pragma("...") operator
@@ -1835,37 +1803,11 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn handle_error(&mut self) -> Result<(), PPError> {
-        if self.is_currently_skipping() {
-            // Skip to end of line
-            while let Some(token) = self.lex_token() {
-                if token.kind == PPTokenKind::Eod {
-                    break;
-                }
-            }
-            return Ok(());
-        }
-        // Collect the error message from the rest of the line
-        let mut message_parts = Vec::new();
-        // Get the location of the #error directive
-        let directive_location = if let Some(lexer) = self.lexer_stack.last() {
-            SourceLoc::new(lexer.source_id, lexer.position)
-        } else {
-            SourceLoc::builtin()
-        };
-        while let Some(token) = self.lex_token() {
-            if token.kind == PPTokenKind::Eod {
-                break;
-            }
-            // Get token text
-            let buffer = self.source_manager.get_buffer(token.location.source_id());
-            let start = token.location.offset() as usize;
-            let end = start + token.length as usize;
-            if end <= buffer.len() {
-                let text = unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) };
-                message_parts.push(text.to_string());
-            }
-        }
-        let message = message_parts.join(" ");
+        // Note: Skipping is handled by caller (check_skipping_and_execute)
+
+        let directive_location = self.get_current_location();
+        let message = self.consume_rest_of_line_as_string();
+
         let diag = Diagnostic {
             level: DiagnosticLevel::Error,
             message: format!("#error directive: {}", message),
@@ -1877,13 +1819,26 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn handle_warning(&mut self) -> Result<(), PPError> {
-        // Collect the warning message from the rest of the line
-        let mut message_parts = Vec::new();
-        let directive_location = if let Some(lexer) = self.lexer_stack.last() {
-            SourceLoc::new(lexer.source_id, lexer.position)
-        } else {
-            SourceLoc::builtin()
+        // Note: Skipping is handled by caller (check_skipping_and_execute)
+
+        let directive_location = self.get_current_location();
+        let message = self.consume_rest_of_line_as_string();
+
+        // For warning, we emit a diagnostic but don't stop compilation
+        let diag = Diagnostic {
+            level: DiagnosticLevel::Warning,
+            message,
+            span: SourceSpan::new(directive_location, directive_location),
+            code: None,
+            hints: Vec::new(),
+            related: Vec::new(),
         };
+        self.diag.report_diagnostic(diag);
+        Ok(())
+    }
+
+    fn consume_rest_of_line_as_string(&mut self) -> String {
+        let mut message_parts = Vec::new();
         while let Some(token) = self.lex_token() {
             if token.kind == PPTokenKind::Eod {
                 break;
@@ -1897,18 +1852,7 @@ impl<'src> Preprocessor<'src> {
                 message_parts.push(text.to_string());
             }
         }
-        let message = message_parts.join(" ");
-        // For warning, we emit a diagnostic but don't stop compilation
-        let diag = Diagnostic {
-            level: DiagnosticLevel::Warning,
-            message,
-            span: SourceSpan::new(directive_location, directive_location),
-            code: None,
-            hints: Vec::new(),
-            related: Vec::new(),
-        };
-        self.diag.report_diagnostic(diag);
-        Ok(())
+        message_parts.join(" ")
     }
 
     /// Expand a macro if it exists

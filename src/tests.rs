@@ -15,3 +15,4 @@ pub mod semantic_symbol_redefinition;
 pub mod semantic_types;
 pub mod semantic_validation;
 pub mod source_manager;
+pub mod test_utils;

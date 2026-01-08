@@ -3,7 +3,7 @@ use super::semantic_common::setup_mir;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::semantic::*;
+
 
     #[test]
     fn test_function_redefinition_with_prototype() {

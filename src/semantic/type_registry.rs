@@ -63,7 +63,7 @@ impl Default for TypeRegistry {
 
 impl TypeRegistry {
     /// Create a new TypeRegistry with builtin types initialized.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let mut reg = TypeRegistry {
             types: Vec::new(),
             pointer_cache: HashMap::new(),
@@ -98,7 +98,7 @@ impl TypeRegistry {
         reg
     }
 
-    pub fn create_builtin(&mut self) {
+    fn create_builtin(&mut self) {
         // Reset types to just dummy to ensure order
         self.types.truncate(1);
 
@@ -201,7 +201,7 @@ impl TypeRegistry {
     /// Resolve a TypeRef to a Type.
     /// Returns Cow because inline types are constructed on the fly.
     #[inline]
-    pub fn get(&self, r: TypeRef) -> Cow<'_, Type> {
+    pub(crate) fn get(&self, r: TypeRef) -> Cow<'_, Type> {
         if r.is_inline_pointer() {
             // Reconstruct Pointer Type
             // We need to know the TypeRef of the pointee.
@@ -249,7 +249,7 @@ impl TypeRegistry {
 
     // Legacy support: mutable access only for completing records/enums
     #[inline]
-    pub fn get_mut(&mut self, r: TypeRef) -> &mut Type {
+    fn get_mut(&mut self, r: TypeRef) -> &mut Type {
         // Cannot mutate inline types
         if r.is_inline_pointer() || r.is_inline_array() {
             panic!("Cannot get_mut on inline type {:?}", r);
@@ -285,7 +285,7 @@ impl TypeRegistry {
     // ============================================================
     // Canonical type constructors
     // ============================================================
-    pub fn pointer_to(&mut self, base: TypeRef) -> TypeRef {
+    pub(crate) fn pointer_to(&mut self, base: TypeRef) -> TypeRef {
         // Try inline
         // 1. If base is Inline Pointer (depth 1..2), we can increment depth (max 3).
         if base.is_inline_pointer() {
@@ -314,7 +314,7 @@ impl TypeRegistry {
         ptr
     }
 
-    pub fn array_of(&mut self, elem: TypeRef, size: ArraySizeType) -> TypeRef {
+    pub(crate) fn array_of(&mut self, elem: TypeRef, size: ArraySizeType) -> TypeRef {
         // Try inline
         if let ArraySizeType::Constant(len) = size
             && len <= 31
@@ -338,7 +338,7 @@ impl TypeRegistry {
         arr
     }
 
-    pub fn function_type(
+    pub(crate) fn function_type(
         &mut self,
         return_type: TypeRef,
         params: Vec<FunctionParameter>,
@@ -364,7 +364,7 @@ impl TypeRegistry {
         f
     }
 
-    pub fn complex_type(&mut self, base_type: TypeRef) -> TypeRef {
+    pub(crate) fn complex_type(&mut self, base_type: TypeRef) -> TypeRef {
         if let Some(&complex) = self.complex_cache.get(&base_type) {
             return complex;
         }
@@ -379,7 +379,7 @@ impl TypeRegistry {
     // Record / enum handling
     // ============================================================
 
-    pub fn declare_record(&mut self, tag: Option<NameId>, is_union: bool) -> TypeRef {
+    pub(crate) fn declare_record(&mut self, tag: Option<NameId>, is_union: bool) -> TypeRef {
         self.alloc(Type::new(TypeKind::Record {
             tag,
             members: Vec::new(),
@@ -388,7 +388,7 @@ impl TypeRegistry {
         }))
     }
 
-    pub fn complete_record(&mut self, record: TypeRef, members: Vec<StructMember>) {
+    pub(crate) fn complete_record(&mut self, record: TypeRef, members: Vec<StructMember>) {
         let ty = self.get_mut(record);
         match &mut ty.kind {
             TypeKind::Record {
@@ -403,7 +403,7 @@ impl TypeRegistry {
         }
     }
 
-    pub fn declare_enum(&mut self, tag: Option<NameId>, base_type: TypeRef) -> TypeRef {
+    pub(crate) fn declare_enum(&mut self, tag: Option<NameId>, base_type: TypeRef) -> TypeRef {
         self.alloc(Type::new(TypeKind::Enum {
             tag,
             base_type,
@@ -412,7 +412,7 @@ impl TypeRegistry {
         }))
     }
 
-    pub fn complete_enum(&mut self, enum_ty: TypeRef, enumerators: Vec<EnumConstant>) {
+    pub(crate) fn complete_enum(&mut self, enum_ty: TypeRef, enumerators: Vec<EnumConstant>) {
         let ty = self.get_mut(enum_ty);
         match &mut ty.kind {
             TypeKind::Enum {
@@ -431,7 +431,7 @@ impl TypeRegistry {
     // Layout
     // ============================================================
 
-    pub fn get_layout(&self, ty: TypeRef) -> Cow<'_, TypeLayout> {
+    pub(crate) fn get_layout(&self, ty: TypeRef) -> Cow<'_, TypeLayout> {
         // If inline, compute on the fly (or if we had a cache, use it).
         // For now, since ensure_layout might mutate, this is tricky.
         // But get_layout assumes layout IS computed.
@@ -467,7 +467,7 @@ impl TypeRegistry {
         }
     }
 
-    pub fn get_array_layout(&self, ty: TypeRef) -> (u16, u16, TypeRef, u64) {
+    pub(crate) fn get_array_layout(&self, ty: TypeRef) -> (u16, u16, TypeRef, u64) {
         let layout = self.get_layout(ty);
         match layout.kind {
             LayoutKind::Array { element, len } => (layout.size, layout.alignment, element, len),
@@ -475,7 +475,7 @@ impl TypeRegistry {
         }
     }
 
-    pub fn get_record_layout(&self, ty: TypeRef) -> (u16, u16, Vec<FieldLayout>, bool) {
+    pub(crate) fn get_record_layout(&self, ty: TypeRef) -> (u16, u16, Vec<FieldLayout>, bool) {
         let layout = self.get_layout(ty);
         match &layout.kind {
             LayoutKind::Record { fields, is_union } => (layout.size, layout.alignment, fields.clone(), *is_union),
@@ -483,7 +483,7 @@ impl TypeRegistry {
         }
     }
 
-    pub fn ensure_layout(&mut self, ty: TypeRef) -> Result<Cow<'_, TypeLayout>, SemanticError> {
+    pub(crate) fn ensure_layout(&mut self, ty: TypeRef) -> Result<Cow<'_, TypeLayout>, SemanticError> {
         if ty.is_inline_pointer() {
             return Ok(Cow::Owned(TypeLayout {
                 size: 8,
@@ -676,7 +676,7 @@ impl TypeRegistry {
         })
     }
 
-    pub fn decay(&mut self, qt: QualType) -> QualType {
+    pub(crate) fn decay(&mut self, qt: QualType) -> QualType {
         let kind = self.get(qt.ty()).kind.clone();
         match kind {
             TypeKind::Array { element_type, .. } => {
@@ -691,15 +691,15 @@ impl TypeRegistry {
         }
     }
 
-    pub fn strip_all(&self, qt: QualType) -> QualType {
+    pub(crate) fn strip_all(&self, qt: QualType) -> QualType {
         QualType::unqualified(qt.ty())
     }
 
-    pub fn merge_qualifiers(&self, base: QualType, add: TypeQualifiers) -> QualType {
+    pub(crate) fn merge_qualifiers(&self, base: QualType, add: TypeQualifiers) -> QualType {
         QualType::new(base.ty(), base.qualifiers() | add)
     }
 
-    pub fn is_compatible(&self, a: QualType, b: QualType) -> bool {
+    pub(crate) fn is_compatible(&self, a: QualType, b: QualType) -> bool {
         a == b
     }
 }

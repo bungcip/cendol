@@ -224,6 +224,8 @@ pub enum SemanticError {
     StaticAssertNotConstant { span: SourceSpan },
     #[error("recursive type definition")]
     RecursiveType { ty: TypeRef },
+    #[error("Invalid application of 'sizeof' to an incomplete type")]
+    SizeOfIncompleteType { ty: TypeRef, span: SourceSpan },
     #[error("controlling expression type does not match any generic association")]
     GenericNoMatch { span: SourceSpan },
 
@@ -258,6 +260,7 @@ impl SemanticError {
                 // For recursive types, we don't have a specific span, so use a dummy span
                 SourceSpan::dummy()
             }
+            SemanticError::SizeOfIncompleteType { span, .. } => *span,
             SemanticError::GenericNoMatch { span } => *span,
             SemanticError::InvalidAlignment { span, .. } => *span,
             SemanticError::NonConstantAlignment { span } => *span,

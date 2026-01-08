@@ -1516,6 +1516,12 @@ fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
                     // Create an error type if conversion fails
                     QualType::unqualified(ctx.registry.type_error)
                 });
+
+            // Ensure the type is complete before allowing sizeof
+            if let Err(e) = ctx.registry.ensure_layout(type_ref.ty()) {
+                ctx.report_error(e);
+            }
+
             // Replace the ParsedSizeOfType node with a SizeOfType node
             let size_of_node = Node::new(NodeKind::SizeOfType(type_ref), ctx.ast.get_node(node_ref).span);
             ctx.ast.replace_node(node_ref, size_of_node);

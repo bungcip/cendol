@@ -75,9 +75,10 @@ pub fn check_diagnostic(driver: &CompilerDriver, message: &str, line: u32, col: 
     let diagnostics = driver.get_diagnostics();
     let found = diagnostics.iter().any(|d| {
         if d.message.contains(message) {
-            let (l, c) = driver.source_manager.get_line_column(d.span.start()).unwrap();
-            if l == line && c == col {
-                return true;
+            if let Some((l, c)) = driver.source_manager.get_line_column(d.span.start()) {
+                if l == line && c == col {
+                    return true;
+                }
             }
         }
         false
@@ -86,6 +87,16 @@ pub fn check_diagnostic(driver: &CompilerDriver, message: &str, line: u32, col: 
         found,
         "Expected diagnostic message containing '{}' at {}:{} not found.\nActual diagnostics: {:?}",
         message, line, col, diagnostics
+    );
+}
+
+pub fn check_diagnostic_message_only(driver: &CompilerDriver, message: &str) {
+    let diagnostics = driver.get_diagnostics();
+    let found = diagnostics.iter().any(|d| d.message.contains(message));
+    assert!(
+        found,
+        "Expected diagnostic message containing '{}' not found.\nActual diagnostics: {:?}",
+        message, diagnostics
     );
 }
 

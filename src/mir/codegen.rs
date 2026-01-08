@@ -281,74 +281,120 @@ fn emit_function_call_impl(
             // Get the return type for this function
             let return_type = convert_type(mir.get_type(func.return_type));
 
-            // Create a function signature by building it directly
-            let mut sig = Signature::new(builder.func.signature.call_conv);
-
-            // Only add return parameter if the function has a non-void return type
-            if let Some(ret_type) = return_type {
-                sig.returns.push(AbiParam::new(ret_type));
-            }
-
-            // For variadic functions, we need to create a signature that matches the actual arguments
-            // being passed, not just the fixed parameters
+            // If it's a variadic function, we must use an indirect call via the function's address
+            // to support different signatures at different call sites without redeclaring the function
+            // with conflicting signatures in Cranelift.
             if func.is_variadic {
-                // For variadic functions, use the actual types of the arguments
-                // Fixed parameters should have their declared types, variadic args should have their actual types
+                // 1. Declare the function with its canonical signature (fixed params only)
+                let mut canonical_sig = Signature::new(builder.func.signature.call_conv);
+
+                // Add fixed parameters
+                for &param_id in &func.params {
+                    let param_local = mir.get_local(param_id);
+                    let param_type = convert_type(mir.get_type(param_local.type_id)).unwrap();
+                    canonical_sig.params.push(AbiParam::new(param_type));
+                }
+
+                // Add return type
+                if let Some(ret_type) = return_type {
+                    canonical_sig.returns.push(AbiParam::new(ret_type));
+                }
+
+                let linkage = match func.kind {
+                    MirFunctionKind::Extern => cranelift_module::Linkage::Import,
+                    MirFunctionKind::Defined => cranelift_module::Linkage::Export,
+                };
+
+                let func_decl = module
+                    .declare_function(func.name.as_str(), linkage, &canonical_sig)
+                    .map_err(|e| format!("Failed to declare variadic function {}: {:?}", func.name, e))?;
+
+                // 2. Get the function address
+                let func_ref = module.declare_func_in_func(func_decl, builder.func);
+                let func_addr = builder.ins().func_addr(types::I64, func_ref);
+
+                // 3. Construct the call-site signature with all arguments (fixed + variadic)
+                let mut call_sig = Signature::new(builder.func.signature.call_conv);
+
+                // Add fixed parameters
+                for &param_id in &func.params {
+                    let param_local = mir.get_local(param_id);
+                    let param_type = convert_type(mir.get_type(param_local.type_id)).unwrap();
+                    call_sig.params.push(AbiParam::new(param_type));
+                }
+
+                // Add variadic arguments
+                for arg in args.iter().skip(func.params.len()) {
+                    let arg_type = get_operand_cranelift_type(arg, mir).unwrap_or(types::I32);
+                    call_sig.params.push(AbiParam::new(arg_type));
+                }
+
+                // Add return type
+                if let Some(ret_type) = return_type {
+                    call_sig.returns.push(AbiParam::new(ret_type));
+                }
+
+                // 4. Resolve arguments
+                let mut arg_values = Vec::new();
                 for (i, arg) in args.iter().enumerate() {
-                    if i < func.params.len() {
-                        // This is a fixed parameter, use its declared type
-                        let param_id = func.params[i];
-                        let param_local = mir.get_local(param_id);
-                        let param_type = convert_type(mir.get_type(param_local.type_id)).unwrap();
-                        sig.params.push(AbiParam::new(param_type));
-                    } else {
-                        // This is a variadic argument, determine its type from the operand
-                        let arg_type = get_operand_cranelift_type(arg, mir).unwrap_or(types::I32);
-                        sig.params.push(AbiParam::new(arg_type));
+                    let param_type = call_sig.params[i].value_type;
+                    match resolve_operand_to_value(arg, builder, param_type, cranelift_stack_slots, mir, module) {
+                        Ok(value) => arg_values.push(value),
+                        Err(e) => return Err(format!("Failed to resolve variadic function argument: {}", e)),
                     }
                 }
+
+                // 5. Perform indirect call
+                let sig_ref = builder.import_signature(call_sig);
+                let call_inst = builder.ins().call_indirect(sig_ref, func_addr, &arg_values);
+
+                let call_results = builder.inst_results(call_inst);
+                if !call_results.is_empty() {
+                    Ok(call_results[0])
+                } else {
+                    Ok(builder.ins().iconst(types::I32, 0))
+                }
             } else {
-                // For non-variadic functions, use the fixed parameter types from the function signature
+                // Regular (non-variadic) function call
+                let mut sig = Signature::new(builder.func.signature.call_conv);
+
+                if let Some(ret_type) = return_type {
+                    sig.returns.push(AbiParam::new(ret_type));
+                }
+
                 for &param_id in &func.params {
                     let param_local = mir.get_local(param_id);
                     let param_type = convert_type(mir.get_type(param_local.type_id)).unwrap();
                     sig.params.push(AbiParam::new(param_type));
                 }
-            }
 
-            // Resolve function arguments to Cranelift values based on the signature we just built
-            let mut arg_values = Vec::new();
-            for (i, arg) in args.iter().enumerate() {
-                let param_type = sig.params[i].value_type;
-                match resolve_operand_to_value(arg, builder, param_type, cranelift_stack_slots, mir, module) {
-                    Ok(value) => arg_values.push(value),
-                    Err(e) => return Err(format!("Failed to resolve function argument: {}", e)),
+                let mut arg_values = Vec::new();
+                for (i, arg) in args.iter().enumerate() {
+                    let param_type = sig.params[i].value_type;
+                    match resolve_operand_to_value(arg, builder, param_type, cranelift_stack_slots, mir, module) {
+                        Ok(value) => arg_values.push(value),
+                        Err(e) => return Err(format!("Failed to resolve function argument: {}", e)),
+                    }
                 }
-            }
 
-            // Declare the function in the module if not already declared
-            let linkage = match func.kind {
-                MirFunctionKind::Extern => cranelift_module::Linkage::Import,
-                MirFunctionKind::Defined => cranelift_module::Linkage::Export,
-            };
+                let linkage = match func.kind {
+                    MirFunctionKind::Extern => cranelift_module::Linkage::Import,
+                    MirFunctionKind::Defined => cranelift_module::Linkage::Export,
+                };
 
-            let func_decl = module
-                .declare_function(func.name.as_str(), linkage, &sig)
-                .map_err(|e| format!("Failed to declare function {}: {:?}", func.name, e))?;
+                let func_decl = module
+                    .declare_function(func.name.as_str(), linkage, &sig)
+                    .map_err(|e| format!("Failed to declare function {}: {:?}", func.name, e))?;
 
-            // Get a local reference to the declared function
-            let local_callee = module.declare_func_in_func(func_decl, builder.func);
+                let local_callee = module.declare_func_in_func(func_decl, builder.func);
+                let call_inst = builder.ins().call(local_callee, &arg_values);
 
-            // Generate the actual function call
-            let call_inst = builder.ins().call(local_callee, &arg_values);
-
-            // Extract the return value from the call instruction
-            let call_results = builder.inst_results(call_inst);
-            if !call_results.is_empty() {
-                Ok(call_results[0])
-            } else {
-                // For void functions, return a dummy value (this won't be used)
-                Ok(builder.ins().iconst(types::I32, 0))
+                let call_results = builder.inst_results(call_inst);
+                if !call_results.is_empty() {
+                    Ok(call_results[0])
+                } else {
+                    Ok(builder.ins().iconst(types::I32, 0))
+                }
             }
         }
         CallTarget::Indirect(func_operand) => {

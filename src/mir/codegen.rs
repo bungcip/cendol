@@ -448,14 +448,9 @@ fn emit_function_call_impl(
                 // We need its address.
                 match func_operand {
                     Operand::Copy(place) => resolve_place_to_addr(place, builder, cranelift_stack_slots, mir, module)?,
-                    _ => resolve_operand_to_value(
-                        func_operand,
-                        builder,
-                        types::I64,
-                        cranelift_stack_slots,
-                        mir,
-                        module,
-                    )?,
+                    _ => {
+                        resolve_operand_to_value(func_operand, builder, types::I64, cranelift_stack_slots, mir, module)?
+                    }
                 }
             } else {
                 resolve_operand_to_value(

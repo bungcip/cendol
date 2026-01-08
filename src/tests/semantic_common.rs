@@ -3,7 +3,7 @@ use crate::ast::Ast;
 use crate::driver::artifact::{CompilePhase, PipelineOutputs};
 use crate::driver::cli::CompileConfig;
 use crate::driver::compiler::CompilerDriver;
-use crate::mir_dumper::{MirDumpConfig, MirDumper};
+use crate::mir::dumper::{MirDumpConfig, MirDumper};
 use crate::semantic::TypeRegistry;
 
 pub fn run_pipeline(source: &str, phase: CompilePhase) -> (CompilerDriver, Result<PipelineOutputs, String>) {

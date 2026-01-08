@@ -30,6 +30,7 @@ use crate::semantic::{ScopeId, SymbolRef, TypeRef};
 pub use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
 
 // Submodules
+pub mod dumper;
 pub mod nodes;
 pub mod parsed_types;
 pub mod utils;

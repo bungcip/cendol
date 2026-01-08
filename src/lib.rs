@@ -5,7 +5,7 @@ mod intern;
 mod lang_options;
 mod lexer;
 pub mod mir;
-mod mir_dumper;
+
 mod parser;
 mod pp;
 mod semantic;

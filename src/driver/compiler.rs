@@ -6,6 +6,7 @@
 
 use indexmap::IndexMap;
 
+use crate::ast::dumper::AstDumper;
 use crate::ast::{Ast, NodeKind, NodeRef, SourceId};
 use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
 use crate::driver::cli::PathOrBuffer;
@@ -14,7 +15,7 @@ use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer};
 use crate::mir::validation::MirValidator;
 
 use super::artifact::{CompileArtifact, CompilePhase, PipelineOutputs};
-use crate::mir_dumper::{MirDumpConfig, MirDumper};
+use crate::mir::dumper::{MirDumpConfig, MirDumper};
 use crate::parser::Parser;
 use crate::pp::{PPToken, Preprocessor};
 use crate::semantic::output::SemaOutput;
@@ -410,9 +411,9 @@ impl CompilerDriver {
                             }
                         }
                     } else if let Some(ast) = artifact.ast {
-                        self.output_handler.dump_parser(&ast, artifact.symbol_table.as_ref());
+                        AstDumper::dump_parser(&ast, artifact.symbol_table.as_ref());
                         if let Some(registry) = artifact.type_registry {
-                            self.output_handler.dump_type_registry(&ast, &registry);
+                            AstDumper::dump_type_registry(&ast, &registry);
                         }
                     } else if let Some(preprocessed) = artifact.preprocessed {
                         self.output_handler.dump_preprocessed_output(

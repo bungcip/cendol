@@ -1,47 +1,4 @@
-use crate::pp::*;
-use crate::diagnostic::DiagnosticEngine;
-use crate::source_manager::SourceManager;
-use serde::Serialize;
-
-#[derive(Serialize)]
-struct DebugToken {
-    kind: String,
-    text: String,
-}
-
-impl From<&PPToken> for DebugToken {
-    fn from(token: &PPToken) -> Self {
-        let kind_str = match &token.kind {
-            PPTokenKind::Identifier(_) => "Identifier".to_string(),
-            PPTokenKind::StringLiteral(_) => "StringLiteral".to_string(),
-            PPTokenKind::Number(_) => "Number".to_string(),
-            PPTokenKind::CharLiteral(_, _) => "CharLiteral".to_string(),
-            k => format!("{:?}", k),
-        };
-
-        DebugToken {
-            kind: kind_str,
-            text: token.get_text().to_string(),
-        }
-    }
-}
-
-fn setup_pp_snapshot(src: &str) -> Vec<DebugToken> {
-    let mut source_manager = SourceManager::new();
-    let mut diagnostics = DiagnosticEngine::new();
-    let config = PPConfig::default();
-
-    let source_id = source_manager.add_buffer(src.as_bytes().to_vec(), "<test>");
-    let mut preprocessor = Preprocessor::new(&mut source_manager, &mut diagnostics, &config);
-
-    let tokens = preprocessor.process(source_id, &config).unwrap();
-    let significant_tokens: Vec<_> = tokens
-        .into_iter()
-        .filter(|t| !matches!(t.kind, PPTokenKind::Eof | PPTokenKind::Eod))
-        .collect();
-
-    significant_tokens.iter().map(DebugToken::from).collect()
-}
+use crate::tests::pp_common::setup_pp_snapshot;
 
 #[test]
 fn test_paste_numbers() {

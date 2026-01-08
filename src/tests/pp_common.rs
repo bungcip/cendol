@@ -57,7 +57,7 @@ pub fn setup_preprocessor_test_with_diagnostics(
         ..Default::default()
     };
 
-    let source_id = source_manager.add_buffer(src.as_bytes().to_vec(), "<test>");
+    let source_id = source_manager.add_buffer(src.as_bytes().to_vec(), "<test>", None);
 
     let mut preprocessor = Preprocessor::new(&mut source_manager, &mut diagnostics, &config);
 

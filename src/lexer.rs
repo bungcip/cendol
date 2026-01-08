@@ -1,6 +1,6 @@
 use crate::intern::StringId;
 use crate::pp::{PPToken, PPTokenKind};
-use crate::source_manager::{SourceLoc, SourceSpan};
+use crate::source_manager::SourceSpan;
 
 use serde::Serialize;
 /// C11 token kinds for the lexical analyzer
@@ -561,10 +561,10 @@ impl<'src> Lexer<'src> {
                 // Consume and append the adjacent literals found in phase 1.
                 for _ in 0..adjacent_literals {
                     let consumed_pptoken = current_token_iter.next().unwrap();
-                    if let PPTokenKind::StringLiteral(next_symbol) = consumed_pptoken.kind {
-                        if let Some(s_content) = Self::extract_string_content(&next_symbol) {
-                            content.push_str(s_content);
-                        }
+                    if let PPTokenKind::StringLiteral(next_symbol) = consumed_pptoken.kind
+                        && let Some(s_content) = Self::extract_string_content(&next_symbol)
+                    {
+                        content.push_str(s_content);
                     }
                 }
 

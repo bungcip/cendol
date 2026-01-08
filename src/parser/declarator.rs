@@ -380,7 +380,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParamData>,
                 let end_span = parser
                     .last_token_span()
                     .unwrap_or_else(|| parser.current_token_span_or_empty());
-                let start_token_span = parser.get_token_span(start_idx).unwrap_or(SourceSpan::empty());
+                let start_token_span = parser.get_token_span(start_idx).unwrap_or_default();
                 let span = start_token_span.merge(end_span);
 
                 params.push(ParamData {

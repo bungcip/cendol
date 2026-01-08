@@ -93,10 +93,10 @@ impl SourceSpan {
 
     pub fn new(start: SourceLoc, end: SourceLoc) -> Self {
         if start.source_id != end.source_id {
-            panic!(
-                "SourceSpan::new called with different SourceIds: {} and {}",
-                start.source_id, end.source_id
-            );
+            // Panic removed: When start and end are in different files (e.g. usage of macro vs macro expansion),
+            // we cannot represent the span correctly in our packed format.
+            // Gracefully degrade to a zero-length span at the start location.
+            return Self::new_with_length(start.source_id, start.offset, 0);
         }
 
         let source_id = start.source_id.to_u32();
@@ -296,9 +296,10 @@ pub struct FileInfo {
     pub file_id: SourceId,
     pub path: PathBuf,
     pub size: u32,
-    pub buffer_index: usize,   // Index into buffers Vec
-    pub line_starts: Vec<u32>, // Line start offsets for efficient line lookup
-    pub line_map: LineMap,     // #line directive mappings
+    pub buffer_index: usize,            // Index into buffers Vec
+    pub line_starts: Vec<u32>,          // Line start offsets for efficient line lookup
+    pub line_map: LineMap,              // #line directive mappings
+    pub include_loc: Option<SourceLoc>, // Location where this file was included/expanded from
 }
 
 /// Manages source files and locations
@@ -321,14 +322,18 @@ impl SourceManager {
 
     /// Add a file to the source manager from a file path
     /// Since we only support UTF-8, we can read directly as bytes and assume validity
-    pub fn add_file_from_path(&mut self, path: &std::path::Path) -> Result<SourceId, std::io::Error> {
+    pub fn add_file_from_path(
+        &mut self,
+        path: &std::path::Path,
+        include_loc: Option<SourceLoc>,
+    ) -> Result<SourceId, std::io::Error> {
         let buffer = std::fs::read(path)?;
         let path_str = path.to_str().unwrap_or("<invalid-utf8>");
-        Ok(self.add_buffer(buffer, path_str))
+        Ok(self.add_buffer(buffer, path_str, include_loc))
     }
 
     /// Add a buffer to the source manager with raw bytes (UTF-8 assumed)
-    pub fn add_buffer(&mut self, buffer: Vec<u8>, path: &str) -> SourceId {
+    pub fn add_buffer(&mut self, buffer: Vec<u8>, path: &str, include_loc: Option<SourceLoc>) -> SourceId {
         let file_id = SourceId::new(self.next_file_id);
         self.next_file_id += 1;
 
@@ -343,6 +348,7 @@ impl SourceManager {
             buffer_index,
             line_starts: Vec::new(),
             line_map: LineMap::new(),
+            include_loc,
         };
 
         self.file_infos.insert(file_id, file_info);
@@ -352,7 +358,7 @@ impl SourceManager {
 
     /// Add a virtual buffer for macro expansions (Level B support)
     /// Virtual buffers contain expanded macro text with proper sequential locations
-    pub fn add_virtual_buffer(&mut self, buffer: Vec<u8>, name: &str) -> SourceId {
+    pub fn add_virtual_buffer(&mut self, buffer: Vec<u8>, name: &str, include_loc: Option<SourceLoc>) -> SourceId {
         let file_id = SourceId::new(self.next_file_id);
         self.next_file_id += 1;
 
@@ -375,6 +381,7 @@ impl SourceManager {
             buffer_index,
             line_starts,
             line_map: LineMap::new(),
+            include_loc,
         };
 
         self.file_infos.insert(file_id, file_info);

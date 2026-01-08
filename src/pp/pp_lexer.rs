@@ -626,20 +626,11 @@ impl PPLexer {
         )
     }
 
-    fn lex_string_literal(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
-        let has_prefix = first_ch == b'L' || first_ch == b'u' || first_ch == b'U';
-        let mut chars = vec![first_ch];
-
-        if has_prefix {
-            // consume the "
-            let quote = self.next_char().unwrap();
-            chars.push(quote);
-        }
-
+    fn lex_common_literal_body(&mut self, delimiter: u8, chars: &mut Vec<u8>) {
         while let Some(ch) = self.next_char() {
             chars.push(ch);
-            if ch == b'"' {
-                break; // End of string literal
+            if ch == delimiter {
+                break; // End of literal
             } else if ch == b'\\' {
                 // Handle escape sequences, including line splicing
                 if let Some(next_ch) = self.next_char() {
@@ -650,24 +641,32 @@ impl PPLexer {
                     }
                 }
             } else if ch >= 0x80 {
-                // Handle UTF-8 multi-byte characters (BMP and beyond)
-                // This is the start of a UTF-8 sequence, consume continuation bytes properly
-                let utf8_sequence_valid = self.is_valid_utf8_start(ch);
-                if utf8_sequence_valid {
+                // Handle UTF-8 multi-byte characters
+                if self.is_valid_utf8_start(ch) {
                     // Consume continuation bytes for valid UTF-8 sequences
                     while let Some(continuation_ch) = self.peek_char() {
                         if (0x80..0xC0).contains(&continuation_ch) {
-                            // This is a UTF-8 continuation byte
                             chars.push(self.next_char().unwrap());
                         } else {
-                            // Not a continuation byte, stop consuming
                             break;
                         }
                     }
                 }
-                // If not a valid UTF-8 start, just continue (fallback behavior)
             }
         }
+    }
+
+    fn lex_string_literal(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
+        let has_prefix = first_ch == b'L' || first_ch == b'u' || first_ch == b'U';
+        let mut chars = vec![first_ch];
+
+        if has_prefix {
+            // consume the "
+            let quote = self.next_char().unwrap();
+            chars.push(quote);
+        }
+
+        self.lex_common_literal_body(b'"', &mut chars);
 
         let text = String::from_utf8(chars).unwrap();
         let symbol = StringId::new(&text);
@@ -700,33 +699,7 @@ impl PPLexer {
             chars.push(quote);
         }
 
-        // now collect until closing '
-        while let Some(ch) = self.next_char() {
-            chars.push(ch);
-            if ch == b'\'' {
-                break; // End of char literal
-            } else if ch == b'\\' {
-                // Handle escape sequences
-                if let Some(escaped) = self.next_char() {
-                    chars.push(escaped);
-                }
-            } else if ch >= 0x80 {
-                // Handle UTF-8 multi-byte characters in char literals
-                // Use the same validation logic as string literals
-                let utf8_sequence_valid = self.is_valid_utf8_start(ch);
-                if utf8_sequence_valid {
-                    // Consume continuation bytes for valid UTF-8 sequences
-                    while let Some(continuation_ch) = self.peek_char() {
-                        if (0x80..0xC0).contains(&continuation_ch) {
-                            chars.push(self.next_char().unwrap());
-                        } else {
-                            break;
-                        }
-                    }
-                }
-                // If not a valid UTF-8 start, just continue (fallback behavior)
-            }
-        }
+        self.lex_common_literal_body(b'\'', &mut chars);
 
         // Parse character literal content
         let quote_start = if has_prefix { 1 } else { 0 };

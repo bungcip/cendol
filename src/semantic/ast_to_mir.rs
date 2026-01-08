@@ -306,6 +306,29 @@ impl<'a> AstToMirLowerer<'a> {
             }
         }
 
+        self.finalize_struct_initializer(field_operands, target_ty)
+    }
+
+    fn lower_array_initializer(
+        &mut self,
+        scope_id: ScopeId,
+        inits: &[nodes::DesignatedInitializer],
+        element_ty: QualType,
+        _size: usize,
+        target_ty: QualType,
+    ) -> Operand {
+        let mut elements = Vec::new();
+        for init in inits {
+            // For now, only sequential initialization is supported.
+            // Designators for arrays are ignored for now to keep it simple.
+            let operand = self.lower_initializer(scope_id, init.initializer, element_ty);
+            elements.push(operand);
+        }
+
+        self.finalize_array_initializer(elements, target_ty)
+    }
+
+    fn finalize_struct_initializer(&mut self, field_operands: Vec<(usize, Operand)>, target_ty: QualType) -> Operand {
         let is_global = self.current_function.is_none();
         if is_global {
             let const_fields = field_operands
@@ -326,22 +349,7 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn lower_array_initializer(
-        &mut self,
-        scope_id: ScopeId,
-        inits: &[nodes::DesignatedInitializer],
-        element_ty: QualType,
-        _size: usize,
-        target_ty: QualType,
-    ) -> Operand {
-        let mut elements = Vec::new();
-        for init in inits {
-            // For now, only sequential initialization is supported.
-            // Designators for arrays are ignored for now to keep it simple.
-            let operand = self.lower_initializer(scope_id, init.initializer, element_ty);
-            elements.push(operand);
-        }
-
+    fn finalize_array_initializer(&mut self, elements: Vec<Operand>, target_ty: QualType) -> Operand {
         let is_global = self.current_function.is_none();
         if is_global {
             let mut const_elements = Vec::new();
@@ -545,28 +553,8 @@ impl<'a> AstToMirLowerer<'a> {
                 UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
                     self.lower_compound_assignment(scope_id, op, *operand_ref, *operand_ref)
                 }
-                UnaryOp::AddrOf => {
-                    let operand = self.lower_expression(scope_id, *operand_ref, true);
-                    if let Operand::Copy(place) = operand {
-                        Operand::AddressOf(place)
-                    } else if let Operand::Constant(const_id) = operand
-                        && let Some(info) = &self.ast.semantic_info
-                        && info.value_categories[(operand_ref.get() - 1) as usize] == ValueCategory::LValue
-                        && matches!(
-                            self.mir_builder.get_constants().get(&const_id),
-                            Some(ConstValue::FunctionAddress(_))
-                        )
-                    {
-                        Operand::Constant(const_id)
-                    } else {
-                        panic!("Cannot take address of a non-lvalue");
-                    }
-                }
-                UnaryOp::Deref => {
-                    let operand = self.lower_expression(scope_id, *operand_ref, true);
-                    let place = Place::Deref(Box::new(operand));
-                    Operand::Copy(Box::new(place))
-                }
+                UnaryOp::AddrOf => self.lower_unary_addrof(scope_id, *operand_ref),
+                UnaryOp::Deref => self.lower_unary_deref(scope_id, *operand_ref),
                 _ => {
                     let operand = self.lower_expression(scope_id, *operand_ref, true);
                     let mir_op = self.map_ast_unary_op_to_mir(op);
@@ -624,6 +612,30 @@ impl<'a> AstToMirLowerer<'a> {
 
         let addr_const_val = ConstValue::GlobalAddress(global_id);
         Operand::Constant(self.create_constant(addr_const_val))
+    }
+
+    fn lower_unary_addrof(&mut self, scope_id: ScopeId, operand_ref: NodeRef) -> Operand {
+        let operand = self.lower_expression(scope_id, operand_ref, true);
+        if let Operand::Copy(place) = operand {
+            Operand::AddressOf(place)
+        } else if let Operand::Constant(const_id) = operand
+            && let Some(info) = &self.ast.semantic_info
+            && info.value_categories[(operand_ref.get() - 1) as usize] == ValueCategory::LValue
+            && matches!(
+                self.mir_builder.get_constants().get(&const_id),
+                Some(ConstValue::FunctionAddress(_))
+            )
+        {
+            Operand::Constant(const_id)
+        } else {
+            panic!("Cannot take address of a non-lvalue");
+        }
+    }
+
+    fn lower_unary_deref(&mut self, scope_id: ScopeId, operand_ref: NodeRef) -> Operand {
+        let operand = self.lower_expression(scope_id, operand_ref, true);
+        let place = Place::Deref(Box::new(operand));
+        Operand::Copy(Box::new(place))
     }
 
     fn lower_ident(&mut self, symbol_ref: &std::cell::Cell<Option<SymbolRef>>) -> Operand {

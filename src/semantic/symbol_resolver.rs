@@ -1429,23 +1429,9 @@ pub(crate) fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx:
 /// Finalize tentative definitions by converting them to defined state
 /// This implements C11 6.9.2 semantics for tentative definitions
 fn finalize_tentative_definitions(symbol_table: &mut SymbolTable) {
-    let tentative_entries: Vec<(NameId, SymbolRef)> = symbol_table
-        .get_scope(ScopeId::GLOBAL)
-        .symbols
-        .values()
-        .filter_map(|entry_ref| {
-            let entry = symbol_table.get_symbol(*entry_ref);
-            if matches!(entry.kind, SymbolKind::Variable { .. }) && entry.def_state == DefinitionState::Tentative {
-                Some((entry.name, *entry_ref))
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    for (_, entry_ref) in &tentative_entries {
-        let entry = symbol_table.get_symbol_mut(*entry_ref);
-        if let SymbolKind::Variable { .. } = &mut entry.kind
+    for entry in &mut symbol_table.entries {
+        if entry.scope_id == ScopeId::GLOBAL
+            && matches!(entry.kind, SymbolKind::Variable { .. })
             && entry.def_state == DefinitionState::Tentative
         {
             entry.def_state = DefinitionState::Defined;

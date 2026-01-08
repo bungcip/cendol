@@ -1,0 +1,42 @@
+{"run_id":"1767859884-192801112","line":654,"new":{"module_name":"cendol__tests__preprocessor","snapshot_name":"computed_include_with_following_code-2","metadata":{"source":"src/tests/preprocessor.rs","assertion_line":654,"expression":"tokens"},"snapshot":"- kind: Identifier\n  text: typedef\n- kind: Identifier\n  text: unsigned\n- kind: Identifier\n  text: long\n- kind: Identifier\n  text: size_t\n- kind: Semicolon\n  text: ;\n- kind: Identifier\n  text: typedef\n- kind: Identifier\n  text: long\n- kind: Identifier\n  text: ptrdiff_t\n- kind: Semicolon\n  text: ;\n- kind: Identifier\n  text: typedef\n- kind: Identifier\n  text: int\n- kind: Identifier\n  text: wchar_t\n- kind: Semicolon\n  text: ;\n- kind: Identifier\n  text: int\n- kind: Identifier\n  text: x\n- kind: Assign\n  text: \"=\"\n- kind: Number\n  text: \"1\"\n- kind: Semicolon\n  text: ;"},"old":{"module_name":"cendol__tests__preprocessor","metadata":{},"snapshot":"- kind: Identifier\n  text: int\n- kind: Identifier\n  text: x\n- kind: Assign\n  text: \"=\"\n- kind: Number\n  text: \"1\"\n- kind: Semicolon\n  text: ;"}}
+{"run_id":"1767859915-962544991","line":652,"new":null,"old":null}
+{"run_id":"1767859915-962544991","line":654,"new":{"module_name":"cendol__tests__preprocessor","snapshot_name":"computed_include_with_following_code-2","metadata":{"source":"src/tests/preprocessor.rs","assertion_line":654,"expression":"tokens"},"snapshot":"- kind: Identifier\n  text: typedef\n- kind: Identifier\n  text: unsigned\n- kind: Identifier\n  text: long\n- kind: Identifier\n  text: size_t\n- kind: Semicolon\n  text: ;\n- kind: Identifier\n  text: typedef\n- kind: Identifier\n  text: long\n- kind: Identifier\n  text: ptrdiff_t\n- kind: Semicolon\n  text: ;\n- kind: Identifier\n  text: typedef\n- kind: Identifier\n  text: int\n- kind: Identifier\n  text: wchar_t\n- kind: Semicolon\n  text: ;\n- kind: Identifier\n  text: int\n- kind: Identifier\n  text: x\n- kind: Assign\n  text: \"=\"\n- kind: Number\n  text: \"1\"\n- kind: Semicolon\n  text: ;"},"old":{"module_name":"cendol__tests__preprocessor","metadata":{},"snapshot":"- kind: Identifier\n  text: int\n- kind: Identifier\n  text: x\n- kind: Assign\n  text: \"=\"\n- kind: Number\n  text: \"1\"\n- kind: Semicolon\n  text: ;"}}
+{"run_id":"1767859930-617049220","line":652,"new":null,"old":null}
+{"run_id":"1767859930-617049220","line":654,"new":{"module_name":"cendol__tests__preprocessor","snapshot_name":"computed_include_with_following_code-2","metadata":{"source":"src/tests/preprocessor.rs","assertion_line":654,"expression":"tokens"},"snapshot":"- kind: Identifier\n  text: typedef\n- kind: Identifier\n  text: unsigned\n- kind: Identifier\n  text: long\n- kind: Identifier\n  text: size_t\n- kind: Semicolon\n  text: ;\n- kind: Identifier\n  text: typedef\n- kind: Identifier\n  text: long\n- kind: Identifier\n  text: ptrdiff_t\n- kind: Semicolon\n  text: ;\n- kind: Identifier\n  text: typedef\n- kind: Identifier\n  text: int\n- kind: Identifier\n  text: wchar_t\n- kind: Semicolon\n  text: ;\n- kind: Identifier\n  text: int\n- kind: Identifier\n  text: x\n- kind: Assign\n  text: \"=\"\n- kind: Number\n  text: \"1\"\n- kind: Semicolon\n  text: ;"},"old":{"module_name":"cendol__tests__preprocessor","metadata":{},"snapshot":"- kind: Identifier\n  text: int\n- kind: Identifier\n  text: x\n- kind: Assign\n  text: \"=\"\n- kind: Number\n  text: \"1\"\n- kind: Semicolon\n  text: ;"}}
+{"run_id":"1767859946-19629175","line":652,"new":null,"old":null}
+{"run_id":"1767859946-19629175","line":654,"new":{"module_name":"cendol__tests__preprocessor","snapshot_name":"computed_include_with_following_code-2","metadata":{"source":"src/tests/preprocessor.rs","assertion_line":654,"expression":"tokens"},"snapshot":"- kind: Identifier\n  text: typedef\n- kind: Identifier\n  text: unsigned\n- kind: Identifier\n  text: long\n- kind: Identifier\n  text: size_t\n- kind: Semicolon\n  text: ;\n- kind: Identifier\n  text: typedef\n- kind: Identifier\n  text: long\n- kind: Identifier\n  text: ptrdiff_t\n- kind: Semicolon\n  text: ;\n- kind: Identifier\n  text: typedef\n- kind: Identifier\n  text: int\n- kind: Identifier\n  text: wchar_t\n- kind: Semicolon\n  text: ;\n- kind: Identifier\n  text: int\n- kind: Identifier\n  text: x\n- kind: Assign\n  text: \"=\"\n- kind: Number\n  text: \"1\"\n- kind: Semicolon\n  text: ;"},"old":{"module_name":"cendol__tests__preprocessor","metadata":{},"snapshot":"- kind: Identifier\n  text: int\n- kind: Identifier\n  text: x\n- kind: Assign\n  text: \"=\"\n- kind: Number\n  text: \"1\"\n- kind: Semicolon\n  text: ;"}}
+{"run_id":"1767859968-635552434","line":652,"new":null,"old":null}
+{"run_id":"1767859968-635552434","line":654,"new":{"module_name":"cendol__tests__preprocessor","snapshot_name":"computed_include_with_following_code-2","metadata":{"source":"src/tests/preprocessor.rs","assertion_line":654,"expression":"tokens"},"snapshot":"- kind: Identifier\n  text: typedef\n- kind: Identifier\n  text: unsigned\n- kind: Identifier\n  text: long\n- kind: Identifier\n  text: size_t\n- kind: Semicolon\n  text: ;\n- kind: Identifier\n  text: typedef\n- kind: Identifier\n  text: long\n- kind: Identifier\n  text: ptrdiff_t\n- kind: Semicolon\n  text: ;\n- kind: Identifier\n  text: typedef\n- kind: Identifier\n  text: int\n- kind: Identifier\n  text: wchar_t\n- kind: Semicolon\n  text: ;\n- kind: Identifier\n  text: int\n- kind: Identifier\n  text: x\n- kind: Assign\n  text: \"=\"\n- kind: Number\n  text: \"1\"\n- kind: Semicolon\n  text: ;"},"old":{"module_name":"cendol__tests__preprocessor","metadata":{},"snapshot":"- kind: Identifier\n  text: int\n- kind: Identifier\n  text: x\n- kind: Assign\n  text: \"=\"\n- kind: Number\n  text: \"1\"\n- kind: Semicolon\n  text: ;"}}
+{"run_id":"1767860005-310069369","line":149,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":341,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":228,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":641,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":703,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":858,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":217,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":652,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":814,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":654,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":362,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":288,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":540,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":743,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":723,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":466,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":733,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":608,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":787,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":846,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":171,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":880,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":122,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":573,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":36,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":428,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":192,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":387,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":754,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":15,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":250,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":764,"new":null,"old":null}
+{"run_id":"1767860005-310069369","line":75,"new":null,"old":null}

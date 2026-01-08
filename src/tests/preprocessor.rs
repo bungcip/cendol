@@ -631,6 +631,79 @@ int y = 2;
 }
 
 #[test]
+fn test_computed_include() {
+    let src = r#"
+#define HEADER <stddef.h>
+#include HEADER
+"#;
+    let (_tokens, diags) = setup_pp_snapshot_with_diags(src);
+    // stddef.h is empty in tests or minimal, we just check no error and empty diags
+    insta::assert_yaml_snapshot!(diags, @"[]");
+}
+
+#[test]
+fn test_computed_include_with_following_code() {
+    let src = r#"
+#define HEADER <stddef.h>
+#include HEADER
+int x = 1;
+"#;
+    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!(diags, @"[]");
+    // Verify that we parsed the following code correctly
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: typedef
+    - kind: Identifier
+      text: unsigned
+    - kind: Identifier
+      text: long
+    - kind: Identifier
+      text: size_t
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: typedef
+    - kind: Identifier
+      text: long
+    - kind: Identifier
+      text: ptrdiff_t
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: typedef
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: wchar_t
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: x
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    "#);
+}
+
+#[test]
+fn test_computed_include_string() {
+    let src = r#"
+#define HDR "nonexistent.h"
+#include HDR
+"#;
+    // This fails with FileNotFound because "nonexistent.h" doesn't exist,
+    // but the fact that it's looking for it means the computed include worked.
+    let (_tokens, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: FileNotFound""#);
+}
+
+#[test]
 fn test_line_directive_with_diagnostics() {
     let src = r#"
 #line 50 "test.c"

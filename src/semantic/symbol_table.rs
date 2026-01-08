@@ -392,7 +392,13 @@ impl SymbolTable {
     }
 
     /// Define a record (struct/union) tag in the current scope.
-    pub(crate) fn define_record(&mut self, name: NameId, ty: TypeRef, is_complete: bool, span: SourceSpan) -> SymbolRef {
+    pub(crate) fn define_record(
+        &mut self,
+        name: NameId,
+        ty: TypeRef,
+        is_complete: bool,
+        span: SourceSpan,
+    ) -> SymbolRef {
         let symbol_entry = Symbol {
             name,
             kind: SymbolKind::Record {
@@ -423,7 +429,12 @@ impl SymbolTable {
     }
 
     /// Define a label in the current scope.
-    pub(crate) fn define_label(&mut self, name: NameId, ty: TypeRef, span: SourceSpan) -> Result<SymbolRef, SymbolTableError> {
+    pub(crate) fn define_label(
+        &mut self,
+        name: NameId,
+        ty: TypeRef,
+        span: SourceSpan,
+    ) -> Result<SymbolRef, SymbolTableError> {
         let symbol_entry = Symbol {
             name,
             kind: SymbolKind::Label,

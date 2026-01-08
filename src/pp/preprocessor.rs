@@ -1409,13 +1409,13 @@ impl<'src> Preprocessor<'src> {
     fn handle_include(&mut self) -> Result<(), PPError> {
         // Parse the include path
         let token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
-        let is_angled = matches!(token.kind, PPTokenKind::Less);
-        let path_str = match token.kind {
+
+        let (path_str, is_angled) = match token.kind {
             PPTokenKind::StringLiteral(symbol) => {
                 // Remove quotes from string literal
                 let full_str = symbol.as_str();
                 if full_str.starts_with('"') && full_str.ends_with('"') {
-                    full_str[1..full_str.len() - 1].to_string()
+                    (full_str[1..full_str.len() - 1].to_string(), false)
                 } else {
                     return Err(PPError::InvalidIncludePath);
                 }
@@ -1441,9 +1441,64 @@ impl<'src> Preprocessor<'src> {
                         path.push_str(text);
                     }
                 }
-                path
+                (path, true)
             }
-            _ => return Err(PPError::InvalidIncludePath),
+            _ => {
+                // Computed include: expand macros and try again
+                let mut tokens = vec![token];
+                // Collect rest of the line
+                while let Some(t) = self.lex_token() {
+                    if t.kind == PPTokenKind::Eod {
+                        // Put back the EOD so expect_eod() can find it
+                        if let Some(lexer) = self.lexer_stack.last_mut() {
+                            lexer.put_back(t);
+                        }
+                        break;
+                    }
+                    tokens.push(t);
+                }
+
+                self.expand_tokens(&mut tokens)?;
+
+                if tokens.is_empty() {
+                    return Err(PPError::InvalidIncludePath);
+                }
+
+                match tokens[0].kind {
+                    PPTokenKind::StringLiteral(symbol) => {
+                        let full_str = symbol.as_str();
+                        if full_str.starts_with('"') && full_str.ends_with('"') {
+                            (full_str[1..full_str.len() - 1].to_string(), false)
+                        } else {
+                            return Err(PPError::InvalidIncludePath);
+                        }
+                    }
+                    PPTokenKind::Less => {
+                        // Reconstruct path from tokens
+                        let mut path = String::new();
+                        let mut found_greater = false;
+                        for t in &tokens[1..] {
+                            if t.kind == PPTokenKind::Greater {
+                                found_greater = true;
+                                break;
+                            }
+                            // Reconstruct text from token
+                            let buffer = self.source_manager.get_buffer(t.location.source_id());
+                            let start = t.location.offset() as usize;
+                            let end = start + t.length as usize;
+                            if end <= buffer.len() {
+                                let text = unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) };
+                                path.push_str(text);
+                            }
+                        }
+                        if !found_greater {
+                            return Err(PPError::InvalidIncludePath);
+                        }
+                        (path, true)
+                    }
+                    _ => return Err(PPError::InvalidIncludePath),
+                }
+            }
         };
 
         // Check include depth

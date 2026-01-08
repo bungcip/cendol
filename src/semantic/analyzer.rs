@@ -141,8 +141,15 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(QualType::unqualified(self.registry.pointer_to(operand_ty.ty())))
             }
             UnaryOp::Deref => {
-                if operand_ty.is_pointer() {
-                    match &self.registry.get(operand_ty.ty()).kind {
+                let mut actual_ty = operand_ty;
+                if operand_ty.is_array() || operand_ty.is_function() {
+                    let idx = (operand_ref.get() - 1) as usize;
+                    self.semantic_info.conversions[idx].push(ImplicitConversion::PointerDecay);
+                    actual_ty = self.registry.decay(operand_ty);
+                }
+
+                if actual_ty.is_pointer() {
+                    match &self.registry.get(actual_ty.ty()).kind {
                         TypeKind::Pointer { pointee } => Some(QualType::unqualified(*pointee)),
                         _ => unreachable!("is_pointer() is true but kind is not Pointer"),
                     }

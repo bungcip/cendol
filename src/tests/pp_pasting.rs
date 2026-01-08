@@ -1,5 +1,5 @@
-use crate::pp::*;
 use crate::diagnostic::DiagnosticEngine;
+use crate::pp::*;
 use crate::source_manager::SourceManager;
 use serde::Serialize;
 

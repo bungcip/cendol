@@ -1,8 +1,8 @@
-use crate::lexer::*;
 use crate::driver::CompilerDriver;
 use crate::driver::artifact::CompilePhase;
 use crate::driver::cli::CompileConfig;
 use crate::intern::StringId;
+use crate::lexer::*;
 
 /// Helper function to test lexing from string to TokenKind
 /// This tests the full pipeline: string -> PPToken -> TokenKind
@@ -52,7 +52,8 @@ mod tests {
 
         for keyword in keywords {
             let symbol = StringId::new(keyword);
-            let expected_kind = crate::lexer::is_keyword(symbol).unwrap_or_else(|| panic!("{} should be a keyword", keyword));
+            let expected_kind =
+                crate::lexer::is_keyword(symbol).unwrap_or_else(|| panic!("{} should be a keyword", keyword));
 
             let token_kinds = setup_lexer(keyword);
             assert_eq!(token_kinds.len(), 1, "Expected 1 token for keyword: {}", keyword);

@@ -22,7 +22,6 @@ pub mod symbol_table;
 pub mod type_registry;
 pub mod types;
 
-
 /// Side table containing semantic information for AST nodes.
 /// Parallel vectors indexed by node index (NodeRef.get() - 1).
 #[derive(Debug, Clone)]

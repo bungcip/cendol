@@ -359,6 +359,10 @@ impl BinaryOp {
                 | BinaryOp::AssignRShift
         )
     }
+
+    pub(crate) fn is_compound(&self) -> bool {
+        self.is_assignment() && !matches!(self, BinaryOp::Assign)
+    }
 }
 
 // Function specifiers

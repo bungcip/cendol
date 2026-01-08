@@ -567,8 +567,8 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::BinaryOp(op, left_ref, right_ref) => {
                 self.lower_binary_op_expr(scope_id, op, *left_ref, *right_ref, mir_ty)
             }
-            NodeKind::Assignment(_, left_ref, right_ref) => {
-                self.lower_assignment_expr(scope_id, *left_ref, *right_ref, mir_ty)
+            NodeKind::Assignment(op, left_ref, right_ref) => {
+                self.lower_assignment_expr(scope_id, op, *left_ref, *right_ref, mir_ty)
             }
             NodeKind::FunctionCall(func_ref, args) => self.lower_function_call(scope_id, *func_ref, args, mir_ty),
             NodeKind::MemberAccess(obj_ref, field_name, is_arrow) => {
@@ -839,19 +839,28 @@ impl<'a> AstToMirLowerer<'a> {
     fn lower_assignment_expr(
         &mut self,
         scope_id: ScopeId,
+        op: &BinaryOp,
         left_ref: NodeRef,
         right_ref: NodeRef,
         mir_ty: TypeId,
     ) -> Operand {
         let lhs_op = self.lower_expression(scope_id, left_ref, true);
         let rhs_op = self.lower_expression(scope_id, right_ref, true);
+        let rhs_converted = self.apply_conversions(rhs_op, right_ref, mir_ty);
 
-        // Apply any recorded implicit conversions from rhs to lhs type
-        let rhs_converted = self.apply_conversions(rhs_op.clone(), right_ref, mir_ty);
+        if let Operand::Copy(place) = lhs_op.clone() {
+            let final_rhs = if op.is_compound() {
+                let base_op = self.map_compound_assign_to_binary_op(op);
+                let rval = Rvalue::BinaryOp(base_op, lhs_op, rhs_converted);
+                // use a temporary local to store the result of the binary operation
+                let (_, temp_place) = self.create_temp_local_with_assignment(rval, mir_ty);
+                Operand::Copy(Box::new(temp_place))
+            } else {
+                rhs_converted
+            };
 
-        if let Operand::Copy(place) = lhs_op {
-            self.emit_assignment(*place, rhs_converted.clone());
-            rhs_converted
+            self.emit_assignment(*place, final_rhs.clone());
+            final_rhs
         } else {
             panic!("LHS of assignment is not a place");
         }
@@ -1467,6 +1476,22 @@ impl<'a> AstToMirLowerer<'a> {
                     None
                 }
             }
+        }
+    }
+
+    fn map_compound_assign_to_binary_op(&self, ast_op: &BinaryOp) -> MirBinaryOp {
+        match ast_op {
+            BinaryOp::AssignAdd => MirBinaryOp::Add,
+            BinaryOp::AssignSub => MirBinaryOp::Sub,
+            BinaryOp::AssignMul => MirBinaryOp::Mul,
+            BinaryOp::AssignDiv => MirBinaryOp::Div,
+            BinaryOp::AssignMod => MirBinaryOp::Mod,
+            BinaryOp::AssignBitAnd => MirBinaryOp::BitAnd,
+            BinaryOp::AssignBitOr => MirBinaryOp::BitOr,
+            BinaryOp::AssignBitXor => MirBinaryOp::BitXor,
+            BinaryOp::AssignLShift => MirBinaryOp::LShift,
+            BinaryOp::AssignRShift => MirBinaryOp::RShift,
+            _ => panic!("Not a compound assignment operator: {:?}", ast_op),
         }
     }
 

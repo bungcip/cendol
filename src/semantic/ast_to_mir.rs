@@ -654,9 +654,7 @@ impl<'a> AstToMirLowerer<'a> {
         } else if operand_ty.is_function() {
             // Function decays to pointer to function
             let func_mir_ty = self.lower_type_to_mir(operand_ty.ty());
-            self.mir_builder.add_type(MirType::Pointer {
-                pointee: func_mir_ty,
-            })
+            self.mir_builder.add_type(MirType::Pointer { pointee: func_mir_ty })
         } else {
             // Already pointer (or should be)
             self.lower_type_to_mir(operand_ty.ty())
@@ -1432,34 +1430,34 @@ impl<'a> AstToMirLowerer<'a> {
                 // Better to desugar it here.
 
                 if let Operand::Copy(place) = &operand {
-                     // Check if it is an array or function
-                     // We don't have easy access to the source type here without looking up the node again.
-                     // But we can assume if PointerDecay is requested, the source is an array/function.
-                     // Actually, if it's an array, `Operand::Copy(place)` loads the whole array?
-                     // No, `Copy` just means "use the value at this place".
-                     // For array, it means the array value.
+                    // Check if it is an array or function
+                    // We don't have easy access to the source type here without looking up the node again.
+                    // But we can assume if PointerDecay is requested, the source is an array/function.
+                    // Actually, if it's an array, `Operand::Copy(place)` loads the whole array?
+                    // No, `Copy` just means "use the value at this place".
+                    // For array, it means the array value.
 
-                     // We want address of first element.
-                     // `&place` -> `AddressOf(place)`.
-                     // But `AddressOf(place)` gives `[N]T*`. We want `T*`.
-                     // This is `BitCast` or `PointerCast`?
+                    // We want address of first element.
+                    // `&place` -> `AddressOf(place)`.
+                    // But `AddressOf(place)` gives `[N]T*`. We want `T*`.
+                    // This is `BitCast` or `PointerCast`?
 
-                     // In C, array decays to pointer to first element.
-                     // `&array[0]`.
+                    // In C, array decays to pointer to first element.
+                    // `&array[0]`.
 
-                     // If we use `Operand::AddressOf(place)`, we get pointer to array.
-                     // Pointer to array `[N]T*` has same representation as `T*`.
-                     // So we can cast it.
+                    // If we use `Operand::AddressOf(place)`, we get pointer to array.
+                    // Pointer to array `[N]T*` has same representation as `T*`.
+                    // So we can cast it.
 
-                     let addr_of_array = Operand::AddressOf(place.clone());
-                     Operand::Cast(target_type_id, Box::new(addr_of_array))
+                    let addr_of_array = Operand::AddressOf(place.clone());
+                    Operand::Cast(target_type_id, Box::new(addr_of_array))
                 } else {
-                     // If it's not a place (e.g. string literal which is Constant), handling might differ.
-                     // But string literal is lowered to Constant(GlobalAddress), which IS a pointer.
-                     // So maybe no decay needed?
+                    // If it's not a place (e.g. string literal which is Constant), handling might differ.
+                    // But string literal is lowered to Constant(GlobalAddress), which IS a pointer.
+                    // So maybe no decay needed?
 
-                     // If we get here with non-place, fallback to generic cast
-                     Operand::Cast(target_type_id, Box::new(operand))
+                    // If we get here with non-place, fallback to generic cast
+                    Operand::Cast(target_type_id, Box::new(operand))
                 }
             }
             _ => Operand::Cast(target_type_id, Box::new(operand)),

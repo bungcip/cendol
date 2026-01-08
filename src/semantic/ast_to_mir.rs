@@ -540,10 +540,7 @@ impl<'a> AstToMirLowerer<'a> {
     fn lower_expression(&mut self, scope_id: ScopeId, expr_ref: NodeRef, need_value: bool) -> Operand {
         let ty = self.ast.get_resolved_type(expr_ref).unwrap_or_else(|| {
             let node = self.ast.get_node(expr_ref);
-            panic!(
-                "Type not resolved for node {:?} at {:?}",
-                node.kind, node.span
-            );
+            panic!("Type not resolved for node {:?} at {:?}", node.kind, node.span);
         });
         let node_kind = self.ast.get_node(expr_ref).kind.clone();
 

@@ -57,8 +57,7 @@ fn apply_parsed_declarator(base_type: TypeRef, parsed_type: &ParsedType, ctx: &m
     // Start with the base type and apply declarator transformations
     let result_type = apply_parsed_declarator_recursive(base_type, parsed_type.declarator, ctx);
     // Combine the declarator result qualifiers with the parsed type qualifiers
-    let combined_type = ctx.registry.merge_qualifiers(result_type, parsed_type.qualifiers);
-    QualType::new(combined_type.ty(), combined_type.qualifiers())
+    ctx.registry.merge_qualifiers(result_type, parsed_type.qualifiers)
 }
 
 /// Recursively apply parsed declarator to base type
@@ -67,48 +66,35 @@ fn apply_parsed_declarator_recursive(
     declarator_ref: ParsedDeclRef,
     ctx: &mut LowerCtx,
 ) -> QualType {
-    // Get all the data we need upfront to avoid borrowing conflicts
-    let (decl_type, qualifiers, inner, size, params, flags) = {
-        match ctx.ast.parsed_types.get_decl(declarator_ref) {
-            ParsedDeclaratorNode::Identifier { .. } => {
-                return QualType::unqualified(current_type);
-            }
-            ParsedDeclaratorNode::Pointer { qualifiers, inner } => (0, Some(qualifiers), Some(inner), None, None, None),
-            ParsedDeclaratorNode::Array { size, inner } => (1, None, Some(inner), Some(size.clone()), None, None),
-            ParsedDeclaratorNode::Function { params, flags, inner } => {
-                (2, None, Some(inner), None, Some(params), Some(flags))
-            }
-        }
-    };
+    let declarator_node = ctx.ast.parsed_types.get_decl(declarator_ref);
 
-    match decl_type {
-        0 => {
+    match declarator_node {
+        ParsedDeclaratorNode::Identifier { .. } => QualType::unqualified(current_type),
+        ParsedDeclaratorNode::Pointer { qualifiers, inner } => {
             // Pointer
             // Apply Pointer modifier to the current type first (Top-Down)
             let pointer_type = ctx.registry.pointer_to(current_type);
-
-            let pointer_qualifiers = qualifiers.unwrap();
-
             let modified_current = pointer_type;
-            let result = apply_parsed_declarator_recursive(modified_current, inner.unwrap(), ctx);
-            QualType::new(result.ty(), result.qualifiers() | pointer_qualifiers)
+            let result = apply_parsed_declarator_recursive(modified_current, inner, ctx);
+            ctx.registry.merge_qualifiers(result, qualifiers)
         }
-        1 => {
+        ParsedDeclaratorNode::Array { size, inner } => {
             // Array
-            let array_size = convert_parsed_array_size(&size.unwrap(), ctx);
+            let array_size = convert_parsed_array_size(&size, ctx);
             let array_type_ref = ctx.registry.array_of(current_type, array_size);
 
-            apply_parsed_declarator_recursive(array_type_ref, inner.unwrap(), ctx)
+            apply_parsed_declarator_recursive(array_type_ref, inner, ctx)
         }
-        2 => {
+        ParsedDeclaratorNode::Function { params, flags, inner } => {
             // Function
             // Process parameters separately
-            let parsed_params: Vec<_> = ctx.ast.parsed_types.get_params(params.unwrap()).to_vec();
+            let parsed_params: Vec<_> = ctx.ast.parsed_types.get_params(params).to_vec();
             let mut processed_params = Vec::new();
             for param in parsed_params {
-                let param_type = convert_parsed_type_to_qual_type(ctx, param.ty, param.span).unwrap_or_else(|_|
+                let param_type = convert_parsed_type_to_qual_type(ctx, param.ty, param.span).unwrap_or_else(|_| {
                     // Create an error type if conversion fails
-                    QualType::unqualified(ctx.registry.type_int));
+                    QualType::unqualified(ctx.registry.type_int)
+                });
 
                 // Apply array-to-pointer decay for function parameters
                 let decayed_param_type = ctx.registry.decay(param_type);
@@ -119,15 +105,11 @@ fn apply_parsed_declarator_recursive(
                 });
             }
 
-            let function_type_ref =
-                ctx.registry
-                    .function_type(current_type, processed_params, flags.unwrap().is_variadic);
+            let function_type_ref = ctx
+                .registry
+                .function_type(current_type, processed_params, flags.is_variadic);
 
-            apply_parsed_declarator_recursive(function_type_ref, inner.unwrap(), ctx)
-        }
-        _ => {
-            // This should never happen
-            QualType::unqualified(current_type)
+            apply_parsed_declarator_recursive(function_type_ref, inner, ctx)
         }
     }
 }
@@ -578,7 +560,7 @@ fn convert_parsed_type_to_qual_type(
     let base_type_ref = convert_parsed_base_type_to_qual_type(ctx, &base_type_node, span)?;
 
     let final_type = apply_parsed_declarator_recursive(base_type_ref.ty(), declarator_ref, ctx);
-    Ok(QualType::new(final_type.ty(), final_type.qualifiers() | qualifiers))
+    Ok(ctx.registry.merge_qualifiers(final_type, qualifiers))
 }
 
 /// Helper to resolve struct/union tags (lookup, forward decl, or definition validation)
@@ -1246,14 +1228,15 @@ pub(crate) fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx:
 
             if let Some(next_decl) = next {
                 let result = apply_declarator(pointer_type_ref, next_decl, ctx);
-                QualType::new(result.ty(), result.qualifiers() | *qualifiers)
+                ctx.registry.merge_qualifiers(result, *qualifiers)
             } else {
                 QualType::new(pointer_type_ref, *qualifiers)
             }
         }
         Declarator::Identifier(_, qualifiers) => {
             let base_type_ref = base_type;
-            QualType::new(base_type_ref, *qualifiers)
+            ctx.registry
+                .merge_qualifiers(QualType::unqualified(base_type_ref), *qualifiers)
         }
         Declarator::Array(base, size) => {
             let element_type = apply_declarator(base_type, base, ctx);
@@ -1296,7 +1279,9 @@ pub(crate) fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx:
                 // Build the function type first
                 let function_type_ref = ctx.registry.function_type(return_type.ty(), parameters, *is_variadic);
                 let pointer_type_ref = ctx.registry.pointer_to(function_type_ref);
-                return QualType::new(pointer_type_ref, *qualifiers);
+                return ctx
+                    .registry
+                    .merge_qualifiers(QualType::unqualified(pointer_type_ref), *qualifiers);
             }
 
             // This is a regular function declaration (or function returning pointer).
@@ -1746,5 +1731,5 @@ fn lower_decl_specifiers_for_function_return(
     let info = lower_decl_specifiers(specs, ctx, span);
     // Return types shouldn't have storage classes usually, but here we just want the type.
     info.base_type
-        .map(|base| QualType::new(base.ty(), base.qualifiers() | info.qualifiers))
+        .map(|base| ctx.registry.merge_qualifiers(base, info.qualifiers))
 }

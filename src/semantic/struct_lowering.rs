@@ -51,7 +51,7 @@ pub(crate) fn lower_struct_members(
             }
 
             if let Some(type_ref) = spec_info.base_type {
-                let type_ref = QualType::new(type_ref.ty(), type_ref.qualifiers() | spec_info.qualifiers);
+                let type_ref = ctx.registry.merge_qualifiers(type_ref, spec_info.qualifiers);
 
                 // Check if it is a Record type (struct or union)
                 if type_ref.is_record() {
@@ -92,7 +92,7 @@ pub(crate) fn lower_struct_members(
                 // By re-applying them here, we ensure that qualifiers like `const` in `const int x;`
                 // are preserved on the final struct member type.
                 let ty = apply_declarator(base_type_ref.ty(), base_declarator, ctx);
-                QualType::new(ty.ty(), ty.qualifiers() | spec_info.qualifiers)
+                ctx.registry.merge_qualifiers(ty, spec_info.qualifiers)
             } else {
                 QualType::unqualified(ctx.registry.type_int)
             };

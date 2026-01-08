@@ -344,18 +344,6 @@ impl TypeRef {
     #[inline]
     pub fn is_arithmetic(self) -> bool {
         self.is_integer() || self.is_floating()
-        // Complex removed from direct check for now unless added to builtin or struct
-    }
-
-    #[inline]
-    pub fn is_complex(self) -> bool {
-        // Complex is handled as a separate kind in Registry now, likely Record or custom logic.
-        // Or if TypeClass::Complex existed. User removed TypeClass::Complex.
-        // We assume it's handled via TypeKind::Complex in registry.
-        // So if class == Builtin/Pointer/Array etc it's not complex (unless Complex is Builtin).
-        // If stored in registry, we can't know without looking up.
-        // For now, return false. This might need fix if is_complex is critical without lookup.
-        false
     }
 
     #[inline]
@@ -440,10 +428,6 @@ impl QualType {
     #[inline]
     pub fn is_enum(self) -> bool {
         self.ty().is_enum()
-    }
-    #[inline]
-    pub fn is_complex(self) -> bool {
-        self.ty().is_complex()
     }
     #[inline]
     pub fn is_builtin(self) -> bool {

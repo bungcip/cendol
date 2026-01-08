@@ -501,11 +501,7 @@ impl AstDumper {
             ),
             NodeKind::EmptyStatement => println!("EmptyStatement"),
             NodeKind::Declaration(decl) => {
-                let specifiers_str = decl
-                    .specifiers
-                    .iter()
-                    .map(|spec| Self::format_decl_specifier(spec))
-                    .join(", ");
+                let specifiers_str = decl.specifiers.iter().map(Self::format_decl_specifier).join(", ");
                 println!(
                     "Declaration({}, init_declarators = [{}])",
                     specifiers_str,
@@ -516,11 +512,7 @@ impl AstDumper {
                 );
             }
             NodeKind::FunctionDef(func_def) => {
-                let specifiers_str = func_def
-                    .specifiers
-                    .iter()
-                    .map(|spec| Self::format_decl_specifier(spec))
-                    .join(", ");
+                let specifiers_str = func_def.specifiers.iter().map(Self::format_decl_specifier).join(", ");
                 println!("FunctionDef({}, body={})", specifiers_str, func_def.body.get());
             }
             NodeKind::Function(function_data) => {
@@ -584,7 +576,7 @@ impl AstDumper {
             ),
             NodeKind::InitializerList(list) => println!(
                 "InitializerList([{}])",
-                list.iter().map(|r| Self::format_designated_initializer(r)).join(", ")
+                list.iter().map(Self::format_designated_initializer).join(", ")
             ),
             NodeKind::Dummy => println!("DUMMY"),
         }

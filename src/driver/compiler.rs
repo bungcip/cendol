@@ -332,10 +332,7 @@ impl CompilerDriver {
         let sema_output = sema.lower_module_complete();
         self.check_diagnostics_and_return_if_error()?;
 
-        Ok(SemaOutputWithAst {
-            sema_output,
-            ast_with_scope: ast,
-        })
+        Ok(SemaOutputWithAst { sema_output })
     }
 
     fn run_codegen(&mut self, sema_output: SemaOutput, emit_kind: EmitKind) -> Result<ClifOutput, PipelineError> {

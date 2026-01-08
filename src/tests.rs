@@ -1,6 +1,7 @@
 pub mod codegen;
 pub mod lexer;
 pub mod parser;
+pub mod pp_common;
 pub mod pp_lexer;
 pub mod pp_pasting;
 pub mod preprocessor;

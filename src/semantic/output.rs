@@ -1,4 +1,3 @@
-use crate::ast::Ast;
 use crate::mir::{
     ConstValue, ConstValueId, Global, GlobalId, Local, LocalId, MirBlock, MirBlockId, MirFunction, MirFunctionId,
     MirModule, MirStmt, MirStmtId, MirType, TypeId,
@@ -23,7 +22,6 @@ pub struct SemaOutput {
 #[derive(Clone)]
 pub struct SemaOutputWithAst {
     pub sema_output: SemaOutput,
-    pub ast_with_scope: Ast,
 }
 
 impl SemaOutput {

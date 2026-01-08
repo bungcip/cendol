@@ -637,7 +637,34 @@ impl<'a> AstToMirLowerer<'a> {
 
     fn lower_unary_deref(&mut self, scope_id: ScopeId, operand_ref: NodeRef) -> Operand {
         let operand = self.lower_expression(scope_id, operand_ref, true);
-        let place = Place::Deref(Box::new(operand));
+
+        // Determine the expected type of the operand after conversions.
+        // For Deref, we expect a pointer.
+        // If operand is Array/Function, it decays to Pointer.
+        let operand_ty = self.ast.get_resolved_type(operand_ref).unwrap();
+        let target_type_id = if operand_ty.is_array() {
+            let element_ty = match &self.registry.get(operand_ty.ty()).kind {
+                TypeKind::Array { element_type, .. } => *element_type,
+                _ => panic!("Expected array"),
+            };
+            let element_mir_ty = self.lower_type_to_mir(element_ty);
+            self.mir_builder.add_type(MirType::Pointer {
+                pointee: element_mir_ty,
+            })
+        } else if operand_ty.is_function() {
+            // Function decays to pointer to function
+            let func_mir_ty = self.lower_type_to_mir(operand_ty.ty());
+            self.mir_builder.add_type(MirType::Pointer {
+                pointee: func_mir_ty,
+            })
+        } else {
+            // Already pointer (or should be)
+            self.lower_type_to_mir(operand_ty.ty())
+        };
+
+        let operand_converted = self.apply_conversions(operand, operand_ref, target_type_id);
+
+        let place = Place::Deref(Box::new(operand_converted));
         Operand::Copy(Box::new(place))
     }
 
@@ -1392,6 +1419,48 @@ impl<'a> AstToMirLowerer<'a> {
             | ImplicitConversion::PointerCast { to, .. } => {
                 let to_mir_type = self.lower_type_to_mir(*to);
                 Operand::Cast(to_mir_type, Box::new(operand))
+            }
+            ImplicitConversion::PointerDecay => {
+                // Pointer decay means converting an array/function to a pointer.
+                // In MIR, array-to-pointer decay is represented by AddressOf + ArrayIndex(0).
+                // Or simply AddressOf if we treat array as value?
+                // Wait, if we have array type operand `[N]T`, we need `T*`.
+                // `operand` is `Copy(Place)`.
+                // If it is an array, we need address of first element.
+                // `&array[0]`.
+                // In MIR, we can use `Cast` if backend supports it, but Cranelift might not support Array->Ptr cast directly.
+                // Better to desugar it here.
+
+                if let Operand::Copy(place) = &operand {
+                     // Check if it is an array or function
+                     // We don't have easy access to the source type here without looking up the node again.
+                     // But we can assume if PointerDecay is requested, the source is an array/function.
+                     // Actually, if it's an array, `Operand::Copy(place)` loads the whole array?
+                     // No, `Copy` just means "use the value at this place".
+                     // For array, it means the array value.
+
+                     // We want address of first element.
+                     // `&place` -> `AddressOf(place)`.
+                     // But `AddressOf(place)` gives `[N]T*`. We want `T*`.
+                     // This is `BitCast` or `PointerCast`?
+
+                     // In C, array decays to pointer to first element.
+                     // `&array[0]`.
+
+                     // If we use `Operand::AddressOf(place)`, we get pointer to array.
+                     // Pointer to array `[N]T*` has same representation as `T*`.
+                     // So we can cast it.
+
+                     let addr_of_array = Operand::AddressOf(place.clone());
+                     Operand::Cast(target_type_id, Box::new(addr_of_array))
+                } else {
+                     // If it's not a place (e.g. string literal which is Constant), handling might differ.
+                     // But string literal is lowered to Constant(GlobalAddress), which IS a pointer.
+                     // So maybe no decay needed?
+
+                     // If we get here with non-place, fallback to generic cast
+                     Operand::Cast(target_type_id, Box::new(operand))
+                }
             }
             _ => Operand::Cast(target_type_id, Box::new(operand)),
         }

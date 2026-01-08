@@ -328,11 +328,7 @@ impl<'a> AstToMirLowerer<'a> {
         self.finalize_array_initializer(elements, target_ty)
     }
 
-    fn finalize_struct_initializer(
-        &mut self,
-        field_operands: Vec<(usize, Operand)>,
-        target_ty: QualType,
-    ) -> Operand {
+    fn finalize_struct_initializer(&mut self, field_operands: Vec<(usize, Operand)>, target_ty: QualType) -> Operand {
         let is_global = self.current_function.is_none();
         if is_global {
             let const_fields = field_operands
@@ -353,11 +349,7 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn finalize_array_initializer(
-        &mut self,
-        elements: Vec<Operand>,
-        target_ty: QualType,
-    ) -> Operand {
+    fn finalize_array_initializer(&mut self, elements: Vec<Operand>, target_ty: QualType) -> Operand {
         let is_global = self.current_function.is_none();
         if is_global {
             let mut const_elements = Vec::new();

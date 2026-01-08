@@ -4,7 +4,6 @@ use super::semantic_common::{setup_diagnostics_output, setup_mir};
 mod tests {
     use super::*;
 
-
     #[test]
     fn test_if_else_statement() {
         let source = r#"

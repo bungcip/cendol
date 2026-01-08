@@ -14,7 +14,7 @@ use crate::ast::{nodes::TypeQualifier, utils::extract_identifier, *};
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::semantic::const_eval::{self, ConstEvalCtx};
 use crate::semantic::struct_lowering::lower_struct_members;
-use crate::semantic::symbol_table::{DefinitionState, SymbolRef, SymbolTableError};
+use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
 use crate::semantic::{
     ArraySizeType, EnumConstant, ScopeId, StructMember, SymbolKind, SymbolTable, TypeKind, TypeQualifiers, TypeRef,
     TypeRegistry,
@@ -467,53 +467,8 @@ fn convert_parsed_base_type_to_qual_type(
         ParsedBaseTypeNode::Builtin(ts) => resolve_type_specifier(ts, ctx, span),
         ParsedBaseTypeNode::Struct { tag, members, is_union } => {
             // Handle struct/union from parsed types
-            let existing_entry = tag.and_then(|tag_name| ctx.symbol_table.lookup_tag(tag_name));
-
-            let type_ref_to_use = if let Some(tag_name) = tag {
-                // Named struct/union
-                if members.is_some() {
-                    // This is a DEFINITION: struct T { ... }
-                    let in_current_scope =
-                        existing_entry.is_some_and(|(_, scope_id)| scope_id == ctx.symbol_table.current_scope());
-
-                    if in_current_scope {
-                        let (entry_ref, _) = existing_entry.unwrap();
-                        let entry = ctx.symbol_table.get_symbol(entry_ref);
-
-                        if entry.is_completed {
-                            // Redeclaration error - for now just return it
-                            entry.type_info
-                        } else {
-                            // Completing a forward declaration in current scope
-                            entry.type_info
-                        }
-                    } else {
-                        // Not in current scope (either not found or shadowing outer)
-                        // Create a new record type
-                        let new_type_ref = ctx.registry.declare_record(Some(*tag_name), *is_union);
-
-                        // Add it to the symbol table in the current scope
-                        ctx.symbol_table.define_record(*tag_name, new_type_ref, false, span);
-                        new_type_ref
-                    }
-                } else {
-                    // This is a USAGE or FORWARD DECL: struct T; or struct T s;
-                    if let Some((entry_ref, _)) = existing_entry {
-                        // Found existing (either in current or outer scope)
-                        let entry = ctx.symbol_table.get_symbol(entry_ref);
-                        entry.type_info
-                    } else {
-                        // Not found anywhere, create an implicit forward declaration in current scope
-                        let forward_ref = ctx.registry.declare_record(Some(*tag_name), *is_union);
-
-                        ctx.symbol_table.define_record(*tag_name, forward_ref, false, span);
-                        forward_ref
-                    }
-                }
-            } else {
-                // Anonymous struct/union definition
-                ctx.registry.declare_record(None, *is_union)
-            };
+            let is_definition = members.is_some();
+            let type_ref = resolve_record_tag(ctx, *tag, *is_union, is_definition, span)?;
 
             // Now handle members if it's a definition
             if let Some(members_range) = members {
@@ -538,74 +493,15 @@ fn convert_parsed_base_type_to_qual_type(
                     });
                 }
 
-                // Update the type in AST and SymbolTable
-                ctx.registry.complete_record(type_ref_to_use, struct_members.clone());
-                ctx.registry.ensure_layout(type_ref_to_use)?;
-
-                if let Some(tag_name) = *tag
-                    && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(tag_name)
-                {
-                    let entry = ctx.symbol_table.get_symbol_mut(entry_ref);
-                    entry.is_completed = true;
-                    if let SymbolKind::Record {
-                        is_complete,
-                        members: entry_members,
-                        ..
-                    } = &mut entry.kind
-                    {
-                        *is_complete = true;
-                        *entry_members = struct_members; // This is now the original value
-                    }
-                }
+                complete_record_symbol(ctx, *tag, type_ref, struct_members)?;
             }
 
-            Ok(QualType::unqualified(type_ref_to_use))
+            Ok(QualType::unqualified(type_ref))
         }
         ParsedBaseTypeNode::Enum { tag, enumerators } => {
             // Handle enum from parsed types
-            let type_ref_to_use = if let Some(tag_name) = tag {
-                let existing_entry = ctx.symbol_table.lookup_tag(*tag_name);
-                if enumerators.is_some() {
-                    // This is a DEFINITION: enum T { ... };
-                    if let Some((entry_ref, scope_id)) = existing_entry
-                        && scope_id == ctx.symbol_table.current_scope()
-                    {
-                        // Found in current scope, check if completed
-                        let (is_completed, first_def, type_info) = {
-                            let entry = ctx.symbol_table.get_symbol(entry_ref);
-                            (entry.is_completed, entry.def_span, entry.type_info)
-                        };
-                        if is_completed {
-                            ctx.report_error(SemanticError::Redefinition {
-                                name: *tag_name,
-                                first_def,
-                                span,
-                            });
-                        }
-                        type_info
-                    } else {
-                        // Not found in current scope, create new entry
-                        let new_type_ref = ctx.registry.declare_enum(Some(*tag_name), ctx.registry.type_int);
-                        ctx.symbol_table.define_enum(*tag_name, new_type_ref, span);
-                        new_type_ref
-                    }
-                } else {
-                    // This is a USAGE or FORWARD DECL: enum T; or enum T e;
-                    if let Some((entry_ref, _)) = existing_entry {
-                        let entry = ctx.symbol_table.get_symbol(entry_ref);
-                        entry.type_info
-                    } else {
-                        // Implicit forward declaration
-                        let forward_ref = ctx.registry.declare_enum(Some(*tag_name), ctx.registry.type_int);
-
-                        ctx.symbol_table.define_enum(*tag_name, forward_ref, span);
-                        forward_ref
-                    }
-                }
-            } else {
-                // Anonymous enum definition
-                ctx.registry.declare_enum(None, ctx.registry.type_int)
-            };
+            let is_definition = enumerators.is_some();
+            let type_ref = resolve_enum_tag(ctx, *tag, is_definition, span)?;
 
             // Process enumerators if it's a definition
             if let Some(enum_range) = enumerators {
@@ -625,30 +521,15 @@ fn convert_parsed_base_type_to_qual_type(
                     enumerators_list.push(enum_constant);
 
                     // Register constant in symbol table
-                    let _ = ctx.symbol_table.define_enum_constant(
-                        parsed_enum.name,
-                        value,
-                        type_ref_to_use,
-                        parsed_enum.span,
-                    );
+                    let _ = ctx
+                        .symbol_table
+                        .define_enum_constant(parsed_enum.name, value, type_ref, parsed_enum.span);
                 }
 
-                // Update the type in AST and SymbolTable using the proper completion function
-                ctx.registry.complete_enum(type_ref_to_use, enumerators_list);
-                ctx.registry.ensure_layout(type_ref_to_use)?;
-
-                if let Some(tag_name) = tag
-                    && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(*tag_name)
-                {
-                    let entry = ctx.symbol_table.get_symbol_mut(entry_ref);
-                    entry.is_completed = true;
-                    if let SymbolKind::EnumTag { is_complete } = &mut entry.kind {
-                        *is_complete = true;
-                    }
-                }
+                complete_enum_symbol(ctx, *tag, type_ref, enumerators_list)?;
             }
 
-            Ok(QualType::unqualified(type_ref_to_use))
+            Ok(QualType::unqualified(type_ref))
         }
         ParsedBaseTypeNode::Typedef(name) => {
             // Lookup typedef in symbol table
@@ -700,6 +581,167 @@ fn convert_parsed_type_to_qual_type(
     Ok(QualType::new(final_type.ty(), final_type.qualifiers() | qualifiers))
 }
 
+/// Helper to resolve struct/union tags (lookup, forward decl, or definition validation)
+fn resolve_record_tag(
+    ctx: &mut LowerCtx,
+    tag: Option<NameId>,
+    is_union: bool,
+    is_definition: bool,
+    span: SourceSpan,
+) -> Result<TypeRef, SemanticError> {
+    let existing_entry = tag.and_then(|tag_name| ctx.symbol_table.lookup_tag(tag_name));
+
+    if let Some(tag_name) = tag {
+        // Named struct/union
+        if is_definition {
+            // This is a DEFINITION: struct T { ... }
+            let in_current_scope =
+                existing_entry.is_some_and(|(_, scope_id)| scope_id == ctx.symbol_table.current_scope());
+
+            if in_current_scope {
+                let (entry_ref, _) = existing_entry.unwrap();
+                let entry = ctx.symbol_table.get_symbol(entry_ref);
+
+                if entry.is_completed {
+                    // Redeclaration error - for now just return the type
+                    // The caller might want to check this, but consistent with existing logic we just return it
+                    Ok(entry.type_info)
+                } else {
+                    // Completing a forward declaration in current scope
+                    Ok(entry.type_info)
+                }
+            } else {
+                // Not in current scope (either not found or shadowing outer)
+                // Create a new record type
+                let new_type_ref = ctx.registry.declare_record(Some(tag_name), is_union);
+
+                // Add it to the symbol table in the current scope
+                ctx.symbol_table.define_record(tag_name, new_type_ref, false, span);
+                Ok(new_type_ref)
+            }
+        } else {
+            // This is a USAGE or FORWARD DECL: struct T; or struct T s;
+            if let Some((entry_ref, _)) = existing_entry {
+                // Found existing (either in current or outer scope)
+                let entry = ctx.symbol_table.get_symbol(entry_ref);
+                Ok(entry.type_info)
+            } else {
+                // Not found anywhere, create an implicit forward declaration in current scope
+                let forward_ref = ctx.registry.declare_record(Some(tag_name), is_union);
+
+                ctx.symbol_table.define_record(tag_name, forward_ref, false, span);
+                Ok(forward_ref)
+            }
+        }
+    } else {
+        // Anonymous struct/union definition
+        Ok(ctx.registry.declare_record(None, is_union))
+    }
+}
+
+/// Helper to resolve enum tags
+fn resolve_enum_tag(
+    ctx: &mut LowerCtx,
+    tag: Option<NameId>,
+    is_definition: bool,
+    span: SourceSpan,
+) -> Result<TypeRef, SemanticError> {
+    let existing_entry = tag.and_then(|tag_name| ctx.symbol_table.lookup_tag(tag_name));
+
+    if let Some(tag_name) = tag {
+        if is_definition {
+            // This is a DEFINITION: enum T { ... };
+            if let Some((entry_ref, scope_id)) = existing_entry
+                && scope_id == ctx.symbol_table.current_scope()
+            {
+                // Found in current scope, check if completed
+                let (is_completed, first_def, type_info) = {
+                    let entry = ctx.symbol_table.get_symbol(entry_ref);
+                    (entry.is_completed, entry.def_span, entry.type_info)
+                };
+                if is_completed {
+                    ctx.report_error(SemanticError::Redefinition {
+                        name: tag_name,
+                        first_def,
+                        span,
+                    });
+                }
+                Ok(type_info)
+            } else {
+                // Not found in current scope, create new entry
+                let new_type_ref = ctx.registry.declare_enum(Some(tag_name), ctx.registry.type_int);
+                ctx.symbol_table.define_enum(tag_name, new_type_ref, span);
+                Ok(new_type_ref)
+            }
+        } else {
+            // This is a USAGE or FORWARD DECL: enum T; or enum T e;
+            if let Some((entry_ref, _)) = existing_entry {
+                let entry = ctx.symbol_table.get_symbol(entry_ref);
+                Ok(entry.type_info)
+            } else {
+                // Implicit forward declaration
+                let forward_ref = ctx.registry.declare_enum(Some(tag_name), ctx.registry.type_int);
+
+                ctx.symbol_table.define_enum(tag_name, forward_ref, span);
+                Ok(forward_ref)
+            }
+        }
+    } else {
+        // Anonymous enum definition
+        Ok(ctx.registry.declare_enum(None, ctx.registry.type_int))
+    }
+}
+
+fn complete_record_symbol(
+    ctx: &mut LowerCtx,
+    tag: Option<NameId>,
+    type_ref: TypeRef,
+    members: Vec<StructMember>,
+) -> Result<(), SemanticError> {
+    // Update the type in AST and SymbolTable
+    ctx.registry.complete_record(type_ref, members.clone());
+    ctx.registry.ensure_layout(type_ref)?;
+
+    if let Some(tag_name) = tag
+        && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(tag_name)
+    {
+        let entry = ctx.symbol_table.get_symbol_mut(entry_ref);
+        entry.is_completed = true;
+        if let SymbolKind::Record {
+            is_complete,
+            members: entry_members,
+            ..
+        } = &mut entry.kind
+        {
+            *is_complete = true;
+            *entry_members = members; // This is now the original value
+        }
+    }
+    Ok(())
+}
+
+fn complete_enum_symbol(
+    ctx: &mut LowerCtx,
+    tag: Option<NameId>,
+    type_ref: TypeRef,
+    enumerators: Vec<EnumConstant>,
+) -> Result<(), SemanticError> {
+    // Update the type in AST and SymbolTable using the proper completion function
+    ctx.registry.complete_enum(type_ref, enumerators);
+    ctx.registry.ensure_layout(type_ref)?;
+
+    if let Some(tag_name) = tag
+        && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(tag_name)
+    {
+        let entry = ctx.symbol_table.get_symbol_mut(entry_ref);
+        entry.is_completed = true;
+        if let SymbolKind::EnumTag { is_complete } = &mut entry.kind {
+            *is_complete = true;
+        }
+    }
+    Ok(())
+}
+
 /// Resolve a type specifier to a QualType
 fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSpan) -> Result<QualType, SemanticError> {
     match ts {
@@ -733,55 +775,8 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
             convert_parsed_type_to_qual_type(ctx, *parsed_type, span)
         }
         TypeSpecifier::Record(is_union, tag, definition) => {
-            // Properly handle struct/union types with their member declarations
-
-            let existing_entry = tag.and_then(|tag_name| ctx.symbol_table.lookup_tag(tag_name));
-
-            let type_ref_to_use = if let Some(tag_name) = tag {
-                // Named struct/union
-                if let Some(_def) = definition {
-                    // This is a DEFINITION: struct T { ... }
-                    let in_current_scope =
-                        existing_entry.is_some_and(|(_, scope_id)| scope_id == ctx.symbol_table.current_scope());
-
-                    if in_current_scope {
-                        let (entry_ref, _) = existing_entry.unwrap();
-                        let entry = ctx.symbol_table.get_symbol(entry_ref);
-
-                        if entry.is_completed {
-                            // Redeclaration error - for now just return it
-                            entry.type_info
-                        } else {
-                            // Completing a forward declaration in current scope
-                            entry.type_info
-                        }
-                    } else {
-                        // Not in current scope (either not found or shadowing outer)
-                        // Create a new record type
-                        let new_type_ref = ctx.registry.declare_record(Some(*tag_name), *is_union);
-
-                        // Add it to the symbol table in the current scope
-                        ctx.symbol_table.define_record(*tag_name, new_type_ref, false, span);
-                        new_type_ref
-                    }
-                } else {
-                    // This is a USAGE or FORWARD DECL: struct T; or struct T s;
-                    if let Some((entry_ref, _)) = existing_entry {
-                        // Found existing (either in current or outer scope)
-                        let entry = ctx.symbol_table.get_symbol(entry_ref);
-                        entry.type_info
-                    } else {
-                        // Not found anywhere, create an implicit forward declaration in current scope
-                        let forward_ref = ctx.registry.declare_record(Some(*tag_name), *is_union);
-
-                        ctx.symbol_table.define_record(*tag_name, forward_ref, false, span);
-                        forward_ref
-                    }
-                }
-            } else {
-                // Anonymous struct/union definition
-                ctx.registry.declare_record(None, *is_union)
-            };
+            let is_definition = definition.is_some();
+            let type_ref = resolve_record_tag(ctx, *tag, *is_union, is_definition, span)?;
 
             // Now handle members if it's a definition
             if let Some(def) = definition {
@@ -791,73 +786,14 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     .map(|decls| lower_struct_members(decls, ctx, span))
                     .unwrap_or_default();
 
-                // Update the type in AST and SymbolTable
-                ctx.registry.complete_record(type_ref_to_use, members.clone());
-                ctx.registry.ensure_layout(type_ref_to_use)?;
-
-                if let Some(tag_name) = tag
-                    && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(*tag_name)
-                {
-                    let entry = ctx.symbol_table.get_symbol_mut(entry_ref);
-                    entry.is_completed = true;
-                    if let SymbolKind::Record {
-                        is_complete,
-                        members: entry_members,
-                        ..
-                    } = &mut entry.kind
-                    {
-                        *is_complete = true;
-                        *entry_members = members;
-                    }
-                }
+                complete_record_symbol(ctx, *tag, type_ref, members)?;
             }
 
-            Ok(QualType::unqualified(type_ref_to_use))
+            Ok(QualType::unqualified(type_ref))
         }
         TypeSpecifier::Enum(tag, enumerators) => {
-            // 1. Resolve or create the enum type (and its tag)
-            let type_ref_to_use = if let Some(tag_name) = tag {
-                let existing_entry = ctx.symbol_table.lookup_tag(*tag_name);
-                if enumerators.is_some() {
-                    // This is a DEFINITION: enum T { ... };
-                    if let Some((entry_ref, scope_id)) = existing_entry
-                        && scope_id == ctx.symbol_table.current_scope()
-                    {
-                        // Found in current scope, check if completed
-                        let (is_completed, first_def, type_info) = {
-                            let entry = ctx.symbol_table.get_symbol(entry_ref);
-                            (entry.is_completed, entry.def_span, entry.type_info)
-                        };
-                        if is_completed {
-                            ctx.report_error(SemanticError::Redefinition {
-                                name: *tag_name,
-                                first_def,
-                                span,
-                            });
-                        }
-                        type_info
-                    } else {
-                        // Not found in current scope, create new entry
-                        let new_type_ref = ctx.registry.declare_enum(Some(*tag_name), ctx.registry.type_int);
-                        ctx.symbol_table.define_enum(*tag_name, new_type_ref, span);
-                        new_type_ref
-                    }
-                } else {
-                    // This is a USAGE or FORWARD DECL: enum T; or enum T e;
-                    if let Some((entry_ref, _)) = existing_entry {
-                        let entry = ctx.symbol_table.get_symbol(entry_ref);
-                        entry.type_info
-                    } else {
-                        // Implicit forward declaration
-                        let forward_ref = ctx.registry.declare_enum(Some(*tag_name), ctx.registry.type_int);
-                        ctx.symbol_table.define_enum(*tag_name, forward_ref, span);
-                        forward_ref
-                    }
-                }
-            } else {
-                // Anonymous enum definition
-                ctx.registry.declare_enum(None, ctx.registry.type_int)
-            };
+            let is_definition = enumerators.is_some();
+            let type_ref_to_use = resolve_enum_tag(ctx, *tag, is_definition, span)?;
 
             // 2. Process enumerators if it's a definition
             if let Some(enums) = enumerators {
@@ -893,19 +829,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     }
                 }
 
-                // Update the type in AST and SymbolTable using the proper completion function
-                ctx.registry.complete_enum(type_ref_to_use, enumerators_list);
-                ctx.registry.ensure_layout(type_ref_to_use)?;
-
-                if let Some(tag_name) = tag
-                    && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(*tag_name)
-                {
-                    let entry = ctx.symbol_table.get_symbol_mut(entry_ref);
-                    entry.is_completed = true;
-                    if let SymbolKind::EnumTag { is_complete } = &mut entry.kind {
-                        *is_complete = true;
-                    }
-                }
+                complete_enum_symbol(ctx, *tag, type_ref_to_use, enumerators_list)?;
             }
 
             Ok(QualType::unqualified(type_ref_to_use))

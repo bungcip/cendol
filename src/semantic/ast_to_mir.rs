@@ -551,7 +551,7 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::Ident(_, symbol_ref) => self.lower_ident(symbol_ref),
             NodeKind::UnaryOp(op, operand_ref) => match *op {
                 UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
-                    self.lower_compound_assignment(scope_id, op, *operand_ref, *operand_ref)
+                    self.lower_pre_incdec(scope_id, op, *operand_ref, *operand_ref)
                 }
                 UnaryOp::AddrOf => self.lower_unary_addrof(scope_id, *operand_ref),
                 UnaryOp::Deref => self.lower_unary_deref(scope_id, *operand_ref),
@@ -1006,13 +1006,8 @@ impl<'a> AstToMirLowerer<'a> {
             // Apply the chain of field accesses
 
             // Resolve base place
-            let mut current_place = if let Operand::Copy(place) = obj_operand {
-                *place
-            } else {
-                let mir_type = self.lower_type_to_mir(obj_ty.ty());
-                let (_, temp_place) = self.create_temp_local_with_assignment(Rvalue::Use(obj_operand), mir_type);
-                temp_place
-            };
+            let mir_type = self.lower_type_to_mir(obj_ty.ty());
+            let mut current_place = self.ensure_place(obj_operand, mir_type);
 
             if is_arrow {
                 // Dereference: *ptr
@@ -1046,21 +1041,11 @@ impl<'a> AstToMirLowerer<'a> {
 
                 match &layout.kind {
                     crate::semantic::types::LayoutKind::Array { element: _, len: _ } => {
-                        // Verify that the array element type has a layout too
-                        // Use get_layout to check existence (it panics if not exists usually, but ensure_layout guarantees it)
-                        // Or we can assume it's fine since we got array layout.
-
                         // Note: In a full implementation, we could add bounds checking here
                         // for static arrays if the index is a constant
 
-                        let arr_place = if let Operand::Copy(place) = arr_operand {
-                            *place
-                        } else {
-                            let mir_type = self.lower_type_to_mir(arr_ty.ty());
-                            let (_, temp_place) =
-                                self.create_temp_local_with_assignment(Rvalue::Use(arr_operand), mir_type);
-                            temp_place
-                        };
+                        let mir_type = self.lower_type_to_mir(arr_ty.ty());
+                        let arr_place = self.ensure_place(arr_operand, mir_type);
 
                         Operand::Copy(Box::new(Place::ArrayIndex(Box::new(arr_place), Box::new(idx_operand))))
                     }
@@ -1073,14 +1058,8 @@ impl<'a> AstToMirLowerer<'a> {
                 // p[idx] is equivalent to *(p + idx) which is what ArrayIndex does
 
                 // Create an ArrayIndex place with the pointer as base and index
-                let pointer_place = if let Operand::Copy(place) = arr_operand {
-                    *place
-                } else {
-                    // If it's not a Copy, create a temporary
-                    let mir_type = self.lower_type_to_mir(arr_ty.ty());
-                    let (_, temp_place) = self.create_temp_local_with_assignment(Rvalue::Use(arr_operand), mir_type);
-                    temp_place
-                };
+                let mir_type = self.lower_type_to_mir(arr_ty.ty());
+                let pointer_place = self.ensure_place(arr_operand, mir_type);
 
                 Operand::Copy(Box::new(Place::ArrayIndex(
                     Box::new(pointer_place),
@@ -1450,6 +1429,15 @@ impl<'a> AstToMirLowerer<'a> {
         (local_id, place)
     }
 
+    fn ensure_place(&mut self, operand: Operand, type_id: TypeId) -> Place {
+        if let Operand::Copy(place) = operand {
+            *place
+        } else {
+            let (_, temp_place) = self.create_temp_local_with_assignment(Rvalue::Use(operand), type_id);
+            temp_place
+        }
+    }
+
     fn emit_rvalue_to_operand(&mut self, rvalue: Rvalue, type_id: TypeId) -> Operand {
         let (_, place) = self.create_temp_local_with_assignment(rvalue, type_id);
         Operand::Copy(Box::new(place))
@@ -1609,13 +1597,7 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn lower_compound_assignment(
-        &mut self,
-        scope_id: ScopeId,
-        op: &UnaryOp,
-        lhs_ref: NodeRef,
-        _rhs_ref: NodeRef,
-    ) -> Operand {
+    fn lower_pre_incdec(&mut self, scope_id: ScopeId, op: &UnaryOp, lhs_ref: NodeRef, _rhs_ref: NodeRef) -> Operand {
         let is_inc = matches!(op, UnaryOp::PreIncrement);
         self.lower_inc_dec_common(scope_id, lhs_ref, is_inc, false, true)
     }

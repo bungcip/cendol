@@ -692,6 +692,10 @@ impl<'a> AstToMirLowerer<'a> {
         right_ref: NodeRef,
         mir_ty: TypeId,
     ) -> Operand {
+        if matches!(op, BinaryOp::LogicAnd | BinaryOp::LogicOr) {
+            return self.lower_logical_op(scope_id, op, left_ref, right_ref, mir_ty);
+        }
+
         let lhs = self.lower_expression(scope_id, left_ref, true);
         let rhs = self.lower_expression(scope_id, right_ref, true);
 
@@ -708,6 +712,94 @@ impl<'a> AstToMirLowerer<'a> {
         let mir_op = self.map_ast_binary_op_to_mir(op);
         let rval = Rvalue::BinaryOp(mir_op, lhs_converted, rhs_converted);
         self.emit_rvalue_to_operand(rval, mir_ty)
+    }
+
+    fn lower_logical_op(
+        &mut self,
+        scope_id: ScopeId,
+        op: &BinaryOp,
+        left_ref: NodeRef,
+        right_ref: NodeRef,
+        mir_ty: TypeId,
+    ) -> Operand {
+        // Short-circuiting logic for && and ||
+        // result = lhs ? (op == LogicOr ? 1 : rhs) : (op == LogicOr ? rhs : 0)
+
+        // Create temporary for result
+        let (_res_local, res_place) = self.create_temp_local(mir_ty);
+
+        let eval_rhs_block = self.mir_builder.create_block();
+        let merge_block = self.mir_builder.create_block();
+        let short_circuit_block = self.mir_builder.create_block();
+
+        // 1. Evaluate LHS
+        let lhs_op = self.lower_condition(scope_id, left_ref);
+
+        // Pre-create constants to avoid double borrow
+        let zero_const = self.create_constant(ConstValue::Int(0));
+        let one_const = self.create_constant(ConstValue::Int(1));
+
+        match op {
+            BinaryOp::LogicAnd => {
+                // if lhs { goto eval_rhs } else { goto short_circuit (result=0) }
+                self.mir_builder
+                    .set_terminator(Terminator::If(lhs_op, eval_rhs_block, short_circuit_block));
+
+                // Short circuit case: LHS is false, so result is 0
+                self.mir_builder.set_current_block(short_circuit_block);
+                self.mir_builder.add_statement(MirStmt::Assign(
+                    res_place.clone(),
+                    Rvalue::Use(Operand::Constant(zero_const)),
+                ));
+                self.mir_builder.set_terminator(Terminator::Goto(merge_block));
+            }
+            BinaryOp::LogicOr => {
+                // if lhs { goto short_circuit (result=1) } else { goto eval_rhs }
+                self.mir_builder
+                    .set_terminator(Terminator::If(lhs_op, short_circuit_block, eval_rhs_block));
+
+                // Short circuit case: LHS is true, so result is 1
+                self.mir_builder.set_current_block(short_circuit_block);
+                self.mir_builder.add_statement(MirStmt::Assign(
+                    res_place.clone(),
+                    Rvalue::Use(Operand::Constant(one_const)),
+                ));
+                self.mir_builder.set_terminator(Terminator::Goto(merge_block));
+            }
+            _ => unreachable!(),
+        }
+
+        // 2. Evaluate RHS
+        self.mir_builder.set_current_block(eval_rhs_block);
+        let rhs_val = self.lower_condition(scope_id, right_ref);
+
+        // Convert boolean condition result to 0 or 1 integer
+        // If rhs_val is true -> 1, else -> 0
+        let rhs_true_block = self.mir_builder.create_block();
+        let rhs_false_block = self.mir_builder.create_block();
+
+        self.mir_builder
+            .set_terminator(Terminator::If(rhs_val, rhs_true_block, rhs_false_block));
+
+        self.mir_builder.set_current_block(rhs_true_block);
+        self.mir_builder.add_statement(MirStmt::Assign(
+            res_place.clone(),
+            Rvalue::Use(Operand::Constant(one_const)),
+        ));
+        self.mir_builder.set_terminator(Terminator::Goto(merge_block));
+
+        self.mir_builder.set_current_block(rhs_false_block);
+        self.mir_builder.add_statement(MirStmt::Assign(
+            res_place.clone(),
+            Rvalue::Use(Operand::Constant(zero_const)),
+        ));
+        self.mir_builder.set_terminator(Terminator::Goto(merge_block));
+
+        // Merge
+        self.mir_builder.set_current_block(merge_block);
+        self.current_block = Some(merge_block);
+
+        Operand::Copy(Box::new(res_place))
     }
 
     fn lower_pointer_arithmetic(

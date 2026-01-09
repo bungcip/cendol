@@ -88,8 +88,6 @@ pub enum NodeKind {
 
     // --- Semantic Nodes (Type-Resolved) ---
     // declarations of VarDecl/FunctionDecl/TypedefDecl/RecordDecl
-    DeclarationList(Vec<NodeRef>),
-
     VarDecl(VarDeclData),
     FunctionDecl(FunctionDeclData),
     TypedefDecl(TypedefDeclData),

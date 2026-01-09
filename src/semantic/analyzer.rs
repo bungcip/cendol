@@ -588,12 +588,6 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 Some(data.ty)
             }
-            NodeKind::DeclarationList(nodes) => {
-                for child in nodes {
-                    self.visit_node(*child);
-                }
-                None
-            }
             NodeKind::EnumConstant(_, value_expr) => {
                 if let Some(expr) = value_expr {
                     self.visit_node(*expr);
@@ -744,12 +738,13 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::SizeOfExpr(expr) => {
                 if let Some(ty) = self.visit_node(*expr)
-                    && !self.registry.is_complete(ty.ty()) {
-                        self.report_error(SemanticError::SizeOfIncompleteType {
-                            ty: ty.ty(),
-                            span: node.span,
-                        });
-                    }
+                    && !self.registry.is_complete(ty.ty())
+                {
+                    self.report_error(SemanticError::SizeOfIncompleteType {
+                        ty: ty.ty(),
+                        span: node.span,
+                    });
+                }
                 Some(QualType::unqualified(self.registry.type_long_unsigned))
             }
             NodeKind::SizeOfType(ty) | NodeKind::AlignOf(ty) => {
@@ -800,7 +795,6 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::TranslationUnit(_)
             | NodeKind::Function(_)
             | NodeKind::VarDecl(_)
-            | NodeKind::DeclarationList(_)
             | NodeKind::RecordDecl(_)
             | NodeKind::TypedefDecl(_)
             | NodeKind::EnumConstant(..)

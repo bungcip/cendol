@@ -162,11 +162,6 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::Function(function_data) => self.lower_function(node_ref, &function_data),
             NodeKind::VarDecl(var_decl) => self.lower_var_declaration(scope_id, &var_decl, node_span),
             NodeKind::CompoundStatement(nodes) => self.lower_compound_statement(node_ref, &nodes),
-            NodeKind::DeclarationList(nodes) => {
-                for child_ref in nodes {
-                    self.lower_node_ref(child_ref, scope_id);
-                }
-            }
             _ => self.try_lower_as_statement(scope_id, node_ref),
         }
     }

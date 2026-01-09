@@ -241,7 +241,6 @@ impl AstDumper {
             | NodeKind::Default(_)
             | NodeKind::ExpressionStatement(_)
             | NodeKind::EmptyStatement
-            | NodeKind::DeclarationList(_)
             | NodeKind::InitializerList(_)
             | NodeKind::StaticAssert(_, _)
             | NodeKind::EnumConstant(_, _)
@@ -470,10 +469,6 @@ impl AstDumper {
                         .join(", ")
                 )
             }
-            NodeKind::DeclarationList(stmts) => println!(
-                "DeclarationList([{}])",
-                stmts.iter().map(|&r| r.get().to_string()).join(", ")
-            ),
             NodeKind::InitializerList(list) => println!(
                 "InitializerList([{}])",
                 list.iter().map(Self::format_designated_initializer).join(", ")

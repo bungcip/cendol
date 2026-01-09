@@ -1,11 +1,10 @@
 #![cfg(test)]
 use crate::ast::{Ast, BinaryOp, DeclSpecifier, Declarator, NodeKind, NodeRef, TypeSpecifier, UnaryOp};
 use crate::diagnostic::{DiagnosticEngine, ParseError};
-use crate::driver::CompilerDriver;
 use crate::driver::artifact::CompilePhase;
-use crate::driver::cli::CompileConfig;
 use crate::parser::statements::parse_compound_statement;
 use crate::parser::{Parser, declarations, statements};
+use crate::tests::test_utils;
 use serde::Serialize;
 
 /// Resolved AST node kind for testing - replaces NodeRef with actual content
@@ -440,9 +439,8 @@ where
     F: FnOnce(&mut Parser<'_, '_>) -> T,
 {
     let phase = CompilePhase::Lex;
-    let config = CompileConfig::from_virtual_file(source.to_string(), phase);
-    let mut driver = CompilerDriver::from_config(config);
-    let mut out = driver.run_pipeline(phase).unwrap();
+    let (_, out) = test_utils::run_pipeline(source, phase);
+    let mut out = out.unwrap();
     let first = out.units.first_mut().unwrap();
     let artifact = first.1;
     let tokens = artifact.lexed.clone().unwrap();
@@ -1552,9 +1550,8 @@ fn test_label_with_numeric_suffix() {
 
 fn parse_test(source: &str) -> Ast {
     let phase = CompilePhase::Parse;
-    let config = CompileConfig::from_virtual_file(source.to_string(), phase);
-    let mut driver = CompilerDriver::from_config(config);
-    let mut out = driver.run_pipeline(phase).unwrap();
+    let (_, out) = test_utils::run_pipeline(source, phase);
+    let mut out = out.unwrap();
     let first = out.units.first_mut().unwrap();
     let artifact = first.1;
     let ast = artifact.ast.clone().unwrap();
@@ -1611,12 +1608,9 @@ fn test_parse_bitfield() {
 fn test_duplicate_typedef_no_panic() {
     let source = "typedef int my_int; typedef int my_int;";
     // We want to run the full pipeline up to symbol resolution, which is part of the MIR phase.
-    let config = CompileConfig::from_virtual_file(source.to_string(), CompilePhase::Mir);
-    let mut driver = CompilerDriver::from_config(config);
-
     // This should no longer panic. A panic will fail the test.
     // We expect an error here because of the redefinition, so we use `let _ = ...`
-    let _ = driver.run_pipeline(CompilePhase::Mir);
+    let (driver, _) = test_utils::run_pipeline(source, CompilePhase::Mir);
 
     let diagnostics = driver.get_diagnostics();
 

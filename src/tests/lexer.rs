@@ -1,8 +1,7 @@
-use crate::driver::CompilerDriver;
 use crate::driver::artifact::CompilePhase;
-use crate::driver::cli::CompileConfig;
 use crate::intern::StringId;
 use crate::lexer::*;
+use crate::tests::test_utils;
 
 /// Helper function to test lexing from string to TokenKind
 /// This tests the full pipeline: string -> PPToken -> TokenKind
@@ -13,9 +12,8 @@ fn setup_lexer(input: &str) -> Vec<TokenKind> {
 /// Helper function to test lexing from string to TokenKind, optionally including EndOfFile
 fn setup_lexer_with_eof(source: &str, include_eof: bool) -> Vec<TokenKind> {
     let phase = CompilePhase::Lex;
-    let config = CompileConfig::from_virtual_file(source.to_string(), phase);
-    let mut driver = CompilerDriver::from_config(config);
-    let mut out = driver.run_pipeline(phase).unwrap();
+    let (_, out) = test_utils::run_pipeline(source, phase);
+    let mut out = out.unwrap();
     let first = out.units.first_mut().unwrap();
     let artifact = first.1;
     let tokens = artifact.lexed.clone().unwrap();

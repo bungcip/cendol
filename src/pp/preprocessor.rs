@@ -1162,7 +1162,7 @@ impl<'src> Preprocessor<'src> {
         // --- Process the pragma content without modifying the main lexer stack ---
         let source_id = self
             .source_manager
-            .add_buffer(pragma_content.as_bytes().to_vec(), "<_Pragma>");
+            .add_buffer(pragma_content.as_bytes().to_vec(), "<_Pragma>", None);
         let buffer = self.source_manager.get_buffer(source_id);
         let mut temp_lexer = PPLexer::new(source_id, buffer.to_vec());
 
@@ -1423,7 +1423,8 @@ impl<'src> Preprocessor<'src> {
         // Check for built-in headers first for angled includes
         let include_source_id = if is_angled {
             if let Some(content) = self.built_in_headers.get(path_str.as_str()) {
-                self.source_manager.add_buffer(content.as_bytes().to_vec(), &path_str)
+                self.source_manager
+                    .add_buffer(content.as_bytes().to_vec(), &path_str, Some(token.location))
             } else {
                 // Get current directory
                 let current_file_id = self.lexer_stack.last().unwrap().source_id;
@@ -1434,19 +1435,21 @@ impl<'src> Preprocessor<'src> {
                 let resolved_path = self.header_search.resolve_path(&path_str, is_angled, current_dir);
                 if let Some(resolved_path) = resolved_path {
                     // Load the file
-                    self.source_manager.add_file_from_path(&resolved_path).map_err(|_| {
-                        // Emit diagnostic for file not found
-                        let diag = Diagnostic {
-                            level: DiagnosticLevel::Error,
-                            message: format!("Include file '{}' not found", path_str),
-                            span: SourceSpan::new(token.location, token.location),
-                            code: Some("include_file_not_found".to_string()),
-                            hints: vec!["Check the include path and ensure the file exists".to_string()],
-                            related: Vec::new(),
-                        };
-                        self.diag.report_diagnostic(diag);
-                        PPError::FileNotFound
-                    })?
+                    self.source_manager
+                        .add_file_from_path(&resolved_path, Some(token.location))
+                        .map_err(|_| {
+                            // Emit diagnostic for file not found
+                            let diag = Diagnostic {
+                                level: DiagnosticLevel::Error,
+                                message: format!("Include file '{}' not found", path_str),
+                                span: SourceSpan::new(token.location, token.location),
+                                code: Some("include_file_not_found".to_string()),
+                                hints: vec!["Check the include path and ensure the file exists".to_string()],
+                                related: Vec::new(),
+                            };
+                            self.diag.report_diagnostic(diag);
+                            PPError::FileNotFound
+                        })?
                 } else {
                     // Emit diagnostic for file not found
                     let diag = Diagnostic {
@@ -1473,19 +1476,21 @@ impl<'src> Preprocessor<'src> {
             };
 
             if let Some(resolved_path) = resolved_path {
-                self.source_manager.add_file_from_path(&resolved_path).map_err(|_| {
-                    // Emit diagnostic for file not found
-                    let diag = Diagnostic {
-                        level: DiagnosticLevel::Error,
-                        message: format!("Include file '{}' not found", path_str),
-                        span: SourceSpan::new(token.location, token.location),
-                        code: Some("include_file_not_found".to_string()),
-                        hints: vec!["Check the include path and ensure the file exists".to_string()],
-                        related: Vec::new(),
-                    };
-                    self.diag.report_diagnostic(diag);
-                    PPError::FileNotFound
-                })?
+                self.source_manager
+                    .add_file_from_path(&resolved_path, Some(token.location))
+                    .map_err(|_| {
+                        // Emit diagnostic for file not found
+                        let diag = Diagnostic {
+                            level: DiagnosticLevel::Error,
+                            message: format!("Include file '{}' not found", path_str),
+                            span: SourceSpan::new(token.location, token.location),
+                            code: Some("include_file_not_found".to_string()),
+                            hints: vec!["Check the include path and ensure the file exists".to_string()],
+                            related: Vec::new(),
+                        };
+                        self.diag.report_diagnostic(diag);
+                        PPError::FileNotFound
+                    })?
             } else if let Some(file_id) = self.source_manager.get_file_id(&path_str) {
                 file_id
             } else {
@@ -1929,14 +1934,16 @@ impl<'src> Preprocessor<'src> {
         &mut self,
         macro_info: &MacroInfo,
         symbol: &StringId,
-        _token: &PPToken,
+        token: &PPToken,
     ) -> Result<Vec<PPToken>, PPError> {
         // For Level B: Create a virtual buffer containing the replacement text
         let replacement_text = self.tokens_to_string(&macro_info.tokens);
         let virtual_buffer = replacement_text.into_bytes();
-        let virtual_id = self
-            .source_manager
-            .add_virtual_buffer(virtual_buffer, &format!("macro_{}", symbol.as_str()));
+        let virtual_id = self.source_manager.add_virtual_buffer(
+            virtual_buffer,
+            &format!("macro_{}", symbol.as_str()),
+            Some(token.location),
+        );
 
         // Create tokens with locations in the virtual buffer
         let mut expanded = Vec::new();
@@ -1968,7 +1975,7 @@ impl<'src> Preprocessor<'src> {
         &mut self,
         macro_info: &MacroInfo,
         symbol: &StringId,
-        _token: &PPToken,
+        token: &PPToken,
     ) -> Result<Vec<PPToken>, PPError> {
         // Parse arguments from lexer
         let args = self.parse_macro_args_from_lexer(macro_info)?;
@@ -1987,9 +1994,11 @@ impl<'src> Preprocessor<'src> {
         // For Level B: Create a virtual buffer containing the substituted text
         let replacement_text = self.tokens_to_string(&substituted);
         let virtual_buffer = replacement_text.into_bytes();
-        let virtual_id = self
-            .source_manager
-            .add_virtual_buffer(virtual_buffer, &format!("macro_{}", symbol.as_str()));
+        let virtual_id = self.source_manager.add_virtual_buffer(
+            virtual_buffer,
+            &format!("macro_{}", symbol.as_str()),
+            Some(token.location),
+        );
 
         // Create tokens with locations in the virtual buffer
         let mut expanded = Vec::new();
@@ -2328,7 +2337,7 @@ impl<'src> Preprocessor<'src> {
         let virtual_buffer = pasted_text.clone().into_bytes();
         let virtual_id = self
             .source_manager
-            .add_virtual_buffer(virtual_buffer, "<pasted-tokens>");
+            .add_virtual_buffer(virtual_buffer, "<pasted-tokens>", None);
 
         // Create a temporary lexer to lex the pasted text
         let buffer = self.source_manager.get_buffer(virtual_id);
@@ -2518,9 +2527,11 @@ impl<'src> Preprocessor<'src> {
                     // (e.g. <pasted-tokens>) into the output stream.
                     let replacement_text = self.tokens_to_string(&substituted);
                     let virtual_buffer = replacement_text.into_bytes();
-                    let virtual_id = self
-                        .source_manager
-                        .add_virtual_buffer(virtual_buffer, &format!("macro_{}", symbol.as_str()));
+                    let virtual_id = self.source_manager.add_virtual_buffer(
+                        virtual_buffer,
+                        &format!("macro_{}", symbol.as_str()),
+                        Some(token.location),
+                    );
 
                     let mut remapped_tokens = Vec::with_capacity(substituted.len());
                     let mut offset = 0u32;

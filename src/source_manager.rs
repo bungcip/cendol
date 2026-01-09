@@ -23,32 +23,22 @@ impl SourceId {
     }
 }
 
-/// Packed file ID and byte offset in a single u32.
-/// - Bits 0-21: Byte Offset (max 4 MiB file size)
-/// - Bits 22-31: Source ID Index (max 1023 unique source files)
+/// Source ID and byte offset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
-pub struct SourceLoc(u32);
+pub struct SourceLoc {
+    pub source_id: SourceId,
+    pub offset: u32,
+}
 
 impl Default for SourceLoc {
     fn default() -> Self {
-        // use builtin because SourceLoc is packed value, so zero invalid
         Self::builtin()
     }
 }
 
 impl SourceLoc {
-    const OFFSET_MASK: u32 = (1 << 22) - 1; // 22 bits for offset
-    const ID_SHIFT: u32 = 22; // Shift for SourceId
-
     pub fn new(source_id: SourceId, offset: u32) -> Self {
-        assert!(offset <= Self::OFFSET_MASK, "Offset exceeds 4 MiB limit");
-        assert!(
-            source_id.0.get() < (1 << (32 - Self::ID_SHIFT)),
-            "SourceId exceeds 1023 limit"
-        );
-
-        let packed = (offset & Self::OFFSET_MASK) | (source_id.0.get() << Self::ID_SHIFT);
-        SourceLoc(packed)
+        SourceLoc { source_id, offset }
     }
 
     /// built-in source location (SourceId = 1, offset = 0)
@@ -57,79 +47,164 @@ impl SourceLoc {
     }
 
     pub fn source_id(&self) -> SourceId {
-        SourceId::new((self.0 >> Self::ID_SHIFT) & ((1 << (32 - Self::ID_SHIFT)) - 1))
+        self.source_id
     }
 
     pub fn offset(&self) -> u32 {
-        self.0 & Self::OFFSET_MASK
+        self.offset
     }
 }
 
 impl std::fmt::Display for SourceLoc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SourceLoc(source_id={}, offset={})", self.source_id(), self.offset())
+        write!(f, "SourceLoc(source_id={}, offset={})", self.source_id, self.offset)
     }
 }
 
 /// Represents a range in the source file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
-pub struct SourceSpan {
-    pub start: SourceLoc,
-    pub end: SourceLoc,
+/// Packed representation (64 bits total):
+/// - Bits 0-23: Offset (24 bits) - Max 16 MiB
+/// - Bits 24-39: Length (16 bits) - Max 64 KiB
+/// - Bits 40-63: SourceId (24 bits) - Max ~16M files
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+pub struct SourceSpan(u64);
+
+impl Default for SourceSpan {
+    fn default() -> Self {
+        Self::empty()
+    }
 }
 
 impl SourceSpan {
+    const OFFSET_BITS: u64 = 24;
+    const LENGTH_BITS: u64 = 16;
+    const SOURCE_ID_BITS: u64 = 24;
+
+    const OFFSET_MASK: u64 = (1 << Self::OFFSET_BITS) - 1;
+    const LENGTH_MASK: u64 = (1 << Self::LENGTH_BITS) - 1;
+    const SOURCE_ID_MASK: u64 = (1 << Self::SOURCE_ID_BITS) - 1;
+
+    const LENGTH_SHIFT: u64 = Self::OFFSET_BITS;
+    const SOURCE_ID_SHIFT: u64 = Self::OFFSET_BITS + Self::LENGTH_BITS;
+
+    const MAX_OFFSET: u32 = Self::OFFSET_MASK as u32;
+    const MAX_LENGTH: u32 = Self::LENGTH_MASK as u32;
+    const MAX_SOURCE_ID: u32 = Self::SOURCE_ID_MASK as u32;
+
     pub fn new(start: SourceLoc, end: SourceLoc) -> Self {
-        Self { start, end }
+        if start.source_id != end.source_id {
+            // Panic removed: When start and end are in different files (e.g. usage of macro vs macro expansion),
+            // we cannot represent the span correctly in our packed format.
+            // Gracefully degrade to a zero-length span at the start location.
+            return Self::new_with_length(start.source_id, start.offset, 0);
+        }
+
+        let source_id = start.source_id.to_u32();
+        if source_id > Self::MAX_SOURCE_ID {
+            panic!("SourceId exceeds 24-bit limit: {}", source_id);
+        }
+
+        let offset = start.offset;
+        let mut length = end.offset.saturating_sub(offset);
+
+        if offset > Self::MAX_OFFSET {
+            panic!("SourceSpan offset exceeds 16 MiB limit: {}", offset);
+        }
+
+        if length > Self::MAX_LENGTH {
+            // Cap length if it's too long
+            length = Self::MAX_LENGTH;
+        }
+
+        let packed = (offset as u64 & Self::OFFSET_MASK)
+            | ((length as u64 & Self::LENGTH_MASK) << Self::LENGTH_SHIFT)
+            | ((source_id as u64 & Self::SOURCE_ID_MASK) << Self::SOURCE_ID_SHIFT);
+
+        Self(packed)
+    }
+
+    pub fn new_with_length(source_id: SourceId, offset: u32, length: u32) -> Self {
+        let id = source_id.to_u32();
+        if id > Self::MAX_SOURCE_ID {
+            panic!("SourceId exceeds 24-bit limit: {}", id);
+        }
+
+        if offset > Self::MAX_OFFSET {
+            panic!("SourceSpan offset exceeds 16 MiB limit: {}", offset);
+        }
+
+        let mut len = length;
+        if len > Self::MAX_LENGTH {
+            len = Self::MAX_LENGTH;
+        }
+
+        let packed = (offset as u64 & Self::OFFSET_MASK)
+            | ((len as u64 & Self::LENGTH_MASK) << Self::LENGTH_SHIFT)
+            | ((id as u64 & Self::SOURCE_ID_MASK) << Self::SOURCE_ID_SHIFT);
+
+        Self(packed)
     }
 
     pub fn empty() -> Self {
-        Self {
-            start: SourceLoc::builtin(),
-            end: SourceLoc::builtin(),
-        }
+        Self::new(SourceLoc::builtin(), SourceLoc::builtin())
     }
 
     pub fn dummy() -> Self {
         Self::empty()
     }
 
+    pub fn start(&self) -> SourceLoc {
+        let offset = (self.0 & Self::OFFSET_MASK) as u32;
+        SourceLoc {
+            source_id: self.source_id(),
+            offset,
+        }
+    }
+
+    pub fn end(&self) -> SourceLoc {
+        let offset = (self.0 & Self::OFFSET_MASK) as u32;
+        let length = ((self.0 >> Self::LENGTH_SHIFT) & Self::LENGTH_MASK) as u32;
+        SourceLoc {
+            source_id: self.source_id(),
+            offset: offset + length,
+        }
+    }
+
     pub fn source_id(&self) -> SourceId {
-        self.start.source_id()
+        let id = ((self.0 >> Self::SOURCE_ID_SHIFT) & Self::SOURCE_ID_MASK) as u32;
+        SourceId::new(id)
     }
 
     pub fn is_source_id_builtin(&self) -> bool {
-        self.start.source_id().to_u32() == 1
+        self.source_id().to_u32() == 1
     }
 
     pub fn is_empty(&self) -> bool {
-        self.start.offset() == 0
-            && self.end.offset() == 0
-            && self.start.source_id().to_u32() == 1
-            && self.end.source_id().to_u32() == 1
+        // Length is bits 24-39
+        ((self.0 >> Self::LENGTH_SHIFT) & Self::LENGTH_MASK) == 0
     }
 
     /// Merge two source spans into a single span covering both
     pub fn merge(self, other: SourceSpan) -> SourceSpan {
-        if self.source_id() != other.source_id() {
-            // If from different files, just return self (or handle differently)
-            // For now assuming spans from same file in parser context
+        let id1 = self.source_id();
+        let id2 = other.source_id();
+
+        if id1 != id2 {
             return self;
         }
 
-        let start = if self.start.offset() < other.start.offset() {
-            self.start
-        } else {
-            other.start
-        };
+        let start1 = self.start().offset;
+        let end1 = self.end().offset;
+        let start2 = other.start().offset;
+        let end2 = other.end().offset;
 
-        let end = if self.end.offset() > other.end.offset() {
-            self.end
-        } else {
-            other.end
-        };
+        let min_start = start1.min(start2);
+        let max_end = end1.max(end2);
 
-        SourceSpan { start, end }
+        let start_loc = SourceLoc::new(id1, min_start);
+        let end_loc = SourceLoc::new(id1, max_end);
+
+        Self::new(start_loc, end_loc)
     }
 }
 
@@ -139,8 +214,8 @@ impl std::fmt::Display for SourceSpan {
             f,
             "SourceSpan(source_id={}, start={}, end={})",
             self.source_id(),
-            self.start.offset(),
-            self.end.offset()
+            self.start().offset,
+            self.end().offset
         )
     }
 }
@@ -221,9 +296,10 @@ pub struct FileInfo {
     pub file_id: SourceId,
     pub path: PathBuf,
     pub size: u32,
-    pub buffer_index: usize,   // Index into buffers Vec
-    pub line_starts: Vec<u32>, // Line start offsets for efficient line lookup
-    pub line_map: LineMap,     // #line directive mappings
+    pub buffer_index: usize,            // Index into buffers Vec
+    pub line_starts: Vec<u32>,          // Line start offsets for efficient line lookup
+    pub line_map: LineMap,              // #line directive mappings
+    pub include_loc: Option<SourceLoc>, // Location where this file was included/expanded from
 }
 
 /// Manages source files and locations
@@ -246,14 +322,18 @@ impl SourceManager {
 
     /// Add a file to the source manager from a file path
     /// Since we only support UTF-8, we can read directly as bytes and assume validity
-    pub fn add_file_from_path(&mut self, path: &std::path::Path) -> Result<SourceId, std::io::Error> {
+    pub fn add_file_from_path(
+        &mut self,
+        path: &std::path::Path,
+        include_loc: Option<SourceLoc>,
+    ) -> Result<SourceId, std::io::Error> {
         let buffer = std::fs::read(path)?;
         let path_str = path.to_str().unwrap_or("<invalid-utf8>");
-        Ok(self.add_buffer(buffer, path_str))
+        Ok(self.add_buffer(buffer, path_str, include_loc))
     }
 
     /// Add a buffer to the source manager with raw bytes (UTF-8 assumed)
-    pub fn add_buffer(&mut self, buffer: Vec<u8>, path: &str) -> SourceId {
+    pub fn add_buffer(&mut self, buffer: Vec<u8>, path: &str, include_loc: Option<SourceLoc>) -> SourceId {
         let file_id = SourceId::new(self.next_file_id);
         self.next_file_id += 1;
 
@@ -268,6 +348,7 @@ impl SourceManager {
             buffer_index,
             line_starts: Vec::new(),
             line_map: LineMap::new(),
+            include_loc,
         };
 
         self.file_infos.insert(file_id, file_info);
@@ -277,7 +358,7 @@ impl SourceManager {
 
     /// Add a virtual buffer for macro expansions (Level B support)
     /// Virtual buffers contain expanded macro text with proper sequential locations
-    pub fn add_virtual_buffer(&mut self, buffer: Vec<u8>, name: &str) -> SourceId {
+    pub fn add_virtual_buffer(&mut self, buffer: Vec<u8>, name: &str, include_loc: Option<SourceLoc>) -> SourceId {
         let file_id = SourceId::new(self.next_file_id);
         self.next_file_id += 1;
 
@@ -300,6 +381,7 @@ impl SourceManager {
             buffer_index,
             line_starts,
             line_map: LineMap::new(),
+            include_loc,
         };
 
         self.file_infos.insert(file_id, file_info);
@@ -366,8 +448,8 @@ impl SourceManager {
     /// Since we only support UTF-8, we can assume the bytes are valid UTF-8
     pub fn get_source_text(&self, span: SourceSpan) -> &str {
         let buffer = self.get_buffer(span.source_id());
-        let start = span.start.offset() as usize;
-        let end = span.end.offset() as usize;
+        let start = span.start().offset() as usize;
+        let end = span.end().offset() as usize;
 
         if start <= end && end <= buffer.len() {
             unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) }

@@ -57,11 +57,11 @@ impl CompilerDriver {
         // Process each input file
         for input_file in self.config.input_files.clone() {
             let source_id = match input_file {
-                PathOrBuffer::Path(path) => match self.source_manager.add_file_from_path(&path) {
+                PathOrBuffer::Path(path) => match self.source_manager.add_file_from_path(&path, None) {
                     Ok(id) => id,
                     Err(e) => return Err(PipelineError::IoError(e)),
                 },
-                PathOrBuffer::Buffer(path, buffer) => self.source_manager.add_buffer(buffer, &path),
+                PathOrBuffer::Buffer(path, buffer) => self.source_manager.add_buffer(buffer, &path, None),
             };
 
             let unit_output = self.run_translation_unit(source_id, stop_after)?;
@@ -262,7 +262,7 @@ impl CompilerDriver {
                     "  ident idx={} name={:?} pos={:?} scope={}",
                     i,
                     name,
-                    self.source_manager.get_line_column(span.start),
+                    self.source_manager.get_line_column(span.start()),
                     scope_str
                 );
             }
@@ -276,7 +276,7 @@ impl CompilerDriver {
                     "  goto  idx={} name={:?} pos={:?} scope={}",
                     i,
                     name,
-                    self.source_manager.get_line_column(span.start),
+                    self.source_manager.get_line_column(span.start()),
                     scope_str
                 );
             }
@@ -290,7 +290,7 @@ impl CompilerDriver {
                     "  label idx={} name={:?} pos={:?} scope={}",
                     i,
                     name,
-                    self.source_manager.get_line_column(span.start),
+                    self.source_manager.get_line_column(span.start()),
                     scope_str
                 );
             }
@@ -314,12 +314,12 @@ impl CompilerDriver {
                         "ICE: unresolved ident node idx={} name={:?} span={:?}",
                         i + 1,
                         name,
-                        self.source_manager.get_line_column(node.span.start)
+                        self.source_manager.get_line_column(node.span.start())
                     );
                     panic!(
                         "ICE: ident '{}' still not have resolved type: {:?}",
                         name,
-                        self.source_manager.get_line_column(node.span.start)
+                        self.source_manager.get_line_column(node.span.start())
                     );
                 }
                 _ => {}

@@ -14,18 +14,10 @@ fn test_source_loc_packing() {
 #[test]
 fn test_source_loc_max_offset() {
     let source_id = SourceId::new(1);
-    let max_offset = (1 << 22) - 1; // 4 MiB - 1
+    let max_offset = (1 << 24) - 1; // 16 MiB - 1
     let loc = SourceLoc::new(source_id, max_offset);
 
     assert_eq!(loc.offset(), max_offset);
-}
-
-#[test]
-#[should_panic(expected = "Offset exceeds 4 MiB limit")]
-fn test_source_loc_offset_overflow() {
-    let source_id = SourceId::new(1);
-    let overflow_offset = 1 << 22; // 4 MiB
-    SourceLoc::new(source_id, overflow_offset);
 }
 
 #[test]
@@ -39,30 +31,21 @@ fn test_source_loc_max_file_id() {
 }
 
 #[test]
-#[should_panic(expected = "SourceId exceeds 1023 limit")]
-fn test_source_loc_file_id_overflow() {
-    let overflow_id = 1024;
-    let source_id = SourceId::new(overflow_id);
-    let offset = 0;
-    SourceLoc::new(source_id, offset);
-}
-
-#[test]
 fn test_source_span_new() {
     let start = SourceLoc::new(SourceId::new(1), 10);
     let end = SourceLoc::new(SourceId::new(1), 20);
     let span = SourceSpan::new(start, end);
 
-    assert_eq!(span.start, start);
-    assert_eq!(span.end, end);
+    assert_eq!(span.start(), start);
+    assert_eq!(span.end(), end);
 }
 
 #[test]
 fn test_source_span_empty() {
     let empty = SourceSpan::empty();
-    assert_eq!(empty.start.source_id(), SourceId::new(1));
-    assert_eq!(empty.start.offset(), 0);
-    assert_eq!(empty.end.offset(), 0);
+    assert_eq!(empty.start().source_id(), SourceId::new(1));
+    assert_eq!(empty.start().offset(), 0);
+    assert_eq!(empty.end().offset(), 0);
 }
 
 #[test]
@@ -79,7 +62,7 @@ fn test_source_span_source_id() {
 fn test_source_manager_get_source_text() {
     let mut sm = SourceManager::new();
     let content = "Hello World!";
-    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c");
+    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c", None);
 
     let start = SourceLoc::new(file_id, 6);
     let end = SourceLoc::new(file_id, 11);
@@ -92,7 +75,7 @@ fn test_source_manager_get_source_text() {
 fn test_source_manager_get_line_column() {
     let mut sm = SourceManager::new();
     let content = "line1\nline2\nline3";
-    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c");
+    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c", None);
     sm.calculate_line_starts_for_test(file_id);
 
     // Position at 'l' in "line2"
@@ -107,7 +90,7 @@ fn test_source_manager_get_line_column() {
 fn test_source_manager_get_line_column_end_of_file() {
     let mut sm = SourceManager::new();
     let content = "line1\nline2";
-    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c");
+    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c", None);
     sm.calculate_line_starts_for_test(file_id);
 
     // Position at end of file
@@ -121,8 +104,8 @@ fn test_source_manager_get_line_column_end_of_file() {
 #[test]
 fn test_source_manager_multiple_files() {
     let mut sm = SourceManager::new();
-    let file1_id = sm.add_buffer("content1".as_bytes().to_vec(), "file1.c");
-    let file2_id = sm.add_buffer("content2".as_bytes().to_vec(), "file2.c");
+    let file1_id = sm.add_buffer("content1".as_bytes().to_vec(), "file1.c", None);
+    let file2_id = sm.add_buffer("content2".as_bytes().to_vec(), "file2.c", None);
 
     assert_eq!(file1_id.0.get(), 2);
     assert_eq!(file2_id.0.get(), 3);
@@ -135,7 +118,7 @@ fn test_source_manager_multiple_files() {
 fn test_source_manager_get_buffer() {
     let mut sm = SourceManager::new();
     let content = "test content";
-    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c");
+    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c", None);
 
     let buffer = sm.get_buffer(file_id);
     assert_eq!(buffer, content.as_bytes());
@@ -145,7 +128,7 @@ fn test_source_manager_get_buffer() {
 fn test_source_manager_get_file_info() {
     let mut sm = SourceManager::new();
     let content = "test";
-    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c");
+    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c", None);
 
     let info = sm.get_file_info(file_id).unwrap();
     assert_eq!(info.file_id, file_id);
@@ -158,7 +141,7 @@ fn test_source_manager_get_file_info() {
 fn test_source_manager_get_source_text_invalid_range() {
     let mut sm = SourceManager::new();
     let content = "short";
-    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c");
+    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c", None);
 
     let start = SourceLoc::new(file_id, 3);
     let end = SourceLoc::new(file_id, 10); // Beyond content length
@@ -170,7 +153,7 @@ fn test_source_manager_get_source_text_invalid_range() {
 #[test]
 fn test_source_manager_empty_file() {
     let mut sm = SourceManager::new();
-    let file_id = sm.add_buffer("".as_bytes().to_vec(), "empty.c");
+    let file_id = sm.add_buffer("".as_bytes().to_vec(), "empty.c", None);
 
     let info = sm.get_file_info(file_id).unwrap();
     assert_eq!(info.size, 0);
@@ -180,7 +163,7 @@ fn test_source_manager_empty_file() {
 fn test_source_manager_file_without_newlines() {
     let mut sm = SourceManager::new();
     let content = "no newlines here";
-    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "no_nl.c");
+    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "no_nl.c", None);
 
     let info = sm.get_file_info(file_id).unwrap();
     assert_eq!(info.size, content.len() as u32);
@@ -190,7 +173,7 @@ fn test_source_manager_file_without_newlines() {
 fn test_source_manager_add_buffer() {
     let mut sm = SourceManager::new();
     let bytes = b"byte content";
-    let file_id = sm.add_buffer(bytes.to_vec(), "bytes.c");
+    let file_id = sm.add_buffer(bytes.to_vec(), "bytes.c", None);
 
     assert_eq!(sm.get_buffer(file_id), bytes);
 }
@@ -289,7 +272,7 @@ fn test_line_directive_ord() {
 fn test_source_manager_get_presumed_location() {
     let mut sm = SourceManager::new();
     let content = "line1\nline2\nline3\nline4\nline5";
-    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c");
+    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c", None);
     sm.calculate_line_starts_for_test(file_id);
 
     // Add a line mapping: at physical line 3, logical line 100
@@ -309,7 +292,7 @@ fn test_source_manager_get_presumed_location() {
 fn test_source_manager_get_presumed_location_no_mapping() {
     let mut sm = SourceManager::new();
     let content = "line1\nline2\nline3";
-    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c");
+    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c", None);
     sm.calculate_line_starts_for_test(file_id);
 
     // No line mappings
@@ -336,4 +319,63 @@ fn test_line_map_performance_many_lookups() {
 
     // Test should complete quickly (binary search is O(log n))
     assert!(line_map.entries.len() == 100);
+}
+
+#[test]
+fn test_struct_sizes() {
+    assert_eq!(std::mem::size_of::<SourceLoc>(), 8);
+    assert_eq!(std::mem::size_of::<SourceSpan>(), 8);
+}
+
+#[test]
+#[should_panic(expected = "SourceSpan offset exceeds 16 MiB limit")]
+fn test_source_span_offset_overflow() {
+    let source_id = SourceId::new(1);
+    let start = SourceLoc::new(source_id, 1 << 24); // 16 MiB
+    let end = SourceLoc::new(source_id, (1 << 24) + 10);
+    SourceSpan::new(start, end);
+}
+
+#[test]
+fn test_source_span_length_limit() {
+    let source_id = SourceId::new(1);
+    // Length 70000 > 65535
+    let start = SourceLoc::new(source_id, 0);
+    let end = SourceLoc::new(source_id, 70000);
+    let span = SourceSpan::new(start, end);
+
+    // Should be capped at 65535
+    assert_eq!(span.end().offset() - span.start().offset(), 65535);
+}
+
+#[test]
+fn test_source_span_new_with_length() {
+    let source_id = SourceId::new(1);
+    let offset = 100;
+    let length = 50;
+    let span = SourceSpan::new_with_length(source_id, offset, length);
+
+    assert_eq!(span.source_id(), source_id);
+    assert_eq!(span.start().offset(), offset);
+    assert_eq!(span.end().offset(), offset + length);
+}
+
+#[test]
+fn test_source_span_new_with_length_limit() {
+    let source_id = SourceId::new(1);
+    let offset = 100;
+    let length = 70000; // > 65535
+    let span = SourceSpan::new_with_length(source_id, offset, length);
+
+    // Should be capped at 65535
+    assert_eq!(span.end().offset() - span.start().offset(), 65535);
+}
+
+#[test]
+#[should_panic(expected = "SourceSpan offset exceeds 16 MiB limit")]
+fn test_source_span_new_with_length_offset_overflow() {
+    let source_id = SourceId::new(1);
+    let offset = 1 << 24; // 16 MiB
+    let length = 10;
+    SourceSpan::new_with_length(source_id, offset, length);
 }

@@ -405,13 +405,13 @@ fn test_pragma_once_via_pragma_operator() {
 _Pragma("once")
 int a = 1;
 "#;
-    sm.add_buffer(header_content.as_bytes().to_vec(), "header_test_pragma.h");
+    sm.add_buffer(header_content.as_bytes().to_vec(), "header_test_pragma.h", None);
 
     let main_content = r#"
 #include "header_test_pragma.h"
 #include "header_test_pragma.h"
 "#;
-    let main_id = sm.add_buffer(main_content.as_bytes().to_vec(), "main.c");
+    let main_id = sm.add_buffer(main_content.as_bytes().to_vec(), "main.c", None);
 
     let mut diag = DiagnosticEngine::new();
     let config = PPConfig::default();
@@ -443,13 +443,13 @@ int a = 1;
 fn test_include_same_file_twice_without_pragma_once() {
     let mut sm = SourceManager::new();
     let header_content = "int a = 1;";
-    sm.add_buffer(header_content.as_bytes().to_vec(), "header_test_twice.h");
+    sm.add_buffer(header_content.as_bytes().to_vec(), "header_test_twice.h", None);
 
     let main_content = r#"
 #include "header_test_twice.h"
 #include "header_test_twice.h"
 "#;
-    let main_id = sm.add_buffer(main_content.as_bytes().to_vec(), "main.c");
+    let main_id = sm.add_buffer(main_content.as_bytes().to_vec(), "main.c", None);
 
     let mut diag = DiagnosticEngine::new();
     let config = PPConfig::default();
@@ -490,9 +490,9 @@ fn test_include_same_file_twice_without_pragma_once() {
 #[test]
 fn test_circular_include_in_memory() {
     let mut sm = SourceManager::new();
-    sm.add_buffer("#include \"mem_b.h\"".as_bytes().to_vec(), "mem_a.h");
-    sm.add_buffer("#include \"mem_a.h\"".as_bytes().to_vec(), "mem_b.h");
-    let main_id = sm.add_buffer("#include \"mem_a.h\"".as_bytes().to_vec(), "mem_main.c");
+    sm.add_buffer("#include \"mem_b.h\"".as_bytes().to_vec(), "mem_a.h", None);
+    sm.add_buffer("#include \"mem_a.h\"".as_bytes().to_vec(), "mem_b.h", None);
+    let main_id = sm.add_buffer("#include \"mem_a.h\"".as_bytes().to_vec(), "mem_main.c", None);
 
     let mut diag = DiagnosticEngine::new();
     let config = PPConfig {
@@ -517,7 +517,7 @@ fn test_circular_include_error_with_temp_files() {
     std::fs::write(&path_main, "#include \"a.h\"").unwrap();
 
     let mut sm = SourceManager::new();
-    let source_id_main = sm.add_file_from_path(&path_main).unwrap();
+    let source_id_main = sm.add_file_from_path(&path_main, None).unwrap();
 
     let mut diag = DiagnosticEngine::new();
     let config = PPConfig {

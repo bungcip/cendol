@@ -61,7 +61,7 @@ pub(crate) fn parse_statement(parser: &mut Parser) -> Result<NodeRef, ParseError
 /// Parse compound statement (block)
 pub(crate) fn parse_compound_statement(parser: &mut Parser) -> Result<(NodeRef, SourceLoc), ParseError> {
     let token = parser.expect(TokenKind::LeftBrace)?;
-    let start_loc = token.span.start;
+    let start_loc = token.span.start();
     let dummy = parser.push_dummy();
 
     let mut block_items = Vec::new();
@@ -133,7 +133,7 @@ pub(crate) fn parse_compound_statement(parser: &mut Parser) -> Result<(NodeRef, 
     }
 
     let right_brace_token = parser.expect(TokenKind::RightBrace)?;
-    let end_loc = right_brace_token.span.end;
+    let end_loc = right_brace_token.span.end();
 
     let span = SourceSpan::new(start_loc, end_loc);
 
@@ -144,7 +144,7 @@ pub(crate) fn parse_compound_statement(parser: &mut Parser) -> Result<(NodeRef, 
 /// Parse if statement
 fn parse_if_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.expect(TokenKind::If)?;
-    let start_loc = token.span.start;
+    let start_loc = token.span.start();
 
     let condition = parse_parenthesized_expr(parser)?;
     let then_branch = parse_statement(parser)?;
@@ -156,8 +156,8 @@ fn parse_if_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     };
 
     let end_loc = match &else_branch {
-        Some(else_stmt) => parser.ast.get_node(*else_stmt).span.end,
-        None => parser.ast.get_node(then_branch).span.end,
+        Some(else_stmt) => parser.ast.get_node(*else_stmt).span.end(),
+        None => parser.ast.get_node(then_branch).span.end(),
     };
 
     let span = SourceSpan::new(start_loc, end_loc);
@@ -175,7 +175,7 @@ fn parse_if_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 /// Parse switch statement
 fn parse_switch_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.expect(TokenKind::Switch)?;
-    let start_loc = token.span.start;
+    let start_loc = token.span.start();
 
     let condition = parse_parenthesized_expr(parser)?;
 
@@ -183,7 +183,7 @@ fn parse_switch_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     let body = parse_statement(parser)?;
 
-    let end_loc = parser.ast.get_node(body).span.end;
+    let end_loc = parser.ast.get_node(body).span.end();
 
     let span = SourceSpan::new(start_loc, end_loc);
 
@@ -194,12 +194,12 @@ fn parse_switch_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 /// Parse while statement
 fn parse_while_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.expect(TokenKind::While)?;
-    let start_loc = token.span.start;
+    let start_loc = token.span.start();
 
     let condition = parse_parenthesized_expr(parser)?;
     let body = parse_statement(parser)?;
 
-    let end_loc = parser.ast.get_node(body).span.end;
+    let end_loc = parser.ast.get_node(body).span.end();
 
     let span = SourceSpan::new(start_loc, end_loc);
 
@@ -212,14 +212,14 @@ fn parse_while_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 /// Parse do-while statement
 fn parse_do_while_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.expect(TokenKind::Do)?;
-    let start_loc = token.span.start;
+    let start_loc = token.span.start();
 
     let body = parse_statement(parser)?;
 
     parser.expect(TokenKind::While)?;
     let condition = parse_parenthesized_expr(parser)?;
     let semicolon_token = parser.expect(TokenKind::Semicolon)?;
-    let end_loc = semicolon_token.span.end;
+    let end_loc = semicolon_token.span.end();
 
     let span = SourceSpan::new(start_loc, end_loc);
 
@@ -230,7 +230,7 @@ fn parse_do_while_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> 
 /// Parse for statement
 fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.expect(TokenKind::For)?;
-    let start_loc = token.span.start;
+    let start_loc = token.span.start();
     let dummy = parser.push_dummy();
 
     parser.expect(TokenKind::LeftParen)?;
@@ -269,7 +269,7 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
         };
 
         // Don't consume semicolon here - it will be consumed by the normal for loop flow
-        let span = SourceSpan::new(start_loc, parser.current_token_span()?.end);
+        let span = SourceSpan::new(start_loc, parser.current_token_span()?.end());
 
         Some(parser.push_node(NodeKind::Declaration(declaration_data), span))
     } else {
@@ -303,7 +303,7 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     let body = parse_statement(parser)?;
 
-    let end_loc = parser.ast.get_node(body).span.end;
+    let end_loc = parser.ast.get_node(body).span.end();
 
     let span = SourceSpan::new(start_loc, end_loc);
 
@@ -321,12 +321,12 @@ fn parse_for_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 /// Parse goto statement
 fn parse_goto_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.expect(TokenKind::Goto)?;
-    let start_loc = token.span.start;
+    let start_loc = token.span.start();
 
     let (label, _) = parser.expect_name()?;
 
     let semicolon_token = parser.expect(TokenKind::Semicolon)?;
-    let end_loc = semicolon_token.span.end;
+    let end_loc = semicolon_token.span.end();
 
     let span = SourceSpan::new(start_loc, end_loc);
     let node = parser.push_node(NodeKind::Goto(label, Cell::new(None)), span);
@@ -336,10 +336,10 @@ fn parse_goto_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 /// Parse continue statement
 fn parse_continue_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.expect(TokenKind::Continue)?;
-    let start_loc = token.span.start;
+    let start_loc = token.span.start();
 
     let semicolon_token = parser.expect(TokenKind::Semicolon)?;
-    let end_loc = semicolon_token.span.end;
+    let end_loc = semicolon_token.span.end();
 
     let span = SourceSpan::new(start_loc, end_loc);
 
@@ -350,10 +350,10 @@ fn parse_continue_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> 
 /// Parse break statement
 fn parse_break_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.expect(TokenKind::Break)?;
-    let start_loc = token.span.start;
+    let start_loc = token.span.start();
 
     let semicolon_token = parser.expect(TokenKind::Semicolon)?;
-    let end_loc = semicolon_token.span.end;
+    let end_loc = semicolon_token.span.end();
 
     let span = SourceSpan::new(start_loc, end_loc);
 
@@ -364,7 +364,7 @@ fn parse_break_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 /// Parse return statement
 fn parse_return_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.expect(TokenKind::Return)?;
-    let start_loc = token.span.start;
+    let start_loc = token.span.start();
 
     let value = if parser.is_token(TokenKind::Semicolon) {
         None
@@ -374,7 +374,7 @@ fn parse_return_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     };
 
     let semicolon_token = parser.expect(TokenKind::Semicolon)?;
-    let end_loc = semicolon_token.span.end;
+    let end_loc = semicolon_token.span.end();
 
     let span = SourceSpan::new(start_loc, end_loc);
 
@@ -393,7 +393,7 @@ fn parse_empty_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 /// Parse case statement (including GNU case ranges)
 fn parse_case_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.expect(TokenKind::Case)?;
-    let start_loc = token.span.start;
+    let start_loc = token.span.start();
 
     let start_expr = parser.parse_expr_min()?;
 
@@ -409,7 +409,7 @@ fn parse_case_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 
     let statement = parse_statement(parser)?;
 
-    let end_loc = parser.ast.get_node(statement).span.end;
+    let end_loc = parser.ast.get_node(statement).span.end();
 
     let span = SourceSpan::new(start_loc, end_loc);
 
@@ -424,12 +424,12 @@ fn parse_case_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 /// Parse default statement
 fn parse_default_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
     let token = parser.expect(TokenKind::Default)?;
-    let start_loc = token.span.start;
+    let start_loc = token.span.start();
 
     parser.expect(TokenKind::Colon)?;
 
     let statement = parse_statement(parser)?;
-    let end_loc = parser.ast.get_node(statement).span.end;
+    let end_loc = parser.ast.get_node(statement).span.end();
 
     let span = SourceSpan::new(start_loc, end_loc);
 
@@ -440,12 +440,12 @@ fn parse_default_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
 /// Parse label statement
 fn parse_label_statement(parser: &mut Parser, label_symbol: NameId) -> Result<NodeRef, ParseError> {
     let token = parser.advance().unwrap(); // consume the identifier
-    let start_loc = token.span.start;
+    let start_loc = token.span.start();
 
     parser.expect(TokenKind::Colon)?; // consume the colon
 
     let statement = parse_statement(parser)?;
-    let end_loc = parser.ast.get_node(statement).span.end;
+    let end_loc = parser.ast.get_node(statement).span.end();
 
     let span = SourceSpan::new(start_loc, end_loc);
 
@@ -455,7 +455,7 @@ fn parse_label_statement(parser: &mut Parser, label_symbol: NameId) -> Result<No
 
 /// Parse expression statement
 fn parse_expression_statement(parser: &mut Parser) -> Result<NodeRef, ParseError> {
-    let start_loc = parser.current_token_span()?.start;
+    let start_loc = parser.current_token_span()?.start();
     let dummy = parser.push_dummy();
 
     let (semi, expr) = if let Some(token) = parser.accept(TokenKind::Semicolon) {
@@ -465,7 +465,7 @@ fn parse_expression_statement(parser: &mut Parser) -> Result<NodeRef, ParseError
         (parser.expect(TokenKind::Semicolon)?, Some(expr))
     };
 
-    let end_loc = semi.span.end;
+    let end_loc = semi.span.end();
     let span = SourceSpan::new(start_loc, end_loc);
 
     let node = parser.replace_node(dummy, NodeKind::ExpressionStatement(expr), span);

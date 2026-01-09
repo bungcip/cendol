@@ -133,7 +133,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Get the current token location (infallible, returns empty span on EOF)
     pub(crate) fn current_token_span_or_empty(&self) -> SourceSpan {
-        self.try_current_token().map(|t| t.span).unwrap_or(SourceSpan::empty())
+        self.try_current_token().map(|t| t.span).unwrap_or_default()
     }
 
     /// Get the location of the previous token, or an empty span if not available.

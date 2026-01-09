@@ -1239,7 +1239,6 @@ pub(crate) fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx:
                 .merge_qualifiers(QualType::unqualified(base_type_ref), *qualifiers)
         }
         Declarator::Array(base, size) => {
-            let element_type = apply_declarator(base_type, base, ctx);
             let array_size = match size {
                 ArraySize::Expression { expr, qualifiers: _ } => resolve_array_size(Some(*expr), ctx),
                 ArraySize::Star { qualifiers: _ } => ArraySizeType::Star,
@@ -1251,59 +1250,17 @@ pub(crate) fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx:
                 } => resolve_array_size(*size, ctx),
             };
 
-            let array_type_ref = ctx.registry.array_of(element_type.ty(), array_size);
-            QualType::unqualified(array_type_ref)
+            let array_type_ref = ctx.registry.array_of(base_type, array_size);
+            apply_declarator(array_type_ref, base, ctx)
         }
         Declarator::Function {
             inner: base,
             params,
             is_variadic,
         } => {
-            // Check for function pointer: a pointer declarator inside the function base
-            // Handle (*f)() which parses as Function(Pointer(Identifier))
-            if let Declarator::Pointer(qualifiers, Some(inner_base)) = &**base {
-                // This is a pointer to a function.
-                // The `base_type` applies to the return type of the function.
-                // Reconstruct the inner declarator properly:
-                // If we have `(*f)()`, `f` is the inner base. `base_type` is the return type.
-
-                // However, apply_declarator calls recursively.
-                // If we treat this as a Pointer to Function:
-                // The Pointer applies to the Function type we build here.
-                // The Function's return type is determined by applying `base_type` to `inner_base`.
-
-                let return_type = apply_declarator(base_type, inner_base, ctx);
-
-                let parameters = lower_function_parameters(params, ctx);
-
-                // Build the function type first
-                let function_type_ref = ctx.registry.function_type(return_type.ty(), parameters, *is_variadic);
-                let pointer_type_ref = ctx.registry.pointer_to(function_type_ref);
-                return ctx
-                    .registry
-                    .merge_qualifiers(QualType::unqualified(pointer_type_ref), *qualifiers);
-            }
-
-            // This is a regular function declaration (or function returning pointer).
-            // E.g. `*f()` -> Function(Pointer(Identifier)).
-            // But wait, `*f()` parses as Pointer(Function(Identifier)).
-            // So `Function` base is `Identifier`.
-            // The case where base is `Pointer` happens ONLY when parens are used: `(*f)()`.
-            // So the `if` block above is correct for `(*f)()`.
-
-            // Wait, what if `inner_base` is NOT Identifier?
-            // `(**f)()` -> Function(Pointer(Pointer(f))).
-            // The `if` matches `Pointer`. `inner` is `Pointer(f)`.
-            // Recursive `apply` handles `inner`.
-
-            // So logic seems correct. I will add debug print to confirm it enters.
-            // println!("DEBUG: Function declarator base: {:?}", base);
-
-            let return_type = apply_declarator(base_type, base, ctx);
             let parameters = lower_function_parameters(params, ctx);
-
-            let function_type_ref = ctx.registry.function_type(return_type.ty(), parameters, *is_variadic);
-            QualType::unqualified(function_type_ref)
+            let function_type_ref = ctx.registry.function_type(base_type, parameters, *is_variadic);
+            apply_declarator(function_type_ref, base, ctx)
         }
         Declarator::AnonymousRecord(is_union, members) => {
             // Create a new record type for the anonymous struct/union

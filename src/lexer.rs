@@ -1,6 +1,6 @@
 use crate::intern::StringId;
 use crate::pp::{PPToken, PPTokenKind};
-use crate::source_manager::{SourceLoc, SourceSpan};
+use crate::source_manager::SourceSpan;
 
 use serde::Serialize;
 /// C11 token kinds for the lexical analyzer
@@ -528,30 +528,53 @@ impl<'src> Lexer<'src> {
         let mut current_token_iter = self.tokens.iter().peekable();
 
         while let Some(pptoken) = current_token_iter.next() {
-            // ⚡ Bolt: Optimized string literal concatenation.
-            // This implementation avoids repeated reallocations when concatenating
-            // adjacent string literals. It performs a quick scan to calculate the
-            // total required size, allocates a single buffer with the exact capacity,
-            // and then appends the content of each literal. This reduces allocations
-            // from N to 1 in the case of concatenated strings, which is a significant
-            // performance win.
             if let PPTokenKind::StringLiteral(symbol) = pptoken.kind {
-                let start_location = pptoken.location;
-                let mut end_location = SourceLoc::new(
-                    pptoken.location.source_id(),
-                    pptoken.location.offset() + pptoken.length as u32,
-                );
+                // ⚡ Bolt: Optimized string literal handling.
+                // This introduces a fast path for single string literals, which are the
+                // most common case. By peeking ahead, we avoid the overhead of the
+                // two-pass concatenation logic unless it's actually needed. This
+                // reduces overhead and improves lexer performance.
 
-                // --- Phase 1: Calculate total size ---
+                // --- Fast path for single string literals ---
+                if !matches!(
+                    current_token_iter.peek(),
+                    Some(PPToken {
+                        kind: PPTokenKind::StringLiteral(_),
+                        ..
+                    })
+                ) {
+                    tokens.push(Token {
+                        kind: self.classify_token(pptoken), // Handles quote stripping
+                        span: SourceSpan::new_with_length(
+                            pptoken.location.source_id(),
+                            pptoken.location.offset(),
+                            pptoken.length as u32,
+                        ),
+                    });
+                    continue;
+                }
+
+                // --- Slow path: Concatenate adjacent string literals ---
+                let start_span = SourceSpan::new_with_length(
+                    pptoken.location.source_id(),
+                    pptoken.location.offset(),
+                    pptoken.length as u32,
+                );
+                let mut final_span = start_span;
+
+                // --- Phase 1: Calculate total size and find last span ---
                 let mut total_size = Self::extract_string_content(&symbol).unwrap_or("").len();
                 let mut adjacent_literals = 0;
-
                 let next_token_idx = self.tokens.len() - current_token_iter.len();
 
-                // Peek ahead to find all adjacent string literals and sum their sizes.
                 while let Some(next_pptoken) = self.tokens.get(next_token_idx + adjacent_literals) {
                     if let PPTokenKind::StringLiteral(next_symbol) = next_pptoken.kind {
                         total_size += Self::extract_string_content(&next_symbol).unwrap_or("").len();
+                        final_span = SourceSpan::new_with_length(
+                            next_pptoken.location.source_id(),
+                            next_pptoken.location.offset(),
+                            next_pptoken.length as u32,
+                        );
                         adjacent_literals += 1;
                     } else {
                         break;
@@ -562,43 +585,30 @@ impl<'src> Lexer<'src> {
                 let mut content = String::with_capacity(total_size);
                 content.push_str(Self::extract_string_content(&symbol).unwrap_or(""));
 
-                // Consume and append the adjacent literals found in phase 1.
                 for _ in 0..adjacent_literals {
                     let consumed_pptoken = current_token_iter.next().unwrap();
                     if let PPTokenKind::StringLiteral(next_symbol) = consumed_pptoken.kind {
                         if let Some(s_content) = Self::extract_string_content(&next_symbol) {
                             content.push_str(s_content);
                         }
-                        end_location = SourceLoc::new(
-                            consumed_pptoken.location.source_id(),
-                            consumed_pptoken.location.offset() + consumed_pptoken.length as u32,
-                        );
                     }
                 }
 
-                // Create a single concatenated token
-                let concatenated_token = Token {
+                tokens.push(Token {
                     kind: TokenKind::StringLiteral(StringId::new(content)),
-                    span: SourceSpan {
-                        start: start_location,
-                        end: end_location,
-                    },
-                };
-
-                tokens.push(concatenated_token);
-                continue; // Continue to the next token in the input stream
+                    span: start_span.merge(final_span),
+                });
+                continue;
             }
 
             // For all other tokens, process normally
             let token = Token {
                 kind: self.classify_token(pptoken),
-                span: SourceSpan {
-                    start: pptoken.location,
-                    end: SourceLoc::new(
-                        pptoken.location.source_id(),
-                        pptoken.location.offset() + pptoken.length as u32,
-                    ),
-                },
+                span: SourceSpan::new_with_length(
+                    pptoken.location.source_id(),
+                    pptoken.location.offset(),
+                    pptoken.length as u32,
+                ),
             };
 
             let is_eof = matches!(token.kind, TokenKind::EndOfFile);

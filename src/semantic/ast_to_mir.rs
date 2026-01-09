@@ -582,7 +582,42 @@ impl<'a> AstToMirLowerer<'a> {
                 let operand = self.lower_expression(scope_id, *operand_ref, true);
                 Operand::Cast(mir_ty, Box::new(operand))
             }
+            NodeKind::CompoundLiteral(ty, init_ref) => self.lower_compound_literal(scope_id, *ty, *init_ref),
             _ => Operand::Constant(self.create_constant(ConstValue::Int(0))),
+        }
+    }
+
+    fn lower_compound_literal(&mut self, scope_id: ScopeId, ty: QualType, init_ref: NodeRef) -> Operand {
+        let mir_ty = self.lower_type_to_mir(ty.ty());
+
+        // Check if we are at global scope
+        if self.current_function.is_none() {
+            // Global compound literal
+            let global_name = self.mir_builder.get_next_anonymous_global_name();
+
+            // Lower initializer (must be constant)
+            let init_operand = self.lower_initializer(scope_id, init_ref, ty);
+            let init_const_id = self
+                .operand_to_const_id(init_operand)
+                .expect("Global compound literal initializer must be constant");
+
+            let global_id = self.mir_builder.create_global_with_init(
+                global_name,
+                mir_ty,
+                false, // not constant (it's an lvalue)
+                Some(init_const_id),
+            );
+
+            Operand::Copy(Box::new(Place::Global(global_id)))
+        } else {
+            // Local compound literal
+            let (_, place) = self.create_temp_local(mir_ty);
+
+            // Lower initializer
+            let init_operand = self.lower_initializer(scope_id, init_ref, ty);
+            self.emit_assignment(place.clone(), init_operand);
+
+            Operand::Copy(Box::new(place))
         }
     }
 

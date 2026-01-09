@@ -26,9 +26,7 @@ fn run_c_code(source: &str) -> i32 {
     let result = driver.run();
     assert!(result.is_ok(), "Compilation failed");
 
-    let run_output = Command::new(exe_path)
-        .output()
-        .expect("Failed to execute");
+    let run_output = Command::new(exe_path).output().expect("Failed to execute");
 
     run_output.status.code().unwrap_or(-1)
 }

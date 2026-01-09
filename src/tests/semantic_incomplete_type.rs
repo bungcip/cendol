@@ -13,8 +13,5 @@ fn rejects_sizeof_on_incomplete_struct() {
     "#,
         CompilePhase::Mir,
     );
-    check_diagnostic_message_only(
-        &driver,
-        "Invalid application of 'sizeof' to an incomplete type",
-    );
+    check_diagnostic_message_only(&driver, "Invalid application of 'sizeof' to an incomplete type");
 }

@@ -7,7 +7,8 @@ use hashbrown::HashMap;
 use std::collections::HashSet;
 
 use crate::pp::interpreter::Interpreter;
-use crate::pp::{PPLexer, PPToken, PPTokenFlags, PPTokenKind};
+use super::pp_lexer::PPLexer;
+use crate::pp::{PPToken, PPTokenFlags, PPTokenKind};
 use std::path::{Path, PathBuf};
 use target_lexicon::{Architecture, OperatingSystem, Triple};
 
@@ -31,7 +32,7 @@ pub enum DirectiveKind {
 
 /// Table of pre-interned preprocessor directive names for O(1) keyword recognition
 #[derive(Clone)]
-pub struct DirectiveKeywordTable {
+pub(crate) struct DirectiveKeywordTable {
     define: StringId,
     undef: StringId,
     include: StringId,
@@ -55,7 +56,7 @@ impl Default for DirectiveKeywordTable {
 }
 
 impl DirectiveKeywordTable {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         DirectiveKeywordTable {
             define: StringId::new("define"),
             undef: StringId::new("undef"),
@@ -74,7 +75,7 @@ impl DirectiveKeywordTable {
         }
     }
 
-    pub fn is_directive(&self, symbol: StringId) -> Option<DirectiveKind> {
+    pub(crate) fn is_directive(&self, symbol: StringId) -> Option<DirectiveKind> {
         if symbol == self.define {
             Some(DirectiveKind::Define)
         } else if symbol == self.undef {
@@ -107,7 +108,7 @@ impl DirectiveKeywordTable {
     }
 
     /// Get the interned symbol for the "defined" operator
-    pub fn defined_symbol(&self) -> StringId {
+    pub(crate) fn defined_symbol(&self) -> StringId {
         self.defined
     }
 }
@@ -127,12 +128,12 @@ bitflags::bitflags! {
 
 /// Represents a macro definition
 #[derive(Clone)]
-pub struct MacroInfo {
-    pub location: SourceLoc,
-    pub flags: MacroFlags, // Packed boolean flags
-    pub tokens: Vec<PPToken>,
-    pub parameter_list: Vec<StringId>,
-    pub variadic_arg: Option<StringId>,
+pub(crate) struct MacroInfo {
+    pub(crate) location: SourceLoc,
+    pub(crate) flags: MacroFlags, // Packed boolean flags
+    pub(crate) tokens: Vec<PPToken>,
+    pub(crate) parameter_list: Vec<StringId>,
+    pub(crate) variadic_arg: Option<StringId>,
 }
 
 /// Represents conditional compilation state
@@ -145,7 +146,7 @@ pub struct PPConditionalInfo {
 
 /// Manages header search paths and include resolution
 #[derive(Clone)]
-pub struct HeaderSearch {
+pub(crate) struct HeaderSearch {
     #[allow(unused)]
     search_path: Vec<SearchPath>,
     system_path: Vec<SearchPath>,
@@ -156,31 +157,31 @@ pub struct HeaderSearch {
 
 impl HeaderSearch {
     /// Add a system include path
-    pub fn add_system_path(&mut self, path: PathBuf) {
+    pub(crate) fn add_system_path(&mut self, path: PathBuf) {
         self.system_path.push(SearchPath {
             path, /* , is_system: true */
         });
     }
 
     /// Add a quoted include path (-iquote)
-    pub fn add_quoted_path(&mut self, path: PathBuf) {
+    pub(crate) fn add_quoted_path(&mut self, path: PathBuf) {
         self.quoted_includes.push(path.to_string_lossy().to_string());
     }
 
     /// Add an angled include path (-I)
-    pub fn add_angled_path(&mut self, path: PathBuf) {
+    pub(crate) fn add_angled_path(&mut self, path: PathBuf) {
         self.angled_includes.push(path.to_string_lossy().to_string());
     }
 
     /// Add a framework path
-    pub fn add_framework_path(&mut self, path: PathBuf) {
+    pub(crate) fn add_framework_path(&mut self, path: PathBuf) {
         self.framework_path.push(SearchPath {
             path, /* , is_system: true */
         });
     }
 
     /// Resolve an include path to an absolute path
-    pub fn resolve_path(&self, include_path: &str, is_angled: bool, current_dir: &Path) -> Option<PathBuf> {
+    pub(crate) fn resolve_path(&self, include_path: &str, is_angled: bool, current_dir: &Path) -> Option<PathBuf> {
         if is_angled {
             // Angled includes: search angled_includes, then system_path, then framework_path
             for include_path_str in &self.angled_includes {
@@ -237,15 +238,15 @@ impl HeaderSearch {
 }
 
 #[derive(Clone)]
-pub struct SearchPath {
-    pub path: PathBuf,
+pub(crate) struct SearchPath {
+    pub(crate) path: PathBuf,
     // pub is_system: bool,
 }
 
 /// Include stack information
 #[derive(Clone)]
-pub struct IncludeStackInfo {
-    pub file_id: SourceId,
+pub(crate) struct IncludeStackInfo {
+    pub(crate) file_id: SourceId,
     // pub location: SourceLoc,
 }
 
@@ -664,12 +665,12 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Check if a macro is defined
-    pub fn is_macro_defined(&self, symbol: &StringId) -> bool {
+    pub(crate) fn is_macro_defined(&self, symbol: &StringId) -> bool {
         self.macros.contains_key(symbol)
     }
 
     /// Get the interned symbol for the "defined" operator
-    pub fn defined_symbol(&self) -> StringId {
+    pub(crate) fn defined_symbol(&self) -> StringId {
         self.directive_keywords.defined_symbol()
     }
 

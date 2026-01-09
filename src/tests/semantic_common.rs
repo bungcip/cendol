@@ -7,8 +7,6 @@ use crate::mir::dumper::{MirDumpConfig, MirDumper};
 use crate::semantic::TypeRegistry;
 use crate::tests::test_utils;
 
-pub use crate::tests::test_utils::run_pipeline;
-
 pub fn run_pass(source: &str, phase: CompilePhase) {
     let (driver, result) = test_utils::run_pipeline(source, phase);
     if result.is_err() {

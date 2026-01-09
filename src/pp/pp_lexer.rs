@@ -189,19 +189,19 @@ impl PPToken {
 }
 
 /// Manages lexing from different source buffers
-pub struct PPLexer {
-    pub source_id: SourceId,
+pub(crate) struct PPLexer {
+    pub(crate) source_id: SourceId,
     buffer: Vec<u8>,
-    pub position: u32, // its okay to use u32 here since source files are limited to 4 MB
+    pub(crate) position: u32, // its okay to use u32 here since source files are limited to 4 MB
     line_starts: Vec<u32>,
     put_back_token: Option<PPToken>,
-    pub line_offset: u32,
+    pub(crate) line_offset: u32,
     // pub filename_override: Option<String>,
-    pub in_directive_line: bool, // Whether we are currently processing tokens on a directive line
+    pub(crate) in_directive_line: bool, // Whether we are currently processing tokens on a directive line
 }
 
 impl PPLexer {
-    pub fn new(source_id: SourceId, buffer: Vec<u8>) -> Self {
+    pub(crate) fn new(source_id: SourceId, buffer: Vec<u8>) -> Self {
         let line_starts = vec![0]; // First line starts at offset 0
 
         PPLexer {
@@ -218,7 +218,7 @@ impl PPLexer {
 
     /// Get the next character, handling line splicing transparently
     /// Line splicing: backslash followed by newline removes both characters
-    pub fn next_char(&mut self) -> Option<u8> {
+    pub(crate) fn next_char(&mut self) -> Option<u8> {
         if self.position as usize >= self.buffer.len() {
             return None;
         }
@@ -256,7 +256,7 @@ impl PPLexer {
     }
 
     /// Peek at the next character without consuming it, handling line splicing
-    pub fn peek_char(&mut self) -> Option<u8> {
+    pub(crate) fn peek_char(&mut self) -> Option<u8> {
         let saved_position = self.position;
         let saved_line_starts = self.line_starts.clone();
 
@@ -431,7 +431,7 @@ impl PPLexer {
         }
     }
 
-    pub fn next_token(&mut self) -> Option<PPToken> {
+    pub(crate) fn next_token(&mut self) -> Option<PPToken> {
         if let Some(token) = self.put_back_token.take() {
             return Some(token);
         }
@@ -735,19 +735,19 @@ impl PPLexer {
         )
     }
 
-    pub fn put_back(&mut self, token: PPToken) {
+    pub(crate) fn put_back(&mut self, token: PPToken) {
         self.put_back_token = Some(token);
     }
 
-    pub fn get_line(&self, offset: u32) -> u32 {
+    pub(crate) fn get_line(&self, offset: u32) -> u32 {
         self.line_starts.partition_point(|&x| x <= offset) as u32 + self.line_offset
     }
 
-    pub fn get_current_line(&self) -> u32 {
+    pub(crate) fn get_current_line(&self) -> u32 {
         self.line_starts.len() as u32 + self.line_offset
     }
 
-    pub fn get_line_starts(&self) -> &Vec<u32> {
+    pub(crate) fn get_line_starts(&self) -> &Vec<u32> {
         &self.line_starts
     }
 }

@@ -2,8 +2,8 @@ use crate::{
     ast::{nodes::*, *},
     diagnostic::{DiagnosticEngine, SemanticError},
     semantic::{
-        ArraySizeType, ImplicitConversion, QualType, SemanticInfo, SymbolKind, SymbolTable, TypeKind, TypeRegistry,
-        ValueCategory,
+        ArraySizeType, ImplicitConversion, QualType, SemanticInfo, SymbolKind, SymbolTable, TypeKind, TypeQualifiers,
+        TypeRegistry, ValueCategory,
         conversions::{integer_promotion, usual_arithmetic_conversions},
     },
 };
@@ -315,6 +315,8 @@ impl<'a> SemanticAnalyzer<'a> {
 
         if !self.is_lvalue(lhs_ref) {
             self.report_error(SemanticError::NotAnLvalue { span: full_span });
+        } else if lhs_ty.is_const() {
+            self.report_error(SemanticError::AssignmentToConst { span: full_span });
         }
 
         self.record_implicit_conversions(lhs_ty, rhs_ty, rhs_ref);
@@ -481,7 +483,10 @@ impl<'a> SemanticAnalyzer<'a> {
             // Ensure layout is computed for array type
             let _ = self.registry.ensure_layout(arr_ty.ty());
             match &self.registry.get(arr_ty.ty()).kind {
-                TypeKind::Array { element_type, .. } => Some(QualType::unqualified(*element_type)),
+                TypeKind::Array { element_type, .. } => {
+                    // The element should inherit the qualifiers from the array.
+                    Some(QualType::new(*element_type, arr_ty.qualifiers()))
+                }
                 _ => unreachable!(),
             }
         } else if arr_ty.is_pointer() {
@@ -631,7 +636,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 let array_size = name.as_str().len() + 1;
                 let array_type = self.registry.array_of(char_type, ArraySizeType::Constant(array_size));
                 let _ = self.registry.ensure_layout(array_type);
-                Some(QualType::unqualified(array_type))
+                Some(QualType::new(array_type, TypeQualifiers::CONST))
             }
             NodeKind::Ident(_, symbol_ref) => {
                 let symbol = self.symbol_table.get_symbol(symbol_ref.get().unwrap());

@@ -234,6 +234,8 @@ pub enum SemanticError {
 
     #[error("requested alignment is not a constant expression")]
     NonConstantAlignment { span: SourceSpan },
+    #[error("cannot assign to a constant value")]
+    AssignmentToConst { span: SourceSpan },
 }
 
 impl SemanticError {
@@ -264,6 +266,7 @@ impl SemanticError {
             SemanticError::GenericNoMatch { span } => *span,
             SemanticError::InvalidAlignment { span, .. } => *span,
             SemanticError::NonConstantAlignment { span } => *span,
+            SemanticError::AssignmentToConst { span } => *span,
         }
     }
 }

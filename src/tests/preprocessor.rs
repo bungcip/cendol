@@ -631,6 +631,28 @@ int y = 2;
 }
 
 #[test]
+fn test_pragma_in_macro() {
+    let src = r#"
+#define P(x) _Pragma(#x)
+P(once)
+int x = 1;
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: x
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    "#);
+}
+
+#[test]
 fn test_line_directive_with_diagnostics() {
     let src = r#"
 #line 50 "test.c"

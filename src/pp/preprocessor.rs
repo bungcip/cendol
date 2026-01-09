@@ -4,7 +4,7 @@ use crate::lang_options::LangOptions;
 use crate::source_manager::{SourceId, SourceLoc, SourceManager, SourceSpan};
 use chrono::{DateTime, Datelike, Timelike, Utc};
 use hashbrown::HashMap;
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 
 use super::pp_lexer::PPLexer;
 use crate::pp::interpreter::Interpreter;
@@ -302,6 +302,7 @@ pub struct Preprocessor<'src> {
 
     // Token management
     lexer_stack: Vec<PPLexer>,
+    pending_tokens: VecDeque<PPToken>,
 
     // State
     include_depth: usize,
@@ -436,6 +437,7 @@ impl<'src> Preprocessor<'src> {
             header_search,
             built_in_headers,
             lexer_stack: Vec::new(),
+            pending_tokens: VecDeque::new(),
             include_depth: 0,
             max_include_depth: config.max_include_depth,
             target: config.target.clone(),
@@ -706,7 +708,7 @@ impl<'src> Preprocessor<'src> {
 
         // Process tokens with string literal concatenation
         while let Some(token) = self.lex_token() {
-            if token.kind == PPTokenKind::Hash {
+            if token.kind == PPTokenKind::Hash && !token.flags.contains(PPTokenFlags::MACRO_EXPANDED) {
                 // Handle directive - always process directives regardless of skipping
                 self.handle_directive()?;
             } else {
@@ -764,9 +766,14 @@ impl<'src> Preprocessor<'src> {
                             self.handle_pragma_operator()?;
                         } else {
                             // Check for macro expansion
-                            if let Some(expanded) = self.expand_macro(&token)? {
-                                // Replace the macro identifier with expanded tokens
-                                result_tokens.extend(expanded);
+                            // Don't expand if already expanded
+                            if token.flags.contains(PPTokenFlags::MACRO_EXPANDED) {
+                                result_tokens.push(token);
+                            } else if let Some(expanded) = self.expand_macro(&token)? {
+                                // Push expanded tokens to pending_tokens (in reverse order so they come out in order)
+                                for t in expanded.into_iter().rev() {
+                                    self.pending_tokens.push_front(t);
+                                }
                             } else {
                                 result_tokens.push(token);
                             }
@@ -972,6 +979,10 @@ impl<'src> Preprocessor<'src> {
 
     /// Lex the next token
     fn lex_token(&mut self) -> Option<PPToken> {
+        if let Some(token) = self.pending_tokens.pop_front() {
+            return Some(token);
+        }
+
         loop {
             if let Some(lexer) = self.lexer_stack.last_mut() {
                 if let Some(token) = lexer.next_token() {
@@ -1127,27 +1138,7 @@ impl<'src> Preprocessor<'src> {
         // Expect string literal.
         let string_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
         let pragma_content = if let PPTokenKind::StringLiteral(symbol) = string_token.kind {
-            let full_str = symbol.as_str();
-            // Destringize: remove quotes and handle escaped characters.
-            let inner_content = &full_str[1..full_str.len() - 1];
-            let mut content = String::with_capacity(inner_content.len());
-            let mut chars = inner_content.chars();
-            while let Some(c) = chars.next() {
-                if c == '\\' {
-                    match chars.next() {
-                        Some('"') => content.push('"'),
-                        Some('\\') => content.push('\\'),
-                        Some(other) => {
-                            content.push('\\');
-                            content.push(other);
-                        }
-                        None => {} // Invalid escape at end of string
-                    }
-                } else {
-                    content.push(c);
-                }
-            }
-            content
+            self.destringize(symbol.as_str())
         } else {
             return Err(PPError::InvalidDirective);
         };
@@ -1157,6 +1148,36 @@ impl<'src> Preprocessor<'src> {
             return Err(PPError::InvalidDirective);
         }
 
+        self.perform_pragma(&pragma_content);
+
+        Ok(())
+    }
+
+    /// Destringize a string literal (remove quotes and handle escapes)
+    fn destringize(&self, full_str: &str) -> String {
+        let inner_content = &full_str[1..full_str.len() - 1];
+        let mut content = String::with_capacity(inner_content.len());
+        let mut chars = inner_content.chars();
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                match chars.next() {
+                    Some('"') => content.push('"'),
+                    Some('\\') => content.push('\\'),
+                    Some(other) => {
+                        content.push('\\');
+                        content.push(other);
+                    }
+                    None => {} // Invalid escape at end of string
+                }
+            } else {
+                content.push(c);
+            }
+        }
+        content
+    }
+
+    /// Perform the action of a pragma directive
+    fn perform_pragma(&mut self, pragma_content: &str) {
         // Get the source_id of the file containing the _Pragma operator for context.
         let pragma_source_id = self.lexer_stack.last().map(|l| l.source_id);
 
@@ -1180,8 +1201,6 @@ impl<'src> Preprocessor<'src> {
             }
             // Other pragma directives are tokenized but currently ignored.
         }
-
-        Ok(())
     }
 
     /// Handle #define directive
@@ -2589,6 +2608,28 @@ impl<'src> Preprocessor<'src> {
                 tokens.splice(i..i + 1, expanded);
                 continue;
             }
+
+            // Check for _Pragma in the expanded stream
+            if let PPTokenKind::Identifier(symbol) = tokens[i].kind {
+                if symbol.as_str() == "_Pragma" {
+                    // Need at least 3 more tokens: ( "string" )
+                    if i + 3 < tokens.len()
+                        && tokens[i + 1].kind == PPTokenKind::LeftParen
+                        && matches!(tokens[i + 2].kind, PPTokenKind::StringLiteral(_))
+                        && tokens[i + 3].kind == PPTokenKind::RightParen
+                    {
+                        if let PPTokenKind::StringLiteral(sym) = tokens[i + 2].kind {
+                            let content = self.destringize(sym.as_str());
+                            self.perform_pragma(&content);
+                            // Remove the 4 tokens
+                            tokens.drain(i..i + 4);
+                            // Do not increment i, as we removed tokens
+                            continue;
+                        }
+                    }
+                }
+            }
+
             i += 1;
         }
 

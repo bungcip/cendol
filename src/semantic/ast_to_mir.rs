@@ -563,9 +563,7 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::LiteralString(val) => self.lower_literal_string(val, &ty),
             NodeKind::Ident(_, symbol_ref) => self.lower_ident(symbol_ref),
             NodeKind::UnaryOp(op, operand_ref) => match *op {
-                UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
-                    self.lower_pre_incdec(scope_id, op, *operand_ref)
-                }
+                UnaryOp::PreIncrement | UnaryOp::PreDecrement => self.lower_pre_incdec(scope_id, op, *operand_ref),
                 UnaryOp::AddrOf => self.lower_unary_addrof(scope_id, *operand_ref),
                 UnaryOp::Deref => self.lower_unary_deref(scope_id, *operand_ref),
                 _ => {

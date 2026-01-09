@@ -84,3 +84,6 @@ pub use types::{
     ArraySizeType, BuiltinType, EnumConstant, FunctionParameter, QualType, StructMember, Type, TypeKind, TypeLayout,
     TypeQualifiers, TypeRef,
 };
+
+#[cfg(test)]
+mod tests_compound_assign;

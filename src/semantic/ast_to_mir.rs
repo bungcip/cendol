@@ -570,8 +570,8 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::BinaryOp(op, left_ref, right_ref) => {
                 self.lower_binary_op_expr(scope_id, op, *left_ref, *right_ref, mir_ty)
             }
-            NodeKind::Assignment(_, left_ref, right_ref) => {
-                self.lower_assignment_expr(scope_id, *left_ref, *right_ref, mir_ty)
+            NodeKind::Assignment(op, left_ref, right_ref) => {
+                self.lower_assignment_expr(scope_id, op, *left_ref, *right_ref, mir_ty)
             }
             NodeKind::FunctionCall(func_ref, args) => self.lower_function_call(scope_id, *func_ref, args, mir_ty),
             NodeKind::MemberAccess(obj_ref, field_name, is_arrow) => {
@@ -902,22 +902,61 @@ impl<'a> AstToMirLowerer<'a> {
     fn lower_assignment_expr(
         &mut self,
         scope_id: ScopeId,
+        op: &BinaryOp,
         left_ref: NodeRef,
         right_ref: NodeRef,
         mir_ty: TypeId,
     ) -> Operand {
         let lhs_op = self.lower_expression(scope_id, left_ref, true);
-        let rhs_op = self.lower_expression(scope_id, right_ref, true);
 
-        // Apply any recorded implicit conversions from rhs to lhs type
-        let rhs_converted = self.apply_conversions(rhs_op.clone(), right_ref, mir_ty);
-
-        if let Operand::Copy(place) = lhs_op {
-            self.emit_assignment(*place, rhs_converted.clone());
-            rhs_converted
+        // Ensure the LHS is a place. If not, this is a semantic error.
+        let place = if let Operand::Copy(place) = lhs_op {
+            *place
         } else {
             panic!("LHS of assignment is not a place");
-        }
+        };
+
+        let rhs_op = self.lower_expression(scope_id, right_ref, true);
+
+        let final_rhs = if *op != BinaryOp::Assign {
+            // This is a compound assignment, e.g., a += b
+            // Use the already-evaluated place to read the current value.
+            let lhs_copy = Operand::Copy(Box::new(place.clone()));
+            let compound_op = match op {
+                BinaryOp::AssignAdd => BinaryOp::Add,
+                BinaryOp::AssignSub => BinaryOp::Sub,
+                BinaryOp::AssignMul => BinaryOp::Mul,
+                BinaryOp::AssignDiv => BinaryOp::Div,
+                BinaryOp::AssignMod => BinaryOp::Mod,
+                BinaryOp::AssignBitAnd => BinaryOp::BitAnd,
+                BinaryOp::AssignBitOr => BinaryOp::BitOr,
+                BinaryOp::AssignBitXor => BinaryOp::BitXor,
+                BinaryOp::AssignLShift => BinaryOp::LShift,
+                BinaryOp::AssignRShift => BinaryOp::RShift,
+                _ => panic!("Unexpected compound assignment operator"),
+            };
+
+            if let Some(rval) =
+                self.lower_pointer_arithmetic(&compound_op, lhs_copy.clone(), rhs_op.clone(), left_ref, right_ref)
+            {
+                self.emit_rvalue_to_operand(rval, mir_ty)
+            } else {
+                let lhs_converted_for_op = self.apply_conversions(lhs_copy, left_ref, mir_ty);
+                let rhs_converted_for_op = self.apply_conversions(rhs_op, right_ref, mir_ty);
+                let mir_bin_op = self.map_ast_binary_op_to_mir(&compound_op);
+                let rval = Rvalue::BinaryOp(mir_bin_op, lhs_converted_for_op, rhs_converted_for_op);
+                self.emit_rvalue_to_operand(rval, mir_ty)
+            }
+        } else {
+            // Simple assignment, just use the RHS
+            rhs_op
+        };
+
+        // Apply final conversions from the (potentially computed) rhs to the lhs type
+        let rhs_converted = self.apply_conversions(final_rhs, right_ref, mir_ty);
+
+        self.emit_assignment(place, rhs_converted.clone());
+        rhs_converted // C assignment expressions evaluate to the assigned value
     }
 
     fn lower_function_call(

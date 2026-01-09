@@ -79,11 +79,6 @@ fn test_emit_const_struct_literal() {
 }
 
 #[test]
-fn test_mir_to_cranelift_basic() {
-    assert!(true);
-}
-
-#[test]
 fn test_store_statement_lowering() {
     // 1. Set up the MIR components
     let mut types = HashMap::new();

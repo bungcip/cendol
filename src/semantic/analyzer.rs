@@ -210,13 +210,32 @@ impl<'a> SemanticAnalyzer<'a> {
         promoted
     }
 
-    fn visit_binary_op(&mut self, op: BinaryOp, lhs_ref: NodeRef, rhs_ref: NodeRef) -> Option<QualType> {
+    fn visit_binary_op(
+        &mut self,
+        op: BinaryOp,
+        lhs_ref: NodeRef,
+        rhs_ref: NodeRef,
+        full_span: SourceSpan,
+    ) -> Option<QualType> {
         let lhs_ty = self.visit_node(lhs_ref)?;
         let rhs_ty = self.visit_node(rhs_ref)?;
 
         // Perform integer promotions and record them
         let lhs_promoted = self.apply_and_record_integer_promotion(lhs_ref, lhs_ty);
         let rhs_promoted = self.apply_and_record_integer_promotion(rhs_ref, rhs_ty);
+
+        if op == BinaryOp::Mod {
+            if !lhs_promoted.is_integer() || !rhs_promoted.is_integer() {
+                let lhs_kind = &self.registry.get(lhs_promoted.ty()).kind;
+                let rhs_kind = &self.registry.get(rhs_promoted.ty()).kind;
+                self.report_error(SemanticError::InvalidBinaryOperands {
+                    left_ty: lhs_kind.to_string(),
+                    right_ty: rhs_kind.to_string(),
+                    span: full_span,
+                });
+                return None;
+            }
+        }
 
         // Handle pointer arithmetic
         // Re-borrow kinds after mutable borrows above
@@ -624,7 +643,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
             NodeKind::UnaryOp(op, operand) => self.visit_unary_op(*op, *operand, node.span),
-            NodeKind::BinaryOp(op, lhs, rhs) => self.visit_binary_op(*op, *lhs, *rhs),
+            NodeKind::BinaryOp(op, lhs, rhs) => self.visit_binary_op(*op, *lhs, *rhs, node.span),
             NodeKind::TernaryOp(cond, then, else_expr) => {
                 self.visit_node(*cond);
                 let then_ty = self.visit_node(*then);

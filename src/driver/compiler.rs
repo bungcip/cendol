@@ -233,11 +233,6 @@ impl CompilerDriver {
         let unresolved_idents: Vec<(usize, crate::ast::NameId, crate::ast::SourceSpan)> = Vec::new();
         let unresolved_gotos: Vec<(usize, crate::ast::NameId, crate::ast::SourceSpan)> = Vec::new();
         let unresolved_labels: Vec<(usize, crate::ast::NameId, crate::ast::SourceSpan)> = Vec::new();
-        for (_i, node) in ast.nodes.iter().enumerate() {
-            match &node.kind {
-                _ => {}
-            }
-        }
 
         if !unresolved_idents.is_empty() || !unresolved_gotos.is_empty() || !unresolved_labels.is_empty() {
             eprintln!("Unresolved identifiers (index, name, span start):");

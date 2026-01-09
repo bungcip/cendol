@@ -234,7 +234,7 @@ pub enum DeclSpecifier {
     StorageClass(StorageClass),
     TypeQualifier(TypeQualifier),
     FunctionSpecifiers(FunctionSpecifiers),
-    AlignmentSpecifier(ParsedAlignmentSpecifier),
+    AlignmentSpecifier(AlignmentSpecifier),
     TypeSpecifier(TypeSpecifier),
     Attribute,
 }
@@ -363,7 +363,7 @@ bitflags::bitflags! {
 
 // Alignment specifiers
 #[derive(Debug, Clone, Serialize)]
-pub enum ParsedAlignmentSpecifier {
+pub enum AlignmentSpecifier {
     Type(ParsedType), // _Alignas(type-name)
     Expr(NodeRef),    // _Alignas(constant-expression)
 }

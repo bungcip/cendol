@@ -23,44 +23,6 @@ use crate::semantic::{
 use crate::semantic::{FunctionParameter, QualType};
 use crate::source_manager::SourceSpan;
 
-/// Extract identifier name from ParsedType declarator
-fn extract_identifier_from_parsed_type(parsed_type: &ParsedType, ctx: &LowerCtx) -> Option<NameId> {
-    extract_identifier_from_parsed_declarator_recursive(parsed_type.declarator, ctx)
-}
-
-/// Recursively extract identifier from parsed declarator
-fn extract_identifier_from_parsed_declarator_recursive(
-    declarator_ref: ParsedDeclRef,
-    ctx: &LowerCtx,
-) -> Option<NameId> {
-    match ctx.parsed_ast.parsed_types.get_decl(declarator_ref) {
-        ParsedDeclaratorNode::Identifier { name } => {
-            // This is an identifier node with the actual name
-            name
-        }
-        ParsedDeclaratorNode::Pointer { inner, .. } => {
-            // Look inside the pointer for the identifier
-            extract_identifier_from_parsed_declarator_recursive(inner, ctx)
-        }
-        ParsedDeclaratorNode::Array { inner, .. } => {
-            // Look inside the array for the identifier
-            extract_identifier_from_parsed_declarator_recursive(inner, ctx)
-        }
-        ParsedDeclaratorNode::Function { inner, .. } => {
-            // Look inside the function for the identifier
-            extract_identifier_from_parsed_declarator_recursive(inner, ctx)
-        }
-    }
-}
-
-/// Apply ParsedType declarator to create a semantic Type
-fn apply_parsed_declarator(base_type: TypeRef, parsed_type: &ParsedType, ctx: &mut LowerCtx) -> QualType {
-    // Start with the base type and apply declarator transformations
-    let result_type = apply_parsed_declarator_recursive(base_type, parsed_type.declarator, ctx);
-    // Combine the declarator result qualifiers with the parsed type qualifiers
-    ctx.registry.merge_qualifiers(result_type, parsed_type.qualifiers)
-}
-
 /// Recursively apply parsed declarator to base type
 fn apply_parsed_declarator_recursive(
     current_type: TypeRef,
@@ -137,8 +99,6 @@ fn convert_parsed_array_size(size: &crate::ast::parsed::ParsedArraySize, ctx: &m
 }
 
 /// Helper function to resolve array size logic
-
-/// Helper function to resolve array size logic
 fn resolve_array_size(_size: Option<ParsedNodeRef>, _ctx: &mut LowerCtx) -> ArraySizeType {
     // Needs to lower and evaluate expression
     // TODO: Implement expression lowering here or defer
@@ -181,11 +141,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     pub(crate) fn report_error(&mut self, error: SemanticError) {
         self.has_errors = true;
         self.diag.report(error);
-    }
-
-    /// Check if the context has any errors
-    pub(crate) fn has_errors(&self) -> bool {
-        self.has_errors
     }
 
     fn set_scope(&mut self, node_ref: NodeRef, scope_id: ScopeId) {
@@ -771,17 +726,6 @@ pub(crate) fn lower_decl_specifiers(
     info
 }
 
-/// Check if a declarator represents a function declaration
-fn is_function_declarator(declarator: &ParsedDeclarator) -> bool {
-    match declarator {
-        ParsedDeclarator::Function { .. } => true,
-        ParsedDeclarator::Pointer(_, Some(inner)) => is_function_declarator(inner),
-        ParsedDeclarator::BitField(inner, _) => is_function_declarator(inner),
-        ParsedDeclarator::Array(inner, _) => is_function_declarator(inner),
-        _ => false,
-    }
-}
-
 fn lower_function_parameters(params: &[ParsedParamData], ctx: &mut LowerCtx) -> Vec<FunctionParameter> {
     params
         .iter()
@@ -1048,11 +992,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         continue;
                     }
 
-                    let init_expr = if let Some(init_node) = init.initializer {
-                        Some(self.lower_expression(init_node))
-                    } else {
-                        None
-                    };
+                    let init_expr = init.initializer.map(|init_node| self.lower_expression(init_node));
 
                     let is_func = matches!(init.declarator, ParsedDeclarator::Function { .. });
 
@@ -1077,19 +1017,18 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     } else {
                         // Array size deduction from initializer
                         let mut final_ty = final_ty;
-                        if let Some(ie) = init_expr {
-                            if let TypeKind::Array {
+                        if let Some(ie) = init_expr
+                            && let TypeKind::Array {
                                 element_type,
                                 size: ArraySizeType::Incomplete,
                             } = &self.registry.get(final_ty.ty()).kind
-                            {
-                                let element_type = *element_type;
-                                if let Some(deduced_size) = self.deduce_array_size_full(ie) {
-                                    let new_ty = self
-                                        .registry
-                                        .array_of(element_type, ArraySizeType::Constant(deduced_size));
-                                    final_ty = QualType::new(new_ty, final_ty.qualifiers());
-                                }
+                        {
+                            let element_type = *element_type;
+                            if let Some(deduced_size) = self.deduce_array_size_full(ie) {
+                                let new_ty = self
+                                    .registry
+                                    .array_of(element_type, ArraySizeType::Constant(deduced_size));
+                                final_ty = QualType::new(new_ty, final_ty.qualifiers());
                             }
                         }
 
@@ -1142,7 +1081,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
                 let func_sym_ref = self.symbol_table.lookup_symbol(func_name).map(|(s, _)| s).unwrap();
 
-                let scope_id = self.symbol_table.push_scope();
+                let _scope_id = self.symbol_table.push_scope();
 
                 // Pre-scan labels for forward goto support
                 self.collect_labels(func_def.body);
@@ -1155,16 +1094,15 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 let mut params_decl = Vec::new();
                 for param in parameters {
-                    if let Some(pname) = param.name {
-                        if let Ok(sym) =
+                    if let Some(pname) = param.name
+                        && let Ok(sym) =
                             self.symbol_table
                                 .define_variable(pname, param.param_type.ty(), None, None, span)
-                        {
-                            params_decl.push(ParamDecl {
-                                symbol: sym,
-                                ty: param.param_type,
-                            });
-                        }
+                    {
+                        params_decl.push(ParamDecl {
+                            symbol: sym,
+                            ty: param.param_type,
+                        });
                     }
                 }
 
@@ -1220,7 +1158,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
             ParsedNodeKind::For(stmt) => {
                 let scope_id = self.symbol_table.push_scope();
-                let init = stmt.init.map(|i| self.lower_node_recursive(i).get(0).cloned().unwrap());
+                let init = stmt
+                    .init
+                    .map(|i| self.lower_node_recursive(i).first().cloned().unwrap());
                 let cond = stmt.condition.map(|c| self.lower_expression(c));
                 let inc = stmt.increment.map(|i| self.lower_expression(i));
                 let body = self.lower_single_statement(stmt.body);
@@ -1384,7 +1324,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let assoc = associations
                     .iter()
                     .map(|a| {
-                        let ty = a.type_name.clone().map(|t| {
+                        let ty = a.type_name.map(|t| {
                             convert_parsed_type_to_qual_type(self, t, span)
                                 .unwrap_or(QualType::unqualified(self.registry.type_error))
                         });

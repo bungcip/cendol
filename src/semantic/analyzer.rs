@@ -743,14 +743,13 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(*ty)
             }
             NodeKind::SizeOfExpr(expr) => {
-                if let Some(ty) = self.visit_node(*expr) {
-                    if !self.registry.is_complete(ty.ty()) {
+                if let Some(ty) = self.visit_node(*expr)
+                    && !self.registry.is_complete(ty.ty()) {
                         self.report_error(SemanticError::SizeOfIncompleteType {
                             ty: ty.ty(),
                             span: node.span,
                         });
                     }
-                }
                 Some(QualType::unqualified(self.registry.type_long_unsigned))
             }
             NodeKind::SizeOfType(ty) | NodeKind::AlignOf(ty) => {

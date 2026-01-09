@@ -644,19 +644,19 @@ impl<'a> AstToMirLowerer<'a> {
                     .expect("Generic selection failed (should be caught by Analyzer)");
                 self.lower_expression(scope_id, expr_to_lower, need_value)
             }
-            NodeKind::VaArg(valist, ty) => {
+            NodeKind::VaArg(_valist, _ty) => {
                 // Intrinsic VA_ARG?
                 // For now, emit dummy or error. Or simple load if simplistic.
                 // Treat as constant 0 to avoid crash, fix later if needed.
                 Operand::Constant(self.create_constant(ConstValue::Int(0)))
             }
-            NodeKind::GnuStatementExpression(stmt, _) => {
+            NodeKind::GnuStatementExpression(_stmt, _) => {
                 // Very Simplified: lower statement, if it sets result, use it.
                 // But statement lowering doesn't return operand.
                 // Skip for now.
                 Operand::Constant(self.create_constant(ConstValue::Int(0)))
             }
-            NodeKind::InitializerList(inits) => {
+            NodeKind::InitializerList(_inits) => {
                 // Should be lowered in context of assignment usually, but if used as rvalue?
                 // It's not valid C expression except in compound literal.
                 // If here, maybe extension?

@@ -570,8 +570,8 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::BinaryOp(op, left_ref, right_ref) => {
                 self.lower_binary_op_expr(scope_id, op, *left_ref, *right_ref, mir_ty)
             }
-            NodeKind::Assignment(_, left_ref, right_ref) => {
-                self.lower_assignment_expr(scope_id, *left_ref, *right_ref, mir_ty)
+            NodeKind::Assignment(op, left_ref, right_ref) => {
+                self.lower_assignment_expr(scope_id, op, *left_ref, *right_ref, mir_ty)
             }
             NodeKind::FunctionCall(func_ref, args) => self.lower_function_call(scope_id, *func_ref, args, mir_ty),
             NodeKind::MemberAccess(obj_ref, field_name, is_arrow) => {
@@ -902,6 +902,7 @@ impl<'a> AstToMirLowerer<'a> {
     fn lower_assignment_expr(
         &mut self,
         scope_id: ScopeId,
+        op: &BinaryOp,
         left_ref: NodeRef,
         right_ref: NodeRef,
         mir_ty: TypeId,
@@ -909,14 +910,72 @@ impl<'a> AstToMirLowerer<'a> {
         let lhs_op = self.lower_expression(scope_id, left_ref, true);
         let rhs_op = self.lower_expression(scope_id, right_ref, true);
 
-        // Apply any recorded implicit conversions from rhs to lhs type
-        let rhs_converted = self.apply_conversions(rhs_op.clone(), right_ref, mir_ty);
-
-        if let Operand::Copy(place) = lhs_op {
-            self.emit_assignment(*place, rhs_converted.clone());
-            rhs_converted
+        let lhs_place = if let Operand::Copy(ref place) = lhs_op {
+            place.clone()
         } else {
             panic!("LHS of assignment is not a place");
+        };
+
+        match op {
+            BinaryOp::Assign => {
+                // Apply any recorded implicit conversions from rhs to lhs type
+                let rhs_converted = self.apply_conversions(rhs_op, right_ref, mir_ty);
+                self.emit_assignment(*lhs_place, rhs_converted.clone());
+                rhs_converted
+            }
+            _ => {
+                // Compound assignment: LHS op= RHS
+                // Equivalent to LHS = (typeof(LHS)) (LHS op RHS)
+                let bin_op = match op {
+                    BinaryOp::AssignAdd => BinaryOp::Add,
+                    BinaryOp::AssignSub => BinaryOp::Sub,
+                    BinaryOp::AssignMul => BinaryOp::Mul,
+                    BinaryOp::AssignDiv => BinaryOp::Div,
+                    BinaryOp::AssignMod => BinaryOp::Mod,
+                    BinaryOp::AssignBitAnd => BinaryOp::BitAnd,
+                    BinaryOp::AssignBitOr => BinaryOp::BitOr,
+                    BinaryOp::AssignBitXor => BinaryOp::BitXor,
+                    BinaryOp::AssignLShift => BinaryOp::LShift,
+                    BinaryOp::AssignRShift => BinaryOp::RShift,
+                    _ => panic!("Unexpected assignment op: {:?}", op),
+                };
+
+                // Check for pointer arithmetic
+                if let Some(rval) = self.lower_pointer_arithmetic(
+                    &bin_op,
+                    lhs_op.clone(),
+                    rhs_op.clone(),
+                    left_ref,
+                    right_ref,
+                ) {
+                    let result_op = self.emit_rvalue_to_operand(rval, mir_ty);
+                    self.emit_assignment(*lhs_place, result_op.clone());
+                    return result_op;
+                }
+
+                // Standard arithmetic
+                // Apply conversions to operands (using mir_ty as a fallback for target type)
+                let lhs_converted = self.apply_conversions(lhs_op.clone(), left_ref, mir_ty);
+                let rhs_converted = self.apply_conversions(rhs_op, right_ref, mir_ty);
+
+                let mir_op = self.map_ast_binary_op_to_mir(&bin_op);
+                let rval = Rvalue::BinaryOp(mir_op, lhs_converted, rhs_converted);
+
+                // Create a temporary for the result of the operation.
+                // We use mir_ty (LHS type) which essentially casts the result back to LHS type.
+                // In C, compound assignment includes an implicit cast to LHS type.
+                // However, Rvalue::BinaryOp result type depends on operands.
+                // We trust cranelift to handle assignment or implicit truncation if we assign to `mir_ty`.
+                // If explicit cast is needed (e.g. int -> short), `emit_rvalue_to_operand` creates a temp of `mir_ty`.
+                // `MirStmt::Assign` allows Rvalue::BinaryOp to be assigned to a Place.
+                // Note: If type mismatch occurs, codegen might need to handle it or we should emit explicit cast.
+                // For now, we rely on `emit_rvalue_to_operand` which creates a temp of `mir_ty` and assigns to it.
+                // If `mir_ty` is smaller than result, this is effectively a cast/truncation.
+
+                let result_op = self.emit_rvalue_to_operand(rval, mir_ty);
+                self.emit_assignment(*lhs_place, result_op.clone());
+                result_op
+            }
         }
     }
 

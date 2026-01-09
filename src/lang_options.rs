@@ -30,7 +30,7 @@ mod tests {
         assert!(!options.is_gnu_mode());
         assert!(!options.is_ms_extensions());
         assert!(!options.is_pedantic());
-        assert_eq!(options.flags.contains(LangFlags::C11), true);
+        assert!(options.flags.contains(LangFlags::C11));
     }
 
     #[test]

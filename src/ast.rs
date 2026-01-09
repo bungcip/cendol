@@ -26,7 +26,7 @@ use std::num::NonZeroU32;
 /// Alias for GlobalSymbol from symbol_table crate with global feature.
 pub type NameId = symbol_table::GlobalSymbol;
 
-use crate::semantic::{ScopeId, SymbolRef, TypeRef};
+use crate::semantic::{ImplicitConversion, QualType, ScopeId, SemanticInfo, SymbolRef, TypeRef, ValueCategory};
 pub use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
 
 // Submodules
@@ -47,9 +47,9 @@ pub use nodes::{BinaryOp, UnaryOp};
 #[derive(Clone)]
 pub struct Ast {
     pub nodes: Vec<Node>,
-    pub parsed_types: ParsedTypeArena,                        // syntax type
-    scope_map: Vec<Option<ScopeId>>,                          // index = NodeRef
-    pub semantic_info: Option<crate::semantic::SemanticInfo>, // Populated after type resolution
+    pub parsed_types: ParsedTypeArena,       // syntax type
+    scope_map: Vec<Option<ScopeId>>,         // index = NodeRef
+    pub semantic_info: Option<SemanticInfo>, // Populated after type resolution
 }
 
 /// Node reference type for referencing child nodes.
@@ -114,7 +114,7 @@ impl Ast {
     }
 
     /// attach semantic info side table for AST (populated after type resolution)
-    pub fn attach_semantic_info(&mut self, semantic_info: crate::semantic::SemanticInfo) {
+    pub fn attach_semantic_info(&mut self, semantic_info: SemanticInfo) {
         self.semantic_info = Some(semantic_info);
     }
 }
@@ -140,12 +140,12 @@ impl Node {
 
 impl Ast {
     /// Get the resolved type for a node (reads from attached semantic_info)
-    pub fn get_resolved_type(&self, node_ref: NodeRef) -> Option<crate::semantic::QualType> {
+    pub fn get_resolved_type(&self, node_ref: NodeRef) -> Option<QualType> {
         self.semantic_info.as_ref()?.types[(node_ref.get() - 1) as usize]
     }
 
     /// Get the value category for a node (reads from attached semantic_info)
-    pub fn get_value_category(&self, node_ref: NodeRef) -> Option<crate::semantic::ValueCategory> {
+    pub fn get_value_category(&self, node_ref: NodeRef) -> Option<ValueCategory> {
         self.semantic_info
             .as_ref()?
             .value_categories
@@ -154,7 +154,7 @@ impl Ast {
     }
 
     /// Get the conversions for a node (reads from attached semantic_info)
-    pub fn get_conversions(&self, node_ref: NodeRef) -> Option<&SmallVec<[crate::semantic::ImplicitConversion; 1]>> {
+    pub fn get_conversions(&self, node_ref: NodeRef) -> Option<&SmallVec<[ImplicitConversion; 1]>> {
         self.semantic_info
             .as_ref()?
             .conversions
@@ -164,7 +164,7 @@ impl Ast {
     /// Check if a node has only pointer decay conversion (optimization opportunity)
     pub fn has_only_pointer_decay(&self, node_ref: NodeRef) -> bool {
         if let Some(conversions) = self.get_conversions(node_ref) {
-            conversions.len() == 1 && conversions[0] == crate::semantic::ImplicitConversion::PointerDecay
+            conversions.len() == 1 && conversions[0] == ImplicitConversion::PointerDecay
         } else {
             false
         }

@@ -2,11 +2,63 @@ use crate::{
     ast::{nodes::*, *},
     diagnostic::{DiagnosticEngine, SemanticError},
     semantic::{
-        ArraySizeType, ImplicitConversion, QualType, SemanticInfo, SymbolKind, SymbolTable, TypeKind, TypeQualifiers,
+        ArraySizeType, QualType, SemanticInfo, SymbolKind, SymbolTable, TypeKind, TypeQualifiers,
         TypeRegistry, ValueCategory,
         conversions::{integer_promotion, usual_arithmetic_conversions},
     },
 };
+
+use smallvec::SmallVec;
+
+/// Side table containing semantic information for AST nodes.
+/// Parallel vectors indexed by node index (NodeRef.get() - 1).
+#[derive(Debug, Clone)]
+pub struct SemanticInfo {
+    pub types: Vec<Option<QualType>>,
+    pub conversions: Vec<SmallVec<[ImplicitConversion; 1]>>,
+    pub value_categories: Vec<ValueCategory>,
+}
+
+impl SemanticInfo {
+    pub fn with_capacity(n: usize) -> Self {
+        use smallvec::SmallVec;
+        Self {
+            types: vec![None; n],
+            conversions: vec![SmallVec::new(); n],
+            value_categories: vec![ValueCategory::RValue; n],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValueCategory {
+    LValue,
+    RValue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImplicitConversion {
+    /// LValue → RValue
+    LValueToRValue,
+
+    /// Array/function → pointer
+    PointerDecay,
+
+    /// char/short → int (store types as TypeRef)
+    IntegerPromotion { from: TypeRef, to: TypeRef },
+
+    /// int → long, unsigned → unsigned long, etc
+    IntegerCast { from: TypeRef, to: TypeRef },
+
+    /// void* ↔ T*
+    PointerCast { from: TypeRef, to: TypeRef },
+
+    /// add/remove const/volatile
+    QualifierAdjust { from: TypeQualifiers, to: TypeQualifiers },
+
+    /// 0 / NULL → T*
+    NullPointerConstant,
+}
 
 /// Run Semantic Analyzer in our AST and return analysist result in SemanticInfo
 /// which contains resolved type, conversion table, and value category

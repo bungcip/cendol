@@ -1,6 +1,4 @@
-//! Semantic validation tests
-use super::semantic_common::{run_fail, run_pass};
-use crate::diagnostic::DiagnosticLevel;
+use super::semantic_common::{run_fail_with_diagnostic, run_fail_with_message, run_pass};
 use crate::driver::artifact::CompilePhase;
 
 #[test]
@@ -18,7 +16,7 @@ fn test_static_assert_pass() {
 
 #[test]
 fn rejects_modulo_on_non_integer() {
-    let driver = run_fail(
+    run_fail_with_diagnostic(
         r#"
         int main() {
             double x = 1.0;
@@ -28,20 +26,10 @@ fn rejects_modulo_on_non_integer() {
         }
     "#,
         CompilePhase::Mir,
+        "Invalid operands for binary operation: have 'double' and 'double'",
+        5,
+        13,
     );
-    assert!(driver.get_diagnostics().iter().any(|d| {
-        if d.level == DiagnosticLevel::Error
-            && d.message
-                .contains("Invalid operands for binary operation: have 'double' and 'double'")
-        {
-            let (line, col) = driver.source_manager.get_line_column(d.span.start()).unwrap();
-            assert_eq!(line, 5);
-            assert_eq!(col, 13);
-            true
-        } else {
-            false
-        }
-    }));
 }
 
 #[test]
@@ -61,7 +49,7 @@ fn accepts_modulo_on_integer() {
 
 #[test]
 fn rejects_bitnot_on_non_integer() {
-    let driver = run_fail(
+    run_fail_with_diagnostic(
         r#"
         int main() {
             double x = 1.0;
@@ -70,43 +58,28 @@ fn rejects_bitnot_on_non_integer() {
         }
     "#,
         CompilePhase::Mir,
+        "Invalid operand for unary operation: have 'double'",
+        4,
+        13,
     );
-    assert!(driver.get_diagnostics().iter().any(|d| {
-        if d.level == DiagnosticLevel::Error && d.message.contains("Invalid operand for unary operation: have 'double'")
-        {
-            let (line, col) = driver.source_manager.get_line_column(d.span.start()).unwrap();
-            assert_eq!(line, 4);
-            assert_eq!(col, 13);
-            true
-        } else {
-            false
-        }
-    }));
 }
 
 #[test]
 fn rejects_conflicting_storage_classes() {
-    let driver = run_fail(
+    run_fail_with_diagnostic(
         r#"
         extern static int x;
     "#,
         CompilePhase::Mir,
+        "conflicting storage class specifiers",
+        2,
+        9,
     );
-    assert!(driver.get_diagnostics().iter().any(|d| {
-        if d.level == DiagnosticLevel::Error && d.message.contains("conflicting storage class specifiers") {
-            let (line, col) = driver.source_manager.get_line_column(d.span.start()).unwrap();
-            assert_eq!(line, 2);
-            assert_eq!(col, 9);
-            true
-        } else {
-            false
-        }
-    }));
 }
 
 #[test]
 fn rejects_variable_as_typedef_in_cast() {
-    let driver = run_fail(
+    run_fail_with_message(
         r#"
         int main() {
             int my_var = 10;
@@ -114,17 +87,13 @@ fn rejects_variable_as_typedef_in_cast() {
         }
     "#,
         CompilePhase::Mir,
+        "Unexpected token: expected Semicolon, found IntegerConstant(1)",
     );
-    assert!(driver.get_diagnostics().iter().any(|d| {
-        d.level == DiagnosticLevel::Error
-            && d.message
-                .contains("Unexpected token: expected Semicolon, found IntegerConstant(1)")
-    }));
 }
 
 #[test]
 fn test_static_assert_fail() {
-    run_fail(
+    run_fail_with_message(
         r#"
         int main() {
             _Static_assert(0, "This should fail");
@@ -132,12 +101,13 @@ fn test_static_assert_fail() {
         }
     "#,
         CompilePhase::Mir,
+        "static assertion failed: This should fail",
     );
 }
 
 #[test]
 fn test_static_assert_file_scope_fail() {
-    run_fail(
+    run_fail_with_message(
         r#"
         _Static_assert(0, "This should fail");
         int main() {
@@ -145,12 +115,13 @@ fn test_static_assert_file_scope_fail() {
         }
     "#,
         CompilePhase::Mir,
+        "static assertion failed: This should fail",
     );
 }
 
 #[test]
 fn test_static_assert_non_constant() {
-    run_fail(
+    run_fail_with_message(
         r#"
         int main() {
             int x = 1;
@@ -159,6 +130,7 @@ fn test_static_assert_non_constant() {
         }
     "#,
         CompilePhase::Mir,
+        "expression in static assertion is not constant",
     );
 }
 

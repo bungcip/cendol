@@ -135,32 +135,23 @@ impl<'a> AstToMirLowerer<'a> {
                                 .map(|p| self.lower_type_to_mir(p.param_type.ty()))
                                 .collect();
 
-                            // Use declare_function for declarations, define_function for definitions
-                            if has_definition {
-                                self.mir_builder.define_function(
-                                    symbol_name,
-                                    param_mir_types,
-                                    return_mir_type,
-                                    *is_variadic,
-                                );
-                            } else {
-                                self.mir_builder.declare_function(
-                                    symbol_name,
-                                    param_mir_types,
-                                    return_mir_type,
-                                    *is_variadic,
-                                );
-                            }
+                            self.define_or_declare_function(
+                                symbol_name,
+                                param_mir_types,
+                                return_mir_type,
+                                *is_variadic,
+                                has_definition,
+                            );
                         } else {
                             // This case should ideally not be reached for a SymbolKind::Function
                             let return_mir_type = self.get_int_type();
-                            if has_definition {
-                                self.mir_builder
-                                    .define_function(symbol_name, vec![], return_mir_type, false);
-                            } else {
-                                self.mir_builder
-                                    .declare_function(symbol_name, vec![], return_mir_type, false);
-                            }
+                            self.define_or_declare_function(
+                                symbol_name,
+                                vec![],
+                                return_mir_type,
+                                false,
+                                has_definition,
+                            );
                         }
                     } else if let SymbolKind::Variable { is_global: true, .. } =
                         self.symbol_table.get_symbol(sym_ref).kind
@@ -328,45 +319,64 @@ impl<'a> AstToMirLowerer<'a> {
         self.finalize_array_initializer(elements, target_ty)
     }
 
-    fn finalize_struct_initializer(&mut self, field_operands: Vec<(usize, Operand)>, target_ty: QualType) -> Operand {
-        let is_global = self.current_function.is_none();
-        if is_global {
-            let const_fields = field_operands
-                .into_iter()
-                .map(|(idx, op)| {
-                    let const_id = self
-                        .operand_to_const_id(op)
-                        .expect("Global initializer is not a constant expression");
-                    (idx, const_id)
-                })
-                .collect();
-            let const_val = ConstValue::StructLiteral(const_fields);
+    fn finalize_initializer_generic<T, C, R>(
+        &mut self,
+        target_ty: QualType,
+        data: T,
+        create_const: C,
+        create_rvalue: R,
+    ) -> Operand
+    where
+        C: FnOnce(&mut Self, T) -> ConstValue,
+        R: FnOnce(T) -> Rvalue,
+    {
+        if self.current_function.is_none() {
+            let const_val = create_const(self, data);
             Operand::Constant(self.create_constant(const_val))
         } else {
-            let rval = Rvalue::StructLiteral(field_operands);
+            let rval = create_rvalue(data);
             let mir_ty = self.lower_type_to_mir(target_ty.ty());
             self.emit_rvalue_to_operand(rval, mir_ty)
         }
     }
 
+    fn finalize_struct_initializer(&mut self, field_operands: Vec<(usize, Operand)>, target_ty: QualType) -> Operand {
+        self.finalize_initializer_generic(
+            target_ty,
+            field_operands,
+            |this, ops| {
+                let const_fields = ops
+                    .into_iter()
+                    .map(|(idx, op)| {
+                        let const_id = this
+                            .operand_to_const_id(op)
+                            .expect("Global initializer is not a constant expression");
+                        (idx, const_id)
+                    })
+                    .collect();
+                ConstValue::StructLiteral(const_fields)
+            },
+            |ops| Rvalue::StructLiteral(ops),
+        )
+    }
+
     fn finalize_array_initializer(&mut self, elements: Vec<Operand>, target_ty: QualType) -> Operand {
-        let is_global = self.current_function.is_none();
-        if is_global {
-            let mut const_elements = Vec::new();
-            for op in elements {
-                if let Some(const_id) = self.operand_to_const_id(op) {
-                    const_elements.push(const_id);
-                } else {
-                    panic!("Global array initializer must be a constant expression");
+        self.finalize_initializer_generic(
+            target_ty,
+            elements,
+            |this, elems| {
+                let mut const_elements = Vec::new();
+                for op in elems {
+                    if let Some(const_id) = this.operand_to_const_id(op) {
+                        const_elements.push(const_id);
+                    } else {
+                        panic!("Global array initializer must be a constant expression");
+                    }
                 }
-            }
-            let const_val = ConstValue::ArrayLiteral(const_elements);
-            Operand::Constant(self.create_constant(const_val))
-        } else {
-            let rval = Rvalue::ArrayLiteral(elements);
-            let mir_ty = self.lower_type_to_mir(target_ty.ty());
-            self.emit_rvalue_to_operand(rval, mir_ty)
-        }
+                ConstValue::ArrayLiteral(const_elements)
+            },
+            |elems| Rvalue::ArrayLiteral(elems),
+        )
     }
 
     fn lower_condition(&mut self, scope_id: ScopeId, condition: NodeRef) -> Operand {
@@ -553,9 +563,7 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::LiteralString(val) => self.lower_literal_string(val, &ty),
             NodeKind::Ident(_, symbol_ref) => self.lower_ident(symbol_ref),
             NodeKind::UnaryOp(op, operand_ref) => match *op {
-                UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
-                    self.lower_pre_incdec(scope_id, op, *operand_ref, *operand_ref)
-                }
+                UnaryOp::PreIncrement | UnaryOp::PreDecrement => self.lower_pre_incdec(scope_id, op, *operand_ref),
                 UnaryOp::AddrOf => self.lower_unary_addrof(scope_id, *operand_ref),
                 UnaryOp::Deref => self.lower_unary_deref(scope_id, *operand_ref),
                 _ => {
@@ -802,35 +810,23 @@ impl<'a> AstToMirLowerer<'a> {
         let zero_const = self.create_constant(ConstValue::Int(0));
         let one_const = self.create_constant(ConstValue::Int(1));
 
-        match op {
-            BinaryOp::LogicAnd => {
-                // if lhs { goto eval_rhs } else { goto short_circuit (result=0) }
-                self.mir_builder
-                    .set_terminator(Terminator::If(lhs_op, eval_rhs_block, short_circuit_block));
-
-                // Short circuit case: LHS is false, so result is 0
-                self.mir_builder.set_current_block(short_circuit_block);
-                self.mir_builder.add_statement(MirStmt::Assign(
-                    res_place.clone(),
-                    Rvalue::Use(Operand::Constant(zero_const)),
-                ));
-                self.mir_builder.set_terminator(Terminator::Goto(merge_block));
-            }
-            BinaryOp::LogicOr => {
-                // if lhs { goto short_circuit (result=1) } else { goto eval_rhs }
-                self.mir_builder
-                    .set_terminator(Terminator::If(lhs_op, short_circuit_block, eval_rhs_block));
-
-                // Short circuit case: LHS is true, so result is 1
-                self.mir_builder.set_current_block(short_circuit_block);
-                self.mir_builder.add_statement(MirStmt::Assign(
-                    res_place.clone(),
-                    Rvalue::Use(Operand::Constant(one_const)),
-                ));
-                self.mir_builder.set_terminator(Terminator::Goto(merge_block));
-            }
+        let (short_circuit_val, true_target, false_target) = match op {
+            BinaryOp::LogicAnd => (zero_const, eval_rhs_block, short_circuit_block),
+            BinaryOp::LogicOr => (one_const, short_circuit_block, eval_rhs_block),
             _ => unreachable!(),
-        }
+        };
+
+        // if lhs { goto true_target } else { goto false_target }
+        self.mir_builder
+            .set_terminator(Terminator::If(lhs_op, true_target, false_target));
+
+        // Short circuit case
+        self.mir_builder.set_current_block(short_circuit_block);
+        self.mir_builder.add_statement(MirStmt::Assign(
+            res_place.clone(),
+            Rvalue::Use(Operand::Constant(short_circuit_val)),
+        ));
+        self.mir_builder.set_terminator(Terminator::Goto(merge_block));
 
         // 2. Evaluate RHS
         self.mir_builder.set_current_block(eval_rhs_block);
@@ -1741,7 +1737,7 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn lower_pre_incdec(&mut self, scope_id: ScopeId, op: &UnaryOp, lhs_ref: NodeRef, _rhs_ref: NodeRef) -> Operand {
+    fn lower_pre_incdec(&mut self, scope_id: ScopeId, op: &UnaryOp, lhs_ref: NodeRef) -> Operand {
         let is_inc = matches!(op, UnaryOp::PreIncrement);
         self.lower_inc_dec_common(scope_id, lhs_ref, is_inc, false, true)
     }
@@ -1810,6 +1806,21 @@ impl<'a> AstToMirLowerer<'a> {
             self.lower_node_ref(statement, scope_id);
         } else {
             panic!("Label '{}' was not pre-scanned", label_name.as_str());
+        }
+    }
+
+    fn define_or_declare_function(
+        &mut self,
+        name: NameId,
+        params: Vec<TypeId>,
+        ret: TypeId,
+        variadic: bool,
+        is_def: bool,
+    ) {
+        if is_def {
+            self.mir_builder.define_function(name, params, ret, variadic);
+        } else {
+            self.mir_builder.declare_function(name, params, ret, variadic);
         }
     }
 }

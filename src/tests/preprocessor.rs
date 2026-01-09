@@ -1,9 +1,7 @@
 use crate::diagnostic::DiagnosticEngine;
 use crate::pp::*;
 use crate::source_manager::SourceManager;
-use crate::tests::pp_common::{
-    DebugToken, setup_pp_snapshot, setup_pp_snapshot_with_diags, setup_preprocessor_test_with_diagnostics,
-};
+use crate::tests::pp_common::{setup_multi_file_pp_snapshot, setup_pp_snapshot, setup_pp_snapshot_with_diags};
 
 #[test]
 fn test_simple_macro_definition_and_expansion() {
@@ -400,32 +398,17 @@ int x = 1;
 
 #[test]
 fn test_pragma_once_via_pragma_operator() {
-    let mut sm = SourceManager::new();
-    let header_content = r#"
-_Pragma("once")
-int a = 1;
-"#;
-    sm.add_buffer(header_content.as_bytes().to_vec(), "header_test_pragma.h", None);
+    let files = vec![
+        ("header_test_pragma.h", "_Pragma(\"once\")\nint a = 1;"),
+        (
+            "main.c",
+            "#include \"header_test_pragma.h\"\n#include \"header_test_pragma.h\"",
+        ),
+    ];
 
-    let main_content = r#"
-#include "header_test_pragma.h"
-#include "header_test_pragma.h"
-"#;
-    let main_id = sm.add_buffer(main_content.as_bytes().to_vec(), "main.c", None);
+    let (tokens, _) = setup_multi_file_pp_snapshot(files, "main.c", None);
 
-    let mut diag = DiagnosticEngine::new();
-    let config = PPConfig::default();
-    let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
-
-    let tokens = pp.process(main_id, &config).unwrap();
-    let significant_tokens: Vec<_> = tokens
-        .into_iter()
-        .filter(|t| !matches!(t.kind, PPTokenKind::Eof | PPTokenKind::Eod))
-        .collect();
-
-    let debug_tokens: Vec<DebugToken> = significant_tokens.iter().map(DebugToken::from).collect();
-
-    insta::assert_yaml_snapshot!(debug_tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r#"
     - kind: Identifier
       text: int
     - kind: Identifier
@@ -441,29 +424,17 @@ int a = 1;
 
 #[test]
 fn test_include_same_file_twice_without_pragma_once() {
-    let mut sm = SourceManager::new();
-    let header_content = "int a = 1;";
-    sm.add_buffer(header_content.as_bytes().to_vec(), "header_test_twice.h", None);
+    let files = vec![
+        ("header_test_twice.h", "int a = 1;"),
+        (
+            "main.c",
+            "#include \"header_test_twice.h\"\n#include \"header_test_twice.h\"",
+        ),
+    ];
 
-    let main_content = r#"
-#include "header_test_twice.h"
-#include "header_test_twice.h"
-"#;
-    let main_id = sm.add_buffer(main_content.as_bytes().to_vec(), "main.c", None);
+    let (tokens, _) = setup_multi_file_pp_snapshot(files, "main.c", None);
 
-    let mut diag = DiagnosticEngine::new();
-    let config = PPConfig::default();
-    let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
-
-    let tokens = pp.process(main_id, &config).unwrap();
-    let significant_tokens: Vec<_> = tokens
-        .into_iter()
-        .filter(|t| !matches!(t.kind, PPTokenKind::Eof | PPTokenKind::Eod))
-        .collect();
-
-    let debug_tokens: Vec<DebugToken> = significant_tokens.iter().map(DebugToken::from).collect();
-
-    insta::assert_yaml_snapshot!(debug_tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r#"
     - kind: Identifier
       text: int
     - kind: Identifier
@@ -489,20 +460,19 @@ fn test_include_same_file_twice_without_pragma_once() {
 
 #[test]
 fn test_circular_include_in_memory() {
-    let mut sm = SourceManager::new();
-    sm.add_buffer("#include \"mem_b.h\"".as_bytes().to_vec(), "mem_a.h", None);
-    sm.add_buffer("#include \"mem_a.h\"".as_bytes().to_vec(), "mem_b.h", None);
-    let main_id = sm.add_buffer("#include \"mem_a.h\"".as_bytes().to_vec(), "mem_main.c", None);
+    let files = vec![
+        ("mem_a.h", "#include \"mem_b.h\""),
+        ("mem_b.h", "#include \"mem_a.h\""),
+        ("mem_main.c", "#include \"mem_a.h\""),
+    ];
 
-    let mut diag = DiagnosticEngine::new();
     let config = PPConfig {
         max_include_depth: 10,
         ..Default::default()
     };
-    let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
-    let result = pp.process(main_id, &config);
 
-    assert!(matches!(result, Err(PPError::IncludeDepthExceeded)));
+    let (_, diags) = setup_multi_file_pp_snapshot(files, "mem_main.c", Some(config));
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: IncludeDepthExceeded""#);
 }
 
 #[test]
@@ -658,8 +628,7 @@ fn test_line_directive_with_diagnostics() {
 #line 50 "test.c"
 invalid syntax here
 "#;
-    let result = setup_preprocessor_test_with_diagnostics(src);
-    assert!(result.is_ok());
+    setup_pp_snapshot(src);
 }
 
 #[test]

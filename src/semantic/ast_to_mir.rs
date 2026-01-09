@@ -356,7 +356,7 @@ impl<'a> AstToMirLowerer<'a> {
                     .collect();
                 ConstValue::StructLiteral(const_fields)
             },
-            |ops| Rvalue::StructLiteral(ops),
+            Rvalue::StructLiteral,
         )
     }
 
@@ -375,7 +375,7 @@ impl<'a> AstToMirLowerer<'a> {
                 }
                 ConstValue::ArrayLiteral(const_elements)
             },
-            |elems| Rvalue::ArrayLiteral(elems),
+            Rvalue::ArrayLiteral,
         )
     }
 

@@ -224,17 +224,15 @@ impl<'a> SemanticAnalyzer<'a> {
         let lhs_promoted = self.apply_and_record_integer_promotion(lhs_ref, lhs_ty);
         let rhs_promoted = self.apply_and_record_integer_promotion(rhs_ref, rhs_ty);
 
-        if op == BinaryOp::Mod {
-            if !lhs_promoted.is_integer() || !rhs_promoted.is_integer() {
-                let lhs_kind = &self.registry.get(lhs_promoted.ty()).kind;
-                let rhs_kind = &self.registry.get(rhs_promoted.ty()).kind;
-                self.report_error(SemanticError::InvalidBinaryOperands {
-                    left_ty: lhs_kind.to_string(),
-                    right_ty: rhs_kind.to_string(),
-                    span: full_span,
-                });
-                return None;
-            }
+        if op == BinaryOp::Mod && (!lhs_promoted.is_integer() || !rhs_promoted.is_integer()) {
+            let lhs_kind = &self.registry.get(lhs_promoted.ty()).kind;
+            let rhs_kind = &self.registry.get(rhs_promoted.ty()).kind;
+            self.report_error(SemanticError::InvalidBinaryOperands {
+                left_ty: lhs_kind.to_string(),
+                right_ty: rhs_kind.to_string(),
+                span: full_span,
+            });
+            return None;
         }
 
         // Handle pointer arithmetic

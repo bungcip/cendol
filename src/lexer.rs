@@ -587,10 +587,10 @@ impl<'src> Lexer<'src> {
 
                 for _ in 0..adjacent_literals {
                     let consumed_pptoken = current_token_iter.next().unwrap();
-                    if let PPTokenKind::StringLiteral(next_symbol) = consumed_pptoken.kind {
-                        if let Some(s_content) = Self::extract_string_content(&next_symbol) {
-                            content.push_str(s_content);
-                        }
+                    if let PPTokenKind::StringLiteral(next_symbol) = consumed_pptoken.kind
+                        && let Some(s_content) = Self::extract_string_content(&next_symbol)
+                    {
+                        content.push_str(s_content);
                     }
                 }
 

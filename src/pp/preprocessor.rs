@@ -2610,23 +2610,22 @@ impl<'src> Preprocessor<'src> {
             }
 
             // Check for _Pragma in the expanded stream
-            if let PPTokenKind::Identifier(symbol) = tokens[i].kind {
-                if symbol.as_str() == "_Pragma" {
-                    // Need at least 3 more tokens: ( "string" )
-                    if i + 3 < tokens.len()
-                        && tokens[i + 1].kind == PPTokenKind::LeftParen
-                        && matches!(tokens[i + 2].kind, PPTokenKind::StringLiteral(_))
-                        && tokens[i + 3].kind == PPTokenKind::RightParen
-                    {
-                        if let PPTokenKind::StringLiteral(sym) = tokens[i + 2].kind {
-                            let content = self.destringize(sym.as_str());
-                            self.perform_pragma(&content);
-                            // Remove the 4 tokens
-                            tokens.drain(i..i + 4);
-                            // Do not increment i, as we removed tokens
-                            continue;
-                        }
-                    }
+            if let PPTokenKind::Identifier(symbol) = tokens[i].kind
+                && symbol.as_str() == "_Pragma"
+            {
+                // Need at least 3 more tokens: ( "string" )
+                if i + 3 < tokens.len()
+                    && tokens[i + 1].kind == PPTokenKind::LeftParen
+                    && matches!(tokens[i + 2].kind, PPTokenKind::StringLiteral(_))
+                    && tokens[i + 3].kind == PPTokenKind::RightParen
+                    && let PPTokenKind::StringLiteral(sym) = tokens[i + 2].kind
+                {
+                    let content = self.destringize(sym.as_str());
+                    self.perform_pragma(&content);
+                    // Remove the 4 tokens
+                    tokens.drain(i..i + 4);
+                    // Do not increment i, as we removed tokens
+                    continue;
                 }
             }
 

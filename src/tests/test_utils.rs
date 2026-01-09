@@ -12,4 +12,3 @@ pub(crate) fn run_pipeline(source: &str, phase: CompilePhase) -> (CompilerDriver
     let result = driver.run_pipeline(phase).map_err(|e| format!("{:?}", e));
     (driver, result)
 }
-

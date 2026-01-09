@@ -6,8 +6,8 @@ use chrono::{DateTime, Datelike, Timelike, Utc};
 use hashbrown::HashMap;
 use std::collections::HashSet;
 
-use crate::pp::interpreter::Interpreter;
 use super::pp_lexer::PPLexer;
+use crate::pp::interpreter::Interpreter;
 use crate::pp::{PPToken, PPTokenFlags, PPTokenKind};
 use std::path::{Path, PathBuf};
 use target_lexicon::{Architecture, OperatingSystem, Triple};

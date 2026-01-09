@@ -1,5 +1,5 @@
-use crate::pp::{PPTokenFlags, PPTokenKind};
 use crate::pp::pp_lexer::PPLexer;
+use crate::pp::{PPTokenFlags, PPTokenKind};
 use crate::source_manager::SourceId;
 
 /// Helper function to create a PPLexer for testing

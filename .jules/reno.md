@@ -19,3 +19,4 @@ c-testsuite/tests/single-exec/00014.c
 c-testsuite/tests/single-exec/00015.c
 c-testsuite/tests/single-exec/00033.c
 c-testsuite/tests/single-exec/00016.c
+c-testsuite/tests/single-exec/00036.c

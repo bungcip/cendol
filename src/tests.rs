@@ -8,6 +8,7 @@ pub mod preprocessor;
 pub mod semantic_array_init_bug;
 pub mod semantic_common;
 pub mod semantic_generic;
+pub mod semantic_incomplete_type;
 pub mod semantic_lowering;
 pub mod semantic_lvalue;
 pub mod semantic_mir;

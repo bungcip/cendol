@@ -609,8 +609,11 @@ impl TypeRegistry {
                 ..
             } => {
                 if !is_complete {
-                    return Err(SemanticError::UnsupportedFeature {
-                        feature: "incomplete record type layout".to_string(),
+                    // This is the correct error when sizeof is used on an incomplete type.
+                    return Err(SemanticError::SizeOfIncompleteType {
+                        ty,
+                        // The span from the caller (e.g., the sizeof expression) is used,
+                        // so a dummy span here is acceptable.
                         span: SourceSpan::dummy(),
                     });
                 }

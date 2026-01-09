@@ -17,6 +17,49 @@ fn test_static_assert_pass() {
 }
 
 #[test]
+fn rejects_modulo_on_non_integer() {
+    let driver = run_fail(
+        r#"
+        int main() {
+            double x = 1.0;
+            double y = 2.0;
+            x % y;
+            return 0;
+        }
+    "#,
+        CompilePhase::Mir,
+    );
+    assert!(driver.get_diagnostics().iter().any(|d| {
+        if d.level == DiagnosticLevel::Error
+            && d.message
+                .contains("Invalid operands for binary operation: have 'double' and 'double'")
+        {
+            let (line, col) = driver.source_manager.get_line_column(d.span.start()).unwrap();
+            assert_eq!(line, 5);
+            assert_eq!(col, 13);
+            true
+        } else {
+            false
+        }
+    }));
+}
+
+#[test]
+fn accepts_modulo_on_integer() {
+    run_pass(
+        r#"
+        int main() {
+            int x = 1;
+            int y = 2;
+            x % y;
+            return 0;
+        }
+    "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
 fn rejects_bitnot_on_non_integer() {
     let driver = run_fail(
         r#"

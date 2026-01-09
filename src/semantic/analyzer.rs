@@ -105,13 +105,9 @@ impl<'a> SemanticAnalyzer<'a> {
     fn is_lvalue(&self, node_ref: NodeRef) -> bool {
         let node_kind = &self.ast.get_node(node_ref).kind;
         match node_kind {
-            NodeKind::Ident(_, symbol) => {
-                if let Some(symbol_ref) = symbol.get() {
-                    let symbol = self.symbol_table.get_symbol(symbol_ref);
-                    matches!(symbol.kind, SymbolKind::Variable { .. } | SymbolKind::Function)
-                } else {
-                    false
-                }
+            NodeKind::Ident(_, symbol_ref) => {
+                let symbol = self.symbol_table.get_symbol(*symbol_ref);
+                matches!(symbol.kind, SymbolKind::Variable { .. } | SymbolKind::Function)
             }
             NodeKind::UnaryOp(op, _) => matches!(*op, UnaryOp::Deref),
             NodeKind::IndexAccess(..) => true,
@@ -702,7 +698,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(QualType::unqualified(array_type))
             }
             NodeKind::Ident(_, symbol_ref) => {
-                let symbol = self.symbol_table.get_symbol(symbol_ref.get().unwrap());
+                let symbol = self.symbol_table.get_symbol(*symbol_ref);
                 match &symbol.kind {
                     SymbolKind::EnumConstant { .. } => Some(QualType::unqualified(self.registry.type_int)),
                     _ => Some(QualType::unqualified(symbol.type_info)),
@@ -713,8 +709,12 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::TernaryOp(cond, then, else_expr) => {
                 self.visit_node(*cond);
                 let then_ty = self.visit_node(*then);
-                self.visit_node(*else_expr);
-                then_ty
+                let else_ty = self.visit_node(*else_expr);
+                if let (Some(t), Some(e)) = (then_ty, else_ty) {
+                    usual_arithmetic_conversions(self.registry, t, e)
+                } else {
+                    None
+                }
             }
             NodeKind::GnuStatementExpression(stmt, _) => {
                 if let NodeKind::CompoundStatement(nodes) = &self.ast.get_node(*stmt).kind {
@@ -743,14 +743,25 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(*ty)
             }
             NodeKind::SizeOfExpr(expr) => {
-                self.visit_node(*expr);
+                if let Some(ty) = self.visit_node(*expr) {
+                    if !self.registry.is_complete(ty.ty()) {
+                        self.report_error(SemanticError::SizeOfIncompleteType {
+                            ty: ty.ty(),
+                            span: node.span,
+                        });
+                    }
+                }
                 Some(QualType::unqualified(self.registry.type_long_unsigned))
             }
-            NodeKind::SizeOfType(ty) => {
-                let _ = self.registry.ensure_layout(ty.ty());
+            NodeKind::SizeOfType(ty) | NodeKind::AlignOf(ty) => {
+                if !self.registry.is_complete(ty.ty()) {
+                    self.report_error(SemanticError::SizeOfIncompleteType {
+                        ty: ty.ty(),
+                        span: node.span,
+                    });
+                }
                 Some(QualType::unqualified(self.registry.type_long_unsigned))
             }
-            NodeKind::AlignOf(_) => Some(QualType::unqualified(self.registry.type_long_unsigned)),
             NodeKind::CompoundLiteral(ty, init) => {
                 let _ = self.registry.ensure_layout(ty.ty());
                 self.visit_node(*init);

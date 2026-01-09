@@ -14,7 +14,7 @@ pub mod analyzer;
 pub mod ast_to_mir;
 pub mod const_eval;
 pub mod conversions;
-pub mod name_resolver;
+
 pub mod output;
 pub mod struct_lowering;
 pub mod symbol_resolver;

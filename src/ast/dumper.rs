@@ -245,19 +245,8 @@ impl AstDumper {
             | NodeKind::InitializerList(_)
             | NodeKind::StaticAssert(_, _)
             | NodeKind::EnumConstant(_, _)
-            | NodeKind::Declaration(_)
-            | NodeKind::FunctionDef(_)
             | NodeKind::Dummy => {
                 // These don't directly contain TypeRefs
-            }
-
-            // Parser-specific nodes that use ParsedType (not semantic TypeRef)
-            NodeKind::ParsedCast(_, _)
-            | NodeKind::ParsedSizeOfType(_)
-            | NodeKind::ParsedAlignOf(_)
-            | NodeKind::ParsedCompoundLiteral(_, _)
-            | NodeKind::ParsedGenericSelection(_, _) => {
-                // These use ParsedType, not semantic TypeRef
             }
 
             // GNU extensions
@@ -430,14 +419,7 @@ impl AstDumper {
             NodeKind::CompoundLiteral(ty, init) => {
                 println!("CompoundLiteral({}, {})", ty, init.get())
             }
-            // Parser variants with ParsedType
-            NodeKind::ParsedCast(_, expr) => println!("ParsedCast(PARSED_TYPE, {})", expr.get()),
-            NodeKind::ParsedSizeOfType(_) => println!("ParsedSizeOfType(PARSED_TYPE)"),
-            NodeKind::ParsedAlignOf(_) => println!("ParsedAlignOf(PARSED_TYPE)"),
-            NodeKind::ParsedCompoundLiteral(_, init) => println!("ParsedCompoundLiteral(PARSED_TYPE, {})", init.get()),
-            NodeKind::ParsedGenericSelection(ctrl, assocs) => {
-                println!("ParsedGenericSelection({}, {} associations)", ctrl.get(), assocs.len())
-            }
+
             NodeKind::GenericSelection(ctrl, assocs) => {
                 println!("GenericSelection({}, {} associations)", ctrl.get(), assocs.len())
             }
@@ -500,21 +482,7 @@ impl AstDumper {
                 expr.map(|r| r.get().to_string()).unwrap_or("none".to_string())
             ),
             NodeKind::EmptyStatement => println!("EmptyStatement"),
-            NodeKind::Declaration(decl) => {
-                let specifiers_str = decl.specifiers.iter().map(Self::format_decl_specifier).join(", ");
-                println!(
-                    "Declaration({}, init_declarators = [{}])",
-                    specifiers_str,
-                    decl.init_declarators
-                        .iter()
-                        .map(|x| { format!("{:?} {:?}", x.declarator, x.initializer) })
-                        .join(", ")
-                );
-            }
-            NodeKind::FunctionDef(func_def) => {
-                let specifiers_str = func_def.specifiers.iter().map(Self::format_decl_specifier).join(", ");
-                println!("FunctionDef({}, body={})", specifiers_str, func_def.body.get());
-            }
+            // Declaration and FunctionDef removed
             NodeKind::Function(function_data) => {
                 // Get the function name from the symbol table
                 let func_name = Self::get_function_name(function_data.symbol, symbol_table);

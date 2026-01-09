@@ -30,13 +30,16 @@ use crate::semantic::{ImplicitConversion, QualType, ScopeId, SemanticInfo, Symbo
 pub use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
 
 // Submodules
+// Submodules
 pub mod dumper;
 pub mod nodes;
+pub mod parsed;
 pub mod parsed_types;
 pub mod utils;
 
 // Re-export commonly used items for convenience
 pub use nodes::*;
+pub use parsed::*;
 pub use parsed_types::*;
 
 // Re-export operators that are used throughout the codebase
@@ -47,9 +50,9 @@ pub use nodes::{BinaryOp, UnaryOp};
 #[derive(Clone)]
 pub struct Ast {
     pub nodes: Vec<Node>,
-    pub parsed_types: ParsedTypeArena,       // syntax type
     scope_map: Vec<Option<ScopeId>>,         // index = NodeRef
     pub semantic_info: Option<SemanticInfo>, // Populated after type resolution
+    root: Option<NodeRef>,
 }
 
 /// Node reference type for referencing child nodes.
@@ -67,21 +70,21 @@ impl Ast {
     pub fn new() -> Self {
         Ast {
             nodes: Vec::new(),
-            parsed_types: ParsedTypeArena::new(),
             scope_map: Vec::new(),
             semantic_info: None,
+            root: None,
         }
     }
 
-    /// Replace a node content in the AST without changing reference
-    pub(crate) fn replace_node(&mut self, old_node_ref: NodeRef, new_node: Node) -> NodeRef {
-        // Replace the old node in the vector
-        let old_index = (old_node_ref.get() - 1) as usize;
-        self.nodes[old_index] = new_node;
+    // /// Replace a node content in the AST without changing reference
+    // pub(crate) fn replace_node(&mut self, old_node_ref: NodeRef, new_node: Node) -> NodeRef {
+    //     // Replace the old node in the vector
+    //     let old_index = (old_node_ref.get() - 1) as usize;
+    //     self.nodes[old_index] = new_node;
 
-        // Return the same reference since we're replacing in place
-        old_node_ref
-    }
+    //     // Return the same reference since we're replacing in place
+    //     old_node_ref
+    // }
 
     /// Add a node to the AST and return its reference
     pub(crate) fn push_node(&mut self, node: Node) -> NodeRef {
@@ -95,9 +98,13 @@ impl Ast {
         &self.nodes[(index.get() - 1) as usize]
     }
 
-    /// get root node ref, by default its first node
+    /// get root node ref
     pub fn get_root(&self) -> NodeRef {
-        NonZeroU32::new(1).unwrap()
+        self.root.unwrap_or(NonZeroU32::new(1).unwrap())
+    }
+
+    pub fn set_root(&mut self, root: NodeRef) {
+        self.root = Some(root);
     }
 
     pub fn scope_of(&self, node: NodeRef) -> ScopeId {

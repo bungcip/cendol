@@ -5,7 +5,6 @@
 //! for creating complex AST nodes ergonomically.
 
 use serde::Serialize;
-use std::cell::Cell;
 use thin_vec::ThinVec;
 
 use crate::{
@@ -25,8 +24,8 @@ pub enum NodeKind {
     LiteralChar(u8),
 
     // --- Expressions ---
-    // Ident now includes a Cell for resolved SymbolEntry after semantic analysis
-    Ident(NameId, Cell<Option<SymbolRef>>),
+    // Ident now includes a resolved SymbolRef after semantic analysis
+    Ident(NameId, SymbolRef),
     UnaryOp(UnaryOp, NodeRef),
     BinaryOp(BinaryOp, NodeRef, NodeRef),
     TernaryOp(NodeRef, NodeRef, NodeRef),
@@ -56,14 +55,6 @@ pub enum NodeKind {
     GenericSelection(NodeRef /* controlling_expr */, Vec<ResolvedGenericAssociation>),
     VaArg(NodeRef /* va_list_expr */, TypeRef), // va_arg macro expansion
 
-    // --- Parser Nodes (using ParsedType) ---
-    /// parser node
-    ParsedCast(ParsedType, NodeRef),
-    ParsedSizeOfType(ParsedType),
-    ParsedCompoundLiteral(ParsedType, NodeRef),
-    ParsedAlignOf(ParsedType),
-    ParsedGenericSelection(NodeRef /* controlling_expr */, Vec<GenericAssociation>),
-
     // --- Statements (Complex statements are separate structs) ---
     CompoundStatement(Vec<NodeRef> /* block items */),
     If(IfStmt),
@@ -74,8 +65,8 @@ pub enum NodeKind {
     Return(Option<NodeRef>),
     Break,
     Continue,
-    Goto(NameId, Cell<Option<SymbolRef>>), // resolved symbol after semantic analysis
-    Label(NameId, NodeRef /* statement */, Cell<Option<SymbolRef>>), // resolved symbol after semantic analysis
+    Goto(NameId, SymbolRef),                           // resolved symbol after semantic analysis
+    Label(NameId, NodeRef /* statement */, SymbolRef), // resolved symbol after semantic analysis
 
     Switch(NodeRef /* condition */, NodeRef /* body statement */),
     Case(NodeRef /* const_expr */, NodeRef /* statement */),
@@ -90,8 +81,8 @@ pub enum NodeKind {
     EmptyStatement,                                        // ';'
 
     // --- Declarations & Definitions ---
-    Declaration(DeclarationData),
-    FunctionDef(FunctionDefData),
+    // Removed Parser-only Declaration and FunctionDef variants.
+    // They are now lowered to semantic nodes immediately or exist only in ParsedAst.
     EnumConstant(NameId, Option<NodeRef> /* value expr */),
     StaticAssert(NodeRef /* condition */, NameId /* message */),
 
@@ -450,7 +441,11 @@ pub enum Designator {
 #[derive(Debug, Clone, Serialize)]
 pub struct GenericAssociation {
     pub type_name: Option<ParsedType>, // None for 'default:'
-    pub result_expr: NodeRef,
+    pub result_expr: NodeRef,          // Wait, ParsedAst uses GenericAssociation with ParsedNodeRef?
+                                       // In ParsedAst: GenericSelection(ParsedNodeRef, Vec<GenericAssociation>)
+                                       // If ParsedAst uses GenericAssociation, and GenericAssociation uses NodeRef (Semantic NodeRef), that is wrong.
+                                       // ParsedAst should use GenericAssociation that uses ParsedNodeRef.
+                                       // Let's check ParsedAst definition of GenericSelection.
 }
 
 #[derive(Debug, Clone, Serialize)]

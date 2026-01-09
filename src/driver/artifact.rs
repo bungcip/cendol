@@ -1,5 +1,5 @@
-use crate::ast::Ast;
 use crate::ast::SourceId;
+use crate::ast::{Ast, ParsedAst};
 use crate::lexer::Token;
 use crate::pp::PPToken;
 use crate::semantic::output::SemaOutput;
@@ -27,6 +27,7 @@ pub enum CompilePhase {
 pub struct CompileArtifact {
     pub preprocessed: Option<Vec<PPToken>>,
     pub lexed: Option<Vec<Token>>,
+    pub parsed_ast: Option<ParsedAst>,
     pub ast: Option<Ast>,
     pub sema_output: Option<SemaOutput>,
     pub clif_dump: Option<String>,

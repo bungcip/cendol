@@ -703,6 +703,28 @@ impl TypeRegistry {
     pub(crate) fn is_compatible(&self, a: QualType, b: QualType) -> bool {
         a == b
     }
+
+    pub(crate) fn is_complete(&self, ty: TypeRef) -> bool {
+        if ty.is_inline_pointer() {
+            return true;
+        }
+        if ty.is_inline_array() {
+            // Array is complete if element is complete
+            // But strict C says array valid if element type is complete (except local VLA which is complete at runtime allocation point?)
+            // Here we just check element kind.
+            let elem = self.reconstruct_element(ty);
+            return self.is_complete(elem);
+        }
+
+        let kind = &self.types[ty.index()].kind;
+        match kind {
+            TypeKind::Record { is_complete, .. } => *is_complete,
+            TypeKind::Enum { is_complete, .. } => *is_complete,
+            TypeKind::Array { element_type, .. } => self.is_complete(*element_type),
+            TypeKind::Void => false,
+            _ => true, // Scalars are always complete
+        }
+    }
 }
 
 // ================================================================

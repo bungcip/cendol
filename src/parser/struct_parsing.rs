@@ -16,7 +16,7 @@ pub(crate) fn parse_record_specifier_with_context(
     parser: &mut Parser,
     is_union: bool,
     in_struct_member: bool,
-) -> Result<TypeSpecifier, ParseError> {
+) -> Result<ParsedTypeSpecifier, ParseError> {
     // Check for __attribute__ after struct/union keyword (GCC extension)
     if parser.is_token(TokenKind::Attribute)
         && let Err(_e) = super::declaration_core::parse_attribute(parser)
@@ -39,7 +39,7 @@ pub(crate) fn parse_record_specifier_with_context(
             // For now, ignore attribute parsing errors
         }
 
-        Some(RecordDefData {
+        Some(ParsedRecordDefData {
             tag,
             members: Some(members),
             is_union,
@@ -48,11 +48,11 @@ pub(crate) fn parse_record_specifier_with_context(
         None
     };
 
-    Ok(TypeSpecifier::Record(is_union, tag, definition))
+    Ok(ParsedTypeSpecifier::Record(is_union, tag, definition))
 }
 
 /// Parse struct declaration list
-pub(crate) fn parse_struct_declaration_list(parser: &mut Parser) -> Result<Vec<DeclarationData>, ParseError> {
+pub(crate) fn parse_struct_declaration_list(parser: &mut Parser) -> Result<Vec<ParsedDeclarationData>, ParseError> {
     let mut declarations = Vec::new();
 
     while !parser.is_token(TokenKind::RightBrace) {
@@ -64,7 +64,7 @@ pub(crate) fn parse_struct_declaration_list(parser: &mut Parser) -> Result<Vec<D
 }
 
 /// Parse struct declaration
-pub(crate) fn parse_struct_declaration(parser: &mut Parser) -> Result<DeclarationData, ParseError> {
+pub(crate) fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedDeclarationData, ParseError> {
     // Check if we have an anonymous struct/union
     let is_struct = parser.accept(TokenKind::Struct).is_some();
     let is_union = if !is_struct {
@@ -96,7 +96,7 @@ pub(crate) fn parse_struct_declaration(parser: &mut Parser) -> Result<Declaratio
                     let end_span = parser.last_token_span().unwrap_or(start_span);
                     let span = start_span.merge(end_span);
 
-                    init_declarators.push(InitDeclarator {
+                    init_declarators.push(ParsedInitDeclarator {
                         declarator,
                         initializer: None,
                         span,
@@ -109,24 +109,24 @@ pub(crate) fn parse_struct_declaration(parser: &mut Parser) -> Result<Declaratio
                 init_declarators
             };
 
-            let type_specifier = TypeSpecifier::Record(
+            let type_specifier = ParsedTypeSpecifier::Record(
                 is_union,
                 None,
-                Some(RecordDefData {
+                Some(ParsedRecordDefData {
                     tag: None,
                     members: Some(members),
                     is_union,
                 }),
             );
 
-            let specifiers = thin_vec![DeclSpecifier::TypeSpecifier(type_specifier)];
+            let specifiers = thin_vec![ParsedDeclSpecifier::TypeSpecifier(type_specifier)];
 
             // Only expect semicolon if we haven't already consumed it in the anonymous case
             if !init_declarators.is_empty() {
                 parser.expect(TokenKind::Semicolon)?;
             }
 
-            Ok(DeclarationData {
+            Ok(ParsedDeclarationData {
                 specifiers,
                 init_declarators,
             })
@@ -155,7 +155,7 @@ pub(crate) fn parse_struct_declaration(parser: &mut Parser) -> Result<Declaratio
                         let end_span = parser.last_token_span().unwrap_or(start_span);
                         let span = start_span.merge(end_span);
 
-                        init_declarators.push(InitDeclarator {
+                        init_declarators.push(ParsedInitDeclarator {
                             declarator,
                             initializer: None,
                             span,
@@ -168,40 +168,40 @@ pub(crate) fn parse_struct_declaration(parser: &mut Parser) -> Result<Declaratio
                     init_declarators
                 };
 
-                let type_specifier = TypeSpecifier::Record(
+                let type_specifier = ParsedTypeSpecifier::Record(
                     is_union,
                     tag,
-                    Some(RecordDefData {
+                    Some(ParsedRecordDefData {
                         tag,
                         members: Some(members),
                         is_union,
                     }),
                 );
 
-                let specifiers = thin_vec![DeclSpecifier::TypeSpecifier(type_specifier)];
+                let specifiers = thin_vec![ParsedDeclSpecifier::TypeSpecifier(type_specifier)];
 
                 // Only expect semicolon if we haven't already consumed it
                 if !init_declarators.is_empty() {
                     parser.expect(TokenKind::Semicolon)?;
                 }
 
-                Ok(DeclarationData {
+                Ok(ParsedDeclarationData {
                     specifiers,
                     init_declarators,
                 })
             } else {
                 // Named struct type with declarators: struct tag declarator1, declarator2;
                 // OR forward declaration: struct tag;
-                let type_specifier = TypeSpecifier::Record(is_union, tag, None);
+                let type_specifier = ParsedTypeSpecifier::Record(is_union, tag, None);
 
-                let specifiers = thin_vec![DeclSpecifier::TypeSpecifier(type_specifier)];
+                let specifiers = thin_vec![ParsedDeclSpecifier::TypeSpecifier(type_specifier)];
 
                 // Check if there are declarators following
                 if parser.is_token(TokenKind::Semicolon) {
                     // Just a forward declaration: struct tag;
                     parser.expect(TokenKind::Semicolon)?;
 
-                    Ok(DeclarationData {
+                    Ok(ParsedDeclarationData {
                         specifiers,
                         init_declarators: ThinVec::new(),
                     })
@@ -214,7 +214,7 @@ pub(crate) fn parse_struct_declaration(parser: &mut Parser) -> Result<Declaratio
                         let end_span = parser.last_token_span().unwrap_or(start_span);
                         let span = start_span.merge(end_span);
 
-                        init_declarators.push(InitDeclarator {
+                        init_declarators.push(ParsedInitDeclarator {
                             declarator,
                             initializer: None,
                             span,
@@ -227,7 +227,7 @@ pub(crate) fn parse_struct_declaration(parser: &mut Parser) -> Result<Declaratio
 
                     parser.expect(TokenKind::Semicolon)?;
 
-                    Ok(DeclarationData {
+                    Ok(ParsedDeclarationData {
                         specifiers,
                         init_declarators,
                     })
@@ -241,11 +241,11 @@ pub(crate) fn parse_struct_declaration(parser: &mut Parser) -> Result<Declaratio
         let mut init_declarators = ThinVec::new();
         loop {
             let start_span = parser.current_token_span_or_empty();
-            let declarator = super::declarator::parse_declarator(parser, None)?;
+            let declarator = super::declarator::parse_declarator(parser, None)?; // This needs to enable ParsedDeclarator
             let end_span = parser.last_token_span().unwrap_or(start_span);
             let span = start_span.merge(end_span);
 
-            init_declarators.push(InitDeclarator {
+            init_declarators.push(ParsedInitDeclarator {
                 declarator,
                 initializer: None,
                 span,
@@ -258,7 +258,7 @@ pub(crate) fn parse_struct_declaration(parser: &mut Parser) -> Result<Declaratio
 
         parser.expect(TokenKind::Semicolon)?;
 
-        Ok(DeclarationData {
+        Ok(ParsedDeclarationData {
             specifiers,
             init_declarators,
         })

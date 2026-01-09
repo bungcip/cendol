@@ -9,7 +9,7 @@ use crate::lexer::TokenKind;
 use super::Parser;
 
 /// Parse enum specifier
-pub(crate) fn parse_enum_specifier(parser: &mut Parser) -> Result<TypeSpecifier, ParseError> {
+pub(crate) fn parse_enum_specifier(parser: &mut Parser) -> Result<ParsedTypeSpecifier, ParseError> {
     let tag = parser.accept_name();
     let enumerators = if parser.accept(TokenKind::LeftBrace).is_some() {
         let enums = parse_enumerator_list(parser)?;
@@ -19,11 +19,11 @@ pub(crate) fn parse_enum_specifier(parser: &mut Parser) -> Result<TypeSpecifier,
         None
     };
 
-    Ok(TypeSpecifier::Enum(tag, enumerators))
+    Ok(ParsedTypeSpecifier::Enum(tag, enumerators))
 }
 
 /// Parse enumerator list
-pub(crate) fn parse_enumerator_list(parser: &mut Parser) -> Result<Vec<NodeRef>, ParseError> {
+pub(crate) fn parse_enumerator_list(parser: &mut Parser) -> Result<Vec<ParsedNodeRef>, ParseError> {
     let mut enumerators = Vec::new();
 
     loop {
@@ -45,7 +45,7 @@ pub(crate) fn parse_enumerator_list(parser: &mut Parser) -> Result<Vec<NodeRef>,
 }
 
 /// Parse enumerator
-pub(crate) fn parse_enumerator(parser: &mut Parser) -> Result<NodeRef, ParseError> {
+pub(crate) fn parse_enumerator(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let (name, mut span) = parser.expect_name()?;
     let value = if parser.accept(TokenKind::Assign).is_some() {
         let expr = parser.parse_expr_assignment()?;
@@ -55,6 +55,6 @@ pub(crate) fn parse_enumerator(parser: &mut Parser) -> Result<NodeRef, ParseErro
         None
     };
 
-    let node = parser.push_node(NodeKind::EnumConstant(name, value), span);
+    let node = parser.push_node(ParsedNodeKind::EnumConstant(name, value), span);
     Ok(node)
 }

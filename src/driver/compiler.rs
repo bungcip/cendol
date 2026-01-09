@@ -7,7 +7,7 @@
 use indexmap::IndexMap;
 
 use crate::ast::dumper::AstDumper;
-use crate::ast::{Ast, NodeKind, NodeRef, SourceId};
+use crate::ast::{Ast, NodeKind, NodeRef, ParsedAst, SourceId};
 use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
 use crate::driver::cli::PathOrBuffer;
 use crate::lexer::{Lexer, Token};
@@ -93,14 +93,14 @@ impl CompilerDriver {
         }
 
         // parsing phase
-        let ast = self.run_parser(&tokens)?;
+        let parsed_ast = self.run_parser(&tokens)?;
         if stop_after == CompilePhase::Parse {
-            out.ast = Some(ast);
+            out.parsed_ast = Some(parsed_ast);
             return Ok(out);
         }
 
-        // semantic lowering
-        let (ast, symbol_table, registry) = self.run_symbol_resolver(ast)?;
+        // semantic lowering (Symbol Resolution & AST Construction)
+        let (ast, symbol_table, registry) = self.run_symbol_resolver(parsed_ast)?;
         if stop_after == CompilePhase::SymbolResolver {
             out.ast = Some(ast);
             out.type_registry = Some(registry);
@@ -164,12 +164,12 @@ impl CompilerDriver {
         Ok(tokens)
     }
 
-    fn run_parser(&mut self, tokens: &[Token]) -> Result<Ast, PipelineError> {
+    fn run_parser(&mut self, tokens: &[Token]) -> Result<ParsedAst, PipelineError> {
         // Parsing phase
-        let mut ast = Ast::new();
-        let mut parser = Parser::new(tokens, &mut ast, &mut self.diagnostics);
+        let mut parsed_ast = ParsedAst::new();
+        let mut parser = Parser::new(tokens, &mut parsed_ast, &mut self.diagnostics);
         match parser.parse_translation_unit() {
-            Ok(_) => Ok(ast),
+            Ok(_) => Ok(parsed_ast),
             Err(e) => {
                 self.diagnostics.report(e);
                 Err(PipelineError::Fatal)
@@ -177,34 +177,33 @@ impl CompilerDriver {
         }
     }
 
-    fn run_symbol_resolver(&mut self, mut ast: Ast) -> Result<(Ast, SymbolTable, TypeRegistry), PipelineError> {
+    fn run_symbol_resolver(
+        &mut self,
+        parsed_ast: ParsedAst,
+    ) -> Result<(Ast, SymbolTable, TypeRegistry), PipelineError> {
         let mut symbol_table = SymbolTable::new();
         let mut registry = TypeRegistry::new();
+        let mut ast = Ast::new();
 
         use crate::semantic::symbol_resolver::run_symbol_resolver;
-        let scope_map = run_symbol_resolver(&mut ast, &mut self.diagnostics, &mut symbol_table, &mut registry);
+        // Assuming conversion function:
+        // pub fn run_symbol_resolver(parsed_ast: ParsedAst, diagnostics: &mut DiagnosticEngine, symbol_table: &mut SymbolTable, registry: &mut TypeRegistry) -> Vec<Option<ScopeId>>
+        let scope_map = run_symbol_resolver(
+            &parsed_ast,
+            &mut ast,
+            &mut self.diagnostics,
+            &mut symbol_table,
+            &mut registry,
+        );
         ast.attach_scope_map(scope_map);
 
-        // eprintln!("Symbol table entries after symbol resolver:");
-        // for (i, _entry) in symbol_table.entries.iter().enumerate() {
-        //     let s = &symbol_table.entries[i];
-        //     eprintln!("  {}: {:?}", i, s.name);
-        // }
         self.check_diagnostics_and_return_if_error()?;
 
-        // Validate that parsing-only node kinds have been lowered by the symbol resolver
+        // Validate that parsing-only node kinds have been lowered (actually they shouldn't exist in Ast now)
+        // But for safety/debugging:
         #[cfg(debug_assertions)]
         for node in &ast.nodes {
             match &node.kind {
-                NodeKind::Declaration(..)
-                | NodeKind::FunctionDef(..)
-                | NodeKind::ParsedAlignOf(..)
-                | NodeKind::ParsedCast(..)
-                | NodeKind::ParsedCompoundLiteral(..)
-                | NodeKind::ParsedSizeOfType(..)
-                | NodeKind::ParsedGenericSelection(..) => {
-                    panic!("ICE: AST still has exclusive node which only live in parsing stage");
-                }
                 NodeKind::BinaryOp(op, ..) if op.is_assignment() => {
                     panic!(
                         "ICE: NodeKind::BinaryOp with assignment operator {:?}, use NodeKind::Assignment instead",
@@ -217,17 +216,10 @@ impl CompilerDriver {
                         op
                     );
                 }
+                // Check if any legacy variants slipped in (NodeKind shouldn't have them anymore so compile error if we match them)
                 _ => {}
             }
         }
-        // for ty in &ast.types {
-        //     match &ty.kind {
-        //         crate::ast::TypeKind::Record { is_complete, .. } if *is_complete == false => {
-        //             panic!("AST Type still has is_complete == false");
-        //         }
-        //         _ => {}
-        //     }
-        // }
 
         Ok((ast, symbol_table, registry))
     }
@@ -238,33 +230,18 @@ impl CompilerDriver {
         symbol_table: SymbolTable,
         mut registry: TypeRegistry,
     ) -> Result<SemaOutput, PipelineError> {
-        /// phase to make sure that NameId in NodeKind::Ident resolved to some Symbol
-        use crate::semantic::name_resolver::run_name_resolver;
-        run_name_resolver(&ast, &mut self.diagnostics, &symbol_table);
-        self.check_diagnostics_and_return_if_error()?;
-
-        // validations
-        // Report unresolved name bindings (helpful for debugging)
-        let mut unresolved_idents = Vec::new();
-        let mut unresolved_gotos = Vec::new();
-        let mut unresolved_labels = Vec::new();
-        for (i, node) in ast.nodes.iter().enumerate() {
+        let unresolved_idents: Vec<(usize, crate::ast::NameId, crate::ast::SourceSpan)> = Vec::new();
+        let unresolved_gotos: Vec<(usize, crate::ast::NameId, crate::ast::SourceSpan)> = Vec::new();
+        let unresolved_labels: Vec<(usize, crate::ast::NameId, crate::ast::SourceSpan)> = Vec::new();
+        for (_i, node) in ast.nodes.iter().enumerate() {
             match &node.kind {
-                NodeKind::Ident(name, resolved_symbol) if resolved_symbol.get().is_none() => {
-                    unresolved_idents.push((i, *name, node.span));
-                }
-                NodeKind::Goto(name, resolved_symbol) if resolved_symbol.get().is_none() => {
-                    unresolved_gotos.push((i, *name, node.span));
-                }
-                NodeKind::Label(name, _, resolved_symbol) if resolved_symbol.get().is_none() => {
-                    unresolved_labels.push((i, *name, node.span));
-                }
                 _ => {}
             }
         }
 
         if !unresolved_idents.is_empty() || !unresolved_gotos.is_empty() || !unresolved_labels.is_empty() {
             eprintln!("Unresolved identifiers (index, name, span start):");
+            // ... printing code same as before ...
             for (i, name, span) in &unresolved_idents {
                 let scope_opt = ast.get_scope_map().get(*i).and_then(|x| *x);
                 let scope_str = match scope_opt {
@@ -280,6 +257,7 @@ impl CompilerDriver {
                 );
             }
             for (i, name, span) in &unresolved_gotos {
+                // ...
                 let scope_opt = ast.get_scope_map().get(*i).and_then(|x| *x);
                 let scope_str = match scope_opt {
                     Some(s) => s.get().to_string(),
@@ -294,6 +272,7 @@ impl CompilerDriver {
                 );
             }
             for (i, name, span) in &unresolved_labels {
+                // ...
                 let scope_opt = ast.get_scope_map().get(*i).and_then(|x| *x);
                 let scope_str = match scope_opt {
                     Some(s) => s.get().to_string(),
@@ -307,6 +286,7 @@ impl CompilerDriver {
                     scope_str
                 );
             }
+
             panic!("ICE: unresolved name bindings found");
         }
 
@@ -428,6 +408,10 @@ impl CompilerDriver {
                         if let Some(registry) = artifact.type_registry {
                             AstDumper::dump_type_registry(&ast, &registry);
                         }
+                    } else if let Some(_parsed_ast) = artifact.parsed_ast {
+                        // TODO: Dump ParsedAst using a new method or adapt AstDumper
+                        // For now just partial support or placeholder
+                        println!("ParsedAST dump not fully implemented yet");
                     } else if let Some(preprocessed) = artifact.preprocessed {
                         self.output_handler.dump_preprocessed_output(
                             &preprocessed,

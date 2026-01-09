@@ -5,7 +5,7 @@
 //! These functions ensure that no semantic types (TypeRef) are created
 //! during parsing, only syntactic types (ParsedType).
 
-use crate::ast::{utils::extract_identifier, *};
+use crate::ast::*;
 use crate::diagnostic::ParseError;
 use crate::semantic::TypeQualifiers;
 use thin_vec::ThinVec;
@@ -15,8 +15,8 @@ use super::Parser;
 /// Build a ParsedType from declaration specifiers and an optional declarator
 pub(crate) fn build_parsed_type_from_specifiers(
     parser: &mut Parser,
-    specifiers: &ThinVec<DeclSpecifier>,
-    declarator: Option<&Declarator>,
+    specifiers: &ThinVec<ParsedDeclSpecifier>,
+    declarator: Option<&ParsedDeclarator>,
 ) -> Result<ParsedType, ParseError> {
     let (base_type_ref, qualifiers) = parse_base_type_and_qualifiers(parser, specifiers)?;
 
@@ -39,18 +39,18 @@ pub(crate) fn build_parsed_type_from_specifiers(
 /// Parse base type and qualifiers from declaration specifiers
 fn parse_base_type_and_qualifiers(
     parser: &mut Parser,
-    specifiers: &ThinVec<DeclSpecifier>,
+    specifiers: &ThinVec<ParsedDeclSpecifier>,
 ) -> Result<(ParsedBaseTypeRef, TypeQualifiers), ParseError> {
     let mut qualifiers = TypeQualifiers::empty();
     let mut base_type_node = None;
 
     for spec in specifiers {
         match spec {
-            DeclSpecifier::TypeSpecifier(ts) => {
+            ParsedDeclSpecifier::TypeSpecifier(ts) => {
                 let parsed_base = parse_type_specifier_to_parsed_base(parser, ts)?;
                 base_type_node = Some(parsed_base);
             }
-            DeclSpecifier::TypeQualifier(q) => {
+            ParsedDeclSpecifier::TypeQualifier(q) => {
                 let qualifier = match q {
                     crate::ast::nodes::TypeQualifier::Const => TypeQualifiers::CONST,
                     crate::ast::nodes::TypeQualifier::Volatile => TypeQualifiers::VOLATILE,
@@ -71,7 +71,7 @@ fn parse_base_type_and_qualifiers(
         parser
             .ast
             .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(TypeSpecifier::Int))
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Int))
     });
 
     Ok((base_type_ref, qualifiers))
@@ -80,76 +80,76 @@ fn parse_base_type_and_qualifiers(
 /// Convert a TypeSpecifier to a ParsedBaseTypeNode
 fn parse_type_specifier_to_parsed_base(
     parser: &mut Parser,
-    ts: &TypeSpecifier,
+    ts: &ParsedTypeSpecifier,
 ) -> Result<ParsedBaseTypeRef, ParseError> {
     match ts {
-        TypeSpecifier::Void => Ok(parser
+        ParsedTypeSpecifier::Void => Ok(parser
             .ast
             .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(TypeSpecifier::Void))),
-        TypeSpecifier::Char => Ok(parser
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Void))),
+        ParsedTypeSpecifier::Char => Ok(parser
             .ast
             .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(TypeSpecifier::Char))),
-        TypeSpecifier::Short => Ok(parser
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Char))),
+        ParsedTypeSpecifier::Short => Ok(parser
             .ast
             .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(TypeSpecifier::Short))),
-        TypeSpecifier::Int => Ok(parser
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Short))),
+        ParsedTypeSpecifier::Int => Ok(parser
             .ast
             .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(TypeSpecifier::Int))),
-        TypeSpecifier::Long => Ok(parser
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Int))),
+        ParsedTypeSpecifier::Long => Ok(parser
             .ast
             .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(TypeSpecifier::Long))),
-        TypeSpecifier::LongLong => Ok(parser
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Long))),
+        ParsedTypeSpecifier::LongLong => Ok(parser
             .ast
             .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(TypeSpecifier::LongLong))),
-        TypeSpecifier::Float => Ok(parser
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::LongLong))),
+        ParsedTypeSpecifier::Float => Ok(parser
             .ast
             .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(TypeSpecifier::Float))),
-        TypeSpecifier::Double => Ok(parser
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Float))),
+        ParsedTypeSpecifier::Double => Ok(parser
             .ast
             .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(TypeSpecifier::Double))),
-        TypeSpecifier::LongDouble => Ok(parser
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Double))),
+        ParsedTypeSpecifier::LongDouble => Ok(parser
             .ast
             .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(TypeSpecifier::LongDouble))),
-        TypeSpecifier::Signed => Ok(parser
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::LongDouble))),
+        ParsedTypeSpecifier::Signed => Ok(parser
             .ast
             .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(TypeSpecifier::Signed))),
-        TypeSpecifier::Unsigned => Ok(parser
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Signed))),
+        ParsedTypeSpecifier::Unsigned => Ok(parser
             .ast
             .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(TypeSpecifier::Unsigned))),
-        TypeSpecifier::Bool => Ok(parser
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Unsigned))),
+        ParsedTypeSpecifier::Bool => Ok(parser
             .ast
             .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(TypeSpecifier::Bool))),
-        TypeSpecifier::Complex => Ok(parser
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Bool))),
+        ParsedTypeSpecifier::Complex => Ok(parser
             .ast
             .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(TypeSpecifier::Complex))),
-        TypeSpecifier::Atomic(parsed_type) => {
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Complex))),
+        ParsedTypeSpecifier::Atomic(parsed_type) => {
             // _Atomic(type-name) - the parsed_type already contains the parsed inner type
             Ok(parser
                 .ast
                 .parsed_types
-                .alloc_base_type(ParsedBaseTypeNode::Builtin(TypeSpecifier::Atomic(*parsed_type))))
+                .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Atomic(*parsed_type))))
         }
-        TypeSpecifier::Record(is_union, tag, definition) => {
+        ParsedTypeSpecifier::Record(is_union, tag, definition) => {
             let members = if let Some(def_data) = definition {
                 if let Some(member_decls) = &def_data.members {
                     let mut parsed_members = Vec::new();
                     for decl in member_decls {
                         // Parse each member declaration
                         for init_decl in &decl.init_declarators {
-                            if let Some(member_name) = extract_identifier(&init_decl.declarator) {
+                            if let Some(member_name) = super::declarator::get_declarator_name(&init_decl.declarator) {
                                 let member_parsed_type = build_parsed_type_from_specifiers(
                                     parser,
                                     &decl.specifiers,
@@ -179,17 +179,17 @@ fn parse_type_specifier_to_parsed_base(
                 is_union: *is_union,
             }))
         }
-        TypeSpecifier::Enum(tag, enumerators) => {
+        ParsedTypeSpecifier::Enum(tag, enumerators) => {
             let parsed_enumerators = if let Some(enum_node_refs) = enumerators {
                 let mut parsed_enums = Vec::new();
                 for &enum_ref in enum_node_refs {
                     let enum_node = parser.ast.get_node(enum_ref);
-                    if let NodeKind::EnumConstant(name, value_expr_ref) = &enum_node.kind {
+                    if let ParsedNodeKind::EnumConstant(name, value_expr_ref) = &enum_node.kind {
                         parsed_enums.push(ParsedEnumConstant {
                             name: *name,
                             value: value_expr_ref.as_ref().and_then(|expr_ref| {
                                 // Try to evaluate constant expression
-                                if let NodeKind::LiteralInt(val) = parser.ast.get_node(*expr_ref).kind {
+                                if let ParsedNodeKind::LiteralInt(val) = parser.ast.get_node(*expr_ref).kind {
                                     Some(val)
                                 } else {
                                     None
@@ -209,17 +209,17 @@ fn parse_type_specifier_to_parsed_base(
                 enumerators: parsed_enumerators,
             }))
         }
-        TypeSpecifier::TypedefName(name) => Ok(parser
+        ParsedTypeSpecifier::TypedefName(name) => Ok(parser
             .ast
             .parsed_types
             .alloc_base_type(ParsedBaseTypeNode::Typedef(*name))),
     }
 }
 
-/// Build a ParsedDeclaratorNode from a Declarator
-fn build_parsed_declarator(parser: &mut Parser, declarator: &Declarator) -> Result<ParsedDeclRef, ParseError> {
+/// Build a ParsedDeclaratorNode from a ParsedDeclarator
+fn build_parsed_declarator(parser: &mut Parser, declarator: &ParsedDeclarator) -> Result<ParsedDeclRef, ParseError> {
     match declarator {
-        Declarator::Identifier(name, qualifiers) => {
+        ParsedDeclarator::Identifier(name, qualifiers) => {
             // Simple identifier with optional qualifiers
             if qualifiers.is_empty() {
                 Ok(parser
@@ -238,7 +238,7 @@ fn build_parsed_declarator(parser: &mut Parser, declarator: &Declarator) -> Resu
                 }))
             }
         }
-        Declarator::Pointer(ptr_qualifiers, inner_decl) => {
+        ParsedDeclarator::Pointer(ptr_qualifiers, inner_decl) => {
             let inner_ref = if let Some(inner) = inner_decl {
                 build_parsed_declarator(parser, inner)?
             } else {
@@ -253,16 +253,15 @@ fn build_parsed_declarator(parser: &mut Parser, declarator: &Declarator) -> Resu
                 inner: inner_ref,
             }))
         }
-        Declarator::Array(inner, size) => {
+        ParsedDeclarator::Array(inner, size) => {
             let inner_ref = build_parsed_declarator(parser, inner)?;
-            let parsed_size = convert_array_size(size)?;
 
             Ok(parser.ast.parsed_types.alloc_decl(ParsedDeclaratorNode::Array {
-                size: parsed_size,
+                size: size.clone(),
                 inner: inner_ref,
             }))
         }
-        Declarator::Function {
+        ParsedDeclarator::Function {
             inner,
             params,
             is_variadic,
@@ -276,7 +275,10 @@ fn build_parsed_declarator(parser: &mut Parser, declarator: &Declarator) -> Resu
                     build_parsed_type_from_specifiers(parser, &param.specifiers, param.declarator.as_ref())?;
 
                 parsed_params.push(ParsedFunctionParam {
-                    name: param.declarator.as_ref().and_then(extract_identifier),
+                    name: param
+                        .declarator
+                        .as_ref()
+                        .and_then(super::declarator::get_declarator_name),
                     ty: param_parsed_type,
                     span: param.span,
                 });
@@ -292,42 +294,27 @@ fn build_parsed_declarator(parser: &mut Parser, declarator: &Declarator) -> Resu
                 inner: inner_ref,
             }))
         }
-        Declarator::Abstract => Ok(parser
+        ParsedDeclarator::Abstract => Ok(parser
             .ast
             .parsed_types
             .alloc_decl(ParsedDeclaratorNode::Identifier { name: None })),
-        _ => {
-            // For unsupported declarator types, fall back to identifier
+
+        ParsedDeclarator::BitField(inner, _width_expr) => {
+            // BitFields inside structs are usually handled by struct parsing,
+            // creating ParsedStructMember directly.
+            // But if we encounter one here (rare in types?), we probably treat as identifier
+            // or maybe we need to represent it.
+            // For types, a bitfield declarator resolves to the underlying type declarator.
+            build_parsed_declarator(parser, inner)
+        }
+
+        ParsedDeclarator::AnonymousRecord(_is_union, _members) => {
+            // Anonymous records are handled elsewhere or ignored in type building
+            // as they declare types themselves, not just a declarator.
             Ok(parser
                 .ast
                 .parsed_types
                 .alloc_decl(ParsedDeclaratorNode::Identifier { name: None }))
-        }
-    }
-}
-
-/// Convert ArraySize to ParsedArraySize
-fn convert_array_size(size: &ArraySize) -> Result<ParsedArraySize, ParseError> {
-    match size {
-        ArraySize::Expression { expr, qualifiers } => Ok(ParsedArraySize::Expression {
-            expr_ref: expr.get(),
-            qualifiers: *qualifiers,
-        }),
-        ArraySize::Star { qualifiers } => Ok(ParsedArraySize::Star {
-            qualifiers: *qualifiers,
-        }),
-        ArraySize::Incomplete => Ok(ParsedArraySize::Incomplete),
-        ArraySize::VlaSpecifier {
-            is_static,
-            qualifiers,
-            size,
-        } => {
-            let _ = is_static;
-            // For VLA specifiers, we treat them as expressions with the size
-            Ok(ParsedArraySize::Expression {
-                expr_ref: size.map(|s| s.get()).unwrap_or(0),
-                qualifiers: *qualifiers,
-            })
         }
     }
 }

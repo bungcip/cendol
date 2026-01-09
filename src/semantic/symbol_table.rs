@@ -447,6 +447,11 @@ impl SymbolTable {
         Ok(self.add_symbol_in_namespace(name, symbol_entry, Namespace::Label))
     }
 
+    /// Lookup a label in the current scope.
+    pub(crate) fn lookup_label(&self, name: NameId) -> Option<(SymbolRef, ScopeId)> {
+        self.lookup(name, self.current_scope_id, Namespace::Label)
+    }
+
     /// Merge a new symbol entry with an existing one in the global scope.
     /// This implements C11 6.9.2 for handling tentative definitions, extern declarations, and actual definitions.
     fn merge_global_symbol(&mut self, name: NameId, mut new_entry: Symbol) -> Result<SymbolRef, SymbolTableError> {

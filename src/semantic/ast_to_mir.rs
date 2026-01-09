@@ -763,6 +763,11 @@ impl<'a> AstToMirLowerer<'a> {
         right_ref: NodeRef,
         mir_ty: TypeId,
     ) -> Operand {
+        debug_assert!(
+            !op.is_assignment(),
+            "lower_binary_op_expr called with assignment operator: {:?}",
+            op
+        );
         if matches!(op, BinaryOp::LogicAnd | BinaryOp::LogicOr) {
             return self.lower_logical_op(scope_id, op, left_ref, right_ref, mir_ty);
         }
@@ -903,6 +908,11 @@ impl<'a> AstToMirLowerer<'a> {
         right_ref: NodeRef,
         mir_ty: TypeId,
     ) -> Operand {
+        debug_assert!(
+            op.is_assignment(),
+            "lower_assignment_expr called with non-assignment operator: {:?}",
+            op
+        );
         let lhs_op = self.lower_expression(scope_id, left_ref, true);
 
         // Ensure the LHS is a place. If not, this is a semantic error.

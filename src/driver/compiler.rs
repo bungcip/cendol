@@ -193,6 +193,7 @@ impl CompilerDriver {
         self.check_diagnostics_and_return_if_error()?;
 
         // Validate that parsing-only node kinds have been lowered by the symbol resolver
+        #[cfg(debug_assertions)]
         for node in &ast.nodes {
             match &node.kind {
                 NodeKind::Declaration(..)
@@ -203,6 +204,18 @@ impl CompilerDriver {
                 | NodeKind::ParsedSizeOfType(..)
                 | NodeKind::ParsedGenericSelection(..) => {
                     panic!("ICE: AST still has exclusive node which only live in parsing stage");
+                }
+                NodeKind::BinaryOp(op, ..) if op.is_assignment() => {
+                    panic!(
+                        "ICE: NodeKind::BinaryOp with assignment operator {:?}, use NodeKind::Assignment instead",
+                        op
+                    );
+                }
+                NodeKind::Assignment(op, ..) if !op.is_assignment() => {
+                    panic!(
+                        "ICE: NodeKind::Assignment with non-assignment operator {:?}, use NodeKind::BinaryOp instead",
+                        op
+                    );
                 }
                 _ => {}
             }

@@ -268,6 +268,11 @@ impl<'a> SemanticAnalyzer<'a> {
         rhs_ref: NodeRef,
         full_span: SourceSpan,
     ) -> Option<QualType> {
+        debug_assert!(
+            !op.is_assignment(),
+            "visit_binary_op called with assignment operator: {:?}",
+            op
+        );
         let lhs_ty = self.visit_node(lhs_ref)?;
         let rhs_ty = self.visit_node(rhs_ref)?;
 
@@ -360,7 +365,19 @@ impl<'a> SemanticAnalyzer<'a> {
         Some(result_ty)
     }
 
-    fn visit_assignment(&mut self, lhs_ref: NodeRef, rhs_ref: NodeRef, full_span: SourceSpan) -> Option<QualType> {
+    fn visit_assignment(
+        &mut self,
+        op: BinaryOp,
+        lhs_ref: NodeRef,
+        rhs_ref: NodeRef,
+        full_span: SourceSpan,
+    ) -> Option<QualType> {
+        debug_assert!(
+            op.is_assignment(),
+            "visit_assignment called with non-assignment operator: {:?}",
+            op
+        );
+
         let lhs_ty = self.visit_node(lhs_ref)?;
         let rhs_ty = self.visit_node(rhs_ref)?;
 
@@ -717,7 +734,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 ty
             }
-            NodeKind::Assignment(_, lhs, rhs) => self.visit_assignment(*lhs, *rhs, node.span),
+            NodeKind::Assignment(op, lhs, rhs) => self.visit_assignment(*op, *lhs, *rhs, node.span),
             NodeKind::FunctionCall(func, args) => self.visit_function_call(*func, args),
             NodeKind::MemberAccess(obj, field_name, is_arrow) => self.visit_member_access(*obj, *field_name, *is_arrow),
             NodeKind::IndexAccess(arr, idx) => self.visit_index_access(*arr, *idx),

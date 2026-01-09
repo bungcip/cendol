@@ -429,7 +429,7 @@ fn resolve_initializer(ast: &Ast, initializer: NodeRef) -> ResolvedNodeKind {
             }
             ResolvedNodeKind::InitializerList(elements)
         }
-        _ => resolve_node(ast, *&initializer),
+        _ => resolve_node(ast, initializer),
     }
 }
 
@@ -464,7 +464,7 @@ fn setup_expr(source: &str) -> ResolvedNodeKind {
 }
 
 fn setup_declaration(source: &str) -> ResolvedNodeKind {
-    let (ast, decl_result) = setup_source(source, |mut parser| declarations::parse_declaration(&mut parser));
+    let (ast, decl_result) = setup_source(source, declarations::parse_declaration);
 
     match decl_result {
         Ok(node_ref) => resolve_node(&ast, node_ref),
@@ -473,7 +473,7 @@ fn setup_declaration(source: &str) -> ResolvedNodeKind {
 }
 
 fn setup_declaration_with_errors(source: &str) -> ParseError {
-    let (_, decl_result) = setup_source(source, |mut parser| declarations::parse_declaration(&mut parser));
+    let (_, decl_result) = setup_source(source, declarations::parse_declaration);
     match decl_result {
         Ok(_) => panic!("Expected parse error"),
         Err(e) => e,
@@ -481,7 +481,7 @@ fn setup_declaration_with_errors(source: &str) -> ParseError {
 }
 
 fn setup_statement(source: &str) -> ResolvedNodeKind {
-    let (ast, stmt_result) = setup_source(source, |mut parser| statements::parse_statement(&mut parser));
+    let (ast, stmt_result) = setup_source(source, statements::parse_statement);
 
     match stmt_result {
         Ok(node_ref) => resolve_node(&ast, node_ref),
@@ -1554,8 +1554,7 @@ fn parse_test(source: &str) -> Ast {
     let mut out = out.unwrap();
     let first = out.units.first_mut().unwrap();
     let artifact = first.1;
-    let ast = artifact.ast.clone().unwrap();
-    ast
+    artifact.ast.clone().unwrap()
 }
 
 #[test]
@@ -1824,11 +1823,11 @@ fn test_ambiguous_compound_statement_with_typedef() {
     // Here we define T as a typedef.
     // Inside the block, `T x;` should be parsed as a declaration.
     let source = "typedef int T; { T x; }";
-    let (ast, stmt_result) = setup_source(source, |mut parser| {
+    let (ast, stmt_result) = setup_source(source, |parser| {
         // Parse the typedef first
-        let _ = declarations::parse_declaration(&mut parser).unwrap();
+        let _ = declarations::parse_declaration(parser).unwrap();
         // Then parse the compound statement
-        parse_compound_statement(&mut parser)
+        parse_compound_statement(parser)
     });
 
     let resolved = match stmt_result {

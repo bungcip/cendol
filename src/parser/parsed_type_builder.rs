@@ -173,7 +173,7 @@ fn parse_type_specifier_to_parsed_base(
                 None
             };
 
-            Ok(parser.ast.parsed_types.alloc_base_type(ParsedBaseTypeNode::Struct {
+            Ok(parser.ast.parsed_types.alloc_base_type(ParsedBaseTypeNode::Record {
                 tag: *tag,
                 members,
                 is_union: *is_union,

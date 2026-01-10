@@ -327,9 +327,6 @@ fn parse_goto_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError
     let end_loc = semicolon_token.span.end();
 
     let span = SourceSpan::new(start_loc, end_loc);
-    // In ParsedNodeKind, Goto uses just SymbolRef (which will be unresolved initially, but here we just store NameId? No, ParsedNodeKind::Goto should probably store NameId for now?)
-    // Wait, ParsedNodeKind::Goto in src/ast/parsed.rs:
-    // Goto(NameId),
     let node = parser.push_node(ParsedNodeKind::Goto(label), span);
     Ok(node)
 }

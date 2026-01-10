@@ -1,5 +1,5 @@
 use crate::{
-    ast::{BinaryOp, NameId, ParsedType, SourceSpan, UnaryOp},
+    ast::{BinaryOp, NameId, ParsedType, SourceSpan, StorageClass, TypeQualifier, UnaryOp},
     semantic::TypeQualifiers,
 };
 use serde::Serialize;
@@ -13,24 +13,15 @@ pub type ParsedNodeRef = NonZeroU32;
 
 /// The parsed AST storage.
 /// Produced by the Parser. Purely syntactic.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ParsedAst {
     pub nodes: Vec<ParsedNode>,
     pub parsed_types: ParsedTypeArena,
 }
 
-impl Default for ParsedAst {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl ParsedAst {
     pub fn new() -> Self {
-        ParsedAst {
-            nodes: Vec::new(),
-            parsed_types: ParsedTypeArena::new(),
-        }
+        ParsedAst::default()
     }
 
     pub fn push_node(&mut self, node: ParsedNode) -> ParsedNodeRef {
@@ -179,8 +170,8 @@ pub struct ParsedFunctionDefData {
 // Declaration specifiers and related types
 #[derive(Debug, Clone)]
 pub enum ParsedDeclSpecifier {
-    StorageClass(crate::ast::nodes::StorageClass),
-    TypeQualifier(crate::ast::nodes::TypeQualifier),
+    StorageClass(StorageClass),
+    TypeQualifier(TypeQualifier),
     FunctionSpecifiers(FunctionSpecifiers),
     AlignmentSpecifier(ParsedAlignmentSpecifier),
     TypeSpecifier(ParsedTypeSpecifier),
@@ -226,10 +217,10 @@ pub enum ParsedAlignmentSpecifier {
 // Declarators
 #[derive(Debug, Clone)]
 pub enum ParsedDeclarator {
-    Identifier(NameId, crate::semantic::TypeQualifiers), // Base case: name (e.g., `x`)
-    Abstract,                                            // for abstract declarator
-    Pointer(crate::semantic::TypeQualifiers, Option<Box<ParsedDeclarator>>), // e.g., `*`
-    Array(Box<ParsedDeclarator>, ParsedArraySize),       // e.g., `[10]`
+    Identifier(NameId, TypeQualifiers),                     // Base case: name (e.g., `x`)
+    Abstract,                                               // for abstract declarator
+    Pointer(TypeQualifiers, Option<Box<ParsedDeclarator>>), // e.g., `*`
+    Array(Box<ParsedDeclarator>, ParsedArraySize),          // e.g., `[10]`
     Function {
         inner: Box<ParsedDeclarator>,
         params: ThinVec<ParsedParamData>,

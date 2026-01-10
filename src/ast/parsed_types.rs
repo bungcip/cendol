@@ -84,7 +84,7 @@ pub struct FunctionFlags {
 pub enum ParsedBaseTypeNode {
     Builtin(ParsedTypeSpecifier),
 
-    Struct {
+    Record {
         tag: Option<NameId>,
         members: Option<ParsedStructMemberRange>, // index range
         is_union: bool,
@@ -126,7 +126,7 @@ pub enum ParsedDeclaratorNode {
 
 /// Arena for storing parsed type information
 /// This provides efficient allocation and referencing for parsed types
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ParsedTypeArena {
     base_types: Vec<ParsedBaseTypeNode>,
     declarators: Vec<ParsedDeclaratorNode>,
@@ -135,24 +135,7 @@ pub struct ParsedTypeArena {
     enum_constants: Vec<ParsedEnumConstant>,
 }
 
-impl Default for ParsedTypeArena {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl ParsedTypeArena {
-    /// Create a new empty parsed type arena
-    pub(crate) fn new() -> Self {
-        Self {
-            base_types: Vec::new(),
-            declarators: Vec::new(),
-            params: Vec::new(),
-            struct_members: Vec::new(),
-            enum_constants: Vec::new(),
-        }
-    }
-
     /// Allocate a new base type and return its reference
     pub(crate) fn alloc_base_type(&mut self, base_type: ParsedBaseTypeNode) -> ParsedBaseTypeRef {
         let index = self.base_types.len() as u32 + 1; // Start from 1 for NonZeroU32

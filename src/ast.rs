@@ -35,7 +35,6 @@ pub mod dumper;
 pub mod nodes;
 pub mod parsed;
 pub mod parsed_types;
-pub mod utils;
 
 // Re-export commonly used items for convenience
 pub use nodes::*;

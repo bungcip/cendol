@@ -207,7 +207,7 @@ fn convert_parsed_base_type_to_qual_type(
 ) -> Result<QualType, SemanticError> {
     match parsed_base {
         ParsedBaseTypeNode::Builtin(ts) => resolve_type_specifier(ts, ctx, span),
-        ParsedBaseTypeNode::Struct { tag, members, is_union } => {
+        ParsedBaseTypeNode::Record { tag, members, is_union } => {
             // Handle struct/union from parsed types
             let is_definition = members.is_some();
             let type_ref = resolve_record_tag(ctx, *tag, *is_union, is_definition, span)?;

@@ -122,7 +122,6 @@ pub(crate) struct LowerCtx<'a, 'src> {
     pub(crate) ast: &'a mut Ast,
     pub(crate) diag: &'src mut DiagnosticEngine,
     pub(crate) symbol_table: &'a mut SymbolTable,
-    pub(crate) scope_map: Vec<Option<ScopeId>>,
     pub(crate) has_errors: bool,
     pub(crate) registry: &'a mut TypeRegistry,
 }
@@ -141,7 +140,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ast,
             diag,
             symbol_table,
-            scope_map: Vec::new(),
             has_errors: false,
             registry,
         }
@@ -153,12 +151,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         self.diag.report(error);
     }
 
-    fn set_scope(&mut self, node_ref: NodeRef, scope_id: ScopeId) {
-        let idx = node_ref.index();
-        if idx >= self.scope_map.len() {
-            self.scope_map.resize(idx + 1, None);
-        }
-        self.scope_map[idx] = Some(scope_id);
+    fn set_scope(&mut self, _node_ref: NodeRef, _scope_id: ScopeId) {
+        // scope_map removed.
+        // Nodes that need scope now store it directly.
     }
 
     fn push_dummy(&mut self, span: SourceSpan) -> NodeRef {
@@ -880,7 +875,7 @@ pub(crate) fn run_semantic_lowering(
     diag: &mut DiagnosticEngine,
     symbol_table: &mut SymbolTable,
     registry: &mut TypeRegistry,
-) -> Vec<Option<ScopeId>> {
+) {
     // Finalize tentative definitions
     finalize_tentative_definitions(symbol_table);
 
@@ -890,8 +885,6 @@ pub(crate) fn run_semantic_lowering(
     // Perform recursive scope-aware lowering starting from root
     let root = parsed_ast.get_root();
     lower_ctx.lower_node(root);
-
-    lower_ctx.scope_map
 }
 
 impl<'a, 'src> LowerCtx<'a, 'src> {
@@ -971,13 +964,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 let decl_start = if decl_len > 0 { reserved_slots[0] } else { NodeRef::ROOT };
 
-                self.ast.kinds[tu_node.index()] =
-                    NodeKind::TranslationUnit(TranslationUnitData { decl_start, decl_len });
+                self.ast.kinds[tu_node.index()] = NodeKind::TranslationUnit(TranslationUnitData {
+                    decl_start,
+                    decl_len,
+                    scope_id: ScopeId::GLOBAL,
+                });
 
                 smallvec![tu_node]
             }
             ParsedNodeKind::CompoundStatement(stmts) => {
-                self.symbol_table.push_scope();
+                let scope_id = self.symbol_table.push_scope();
 
                 // Use target slot if provided, otherwise reserve new slot
                 // Note: We set scope AFTER push_scope since CompoundStatement creates a new scope
@@ -1016,7 +1012,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.symbol_table.pop_scope();
 
                 // Replace dummy node with actual CompoundStatement
-                self.ast.kinds[node.index()] = NodeKind::CompoundStatement(CompoundStmtData { stmt_start, stmt_len });
+                self.ast.kinds[node.index()] = NodeKind::CompoundStatement(CompoundStmtData {
+                    stmt_start,
+                    stmt_len,
+                    scope_id,
+                });
 
                 smallvec![node]
             }
@@ -1086,7 +1086,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
         let func_sym_ref = self.symbol_table.lookup_symbol(func_name).map(|(s, _)| s).unwrap();
 
-        let _scope_id = self.symbol_table.push_scope();
+        let scope_id = self.symbol_table.push_scope();
 
         // Pre-scan labels for forward goto support
         self.collect_labels(func_def.body);
@@ -1132,6 +1132,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             param_start,
             param_len,
             body: body_node,
+            scope_id,
         });
     }
 
@@ -1271,6 +1272,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     ty: final_ty.ty(),
                     storage: spec_info.storage,
                     body: None,
+                    scope_id: self.symbol_table.current_scope(),
                 };
                 if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) =
                     self.symbol_table.define_function(name, final_ty.ty(), false, span)
@@ -1387,6 +1389,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     condition: cond,
                     increment: inc,
                     body,
+                    scope_id,
                 });
                 smallvec![node]
             }

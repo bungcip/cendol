@@ -50,8 +50,58 @@ pub use nodes::{BinaryOp, UnaryOp};
 pub struct Ast {
     pub kinds: Vec<NodeKind>,
     pub spans: Vec<SourceSpan>,
-    scope_map: Vec<Option<ScopeId>>,         // index = NodeRef
     pub semantic_info: Option<SemanticInfo>, // Populated after type resolution
+}
+
+impl Ast {
+    /// Create a new empty AST
+    pub fn new() -> Self {
+        Ast::default()
+    }
+
+    /// Add a node to the AST and return its reference
+    pub(crate) fn push_node(&mut self, kind: NodeKind, span: SourceSpan) -> NodeRef {
+        let index = self.kinds.len() as u32 + 1; // Start from 1 for NonZeroU32
+        self.kinds.push(kind);
+        self.spans.push(span);
+        NodeRef::new(index).expect("NodeRef overflow")
+    }
+
+    /// Add a dummy node to the AST and return its reference
+    pub(crate) fn push_dummy(&mut self, span: SourceSpan) -> NodeRef {
+        self.push_node(NodeKind::Dummy, span)
+    }
+
+    /// Get node kind by reference
+    pub fn get_kind(&self, node_ref: NodeRef) -> &NodeKind {
+        &self.kinds[node_ref.index()]
+    }
+
+    /// Get node span by reference
+    pub fn get_span(&self, node_ref: NodeRef) -> SourceSpan {
+        self.spans[node_ref.index()]
+    }
+
+    /// get root node ref
+    pub fn get_root(&self) -> NodeRef {
+        NodeRef::ROOT
+    }
+
+    pub fn scope_of(&self, node_ref: NodeRef) -> ScopeId {
+        match &self.kinds[node_ref.index()] {
+            NodeKind::TranslationUnit(data) => data.scope_id,
+            NodeKind::Function(data) => data.scope_id,
+            NodeKind::FunctionDecl(data) => data.scope_id,
+            NodeKind::CompoundStatement(data) => data.scope_id,
+            NodeKind::For(data) => data.scope_id,
+            _ => panic!("ICE: Node {:?} does not have a scope", self.get_kind(node_ref)),
+        }
+    }
+
+    /// attach semantic info side table for AST (populated after type resolution)
+    pub fn attach_semantic_info(&mut self, semantic_info: SemanticInfo) {
+        self.semantic_info = Some(semantic_info);
+    }
 }
 
 /// Node reference type for referencing child nodes.
@@ -113,59 +163,6 @@ impl Iterator for NodeRefRange {
 }
 
 impl ExactSizeIterator for NodeRefRange {}
-
-impl Ast {
-    /// Create a new empty AST
-    pub fn new() -> Self {
-        Ast::default()
-    }
-
-    /// Add a node to the AST and return its reference
-    pub(crate) fn push_node(&mut self, kind: NodeKind, span: SourceSpan) -> NodeRef {
-        let index = self.kinds.len() as u32 + 1; // Start from 1 for NonZeroU32
-        self.kinds.push(kind);
-        self.spans.push(span);
-        NodeRef::new(index).expect("NodeRef overflow")
-    }
-
-    /// Add a dummy node to the AST and return its reference
-    pub(crate) fn push_dummy(&mut self, span: SourceSpan) -> NodeRef {
-        self.push_node(NodeKind::Dummy, span)
-    }
-
-    /// Get node kind by reference
-    pub fn get_kind(&self, node_ref: NodeRef) -> &NodeKind {
-        &self.kinds[node_ref.index()]
-    }
-
-    /// Get node span by reference
-    pub fn get_span(&self, node_ref: NodeRef) -> SourceSpan {
-        self.spans[node_ref.index()]
-    }
-
-    /// get root node ref
-    pub fn get_root(&self) -> NodeRef {
-        NodeRef::ROOT
-    }
-
-    pub fn scope_of(&self, node_ref: NodeRef) -> ScopeId {
-        self.scope_map[node_ref.index()].expect("ICE: AST Node scope is not set")
-    }
-
-    pub fn get_scope_map(&self) -> &[Option<ScopeId>] {
-        &self.scope_map
-    }
-
-    /// attach new scope map for AST
-    pub fn attach_scope_map(&mut self, scope_map: Vec<Option<ScopeId>>) {
-        self.scope_map = scope_map;
-    }
-
-    /// attach semantic info side table for AST (populated after type resolution)
-    pub fn attach_semantic_info(&mut self, semantic_info: SemanticInfo) {
-        self.semantic_info = Some(semantic_info);
-    }
-}
 
 /// The primary AST node structure.
 /// Stored in the flattened Vec<Node>, with index-based references.

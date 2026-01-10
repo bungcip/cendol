@@ -9,7 +9,7 @@ use serde::Serialize;
 use crate::semantic::TypeQualifiers;
 use crate::{
     ast::{NameId, NodeRef, SymbolRef, TypeRef},
-    semantic::QualType,
+    semantic::{QualType, ScopeId},
 };
 
 /// The core enum defining all possible AST node types for C11.
@@ -298,6 +298,7 @@ pub struct ForStmt {
     pub condition: Option<NodeRef>,
     pub increment: Option<NodeRef>,
     pub body: NodeRef,
+    pub scope_id: ScopeId,
 }
 
 // Semantic node data structures (type-resolved)
@@ -305,12 +306,14 @@ pub struct ForStmt {
 pub struct CompoundStmtData {
     pub stmt_start: NodeRef,
     pub stmt_len: u16,
+    pub scope_id: ScopeId,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct TranslationUnitData {
     pub decl_start: NodeRef,
     pub decl_len: u16,
+    pub scope_id: ScopeId,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -326,6 +329,7 @@ pub struct FunctionData {
     pub param_start: NodeRef,
     pub param_len: u16,
     pub body: NodeRef, // compound statement
+    pub scope_id: ScopeId,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -350,6 +354,7 @@ pub struct FunctionDeclData {
     pub ty: TypeRef,
     pub storage: Option<StorageClass>,
     pub body: Option<NodeRef>,
+    pub scope_id: ScopeId,
 }
 
 #[derive(Debug, Clone, Serialize)]

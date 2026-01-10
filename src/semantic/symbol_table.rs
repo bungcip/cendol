@@ -73,8 +73,10 @@ pub enum SymbolTableError {
     InvalidRedefinition { name: NameId, existing: SymbolRef },
 }
 
+use serde::Serialize;
+
 /// Scope ID for efficient scope references
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct ScopeId(NonZeroU32);
 
 impl ScopeId {

@@ -186,14 +186,13 @@ impl CompilerDriver {
         let mut ast = Ast::new();
 
         use crate::semantic::lowering::run_semantic_lowering;
-        let scope_map = run_semantic_lowering(
+        run_semantic_lowering(
             &parsed_ast,
             &mut ast,
             &mut self.diagnostics,
             &mut symbol_table,
             &mut registry,
         );
-        ast.attach_scope_map(scope_map);
 
         self.check_diagnostics_and_return_if_error()?;
 

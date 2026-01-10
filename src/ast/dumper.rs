@@ -183,6 +183,7 @@ impl AstDumper {
             NodeKind::EnumDecl(enum_decl) => {
                 type_refs.insert(enum_decl.ty);
             }
+            NodeKind::EnumMember(_) => {}
 
             // QualType usage (contains TypeRef)
             NodeKind::Cast(qual_type, _) => {
@@ -203,11 +204,12 @@ impl AstDumper {
             NodeKind::TypedefDecl(typedef_decl) => {
                 type_refs.insert(typedef_decl.ty.ty());
             }
-            NodeKind::GenericSelection(_, assocs) => {
-                for assoc in assocs {
-                    if let Some(qual_type) = assoc.ty {
-                        type_refs.insert(qual_type.ty());
-                    }
+            NodeKind::GenericSelection(_) => {
+                // GenericSelectionData doesn't contain TypeRefs directly.
+            }
+            NodeKind::GenericAssociation(ga) => {
+                if let Some(qual_type) = ga.ty {
+                    type_refs.insert(qual_type.ty());
                 }
             }
 
@@ -350,8 +352,20 @@ impl AstDumper {
                 println!("CompoundLiteral({}, {})", ty, init.get())
             }
 
-            NodeKind::GenericSelection(ctrl, assocs) => {
-                println!("GenericSelection({}, {} associations)", ctrl.get(), assocs.len())
+            NodeKind::GenericSelection(gs) => {
+                println!(
+                    "GenericSelection(control={}, associations={}..{})",
+                    gs.control.get(),
+                    gs.assoc_start.get(),
+                    gs.assoc_start.get() + gs.assoc_len as u32
+                )
+            }
+            NodeKind::GenericAssociation(ga) => {
+                println!(
+                    "GenericAssociation(ty={:?}, result_expr={})",
+                    ga.ty,
+                    ga.result_expr.get()
+                )
             }
             NodeKind::VaArg(va_list, ty) => println!("VaArg({}, {})", va_list.get(), ty.get()),
             NodeKind::GnuStatementExpression(compound_stmt, result_expr) => {
@@ -463,15 +477,15 @@ impl AstDumper {
             }
             NodeKind::EnumDecl(enum_decl) => {
                 println!(
-                    "EnumDecl(name={:?}, ty={}, members=[{}])",
+                    "EnumDecl(name={:?}, ty={}, members={}..{})",
                     enum_decl.name,
                     enum_decl.ty.get(),
-                    enum_decl
-                        .members
-                        .iter()
-                        .map(|m| format!("{}={}", m.name, m.value))
-                        .join(", ")
+                    enum_decl.member_start.get(),
+                    enum_decl.member_start.get() + enum_decl.member_len as u32
                 )
+            }
+            NodeKind::EnumMember(enum_member) => {
+                println!("EnumMember(name={}, value={})", enum_member.name, enum_member.value)
             }
             NodeKind::InitializerList(list) => println!(
                 "InitializerList([{}])",

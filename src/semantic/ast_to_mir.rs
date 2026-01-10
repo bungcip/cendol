@@ -614,10 +614,10 @@ impl<'a> AstToMirLowerer<'a> {
                 let align = self.registry.get_layout(ty.ty()).alignment;
                 Operand::Constant(self.create_constant(ConstValue::Int(align as i64)))
             }
-            NodeKind::GenericSelection(ctrl, assocs) => {
+            NodeKind::GenericSelection(gs) => {
                 let ctrl_ty = self
                     .ast
-                    .get_resolved_type(*ctrl)
+                    .get_resolved_type(gs.control)
                     .expect("Controlling expr type missing")
                     .ty();
                 let unqualified_ctrl = self.registry.strip_all(QualType::unqualified(ctrl_ty));
@@ -625,14 +625,18 @@ impl<'a> AstToMirLowerer<'a> {
                 let mut selected_expr = None;
                 let mut default_expr = None;
 
-                for assoc in assocs {
-                    if let Some(ty) = assoc.ty {
-                        if self.registry.is_compatible(unqualified_ctrl, ty) {
-                            selected_expr = Some(assoc.result_expr);
-                            break;
+                for i in 0..gs.assoc_len {
+                    let assoc_idx = gs.assoc_start.get() + i as u32;
+                    let assoc_node_ref = NodeRef::new(assoc_idx).expect("Invalid association index");
+                    if let NodeKind::GenericAssociation(ga) = self.ast.get_kind(assoc_node_ref) {
+                        if let Some(ty) = ga.ty {
+                            if self.registry.is_compatible(unqualified_ctrl, ty) {
+                                selected_expr = Some(ga.result_expr);
+                                break;
+                            }
+                        } else {
+                            default_expr = Some(ga.result_expr);
                         }
-                    } else {
-                        default_expr = Some(assoc.result_expr);
                     }
                 }
 

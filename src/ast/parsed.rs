@@ -1,5 +1,5 @@
 use crate::{
-    ast::{BinaryOp, NameId, ParsedType, SourceSpan, TypeRef, UnaryOp},
+    ast::{BinaryOp, NameId, ParsedType, SourceSpan, UnaryOp},
     semantic::TypeQualifiers,
 };
 use std::num::NonZeroU32;
@@ -95,7 +95,7 @@ pub enum ParsedNodeKind {
 
     CompoundLiteral(ParsedType, ParsedNodeRef),
     GenericSelection(ParsedNodeRef, Vec<ParsedGenericAssociation>),
-    VaArg(ParsedNodeRef, TypeRef), // kept as TypeRef for now, maybe should be ParsedType? va_arg takes type name.
+    VaArg(ParsedNodeRef, ParsedType), // NOTE: still not used in parser for now
 
     // --- Statements ---
     CompoundStatement(Vec<ParsedNodeRef>),

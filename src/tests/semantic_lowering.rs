@@ -72,19 +72,36 @@ fn test_enum_decl_members_populated() {
             found_enum_decl = true;
 
             // Assert that members are populated
-            assert_eq!(enum_decl.members.len(), 3, "EnumDecl should have 3 members");
+            assert_eq!(enum_decl.member_len, 3, "EnumDecl should have 3 members");
 
-            let red = &enum_decl.members[0];
-            assert_eq!(red.name.as_str(), "RED");
-            assert_eq!(red.value, 0);
+            let member_start_idx = enum_decl.member_start.index();
 
-            let green = &enum_decl.members[1];
-            assert_eq!(green.name.as_str(), "GREEN");
-            assert_eq!(green.value, 1);
+            // Check first member RED
+            let red_kind = &ast.kinds[member_start_idx];
+            if let NodeKind::EnumMember(red) = red_kind {
+                assert_eq!(red.name.as_str(), "RED");
+                assert_eq!(red.value, 0);
+            } else {
+                panic!("Expected EnumMember at index {}", member_start_idx);
+            }
 
-            let blue = &enum_decl.members[2];
-            assert_eq!(blue.name.as_str(), "BLUE");
-            assert_eq!(blue.value, 2);
+            // Check second member GREEN
+            let green_kind = &ast.kinds[member_start_idx + 1];
+            if let NodeKind::EnumMember(green) = green_kind {
+                assert_eq!(green.name.as_str(), "GREEN");
+                assert_eq!(green.value, 1);
+            } else {
+                panic!("Expected EnumMember at index {}", member_start_idx + 1);
+            }
+
+            // Check third member BLUE
+            let blue_kind = &ast.kinds[member_start_idx + 2];
+            if let NodeKind::EnumMember(blue) = blue_kind {
+                assert_eq!(blue.name.as_str(), "BLUE");
+                assert_eq!(blue.value, 2);
+            } else {
+                panic!("Expected EnumMember at index {}", member_start_idx + 2);
+            }
         }
     }
 

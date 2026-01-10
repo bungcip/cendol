@@ -605,7 +605,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 Some(QualType::unqualified(self.registry.type_int))
             }
-            NodeKind::RecordDecl(_) | NodeKind::EnumDecl(_) | NodeKind::TypedefDecl(_) => None,
+            NodeKind::RecordDecl(_)
+            | NodeKind::FieldDecl(_)
+            | NodeKind::EnumDecl(_)
+            | NodeKind::EnumMember(_)
+            | NodeKind::TypedefDecl(_) => None,
             NodeKind::FunctionDecl(data) => {
                 let func_type = self.registry.get(data.ty).kind.clone();
                 if let TypeKind::Function { parameters, .. } = func_type {
@@ -780,7 +784,8 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(*init);
                 Some(*ty)
             }
-            NodeKind::GenericSelection(ctrl, assocs) => self.visit_generic_selection(*ctrl, assocs),
+            NodeKind::GenericSelection(gs) => self.visit_generic_selection(gs),
+            NodeKind::GenericAssociation(ga) => self.visit_node(ga.result_expr),
             NodeKind::VaArg(expr, ty) => {
                 self.visit_node(*expr);
                 Some(QualType::unqualified(*ty))
@@ -815,6 +820,9 @@ impl<'a> SemanticAnalyzer<'a> {
             | NodeKind::Function(_)
             | NodeKind::VarDecl(_)
             | NodeKind::RecordDecl(_)
+            | NodeKind::FieldDecl(_)
+            | NodeKind::EnumDecl(_)
+            | NodeKind::EnumMember(_)
             | NodeKind::TypedefDecl(_)
             | NodeKind::EnumConstant(..)
             | NodeKind::FunctionDecl(_) => self.visit_declaration_node(node_ref, node_kind),
@@ -885,13 +893,9 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn visit_generic_selection(
-        &mut self,
-        ctrl_ref: NodeRef,
-        assocs: &[ResolvedGenericAssociation],
-    ) -> Option<QualType> {
+    fn visit_generic_selection(&mut self, gs: &GenericSelectionData) -> Option<QualType> {
         // First, visit the controlling expression to determine its type.
-        let ctrl_ty = self.visit_node(ctrl_ref)?;
+        let ctrl_ty = self.visit_node(gs.control)?;
 
         // C11 6.5.1.1p3: The controlling expression of a generic selection is not evaluated.
         // C11 6.5.1.1p2: The type name in a generic association specifies a type compatible with the
@@ -901,24 +905,25 @@ impl<'a> SemanticAnalyzer<'a> {
         // It's crucial to visit *all* result expressions to ensure they are
         // fully type-checked, even if they are not the selected branch.
         // This resolves all identifier types within them.
-        for assoc in assocs {
-            self.visit_node(assoc.result_expr);
-        }
-
-        // Now, find the selected expression based on type compatibility.
         let mut selected_expr_ref = None;
         let mut default_expr_ref = None;
 
-        for assoc in assocs {
-            if let Some(assoc_ty) = assoc.ty {
-                // This is a type association.
-                if self.registry.is_compatible(unqualified_ctrl_ty, assoc_ty) {
-                    selected_expr_ref = Some(assoc.result_expr);
-                    break;
+        for i in 0..gs.assoc_len {
+            let assoc_idx = gs.assoc_start.get() + i as u32;
+            let assoc_node_ref = NodeRef::new(assoc_idx).expect("Invalid association index");
+
+            if let NodeKind::GenericAssociation(ga) = self.ast.get_kind(assoc_node_ref).clone() {
+                self.visit_node(assoc_node_ref);
+
+                if let Some(assoc_ty) = ga.ty {
+                    // This is a type association.
+                    if self.registry.is_compatible(unqualified_ctrl_ty, assoc_ty) {
+                        selected_expr_ref = Some(ga.result_expr);
+                    }
+                } else {
+                    // This is the 'default' association.
+                    default_expr_ref = Some(ga.result_expr);
                 }
-            } else {
-                // This is the 'default' association.
-                default_expr_ref = Some(assoc.result_expr);
             }
         }
 
@@ -935,7 +940,7 @@ impl<'a> SemanticAnalyzer<'a> {
         } else {
             // If no match is found and there's no default, it's a semantic error.
             self.report_error(SemanticError::GenericNoMatch {
-                span: self.ast.get_span(ctrl_ref),
+                span: self.ast.get_span(gs.control),
             });
             None
         }

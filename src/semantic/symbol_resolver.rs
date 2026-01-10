@@ -975,24 +975,31 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         };
 
                         if let Some((tag, enumerators)) = enum_data {
-                            let members = enumerators
-                                .iter()
-                                .map(|e| crate::ast::nodes::EnumMember {
-                                    name: e.name,
-                                    value: e.value,
-                                    span: e.span,
-                                })
-                                .collect();
-                            let node = self.ast.push_node(
-                                NodeKind::EnumDecl(EnumDeclData {
-                                    name: tag,
-                                    ty: ty.ty(),
-                                    members,
-                                }),
-                                span,
-                            );
-                            self.set_scope(node, self.symbol_table.current_scope());
-                            return vec![node];
+                            let dummy = self.push_dummy(span);
+                            let mut member_start = NodeRef::new(1).unwrap();
+                            let member_len = enumerators.len() as u16;
+
+                            for (i, e) in enumerators.iter().enumerate() {
+                                let member_ref = self.ast.push_node(
+                                    NodeKind::EnumMember(EnumMemberData {
+                                        name: e.name,
+                                        value: e.value,
+                                    }),
+                                    e.span,
+                                );
+                                self.set_scope(member_ref, self.symbol_table.current_scope());
+                                if i == 0 {
+                                    member_start = member_ref;
+                                }
+                            }
+
+                            self.ast.kinds[dummy.index()] = NodeKind::EnumDecl(EnumDeclData {
+                                name: tag,
+                                ty: ty.ty(),
+                                member_start,
+                                member_len,
+                            });
+                            return vec![dummy];
                         }
                     }
                     return vec![];
@@ -1406,24 +1413,42 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedNodeKind::GenericSelection(control, associations) => {
                 let node = self.push_dummy(span);
                 let c = self.lower_expression(control);
-                let assoc = associations
-                    .iter()
-                    .map(|a| {
-                        let ty = a.type_name.map(|t| {
-                            convert_to_qual_type(self, t, span)
-                                .unwrap_or(QualType::unqualified(self.registry.type_error))
-                        });
-                        let expr = self.lower_expression(a.result_expr);
-                        ResolvedGenericAssociation { ty, result_expr: expr }
-                    })
-                    .collect();
-                self.ast.kinds[node.index()] = NodeKind::GenericSelection(c, assoc);
+
+                let assoc_len = associations.len() as u16;
+                let mut assoc_dummies = Vec::new();
+                for _ in 0..assoc_len {
+                    assoc_dummies.push(self.push_dummy(span));
+                }
+
+                for (i, a) in associations.iter().enumerate() {
+                    let ty = a.type_name.map(|t| {
+                        convert_to_qual_type(self, t, span).unwrap_or(QualType::unqualified(self.registry.type_error))
+                    });
+                    let expr = self.lower_expression(a.result_expr);
+                    let assoc_ref = assoc_dummies[i];
+                    self.ast.kinds[assoc_ref.index()] =
+                        NodeKind::GenericAssociation(GenericAssociationData { ty, result_expr: expr });
+                    self.set_scope(assoc_ref, self.symbol_table.current_scope());
+                }
+
+                let assoc_start = if assoc_len > 0 {
+                    assoc_dummies[0]
+                } else {
+                    NodeRef::new(1).unwrap()
+                };
+
+                self.ast.kinds[node.index()] = NodeKind::GenericSelection(GenericSelectionData {
+                    control: c,
+                    assoc_start,
+                    assoc_len,
+                });
                 vec![node]
             }
-            ParsedNodeKind::VaArg(va_list, type_ref) => {
+            ParsedNodeKind::VaArg(va_list, parsed_type) => {
                 let node = self.push_dummy(span);
                 let v = self.lower_expression(va_list);
-                self.ast.kinds[node.index()] = NodeKind::VaArg(v, type_ref);
+                let ty = convert_to_qual_type(self, parsed_type, span).unwrap();
+                self.ast.kinds[node.index()] = NodeKind::VaArg(v, ty.ty());
                 vec![node]
             }
             ParsedNodeKind::InitializerList(inits) => {

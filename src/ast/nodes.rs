@@ -5,10 +5,10 @@
 //! for creating complex AST nodes ergonomically.
 
 use serde::Serialize;
-use thin_vec::ThinVec;
 
+use crate::semantic::TypeQualifiers;
 use crate::{
-    ast::{NameId, NodeRef, ParsedType, SourceSpan, SymbolRef, TypeRef},
+    ast::{NameId, NodeRef, SymbolRef, TypeRef},
     semantic::QualType,
 };
 
@@ -53,7 +53,8 @@ pub enum NodeKind {
     AlignOf(QualType), // C11 _Alignof
 
     CompoundLiteral(QualType, NodeRef),
-    GenericSelection(NodeRef /* controlling_expr */, Vec<ResolvedGenericAssociation>),
+    GenericSelection(GenericSelectionData),
+    GenericAssociation(GenericAssociationData),
     VaArg(NodeRef /* va_list_expr */, TypeRef), // va_arg macro expansion
 
     // --- Statements (Complex statements are separate structs) ---
@@ -94,6 +95,7 @@ pub enum NodeKind {
     RecordDecl(RecordDeclData),
     FieldDecl(FieldDeclData),
     EnumDecl(EnumDeclData),
+    EnumMember(EnumMemberData),
     Function(FunctionData),
 
     // --- Top Level ---
@@ -129,27 +131,6 @@ pub struct ForStmt {
     pub condition: Option<NodeRef>,
     pub increment: Option<NodeRef>,
     pub body: NodeRef,
-}
-
-// Declaration data
-#[derive(Debug, Clone, Serialize)]
-pub struct DeclarationData {
-    pub specifiers: ThinVec<DeclSpecifier>,
-    pub init_declarators: ThinVec<InitDeclarator>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct InitDeclarator {
-    pub declarator: Declarator,
-    pub initializer: Option<NodeRef>, // Initializer or Expr
-    pub span: SourceSpan,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct FunctionDefData {
-    pub specifiers: ThinVec<DeclSpecifier>,
-    pub declarator: ParsedType,
-    pub body: NodeRef, // A CompoundStatement
 }
 
 // Semantic node data structures (type-resolved)
@@ -219,14 +200,14 @@ pub struct CallExpr {
 pub struct EnumDeclData {
     pub name: Option<NameId>,
     pub ty: TypeRef,
-    pub members: Vec<EnumMember>,
+    pub member_start: NodeRef,
+    pub member_len: u16,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct EnumMember {
+pub struct EnumMemberData {
     pub name: NameId,
     pub value: i64,
-    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -235,46 +216,6 @@ pub enum TypeQualifier {
     Restrict,
     Volatile,
     Atomic,
-}
-
-// Declaration specifiers and related types
-#[derive(Debug, Clone, Serialize)]
-pub enum DeclSpecifier {
-    StorageClass(StorageClass),
-    TypeQualifier(TypeQualifier),
-    FunctionSpecifiers(FunctionSpecifiers),
-    AlignmentSpecifier(AlignmentSpecifier),
-    TypeSpecifier(TypeSpecifier),
-    Attribute,
-}
-
-// Type specifiers
-#[derive(Debug, Clone, Serialize)]
-pub enum TypeSpecifier {
-    Void,
-    Char,
-    Short,
-    Int,
-    Long,
-    LongLong,
-    Float,
-    Double,
-    LongDouble,
-    Signed,
-    Unsigned,
-    Bool,
-    Complex,
-    Atomic(ParsedType), // _Bool, _Complex, _Atomic
-    Record(
-        bool,                  /* is_union */
-        Option<NameId>,        /* tag */
-        Option<RecordDefData>, /* definition */
-    ),
-    Enum(
-        Option<NameId>,       /* tag */
-        Option<Vec<NodeRef>>, /* enumerators */
-    ),
-    TypedefName(NameId),
 }
 
 // Storage classes
@@ -288,9 +229,6 @@ pub enum StorageClass {
     Register,
     ThreadLocal, // C11 _Thread_local
 }
-
-// Type qualifiers (imported from types module)
-use crate::semantic::TypeQualifiers;
 
 // Unary Operators
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -370,36 +308,6 @@ bitflags::bitflags! {
     }
 }
 
-// Alignment specifiers
-#[derive(Debug, Clone, Serialize)]
-pub enum AlignmentSpecifier {
-    Type(ParsedType), // _Alignas(type-name)
-    Expr(NodeRef),    // _Alignas(constant-expression)
-}
-
-// Declarators
-#[derive(Debug, Clone, Serialize)]
-pub enum Declarator {
-    Identifier(NameId, TypeQualifiers),               // Base case: name (e.g., `x`)
-    Abstract,                                         // for abstract declarator
-    Pointer(TypeQualifiers, Option<Box<Declarator>>), // e.g., `*`
-    Array(Box<Declarator>, ArraySize),                // e.g., `[10]`
-    Function {
-        inner: Box<Declarator>,
-        params: ThinVec<ParamData>,
-        is_variadic: bool,
-    }, // e.g., `(int x)`
-    AnonymousRecord(bool /* is_union */, ThinVec<DeclarationData> /* members */), // C11 anonymous struct/union
-    BitField(Box<Declarator>, NodeRef /* bit width expression */), // e.g., `x : 8`
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ParamData {
-    pub specifiers: ThinVec<DeclSpecifier>,
-    pub declarator: Option<Declarator>, // Optional name for abstract declarator
-    pub span: SourceSpan,
-}
-
 // Array sizes
 #[derive(Debug, Clone, Serialize)]
 pub enum ArraySize {
@@ -416,14 +324,6 @@ pub enum ArraySize {
         qualifiers: TypeQualifiers,
         size: Option<NodeRef>,
     }, // for VLA
-}
-
-// Record definitions
-#[derive(Debug, Clone, Serialize)]
-pub struct RecordDefData {
-    pub tag: Option<NameId>,                   // None if anonymous
-    pub members: Option<Vec<DeclarationData>>, // Field declarations
-    pub is_union: bool,
 }
 
 // Initializers
@@ -446,19 +346,15 @@ pub enum Designator {
     GnuArrayRange(NodeRef, NodeRef), // GCC extension: Range expression [start ... end]
 }
 
-// Generic selection
 #[derive(Debug, Clone, Serialize)]
-pub struct GenericAssociation {
-    pub type_name: Option<ParsedType>, // None for 'default:'
-    pub result_expr: NodeRef,          // Wait, ParsedAst uses GenericAssociation with ParsedNodeRef?
-                                       // In ParsedAst: GenericSelection(ParsedNodeRef, Vec<GenericAssociation>)
-                                       // If ParsedAst uses GenericAssociation, and GenericAssociation uses NodeRef (Semantic NodeRef), that is wrong.
-                                       // ParsedAst should use GenericAssociation that uses ParsedNodeRef.
-                                       // Let's check ParsedAst definition of GenericSelection.
+pub struct GenericSelectionData {
+    pub control: NodeRef,
+    pub assoc_start: NodeRef,
+    pub assoc_len: u16,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct ResolvedGenericAssociation {
+pub struct GenericAssociationData {
     pub ty: Option<QualType>, // None for 'default:'
     pub result_expr: NodeRef,
 }

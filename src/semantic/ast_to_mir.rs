@@ -552,6 +552,20 @@ impl<'a> AstToMirLowerer<'a> {
             let node = self.ast.get_node(expr_ref);
             panic!("Type not resolved for node {:?} at {:?}", node.kind, node.span);
         });
+
+        // Try to constant fold expression first
+        // This is crucial for global initializers where we cannot generate runtime code
+        if let Some(val) = crate::semantic::const_eval::eval_const_expr(
+            &crate::semantic::const_eval::ConstEvalCtx { ast: self.ast },
+            expr_ref,
+        ) {
+            // Only use constant folding result if the type is appropriate (integer)
+            // const_eval currently returns i64.
+            if ty.is_integer() {
+                return Operand::Constant(self.create_constant(ConstValue::Int(val)));
+            }
+        }
+
         let node_kind = self.ast.get_node(expr_ref).kind.clone();
 
         let mir_ty = self.lower_type_to_mir(ty.ty());

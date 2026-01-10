@@ -87,3 +87,5 @@ pub use types::{
 
 #[cfg(test)]
 mod tests_compound_assign;
+#[cfg(test)]
+mod tests_crash_repro;

@@ -19,7 +19,7 @@ use crate::ast::parsed::{
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::semantic::const_eval::{self, ConstEvalCtx};
-use crate::semantic::symbol_table::DefinitionState;
+use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
 use crate::semantic::{
     ArraySizeType, EnumConstant, ScopeId, StructMember, SymbolKind, SymbolRef, SymbolTable, TypeKind, TypeQualifiers,
     TypeRef, TypeRegistry,
@@ -158,6 +158,17 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let node_ref = self.ast.push_dummy(span);
         self.set_scope(node_ref, self.symbol_table.current_scope());
         node_ref
+    }
+
+    /// Get the first slot from target_slots if available, otherwise push a new dummy node.
+    /// Also ensures scope is set on the node.
+    fn get_or_push_slot(&mut self, target_slots: Option<&[NodeRef]>, span: SourceSpan) -> NodeRef {
+        if let Some(target) = target_slots.and_then(|t| t.first()) {
+            self.set_scope(*target, self.symbol_table.current_scope());
+            *target
+        } else {
+            self.push_dummy(span)
+        }
     }
 
     fn count_semantic_nodes(&self, node_ref: ParsedNodeRef) -> usize {
@@ -976,12 +987,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.symbol_table.push_scope();
 
                 // Use target slot if provided, otherwise reserve new slot
+                // Note: We set scope AFTER push_scope since CompoundStatement creates a new scope
                 let compound_stmt_node = if let Some(target) = target_slots.and_then(|t| t.first()) {
                     *target
                 } else {
-                    self.push_dummy(span)
+                    // push_dummy sets scope to current scope, but we've already pushed a new one
+                    self.ast.push_dummy(span)
                 };
-                // Set scope on the CompoundStatement node (push_dummy already does this, but target_slots don't)
                 self.set_scope(compound_stmt_node, self.symbol_table.current_scope());
 
                 // Count total semantic nodes
@@ -1024,11 +1036,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
             ParsedNodeKind::Declaration(decl_data) => self.lower_declaration(&decl_data, span, target_slots),
             ParsedNodeKind::FunctionDef(func_def) => {
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    *target
-                } else {
-                    self.push_dummy(span)
-                };
+                let node = self.get_or_push_slot(target_slots, span);
                 self.lower_function_definition(&func_def, node, span);
                 vec![node]
             }
@@ -1125,11 +1133,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
         }
 
-        let param_start = if param_len > 0 {
-            param_dummies[0]
-        } else {
-            NodeRef::new(1).unwrap()
-        };
+        let param_start = if param_len > 0 { param_dummies[0] } else { NodeRef::ROOT };
 
         self.set_scope(node, self.symbol_table.current_scope());
 
@@ -1161,12 +1165,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             if let Some(ty) = spec_info.base_type {
                 // Extract needed data from registry to avoid borrowing self.registry during node creation
                 let type_data = match &self.registry.get(ty.ty()).kind {
-                    crate::semantic::types::TypeKind::Record {
+                    TypeKind::Record {
                         tag, members, is_union, ..
                     } => Some(TypeData::Record(*tag, members.clone(), *is_union)),
-                    crate::semantic::types::TypeKind::Enum { tag, enumerators, .. } => {
-                        Some(TypeData::Enum(*tag, enumerators.clone()))
-                    }
+                    TypeKind::Enum { tag, enumerators, .. } => Some(TypeData::Enum(*tag, enumerators.clone())),
                     _ => None,
                 };
 
@@ -1185,7 +1187,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                             for m in members {
                                 let field_node = self.ast.push_node(
-                                    NodeKind::FieldDecl(crate::ast::nodes::FieldDeclData {
+                                    NodeKind::FieldDecl(FieldDeclData {
                                         name: m.name,
                                         ty: m.member_type,
                                     }),
@@ -1195,7 +1197,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                                 member_len += 1;
                             }
 
-                            self.ast.kinds[node.index()] = NodeKind::RecordDecl(crate::ast::nodes::RecordDeclData {
+                            self.ast.kinds[node.index()] = NodeKind::RecordDecl(RecordDeclData {
                                 name: tag,
                                 ty: ty.ty(),
                                 member_start,
@@ -1204,12 +1206,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                             });
                         }
                         TypeData::Enum(tag, enumerators) => {
-                            let mut member_start = NodeRef::new(1).unwrap();
+                            let mut member_start = NodeRef::ROOT;
                             let member_len = enumerators.len() as u16;
 
                             for (i, e) in enumerators.iter().enumerate() {
                                 let member_ref = self.ast.push_node(
-                                    NodeKind::EnumMember(crate::ast::nodes::EnumMemberData {
+                                    NodeKind::EnumMember(EnumMemberData {
                                         name: e.name,
                                         value: e.value,
                                     }),
@@ -1221,7 +1223,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                                 }
                             }
 
-                            self.ast.kinds[node.index()] = NodeKind::EnumDecl(crate::ast::nodes::EnumDeclData {
+                            self.ast.kinds[node.index()] = NodeKind::EnumDecl(EnumDeclData {
                                 name: tag,
                                 ty: ty.ty(),
                                 member_start,
@@ -1236,8 +1238,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         enum TypeData {
-            Record(Option<NameId>, Vec<crate::semantic::types::StructMember>, bool),
-            Enum(Option<NameId>, Vec<crate::semantic::types::EnumConstant>),
+            Record(Option<NameId>, Vec<StructMember>, bool),
+            Enum(Option<NameId>, Vec<EnumConstant>),
         }
 
         let mut nodes = Vec::new();
@@ -1269,8 +1271,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         span,
                     });
                 }
-                self.ast.kinds[node.index()] =
-                    NodeKind::TypedefDecl(crate::ast::nodes::TypedefDeclData { name, ty: final_ty });
+                self.ast.kinds[node.index()] = NodeKind::TypedefDecl(TypedefDeclData { name, ty: final_ty });
                 nodes.push(node);
                 continue;
             }
@@ -1318,9 +1319,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     init: init_expr,
                     alignment: spec_info.alignment,
                 };
-                if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) = self
-                    .symbol_table
-                    .define_variable(name, final_ty.ty(), init_expr, spec_info.alignment, span)
+                if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
+                    self.symbol_table
+                        .define_variable(name, final_ty.ty(), init_expr, spec_info.alignment, span)
                 {
                     let first_def = self.symbol_table.get_symbol(existing).def_span;
                     self.report_error(SemanticError::Redefinition { name, first_def, span });
@@ -1343,63 +1344,39 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         match &parsed_node.kind {
             ParsedNodeKind::Declaration(decl) => self.lower_declaration(decl, span, target_slots),
             ParsedNodeKind::StaticAssert(expr, msg) => {
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    *target
-                } else {
-                    self.push_dummy(span)
-                };
+                let node = self.get_or_push_slot(target_slots, span);
                 let lowered_expr = self.lower_expression(*expr);
                 self.ast.kinds[node.index()] = NodeKind::StaticAssert(lowered_expr, *msg);
-                self.set_scope(node, self.symbol_table.current_scope());
                 vec![node]
             }
             ParsedNodeKind::If(stmt) => {
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    *target
-                } else {
-                    self.push_dummy(span)
-                };
+                let node = self.get_or_push_slot(target_slots, span);
                 let cond = self.lower_expression(stmt.condition);
                 let then = self.lower_single_statement(stmt.then_branch);
                 let else_branch = stmt.else_branch.map(|b| self.lower_single_statement(b));
-                self.ast.kinds[node.index()] = NodeKind::If(crate::ast::IfStmt {
+                self.ast.kinds[node.index()] = NodeKind::If(IfStmt {
                     condition: cond,
                     then_branch: then,
                     else_branch,
                 });
-                self.set_scope(node, self.symbol_table.current_scope());
                 vec![node]
             }
             ParsedNodeKind::While(stmt) => {
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    *target
-                } else {
-                    self.push_dummy(span)
-                };
+                let node = self.get_or_push_slot(target_slots, span);
                 let cond = self.lower_expression(stmt.condition);
                 let body = self.lower_single_statement(stmt.body);
                 self.ast.kinds[node.index()] = NodeKind::While(WhileStmt { condition: cond, body });
-                self.set_scope(node, self.symbol_table.current_scope());
                 vec![node]
             }
             ParsedNodeKind::DoWhile(body, cond) => {
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    *target
-                } else {
-                    self.push_dummy(span)
-                };
+                let node = self.get_or_push_slot(target_slots, span);
                 let b = self.lower_single_statement(*body);
                 let c = self.lower_expression(*cond);
                 self.ast.kinds[node.index()] = NodeKind::DoWhile(b, c);
-                self.set_scope(node, self.symbol_table.current_scope());
                 vec![node]
             }
             ParsedNodeKind::For(stmt) => {
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    *target
-                } else {
-                    self.push_dummy(span)
-                };
+                let node = self.get_or_push_slot(target_slots, span);
                 let scope_id = self.symbol_table.push_scope();
                 self.set_scope(node, scope_id);
 
@@ -1420,51 +1397,31 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 vec![node]
             }
             ParsedNodeKind::Switch(cond, body) => {
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    *target
-                } else {
-                    self.push_dummy(span)
-                };
+                let node = self.get_or_push_slot(target_slots, span);
                 let c = self.lower_expression(*cond);
                 let b = self.lower_single_statement(*body);
                 self.ast.kinds[node.index()] = NodeKind::Switch(c, b);
-                self.set_scope(node, self.symbol_table.current_scope());
                 vec![node]
             }
             ParsedNodeKind::Case(expr, stmt) => {
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    *target
-                } else {
-                    self.push_dummy(span)
-                };
+                let node = self.get_or_push_slot(target_slots, span);
                 let e = self.lower_expression(*expr);
                 let s = self.lower_single_statement(*stmt);
                 self.ast.kinds[node.index()] = NodeKind::Case(e, s);
-                self.set_scope(node, self.symbol_table.current_scope());
                 vec![node]
             }
             ParsedNodeKind::CaseRange(start, end, stmt) => {
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    *target
-                } else {
-                    self.push_dummy(span)
-                };
+                let node = self.get_or_push_slot(target_slots, span);
                 let s_expr = self.lower_expression(*start);
                 let e_expr = self.lower_expression(*end);
                 let s_stmt = self.lower_single_statement(*stmt);
                 self.ast.kinds[node.index()] = NodeKind::CaseRange(s_expr, e_expr, s_stmt);
-                self.set_scope(node, self.symbol_table.current_scope());
                 vec![node]
             }
             ParsedNodeKind::Default(stmt) => {
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    *target
-                } else {
-                    self.push_dummy(span)
-                };
+                let node = self.get_or_push_slot(target_slots, span);
                 let s = self.lower_single_statement(*stmt);
                 self.ast.kinds[node.index()] = NodeKind::Default(s);
-                self.set_scope(node, self.symbol_table.current_scope());
                 vec![node]
             }
             ParsedNodeKind::Break => {
@@ -1502,37 +1459,22 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 vec![node]
             }
             ParsedNodeKind::Label(name, inner) => {
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    *target
-                } else {
-                    self.push_dummy(span)
-                };
+                let node = self.get_or_push_slot(target_slots, span);
                 let sym = self.define_label(*name, span);
                 let s = self.lower_single_statement(*inner);
                 self.ast.kinds[node.index()] = NodeKind::Label(*name, s, sym);
-                self.set_scope(node, self.symbol_table.current_scope());
                 vec![node]
             }
             ParsedNodeKind::Return(expr) => {
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    *target
-                } else {
-                    self.push_dummy(span)
-                };
+                let node = self.get_or_push_slot(target_slots, span);
                 let e = expr.map(|x| self.lower_expression(x));
                 self.ast.kinds[node.index()] = NodeKind::Return(e);
-                self.set_scope(node, self.symbol_table.current_scope());
                 vec![node]
             }
             ParsedNodeKind::ExpressionStatement(expr) => {
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    *target
-                } else {
-                    self.push_dummy(span)
-                };
+                let node = self.get_or_push_slot(target_slots, span);
                 let e = expr.map(|x| self.lower_expression(x));
                 self.ast.kinds[node.index()] = NodeKind::ExpressionStatement(e);
-                self.set_scope(node, self.symbol_table.current_scope());
                 vec![node]
             }
             ParsedNodeKind::BinaryOp(op, lhs, rhs) => {
@@ -1693,11 +1635,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     self.set_scope(assoc_ref, self.symbol_table.current_scope());
                 }
 
-                let assoc_start = if assoc_len > 0 {
-                    assoc_dummies[0]
-                } else {
-                    NodeRef::new(1).unwrap()
-                };
+                let assoc_start = if assoc_len > 0 { assoc_dummies[0] } else { NodeRef::ROOT };
 
                 self.ast.kinds[node.index()] = NodeKind::GenericSelection(GenericSelectionData {
                     control: c,
@@ -1747,11 +1685,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
 
                 let init_len = init_dummies.len() as u16;
-                let init_start = if init_len > 0 {
-                    init_dummies[0]
-                } else {
-                    NodeRef::new(1).unwrap()
-                };
+                let init_start = if init_len > 0 { init_dummies[0] } else { NodeRef::ROOT };
 
                 self.ast.kinds[node.index()] = NodeKind::InitializerList(InitializerListData { init_start, init_len });
 

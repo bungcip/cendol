@@ -146,7 +146,7 @@ impl Ast {
 
     /// get root node ref
     pub fn get_root(&self) -> NodeRef {
-        NodeRef::new(1).expect("ICE: AST is empty")
+        NodeRef::ROOT
     }
 
     pub fn scope_of(&self, node_ref: NodeRef) -> ScopeId {

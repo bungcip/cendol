@@ -1661,13 +1661,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 });
                 vec![node]
             }
-            ParsedNodeKind::VaArg(va_list, parsed_type) => {
-                let node = self.push_dummy(span);
-                let v = self.lower_expression(*va_list);
-                let ty = convert_to_qual_type(self, *parsed_type, span).unwrap();
-                self.ast.kinds[node.index()] = NodeKind::VaArg(v, ty.ty());
-                vec![node]
-            }
             ParsedNodeKind::InitializerList(inits) => {
                 let node = self.push_dummy(span);
 

@@ -87,7 +87,6 @@ pub enum ParsedNodeKind {
 
     CompoundLiteral(ParsedType, ParsedNodeRef),
     GenericSelection(ParsedNodeRef, Vec<ParsedGenericAssociation>),
-    VaArg(ParsedNodeRef, ParsedType), // NOTE: still not used in parser for now
 
     // --- Statements ---
     CompoundStatement(Vec<ParsedNodeRef>),

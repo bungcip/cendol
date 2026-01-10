@@ -426,19 +426,29 @@ impl<'a> MirDumper<'a> {
             && let ConstValue::ArrayLiteral(elements) = const_value
         {
             // Try to convert the array elements to a string
-            let mut chars = Vec::new();
+            let mut string_content = String::new();
+
             for &element_id in elements {
                 let element = self.sema_output.constants.get(&element_id).unwrap();
                 if let ConstValue::Int(byte) = element {
-                    if *byte == 0 {
+                    let byte = *byte as u8;
+                    if byte == 0 {
                         // Null terminator - end of string
                         break;
-                    } else if *byte >= 32 && *byte <= 126 {
-                        // Printable ASCII character
-                        chars.push(*byte as u8 as char);
-                    } else {
-                        // Non-printable character, not a simple string literal
-                        return None;
+                    }
+
+                    match byte {
+                        b'\n' => string_content.push_str("\\n"),
+                        b'\r' => string_content.push_str("\\r"),
+                        b'\t' => string_content.push_str("\\t"),
+                        b'\\' => string_content.push_str("\\\\"),
+                        b'"' => string_content.push_str("\\\""),
+                        b if b >= 32 && b <= 126 => string_content.push(b as char),
+                        _ => {
+                            // Use hex escape for other non-printable characters
+                            use std::fmt::Write;
+                            write!(&mut string_content, "\\x{:02x}", byte).ok()?;
+                        }
                     }
                 } else {
                     // Non-integer element, not a string
@@ -446,8 +456,8 @@ impl<'a> MirDumper<'a> {
                 }
             }
 
-            if !chars.is_empty() {
-                return Some(format!("const \"{}\"", chars.iter().collect::<String>()));
+            if !string_content.is_empty() {
+                return Some(format!("const \"{}\"", string_content));
             }
         }
 

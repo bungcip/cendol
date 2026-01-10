@@ -370,10 +370,7 @@ fn parse_infix(
 }
 
 /// Parse GNU statement expression: ({ compound-statement })
-fn parse_gnu_statement_expression(
-    parser: &mut Parser,
-    start_loc: SourceLoc,
-) -> Result<ParsedNodeRef, ParseError> {
+fn parse_gnu_statement_expression(parser: &mut Parser, start_loc: SourceLoc) -> Result<ParsedNodeRef, ParseError> {
     debug!("parse_gnu_statement_expression: parsing GNU statement expression");
 
     // Parse the compound statement (parse_compound_statement expects LeftBrace)

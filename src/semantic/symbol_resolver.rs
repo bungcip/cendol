@@ -78,8 +78,7 @@ fn apply_parsed_declarator_recursive(
 }
 
 /// Convert ParsedArraySize to ArraySizeType
-fn convert_parsed_array_size(size: &crate::ast::parsed::ParsedArraySize, ctx: &mut LowerCtx) -> ArraySizeType {
-    use crate::ast::parsed::ParsedArraySize;
+fn convert_parsed_array_size(size: &ParsedArraySize, ctx: &mut LowerCtx) -> ArraySizeType {
     match size {
         ParsedArraySize::Expression { expr: _, .. } => {
             // Evaluate expression
@@ -144,7 +143,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     fn set_scope(&mut self, node_ref: NodeRef, scope_id: ScopeId) {
-        let idx = (node_ref.get() - 1) as usize;
+        let idx = node_ref.index();
         if idx >= self.scope_map.len() {
             self.scope_map.resize(idx + 1, None);
         }
@@ -691,18 +690,18 @@ pub(crate) fn lower_decl_specifiers(
             }
             ParsedDeclSpecifier::TypeQualifier(tq) => {
                 let mask = match tq {
-                    crate::ast::nodes::TypeQualifier::Const => crate::semantic::TypeQualifiers::CONST,
-                    crate::ast::nodes::TypeQualifier::Volatile => crate::semantic::TypeQualifiers::VOLATILE,
-                    crate::ast::nodes::TypeQualifier::Restrict => crate::semantic::TypeQualifiers::RESTRICT,
-                    crate::ast::nodes::TypeQualifier::Atomic => crate::semantic::TypeQualifiers::ATOMIC,
+                    TypeQualifier::Const => TypeQualifiers::CONST,
+                    TypeQualifier::Volatile => TypeQualifiers::VOLATILE,
+                    TypeQualifier::Restrict => TypeQualifiers::RESTRICT,
+                    TypeQualifier::Atomic => TypeQualifiers::ATOMIC,
                 };
                 info.qualifiers.insert(mask);
             }
             ParsedDeclSpecifier::FunctionSpecifiers(fs) => {
-                if fs.contains(crate::ast::nodes::FunctionSpecifiers::INLINE) {
+                if fs.contains(FunctionSpecifiers::INLINE) {
                     info.is_inline = true;
                 }
-                if fs.contains(crate::ast::nodes::FunctionSpecifiers::NORETURN) {
+                if fs.contains(FunctionSpecifiers::NORETURN) {
                     info.is_noreturn = true;
                 }
             }
@@ -1468,8 +1467,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     fn deduce_array_size_full(&self, init_node: NodeRef) -> Option<usize> {
-        let node = self.ast.get_node(init_node);
-        match &node.kind {
+        let node_kind = self.ast.get_kind(init_node);
+        match node_kind {
             NodeKind::InitializerList(inits) => {
                 let mut max_index: i64 = -1;
                 let mut current_index: i64 = 0;

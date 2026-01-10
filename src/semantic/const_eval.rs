@@ -14,8 +14,8 @@ pub(crate) struct ConstEvalCtx<'a> {
 
 /// Evaluate a constant expression node to an i64 value
 pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Option<i64> {
-    let node = ctx.ast.get_node(expr_node_ref);
-    match &node.kind {
+    let node_kind = ctx.ast.get_kind(expr_node_ref);
+    match node_kind {
         NodeKind::LiteralInt(val) => Some(*val),
         NodeKind::BinaryOp(op, left_ref, right_ref) => {
             let left_val = eval_const_expr(ctx, *left_ref)?;

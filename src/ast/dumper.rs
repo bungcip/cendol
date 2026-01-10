@@ -5,21 +5,21 @@
 use hashbrown::HashSet;
 use itertools::Itertools;
 
-use crate::ast::{Ast, NodeKind};
-use crate::semantic::{SymbolRef, TypeRegistry};
+use crate::ast::{Ast, DesignatedInitializer, Designator, NodeKind};
+use crate::semantic::{ArraySizeType, SymbolRef, SymbolTable, TypeKind, TypeRef, TypeRegistry};
 
 /// Dumper for AST
 pub struct AstDumper;
 
 impl AstDumper {
     /// Dump parser AST to stdout
-    pub fn dump_parser(ast: &Ast, symbol_table: Option<&crate::semantic::SymbolTable>) {
-        for (i, node) in ast.nodes.iter().enumerate() {
-            if matches!(node.kind, NodeKind::Dummy) {
+    pub fn dump_parser(ast: &Ast, symbol_table: Option<&SymbolTable>) {
+        for (i, kind) in ast.kinds.iter().enumerate() {
+            if matches!(kind, NodeKind::Dummy) {
                 continue;
             }
             print!("{}: ", i + 1);
-            Self::dump_parser_kind(&node.kind, symbol_table);
+            Self::dump_parser_kind(kind, symbol_table);
         }
     }
 
@@ -28,8 +28,8 @@ impl AstDumper {
         // Collect all TypeRefs used in the AST
         let mut used_type_refs = HashSet::new();
 
-        for node in &ast.nodes {
-            Self::collect_type_refs_from_node(&node.kind, &mut used_type_refs);
+        for kind in &ast.kinds {
+            Self::collect_type_refs_from_node(kind, &mut used_type_refs);
         }
 
         if used_type_refs.is_empty() {
@@ -53,9 +53,7 @@ impl AstDumper {
 
     /// Format TypeKind in a user-friendly way for TypeRegistry dump
     #[allow(clippy::only_used_in_recursion)]
-    fn format_type_kind_user_friendly(kind: &crate::semantic::TypeKind, registry: &TypeRegistry) -> String {
-        use crate::semantic::TypeKind;
-
+    fn format_type_kind_user_friendly(kind: &TypeKind, registry: &TypeRegistry) -> String {
         match kind {
             // Basic types - use the existing dump format
             TypeKind::Void => "void".to_string(),
@@ -119,10 +117,10 @@ impl AstDumper {
             TypeKind::Array { element_type, size } => {
                 let element_str = Self::format_type_kind_user_friendly(&registry.get(*element_type).kind, registry);
                 match size {
-                    crate::semantic::ArraySizeType::Constant(len) => format!("{}[{}]", element_str, len),
-                    crate::semantic::ArraySizeType::Incomplete => format!("{}[]", element_str),
-                    crate::semantic::ArraySizeType::Variable(_) => "<VLA>".to_string(),
-                    crate::semantic::ArraySizeType::Star => format!("{}[*]", element_str),
+                    ArraySizeType::Constant(len) => format!("{}[{}]", element_str, len),
+                    ArraySizeType::Incomplete => format!("{}[]", element_str),
+                    ArraySizeType::Variable(_) => "<VLA>".to_string(),
+                    ArraySizeType::Star => format!("{}[*]", element_str),
                 }
             }
             TypeKind::Function {
@@ -160,7 +158,7 @@ impl AstDumper {
     }
 
     /// Collect TypeRefs from a NodeKind
-    fn collect_type_refs_from_node(kind: &NodeKind, type_refs: &mut HashSet<crate::semantic::TypeRef>) {
+    fn collect_type_refs_from_node(kind: &NodeKind, type_refs: &mut HashSet<TypeRef>) {
         match kind {
             // Direct TypeRef usage
             NodeKind::VaArg(_, ty_ref) => {
@@ -270,7 +268,7 @@ impl AstDumper {
     }
 
     /// Get function name from symbol entry reference
-    fn get_function_name(symbol_ref: SymbolRef, symbol_table: Option<&crate::semantic::SymbolTable>) -> String {
+    fn get_function_name(symbol_ref: SymbolRef, symbol_table: Option<&SymbolTable>) -> String {
         if let Some(table) = symbol_table {
             let entry = table.get_symbol(symbol_ref);
             return entry.name.to_string();
@@ -279,17 +277,17 @@ impl AstDumper {
     }
 
     /// Format a DesignatedInitializer for display
-    fn format_designated_initializer(init: &crate::ast::nodes::DesignatedInitializer) -> String {
+    fn format_designated_initializer(init: &DesignatedInitializer) -> String {
         let mut result = String::new();
         for designator in &init.designation {
             match designator {
-                crate::ast::nodes::Designator::FieldName(name) => {
+                Designator::FieldName(name) => {
                     result.push_str(&format!(".{}", name));
                 }
-                crate::ast::nodes::Designator::ArrayIndex(index) => {
+                Designator::ArrayIndex(index) => {
                     result.push_str(&format!("[{}]", index.get()));
                 }
-                crate::ast::nodes::Designator::GnuArrayRange(start, end) => {
+                Designator::GnuArrayRange(start, end) => {
                     result.push_str(&format!("[{} ... {}]", start.get(), end.get()));
                 }
             }
@@ -304,7 +302,7 @@ impl AstDumper {
     }
 
     /// Dump a single AST node kind
-    fn dump_parser_kind(kind: &NodeKind, symbol_table: Option<&crate::semantic::SymbolTable>) {
+    fn dump_parser_kind(kind: &NodeKind, symbol_table: Option<&SymbolTable>) {
         match kind {
             NodeKind::TranslationUnit(tu) => {
                 println!(

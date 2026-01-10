@@ -15,8 +15,8 @@ fn test_record_decl_members_populated() {
 
     // Find the RecordDecl node
     let mut found_record_decl = false;
-    for node in &ast.nodes {
-        if let NodeKind::RecordDecl(record_decl) = &node.kind
+    for kind in &ast.kinds {
+        if let NodeKind::RecordDecl(record_decl) = kind
             && record_decl.name.map(|n| n.as_str()) == Some("Point")
         {
             found_record_decl = true;
@@ -49,8 +49,8 @@ fn test_enum_decl_members_populated() {
 
     // Find the EnumDecl node
     let mut found_enum_decl = false;
-    for node in &ast.nodes {
-        if let NodeKind::EnumDecl(enum_decl) = &node.kind
+    for kind in &ast.kinds {
+        if let NodeKind::EnumDecl(enum_decl) = kind
             && enum_decl.name.map(|n| n.as_str()) == Some("Color")
         {
             found_enum_decl = true;
@@ -88,8 +88,8 @@ fn test_struct_member_qualifiers_preserved() {
 
     // Find RecordDecl
     let mut found = false;
-    for node in &ast.nodes {
-        if let NodeKind::RecordDecl(decl) = &node.kind
+    for kind in &ast.kinds {
+        if let NodeKind::RecordDecl(decl) = kind
             && decl.name.map(|n| n.as_str()) == Some("S")
         {
             found = true;

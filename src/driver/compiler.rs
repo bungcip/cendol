@@ -202,8 +202,8 @@ impl CompilerDriver {
         // Validate that parsing-only node kinds have been lowered (actually they shouldn't exist in Ast now)
         // But for safety/debugging:
         #[cfg(debug_assertions)]
-        for node in &ast.nodes {
-            match &node.kind {
+        for kind in &ast.kinds {
+            match kind {
                 NodeKind::BinaryOp(op, ..) if op.is_assignment() => {
                     panic!(
                         "ICE: NodeKind::BinaryOp with assignment operator {:?}, use NodeKind::Assignment instead",
@@ -294,20 +294,21 @@ impl CompilerDriver {
 
         // invariant validations
         // all expression must have resolved_type set
-        for (i, node) in ast.nodes.iter().enumerate() {
+        for (i, kind) in ast.kinds.iter().enumerate() {
             let node_ref = NodeRef::new((i as u32) + 1).unwrap();
-            match &node.kind {
+            match kind {
                 NodeKind::Ident(name, ..) if ast.get_resolved_type(node_ref).is_none() => {
+                    let span = ast.get_span(node_ref);
                     eprintln!(
                         "ICE: unresolved ident node idx={} name={:?} span={:?}",
                         i + 1,
                         name,
-                        self.source_manager.get_line_column(node.span.start())
+                        self.source_manager.get_line_column(span.start())
                     );
                     panic!(
                         "ICE: ident '{}' still not have resolved type: {:?}",
                         name,
-                        self.source_manager.get_line_column(node.span.start())
+                        self.source_manager.get_line_column(span.start())
                     );
                 }
                 _ => {}

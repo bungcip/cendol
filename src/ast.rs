@@ -47,68 +47,69 @@ pub use nodes::{BinaryOp, UnaryOp};
 
 /// The flattened AST storage.
 /// Contains all AST nodes, types, symbol entries in contiguous vectors.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Ast {
-    pub nodes: Vec<Node>,
+    pub kinds: Vec<NodeKind>,
+    pub spans: Vec<SourceSpan>,
     scope_map: Vec<Option<ScopeId>>,         // index = NodeRef
     pub semantic_info: Option<SemanticInfo>, // Populated after type resolution
     root: Option<NodeRef>,
 }
 
 /// Node reference type for referencing child nodes.
-pub type NodeRef = NonZeroU32;
+/// Node reference type for referencing child nodes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+pub struct NodeRef(NonZeroU32);
 
-/// Helper methods for Ast.
-impl Default for Ast {
-    fn default() -> Self {
-        Self::new()
+impl NodeRef {
+    pub fn new(value: u32) -> Option<Self> {
+        NonZeroU32::new(value).map(Self)
+    }
+
+    pub fn get(self) -> u32 {
+        self.0.get()
+    }
+
+    pub fn index(self) -> usize {
+        (self.get() - 1) as usize
     }
 }
 
 impl Ast {
     /// Create a new empty AST
     pub fn new() -> Self {
-        Ast {
-            nodes: Vec::new(),
-            scope_map: Vec::new(),
-            semantic_info: None,
-            root: None,
-        }
+        Ast::default()
     }
-
-    // /// Replace a node content in the AST without changing reference
-    // pub(crate) fn replace_node(&mut self, old_node_ref: NodeRef, new_node: Node) -> NodeRef {
-    //     // Replace the old node in the vector
-    //     let old_index = (old_node_ref.get() - 1) as usize;
-    //     self.nodes[old_index] = new_node;
-
-    //     // Return the same reference since we're replacing in place
-    //     old_node_ref
-    // }
 
     /// Add a node to the AST and return its reference
     pub(crate) fn push_node(&mut self, node: Node) -> NodeRef {
-        let index = self.nodes.len() as u32 + 1; // Start from 1 for NonZeroU32
-        self.nodes.push(node);
+        let index = self.kinds.len() as u32 + 1; // Start from 1 for NonZeroU32
+        self.kinds.push(node.kind);
+        self.spans.push(node.span);
         NodeRef::new(index).expect("NodeRef overflow")
     }
 
-    /// Get a node by its reference
-    pub fn get_node(&self, index: NodeRef) -> &Node {
-        &self.nodes[(index.get() - 1) as usize]
+    /// Get node kind by reference
+    pub fn get_kind(&self, node_ref: NodeRef) -> &NodeKind {
+        &self.kinds[node_ref.index()]
+    }
+
+    /// Get node span by reference
+    pub fn get_span(&self, node_ref: NodeRef) -> SourceSpan {
+        self.spans[node_ref.index()]
     }
 
     /// get root node ref
     pub fn get_root(&self) -> NodeRef {
-        self.root.unwrap_or(NonZeroU32::new(1).unwrap())
+        self.root.unwrap_or(NodeRef::new(1).unwrap())
     }
 
     pub fn set_root(&mut self, root: NodeRef) {
         self.root = Some(root);
     }
 
-    pub fn scope_of(&self, node: NodeRef) -> ScopeId {
-        self.scope_map[(node.get() - 1) as usize].expect("ICE: AST Node scope is not set")
+    pub fn scope_of(&self, node_ref: NodeRef) -> ScopeId {
+        self.scope_map[node_ref.index()].expect("ICE: AST Node scope is not set")
     }
 
     pub fn get_scope_map(&self) -> &[Option<ScopeId>] {
@@ -148,7 +149,7 @@ impl Node {
 impl Ast {
     /// Get the resolved type for a node (reads from attached semantic_info)
     pub fn get_resolved_type(&self, node_ref: NodeRef) -> Option<QualType> {
-        self.semantic_info.as_ref()?.types[(node_ref.get() - 1) as usize]
+        self.semantic_info.as_ref()?.types[node_ref.index()]
     }
 
     /// Get the value category for a node (reads from attached semantic_info)
@@ -156,16 +157,13 @@ impl Ast {
         self.semantic_info
             .as_ref()?
             .value_categories
-            .get((node_ref.get() - 1) as usize)
+            .get(node_ref.index())
             .copied()
     }
 
     /// Get the conversions for a node (reads from attached semantic_info)
     pub fn get_conversions(&self, node_ref: NodeRef) -> Option<&SmallVec<[ImplicitConversion; 1]>> {
-        self.semantic_info
-            .as_ref()?
-            .conversions
-            .get((node_ref.get() - 1) as usize)
+        self.semantic_info.as_ref()?.conversions.get(node_ref.index())
     }
 
     /// Check if a node has only pointer decay conversion (optimization opportunity)

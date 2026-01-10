@@ -1,4 +1,7 @@
-use crate::ast::{BinaryOp, NameId, ParsedType, SourceSpan, TypeRef, UnaryOp};
+use crate::{
+    ast::{BinaryOp, NameId, ParsedType, SourceSpan, TypeRef, UnaryOp},
+    semantic::TypeQualifiers,
+};
 use std::num::NonZeroU32;
 use thin_vec::ThinVec;
 
@@ -250,15 +253,15 @@ pub struct ParsedParamData {
 pub enum ParsedArraySize {
     Expression {
         expr: ParsedNodeRef,
-        qualifiers: crate::semantic::TypeQualifiers,
+        qualifiers: TypeQualifiers,
     },
     Star {
-        qualifiers: crate::semantic::TypeQualifiers,
+        qualifiers: TypeQualifiers,
     }, // [*] VLA
     Incomplete, // []
     VlaSpecifier {
         is_static: bool,
-        qualifiers: crate::semantic::TypeQualifiers,
+        qualifiers: TypeQualifiers,
         size: Option<ParsedNodeRef>,
     }, // for VLA
 }

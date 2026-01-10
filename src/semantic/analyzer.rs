@@ -779,10 +779,6 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::GenericSelection(gs) => self.visit_generic_selection(gs),
             NodeKind::GenericAssociation(ga) => self.visit_node(ga.result_expr),
-            NodeKind::VaArg(expr, ty) => {
-                self.visit_node(*expr);
-                Some(QualType::unqualified(*ty))
-            }
             NodeKind::InitializerList(list) => {
                 for item_ref in list.init_start.range(list.init_len) {
                     self.visit_node(item_ref);

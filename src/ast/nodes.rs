@@ -55,7 +55,6 @@ pub enum NodeKind {
     CompoundLiteral(QualType, NodeRef),
     GenericSelection(GenericSelectionData),
     GenericAssociation(GenericAssociationData),
-    VaArg(NodeRef /* va_list_expr */, TypeRef), // va_arg macro expansion
 
     // --- Statements (Complex statements are separate structs) ---
     CompoundStatement(CompoundStmtData),
@@ -136,7 +135,6 @@ impl NodeKind {
             | NodeKind::Cast(_, child)
             | NodeKind::SizeOfExpr(child)
             | NodeKind::CompoundLiteral(_, child)
-            | NodeKind::VaArg(child, _)
             | NodeKind::Label(_, child, _)
             | NodeKind::Default(child)
             | NodeKind::StaticAssert(child, _) => f(*child),

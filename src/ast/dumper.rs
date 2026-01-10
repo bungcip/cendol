@@ -159,10 +159,6 @@ impl AstDumper {
     /// Collect TypeRefs from a NodeKind
     fn collect_type_refs_from_node(kind: &NodeKind, type_refs: &mut HashSet<TypeRef>) {
         match kind {
-            // Direct TypeRef usage
-            NodeKind::VaArg(_, ty_ref) => {
-                type_refs.insert(*ty_ref);
-            }
             NodeKind::Function(data) => {
                 type_refs.insert(data.ty);
             }
@@ -366,7 +362,6 @@ impl AstDumper {
                     ga.result_expr.get()
                 )
             }
-            NodeKind::VaArg(va_list, ty) => println!("VaArg({}, {})", va_list.get(), ty.get()),
             NodeKind::GnuStatementExpression(compound_stmt, result_expr) => {
                 println!("GnuStatementExpression({}, {})", compound_stmt.get(), result_expr.get())
             }

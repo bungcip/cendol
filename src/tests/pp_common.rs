@@ -27,13 +27,28 @@ impl From<&PPToken> for DebugToken {
 }
 
 pub fn setup_pp_snapshot(src: &str) -> Vec<DebugToken> {
-    let (tokens, _) = setup_preprocessor_test_with_diagnostics(src).unwrap();
+    let (tokens, _) = setup_preprocessor_test_with_diagnostics(src, None).unwrap();
     tokens.iter().map(DebugToken::from).collect()
 }
 
 pub fn setup_pp_snapshot_with_diags(src: &str) -> (Vec<DebugToken>, Vec<String>) {
     // Return a Result-like structure for the snapshot
-    match setup_preprocessor_test_with_diagnostics(src) {
+    match setup_preprocessor_test_with_diagnostics(src, None) {
+        Ok((tokens, diags)) => {
+            let debug_tokens = tokens.iter().map(DebugToken::from).collect();
+            let debug_diags = diags.iter().map(|d| format!("{:?}: {}", d.level, d.message)).collect();
+            (debug_tokens, debug_diags)
+        }
+        Err(e) => (vec![], vec![format!("Fatal Error: {:?}", e)]),
+    }
+}
+
+pub fn setup_multi_file_pp_snapshot(
+    files: Vec<(&str, &str)>,
+    main_file: &str,
+    config: Option<PPConfig>,
+) -> (Vec<DebugToken>, Vec<String>) {
+    match setup_multi_file_pp_with_diagnostics(files, main_file, config) {
         Ok((tokens, diags)) => {
             let debug_tokens = tokens.iter().map(DebugToken::from).collect();
             let debug_diags = diags.iter().map(|d| format!("{:?}: {}", d.level, d.message)).collect();
@@ -46,22 +61,39 @@ pub fn setup_pp_snapshot_with_diags(src: &str) -> (Vec<DebugToken>, Vec<String>)
 /// Helper function to set up preprocessor testing and return diagnostics
 pub fn setup_preprocessor_test_with_diagnostics(
     src: &str,
+    config: Option<PPConfig>,
+) -> Result<(Vec<PPToken>, Vec<crate::diagnostic::Diagnostic>), PPError> {
+    setup_multi_file_pp_with_diagnostics(vec![("<test>", src)], "<test>", config)
+}
+
+pub fn setup_multi_file_pp_with_diagnostics(
+    files: Vec<(&str, &str)>,
+    main_file_name: &str,
+    config: Option<PPConfig>,
 ) -> Result<(Vec<PPToken>, Vec<crate::diagnostic::Diagnostic>), PPError> {
     // Initialize logging for tests
     let _ = env_logger::try_init();
 
     let mut source_manager = SourceManager::new();
     let mut diagnostics = DiagnosticEngine::new();
-    let config = PPConfig {
+    let config = config.unwrap_or_else(|| PPConfig {
         max_include_depth: 100,
         ..Default::default()
-    };
+    });
 
-    let source_id = source_manager.add_buffer(src.as_bytes().to_vec(), "<test>", None);
+    let mut main_id = None;
+    for (name, content) in files {
+        let id = source_manager.add_buffer(content.as_bytes().to_vec(), name, None);
+        if name == main_file_name {
+            main_id = Some(id);
+        }
+    }
+
+    let main_id = main_id.expect("Main file not found in provided files");
 
     let mut preprocessor = Preprocessor::new(&mut source_manager, &mut diagnostics, &config);
 
-    let tokens = preprocessor.process(source_id, &config)?;
+    let tokens = preprocessor.process(main_id, &config)?;
 
     let significant_tokens: Vec<_> = tokens
         .into_iter()

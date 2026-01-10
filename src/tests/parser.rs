@@ -1,5 +1,8 @@
 #![cfg(test)]
-use crate::ast::{Ast, BinaryOp, DeclSpecifier, Declarator, NodeKind, NodeRef, TypeSpecifier, UnaryOp};
+use crate::ast::parsed::{
+    ParsedAst, ParsedDeclSpecifier, ParsedDeclarator, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpecifier,
+};
+use crate::ast::{BinaryOp, UnaryOp};
 use crate::diagnostic::{DiagnosticEngine, ParseError};
 use crate::driver::artifact::CompilePhase;
 use crate::parser::statements::parse_compound_statement;
@@ -81,95 +84,89 @@ struct ResolvedInitDeclarator {
     initializer: Option<ResolvedNodeKind>,
 }
 
-/// Resolve a NodeRef to a ResolvedNodeKind by recursively following references
-fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
+/// Resolve a ParsedNodeRef to a ResolvedNodeKind by recursively following references
+fn resolve_node(ast: &ParsedAst, node_ref: ParsedNodeRef) -> ResolvedNodeKind {
     let node = ast.get_node(node_ref);
     match &node.kind {
-        NodeKind::LiteralInt(value) => ResolvedNodeKind::LiteralInt(*value),
-        NodeKind::LiteralFloat(value) => ResolvedNodeKind::LiteralFloat(*value),
-        NodeKind::LiteralString(symbol) => ResolvedNodeKind::LiteralString(symbol.to_string()),
-        NodeKind::LiteralChar(value) => ResolvedNodeKind::LiteralChar(*value),
-        NodeKind::Ident(symbol, _) => ResolvedNodeKind::Ident(symbol.to_string()),
-        NodeKind::UnaryOp(op, operand) => ResolvedNodeKind::UnaryOp(*op, Box::new(resolve_node(ast, *operand))),
-        NodeKind::BinaryOp(op, left, right) => ResolvedNodeKind::BinaryOp(
+        ParsedNodeKind::LiteralInt(value) => ResolvedNodeKind::LiteralInt(*value),
+        ParsedNodeKind::LiteralFloat(value) => ResolvedNodeKind::LiteralFloat(*value),
+        ParsedNodeKind::LiteralString(symbol) => ResolvedNodeKind::LiteralString(symbol.to_string()),
+        ParsedNodeKind::LiteralChar(value) => ResolvedNodeKind::LiteralChar(*value),
+        ParsedNodeKind::Ident(symbol) => ResolvedNodeKind::Ident(symbol.to_string()),
+        ParsedNodeKind::UnaryOp(op, operand) => ResolvedNodeKind::UnaryOp(*op, Box::new(resolve_node(ast, *operand))),
+        ParsedNodeKind::BinaryOp(op, left, right) => ResolvedNodeKind::BinaryOp(
             *op,
             Box::new(resolve_node(ast, *left)),
             Box::new(resolve_node(ast, *right)),
         ),
-        NodeKind::TernaryOp(cond, then_expr, else_expr) => ResolvedNodeKind::TernaryOp(
+        ParsedNodeKind::TernaryOp(cond, then_expr, else_expr) => ResolvedNodeKind::TernaryOp(
             Box::new(resolve_node(ast, *cond)),
             Box::new(resolve_node(ast, *then_expr)),
             Box::new(resolve_node(ast, *else_expr)),
         ),
-        NodeKind::PostIncrement(operand) => ResolvedNodeKind::PostIncrement(Box::new(resolve_node(ast, *operand))),
-        NodeKind::PostDecrement(operand) => ResolvedNodeKind::PostDecrement(Box::new(resolve_node(ast, *operand))),
-        NodeKind::Assignment(op, lhs, rhs) => ResolvedNodeKind::Assignment(
+        ParsedNodeKind::PostIncrement(operand) => {
+            ResolvedNodeKind::PostIncrement(Box::new(resolve_node(ast, *operand)))
+        }
+        ParsedNodeKind::PostDecrement(operand) => {
+            ResolvedNodeKind::PostDecrement(Box::new(resolve_node(ast, *operand)))
+        }
+        ParsedNodeKind::Assignment(op, lhs, rhs) => ResolvedNodeKind::Assignment(
             *op,
             Box::new(resolve_node(ast, *lhs)),
             Box::new(resolve_node(ast, *rhs)),
         ),
-        NodeKind::FunctionCall(func, args) => ResolvedNodeKind::FunctionCall(
+        ParsedNodeKind::FunctionCall(func, args) => ResolvedNodeKind::FunctionCall(
             Box::new(resolve_node(ast, *func)),
             args.iter().map(|&arg| resolve_node(ast, arg)).collect(),
         ),
-        NodeKind::MemberAccess(object, field, is_arrow) => {
+        ParsedNodeKind::MemberAccess(object, field, is_arrow) => {
             ResolvedNodeKind::MemberAccess(Box::new(resolve_node(ast, *object)), field.to_string(), *is_arrow)
         }
-        NodeKind::IndexAccess(array, index) => {
+        ParsedNodeKind::IndexAccess(array, index) => {
             ResolvedNodeKind::IndexAccess(Box::new(resolve_node(ast, *array)), Box::new(resolve_node(ast, *index)))
         }
-        NodeKind::Cast(type_ref, expr) => {
+        ParsedNodeKind::Cast(type_ref, expr) => {
             // For simplicity, just show a placeholder type name
-            // In a full implementation, we'd resolve the actual type
-            ResolvedNodeKind::Cast(format!("type_{}", type_ref), Box::new(resolve_node(ast, *expr)))
-        }
-        NodeKind::ParsedCast(parsed_type, expr) => {
-            // For simplicity, just show a placeholder type name
-            // In a full implementation, we'd resolve the actual parsed type
             ResolvedNodeKind::Cast(
-                format!(
-                    "parsed_type_{}_{}",
-                    parsed_type.base.get(),
-                    parsed_type.declarator.get()
-                ),
+                format!("parsed_type_{}_{}", type_ref.base.get(), type_ref.declarator.get()),
                 Box::new(resolve_node(ast, *expr)),
             )
         }
-        NodeKind::SizeOfExpr(expr) => ResolvedNodeKind::SizeOfExpr(Box::new(resolve_node(ast, *expr))),
-        NodeKind::SizeOfType(type_ref) => ResolvedNodeKind::SizeOfType(format!("type_{}", type_ref)),
-        NodeKind::AlignOf(type_ref) => ResolvedNodeKind::AlignOf(format!("type_{}", type_ref)),
-        NodeKind::Declaration(decl) => {
+        ParsedNodeKind::SizeOfExpr(expr) => ResolvedNodeKind::SizeOfExpr(Box::new(resolve_node(ast, *expr))),
+        ParsedNodeKind::SizeOfType(type_ref) => ResolvedNodeKind::SizeOfType(format!("type_{}", type_ref.base.get())),
+        ParsedNodeKind::AlignOf(type_ref) => ResolvedNodeKind::AlignOf(format!("type_{}", type_ref.base.get())),
+        ParsedNodeKind::Declaration(decl) => {
             let specifiers = decl
                 .specifiers
                 .iter()
                 .map(|s| match s {
-                    DeclSpecifier::TypeSpecifier(ts) => match ts {
-                        TypeSpecifier::Void => "void".to_string(),
-                        TypeSpecifier::Bool => "_Bool".to_string(),
-                        TypeSpecifier::Char => "char".to_string(),
-                        TypeSpecifier::Short => "short".to_string(),
-                        TypeSpecifier::Int => "int".to_string(),
-                        TypeSpecifier::Long => "long".to_string(),
-                        TypeSpecifier::Float => "float".to_string(),
-                        TypeSpecifier::Double => "double".to_string(),
-                        TypeSpecifier::Signed => "signed".to_string(),
-                        TypeSpecifier::Unsigned => "unsigned".to_string(),
-                        TypeSpecifier::Complex => "_Complex".to_string(),
-                        TypeSpecifier::TypedefName(name) => format!("TypedefName({:?})", name.to_string()),
-                        TypeSpecifier::Enum(tag, enumerators) => {
+                    ParsedDeclSpecifier::TypeSpecifier(ts) => match ts {
+                        ParsedTypeSpecifier::Void => "void".to_string(),
+                        ParsedTypeSpecifier::Bool => "_Bool".to_string(),
+                        ParsedTypeSpecifier::Char => "char".to_string(),
+                        ParsedTypeSpecifier::Short => "short".to_string(),
+                        ParsedTypeSpecifier::Int => "int".to_string(),
+                        ParsedTypeSpecifier::Long => "long".to_string(),
+                        ParsedTypeSpecifier::Float => "float".to_string(),
+                        ParsedTypeSpecifier::Double => "double".to_string(),
+                        ParsedTypeSpecifier::Signed => "signed".to_string(),
+                        ParsedTypeSpecifier::Unsigned => "unsigned".to_string(),
+                        ParsedTypeSpecifier::Complex => "_Complex".to_string(),
+                        ParsedTypeSpecifier::TypedefName(name) => format!("TypedefName({:?})", name.to_string()),
+                        ParsedTypeSpecifier::Enum(tag, enumerators) => {
                             let tag_str = tag.as_ref().map(|s| s.as_str()).unwrap_or("");
                             if let Some(enums) = enumerators {
                                 let enum_parts: Vec<String> = enums
                                     .iter()
                                     .map(|&node_ref| match &ast.get_node(node_ref).kind {
-                                        NodeKind::EnumConstant(name, Some(value_expr)) => {
+                                        ParsedNodeKind::EnumConstant(name, Some(value_expr)) => {
                                             let value = resolve_node(ast, *value_expr);
                                             match value {
                                                 ResolvedNodeKind::LiteralInt(val) => format!("{} = {}", name, val),
                                                 _ => format!("{} = <expr>", name),
                                             }
                                         }
-                                        NodeKind::EnumConstant(name, None) => name.to_string(),
+                                        ParsedNodeKind::EnumConstant(name, None) => name.to_string(),
                                         _ => "<invalid>".to_string(),
                                     })
                                     .collect();
@@ -178,7 +175,7 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
                                 format!("enum {}", tag_str)
                             }
                         }
-                        TypeSpecifier::Record(is_union, tag, def) => {
+                        ParsedTypeSpecifier::Record(is_union, tag, def) => {
                             let record_kind = if *is_union { "union" } else { "struct" };
                             let tag_str = tag.as_ref().map(|s| s.as_str()).unwrap_or("");
                             let has_body = def.as_ref().is_some_and(|d| d.members.is_some());
@@ -195,11 +192,11 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
                         }
                         _ => format!("{:?}", ts),
                     },
-                    DeclSpecifier::StorageClass(sc) => format!("{:?}", sc),
-                    DeclSpecifier::TypeQualifier(tq) => format!("TypeQualifier({:?})", tq),
-                    DeclSpecifier::FunctionSpecifiers(fs) => format!("{:?}", fs),
-                    DeclSpecifier::AlignmentSpecifier(aspec) => format!("{:?}", aspec),
-                    DeclSpecifier::Attribute => "__attribute__".to_string(),
+                    ParsedDeclSpecifier::StorageClass(sc) => format!("{:?}", sc),
+                    ParsedDeclSpecifier::TypeQualifier(tq) => format!("TypeQualifier({:?})", tq),
+                    ParsedDeclSpecifier::FunctionSpecifiers(fs) => format!("{:?}", fs),
+                    ParsedDeclSpecifier::AlignmentSpecifier(aspec) => format!("{:?}", aspec),
+                    ParsedDeclSpecifier::Attribute => "__attribute__".to_string(),
                 })
                 .collect();
             let init_declarators = decl
@@ -226,21 +223,21 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
                 init_declarators,
             }
         }
-        NodeKind::EnumConstant(name, value_expr) => ResolvedNodeKind::EnumConstant(
+        ParsedNodeKind::EnumConstant(name, value_expr) => ResolvedNodeKind::EnumConstant(
             name.to_string(),
             value_expr.map(|expr| Box::new(resolve_node(ast, expr))),
         ),
-        NodeKind::ExpressionStatement(expr) => {
+        ParsedNodeKind::ExpressionStatement(expr) => {
             ResolvedNodeKind::ExpressionStatement(expr.map(|e| Box::new(resolve_node(ast, e))))
         }
-        NodeKind::CompoundStatement(statements) => {
+        ParsedNodeKind::CompoundStatement(statements) => {
             ResolvedNodeKind::CompoundStatement(statements.iter().map(|&stmt| resolve_node(ast, stmt)).collect())
         }
-        NodeKind::GnuStatementExpression(compound_stmt, result_expr) => ResolvedNodeKind::GnuStatementExpression(
+        ParsedNodeKind::GnuStatementExpression(compound_stmt, result_expr) => ResolvedNodeKind::GnuStatementExpression(
             Box::new(resolve_node(ast, *compound_stmt)),
             Box::new(resolve_node(ast, *result_expr)),
         ),
-        NodeKind::ParsedGenericSelection(controlling_expr, associations) => {
+        ParsedNodeKind::GenericSelection(controlling_expr, associations) => {
             let resolved_controlling = Box::new(resolve_node(ast, *controlling_expr));
             let resolved_associations = associations
                 .iter()
@@ -256,68 +253,68 @@ fn resolve_node(ast: &Ast, node_ref: NodeRef) -> ResolvedNodeKind {
                 .collect();
             ResolvedNodeKind::GenericSelection(resolved_controlling, resolved_associations)
         }
-        NodeKind::Label(label, statement, _) => {
+        ParsedNodeKind::Label(label, statement) => {
             ResolvedNodeKind::Label(label.to_string(), Box::new(resolve_node(ast, *statement)))
         }
-        NodeKind::Goto(label, _) => ResolvedNodeKind::Goto(label.to_string()),
-        NodeKind::Return(expr) => ResolvedNodeKind::Return(expr.map(|e| Box::new(resolve_node(ast, e)))),
-        NodeKind::Break => ResolvedNodeKind::Break,
-        NodeKind::Continue => ResolvedNodeKind::Continue,
-        NodeKind::Switch(condition, body) => ResolvedNodeKind::Switch(
+        ParsedNodeKind::Goto(label) => ResolvedNodeKind::Goto(label.to_string()),
+        ParsedNodeKind::Return(expr) => ResolvedNodeKind::Return(expr.map(|e| Box::new(resolve_node(ast, e)))),
+        ParsedNodeKind::Break => ResolvedNodeKind::Break,
+        ParsedNodeKind::Continue => ResolvedNodeKind::Continue,
+        ParsedNodeKind::Switch(condition, body) => ResolvedNodeKind::Switch(
             Box::new(resolve_node(ast, *condition)),
             Box::new(resolve_node(ast, *body)),
         ),
-        NodeKind::Case(expr, statement) => ResolvedNodeKind::Case(
+        ParsedNodeKind::Case(expr, statement) => ResolvedNodeKind::Case(
             Box::new(resolve_node(ast, *expr)),
             Box::new(resolve_node(ast, *statement)),
         ),
-        NodeKind::CaseRange(start, end, statement) => ResolvedNodeKind::CaseRange(
+        ParsedNodeKind::CaseRange(start, end, statement) => ResolvedNodeKind::CaseRange(
             Box::new(resolve_node(ast, *start)),
             Box::new(resolve_node(ast, *end)),
             Box::new(resolve_node(ast, *statement)),
         ),
-        NodeKind::Default(statement) => ResolvedNodeKind::Default(Box::new(resolve_node(ast, *statement))),
-        NodeKind::If(if_stmt) => ResolvedNodeKind::If(
+        ParsedNodeKind::Default(statement) => ResolvedNodeKind::Default(Box::new(resolve_node(ast, *statement))),
+        ParsedNodeKind::If(if_stmt) => ResolvedNodeKind::If(
             Box::new(resolve_node(ast, if_stmt.condition)),
             Box::new(resolve_node(ast, if_stmt.then_branch)),
             if_stmt.else_branch.map(|br| Box::new(resolve_node(ast, br))),
         ),
-        NodeKind::While(while_stmt) => ResolvedNodeKind::While(
+        ParsedNodeKind::While(while_stmt) => ResolvedNodeKind::While(
             Box::new(resolve_node(ast, while_stmt.condition)),
             Box::new(resolve_node(ast, while_stmt.body)),
         ),
-        NodeKind::DoWhile(body, condition) => ResolvedNodeKind::DoWhile(
+        ParsedNodeKind::DoWhile(body, condition) => ResolvedNodeKind::DoWhile(
             Box::new(resolve_node(ast, *body)),
             Box::new(resolve_node(ast, *condition)),
         ),
-        NodeKind::For(for_stmt) => ResolvedNodeKind::For(
+        ParsedNodeKind::For(for_stmt) => ResolvedNodeKind::For(
             for_stmt.init.map(|i| Box::new(resolve_node(ast, i))),
             for_stmt.condition.map(|c| Box::new(resolve_node(ast, c))),
             for_stmt.increment.map(|inc| Box::new(resolve_node(ast, inc))),
             Box::new(resolve_node(ast, for_stmt.body)),
         ),
-        NodeKind::EmptyStatement => ResolvedNodeKind::Empty,
-        // Add more cases as needed for other NodeKind variants used in tests
-        _ => panic!("Unsupported NodeKind for resolution: {:?}", node.kind),
+        ParsedNodeKind::EmptyStatement => ResolvedNodeKind::Empty,
+        // Add more cases as needed for other ParsedNodeKind variants used in tests
+        _ => panic!("Unsupported ParsedNodeKind for resolution: {:?}", node.kind),
     }
 }
 
-fn extract_declarator_name(declarator: &Declarator) -> Option<String> {
+fn extract_declarator_name(declarator: &ParsedDeclarator) -> Option<String> {
     match declarator {
-        Declarator::Identifier(name, _) => Some(name.to_string()),
-        Declarator::Pointer(_, next) => next.as_ref().and_then(|d| extract_declarator_name(d)),
-        Declarator::Array(next, _) => extract_declarator_name(next),
-        Declarator::Function { inner, .. } => extract_declarator_name(inner),
-        Declarator::BitField(next, _) => extract_declarator_name(next),
-        Declarator::Abstract => None,
+        ParsedDeclarator::Identifier(name, _) => Some(name.to_string()),
+        ParsedDeclarator::Pointer(_, next) => next.as_ref().and_then(|d| extract_declarator_name(d)),
+        ParsedDeclarator::Array(next, _) => extract_declarator_name(next),
+        ParsedDeclarator::Function { inner, .. } => extract_declarator_name(inner),
+        ParsedDeclarator::BitField(next, _) => extract_declarator_name(next),
+        ParsedDeclarator::Abstract => None,
         _ => None,
     }
 }
 
-fn extract_declarator_kind(declarator: &Declarator) -> String {
+fn extract_declarator_kind(declarator: &ParsedDeclarator) -> String {
     match declarator {
-        Declarator::Identifier(_, _) => "identifier".to_string(),
-        Declarator::Pointer(_, Some(inner)) => {
+        ParsedDeclarator::Identifier(_, _) => "identifier".to_string(),
+        ParsedDeclarator::Pointer(_, Some(inner)) => {
             let inner_kind = extract_declarator_kind(inner);
             if inner_kind == "identifier" || inner_kind == "abstract" {
                 "pointer".to_string()
@@ -325,8 +322,9 @@ fn extract_declarator_kind(declarator: &Declarator) -> String {
                 format!("pointer to {}", inner_kind)
             }
         }
-        Declarator::Pointer(_, None) => "pointer".to_string(),
-        Declarator::Array(inner, _) => {
+
+        ParsedDeclarator::Pointer(_, None) => "pointer".to_string(),
+        ParsedDeclarator::Array(inner, _) => {
             let inner_kind = extract_declarator_kind(inner);
             if inner_kind == "identifier" || inner_kind == "abstract" {
                 "array".to_string()
@@ -334,7 +332,7 @@ fn extract_declarator_kind(declarator: &Declarator) -> String {
                 format!("array of {}", inner_kind)
             }
         }
-        Declarator::Function {
+        ParsedDeclarator::Function {
             inner,
             params,
             is_variadic,
@@ -349,17 +347,17 @@ fn extract_declarator_kind(declarator: &Declarator) -> String {
                         // Extract parameter type from specifiers
                         let mut type_parts = Vec::new();
                         for spec in &param.specifiers {
-                            if let DeclSpecifier::TypeSpecifier(ts) = spec {
+                            if let ParsedDeclSpecifier::TypeSpecifier(ts) = spec {
                                 match ts {
-                                    TypeSpecifier::Void => type_parts.push("void"),
-                                    TypeSpecifier::Char => type_parts.push("char"),
-                                    TypeSpecifier::Short => type_parts.push("short"),
-                                    TypeSpecifier::Int => type_parts.push("int"),
-                                    TypeSpecifier::Long => type_parts.push("long"),
-                                    TypeSpecifier::Float => type_parts.push("float"),
-                                    TypeSpecifier::Double => type_parts.push("double"),
-                                    TypeSpecifier::Signed => type_parts.push("signed"),
-                                    TypeSpecifier::Unsigned => type_parts.push("unsigned"),
+                                    ParsedTypeSpecifier::Void => type_parts.push("void"),
+                                    ParsedTypeSpecifier::Char => type_parts.push("char"),
+                                    ParsedTypeSpecifier::Short => type_parts.push("short"),
+                                    ParsedTypeSpecifier::Int => type_parts.push("int"),
+                                    ParsedTypeSpecifier::Long => type_parts.push("long"),
+                                    ParsedTypeSpecifier::Float => type_parts.push("float"),
+                                    ParsedTypeSpecifier::Double => type_parts.push("double"),
+                                    ParsedTypeSpecifier::Signed => type_parts.push("signed"),
+                                    ParsedTypeSpecifier::Unsigned => type_parts.push("unsigned"),
                                     _ => type_parts.push("..."),
                                 }
                             }
@@ -402,12 +400,12 @@ fn extract_declarator_kind(declarator: &Declarator) -> String {
             };
             format!("function({}) -> {}", param_str, return_type_str)
         }
-        Declarator::BitField(inner, _) => {
+        ParsedDeclarator::BitField(inner, _) => {
             let inner_kind = extract_declarator_kind(inner);
             format!("bitfield {}", inner_kind)
         }
-        Declarator::Abstract => "abstract".to_string(),
-        Declarator::AnonymousRecord(is_union, _) => {
+        ParsedDeclarator::Abstract => "abstract".to_string(),
+        ParsedDeclarator::AnonymousRecord(is_union, _) => {
             if *is_union {
                 "union".to_string()
             } else {
@@ -417,10 +415,10 @@ fn extract_declarator_kind(declarator: &Declarator) -> String {
     }
 }
 
-fn resolve_initializer(ast: &Ast, initializer: NodeRef) -> ResolvedNodeKind {
+fn resolve_initializer(ast: &ParsedAst, initializer: ParsedNodeRef) -> ResolvedNodeKind {
     let node = ast.get_node(initializer);
     match &node.kind {
-        NodeKind::InitializerList(designated_inits) => {
+        ParsedNodeKind::InitializerList(designated_inits) => {
             let mut elements = Vec::new();
             for designated in designated_inits {
                 // For now, ignore designations and just collect the initializer values
@@ -429,12 +427,12 @@ fn resolve_initializer(ast: &Ast, initializer: NodeRef) -> ResolvedNodeKind {
             }
             ResolvedNodeKind::InitializerList(elements)
         }
-        _ => resolve_node(ast, *&initializer),
+        _ => resolve_node(ast, initializer),
     }
 }
 
 /// Generic helper function for parsing source code with common setup
-fn setup_source<F, T>(source: &str, parse_fn: F) -> (Ast, T)
+fn setup_source<F, T>(source: &str, parse_fn: F) -> (ParsedAst, T)
 where
     F: FnOnce(&mut Parser<'_, '_>) -> T,
 {
@@ -446,7 +444,7 @@ where
     let tokens = artifact.lexed.clone().unwrap();
 
     let mut diag = DiagnosticEngine::new();
-    let mut ast = Ast::new();
+    let mut ast = ParsedAst::new();
     let mut parser = Parser::new(&tokens, &mut ast, &mut diag);
     let result = parse_fn(&mut parser);
 
@@ -1548,13 +1546,13 @@ fn test_label_with_numeric_suffix() {
     ");
 }
 
-fn parse_test(source: &str) -> Ast {
+fn parse_test(source: &str) -> ParsedAst {
     let phase = CompilePhase::Parse;
     let (_, out) = test_utils::run_pipeline(source, phase);
     let mut out = out.unwrap();
     let first = out.units.first_mut().unwrap();
     let artifact = first.1;
-    let ast = artifact.ast.clone().unwrap();
+    let ast = artifact.parsed_ast.clone().unwrap();
     ast
 }
 
@@ -1565,17 +1563,19 @@ fn test_parse_bitfield() {
     let root = &ast.nodes[0];
 
     let decl = match &root.kind {
-        NodeKind::TranslationUnit(decls) => ast.get_node(decls[0]),
+        ParsedNodeKind::TranslationUnit(decls) => ast.get_node(decls[0]),
         _ => panic!("Expected TranslationUnit"),
     };
 
     let type_spec = match &decl.kind {
-        NodeKind::Declaration(d) => &d.specifiers[0],
+        ParsedNodeKind::Declaration(d) => &d.specifiers[0],
         _ => panic!("Expected Declaration"),
     };
 
     let members = match type_spec {
-        DeclSpecifier::TypeSpecifier(TypeSpecifier::Record(_, _, Some(def))) => def.members.as_ref().unwrap(),
+        ParsedDeclSpecifier::TypeSpecifier(ParsedTypeSpecifier::Record(_, _, Some(def))) => {
+            def.members.as_ref().unwrap()
+        }
         _ => panic!("Expected Record"),
     };
 
@@ -1583,10 +1583,10 @@ fn test_parse_bitfield() {
     let member1_decl = &members[0];
     let init_declarator1 = &member1_decl.init_declarators[0];
     match &init_declarator1.declarator {
-        Declarator::BitField(base, width_expr_ref) => {
-            assert!(matches!(**base, Declarator::Identifier(name, _) if name.to_string() == "a"));
+        ParsedDeclarator::BitField(base, width_expr_ref) => {
+            assert!(matches!(**base, ParsedDeclarator::Identifier(name, _) if name.to_string() == "a"));
             let width_expr = ast.get_node(*width_expr_ref);
-            assert!(matches!(width_expr.kind, NodeKind::LiteralInt(4)));
+            assert!(matches!(width_expr.kind, ParsedNodeKind::LiteralInt(4)));
         }
         _ => panic!("Expected BitField declarator for 'a'"),
     }
@@ -1595,10 +1595,10 @@ fn test_parse_bitfield() {
     let member2_decl = &members[1];
     let init_declarator2 = &member2_decl.init_declarators[0];
     match &init_declarator2.declarator {
-        Declarator::BitField(base, width_expr_ref) => {
-            assert!(matches!(**base, Declarator::Identifier(name, _) if name.to_string() == "b"));
+        ParsedDeclarator::BitField(base, width_expr_ref) => {
+            assert!(matches!(**base, ParsedDeclarator::Identifier(name, _) if name.to_string() == "b"));
             let width_expr = ast.get_node(*width_expr_ref);
-            assert!(matches!(width_expr.kind, NodeKind::LiteralInt(2)));
+            assert!(matches!(width_expr.kind, ParsedNodeKind::LiteralInt(2)));
         }
         _ => panic!("Expected BitField declarator for 'b'"),
     }

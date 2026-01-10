@@ -16,7 +16,7 @@ pub(crate) mod expr_patterns {
     use super::*;
 
     /// Parse a parenthesized expression: (expression)
-    pub(crate) fn parse_parenthesized_expr(parser: &mut Parser) -> Result<NodeRef, ParseError> {
+    pub(crate) fn parse_parenthesized_expr(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         debug!("parse_parenthesized_expr: parsing parenthesized expression");
         parser.expect(crate::lexer::TokenKind::LeftParen)?;
         let expr = parser.parse_expr_min()?;
@@ -28,7 +28,7 @@ pub(crate) mod expr_patterns {
     pub(crate) fn parse_expr_list(
         parser: &mut Parser,
         binding_power: BindingPower,
-    ) -> Result<Vec<NodeRef>, ParseError> {
+    ) -> Result<Vec<ParsedNodeRef>, ParseError> {
         debug!("parse_expr_list: parsing expression list");
         let mut args = Vec::new();
 

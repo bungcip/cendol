@@ -9,7 +9,7 @@ use std::num::{NonZeroU16, NonZeroU32};
 
 use serde::Serialize;
 
-use crate::ast::nodes::TypeSpecifier;
+use crate::ast::parsed::{ParsedArraySize, ParsedTypeSpecifier};
 use crate::ast::{NameId, SourceSpan};
 use crate::semantic::TypeQualifiers;
 
@@ -79,23 +79,10 @@ pub struct FunctionFlags {
     pub is_variadic: bool,
 }
 
-/// Parsed array size information
-#[derive(Debug, Clone)]
-pub enum ParsedArraySize {
-    Expression {
-        expr_ref: u32, // Reference to expression node
-        qualifiers: TypeQualifiers,
-    },
-    Star {
-        qualifiers: TypeQualifiers,
-    }, // [*] VLA
-    Incomplete, // []
-}
-
 /// Parsed base type node (the fundamental type specifier)
 #[derive(Clone, Debug)]
 pub enum ParsedBaseTypeNode {
-    Builtin(TypeSpecifier),
+    Builtin(ParsedTypeSpecifier),
 
     Struct {
         tag: Option<NameId>,

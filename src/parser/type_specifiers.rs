@@ -10,15 +10,15 @@ use crate::lexer::TokenKind;
 use super::Parser;
 
 /// Parse type specifier
-pub(crate) fn parse_type_specifier(parser: &mut Parser) -> Result<TypeSpecifier, ParseError> {
+pub(crate) fn parse_type_specifier(parser: &mut Parser) -> Result<ParsedTypeSpecifier, ParseError> {
     parse_type_specifier_with_context(parser, false)
 }
 
 /// Parse type specifier with context
-pub(crate) fn parse_type_specifier_with_context(
+fn parse_type_specifier_with_context(
     parser: &mut Parser,
     in_struct_member: bool,
-) -> Result<TypeSpecifier, ParseError> {
+) -> Result<ParsedTypeSpecifier, ParseError> {
     let token = parser.try_current_token().ok_or_else(|| ParseError::UnexpectedEof {
         span: parser.previous_token_span(),
     })?;
@@ -26,19 +26,19 @@ pub(crate) fn parse_type_specifier_with_context(
     match token.kind {
         TokenKind::Void => {
             parser.advance();
-            Ok(TypeSpecifier::Void)
+            Ok(ParsedTypeSpecifier::Void)
         }
         TokenKind::Char => {
             parser.advance();
-            Ok(TypeSpecifier::Char)
+            Ok(ParsedTypeSpecifier::Char)
         }
         TokenKind::Short => {
             parser.advance();
-            Ok(TypeSpecifier::Short)
+            Ok(ParsedTypeSpecifier::Short)
         }
         TokenKind::Int => {
             parser.advance();
-            Ok(TypeSpecifier::Int)
+            Ok(ParsedTypeSpecifier::Int)
         }
         TokenKind::Long => {
             parser.advance();
@@ -47,37 +47,37 @@ pub(crate) fn parse_type_specifier_with_context(
                 match next_token.kind {
                     TokenKind::Long => {
                         parser.advance();
-                        Ok(TypeSpecifier::LongLong)
+                        Ok(ParsedTypeSpecifier::LongLong)
                     }
                     TokenKind::Double => {
                         parser.advance();
-                        Ok(TypeSpecifier::LongDouble)
+                        Ok(ParsedTypeSpecifier::LongDouble)
                     }
-                    _ => Ok(TypeSpecifier::Long),
+                    _ => Ok(ParsedTypeSpecifier::Long),
                 }
             } else {
-                Ok(TypeSpecifier::Long)
+                Ok(ParsedTypeSpecifier::Long)
             }
         }
         TokenKind::Float => {
             parser.advance();
-            Ok(TypeSpecifier::Float)
+            Ok(ParsedTypeSpecifier::Float)
         }
         TokenKind::Double => {
             parser.advance();
-            Ok(TypeSpecifier::Double)
+            Ok(ParsedTypeSpecifier::Double)
         }
         TokenKind::Signed => {
             parser.advance();
-            Ok(TypeSpecifier::Signed)
+            Ok(ParsedTypeSpecifier::Signed)
         }
         TokenKind::Unsigned => {
             parser.advance();
-            Ok(TypeSpecifier::Unsigned)
+            Ok(ParsedTypeSpecifier::Unsigned)
         }
         TokenKind::Bool => {
             parser.advance();
-            Ok(TypeSpecifier::Bool)
+            Ok(ParsedTypeSpecifier::Bool)
         }
         TokenKind::Complex => {
             parser.advance();
@@ -92,7 +92,7 @@ pub(crate) fn parse_type_specifier_with_context(
                     // consume double for long double
                 }
             }
-            Ok(TypeSpecifier::Complex)
+            Ok(ParsedTypeSpecifier::Complex)
         }
         TokenKind::Struct => {
             parser.advance();
@@ -108,7 +108,7 @@ pub(crate) fn parse_type_specifier_with_context(
         }
         TokenKind::Identifier(symbol) => {
             parser.advance();
-            Ok(TypeSpecifier::TypedefName(symbol))
+            Ok(ParsedTypeSpecifier::TypedefName(symbol))
         }
         _ => {
             let expected = "void, char, short, int, long, float, double, signed, unsigned, bool, complex, atomic, struct, union, enum, or identifier";

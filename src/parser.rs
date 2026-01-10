@@ -85,7 +85,7 @@ pub(crate) struct ParserState {
 pub struct Parser<'arena, 'src> {
     tokens: &'src [Token],
     current_idx: usize,
-    ast: &'arena mut Ast,
+    ast: &'arena mut ParsedAst,
     diag: &'src mut DiagnosticEngine,
 
     // Type context for typedef tracking
@@ -94,7 +94,7 @@ pub struct Parser<'arena, 'src> {
 
 impl<'arena, 'src> Parser<'arena, 'src> {
     /// Create a new parser
-    pub fn new(tokens: &'src [Token], ast: &'arena mut Ast, diag: &'src mut DiagnosticEngine) -> Self {
+    pub fn new(tokens: &'src [Token], ast: &'arena mut ParsedAst, diag: &'src mut DiagnosticEngine) -> Self {
         Parser {
             tokens,
             current_idx: 0,
@@ -274,27 +274,27 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     pub(crate) fn parse_expression(
         &mut self,
         min_binding_power: expressions::BindingPower,
-    ) -> Result<NodeRef, ParseError> {
+    ) -> Result<ParsedNodeRef, ParseError> {
         parse_expression(self, min_binding_power)
     }
 
     /// Private helper to parse an expression with a given binding power, ensuring it's not a declaration.
-    fn parse_expr_bp(&mut self, min_binding_power: BindingPower) -> Result<NodeRef, ParseError> {
+    fn parse_expr_bp(&mut self, min_binding_power: BindingPower) -> Result<ParsedNodeRef, ParseError> {
         self.parse_expression(min_binding_power)
     }
 
     /// Parse expression with minimum binding power
-    pub(crate) fn parse_expr_min(&mut self) -> Result<NodeRef, ParseError> {
+    pub(crate) fn parse_expr_min(&mut self) -> Result<ParsedNodeRef, ParseError> {
         self.parse_expr_bp(BindingPower::MIN)
     }
 
     /// Parse expression up to assignment
-    pub(crate) fn parse_expr_assignment(&mut self) -> Result<NodeRef, ParseError> {
+    pub(crate) fn parse_expr_assignment(&mut self) -> Result<ParsedNodeRef, ParseError> {
         self.parse_expr_bp(BindingPower::ASSIGNMENT)
     }
 
     /// Parse translation unit (top level)
-    pub fn parse_translation_unit(&mut self) -> Result<NodeRef, ParseError> {
+    pub fn parse_translation_unit(&mut self) -> Result<ParsedNodeRef, ParseError> {
         declarations::parse_translation_unit(self)
     }
 
@@ -304,7 +304,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Extract the declared name from a declarator, if any
-    fn get_declarator_name(&self, declarator: &crate::ast::Declarator) -> Option<NameId> {
+    fn get_declarator_name(&self, declarator: &crate::ast::parsed::ParsedDeclarator) -> Option<NameId> {
         declarator::get_declarator_name(declarator)
     }
 
@@ -362,7 +362,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         &mut self,
         parsed_type: ParsedType,
         right_paren_token: Token,
-    ) -> Result<NodeRef, ParseError> {
+    ) -> Result<ParsedNodeRef, ParseError> {
         expressions::parse_cast_expression_from_type_and_paren(self, parsed_type, right_paren_token)
     }
 
@@ -371,7 +371,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         &mut self,
         parsed_type: ParsedType,
         start_loc: SourceLoc,
-    ) -> Result<NodeRef, ParseError> {
+    ) -> Result<ParsedNodeRef, ParseError> {
         expressions::parse_compound_literal_from_type_and_start(self, parsed_type, start_loc)
     }
 
@@ -441,16 +441,21 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 /// contain functions related to AST nodes
 impl<'arena, 'src> Parser<'arena, 'src> {
     /// Push a node to the AST and return its reference
-    pub(crate) fn push_node(&mut self, kind: NodeKind, span: SourceSpan) -> NodeRef {
-        self.ast.push_node(Node::new(kind, span))
+    pub(crate) fn push_node(&mut self, kind: ParsedNodeKind, span: SourceSpan) -> ParsedNodeRef {
+        self.ast.push_node(ParsedNode::new(kind, span))
     }
 
-    pub(crate) fn push_dummy(&mut self) -> NodeRef {
-        self.push_node(NodeKind::Dummy, SourceSpan::empty())
+    pub(crate) fn push_dummy(&mut self) -> ParsedNodeRef {
+        self.push_node(ParsedNodeKind::Dummy, SourceSpan::empty())
     }
 
     /// Push a node to the AST and return its reference
-    pub(crate) fn replace_node(&mut self, old_ref: NodeRef, kind: NodeKind, span: SourceSpan) -> NodeRef {
-        self.ast.replace_node(old_ref, Node::new(kind, span))
+    pub(crate) fn replace_node(
+        &mut self,
+        old_ref: ParsedNodeRef,
+        kind: ParsedNodeKind,
+        span: SourceSpan,
+    ) -> ParsedNodeRef {
+        self.ast.replace_node(old_ref, ParsedNode::new(kind, span))
     }
 }

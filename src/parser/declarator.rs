@@ -20,9 +20,13 @@ enum DeclaratorComponent {
 }
 
 /// Validate declarator combinations
-fn validate_declarator_combination(base: &Declarator, new_kind: &str, span: SourceSpan) -> Result<(), ParseError> {
+fn validate_declarator_combination(
+    base: &ParsedDeclarator,
+    new_kind: &str,
+    span: SourceSpan,
+) -> Result<(), ParseError> {
     match base {
-        Declarator::Function { .. } => {
+        ParsedDeclarator::Function { .. } => {
             if new_kind == "array" {
                 return Err(ParseError::DeclarationNotAllowed { span });
             }
@@ -30,7 +34,7 @@ fn validate_declarator_combination(base: &Declarator, new_kind: &str, span: Sour
                 return Err(ParseError::DeclarationNotAllowed { span });
             }
         }
-        Declarator::Array(..) => {
+        ParsedDeclarator::Array(..) => {
             if new_kind == "function" {
                 return Err(ParseError::DeclarationNotAllowed { span });
             }
@@ -44,7 +48,7 @@ fn validate_declarator_combination(base: &Declarator, new_kind: &str, span: Sour
 pub(crate) fn parse_declarator(
     parser: &mut Parser,
     initial_declarator: Option<NameId>,
-) -> Result<Declarator, ParseError> {
+) -> Result<ParsedDeclarator, ParseError> {
     debug!(
         "parse_declarator: starting at position {}, token: {:?}, initial_declarator: {:?}",
         parser.current_idx,
@@ -73,16 +77,16 @@ pub(crate) fn parse_declarator(
         parser.expect(TokenKind::RightParen)?; // Consume ')'
         inner_declarator
     } else if let Some(ident_symbol) = initial_declarator {
-        Declarator::Identifier(ident_symbol, TypeQualifiers::empty())
+        ParsedDeclarator::Identifier(ident_symbol, TypeQualifiers::empty())
     } else if let Some(token) = parser.try_current_token() {
         if let TokenKind::Identifier(symbol) = token.kind {
             parser.advance(); // Consume identifier
-            Declarator::Identifier(symbol, TypeQualifiers::empty())
+            ParsedDeclarator::Identifier(symbol, TypeQualifiers::empty())
         } else if parser.is_abstract_declarator_start() {
             parse_abstract_declarator(parser)?
         } else {
             // For abstract declarator, if nothing matches, it's just abstract
-            Declarator::Abstract
+            ParsedDeclarator::Abstract
         }
     } else {
         // Consume invalid tokens until ) or end
@@ -94,7 +98,7 @@ pub(crate) fn parse_declarator(
             parser.advance();
         }
         // For abstract declarator, if no token, it's abstract
-        Declarator::Abstract
+        ParsedDeclarator::Abstract
     };
 
     // Parse trailing array and function declarators
@@ -134,26 +138,26 @@ fn parse_type_qualifiers(parser: &mut Parser) -> Result<TypeQualifiers, ParseErr
 }
 
 /// Helper to parse array size
-fn parse_array_size(parser: &mut Parser) -> Result<ArraySize, ParseError> {
+fn parse_array_size(parser: &mut Parser) -> Result<ParsedArraySize, ParseError> {
     let is_static = parser.accept(TokenKind::Static).is_some();
     let qualifiers = parse_type_qualifiers(parser)?;
 
     if parser.accept(TokenKind::Star).is_some() {
-        Ok(ArraySize::Star { qualifiers })
+        Ok(ParsedArraySize::Star { qualifiers })
     } else if parser.is_token(TokenKind::RightBracket) {
         // Empty []
-        Ok(ArraySize::Incomplete)
+        Ok(ParsedArraySize::Incomplete)
     } else {
         // Assume it's an expression for the size
         let expr_node = parser.parse_expr_min()?;
         if is_static || !qualifiers.is_empty() {
-            Ok(ArraySize::VlaSpecifier {
+            Ok(ParsedArraySize::VlaSpecifier {
                 is_static,
                 qualifiers,
                 size: Some(expr_node),
             })
         } else {
-            Ok(ArraySize::Expression {
+            Ok(ParsedArraySize::Expression {
                 expr: expr_node,
                 qualifiers,
             })
@@ -177,8 +181,8 @@ fn parse_leading_pointers(parser: &mut Parser) -> Result<Vec<DeclaratorComponent
 /// This is used for abstract declarators in type names where bit-fields are not allowed
 fn parse_trailing_declarators_for_type_names(
     parser: &mut Parser,
-    mut current_base: Declarator,
-) -> Result<Declarator, ParseError> {
+    mut current_base: ParsedDeclarator,
+) -> Result<ParsedDeclarator, ParseError> {
     loop {
         let current_token_span = parser.try_current_token().map_or(SourceSpan::empty(), |t| t.span);
         if parser.accept(TokenKind::LeftBracket).is_some() {
@@ -186,13 +190,13 @@ fn parse_trailing_declarators_for_type_names(
             validate_declarator_combination(&current_base, "array", current_token_span)?;
             let array_size = parse_array_size(parser)?;
             parser.expect(TokenKind::RightBracket)?; // Consume ']'
-            current_base = Declarator::Array(Box::new(current_base), array_size);
+            current_base = ParsedDeclarator::Array(Box::new(current_base), array_size);
         } else if parser.accept(TokenKind::LeftParen).is_some() {
             // Function declarator
             validate_declarator_combination(&current_base, "function", current_token_span)?;
             let (parameters, is_variadic) = parse_function_parameters(parser)?;
             parser.expect(TokenKind::RightParen)?; // Consume ')'
-            current_base = Declarator::Function {
+            current_base = ParsedDeclarator::Function {
                 inner: Box::new(current_base),
                 params: parameters,
                 is_variadic,
@@ -206,7 +210,10 @@ fn parse_trailing_declarators_for_type_names(
 }
 
 /// Parse trailing declarators (arrays, functions, bit-fields) that follow the base declarator
-fn parse_trailing_declarators(parser: &mut Parser, mut current_base: Declarator) -> Result<Declarator, ParseError> {
+fn parse_trailing_declarators(
+    parser: &mut Parser,
+    mut current_base: ParsedDeclarator,
+) -> Result<ParsedDeclarator, ParseError> {
     loop {
         let current_token_span = parser.try_current_token().map_or(SourceSpan::empty(), |t| t.span);
         if parser.accept(TokenKind::LeftBracket).is_some() {
@@ -214,13 +221,13 @@ fn parse_trailing_declarators(parser: &mut Parser, mut current_base: Declarator)
             validate_declarator_combination(&current_base, "array", current_token_span)?;
             let array_size = parse_array_size(parser)?;
             parser.expect(TokenKind::RightBracket)?; // Consume ']'
-            current_base = Declarator::Array(Box::new(current_base), array_size);
+            current_base = ParsedDeclarator::Array(Box::new(current_base), array_size);
         } else if parser.accept(TokenKind::LeftParen).is_some() {
             // Function declarator
             validate_declarator_combination(&current_base, "function", current_token_span)?;
             let (parameters, is_variadic) = parse_function_parameters(parser)?;
             parser.expect(TokenKind::RightParen)?; // Consume ')'
-            current_base = Declarator::Function {
+            current_base = ParsedDeclarator::Function {
                 inner: Box::new(current_base),
                 params: parameters,
                 is_variadic,
@@ -228,7 +235,7 @@ fn parse_trailing_declarators(parser: &mut Parser, mut current_base: Declarator)
         } else if parser.accept(TokenKind::Colon).is_some() {
             // Bit-field declarator: name : width
             let bit_width_expr = parser.parse_expr_min()?;
-            current_base = Declarator::BitField(Box::new(current_base), bit_width_expr);
+            current_base = ParsedDeclarator::BitField(Box::new(current_base), bit_width_expr);
         } else {
             break;
         }
@@ -238,12 +245,15 @@ fn parse_trailing_declarators(parser: &mut Parser, mut current_base: Declarator)
 }
 
 /// Reconstruct the declarator chain by applying pointer qualifiers in reverse order
-fn reconstruct_declarator_chain(declarator_chain: Vec<DeclaratorComponent>, base_declarator: Declarator) -> Declarator {
+fn reconstruct_declarator_chain(
+    declarator_chain: Vec<DeclaratorComponent>,
+    base_declarator: ParsedDeclarator,
+) -> ParsedDeclarator {
     let mut final_declarator = base_declarator;
     for component in declarator_chain.into_iter().rev() {
         final_declarator = match component {
             DeclaratorComponent::Pointer(qualifiers) => {
-                Declarator::Pointer(qualifiers, Some(Box::new(final_declarator)))
+                ParsedDeclarator::Pointer(qualifiers, Some(Box::new(final_declarator)))
             }
         };
     }
@@ -251,7 +261,7 @@ fn reconstruct_declarator_chain(declarator_chain: Vec<DeclaratorComponent>, base
 }
 
 /// Helper to parse function parameters
-fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParamData>, bool), ParseError> {
+fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParsedParamData>, bool), ParseError> {
     let mut params = ThinVec::new();
     let mut is_variadic = false;
 
@@ -308,7 +318,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParamData>,
                         parser.diag.diagnostics.truncate(saved_diagnostic_count);
 
                         // Create a simple default specifier
-                        thin_vec![DeclSpecifier::TypeSpecifier(TypeSpecifier::Int)]
+                        thin_vec![ParsedDeclSpecifier::TypeSpecifier(ParsedTypeSpecifier::Int)]
                     }
                 };
 
@@ -383,7 +393,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParamData>,
                 let start_token_span = parser.get_token_span(start_idx).unwrap_or_default();
                 let span = start_token_span.merge(end_span);
 
-                params.push(ParamData {
+                params.push(ParsedParamData {
                     specifiers,
                     declarator,
                     span,
@@ -432,21 +442,21 @@ pub(crate) fn is_abstract_declarator_start(parser: &Parser) -> bool {
 }
 
 /// Extract the declared name from a declarator, if any
-pub(crate) fn get_declarator_name(declarator: &Declarator) -> Option<NameId> {
+pub(crate) fn get_declarator_name(declarator: &ParsedDeclarator) -> Option<NameId> {
     match declarator {
-        Declarator::Identifier(name, _) => Some(*name),
-        Declarator::Pointer(_, Some(inner)) => get_declarator_name(inner),
-        Declarator::Array(inner, _) => get_declarator_name(inner),
-        Declarator::Function { inner, .. } => get_declarator_name(inner),
-        Declarator::BitField(inner, _) => get_declarator_name(inner),
-        Declarator::AnonymousRecord(_, _) => None,
-        Declarator::Abstract => None,
-        Declarator::Pointer(_, None) => None,
+        ParsedDeclarator::Identifier(name, _) => Some(*name),
+        ParsedDeclarator::Pointer(_, Some(inner)) => get_declarator_name(inner),
+        ParsedDeclarator::Array(inner, _) => get_declarator_name(inner),
+        ParsedDeclarator::Function { inner, .. } => get_declarator_name(inner),
+        ParsedDeclarator::BitField(inner, _) => get_declarator_name(inner),
+        ParsedDeclarator::AnonymousRecord(_, _) => None,
+        ParsedDeclarator::Abstract => None,
+        ParsedDeclarator::Pointer(_, None) => None,
     }
 }
 
 /// Parse abstract declarator (for type names without identifiers)
-pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarator, ParseError> {
+pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<ParsedDeclarator, ParseError> {
     debug!(
         "parse_abstract_declarator: starting at position {}, token {:?}",
         parser.current_idx,
@@ -473,16 +483,16 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarato
                     if let Some(next_token) = parser.try_current_token() {
                         if let TokenKind::Identifier(name) = next_token.kind {
                             parser.advance(); // consume identifier
-                            Declarator::Identifier(name, TypeQualifiers::empty())
+                            ParsedDeclarator::Identifier(name, TypeQualifiers::empty())
                         } else {
-                            Declarator::Abstract
+                            ParsedDeclarator::Abstract
                         }
                     } else {
-                        Declarator::Abstract
+                        ParsedDeclarator::Abstract
                     }
                 } else {
                     parser.advance(); // consume invalid identifier
-                    Declarator::Abstract
+                    ParsedDeclarator::Abstract
                 }
             }
             TokenKind::Int => {
@@ -491,12 +501,12 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarato
                 if let Some(next_token) = parser.try_current_token() {
                     if let TokenKind::Identifier(name) = next_token.kind {
                         parser.advance(); // consume identifier
-                        Declarator::Identifier(name, TypeQualifiers::empty())
+                        ParsedDeclarator::Identifier(name, TypeQualifiers::empty())
                     } else {
-                        Declarator::Abstract
+                        ParsedDeclarator::Abstract
                     }
                 } else {
-                    Declarator::Abstract
+                    ParsedDeclarator::Abstract
                 }
             }
             TokenKind::LeftParen => {
@@ -504,8 +514,8 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarato
                 parser.advance(); // Consume '('
                 if parser.accept(TokenKind::RightParen).is_some() {
                     // Empty parameter list: ()
-                    Declarator::Function {
-                        inner: Box::new(Declarator::Abstract),
+                    ParsedDeclarator::Function {
+                        inner: Box::new(ParsedDeclarator::Abstract),
                         params: ThinVec::new(),
                         is_variadic: false,
                     }
@@ -533,7 +543,7 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarato
                             );
                             let (parameters, is_variadic) = parse_function_parameters(parser)?;
                             parser.expect(TokenKind::RightParen)?; // Consume ')'
-                            Declarator::Function {
+                            ParsedDeclarator::Function {
                                 inner: Box::new(inner_declarator),
                                 params: parameters,
                                 is_variadic,
@@ -541,7 +551,7 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarato
                         } else {
                             // Roll back and try a different approach
                             parser.current_idx = start_idx;
-                            Declarator::Abstract
+                            ParsedDeclarator::Abstract
                         }
                     }
                 }
@@ -550,20 +560,20 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarato
                 parser.advance(); // Consume '['
                 let array_size = parse_array_size(parser)?;
                 parser.expect(TokenKind::RightBracket)?; // Consume ']'
-                Declarator::Array(Box::new(Declarator::Abstract), array_size)
+                ParsedDeclarator::Array(Box::new(ParsedDeclarator::Abstract), array_size)
             }
             TokenKind::Star => {
                 parser.advance(); // Consume '*'
                 let qualifiers = parse_type_qualifiers(parser)?;
-                Declarator::Pointer(qualifiers, Some(Box::new(Declarator::Abstract)))
+                ParsedDeclarator::Pointer(qualifiers, Some(Box::new(ParsedDeclarator::Abstract)))
             }
             _ => {
                 // invalid token, don't consume
-                Declarator::Abstract
+                ParsedDeclarator::Abstract
             }
         }
     } else {
-        Declarator::Abstract
+        ParsedDeclarator::Abstract
     };
 
     debug!(

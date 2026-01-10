@@ -5,21 +5,21 @@
 use hashbrown::HashSet;
 use itertools::Itertools;
 
-use crate::ast::{Ast, NodeKind};
-use crate::semantic::{SymbolRef, TypeRegistry};
+use crate::ast::{Ast, DesignatedInitializer, Designator, NodeKind};
+use crate::semantic::{ArraySizeType, SymbolRef, SymbolTable, TypeKind, TypeRef, TypeRegistry};
 
 /// Dumper for AST
 pub struct AstDumper;
 
 impl AstDumper {
     /// Dump parser AST to stdout
-    pub fn dump_parser(ast: &Ast, symbol_table: Option<&crate::semantic::SymbolTable>) {
-        for (i, node) in ast.nodes.iter().enumerate() {
-            if matches!(node.kind, NodeKind::Dummy) {
+    pub fn dump_parser(ast: &Ast, symbol_table: Option<&SymbolTable>) {
+        for (i, kind) in ast.kinds.iter().enumerate() {
+            if matches!(kind, NodeKind::Dummy) {
                 continue;
             }
             print!("{}: ", i + 1);
-            Self::dump_parser_kind(&node.kind, symbol_table);
+            Self::dump_parser_kind(kind, symbol_table);
         }
     }
 
@@ -28,8 +28,8 @@ impl AstDumper {
         // Collect all TypeRefs used in the AST
         let mut used_type_refs = HashSet::new();
 
-        for node in &ast.nodes {
-            Self::collect_type_refs_from_node(&node.kind, &mut used_type_refs);
+        for kind in &ast.kinds {
+            Self::collect_type_refs_from_node(kind, &mut used_type_refs);
         }
 
         if used_type_refs.is_empty() {
@@ -53,9 +53,7 @@ impl AstDumper {
 
     /// Format TypeKind in a user-friendly way for TypeRegistry dump
     #[allow(clippy::only_used_in_recursion)]
-    fn format_type_kind_user_friendly(kind: &crate::semantic::TypeKind, registry: &TypeRegistry) -> String {
-        use crate::semantic::TypeKind;
-
+    fn format_type_kind_user_friendly(kind: &TypeKind, registry: &TypeRegistry) -> String {
         match kind {
             // Basic types - use the existing dump format
             TypeKind::Void => "void".to_string(),
@@ -119,10 +117,10 @@ impl AstDumper {
             TypeKind::Array { element_type, size } => {
                 let element_str = Self::format_type_kind_user_friendly(&registry.get(*element_type).kind, registry);
                 match size {
-                    crate::semantic::ArraySizeType::Constant(len) => format!("{}[{}]", element_str, len),
-                    crate::semantic::ArraySizeType::Incomplete => format!("{}[]", element_str),
-                    crate::semantic::ArraySizeType::Variable(_) => "<VLA>".to_string(),
-                    crate::semantic::ArraySizeType::Star => format!("{}[*]", element_str),
+                    ArraySizeType::Constant(len) => format!("{}[{}]", element_str, len),
+                    ArraySizeType::Incomplete => format!("{}[]", element_str),
+                    ArraySizeType::Variable(_) => "<VLA>".to_string(),
+                    ArraySizeType::Star => format!("{}[*]", element_str),
                 }
             }
             TypeKind::Function {
@@ -160,7 +158,7 @@ impl AstDumper {
     }
 
     /// Collect TypeRefs from a NodeKind
-    fn collect_type_refs_from_node(kind: &NodeKind, type_refs: &mut HashSet<crate::semantic::TypeRef>) {
+    fn collect_type_refs_from_node(kind: &NodeKind, type_refs: &mut HashSet<TypeRef>) {
         match kind {
             // Direct TypeRef usage
             NodeKind::VaArg(_, ty_ref) => {
@@ -241,23 +239,11 @@ impl AstDumper {
             | NodeKind::Default(_)
             | NodeKind::ExpressionStatement(_)
             | NodeKind::EmptyStatement
-            | NodeKind::DeclarationList(_)
             | NodeKind::InitializerList(_)
             | NodeKind::StaticAssert(_, _)
             | NodeKind::EnumConstant(_, _)
-            | NodeKind::Declaration(_)
-            | NodeKind::FunctionDef(_)
             | NodeKind::Dummy => {
                 // These don't directly contain TypeRefs
-            }
-
-            // Parser-specific nodes that use ParsedType (not semantic TypeRef)
-            NodeKind::ParsedCast(_, _)
-            | NodeKind::ParsedSizeOfType(_)
-            | NodeKind::ParsedAlignOf(_)
-            | NodeKind::ParsedCompoundLiteral(_, _)
-            | NodeKind::ParsedGenericSelection(_, _) => {
-                // These use ParsedType, not semantic TypeRef
             }
 
             // GNU extensions
@@ -282,7 +268,7 @@ impl AstDumper {
     }
 
     /// Get function name from symbol entry reference
-    fn get_function_name(symbol_ref: SymbolRef, symbol_table: Option<&crate::semantic::SymbolTable>) -> String {
+    fn get_function_name(symbol_ref: SymbolRef, symbol_table: Option<&SymbolTable>) -> String {
         if let Some(table) = symbol_table {
             let entry = table.get_symbol(symbol_ref);
             return entry.name.to_string();
@@ -290,86 +276,18 @@ impl AstDumper {
         format!("func_{}", symbol_ref.get())
     }
 
-    /// Format a DeclSpecifier for display
-    fn format_decl_specifier(specifier: &crate::ast::nodes::DeclSpecifier) -> String {
-        match specifier {
-            crate::ast::nodes::DeclSpecifier::StorageClass(storage) => match storage {
-                crate::ast::nodes::StorageClass::Typedef => "typedef".to_string(),
-                crate::ast::nodes::StorageClass::Extern => "extern".to_string(),
-                crate::ast::nodes::StorageClass::Static => "static".to_string(),
-                crate::ast::nodes::StorageClass::Auto => "auto".to_string(),
-                crate::ast::nodes::StorageClass::Register => "register".to_string(),
-                crate::ast::nodes::StorageClass::ThreadLocal => "_Thread_local".to_string(),
-            },
-            crate::ast::nodes::DeclSpecifier::TypeQualifier(qual) => {
-                let s = format!("{:?}", qual);
-                if s == "Atomic" {
-                    "_Atomic".to_string()
-                } else {
-                    s.to_lowercase()
-                }
-            }
-            crate::ast::nodes::DeclSpecifier::FunctionSpecifiers(func_spec) => {
-                let mut parts = Vec::new();
-                if func_spec.contains(crate::ast::nodes::FunctionSpecifiers::INLINE) {
-                    parts.push("inline");
-                }
-                if func_spec.contains(crate::ast::nodes::FunctionSpecifiers::NORETURN) {
-                    parts.push("_Noreturn");
-                }
-                if parts.is_empty() {
-                    "FunctionSpecifiers(0x0)".to_string()
-                } else {
-                    parts.join(" ")
-                }
-            }
-            crate::ast::nodes::DeclSpecifier::AlignmentSpecifier(_) => "_Alignas(...)".to_string(),
-            crate::ast::nodes::DeclSpecifier::TypeSpecifier(type_spec) => match type_spec {
-                crate::ast::nodes::TypeSpecifier::Void => "void".to_string(),
-                crate::ast::nodes::TypeSpecifier::Char => "char".to_string(),
-                crate::ast::nodes::TypeSpecifier::Short => "short".to_string(),
-                crate::ast::nodes::TypeSpecifier::Int => "int".to_string(),
-                crate::ast::nodes::TypeSpecifier::Long => "long".to_string(),
-                crate::ast::nodes::TypeSpecifier::LongLong => "long long".to_string(),
-                crate::ast::nodes::TypeSpecifier::Float => "float".to_string(),
-                crate::ast::nodes::TypeSpecifier::Double => "double".to_string(),
-                crate::ast::nodes::TypeSpecifier::LongDouble => "long double".to_string(),
-                crate::ast::nodes::TypeSpecifier::Signed => "signed".to_string(),
-                crate::ast::nodes::TypeSpecifier::Unsigned => "unsigned".to_string(),
-                crate::ast::nodes::TypeSpecifier::Bool => "_Bool".to_string(),
-                crate::ast::nodes::TypeSpecifier::Complex => "_Complex".to_string(),
-                crate::ast::nodes::TypeSpecifier::Atomic(_) => "_Atomic(...)".to_string(),
-                crate::ast::nodes::TypeSpecifier::Record(is_union, tag, _) => {
-                    let type_name = if *is_union { "union" } else { "struct" };
-                    match tag {
-                        Some(symbol) => format!("{} {}", type_name, symbol),
-                        None => type_name.to_string(),
-                    }
-                }
-                crate::ast::nodes::TypeSpecifier::Enum(tag, _) => match tag {
-                    Some(symbol) => format!("enum {}", symbol),
-                    None => "enum".to_string(),
-                },
-                crate::ast::nodes::TypeSpecifier::TypedefName(symbol) => {
-                    format!("typedef {}", symbol)
-                }
-            },
-            crate::ast::nodes::DeclSpecifier::Attribute => "__attribute__(...)".to_string(),
-        }
-    }
-
     /// Format a DesignatedInitializer for display
-    fn format_designated_initializer(init: &crate::ast::nodes::DesignatedInitializer) -> String {
+    fn format_designated_initializer(init: &DesignatedInitializer) -> String {
         let mut result = String::new();
         for designator in &init.designation {
             match designator {
-                crate::ast::nodes::Designator::FieldName(name) => {
+                Designator::FieldName(name) => {
                     result.push_str(&format!(".{}", name));
                 }
-                crate::ast::nodes::Designator::ArrayIndex(index) => {
+                Designator::ArrayIndex(index) => {
                     result.push_str(&format!("[{}]", index.get()));
                 }
-                crate::ast::nodes::Designator::GnuArrayRange(start, end) => {
+                Designator::GnuArrayRange(start, end) => {
                     result.push_str(&format!("[{} ... {}]", start.get(), end.get()));
                 }
             }
@@ -384,7 +302,7 @@ impl AstDumper {
     }
 
     /// Dump a single AST node kind
-    fn dump_parser_kind(kind: &NodeKind, symbol_table: Option<&crate::semantic::SymbolTable>) {
+    fn dump_parser_kind(kind: &NodeKind, symbol_table: Option<&SymbolTable>) {
         match kind {
             NodeKind::TranslationUnit(tu) => {
                 println!(
@@ -430,14 +348,7 @@ impl AstDumper {
             NodeKind::CompoundLiteral(ty, init) => {
                 println!("CompoundLiteral({}, {})", ty, init.get())
             }
-            // Parser variants with ParsedType
-            NodeKind::ParsedCast(_, expr) => println!("ParsedCast(PARSED_TYPE, {})", expr.get()),
-            NodeKind::ParsedSizeOfType(_) => println!("ParsedSizeOfType(PARSED_TYPE)"),
-            NodeKind::ParsedAlignOf(_) => println!("ParsedAlignOf(PARSED_TYPE)"),
-            NodeKind::ParsedCompoundLiteral(_, init) => println!("ParsedCompoundLiteral(PARSED_TYPE, {})", init.get()),
-            NodeKind::ParsedGenericSelection(ctrl, assocs) => {
-                println!("ParsedGenericSelection({}, {} associations)", ctrl.get(), assocs.len())
-            }
+
             NodeKind::GenericSelection(ctrl, assocs) => {
                 println!("GenericSelection({}, {} associations)", ctrl.get(), assocs.len())
             }
@@ -500,21 +411,7 @@ impl AstDumper {
                 expr.map(|r| r.get().to_string()).unwrap_or("none".to_string())
             ),
             NodeKind::EmptyStatement => println!("EmptyStatement"),
-            NodeKind::Declaration(decl) => {
-                let specifiers_str = decl.specifiers.iter().map(Self::format_decl_specifier).join(", ");
-                println!(
-                    "Declaration({}, init_declarators = [{}])",
-                    specifiers_str,
-                    decl.init_declarators
-                        .iter()
-                        .map(|x| { format!("{:?} {:?}", x.declarator, x.initializer) })
-                        .join(", ")
-                );
-            }
-            NodeKind::FunctionDef(func_def) => {
-                let specifiers_str = func_def.specifiers.iter().map(Self::format_decl_specifier).join(", ");
-                println!("FunctionDef({}, body={})", specifiers_str, func_def.body.get());
-            }
+            // Declaration and FunctionDef removed
             NodeKind::Function(function_data) => {
                 // Get the function name from the symbol table
                 let func_name = Self::get_function_name(function_data.symbol, symbol_table);
@@ -570,10 +467,6 @@ impl AstDumper {
                         .join(", ")
                 )
             }
-            NodeKind::DeclarationList(stmts) => println!(
-                "DeclarationList([{}])",
-                stmts.iter().map(|&r| r.get().to_string()).join(", ")
-            ),
             NodeKind::InitializerList(list) => println!(
                 "InitializerList([{}])",
                 list.iter().map(Self::format_designated_initializer).join(", ")

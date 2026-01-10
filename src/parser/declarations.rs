@@ -4,7 +4,7 @@
 //! declarators, initializers, and top-level constructs like function definitions
 //! and translation units.
 
-use crate::ast::*;
+use crate::ast::{parsed::*, *};
 use crate::diagnostic::ParseError;
 use crate::lexer::{Token, TokenKind};
 use crate::parser::declaration_core::parse_declaration_specifiers;
@@ -15,7 +15,7 @@ use thin_vec::ThinVec;
 use super::Parser;
 
 /// Parse a declaration
-pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseError> {
+pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let trx = parser.start_transaction();
     let start_loc = trx.parser.current_token_span()?.start();
 
@@ -53,8 +53,8 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseErr
                 debug!(
                     "parse_declaration: last specifier type: {:?}",
                     match last_specifier {
-                        DeclSpecifier::TypeSpecifier(ts) => std::mem::discriminant(ts),
-                        _ => std::mem::discriminant(&TypeSpecifier::Void),
+                        ParsedDeclSpecifier::TypeSpecifier(ts) => std::mem::discriminant(ts),
+                        _ => std::mem::discriminant(&ParsedTypeSpecifier::Void),
                     }
                 );
             }
@@ -70,10 +70,12 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseErr
     let has_record_enum_type = specifiers.iter().any(|s| {
         matches!(
             s,
-            DeclSpecifier::TypeSpecifier(TypeSpecifier::Record(_, _, _) | TypeSpecifier::Enum(_, _))
+            ParsedDeclSpecifier::TypeSpecifier(ParsedTypeSpecifier::Record(_, _, _) | ParsedTypeSpecifier::Enum(_, _))
         )
     });
-    let has_storage_class = specifiers.iter().any(|s| matches!(s, DeclSpecifier::StorageClass(_)));
+    let has_storage_class = specifiers
+        .iter()
+        .any(|s| matches!(s, ParsedDeclSpecifier::StorageClass(_)));
     let is_record_enum_specifier = has_record_enum_type && !has_storage_class;
 
     // If we have a struct/union/enum specifier, we need to check if there are declarators following
@@ -86,7 +88,7 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseErr
             // 1. A pure struct/union/enum definition like "struct foo { ... };" or "enum E { ... };"
             // 2. A forward struct/union/enum declaration like "struct foo;" or "enum E;"
             // In both cases, consume the semicolon and create declaration with no declarators
-            let declaration_data = DeclarationData {
+            let declaration_data = ParsedDeclarationData {
                 specifiers,
                 init_declarators: ThinVec::new(),
             };
@@ -94,7 +96,9 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseErr
             let end_loc = semi.span.end();
             let span = SourceSpan::new(start_loc, end_loc);
 
-            let node = trx.parser.push_node(NodeKind::Declaration(declaration_data), span);
+            let node = trx
+                .parser
+                .push_node(ParsedNodeKind::Declaration(declaration_data), span);
             debug!(
                 "parse_declaration: successfully parsed record/enum declaration, node_id={}",
                 node.get()
@@ -126,10 +130,10 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseErr
     if !has_declarators {
         // Check if this looks like a record/enum definition
         // by looking at the last parsed specifier
-        let message = if let Some(DeclSpecifier::TypeSpecifier(ts)) = specifiers.last() {
+        let message = if let Some(ParsedDeclSpecifier::TypeSpecifier(ts)) = specifiers.last() {
             match ts {
-                TypeSpecifier::Record(_, _, _) => "Expected ';' after struct/union definition",
-                TypeSpecifier::Enum(_, _) => "Expected ';' after enum definition",
+                ParsedTypeSpecifier::Record(_, _, _) => "Expected ';' after struct/union definition",
+                ParsedTypeSpecifier::Enum(_, _) => "Expected ';' after enum definition",
                 _ => "Expected declarator or identifier after type specifier",
             }
         } else {
@@ -196,7 +200,7 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseErr
         let end_span = trx.parser.last_token_span().unwrap_or(start_span);
         let span = start_span.merge(end_span);
 
-        init_declarators.push(InitDeclarator {
+        init_declarators.push(ParsedInitDeclarator {
             declarator,
             initializer,
             span,
@@ -238,7 +242,7 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseErr
 
     // Track typedef names for disambiguation
     for specifier in &specifiers {
-        if matches!(specifier, DeclSpecifier::StorageClass(StorageClass::Typedef)) {
+        if matches!(specifier, ParsedDeclSpecifier::StorageClass(StorageClass::Typedef)) {
             debug!("Found Typedef specifier, adding typedef names");
             for init_declarator in &init_declarators {
                 let name = trx.parser.get_declarator_name(&init_declarator.declarator);
@@ -251,14 +255,14 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseErr
         }
     }
 
-    let declaration_data = DeclarationData {
+    let declaration_data = ParsedDeclarationData {
         specifiers,
         init_declarators,
     };
 
     let node = trx
         .parser
-        .replace_node(dummy, NodeKind::Declaration(declaration_data), span);
+        .replace_node(dummy, ParsedNodeKind::Declaration(declaration_data), span);
     debug!(
         "parse_declaration: successfully parsed declaration, node_id={}",
         node.get()
@@ -268,7 +272,7 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<NodeRef, ParseErr
 }
 
 /// Parse function definition
-pub(crate) fn parse_function_definition(parser: &mut Parser) -> Result<NodeRef, ParseError> {
+fn parse_function_definition(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let start_loc = parser.current_token()?.span.start();
     let dummy = parser.push_dummy();
 
@@ -278,27 +282,23 @@ pub(crate) fn parse_function_definition(parser: &mut Parser) -> Result<NodeRef, 
     // Parse declarator (should be a function declarator)
     let declarator = super::declarator::parse_declarator(parser, None)?;
 
-    // Convert declarator to ParsedType
-    let parsed_declarator =
-        super::parsed_type_builder::build_parsed_type_from_specifiers(parser, &specifiers, Some(&declarator))?;
-
     // Parse function body
     let (body, body_end_loc) = super::statements::parse_compound_statement(parser)?;
 
     let span = SourceSpan::new(start_loc, body_end_loc);
 
-    let function_def = FunctionDefData {
+    let function_def = ParsedFunctionDefData {
         specifiers,
-        declarator: parsed_declarator,
+        declarator: Box::new(declarator),
         body,
     };
 
-    let node = parser.replace_node(dummy, NodeKind::FunctionDef(function_def), span);
+    let node = parser.replace_node(dummy, ParsedNodeKind::FunctionDef(function_def), span);
     Ok(node)
 }
 
 /// Parse translation unit (top level)
-pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, ParseError> {
+pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let start_loc = parser.current_token()?.span.start();
     let mut end_loc = SourceLoc::builtin();
 
@@ -350,13 +350,13 @@ pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<NodeRef, Par
     }
 
     let span = SourceSpan::new(start_loc, end_loc);
-    let node = parser.replace_node(dummy, NodeKind::TranslationUnit(top_level_declarations), span);
+    let node = parser.replace_node(dummy, ParsedNodeKind::TranslationUnit(top_level_declarations), span);
 
     Ok(node)
 }
 
 /// Parse static assert (C11)
-pub(crate) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<NodeRef, ParseError> {
+fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<ParsedNodeRef, ParseError> {
     // already consumed `_Static_assert`
     let start_loc = start_token.span.start();
     parser.expect(TokenKind::LeftParen)?;
@@ -382,6 +382,6 @@ pub(crate) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Re
     let semicolon_token = parser.expect(TokenKind::Semicolon)?;
     let end_loc = semicolon_token.span.end();
     let span = SourceSpan::new(start_loc, end_loc);
-    let node = parser.push_node(NodeKind::StaticAssert(condition, message), span);
+    let node = parser.push_node(ParsedNodeKind::StaticAssert(condition, message), span);
     Ok(node)
 }

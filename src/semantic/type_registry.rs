@@ -645,32 +645,30 @@ impl TypeRegistry {
     }
 
     fn compute_record_layout(&mut self, members: &[StructMember], is_union: bool) -> Result<TypeLayout, SemanticError> {
-        let mut max_size = 0;
         let mut max_align = 1;
-        let mut field_layouts = Vec::new();
-        let mut offset = 0;
+        let mut current_size = 0;
+        let mut field_layouts = Vec::with_capacity(members.len());
 
-        if is_union {
-            for member in members {
-                let member_layout = self.ensure_layout(member.member_type.ty())?;
-                max_size = max_size.max(member_layout.size);
-                max_align = max_align.max(member_layout.alignment);
+        for member in members {
+            let layout = self.ensure_layout(member.member_type.ty())?;
+            max_align = max_align.max(layout.alignment);
+
+            if is_union {
+                current_size = current_size.max(layout.size);
                 field_layouts.push(FieldLayout { offset: 0 });
-            }
-        } else {
-            for member in members {
-                let member_layout = self.ensure_layout(member.member_type.ty())?;
-                max_align = max_align.max(member_layout.alignment);
-                let padding = (member_layout.alignment - (offset % member_layout.alignment)) % member_layout.alignment;
-                offset += padding;
+            } else {
+                // Align current_size to member's alignment to find its offset
+                let offset = (current_size + layout.alignment - 1) & !(layout.alignment - 1);
                 field_layouts.push(FieldLayout { offset });
-                offset += member_layout.size;
+                current_size = offset + layout.size;
             }
-            max_size = (offset + max_align - 1) & !(max_align - 1);
         }
 
+        // Final size is padded to the record's max alignment
+        let final_size = (current_size + max_align - 1) & !(max_align - 1);
+
         Ok(TypeLayout {
-            size: max_size,
+            size: final_size,
             alignment: max_align,
             kind: LayoutKind::Record {
                 fields: field_layouts,
@@ -704,6 +702,28 @@ impl TypeRegistry {
 
     pub(crate) fn is_compatible(&self, a: QualType, b: QualType) -> bool {
         a == b
+    }
+
+    pub(crate) fn is_complete(&self, ty: TypeRef) -> bool {
+        if ty.is_inline_pointer() {
+            return true;
+        }
+        if ty.is_inline_array() {
+            // Array is complete if element is complete
+            // But strict C says array valid if element type is complete (except local VLA which is complete at runtime allocation point?)
+            // Here we just check element kind.
+            let elem = self.reconstruct_element(ty);
+            return self.is_complete(elem);
+        }
+
+        let kind = &self.types[ty.index()].kind;
+        match kind {
+            TypeKind::Record { is_complete, .. } => *is_complete,
+            TypeKind::Enum { is_complete, .. } => *is_complete,
+            TypeKind::Array { element_type, .. } => self.is_complete(*element_type),
+            TypeKind::Void => false,
+            _ => true, // Scalars are always complete
+        }
     }
 }
 

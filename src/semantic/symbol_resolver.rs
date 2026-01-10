@@ -10,55 +10,18 @@
 //! grammar-oriented parser AST and the type-resolved semantic AST (HIR). The lowering
 //! phase handles all C-style declaration forms
 
-use crate::ast::{nodes::TypeQualifier, utils::extract_identifier, *};
+use crate::ast::parsed::{ParsedDeclarator, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpecifier};
+use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::semantic::const_eval::{self, ConstEvalCtx};
 use crate::semantic::struct_lowering::lower_struct_members;
-use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
+use crate::semantic::symbol_table::DefinitionState;
 use crate::semantic::{
-    ArraySizeType, EnumConstant, ScopeId, StructMember, SymbolKind, SymbolTable, TypeKind, TypeQualifiers, TypeRef,
-    TypeRegistry,
+    ArraySizeType, EnumConstant, ScopeId, StructMember, SymbolKind, SymbolRef, SymbolTable, TypeKind, TypeQualifiers,
+    TypeRef, TypeRegistry,
 };
 use crate::semantic::{FunctionParameter, QualType};
 use crate::source_manager::SourceSpan;
-
-/// Extract identifier name from ParsedType declarator
-fn extract_identifier_from_parsed_type(parsed_type: &ParsedType, ctx: &LowerCtx) -> Option<NameId> {
-    extract_identifier_from_parsed_declarator_recursive(parsed_type.declarator, ctx)
-}
-
-/// Recursively extract identifier from parsed declarator
-fn extract_identifier_from_parsed_declarator_recursive(
-    declarator_ref: ParsedDeclRef,
-    ctx: &LowerCtx,
-) -> Option<NameId> {
-    match ctx.ast.parsed_types.get_decl(declarator_ref) {
-        ParsedDeclaratorNode::Identifier { name } => {
-            // This is an identifier node with the actual name
-            name
-        }
-        ParsedDeclaratorNode::Pointer { inner, .. } => {
-            // Look inside the pointer for the identifier
-            extract_identifier_from_parsed_declarator_recursive(inner, ctx)
-        }
-        ParsedDeclaratorNode::Array { inner, .. } => {
-            // Look inside the array for the identifier
-            extract_identifier_from_parsed_declarator_recursive(inner, ctx)
-        }
-        ParsedDeclaratorNode::Function { inner, .. } => {
-            // Look inside the function for the identifier
-            extract_identifier_from_parsed_declarator_recursive(inner, ctx)
-        }
-    }
-}
-
-/// Apply ParsedType declarator to create a semantic Type
-fn apply_parsed_declarator(base_type: TypeRef, parsed_type: &ParsedType, ctx: &mut LowerCtx) -> QualType {
-    // Start with the base type and apply declarator transformations
-    let result_type = apply_parsed_declarator_recursive(base_type, parsed_type.declarator, ctx);
-    // Combine the declarator result qualifiers with the parsed type qualifiers
-    ctx.registry.merge_qualifiers(result_type, parsed_type.qualifiers)
-}
 
 /// Recursively apply parsed declarator to base type
 fn apply_parsed_declarator_recursive(
@@ -66,7 +29,7 @@ fn apply_parsed_declarator_recursive(
     declarator_ref: ParsedDeclRef,
     ctx: &mut LowerCtx,
 ) -> QualType {
-    let declarator_node = ctx.ast.parsed_types.get_decl(declarator_ref);
+    let declarator_node = ctx.parsed_ast.parsed_types.get_decl(declarator_ref);
 
     match declarator_node {
         ParsedDeclaratorNode::Identifier { .. } => QualType::unqualified(current_type),
@@ -79,7 +42,7 @@ fn apply_parsed_declarator_recursive(
             ctx.registry.merge_qualifiers(result, qualifiers)
         }
         ParsedDeclaratorNode::Array { size, inner } => {
-            // Array
+            // Array - using ParsedArraySize from convert helper (which needs update)
             let array_size = convert_parsed_array_size(&size, ctx);
             let array_type_ref = ctx.registry.array_of(current_type, array_size);
 
@@ -88,7 +51,7 @@ fn apply_parsed_declarator_recursive(
         ParsedDeclaratorNode::Function { params, flags, inner } => {
             // Function
             // Process parameters separately
-            let parsed_params: Vec<_> = ctx.ast.parsed_types.get_params(params).to_vec();
+            let parsed_params: Vec<_> = ctx.parsed_ast.parsed_types.get_params(params).to_vec();
             let mut processed_params = Vec::new();
             for param in parsed_params {
                 let param_type = convert_parsed_type_to_qual_type(ctx, param.ty, param.span).unwrap_or_else(|_| {
@@ -115,118 +78,40 @@ fn apply_parsed_declarator_recursive(
 }
 
 /// Convert ParsedArraySize to ArraySizeType
-fn convert_parsed_array_size(size: &ParsedArraySize, _ctx: &mut LowerCtx) -> ArraySizeType {
+fn convert_parsed_array_size(size: &ParsedArraySize, ctx: &mut LowerCtx) -> ArraySizeType {
     match size {
-        ParsedArraySize::Expression { expr_ref: _, .. } => {
-            // For now, treat as incomplete since we don't have expression evaluation
+        ParsedArraySize::Expression { expr: _, .. } => {
+            // Evaluate expression
+            let _const_eval_ctx = ConstEvalCtx { ast: ctx.ast }; // Wait, ConstEval works on Ast?
+            // Since we construct Ast on fly, we can only evaluate if constants are resolved.
+            // But expressions in ParsedAst are ParsedNodeRef. ConstEval expects NodeRef (semantic).
+            // This is a Catch-22 unless we lower expression first.
+            // For now, defer evaluation or lower expression here.
+
+            // TODO: Lower expression before evaluation
             ArraySizeType::Incomplete
         }
         ParsedArraySize::Star { .. } => ArraySizeType::Star,
         ParsedArraySize::Incomplete => ArraySizeType::Incomplete,
-    }
-}
-
-/// Helper function to deduce array size from initializer
-fn deduce_array_size(ctx: &LowerCtx, init_node: NodeRef) -> Option<usize> {
-    let node = ctx.ast.get_node(init_node);
-    match &node.kind {
-        NodeKind::InitializerList(inits) => {
-            let mut max_index: i64 = -1;
-            let mut current_index: i64 = 0;
-
-            // If list is empty (GCC extension), size is 0
-            if inits.is_empty() {
-                return Some(0);
-            }
-
-            for init in inits {
-                // Check for array index designator
-                if let Some(first_designator) = init.designation.first() {
-                    match first_designator {
-                        crate::ast::Designator::ArrayIndex(expr_ref) => {
-                            let const_ctx = ConstEvalCtx { ast: ctx.ast };
-                            if let Some(val) = const_eval::eval_const_expr(&const_ctx, *expr_ref) {
-                                current_index = val;
-                            } else {
-                                // Non-constant index in initializer -> can't deduce size
-                                return None;
-                            }
-                        }
-                        crate::ast::Designator::GnuArrayRange(start, end) => {
-                            let const_ctx = ConstEvalCtx { ast: ctx.ast };
-                            if let (Some(start_val), Some(end_val)) = (
-                                const_eval::eval_const_expr(&const_ctx, *start),
-                                const_eval::eval_const_expr(&const_ctx, *end),
-                            ) {
-                                if start_val > end_val {
-                                    return None;
-                                }
-                                current_index = end_val;
-                            } else {
-                                return None;
-                            }
-                        }
-                        crate::ast::Designator::FieldName(_) => {
-                            // Field designator on array element -> applies to current element
-                            // No change to current_index
-                        }
-                    }
-                }
-
-                if current_index > max_index {
-                    max_index = current_index;
-                }
-
-                // Advance current_index for next element
-                current_index += 1;
-            }
-
-            if max_index < 0 {
-                Some(0)
-            } else {
-                Some((max_index + 1) as usize)
-            }
-        }
-        NodeKind::LiteralString(name_id) => {
-            // String literal initialization: char a[] = "foo";
-            // Size is len + 1 (including null terminator)
-            let s = name_id.to_string();
-            Some(s.len() + 1)
-        }
-        _ => None,
+        ParsedArraySize::VlaSpecifier { .. } => ArraySizeType::Incomplete,
     }
 }
 
 /// Helper function to resolve array size logic
-fn resolve_array_size(size: Option<NodeRef>, ctx: &mut LowerCtx) -> ArraySizeType {
-    if let Some(expr) = size {
-        let const_eval_ctx = ConstEvalCtx { ast: ctx.ast };
-        if let Some(const_val) = const_eval::eval_const_expr(&const_eval_ctx, expr) {
-            if const_val > 0 {
-                ArraySizeType::Constant(const_val as usize)
-            } else {
-                ctx.report_error(SemanticError::InvalidArraySize {
-                    span: ctx.ast.get_node(expr).span,
-                });
-                ArraySizeType::Incomplete
-            }
-        } else {
-            // TODO: Handle non-constant array sizes (VLAs)
-            ArraySizeType::Incomplete
-        }
-    } else {
-        // Should not happen as parser ensures size is Some
-        ArraySizeType::Incomplete
-    }
+fn resolve_array_size(_size: Option<ParsedNodeRef>, _ctx: &mut LowerCtx) -> ArraySizeType {
+    // Needs to lower and evaluate expression
+    // TODO: Implement expression lowering here or defer
+    // For now return Incomplete
+    ArraySizeType::Incomplete
 }
 
 /// Context for the semantic lowering phase
 pub(crate) struct LowerCtx<'a, 'src> {
+    pub(crate) parsed_ast: &'a ParsedAst,
     pub(crate) ast: &'a mut Ast,
     pub(crate) diag: &'src mut DiagnosticEngine,
     pub(crate) symbol_table: &'a mut SymbolTable,
     pub(crate) scope_map: Vec<Option<ScopeId>>,
-    // Track errors during lowering for early termination
     pub(crate) has_errors: bool,
     pub(crate) registry: &'a mut TypeRegistry,
 }
@@ -234,12 +119,14 @@ pub(crate) struct LowerCtx<'a, 'src> {
 impl<'a, 'src> LowerCtx<'a, 'src> {
     /// Create a new lowering context
     pub(crate) fn new(
+        parsed_ast: &'a ParsedAst,
         ast: &'a mut Ast,
         diag: &'src mut DiagnosticEngine,
         symbol_table: &'a mut SymbolTable,
         registry: &'a mut TypeRegistry,
     ) -> Self {
         Self {
+            parsed_ast,
             ast,
             diag,
             symbol_table,
@@ -255,13 +142,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         self.diag.report(error);
     }
 
-    /// Check if the context has any errors
-    pub(crate) fn has_errors(&self) -> bool {
-        self.has_errors
-    }
-
     fn set_scope(&mut self, node_ref: NodeRef, scope_id: ScopeId) {
-        self.scope_map[(node_ref.get() - 1) as usize] = Some(scope_id);
+        let idx = node_ref.index();
+        if idx >= self.scope_map.len() {
+            self.scope_map.resize(idx + 1, None);
+        }
+        self.scope_map[idx] = Some(scope_id);
     }
 }
 
@@ -275,168 +161,6 @@ pub(crate) struct DeclSpecInfo {
     pub(crate) is_inline: bool,
     pub(crate) is_noreturn: bool,
     pub(crate) alignment: Option<u32>,
-}
-
-/// Main entry point for lowering a declaration
-/// Returns a vector of semantic node data (one for each declarator)
-pub(crate) fn lower_declaration(ctx: &mut LowerCtx, decl_node: NodeRef) -> Vec<NodeKind> {
-    // Get the declaration data from the AST node
-    let (declaration_span, decl) = {
-        let decl_node_data = ctx.ast.get_node(decl_node);
-        let span = decl_node_data.span;
-        let declaration_data = match &decl_node_data.kind {
-            NodeKind::Declaration(d) => d.clone(),
-            _ => unreachable!("Expected Declaration node"),
-        };
-        (span, declaration_data)
-    };
-
-    // Handle declarations with 0 init_declarators (type definitions)
-    if decl.init_declarators.is_empty() {
-        let type_def_node = lower_type_definition(&decl.specifiers, ctx, declaration_span);
-        if let Some(type_def_node_ref) = type_def_node {
-            // Extract the node kind from the created node
-            let node_kind = ctx.ast.get_node(type_def_node_ref).kind.clone();
-            return vec![node_kind];
-        } else {
-            return Vec::new();
-        }
-    }
-
-    // 1. Parse and validate declaration specifiers
-    let spec = lower_decl_specifiers(&decl.specifiers, ctx, declaration_span);
-
-    // If we have errors in specifiers, return empty vector
-    if ctx.has_errors() {
-        return Vec::new();
-    }
-
-    // 2. Process init-declarators into semantic node data
-    let semantic_nodes: Vec<NodeKind> = decl
-        .init_declarators
-        .into_iter()
-        .map(|init| {
-            let span = if init.span.is_empty() {
-                declaration_span
-            } else {
-                init.span
-            };
-            create_semantic_node_data(ctx, &spec, init, span)
-        })
-        .collect();
-
-    semantic_nodes
-}
-
-/// Process declaration specifiers into consolidated information
-pub(crate) fn lower_decl_specifiers(specs: &[DeclSpecifier], ctx: &mut LowerCtx, span: SourceSpan) -> DeclSpecInfo {
-    let mut info = DeclSpecInfo::default();
-
-    for spec in specs {
-        match spec {
-            DeclSpecifier::StorageClass(sc) => {
-                // Check for duplicate storage class
-                if info.storage.replace(*sc).is_some() {
-                    ctx.report_error(SemanticError::ConflictingStorageClasses { span });
-                }
-
-                // Handle typedef storage class
-                if *sc == StorageClass::Typedef {
-                    info.is_typedef = true;
-                }
-            }
-
-            DeclSpecifier::TypeQualifier(q) => {
-                let qualifier = match q {
-                    TypeQualifier::Const => TypeQualifiers::CONST,
-                    TypeQualifier::Volatile => TypeQualifiers::VOLATILE,
-                    TypeQualifier::Restrict => TypeQualifiers::RESTRICT,
-                    TypeQualifier::Atomic => TypeQualifiers::ATOMIC,
-                };
-                info.qualifiers |= qualifier;
-            }
-
-            DeclSpecifier::TypeSpecifier(ts) => {
-                let ty = resolve_type_specifier(ts, ctx, span).unwrap_or_else(|e| {
-                    ctx.report_error(e);
-                    QualType::unqualified(ctx.registry.type_error)
-                });
-                info.base_type = merge_base_type(info.base_type, ty, ctx);
-            }
-
-            DeclSpecifier::FunctionSpecifiers(fs) => {
-                if fs.contains(FunctionSpecifiers::INLINE) {
-                    info.is_inline = true;
-                }
-                if fs.contains(FunctionSpecifiers::NORETURN) {
-                    info.is_noreturn = true;
-                }
-            }
-
-            DeclSpecifier::AlignmentSpecifier(spec) => {
-                let align = match spec {
-                    ParsedAlignmentSpecifier::Type(parsed_type) => {
-                        let ty = convert_parsed_type_to_qual_type(ctx, *parsed_type, span).unwrap_or_else(|_| {
-                            // Error already reported by convert_parsed_type_to_qual_type if it failed
-                            QualType::unqualified(ctx.registry.type_int) // Default fallback
-                        });
-
-                        // Layout must be complete to get alignment
-                        match ctx.registry.ensure_layout(ty.ty()) {
-                            Ok(layout) => layout.alignment as u32,
-                            Err(e) => {
-                                ctx.report_error(e);
-                                1 // Default
-                            }
-                        }
-                    }
-                    ParsedAlignmentSpecifier::Expr(expr_ref) => {
-                        let const_ctx = ConstEvalCtx { ast: ctx.ast };
-                        if let Some(val) = const_eval::eval_const_expr(&const_ctx, *expr_ref) {
-                            if val == 0 {
-                                // "If the constant expression evaluates to zero, the alignment specifier shall have no effect."
-                                0 // Return 0 to indicate no effect
-                            } else if val < 0 {
-                                ctx.report_error(SemanticError::InvalidAlignment {
-                                    value: val,
-                                    span: ctx.ast.get_node(*expr_ref).span,
-                                });
-                                1
-                            } else {
-                                // Must be power of 2
-                                if (val & (val - 1)) != 0 {
-                                    ctx.report_error(SemanticError::InvalidAlignment {
-                                        value: val,
-                                        span: ctx.ast.get_node(*expr_ref).span,
-                                    });
-                                    1
-                                } else {
-                                    val as u32
-                                }
-                            }
-                        } else {
-                            ctx.report_error(SemanticError::NonConstantAlignment {
-                                span: ctx.ast.get_node(*expr_ref).span,
-                            });
-                            1
-                        }
-                    }
-                };
-
-                // "The alignment of the object is that of the strictest alignment specified"
-                info.alignment = Some(info.alignment.unwrap_or(0).max(align));
-            }
-
-            DeclSpecifier::Attribute => {
-                // TODO: Handle attributes
-            }
-        }
-    }
-
-    // Validate specifier combinations
-    validate_specifier_combinations(&info, ctx, span);
-
-    info
 }
 
 /// Convert a ParsedBaseTypeNode to a QualType
@@ -455,7 +179,7 @@ fn convert_parsed_base_type_to_qual_type(
             // Now handle members if it's a definition
             if let Some(members_range) = members {
                 // Get the parsed members first to avoid borrowing conflicts
-                let parsed_members: Vec<_> = ctx.ast.parsed_types.get_struct_members(*members_range).to_vec();
+                let parsed_members: Vec<_> = ctx.parsed_ast.parsed_types.get_struct_members(*members_range).to_vec();
 
                 // Process member types separately to avoid borrowing conflicts
                 let mut member_types = Vec::new();
@@ -487,7 +211,7 @@ fn convert_parsed_base_type_to_qual_type(
 
             // Process enumerators if it's a definition
             if let Some(enum_range) = enumerators {
-                let parsed_enums = ctx.ast.parsed_types.get_enum_constants(*enum_range);
+                let parsed_enums = ctx.parsed_ast.parsed_types.get_enum_constants(*enum_range);
                 let mut next_value = 0i64;
                 let mut enumerators_list = Vec::new();
 
@@ -550,7 +274,7 @@ fn convert_parsed_type_to_qual_type(
 ) -> Result<QualType, SemanticError> {
     let base_type_node = {
         // borrow immutable hanya di dalam block ini
-        let parsed_types = &ctx.ast.parsed_types;
+        let parsed_types = &ctx.parsed_ast.parsed_types;
         parsed_types.get_base_type(parsed_type.base)
     };
 
@@ -725,43 +449,51 @@ fn complete_enum_symbol(
 }
 
 /// Resolve a type specifier to a QualType
-fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSpan) -> Result<QualType, SemanticError> {
+fn resolve_type_specifier(
+    ts: &ParsedTypeSpecifier,
+    ctx: &mut LowerCtx,
+    span: SourceSpan,
+) -> Result<QualType, SemanticError> {
     match ts {
-        TypeSpecifier::Void => Ok(QualType::unqualified(ctx.registry.type_void)),
-        TypeSpecifier::Char => Ok(QualType::unqualified(ctx.registry.type_char)),
-        TypeSpecifier::Short => Ok(QualType::unqualified(ctx.registry.type_short)),
-        TypeSpecifier::Int => Ok(QualType::unqualified(ctx.registry.type_int)),
-        TypeSpecifier::Long => Ok(QualType::unqualified(ctx.registry.type_long)),
-        TypeSpecifier::LongLong => Ok(QualType::unqualified(ctx.registry.type_long_long)),
-        TypeSpecifier::Float => Ok(QualType::unqualified(ctx.registry.type_float)),
-        TypeSpecifier::Double => Ok(QualType::unqualified(ctx.registry.type_double)),
-        TypeSpecifier::LongDouble => Ok(QualType::unqualified(ctx.registry.type_long_double)),
-        TypeSpecifier::Signed => {
+        ParsedTypeSpecifier::Void => Ok(QualType::unqualified(ctx.registry.type_void)),
+        ParsedTypeSpecifier::Char => Ok(QualType::unqualified(ctx.registry.type_char)),
+        ParsedTypeSpecifier::Short => Ok(QualType::unqualified(ctx.registry.type_short)),
+        ParsedTypeSpecifier::Int => Ok(QualType::unqualified(ctx.registry.type_int)),
+        ParsedTypeSpecifier::Long => Ok(QualType::unqualified(ctx.registry.type_long)),
+        ParsedTypeSpecifier::LongLong => Ok(QualType::unqualified(ctx.registry.type_long_long)),
+        ParsedTypeSpecifier::Float => Ok(QualType::unqualified(ctx.registry.type_float)),
+        ParsedTypeSpecifier::Double => Ok(QualType::unqualified(ctx.registry.type_double)),
+        ParsedTypeSpecifier::LongDouble => Ok(QualType::unqualified(ctx.registry.type_long_double)),
+        ParsedTypeSpecifier::Signed => {
             // Signed modifier - for now, default to signed int
             Ok(QualType::unqualified(ctx.registry.type_int))
         }
-        TypeSpecifier::Unsigned => {
+        ParsedTypeSpecifier::Unsigned => {
             // Unsigned modifier - return a special marker type that will be handled in merge_base_type
             Ok(QualType::unqualified(ctx.registry.type_int_unsigned))
         }
-        TypeSpecifier::Bool => Ok(QualType::unqualified(ctx.registry.type_bool)),
-        TypeSpecifier::Complex => {
+        ParsedTypeSpecifier::Bool => Ok(QualType::unqualified(ctx.registry.type_bool)),
+        ParsedTypeSpecifier::Complex => {
             // Complex types need a base type
             // For now, default to complex double
             let complex_type = ctx.registry.complex_type(ctx.registry.type_double);
             Ok(QualType::unqualified(complex_type))
         }
-        TypeSpecifier::Atomic(parsed_type) => {
+        ParsedTypeSpecifier::Atomic(parsed_type) => {
             // Convert the ParsedType to a TypeRef by applying the declarator to the base type
-            // Use the convert_parsed_type_to_type_ref function to handle this properly
             convert_parsed_type_to_qual_type(ctx, *parsed_type, span)
         }
-        TypeSpecifier::Record(is_union, tag, definition) => {
+        ParsedTypeSpecifier::Record(is_union, tag, definition) => {
+            // ... resolve_record_tag works same args ...
             let is_definition = definition.is_some();
             let type_ref = resolve_record_tag(ctx, *tag, *is_union, is_definition, span)?;
 
             // Now handle members if it's a definition
             if let Some(def) = definition {
+                // def is ParsedRecordDefData. members is Option<Vec<ParsedDeclarationData>>.
+                // lower_struct_members expects Vec<ParsedDeclarationData>?
+                // It expects &[DeclarationData] before.
+                // I need to update lower_struct_members as well.
                 let members = def
                     .members
                     .as_ref()
@@ -773,7 +505,7 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
 
             Ok(QualType::unqualified(type_ref))
         }
-        TypeSpecifier::Enum(tag, enumerators) => {
+        ParsedTypeSpecifier::Enum(tag, enumerators) => {
             let is_definition = enumerators.is_some();
             let type_ref_to_use = resolve_enum_tag(ctx, *tag, is_definition, span)?;
 
@@ -783,11 +515,15 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                 let mut enumerators_list = Vec::new();
 
                 for &enum_ref in enums {
-                    let enum_node = ctx.ast.get_node(enum_ref);
-                    if let NodeKind::EnumConstant(name, value_expr_ref) = &enum_node.kind {
+                    // Get node from PARSED ast
+                    let enum_node = ctx.parsed_ast.get_node(enum_ref);
+                    if let ParsedNodeKind::EnumConstant(name, value_expr_ref) = &enum_node.kind {
+                        // TODO: Evaluate value_expr_ref
+                        // For now check for literal int if possible or 0
+                        // But value_expr_ref is ParsedNodeRef.
                         let value = if let Some(v_ref) = value_expr_ref {
-                            let val_node = ctx.ast.get_node(*v_ref);
-                            if let NodeKind::LiteralInt(val) = val_node.kind {
+                            let val_node = ctx.parsed_ast.get_node(*v_ref);
+                            if let ParsedNodeKind::LiteralInt(val) = val_node.kind {
                                 val
                             } else {
                                 0 // Should ideally evaluate expression
@@ -816,14 +552,13 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
 
             Ok(QualType::unqualified(type_ref_to_use))
         }
-        TypeSpecifier::TypedefName(name) => {
+        ParsedTypeSpecifier::TypedefName(name) => {
             // Lookup typedef in symbol table
             if let Some((entry_ref, _scope_id)) = ctx.symbol_table.lookup_symbol(*name) {
                 let entry = ctx.symbol_table.get_symbol(entry_ref);
                 if let SymbolKind::Typedef { aliased_type } = entry.kind {
                     Ok(QualType::unqualified(aliased_type))
                 } else {
-                    // Get the kind of the symbol as a string for the error message
                     let kind_string = format!("{:?}", entry.kind);
                     let found_kind_str = kind_string.split_whitespace().next().unwrap_or("symbol");
                     Err(SemanticError::ExpectedTypedefName {
@@ -832,12 +567,6 @@ fn resolve_type_specifier(ts: &TypeSpecifier, ctx: &mut LowerCtx, span: SourceSp
                     })
                 }
             } else {
-                // Typedef not found during semantic lowering - this is expected
-                // when typedefs are defined later in the same scope.
-                // Create a forward reference that will be resolved during semantic analysis.
-                // For now, create a placeholder record type with the expected structure.
-                // This is a temporary solution - in a full implementation, we'd have a proper
-                // forward reference mechanism.
                 Ok(QualType::unqualified(ctx.registry.declare_record(Some(*name), false)))
             }
         }
@@ -940,258 +669,63 @@ fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span
     // - Check for missing required specifiers
 }
 
-/// Create a type definition semantic node for declarations with 0 init_declarators
-fn lower_type_definition(specifiers: &[DeclSpecifier], ctx: &mut LowerCtx, span: SourceSpan) -> Option<NodeRef> {
-    // Find the type specifier
-    let mut type_specifier = None;
-    for spec in specifiers {
-        if let DeclSpecifier::TypeSpecifier(ts) = spec {
-            type_specifier = Some(ts);
-            break;
-        }
-    }
-
-    let type_spec = type_specifier?;
-
-    match type_spec {
-        TypeSpecifier::Record(is_union, tag, _definition) => {
-            // Create the record type
-            let record_type = match resolve_type_specifier(type_spec, ctx, span) {
-                Ok(ty) => ty,
-                Err(e) => {
-                    ctx.report_error(e);
-                    return None;
-                }
-            };
-
-            // Create RecordDecl semantic node
-            let record_decl = RecordDeclData {
-                name: *tag,
-                ty: record_type.ty(),
-                members: {
-                    if let TypeKind::Record { members, .. } = &ctx.registry.get(record_type.ty()).kind {
-                        members
-                            .iter()
-                            .map(|m| FieldDeclData {
-                                name: m.name,
-                                ty: m.member_type,
-                            })
-                            .collect()
-                    } else {
-                        Vec::new()
-                    }
-                },
-                is_union: *is_union,
-            };
-
-            let record_node = Node::new(NodeKind::RecordDecl(record_decl), span);
-            Some(ctx.ast.push_node(record_node))
-        }
-        TypeSpecifier::Enum(tag, _enumerators) => {
-            // Create the enum type
-            let enum_type = match resolve_type_specifier(type_spec, ctx, span) {
-                Ok(ty) => ty,
-                Err(e) => {
-                    ctx.report_error(e);
-                    return None;
-                }
-            };
-
-            // Create EnumDecl semantic node
-            let enum_decl = EnumDeclData {
-                name: *tag,
-                ty: enum_type.ty(),
-                members: if let TypeKind::Enum { enumerators, .. } = &ctx.registry.get(enum_type.ty()).kind {
-                    enumerators
-                        .iter()
-                        .map(|e| EnumMember {
-                            name: e.name,
-                            value: e.value,
-                            span: e.span,
-                        })
-                        .collect()
-                } else {
-                    Vec::new()
-                },
-            };
-
-            let enum_node = Node::new(NodeKind::EnumDecl(enum_decl), span);
-            Some(ctx.ast.push_node(enum_node))
-        }
-        _ => None,
-    }
-}
-
-/// Check if a declarator represents a function declaration (not just a function pointer)
-fn is_function_declarator(declarator: &Declarator) -> bool {
-    match declarator {
-        Declarator::Function { .. } => true,
-        Declarator::Pointer(_, Some(inner)) => is_function_declarator(inner),
-        _ => false,
-    }
-}
-
-/// Create the semantic node data for an init-declarator without adding it to the AST
-fn create_semantic_node_data(
+/// Parse and validate declaration specifiers
+pub(crate) fn lower_decl_specifiers(
+    specs: &[ParsedDeclSpecifier],
     ctx: &mut LowerCtx,
-    spec: &DeclSpecInfo,
-    init: InitDeclarator,
     span: SourceSpan,
-) -> NodeKind {
-    // 1. Resolve final type (base + declarator)
-    let base_ty = spec.base_type.unwrap_or_else(|| {
-        ctx.report_error(SemanticError::MissingTypeSpecifier { span });
-        QualType::unqualified(ctx.registry.type_error)
-    });
+) -> DeclSpecInfo {
+    let mut info = DeclSpecInfo::default();
 
-    let name = extract_identifier(&init.declarator).expect("Anonymous declarations unsupported");
-
-    // For simple identifiers without qualifiers, don't create a new type entry
-    let mut final_ty = if let Declarator::Identifier(_, qualifiers) = &init.declarator {
-        if qualifiers.is_empty() {
-            // Simple case: just use the base type directly
-            base_ty
-        } else {
-            // Has qualifiers, need to apply declarator
-            apply_declarator(base_ty.ty(), &init.declarator, ctx)
-        }
-    } else {
-        // Complex case: apply declarator transformations and create new type
-        apply_declarator(base_ty.ty(), &init.declarator, ctx)
-    };
-
-    // Check for incomplete array with initializer and deduce size
-    // We need to extract info first to avoid borrow conflicts with ctx.registry
-    let array_deduction_info = {
-        if final_ty.is_array() {
-            let ty = ctx.registry.get(final_ty.ty());
-            if let TypeKind::Array {
-                element_type,
-                size: ArraySizeType::Incomplete,
-            } = &ty.kind
-            {
-                Some(*element_type)
-            } else {
-                None
+    for spec in specs {
+        match spec {
+            ParsedDeclSpecifier::StorageClass(sc) => {
+                if info.storage.is_some() {
+                    ctx.report_error(SemanticError::ConflictingStorageClasses { span });
+                }
+                if *sc == StorageClass::Typedef {
+                    info.is_typedef = true;
+                }
+                info.storage = Some(*sc);
             }
-        } else {
-            None
-        }
-    };
-
-    if let Some(element_type) = array_deduction_info
-        && let Some(init_node) = init.initializer
-        && let Some(new_size) = deduce_array_size(ctx, init_node)
-    {
-        let new_ty_ref = ctx.registry.array_of(element_type, ArraySizeType::Constant(new_size));
-
-        // Preserve qualifiers from the original type
-        final_ty = QualType::new(new_ty_ref, final_ty.qualifiers());
-
-        // Ensure layout is computed for the new type so sizeof() works
-        let _ = ctx.registry.ensure_layout(new_ty_ref);
-    }
-
-    // 2. Handle typedefs
-    if spec.is_typedef {
-        let typedef_decl = TypedefDeclData { name, ty: final_ty };
-
-        // Add typedef to symbol table to resolve forward references
-        if let Err(e) = ctx.symbol_table.define_typedef(name, final_ty.ty(), span) {
-            let SymbolTableError::InvalidRedefinition { name, existing } = e;
-            let existing_symbol = ctx.symbol_table.get_symbol(existing);
-            ctx.report_error(SemanticError::Redefinition {
-                name,
-                first_def: existing_symbol.def_span,
-                span,
-            });
-        }
-
-        return NodeKind::TypedefDecl(typedef_decl);
-    }
-
-    // 3. Distinguish between functions and variables
-    // Check if the declarator is a function declarator (even if the final type is pointer to function)
-    let is_function = is_function_declarator(&init.declarator);
-
-    if is_function {
-        // Extract function type information
-        // Optimization: avoid cloning Type if possible, use TypeRef checks
-        let final_ty_ref = final_ty.ty();
-
-        let function_type_ref = if final_ty_ref.is_function() {
-            final_ty_ref
-        } else {
-            // Not a function type (variable, pointer, function pointer, etc.)
-            let var_decl = VarDeclData {
-                name,
-                ty: final_ty,
-                storage: spec.storage,
-                init: init.initializer,
-                alignment: spec.alignment,
-            };
-
-            if let Err(e) =
-                ctx.symbol_table
-                    .define_variable(name, final_ty.ty(), init.initializer, spec.alignment, span)
-            {
-                let SymbolTableError::InvalidRedefinition { name, existing } = e;
-                let existing = ctx.symbol_table.get_symbol(existing);
-                ctx.diag.report(SemanticError::Redefinition {
-                    name,
-                    first_def: existing.def_span,
-                    span,
+            ParsedDeclSpecifier::TypeQualifier(tq) => {
+                let mask = match tq {
+                    TypeQualifier::Const => TypeQualifiers::CONST,
+                    TypeQualifier::Volatile => TypeQualifiers::VOLATILE,
+                    TypeQualifier::Restrict => TypeQualifiers::RESTRICT,
+                    TypeQualifier::Atomic => TypeQualifiers::ATOMIC,
+                };
+                info.qualifiers.insert(mask);
+            }
+            ParsedDeclSpecifier::FunctionSpecifiers(fs) => {
+                if fs.contains(FunctionSpecifiers::INLINE) {
+                    info.is_inline = true;
+                }
+                if fs.contains(FunctionSpecifiers::NORETURN) {
+                    info.is_noreturn = true;
+                }
+            }
+            ParsedDeclSpecifier::AlignmentSpecifier(_align) => {
+                // TODO: Handle alignment
+            }
+            ParsedDeclSpecifier::TypeSpecifier(ts) => {
+                let ty = resolve_type_specifier(ts, ctx, span).unwrap_or_else(|e| {
+                    ctx.report_error(e);
+                    QualType::unqualified(ctx.registry.type_error)
                 });
+                info.base_type = merge_base_type(info.base_type, ty, ctx);
             }
-
-            return NodeKind::VarDecl(var_decl);
-        };
-
-        let func_decl = FunctionDeclData {
-            name,
-            ty: function_type_ref, // Use the function type, not the pointer to function type
-            storage: spec.storage,
-            body: None,
-        };
-
-        if let Err(e) = ctx.symbol_table.define_function(name, function_type_ref, false, span) {
-            let SymbolTableError::InvalidRedefinition { name, existing } = e;
-            let existing = ctx.symbol_table.get_symbol(existing);
-            ctx.diag.report(SemanticError::Redefinition {
-                name,
-                first_def: existing.def_span,
-                span,
-            });
+            ParsedDeclSpecifier::Attribute => {
+                // Ignore attributes for now
+            }
         }
-
-        NodeKind::FunctionDecl(func_decl)
-    } else {
-        let var_decl = VarDeclData {
-            name,
-            ty: final_ty,
-            storage: spec.storage,
-            init: init.initializer,
-            alignment: spec.alignment,
-        };
-
-        if let Err(e) = ctx
-            .symbol_table
-            .define_variable(name, final_ty.ty(), init.initializer, spec.alignment, span)
-        {
-            let SymbolTableError::InvalidRedefinition { name, existing } = e;
-            let existing = ctx.symbol_table.get_symbol(existing);
-            ctx.diag.report(SemanticError::Redefinition {
-                name,
-                first_def: existing.def_span,
-                span,
-            });
-        }
-
-        NodeKind::VarDecl(var_decl)
     }
+
+    validate_specifier_combinations(&info, ctx, span);
+    info
 }
 
-fn lower_function_parameters(params: &[ParamData], ctx: &mut LowerCtx) -> Vec<FunctionParameter> {
+fn lower_function_parameters(params: &[ParsedParamData], ctx: &mut LowerCtx) -> Vec<FunctionParameter> {
     params
         .iter()
         .map(|param| {
@@ -1204,7 +738,7 @@ fn lower_function_parameters(params: &[ParamData], ctx: &mut LowerCtx) -> Vec<Fu
                 .unwrap_or_else(|| QualType::unqualified(ctx.registry.type_int));
 
             let final_ty = if let Some(declarator) = &param.declarator {
-                apply_declarator(base_ty.ty(), declarator, ctx)
+                apply_ast_declarator(base_ty.ty(), declarator, ctx)
             } else {
                 base_ty
             };
@@ -1214,36 +748,48 @@ fn lower_function_parameters(params: &[ParamData], ctx: &mut LowerCtx) -> Vec<Fu
 
             FunctionParameter {
                 param_type: decayed_ty,
-                name: param.declarator.as_ref().and_then(extract_identifier),
+                name: param.declarator.as_ref().and_then(extract_identifier_from_declarator),
             }
         })
         .collect()
 }
 
+// Local helper to exact identifier from ParsedDeclarator (duplicate of struct_lowering one, should unify later)
+fn extract_identifier_from_declarator(decl: &ParsedDeclarator) -> Option<NameId> {
+    match decl {
+        ParsedDeclarator::Identifier(name, _) => Some(*name),
+        ParsedDeclarator::Pointer(_, inner) => inner.as_ref().and_then(|d| extract_identifier_from_declarator(d)),
+        ParsedDeclarator::Array(inner, _) => extract_identifier_from_declarator(inner),
+        ParsedDeclarator::Function { inner, .. } => extract_identifier_from_declarator(inner),
+        ParsedDeclarator::BitField(inner, _) => extract_identifier_from_declarator(inner),
+        _ => None,
+    }
+}
+
 /// Apply declarator transformations to a base type
-pub(crate) fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx: &mut LowerCtx) -> QualType {
+pub(crate) fn apply_ast_declarator(base_type: TypeRef, declarator: &ParsedDeclarator, ctx: &mut LowerCtx) -> QualType {
     match declarator {
-        Declarator::Pointer(qualifiers, next) => {
+        ParsedDeclarator::Pointer(qualifiers, next) => {
             let pointer_type_ref = ctx.registry.pointer_to(base_type);
 
             if let Some(next_decl) = next {
-                let result = apply_declarator(pointer_type_ref, next_decl, ctx);
+                let result = apply_ast_declarator(pointer_type_ref, next_decl, ctx);
                 ctx.registry.merge_qualifiers(result, *qualifiers)
             } else {
                 QualType::new(pointer_type_ref, *qualifiers)
             }
         }
-        Declarator::Identifier(_, qualifiers) => {
+        ParsedDeclarator::Identifier(_, qualifiers) => {
             let base_type_ref = base_type;
             ctx.registry
                 .merge_qualifiers(QualType::unqualified(base_type_ref), *qualifiers)
         }
-        Declarator::Array(base, size) => {
+        ParsedDeclarator::Array(base, size) => {
             let array_size = match size {
-                ArraySize::Expression { expr, qualifiers: _ } => resolve_array_size(Some(*expr), ctx),
-                ArraySize::Star { qualifiers: _ } => ArraySizeType::Star,
-                ArraySize::Incomplete => ArraySizeType::Incomplete,
-                ArraySize::VlaSpecifier {
+                ParsedArraySize::Expression { expr, qualifiers: _ } => resolve_array_size(Some(*expr), ctx), // TODO: resolve_array_size needs ParsedNodeRef support
+                ParsedArraySize::Star { qualifiers: _ } => ArraySizeType::Star,
+                ParsedArraySize::Incomplete => ArraySizeType::Incomplete,
+                ParsedArraySize::VlaSpecifier {
                     is_static: _,
                     qualifiers: _,
                     size,
@@ -1251,49 +797,35 @@ pub(crate) fn apply_declarator(base_type: TypeRef, declarator: &Declarator, ctx:
             };
 
             let array_type_ref = ctx.registry.array_of(base_type, array_size);
-            apply_declarator(array_type_ref, base, ctx)
+            apply_ast_declarator(array_type_ref, base, ctx)
         }
-        Declarator::Function {
+        ParsedDeclarator::Function {
             inner: base,
             params,
             is_variadic,
         } => {
             let parameters = lower_function_parameters(params, ctx);
             let function_type_ref = ctx.registry.function_type(base_type, parameters, *is_variadic);
-            apply_declarator(function_type_ref, base, ctx)
+            apply_ast_declarator(function_type_ref, base, ctx)
         }
-        Declarator::AnonymousRecord(is_union, members) => {
-            // Create a new record type for the anonymous struct/union
+        ParsedDeclarator::AnonymousRecord(is_union, members) => {
+            // Use struct_lowering helper
             let record_type_ref = ctx.registry.declare_record(None, *is_union);
-
-            // Process members using the extracted logic
-            // Use the current node's span if available (we don't have it directly here, so we rely on members' spans mostly)
-            // But we need a span for lower_struct_members. We can use SourceSpan::empty() if we don't have one,
-            // or pass it down. apply_declarator doesn't take span.
-            // However, members themselves have spans in DeclarationData.
-            let struct_members = lower_struct_members(members, ctx, SourceSpan::empty());
-
-            // Complete the record type
+            let struct_members =
+                crate::semantic::struct_lowering::lower_struct_members(members, ctx, SourceSpan::empty());
             ctx.registry.complete_record(record_type_ref, struct_members);
-
-            if let Err(e) = ctx.registry.ensure_layout(record_type_ref) {
-                ctx.report_error(e);
-                QualType::unqualified(ctx.registry.type_error)
-            } else {
-                // Return the new record type
-                QualType::unqualified(record_type_ref)
-            }
+            let _ = ctx.registry.ensure_layout(record_type_ref);
+            QualType::unqualified(record_type_ref)
         }
-        Declarator::BitField(base, _) => {
-            // TODO: Handle bit fields
-            apply_declarator(base_type, base, ctx)
+        ParsedDeclarator::BitField(base, _) => {
+            // Bitfield logic handled in struct lowering usually. Here just type application.
+            apply_ast_declarator(base_type, base, ctx)
         }
-        Declarator::Abstract => QualType::unqualified(base_type),
+        ParsedDeclarator::Abstract => QualType::unqualified(base_type),
     }
 }
 
 /// Finalize tentative definitions by converting them to defined state
-/// This implements C11 6.9.2 semantics for tentative definitions
 fn finalize_tentative_definitions(symbol_table: &mut SymbolTable) {
     for entry in &mut symbol_table.entries {
         if entry.scope_id == ScopeId::GLOBAL
@@ -1305,394 +837,695 @@ fn finalize_tentative_definitions(symbol_table: &mut SymbolTable) {
     }
 }
 
-/// Main entry point for running semantic lowering on an entire AST
+/// Main entry point for running symbol resolution on ParsedAst
 pub(crate) fn run_symbol_resolver(
+    parsed_ast: &ParsedAst,
     ast: &mut Ast,
     diag: &mut DiagnosticEngine,
     symbol_table: &mut SymbolTable,
     registry: &mut TypeRegistry,
 ) -> Vec<Option<ScopeId>> {
     // Check if we have a root node to start traversal from
-    let node_length = ast.nodes.len();
-    let root_node_ref = ast.get_root();
+    let root_node_ref = parsed_ast.get_root();
 
-    // Finalize tentative definitions before any processing
-    // This must happen before creating the LowerCtx to avoid borrow conflicts
+    // We also resize the semantic AST to hold expected number of nodes? No, we build it.
+    // But we need scope map for SEMANTIC nodes.
+    // We can't pre-size it easily because 1 parsed declaration -> N semantic declarations.
+    // We'll let it grow.
+    let _scope_map: Vec<Option<ScopeId>> = Vec::new();
+
+    // Finalize tentative definitions
     finalize_tentative_definitions(symbol_table);
 
     // Create lowering context
-    let mut lower_ctx = LowerCtx::new(ast, diag, symbol_table, registry);
+    let mut lower_ctx = LowerCtx::new(parsed_ast, ast, diag, symbol_table, registry);
 
-    // initial size of scope map
-    lower_ctx.scope_map.resize(node_length, None);
+    // Perform recursive scope-aware lowering starting from root
+    let semantic_roots = lower_ctx.lower_node_recursive(root_node_ref);
 
-    // Perform recursive scope-aware lowering
-    lower_node_recursive(&mut lower_ctx, root_node_ref);
+    // The result of lower_node_recursive(root) should be TranslationUnit(s).
+    // But the Parser produces ONE TranslationUnit node.
+    // All children are TopLevels.
+
+    // We need to set the root of semantic AST.
+    // The recursive call on Root (TranslationUnit) checks NodeKind::TranslationUnit and returns a new TranslationUnit node.
+    if let Some(root) = semantic_roots.first() {
+        lower_ctx.ast.set_root(*root);
+    }
 
     lower_ctx.scope_map
 }
 
-fn lower_node_recursive(ctx: &mut LowerCtx, node_ref: NodeRef) {
-    let node_kind = {
-        let node = ctx.ast.get_node(node_ref);
-        node.kind.clone()
-    };
+impl<'a, 'src> LowerCtx<'a, 'src> {
+    pub(crate) fn lower_node_recursive(&mut self, parsed_ref: ParsedNodeRef) -> Vec<NodeRef> {
+        let parsed_node = self.parsed_ast.get_node(parsed_ref);
+        let span = parsed_node.span;
+        let kind = parsed_node.kind.clone();
 
-    match node_kind {
-        NodeKind::TranslationUnit(nodes) => {
-            ctx.symbol_table.set_current_scope(ScopeId::GLOBAL);
-            ctx.set_scope(node_ref, ScopeId::GLOBAL);
-
-            for node in nodes {
-                lower_node_recursive(ctx, node);
+        match kind {
+            ParsedNodeKind::TranslationUnit(children) => {
+                self.symbol_table.set_current_scope(ScopeId::GLOBAL);
+                let mut semantic_children = Vec::new();
+                for child in children {
+                    let lowered = self.lower_node_recursive(child);
+                    semantic_children.extend(lowered);
+                }
+                let tu_node = self
+                    .ast
+                    .push_node(Node::new(NodeKind::TranslationUnit(semantic_children), span));
+                self.set_scope(tu_node, ScopeId::GLOBAL);
+                vec![tu_node]
             }
-        }
-        NodeKind::FunctionDef(func_def) => {
-            // Extract function name from the ParsedType declarator
-            let func_name = extract_identifier_from_parsed_type(&func_def.declarator, ctx)
-                .unwrap_or_else(|| NameId::new("anonymous_function"));
+            ParsedNodeKind::CompoundStatement(stmts) => {
+                let scope_id = self.symbol_table.push_scope();
+                let mut semantic_stmts = Vec::new();
+                for stmt in stmts {
+                    semantic_stmts.extend(self.lower_node_recursive(stmt));
+                }
+                self.symbol_table.pop_scope();
 
-            // Extract the return type from the function definition's specifiers
-            let return_type_ref =
-                lower_decl_specifiers_for_function_return(&func_def.specifiers, ctx, ctx.ast.get_node(node_ref).span)
-                    .unwrap_or_else(|| QualType::unqualified(ctx.registry.type_int));
-
-            // Create the function type with the correct return type by applying the declarator
-            let declarator_type = apply_parsed_declarator(return_type_ref.ty(), &func_def.declarator, ctx);
-            let function_type_ref = declarator_type.ty();
-
-            // Extract parameters from the function type for the symbol entry
-            // This still requires accessing the registry because params are stored in TypeKind::Function
-            let parameters = if let TypeKind::Function { parameters, .. } = &ctx.registry.get(function_type_ref).kind {
-                parameters.clone()
-            } else {
-                Vec::new()
-            };
-
-            let symbol_entry_ref = ctx
-                .symbol_table
-                .define_function(
-                    func_name,
-                    function_type_ref,
-                    true, // is_definition
-                    ctx.ast.get_node(node_ref).span,
-                )
-                .expect("Function definition failed");
-
-            let param_scope_id = ctx.symbol_table.push_scope();
-            ctx.set_scope(node_ref, param_scope_id);
-
-            // Create normalized parameters for the FunctionData
-            let normalized_params = parameters
-                .into_iter()
-                .map(|param| {
-                    // Create a symbol entry for the parameter
-                    let param_symbol_ref = ctx
-                        .symbol_table
-                        .define_variable(
-                            param.name.unwrap_or_else(|| NameId::new("unnamed_param")),
-                            param.param_type.ty(),
-                            None, // No initializer
-                            None, // No alignment
-                            ctx.ast.get_node(node_ref).span,
-                        )
-                        .unwrap();
-
-                    crate::ast::ParamDecl {
-                        symbol: param_symbol_ref,
-                        ty: param.param_type,
-                    }
-                })
-                .collect();
-
-            // Create the Function semantic node
-            let function_data = crate::ast::FunctionData {
-                symbol: symbol_entry_ref,
-                ty: function_type_ref,
-                params: normalized_params,
-                body: func_def.body,
-            };
-
-            // Replace the FunctionDef node with the Function node
-            let function_node = Node::new(NodeKind::Function(function_data), ctx.ast.get_node(node_ref).span);
-            ctx.ast.replace_node(node_ref, function_node);
-
-            // Now process the function body with proper scope management
-            lower_node_recursive(ctx, func_def.body);
-            ctx.symbol_table.pop_scope();
-        }
-        NodeKind::CompoundStatement(nodes) => {
-            let scope_id = ctx.symbol_table.push_scope();
-            ctx.set_scope(node_ref, scope_id);
-
-            for node in nodes {
-                lower_node_recursive(ctx, node);
+                let node = self
+                    .ast
+                    .push_node(Node::new(NodeKind::CompoundStatement(semantic_stmts), span));
+                self.set_scope(node, scope_id);
+                vec![node]
             }
-            ctx.symbol_table.pop_scope();
-        }
-        NodeKind::Declaration(_) => {
-            let semantic_nodes = lower_declaration(ctx, node_ref);
+            ParsedNodeKind::Declaration(decl_data) => {
+                let mut nodes = Vec::new();
+                let spec_info = lower_decl_specifiers(&decl_data.specifiers, self, span);
 
-            if !semantic_nodes.is_empty() {
-                if semantic_nodes.len() == 1 {
-                    // Single declarator case: replace the original declaration node with the semantic node data
-                    let semantic_node_kind = semantic_nodes[0].clone();
-                    let original_span = ctx.ast.get_node(node_ref).span;
-                    ctx.ast
-                        .replace_node(node_ref, Node::new(semantic_node_kind, original_span));
-                    // After replacement, recurse into the semantic node to process its children
-                    if let NodeKind::VarDecl(var_decl) = &semantic_nodes[0]
-                        && let Some(init_expr) = var_decl.init
-                    {
-                        lower_node_recursive(ctx, init_expr);
+                if decl_data.init_declarators.is_empty() {
+                    if let Some(ty) = spec_info.base_type {
+                        if let crate::semantic::types::TypeKind::Record {
+                            tag, members, is_union, ..
+                        } = &self.registry.get(ty.ty()).kind
+                        {
+                            let fields = members
+                                .iter()
+                                .map(|m| crate::ast::nodes::FieldDeclData {
+                                    name: m.name,
+                                    ty: m.member_type,
+                                })
+                                .collect();
+                            let node = self.ast.push_node(Node::new(
+                                NodeKind::RecordDecl(crate::ast::nodes::RecordDeclData {
+                                    name: *tag,
+                                    ty: ty.ty(),
+                                    members: fields,
+                                    is_union: *is_union,
+                                }),
+                                span,
+                            ));
+                            self.set_scope(node, self.symbol_table.current_scope());
+                            return vec![node];
+                        } else if let crate::semantic::types::TypeKind::Enum { tag, enumerators, .. } =
+                            &self.registry.get(ty.ty()).kind
+                        {
+                            let members = enumerators
+                                .iter()
+                                .map(|e| crate::ast::nodes::EnumMember {
+                                    name: e.name,
+                                    value: e.value,
+                                    span: e.span,
+                                })
+                                .collect();
+                            let node = self.ast.push_node(Node::new(
+                                NodeKind::EnumDecl(crate::ast::nodes::EnumDeclData {
+                                    name: *tag,
+                                    ty: ty.ty(),
+                                    members,
+                                }),
+                                span,
+                            ));
+                            self.set_scope(node, self.symbol_table.current_scope());
+                            return vec![node];
+                        }
                     }
+                    return vec![];
+                }
+
+                for init in decl_data.init_declarators {
+                    let base_ty = spec_info.base_type.unwrap_or_else(|| {
+                        self.report_error(SemanticError::MissingTypeSpecifier { span });
+                        QualType::unqualified(self.registry.type_error)
+                    });
+
+                    let final_ty = apply_ast_declarator(base_ty.ty(), &init.declarator, self);
+                    let name = extract_identifier_from_declarator(&init.declarator)
+                        .expect("Anonymous declaration unsupported");
+
+                    if spec_info.is_typedef {
+                        if let Err(_e) = self.symbol_table.define_typedef(name, final_ty.ty(), span) {
+                            self.report_error(SemanticError::Redefinition {
+                                name,
+                                first_def: span,
+                                span,
+                            });
+                        }
+                        let node = self.ast.push_node(Node::new(
+                            NodeKind::TypedefDecl(TypedefDeclData { name, ty: final_ty }),
+                            span,
+                        ));
+                        self.set_scope(node, self.symbol_table.current_scope());
+                        nodes.push(node);
+                        continue;
+                    }
+
+                    let init_expr = init.initializer.map(|init_node| self.lower_expression(init_node));
+
+                    let is_func = matches!(init.declarator, ParsedDeclarator::Function { .. });
+
+                    if is_func {
+                        let func_decl = FunctionDeclData {
+                            name,
+                            ty: final_ty.ty(),
+                            storage: spec_info.storage,
+                            body: None,
+                        };
+                        if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition {
+                            existing,
+                            ..
+                        }) = self.symbol_table.define_function(name, final_ty.ty(), false, span)
+                        {
+                            let first_def = self.symbol_table.get_symbol(existing).def_span;
+                            self.report_error(SemanticError::Redefinition { name, first_def, span });
+                        }
+                        let node = self.ast.push_node(Node::new(NodeKind::FunctionDecl(func_decl), span));
+                        self.set_scope(node, self.symbol_table.current_scope());
+                        nodes.push(node);
+                    } else {
+                        // Array size deduction from initializer
+                        let mut final_ty = final_ty;
+                        if let Some(ie) = init_expr
+                            && let TypeKind::Array {
+                                element_type,
+                                size: ArraySizeType::Incomplete,
+                            } = &self.registry.get(final_ty.ty()).kind
+                        {
+                            let element_type = *element_type;
+                            if let Some(deduced_size) = self.deduce_array_size_full(ie) {
+                                let new_ty = self
+                                    .registry
+                                    .array_of(element_type, ArraySizeType::Constant(deduced_size));
+                                final_ty = QualType::new(new_ty, final_ty.qualifiers());
+                            }
+                        }
+
+                        let var_decl = VarDeclData {
+                            name,
+                            ty: final_ty,
+                            storage: spec_info.storage,
+                            init: init_expr,
+                            alignment: spec_info.alignment,
+                        };
+                        if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition {
+                            existing,
+                            ..
+                        }) =
+                            self.symbol_table
+                                .define_variable(name, final_ty.ty(), init_expr, spec_info.alignment, span)
+                        {
+                            let first_def = self.symbol_table.get_symbol(existing).def_span;
+                            self.report_error(SemanticError::Redefinition { name, first_def, span });
+                        }
+                        let node = self.ast.push_node(Node::new(NodeKind::VarDecl(var_decl), span));
+                        self.set_scope(node, self.symbol_table.current_scope());
+                        nodes.push(node);
+                    }
+                }
+                nodes
+            }
+            ParsedNodeKind::FunctionDef(func_def) => {
+                let spec_info = lower_decl_specifiers(&func_def.specifiers, self, span);
+                let base_ty = spec_info
+                    .base_type
+                    .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
+
+                let final_ty = apply_ast_declarator(base_ty.ty(), &func_def.declarator, self);
+                let func_name = extract_identifier_from_declarator(&func_def.declarator)
+                    .expect("Function definition must have a name");
+
+                if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) =
+                    self.symbol_table.define_function(func_name, final_ty.ty(), true, span)
+                {
+                    let entry = self.symbol_table.get_symbol(existing);
+                    if entry.def_state == DefinitionState::Defined {
+                        let first_def = entry.def_span;
+                        self.report_error(SemanticError::Redefinition {
+                            name: func_name,
+                            first_def,
+                            span,
+                        });
+                    }
+                }
+                let func_sym_ref = self.symbol_table.lookup_symbol(func_name).map(|(s, _)| s).unwrap();
+
+                let _scope_id = self.symbol_table.push_scope();
+
+                // Pre-scan labels for forward goto support
+                self.collect_labels(func_def.body);
+
+                let parameters = if let TypeKind::Function { parameters, .. } = &self.registry.get(final_ty.ty()).kind {
+                    parameters.clone()
                 } else {
-                    // Multi-declarator case: create a DeclarationList containing all semantic nodes
-                    let original_span = ctx.ast.get_node(node_ref).span;
-                    let semantic_node_refs: Vec<NodeRef> = semantic_nodes
-                        .into_iter()
-                        .map(|kind| ctx.ast.push_node(Node::new(kind, original_span)))
-                        .collect();
-                    let compound_node = Node::new(NodeKind::DeclarationList(semantic_node_refs), original_span);
-                    ctx.ast.replace_node(node_ref, compound_node);
+                    vec![]
+                };
+
+                let mut params_decl = Vec::new();
+                for param in parameters {
+                    if let Some(pname) = param.name
+                        && let Ok(sym) =
+                            self.symbol_table
+                                .define_variable(pname, param.param_type.ty(), None, None, span)
+                    {
+                        params_decl.push(ParamDecl {
+                            symbol: sym,
+                            ty: param.param_type,
+                        });
+                    }
+                }
+
+                let body_node = self.lower_single_statement(func_def.body);
+
+                self.symbol_table.pop_scope();
+
+                let node = self.ast.push_node(Node::new(
+                    NodeKind::Function(FunctionData {
+                        symbol: func_sym_ref,
+                        ty: final_ty.ty(),
+                        params: params_decl,
+                        body: body_node,
+                    }),
+                    span,
+                ));
+                self.set_scope(node, self.symbol_table.current_scope());
+                vec![node]
+            }
+            ParsedNodeKind::StaticAssert(expr, msg) => {
+                let lowered_expr = self.lower_expression(expr);
+                let node = self
+                    .ast
+                    .push_node(Node::new(NodeKind::StaticAssert(lowered_expr, msg), span));
+                self.set_scope(node, self.symbol_table.current_scope());
+                vec![node]
+            }
+            ParsedNodeKind::If(stmt) => {
+                let cond = self.lower_expression(stmt.condition);
+                let then = self.lower_single_statement(stmt.then_branch);
+                let else_branch = stmt.else_branch.map(|b| self.lower_single_statement(b));
+                vec![self.ast.push_node(Node::new(
+                    NodeKind::If(crate::ast::IfStmt {
+                        condition: cond,
+                        then_branch: then,
+                        else_branch,
+                    }),
+                    span,
+                ))]
+            }
+            ParsedNodeKind::While(stmt) => {
+                let cond = self.lower_expression(stmt.condition);
+                let body = self.lower_single_statement(stmt.body);
+                vec![self.ast.push_node(Node::new(
+                    NodeKind::While(crate::ast::WhileStmt { condition: cond, body }),
+                    span,
+                ))]
+            }
+            ParsedNodeKind::DoWhile(body, cond) => {
+                let b = self.lower_single_statement(body);
+                let c = self.lower_expression(cond);
+                vec![self.ast.push_node(Node::new(NodeKind::DoWhile(b, c), span))]
+            }
+            ParsedNodeKind::For(stmt) => {
+                let scope_id = self.symbol_table.push_scope();
+                let init = stmt
+                    .init
+                    .map(|i| self.lower_node_recursive(i).first().cloned().unwrap());
+                let cond = stmt.condition.map(|c| self.lower_expression(c));
+                let inc = stmt.increment.map(|i| self.lower_expression(i));
+                let body = self.lower_single_statement(stmt.body);
+                self.symbol_table.pop_scope();
+
+                let node = self.ast.push_node(Node::new(
+                    NodeKind::For(crate::ast::ForStmt {
+                        init,
+                        condition: cond,
+                        increment: inc,
+                        body,
+                    }),
+                    span,
+                ));
+                self.set_scope(node, scope_id);
+                vec![node]
+            }
+            ParsedNodeKind::Switch(cond, body) => {
+                let c = self.lower_expression(cond);
+                let b = self.lower_single_statement(body);
+                vec![self.ast.push_node(Node::new(NodeKind::Switch(c, b), span))]
+            }
+            ParsedNodeKind::Case(expr, stmt) => {
+                let e = self.lower_expression(expr);
+                let s = self.lower_single_statement(stmt);
+                vec![self.ast.push_node(Node::new(NodeKind::Case(e, s), span))]
+            }
+            ParsedNodeKind::CaseRange(start, end, stmt) => {
+                let s_expr = self.lower_expression(start);
+                let e_expr = self.lower_expression(end);
+                let s_stmt = self.lower_single_statement(stmt);
+                vec![
+                    self.ast
+                        .push_node(Node::new(NodeKind::CaseRange(s_expr, e_expr, s_stmt), span)),
+                ]
+            }
+            ParsedNodeKind::Default(stmt) => {
+                let s = self.lower_single_statement(stmt);
+                vec![self.ast.push_node(Node::new(NodeKind::Default(s), span))]
+            }
+            ParsedNodeKind::Break => {
+                vec![self.ast.push_node(Node::new(NodeKind::Break, span))]
+            }
+            ParsedNodeKind::Continue => {
+                vec![self.ast.push_node(Node::new(NodeKind::Continue, span))]
+            }
+            ParsedNodeKind::Goto(name) => {
+                let sym = self.resolve_label(name, span);
+                vec![self.ast.push_node(Node::new(NodeKind::Goto(name, sym), span))]
+            }
+            ParsedNodeKind::Label(name, inner) => {
+                let sym = self.define_label(name, span);
+                let s = self.lower_single_statement(inner);
+                vec![self.ast.push_node(Node::new(NodeKind::Label(name, s, sym), span))]
+            }
+            ParsedNodeKind::Return(expr) => {
+                let e = expr.map(|x| self.lower_expression(x));
+                vec![self.ast.push_node(Node::new(NodeKind::Return(e), span))]
+            }
+            ParsedNodeKind::ExpressionStatement(expr) => {
+                let e = expr.map(|x| self.lower_expression(x));
+                vec![self.ast.push_node(Node::new(NodeKind::ExpressionStatement(e), span))]
+            }
+            ParsedNodeKind::BinaryOp(op, lhs, rhs) => {
+                let l = self.lower_expression(lhs);
+                let r = self.lower_expression(rhs);
+                vec![self.ast.push_node(Node::new(NodeKind::BinaryOp(op, l, r), span))]
+            }
+            ParsedNodeKind::Assignment(op, lhs, rhs) => {
+                let l = self.lower_expression(lhs);
+                let r = self.lower_expression(rhs);
+                vec![self.ast.push_node(Node::new(NodeKind::Assignment(op, l, r), span))]
+            }
+            ParsedNodeKind::UnaryOp(op, operand) => {
+                let o = self.lower_expression(operand);
+                vec![self.ast.push_node(Node::new(NodeKind::UnaryOp(op, o), span))]
+            }
+            ParsedNodeKind::LiteralInt(val) => {
+                vec![self.ast.push_node(Node::new(NodeKind::LiteralInt(val), span))]
+            }
+            ParsedNodeKind::LiteralFloat(val) => {
+                vec![self.ast.push_node(Node::new(NodeKind::LiteralFloat(val), span))]
+            }
+            ParsedNodeKind::LiteralChar(val) => {
+                vec![self.ast.push_node(Node::new(NodeKind::LiteralChar(val), span))]
+            }
+            ParsedNodeKind::LiteralString(val) => {
+                vec![self.ast.push_node(Node::new(NodeKind::LiteralString(val), span))]
+            }
+            ParsedNodeKind::Ident(name) => {
+                let sym = self.resolve_ident(name, span);
+                vec![self.ast.push_node(Node::new(NodeKind::Ident(name, sym), span))]
+            }
+            ParsedNodeKind::FunctionCall(func, args) => {
+                let f = self.lower_expression(func);
+                let a = args.iter().map(|arg| self.lower_expression(*arg)).collect();
+                vec![self.ast.push_node(Node::new(NodeKind::FunctionCall(f, a), span))]
+            }
+            ParsedNodeKind::MemberAccess(base, member, is_arrow) => {
+                let b = self.lower_expression(base);
+                vec![
+                    self.ast
+                        .push_node(Node::new(NodeKind::MemberAccess(b, member, is_arrow), span)),
+                ]
+            }
+            ParsedNodeKind::Cast(ty_name, expr) => {
+                let e = self.lower_expression(expr);
+                let ty = convert_parsed_type_to_qual_type(self, ty_name, span)
+                    .unwrap_or(QualType::unqualified(self.registry.type_error));
+                vec![self.ast.push_node(Node::new(NodeKind::Cast(ty, e), span))]
+            }
+            ParsedNodeKind::PostIncrement(operand) => {
+                let o = self.lower_expression(operand);
+                vec![self.ast.push_node(Node::new(NodeKind::PostIncrement(o), span))]
+            }
+            ParsedNodeKind::PostDecrement(operand) => {
+                let o = self.lower_expression(operand);
+                vec![self.ast.push_node(Node::new(NodeKind::PostDecrement(o), span))]
+            }
+            ParsedNodeKind::IndexAccess(base, index) => {
+                let b = self.lower_expression(base);
+                let i = self.lower_expression(index);
+                vec![self.ast.push_node(Node::new(NodeKind::IndexAccess(b, i), span))]
+            }
+            ParsedNodeKind::TernaryOp(cond, then_branch, else_branch) => {
+                let c = self.lower_expression(cond);
+                let t = self.lower_expression(then_branch);
+                let e = self.lower_expression(else_branch);
+                vec![self.ast.push_node(Node::new(NodeKind::TernaryOp(c, t, e), span))]
+            }
+            ParsedNodeKind::GnuStatementExpression(stmt, expr) => {
+                let s = self.lower_expression(stmt);
+                let e = self.lower_expression(expr);
+                vec![
+                    self.ast
+                        .push_node(Node::new(NodeKind::GnuStatementExpression(s, e), span)),
+                ]
+            }
+            ParsedNodeKind::SizeOfExpr(expr) => {
+                let e = self.lower_expression(expr);
+                vec![self.ast.push_node(Node::new(NodeKind::SizeOfExpr(e), span))]
+            }
+            ParsedNodeKind::SizeOfType(ty_name) => {
+                let ty = convert_parsed_type_to_qual_type(self, ty_name, span)
+                    .unwrap_or(QualType::unqualified(self.registry.type_error));
+                vec![self.ast.push_node(Node::new(NodeKind::SizeOfType(ty), span))]
+            }
+            ParsedNodeKind::AlignOf(ty_name) => {
+                let ty = convert_parsed_type_to_qual_type(self, ty_name, span)
+                    .unwrap_or(QualType::unqualified(self.registry.type_error));
+                vec![self.ast.push_node(Node::new(NodeKind::AlignOf(ty), span))]
+            }
+            ParsedNodeKind::CompoundLiteral(ty_name, init) => {
+                let ty = convert_parsed_type_to_qual_type(self, ty_name, span)
+                    .unwrap_or(QualType::unqualified(self.registry.type_error));
+                let i = self.lower_expression(init);
+                vec![self.ast.push_node(Node::new(NodeKind::CompoundLiteral(ty, i), span))]
+            }
+            ParsedNodeKind::GenericSelection(control, associations) => {
+                let c = self.lower_expression(control);
+                let assoc = associations
+                    .iter()
+                    .map(|a| {
+                        let ty = a.type_name.map(|t| {
+                            convert_parsed_type_to_qual_type(self, t, span)
+                                .unwrap_or(QualType::unqualified(self.registry.type_error))
+                        });
+                        let expr = self.lower_expression(a.result_expr);
+                        crate::ast::nodes::ResolvedGenericAssociation { ty, result_expr: expr }
+                    })
+                    .collect();
+                vec![
+                    self.ast
+                        .push_node(Node::new(NodeKind::GenericSelection(c, assoc), span)),
+                ]
+            }
+            ParsedNodeKind::VaArg(va_list, type_ref) => {
+                let v = self.lower_expression(va_list);
+                vec![self.ast.push_node(Node::new(NodeKind::VaArg(v, type_ref), span))]
+            }
+            ParsedNodeKind::InitializerList(inits) => {
+                let lowered_inits = inits
+                    .iter()
+                    .map(|init| {
+                        let expr = self.lower_expression(init.initializer);
+                        let designation = init
+                            .designation
+                            .iter()
+                            .map(|d| match d {
+                                ParsedDesignator::FieldName(name) => crate::ast::nodes::Designator::FieldName(*name),
+                                ParsedDesignator::ArrayIndex(idx) => {
+                                    crate::ast::nodes::Designator::ArrayIndex(self.lower_expression(*idx))
+                                }
+                                ParsedDesignator::GnuArrayRange(start, end) => {
+                                    crate::ast::nodes::Designator::GnuArrayRange(
+                                        self.lower_expression(*start),
+                                        self.lower_expression(*end),
+                                    )
+                                }
+                            })
+                            .collect();
+
+                        crate::ast::nodes::DesignatedInitializer {
+                            designation,
+                            initializer: expr,
+                        }
+                    })
+                    .collect();
+                vec![
+                    self.ast
+                        .push_node(Node::new(NodeKind::InitializerList(lowered_inits), span)),
+                ]
+            }
+            ParsedNodeKind::Dummy => {
+                vec![self.ast.push_node(Node::new(NodeKind::Dummy, span))]
+            }
+            _ => vec![self.ast.push_node(Node::new(NodeKind::Dummy, span))],
+        }
+    }
+
+    pub(crate) fn lower_expression(&mut self, node: ParsedNodeRef) -> NodeRef {
+        match self.lower_node_recursive(node).first().cloned() {
+            Some(n) => n,
+            None => self.ast.push_node(Node::new(NodeKind::Dummy, SourceSpan::default())),
+        }
+    }
+
+    pub(crate) fn lower_single_statement(&mut self, node: ParsedNodeRef) -> NodeRef {
+        self.lower_node_recursive(node)
+            .first()
+            .cloned()
+            .unwrap_or_else(|| self.ast.push_node(Node::new(NodeKind::Dummy, SourceSpan::default())))
+    }
+
+    fn resolve_ident(&mut self, name: NameId, span: SourceSpan) -> SymbolRef {
+        if let Some((sym_ref, _)) = self.symbol_table.lookup_symbol(name) {
+            sym_ref
+        } else {
+            self.report_error(SemanticError::UndeclaredIdentifier { name, span });
+            SymbolRef::new(1).expect("SymbolRef 1 creation failed")
+        }
+    }
+
+    fn define_label(&mut self, name: NameId, span: SourceSpan) -> SymbolRef {
+        match self.symbol_table.define_label(name, self.registry.type_void, span) {
+            Ok(sym) => sym,
+            Err(_) => {
+                // If already defined (e.g. by pre-scan), look it up
+                self.symbol_table
+                    .lookup_label(name)
+                    .map(|(s, _)| s)
+                    .unwrap_or_else(|| SymbolRef::new(1).unwrap())
+            }
+        }
+    }
+
+    fn resolve_label(&mut self, name: NameId, span: SourceSpan) -> SymbolRef {
+        if let Some((sym_ref, _)) = self.symbol_table.lookup_label(name) {
+            sym_ref
+        } else {
+            // Forward references are okay because of pre-scan
+            // But if NOT even in pre-scan, then it's undeclared
+            self.report_error(SemanticError::UndeclaredIdentifier { name, span });
+            SymbolRef::new(1).unwrap()
+        }
+    }
+
+    fn collect_labels(&mut self, node: ParsedNodeRef) {
+        let parsed_node = self.parsed_ast.get_node(node);
+        match &parsed_node.kind {
+            ParsedNodeKind::Label(name, inner) => {
+                let _ = self
+                    .symbol_table
+                    .define_label(*name, self.registry.type_void, parsed_node.span);
+                self.collect_labels(*inner);
+            }
+            ParsedNodeKind::CompoundStatement(stmts) => {
+                for stmt in stmts {
+                    self.collect_labels(*stmt);
                 }
             }
+            ParsedNodeKind::If(stmt) => {
+                self.collect_labels(stmt.then_branch);
+                if let Some(eb) = stmt.else_branch {
+                    self.collect_labels(eb);
+                }
+            }
+            ParsedNodeKind::While(stmt) => {
+                self.collect_labels(stmt.body);
+            }
+            ParsedNodeKind::DoWhile(body, _) => {
+                self.collect_labels(*body);
+            }
+            ParsedNodeKind::For(stmt) => {
+                self.collect_labels(stmt.body);
+            }
+            ParsedNodeKind::Switch(_, body) => {
+                self.collect_labels(*body);
+            }
+            ParsedNodeKind::Case(_, stmt) | ParsedNodeKind::CaseRange(_, _, stmt) | ParsedNodeKind::Default(stmt) => {
+                self.collect_labels(*stmt);
+            }
+            _ => {}
         }
-        NodeKind::For(for_stmt) => {
-            let scope_id = ctx.symbol_table.push_scope();
-            ctx.set_scope(node_ref, scope_id);
+    }
 
-            if let Some(init) = for_stmt.init {
-                lower_node_recursive(ctx, init);
-            }
-            if let Some(cond) = for_stmt.condition {
-                lower_node_recursive(ctx, cond);
-            }
-            if let Some(inc) = for_stmt.increment {
-                lower_node_recursive(ctx, inc);
-            }
-            lower_node_recursive(ctx, for_stmt.body);
-            ctx.symbol_table.pop_scope();
-        }
-        // Other nodes that might contain statements/declarations
-        NodeKind::If(if_stmt) => {
-            lower_node_recursive(ctx, if_stmt.condition);
-            lower_node_recursive(ctx, if_stmt.then_branch);
-            if let Some(else_branch) = if_stmt.else_branch {
-                lower_node_recursive(ctx, else_branch);
-            }
-        }
-        NodeKind::While(while_stmt) => {
-            lower_node_recursive(ctx, while_stmt.condition);
-            lower_node_recursive(ctx, while_stmt.body);
-        }
-        NodeKind::DoWhile(body, condition) => {
-            lower_node_recursive(ctx, body);
-            lower_node_recursive(ctx, condition);
-        }
-        NodeKind::Label(name, stmt, _) => {
-            let label_ty = ctx.registry.type_void; // void for now
-            let _ = ctx
-                .symbol_table
-                .define_label(name, label_ty, ctx.ast.get_node(node_ref).span);
-            lower_node_recursive(ctx, stmt);
-        }
-        NodeKind::ParsedCast(parsed_type, expr_node) => {
-            // Convert ParsedType to TypeRef
-            let type_ref = convert_parsed_type_to_qual_type(ctx, parsed_type, ctx.ast.get_node(node_ref).span)
-                .unwrap_or_else(|_| {
-                    // Create an error type if conversion fails
-                    QualType::unqualified(ctx.registry.type_error)
-                });
-            // Replace the ParsedCast node with a Cast node
-            let cast_node = Node::new(NodeKind::Cast(type_ref, expr_node), ctx.ast.get_node(node_ref).span);
-            ctx.ast.replace_node(node_ref, cast_node);
-            lower_node_recursive(ctx, expr_node);
-        }
-        NodeKind::ParsedSizeOfType(parsed_type) => {
-            // Convert ParsedType to TypeRef
-            let type_ref = convert_parsed_type_to_qual_type(ctx, parsed_type, ctx.ast.get_node(node_ref).span)
-                .unwrap_or_else(|_| {
-                    // Create an error type if conversion fails
-                    QualType::unqualified(ctx.registry.type_error)
-                });
+    fn deduce_array_size_full(&self, init_node: NodeRef) -> Option<usize> {
+        let node_kind = self.ast.get_kind(init_node);
+        match node_kind {
+            NodeKind::InitializerList(inits) => {
+                let mut max_index: i64 = -1;
+                let mut current_index: i64 = 0;
 
-            // Ensure the type is complete before allowing sizeof
-            if let Err(e) = ctx.registry.ensure_layout(type_ref.ty()) {
-                ctx.report_error(e);
-            }
+                if inits.is_empty() {
+                    return Some(0);
+                }
 
-            // Replace the ParsedSizeOfType node with a SizeOfType node
-            let size_of_node = Node::new(NodeKind::SizeOfType(type_ref), ctx.ast.get_node(node_ref).span);
-            ctx.ast.replace_node(node_ref, size_of_node);
-        }
-        NodeKind::ParsedCompoundLiteral(parsed_type, initializer_node) => {
-            // Convert ParsedType to TypeRef
-            let type_ref = convert_parsed_type_to_qual_type(ctx, parsed_type, ctx.ast.get_node(node_ref).span)
-                .unwrap_or_else(|_| {
-                    // Create an error type if conversion fails
-                    QualType::unqualified(ctx.registry.type_error)
-                });
-            // Replace the ParsedCompoundLiteral node with a CompoundLiteral node
-            let compound_literal_node = Node::new(
-                NodeKind::CompoundLiteral(type_ref, initializer_node),
-                ctx.ast.get_node(node_ref).span,
-            );
-            ctx.ast.replace_node(node_ref, compound_literal_node);
-            lower_node_recursive(ctx, initializer_node);
-        }
-        NodeKind::ParsedAlignOf(parsed_type) => {
-            // Convert ParsedType to TypeRef
-            let type_ref = convert_parsed_type_to_qual_type(ctx, parsed_type, ctx.ast.get_node(node_ref).span)
-                .unwrap_or_else(|_| {
-                    // Create an error type if conversion fails
-                    QualType::unqualified(ctx.registry.type_error)
-                });
-            // Replace the ParsedAlignOf node with an AlignOf node
-            let align_of_node = Node::new(NodeKind::AlignOf(type_ref), ctx.ast.get_node(node_ref).span);
-            ctx.ast.replace_node(node_ref, align_of_node);
-        }
-        // Expression nodes - recurse into subexpressions
-        NodeKind::UnaryOp(_, expr) => {
-            lower_node_recursive(ctx, expr);
-        }
-        NodeKind::BinaryOp(_, left, right) => {
-            lower_node_recursive(ctx, left);
-            lower_node_recursive(ctx, right);
-        }
-        NodeKind::TernaryOp(cond, then_branch, else_branch) => {
-            lower_node_recursive(ctx, cond);
-            lower_node_recursive(ctx, then_branch);
-            lower_node_recursive(ctx, else_branch);
-        }
-        NodeKind::FunctionCall(func, args) => {
-            lower_node_recursive(ctx, func);
-            for arg in args {
-                lower_node_recursive(ctx, arg);
-            }
-        }
-        NodeKind::MemberAccess(obj, _, _) => {
-            lower_node_recursive(ctx, obj);
-        }
-        NodeKind::IndexAccess(arr, idx) => {
-            lower_node_recursive(ctx, arr);
-            lower_node_recursive(ctx, idx);
-        }
-        NodeKind::Cast(_, expr) => {
-            lower_node_recursive(ctx, expr);
-        }
-        NodeKind::SizeOfExpr(expr) => {
-            lower_node_recursive(ctx, expr);
-        }
-        NodeKind::SizeOfType(_) => {
-            // Already resolved, no subexpressions
-        }
-        NodeKind::AlignOf(_) => {
-            // Already resolved, no subexpressions
-        }
-        NodeKind::CompoundLiteral(_, init) => {
-            lower_node_recursive(ctx, init);
-        }
-        NodeKind::ParsedGenericSelection(ctrl, assocs) => {
-            lower_node_recursive(ctx, ctrl);
-            let mut resolved_assocs = Vec::new();
-            for assoc in assocs {
-                lower_node_recursive(ctx, assoc.result_expr);
-                let ty = match assoc.type_name {
-                    Some(parsed_type) => {
-                        match convert_parsed_type_to_qual_type(ctx, parsed_type, ctx.ast.get_node(node_ref).span) {
-                            Ok(ty) => Some(ty),
-                            Err(e) => {
-                                ctx.report_error(e);
-                                Some(QualType::unqualified(ctx.registry.type_error))
+                for init in inits {
+                    if let Some(first_designator) = init.designation.first() {
+                        match first_designator {
+                            crate::ast::Designator::ArrayIndex(expr_ref) => {
+                                let const_ctx = ConstEvalCtx { ast: self.ast };
+                                if let Some(val) = const_eval::eval_const_expr(&const_ctx, *expr_ref) {
+                                    current_index = val;
+                                } else {
+                                    return None;
+                                }
+                            }
+                            crate::ast::Designator::GnuArrayRange(start, end) => {
+                                let const_ctx = ConstEvalCtx { ast: self.ast };
+                                if let (Some(start_val), Some(end_val)) = (
+                                    const_eval::eval_const_expr(&const_ctx, *start),
+                                    const_eval::eval_const_expr(&const_ctx, *end),
+                                ) {
+                                    if start_val > end_val {
+                                        return None;
+                                    }
+                                    current_index = end_val;
+                                } else {
+                                    return None;
+                                }
+                            }
+                            crate::ast::Designator::FieldName(_) => {
+                                // Should not happen in array initializer
+                                return None;
                             }
                         }
                     }
-                    None => None,
-                };
-                resolved_assocs.push(ResolvedGenericAssociation {
-                    ty,
-                    result_expr: assoc.result_expr,
-                });
-            }
-            let generic_node = Node::new(
-                NodeKind::GenericSelection(ctrl, resolved_assocs),
-                ctx.ast.get_node(node_ref).span,
-            );
-            ctx.ast.replace_node(node_ref, generic_node);
-        }
-        // Statement nodes that contain expressions
-        NodeKind::ExpressionStatement(Some(expr)) => {
-            lower_node_recursive(ctx, expr);
-        }
-        NodeKind::Return(Some(expr)) => {
-            lower_node_recursive(ctx, expr);
-        }
-        NodeKind::Case(expr, stmt) => {
-            lower_node_recursive(ctx, expr);
-            lower_node_recursive(ctx, stmt);
-        }
-        NodeKind::CaseRange(start, end, stmt) => {
-            lower_node_recursive(ctx, start);
-            lower_node_recursive(ctx, end);
-            lower_node_recursive(ctx, stmt);
-        }
-        NodeKind::Default(stmt) => {
-            lower_node_recursive(ctx, stmt);
-        }
-        NodeKind::Switch(expr, body) => {
-            lower_node_recursive(ctx, expr);
-            lower_node_recursive(ctx, body);
-        }
-        // More expression nodes
-        NodeKind::Assignment(_, lhs, rhs) => {
-            lower_node_recursive(ctx, lhs);
-            lower_node_recursive(ctx, rhs);
-        }
-        NodeKind::PostIncrement(expr) => {
-            lower_node_recursive(ctx, expr);
-        }
-        NodeKind::PostDecrement(expr) => {
-            lower_node_recursive(ctx, expr);
-        }
-        NodeKind::GnuStatementExpression(compound, result) => {
-            lower_node_recursive(ctx, compound);
-            lower_node_recursive(ctx, result);
-        }
-        NodeKind::VaArg(expr, _) => {
-            lower_node_recursive(ctx, expr);
-        }
-        NodeKind::InitializerList(designated_inits) => {
-            for designated_init in designated_inits {
-                lower_node_recursive(ctx, designated_init.initializer);
-                for designator in &designated_init.designation {
-                    if let crate::ast::Designator::ArrayIndex(idx_expr) = designator {
-                        lower_node_recursive(ctx, *idx_expr);
+
+                    if current_index > max_index {
+                        max_index = current_index;
                     }
+                    current_index += 1;
+                }
+
+                if max_index >= 0 {
+                    Some((max_index + 1) as usize)
+                } else {
+                    Some(0)
                 }
             }
-        }
-        NodeKind::VarDecl(var_decl) => {
-            // Recurse into initializer if present
-            if let Some(init_expr) = var_decl.init {
-                lower_node_recursive(ctx, init_expr);
+            NodeKind::LiteralString(name_id) => {
+                let s = name_id.to_string();
+                Some(s.len() + 1)
             }
+            _ => None,
         }
-        NodeKind::FunctionDecl(_) | NodeKind::TypedefDecl(_) | NodeKind::RecordDecl(_) | NodeKind::EnumDecl(_) => {
-            // These semantic nodes don't have child expressions to lower
-        }
-        _ => {}
     }
-}
-
-/// Lower declaration specifiers for function return type
-fn lower_decl_specifiers_for_function_return(
-    specs: &[DeclSpecifier],
-    ctx: &mut LowerCtx,
-    span: SourceSpan,
-) -> Option<QualType> {
-    let info = lower_decl_specifiers(specs, ctx, span);
-    // Return types shouldn't have storage classes usually, but here we just want the type.
-    info.base_type
-        .map(|base| ctx.registry.merge_qualifiers(base, info.qualifiers))
 }

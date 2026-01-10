@@ -832,11 +832,11 @@ mod tests {
 
         Level: Error
         Message: redefinition of 'x'
-        Span: SourceSpan(source_id=SourceId(2), start=40, end=45)
+        Span: SourceSpan(source_id=SourceId(2), start=36, end=46)
 
         Level: Note
         Message: previous definition is here
-        Span: SourceSpan(source_id=SourceId(2), start=17, end=22)
+        Span: SourceSpan(source_id=SourceId(2), start=13, end=23)
         ");
     }
 

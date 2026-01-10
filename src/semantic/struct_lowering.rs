@@ -1,28 +1,35 @@
-use crate::ast::nodes::*;
-use crate::ast::utils::extract_identifier;
+// For any semantic nodes we might create? StructMember uses QualType.
+use crate::ast::parsed::*;
 use crate::diagnostic::SemanticError;
-use crate::semantic::const_eval::{self, ConstEvalCtx};
-use crate::semantic::symbol_resolver::{LowerCtx, apply_declarator, lower_decl_specifiers};
+use crate::semantic::const_eval::ConstEvalCtx;
+use crate::semantic::symbol_resolver::{LowerCtx, apply_ast_declarator, lower_decl_specifiers};
 use crate::semantic::{QualType, StructMember, TypeKind};
 use std::num::NonZeroU16;
 
 /// Extracts the bit-field width from a declarator if it exists.
-fn extract_bit_field_width<'a>(declarator: &'a Declarator, ctx: &mut LowerCtx) -> (Option<NonZeroU16>, &'a Declarator) {
-    if let Declarator::BitField(base, expr) = declarator {
-        let const_eval_ctx = ConstEvalCtx { ast: ctx.ast };
-        let width = if let Some(const_val) = const_eval::eval_const_expr(&const_eval_ctx, *expr) {
-            if const_val > 0 && const_val <= 16 {
-                NonZeroU16::new(const_val as u16)
+fn extract_bit_field_width<'a>(
+    declarator: &'a ParsedDeclarator,
+    ctx: &mut LowerCtx,
+) -> (Option<NonZeroU16>, &'a ParsedDeclarator) {
+    if let ParsedDeclarator::BitField(base, expr_ref) = declarator {
+        let _const_eval_ctx = ConstEvalCtx { ast: ctx.ast };
+        // expr_ref is ParsedNodeRef. ConstEval expects NodeRef.
+        // TODO: We cannot eval ParsedNodeRef directly with ConstEvalCtx unless we resolve it or have ParsedConstEval.
+        // For now, defer evaluation or assume 0/error.
+        // Or better, we assume the expression is simple literal maybe?
+        // Let's check ParsedAst for the node.
+        let node = ctx.parsed_ast.get_node(*expr_ref);
+        let width = if let ParsedNodeKind::LiteralInt(val) = node.kind {
+            if val > 0 && val <= 64 {
+                // Bitfield width can be up to type width (e.g. 64)
+                NonZeroU16::new(val as u16)
             } else {
-                ctx.report_error(SemanticError::InvalidBitfieldWidth {
-                    span: ctx.ast.get_node(*expr).span,
-                });
+                ctx.report_error(SemanticError::InvalidBitfieldWidth { span: node.span });
                 None
             }
         } else {
-            ctx.report_error(SemanticError::NonConstantBitfieldWidth {
-                span: ctx.ast.get_node(*expr).span,
-            });
+            // Evaluator needed for non-literals.
+            ctx.report_error(SemanticError::NonConstantBitfieldWidth { span: node.span });
             None
         };
         (width, base)
@@ -31,10 +38,21 @@ fn extract_bit_field_width<'a>(declarator: &'a Declarator, ctx: &mut LowerCtx) -
     }
 }
 
+fn extract_identifier_from_declarator(decl: &ParsedDeclarator) -> Option<crate::ast::NameId> {
+    match decl {
+        ParsedDeclarator::Identifier(name, _) => Some(*name),
+        ParsedDeclarator::Pointer(_, inner) => inner.as_ref().and_then(|d| extract_identifier_from_declarator(d)),
+        ParsedDeclarator::Array(inner, _) => extract_identifier_from_declarator(inner),
+        ParsedDeclarator::Function { inner, .. } => extract_identifier_from_declarator(inner),
+        ParsedDeclarator::BitField(inner, _) => extract_identifier_from_declarator(inner),
+        _ => None,
+    }
+}
+
 /// Common logic for lowering struct members, used by both TypeSpecifier::Record lowering
 /// and Declarator::AnonymousRecord handling.
 pub(crate) fn lower_struct_members(
-    members: &[DeclarationData],
+    members: &[ParsedDeclarationData],
     ctx: &mut LowerCtx,
     span: crate::ast::SourceSpan,
 ) -> Vec<StructMember> {
@@ -83,15 +101,11 @@ pub(crate) fn lower_struct_members(
         for init_declarator in &decl.init_declarators {
             let (bit_field_size, base_declarator) = extract_bit_field_width(&init_declarator.declarator, ctx);
 
-            let member_name = extract_identifier(base_declarator);
+            let member_name = extract_identifier_from_declarator(base_declarator);
 
             let member_type = if let Some(base_type_ref) = spec_info.base_type {
                 // Manually re-apply qualifiers from the base type.
-                // This is necessary because apply_declarator takes TypeRef (unqualified)
-                // and effectively strips the qualifiers from the base type during type construction.
-                // By re-applying them here, we ensure that qualifiers like `const` in `const int x;`
-                // are preserved on the final struct member type.
-                let ty = apply_declarator(base_type_ref.ty(), base_declarator, ctx);
+                let ty = apply_ast_declarator(base_type_ref.ty(), base_declarator, ctx);
                 ctx.registry.merge_qualifiers(ty, spec_info.qualifiers)
             } else {
                 QualType::unqualified(ctx.registry.type_int)

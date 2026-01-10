@@ -20,6 +20,16 @@ pub fn run_fail(source: &str, phase: CompilePhase) -> CompilerDriver {
     driver
 }
 
+pub fn run_fail_with_message(source: &str, phase: CompilePhase, message: &str) {
+    let driver = run_fail(source, phase);
+    check_diagnostic_message_only(&driver, message);
+}
+
+pub fn run_fail_with_diagnostic(source: &str, phase: CompilePhase, message: &str, line: u32, col: u32) {
+    let driver = run_fail(source, phase);
+    check_diagnostic(&driver, message, line, col);
+}
+
 pub fn setup_mir(source: &str) -> String {
     let (driver, result) = test_utils::run_pipeline(source, CompilePhase::Mir);
     let mut out = match result {
@@ -72,12 +82,12 @@ pub fn setup_diagnostics_output(source: &str) -> String {
 pub fn check_diagnostic(driver: &CompilerDriver, message: &str, line: u32, col: u32) {
     let diagnostics = driver.get_diagnostics();
     let found = diagnostics.iter().any(|d| {
-        if d.message.contains(message) {
-            if let Some((l, c)) = driver.source_manager.get_line_column(d.span.start()) {
-                if l == line && c == col {
-                    return true;
-                }
-            }
+        if d.message.contains(message)
+            && let Some((l, c)) = driver.source_manager.get_line_column(d.span.start())
+            && l == line
+            && c == col
+        {
+            return true;
         }
         false
     });

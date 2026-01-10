@@ -4,7 +4,14 @@
 //! declaration specifiers, initializers, and coordination between
 //! different declaration components.
 
-use crate::ast::{nodes::TypeQualifier, *};
+use crate::ast::SourceSpan;
+use crate::ast::nodes::StorageClass;
+use crate::ast::nodes::TypeQualifier;
+// Import all parsed types to be sure
+use crate::ast::parsed::{
+    ParsedAlignmentSpecifier, ParsedDeclSpecifier, ParsedDesignatedInitializer, ParsedDesignator, ParsedNodeKind,
+    ParsedNodeRef, ParsedTypeSpecifier,
+};
 use crate::diagnostic::ParseError;
 use crate::lexer::TokenKind;
 use log::debug;
@@ -13,7 +20,7 @@ use thin_vec::ThinVec;
 use super::Parser;
 
 /// Parse declaration specifiers
-pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVec<DeclSpecifier>, ParseError> {
+pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVec<ParsedDeclSpecifier>, ParseError> {
     let mut specifiers = ThinVec::new();
     let mut has_type_specifier = false;
     let start_idx = parser.current_idx;
@@ -50,7 +57,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                     _ => unreachable!(),
                 };
                 parser.advance();
-                specifiers.push(DeclSpecifier::StorageClass(storage_class));
+                specifiers.push(ParsedDeclSpecifier::StorageClass(storage_class));
             }
 
             // Type qualifiers
@@ -68,8 +75,8 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                             let parsed_type = super::parsed_type_builder::parse_parsed_type_name(parser)?;
 
                             parser.expect(TokenKind::RightParen)?;
-                            let type_specifier = TypeSpecifier::Atomic(parsed_type);
-                            specifiers.push(DeclSpecifier::TypeSpecifier(type_specifier));
+                            let type_specifier = ParsedTypeSpecifier::Atomic(parsed_type);
+                            specifiers.push(ParsedDeclSpecifier::TypeSpecifier(type_specifier));
                             has_type_specifier = true;
                             continue;
                         }
@@ -78,21 +85,21 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                     _ => unreachable!(),
                 };
                 parser.advance();
-                specifiers.push(DeclSpecifier::TypeQualifier(qualifier));
+                specifiers.push(ParsedDeclSpecifier::TypeQualifier(qualifier));
             }
 
             // Function specifiers
             TokenKind::Inline | TokenKind::Noreturn => {
-                let mut func_specs = FunctionSpecifiers::empty();
+                let mut func_specs = crate::ast::nodes::FunctionSpecifiers::empty();
                 while let Some(token) = parser.try_current_token() {
                     match token.kind {
-                        TokenKind::Inline => func_specs.insert(FunctionSpecifiers::INLINE),
-                        TokenKind::Noreturn => func_specs.insert(FunctionSpecifiers::NORETURN),
+                        TokenKind::Inline => func_specs.insert(crate::ast::nodes::FunctionSpecifiers::INLINE),
+                        TokenKind::Noreturn => func_specs.insert(crate::ast::nodes::FunctionSpecifiers::NORETURN),
                         _ => break,
                     }
                     parser.advance();
                 }
-                specifiers.push(DeclSpecifier::FunctionSpecifiers(func_specs));
+                specifiers.push(ParsedDeclSpecifier::FunctionSpecifiers(func_specs));
             }
 
             TokenKind::Attribute => {
@@ -100,7 +107,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                 if let Err(_e) = parse_attribute(parser) {
                     // For now, ignore attribute parsing errors
                 }
-                specifiers.push(DeclSpecifier::Attribute);
+                specifiers.push(ParsedDeclSpecifier::Attribute);
             }
 
             // Type specifiers
@@ -119,7 +126,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
             | TokenKind::Union
             | TokenKind::Enum => {
                 let type_specifier = super::type_specifiers::parse_type_specifier(parser)?;
-                specifiers.push(DeclSpecifier::TypeSpecifier(type_specifier));
+                specifiers.push(ParsedDeclSpecifier::TypeSpecifier(type_specifier));
                 has_type_specifier = true;
             }
 
@@ -139,7 +146,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                         symbol
                     );
                     let type_specifier = super::type_specifiers::parse_type_specifier(parser)?;
-                    specifiers.push(DeclSpecifier::TypeSpecifier(type_specifier));
+                    specifiers.push(ParsedDeclSpecifier::TypeSpecifier(type_specifier));
                     has_type_specifier = true;
                 } else {
                     debug!(
@@ -181,7 +188,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                     });
                 };
 
-                specifiers.push(DeclSpecifier::AlignmentSpecifier(alignment));
+                specifiers.push(ParsedDeclSpecifier::AlignmentSpecifier(alignment));
             }
 
             _ => {
@@ -217,7 +224,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
 }
 
 /// Parse initializer
-pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<NodeRef, ParseError> {
+pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     debug!(
         "parse_initializer: called at position {}, current token: {:?}",
         parser.current_idx,
@@ -247,8 +254,8 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<NodeRef, ParseErr
                     parse_initializer_expression(parser)?
                 };
 
-                // Wrap in DesignatedInitializer with empty designation
-                DesignatedInitializer {
+                // Wrap in ParsedDesignatedInitializer with empty designation
+                ParsedDesignatedInitializer {
                     designation: Vec::new(),
                     initializer: expr_or_compound,
                 }
@@ -263,7 +270,7 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<NodeRef, ParseErr
 
         let end_token = parser.expect(TokenKind::RightBrace)?;
         let span = SourceSpan::new(span.start(), end_token.span.end());
-        let initializer = parser.push_node(NodeKind::InitializerList(initializers), span);
+        let initializer = parser.push_node(ParsedNodeKind::InitializerList(initializers), span);
         Ok(initializer)
     } else {
         debug!(
@@ -277,7 +284,7 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<NodeRef, ParseErr
 }
 
 /// Parse designated initializer
-fn parse_designated_initializer(parser: &mut Parser) -> Result<DesignatedInitializer, ParseError> {
+fn parse_designated_initializer(parser: &mut Parser) -> Result<ParsedDesignatedInitializer, ParseError> {
     let designation = if parser.matches(&[TokenKind::Dot, TokenKind::LeftBracket]) {
         parse_designation(parser)?
     } else {
@@ -287,20 +294,20 @@ fn parse_designated_initializer(parser: &mut Parser) -> Result<DesignatedInitial
     parser.expect(TokenKind::Assign)?;
     let initializer = parse_initializer(parser)?;
 
-    Ok(DesignatedInitializer {
+    Ok(ParsedDesignatedInitializer {
         designation,
         initializer,
     })
 }
 
 /// Parse designation
-fn parse_designation(parser: &mut Parser) -> Result<Vec<Designator>, ParseError> {
+fn parse_designation(parser: &mut Parser) -> Result<Vec<ParsedDesignator>, ParseError> {
     let mut designators = Vec::new();
 
     while parser.matches(&[TokenKind::Dot, TokenKind::LeftBracket]) {
         if parser.accept(TokenKind::Dot).is_some() {
             let (field_name, _) = parser.expect_name()?;
-            designators.push(Designator::FieldName(field_name));
+            designators.push(ParsedDesignator::FieldName(field_name));
         } else if parser.accept(TokenKind::LeftBracket).is_some() {
             // Check if this is a range designator (contains ellipsis)
             let start_expr = parser.parse_expr_min()?;
@@ -309,11 +316,11 @@ fn parse_designation(parser: &mut Parser) -> Result<Vec<Designator>, ParseError>
             if parser.accept(TokenKind::Ellipsis).is_some() {
                 let end_expr = parser.parse_expr_min()?;
                 parser.expect(TokenKind::RightBracket)?;
-                designators.push(Designator::GnuArrayRange(start_expr, end_expr));
+                designators.push(ParsedDesignator::GnuArrayRange(start_expr, end_expr));
             } else {
                 // Single index designator
                 parser.expect(TokenKind::RightBracket)?;
-                designators.push(Designator::ArrayIndex(start_expr));
+                designators.push(ParsedDesignator::ArrayIndex(start_expr));
             }
         }
     }
@@ -322,7 +329,7 @@ fn parse_designation(parser: &mut Parser) -> Result<Vec<Designator>, ParseError>
 }
 
 /// Parse expression for initializer (stops at commas that separate declarators)
-fn parse_initializer_expression(parser: &mut Parser) -> Result<NodeRef, ParseError> {
+fn parse_initializer_expression(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     // Parse expressions in initializers, but stop at comma operators to avoid
     // consuming declarator-separating commas. Use assignment precedence to allow
     // most binary operators but prevent comma operators.

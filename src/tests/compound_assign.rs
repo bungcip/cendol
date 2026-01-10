@@ -3,8 +3,6 @@
 //! This module contains tests that compile and run C code with compound assignment
 //! operators to verify their correctness in the generated executable.
 
-#![cfg(test)]
-use crate::driver::cli::CompileConfig;
 use std::process::Command;
 use tempfile::NamedTempFile;
 
@@ -13,7 +11,7 @@ fn run_c_code(source: &str) -> i32 {
     let temp_path = temp_file.into_temp_path();
     let exe_path = temp_path.to_path_buf();
 
-    let config = CompileConfig {
+    let config = crate::driver::cli::CompileConfig {
         input_files: vec![crate::driver::cli::PathOrBuffer::Buffer(
             "test.c".into(),
             source.as_bytes().to_vec(),
@@ -24,7 +22,12 @@ fn run_c_code(source: &str) -> i32 {
 
     let mut driver = crate::driver::compiler::CompilerDriver::from_config(config);
     let result = driver.run();
-    assert!(result.is_ok(), "Compilation failed");
+
+    // Check for compilation errors
+    if result.is_err() || driver.source_manager.get_file_id("test.c").is_none() {
+         driver.print_diagnostics();
+         panic!("Compilation failed");
+    }
 
     let run_output = Command::new(exe_path).output().expect("Failed to execute");
 

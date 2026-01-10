@@ -538,24 +538,18 @@ impl<'a> AstToMirLowerer<'a> {
         let mir_ty = self.lower_type_to_mir(ty.ty());
 
         match &node_kind {
-            NodeKind::LiteralInt(val) => Operand::Constant(self.create_constant(ConstValue::Int(*val))),
-            NodeKind::LiteralFloat(val) => Operand::Constant(self.create_constant(ConstValue::Float(*val))),
-            NodeKind::LiteralChar(val) => Operand::Constant(self.create_constant(ConstValue::Int(*val as i64))),
-            NodeKind::LiteralString(val) => self.lower_literal_string(val, &ty),
+            NodeKind::LiteralInt(_)
+            | NodeKind::LiteralFloat(_)
+            | NodeKind::LiteralChar(_)
+            | NodeKind::LiteralString(_) => self.lower_literal(&node_kind, &ty),
             NodeKind::Ident(_, symbol_ref) => self.lower_ident(*symbol_ref),
-            NodeKind::UnaryOp(op, operand_ref) => match *op {
-                UnaryOp::PreIncrement | UnaryOp::PreDecrement => self.lower_pre_incdec(scope_id, op, *operand_ref),
-                UnaryOp::AddrOf => self.lower_unary_addrof(scope_id, *operand_ref),
-                UnaryOp::Deref => self.lower_unary_deref(scope_id, *operand_ref),
-                _ => {
-                    let operand = self.lower_expression(scope_id, *operand_ref, true);
-                    let mir_op = self.map_ast_unary_op_to_mir(op);
-                    let rval = Rvalue::UnaryOp(mir_op, operand);
-                    self.emit_rvalue_to_operand(rval, mir_ty)
-                }
-            },
-            NodeKind::PostIncrement(operand_ref) => self.lower_post_incdec(scope_id, *operand_ref, true, need_value),
-            NodeKind::PostDecrement(operand_ref) => self.lower_post_incdec(scope_id, *operand_ref, false, need_value),
+            NodeKind::UnaryOp(op, operand_ref) => self.lower_unary_op(scope_id, op, *operand_ref, mir_ty),
+            NodeKind::PostIncrement(operand_ref) => {
+                self.lower_post_incdec(scope_id, *operand_ref, true, need_value)
+            }
+            NodeKind::PostDecrement(operand_ref) => {
+                self.lower_post_incdec(scope_id, *operand_ref, false, need_value)
+            }
             NodeKind::BinaryOp(op, left_ref, right_ref) => {
                 self.lower_binary_op_expr(scope_id, op, *left_ref, *right_ref, mir_ty)
             }
@@ -596,50 +590,10 @@ impl<'a> AstToMirLowerer<'a> {
 
                 Operand::Copy(Box::new(Place::Local(result_local)))
             }
-            NodeKind::SizeOfExpr(expr) => {
-                let operand_ty = self
-                    .ast
-                    .get_resolved_type(*expr)
-                    .expect("SizeOf operand type missing")
-                    .ty();
-                let size = self.registry.get_layout(operand_ty).size;
-                Operand::Constant(self.create_constant(ConstValue::Int(size as i64)))
-            }
-            NodeKind::SizeOfType(ty) => {
-                let size = self.registry.get_layout(ty.ty()).size;
-                Operand::Constant(self.create_constant(ConstValue::Int(size as i64)))
-            }
-            NodeKind::AlignOf(ty) => {
-                let align = self.registry.get_layout(ty.ty()).alignment;
-                Operand::Constant(self.create_constant(ConstValue::Int(align as i64)))
-            }
-            NodeKind::GenericSelection(ctrl, assocs) => {
-                let ctrl_ty = self
-                    .ast
-                    .get_resolved_type(*ctrl)
-                    .expect("Controlling expr type missing")
-                    .ty();
-                let unqualified_ctrl = self.registry.strip_all(QualType::unqualified(ctrl_ty));
-
-                let mut selected_expr = None;
-                let mut default_expr = None;
-
-                for assoc in assocs {
-                    if let Some(ty) = assoc.ty {
-                        if self.registry.is_compatible(unqualified_ctrl, ty) {
-                            selected_expr = Some(assoc.result_expr);
-                            break;
-                        }
-                    } else {
-                        default_expr = Some(assoc.result_expr);
-                    }
-                }
-
-                let expr_to_lower = selected_expr
-                    .or(default_expr)
-                    .expect("Generic selection failed (should be caught by Analyzer)");
-                self.lower_expression(scope_id, expr_to_lower, need_value)
-            }
+            NodeKind::SizeOfExpr(_)
+            | NodeKind::SizeOfType(_)
+            | NodeKind::AlignOf(_)
+            | NodeKind::GenericSelection(_, _) => self.lower_compile_time_query(scope_id, &node_kind, need_value),
             NodeKind::VaArg(_valist, _ty) => {
                 // Intrinsic VA_ARG?
                 // For now, emit dummy or error. Or simple load if simplistic.
@@ -698,6 +652,86 @@ impl<'a> AstToMirLowerer<'a> {
             self.emit_assignment(place.clone(), init_operand);
 
             Operand::Copy(Box::new(place))
+        }
+    }
+
+    fn lower_literal(&mut self, node_kind: &NodeKind, ty: &QualType) -> Operand {
+        match node_kind {
+            NodeKind::LiteralInt(val) => Operand::Constant(self.create_constant(ConstValue::Int(*val))),
+            NodeKind::LiteralFloat(val) => Operand::Constant(self.create_constant(ConstValue::Float(*val))),
+            NodeKind::LiteralChar(val) => Operand::Constant(self.create_constant(ConstValue::Int(*val as i64))),
+            NodeKind::LiteralString(val) => self.lower_literal_string(val, ty),
+            _ => panic!("Not a literal: {:?}", node_kind),
+        }
+    }
+
+    fn lower_unary_op(
+        &mut self,
+        scope_id: ScopeId,
+        op: &UnaryOp,
+        operand_ref: NodeRef,
+        mir_ty: TypeId,
+    ) -> Operand {
+        match *op {
+            UnaryOp::PreIncrement | UnaryOp::PreDecrement => self.lower_pre_incdec(scope_id, op, operand_ref),
+            UnaryOp::AddrOf => self.lower_unary_addrof(scope_id, operand_ref),
+            UnaryOp::Deref => self.lower_unary_deref(scope_id, operand_ref),
+            _ => {
+                let operand = self.lower_expression(scope_id, operand_ref, true);
+                let mir_op = self.map_ast_unary_op_to_mir(op);
+                let rval = Rvalue::UnaryOp(mir_op, operand);
+                self.emit_rvalue_to_operand(rval, mir_ty)
+            }
+        }
+    }
+
+    fn lower_compile_time_query(&mut self, scope_id: ScopeId, node_kind: &NodeKind, need_value: bool) -> Operand {
+        match node_kind {
+            NodeKind::SizeOfExpr(expr) => {
+                let operand_ty = self
+                    .ast
+                    .get_resolved_type(*expr)
+                    .expect("SizeOf operand type missing")
+                    .ty();
+                let size = self.registry.get_layout(operand_ty).size;
+                Operand::Constant(self.create_constant(ConstValue::Int(size as i64)))
+            }
+            NodeKind::SizeOfType(ty) => {
+                let size = self.registry.get_layout(ty.ty()).size;
+                Operand::Constant(self.create_constant(ConstValue::Int(size as i64)))
+            }
+            NodeKind::AlignOf(ty) => {
+                let align = self.registry.get_layout(ty.ty()).alignment;
+                Operand::Constant(self.create_constant(ConstValue::Int(align as i64)))
+            }
+            NodeKind::GenericSelection(ctrl, assocs) => {
+                let ctrl_ty = self
+                    .ast
+                    .get_resolved_type(*ctrl)
+                    .expect("Controlling expr type missing")
+                    .ty();
+                let unqualified_ctrl = self.registry.strip_all(QualType::unqualified(ctrl_ty));
+
+                let mut selected_expr = None;
+                let mut default_expr = None;
+
+                for assoc in assocs {
+                    if let Some(ty) = assoc.ty {
+                        if self.registry.is_compatible(unqualified_ctrl, ty) {
+                            selected_expr = Some(assoc.result_expr);
+                            break;
+                        }
+                    } else {
+                        default_expr = Some(assoc.result_expr);
+                    }
+                }
+
+                let expr_to_lower = selected_expr
+                    .or(default_expr)
+                    .expect("Generic selection failed (should be caught by Analyzer)");
+                self.lower_expression(scope_id, expr_to_lower, need_value)
+            }
+            _ => panic!("Not a compile time query: {:?}", node_kind),
         }
     }
 

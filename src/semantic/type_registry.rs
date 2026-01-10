@@ -55,6 +55,7 @@ pub struct TypeRegistry {
     pub type_float: TypeRef,
     pub type_double: TypeRef,
     pub type_long_double: TypeRef,
+    pub type_void_ptr: TypeRef,
     pub type_error: TypeRef,
 }
 
@@ -92,6 +93,7 @@ impl TypeRegistry {
             type_float: unsafe { TypeRef::from_raw_unchecked(1) },
             type_double: unsafe { TypeRef::from_raw_unchecked(1) },
             type_long_double: unsafe { TypeRef::from_raw_unchecked(1) },
+            type_void_ptr: unsafe { TypeRef::from_raw_unchecked(1) },
             type_error: unsafe { TypeRef::from_raw_unchecked(1) },
         };
 
@@ -171,6 +173,9 @@ impl TypeRegistry {
 
         // 16: LongDouble
         self.type_long_double = self.alloc_builtin(TypeKind::Double { is_long_double: true });
+
+        // Pre-calculate void*
+        self.type_void_ptr = self.pointer_to(self.type_void);
 
         // We can assert that the last allocated index was 16
         debug_assert_eq!(self.types.len() - 1, 16, "Builtin types allocation mismatch");

@@ -293,6 +293,10 @@ impl MirType {
             _ => false,
         }
     }
+
+    pub fn is_pointer(&self) -> bool {
+        matches!(self, MirType::Pointer { .. })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -695,6 +699,22 @@ impl MirBuilder {
     /// Get all constants for validation
     pub fn get_constants(&self) -> &HashMap<ConstValueId, ConstValue> {
         &self.constants
+    }
+
+    pub fn get_globals(&self) -> &HashMap<GlobalId, Global> {
+        &self.globals
+    }
+
+    pub fn get_locals(&self) -> &HashMap<LocalId, Local> {
+        &self.locals
+    }
+
+    pub fn get_types(&self) -> &HashMap<TypeId, MirType> {
+        &self.types
+    }
+
+    pub fn get_statements(&self) -> &HashMap<MirStmtId, MirStmt> {
+        &self.statements
     }
 
     /// Set the entry block for a function

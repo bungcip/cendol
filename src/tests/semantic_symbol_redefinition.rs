@@ -40,7 +40,7 @@ mod tests {
         type %t3 = ptr<%t4>
         type %t4 = fn() -> %t0
 
-        global @x: i32 = cast<i32>(const 3)
+        global @x: i32 = const 3
 
         fn main() -> i32
         {
@@ -53,13 +53,13 @@ mod tests {
             cond_br %1, bb3, bb4
 
           bb3:
-            return cast<i32>(const 0)
+            return const 0
 
           bb4:
             br bb5
 
           bb5:
-            @x = cast<i32>(const 0)
+            @x = const 0
             return @x
         }
 

@@ -31,16 +31,16 @@ mod tests {
           }
 
           bb1:
-            %a = cast<i32>(const 1)
-            %b = cast<i32>(const 2)
+            %a = const 1
+            %b = const 2
             %3 = %a > %b
             cond_br %3, bb2, bb3
 
           bb2:
-            return cast<i32>(const 1)
+            return const 1
 
           bb3:
-            return cast<i32>(const 2)
+            return const 2
 
           bb4:
             unreachable
@@ -71,7 +71,7 @@ mod tests {
           }
 
           bb1:
-            %steins = cast<i32>(const 99)
+            %steins = const 99
             br bb2
 
           bb2:
@@ -114,8 +114,8 @@ mod tests {
           }
 
           bb1:
-            %steins = cast<i32>(const 44)
-            %gate = cast<i32>(const 1)
+            %steins = const 44
+            %gate = const 1
             br bb2
 
           bb2:
@@ -152,7 +152,7 @@ mod tests {
           }
 
           bb1:
-            %result = cast<i32>(const 99)
+            %result = const 99
             return %result
         }
         ");
@@ -171,7 +171,7 @@ mod tests {
         insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
-        global @result: i32 = cast<i32>(const 99)
+        global @result: i32 = const 99
 
         fn main() -> i32
         {
@@ -213,10 +213,10 @@ mod tests {
             br bb4
 
           bb4:
-            return cast<i32>(const 1)
+            return const 1
 
           bb5:
-            return cast<i32>(const 0)
+            return const 0
         }
         ");
     }
@@ -251,13 +251,13 @@ mod tests {
             cond_br %1, bb2, bb3
 
           bb2:
-            return cast<i32>(const 1)
+            return const 1
 
           bb3:
             br bb4
 
           bb4:
-            return cast<i32>(const 0)
+            return const 0
         }
         ");
     }
@@ -299,13 +299,13 @@ mod tests {
             cond_br %3, bb2, bb3
 
           bb2:
-            return cast<i32>(const 1)
+            return const 1
 
           bb3:
             br bb4
 
           bb4:
-            return cast<i32>(const 0)
+            return const 0
         }
         ");
     }
@@ -331,7 +331,7 @@ mod tests {
         {
 
           bb1:
-            return cast<i32>(const 0)
+            return const 0
         }
         ");
     }
@@ -353,14 +353,14 @@ mod tests {
         type %t1 = struct S { a: %t0, p: %t2 }
         type %t2 = ptr<%t0>
 
-        global @x: i32 = cast<i32>(const 10)
+        global @x: i32 = const 10
         global @s: %t1 = const struct_literal { 1: const @x, 0: const 1 }
 
         fn main() -> i32
         {
 
           bb1:
-            return cast<i32>(const 0)
+            return const 0
         }
         ");
     }
@@ -398,7 +398,7 @@ mod tests {
         {
 
           bb1:
-            return cast<i32>(const 0)
+            return const 0
         }
         ");
     }
@@ -431,8 +431,8 @@ mod tests {
           }
 
           bb1:
-            @s1.field_0 = cast<i32>(const 1)
-            %s2.field_0 = cast<i32>(const 2)
+            @s1.field_0 = const 1
+            %s2.field_0 = const 2
             return @s1.field_0
         }
         ");
@@ -467,13 +467,13 @@ mod tests {
           }
 
           bb1:
-            %x = cast<i32>(const 1)
-            %x = cast<i32>(const 2)
+            %x = const 1
+            %x = const 2
             %3 = %x != cast<i32>(const 2)
             cond_br %3, bb2, bb3
 
           bb2:
-            return cast<i32>(const 1)
+            return const 1
 
           bb3:
             br bb4
@@ -483,13 +483,13 @@ mod tests {
             cond_br %4, bb5, bb6
 
           bb5:
-            return cast<i32>(const 1)
+            return const 1
 
           bb6:
             br bb7
 
           bb7:
-            return cast<i32>(const 0)
+            return const 0
         }
         ");
     }
@@ -556,7 +556,7 @@ mod tests {
           }
 
           bb2:
-            %3 = call foo(cast<i32>(const 5))
+            %3 = call foo(const 5)
             return %3
         }
 
@@ -567,7 +567,7 @@ mod tests {
           }
 
           bb1:
-            %x = cast<i32>(const 10)
+            %x = const 10
             return %x
         }
         ");
@@ -681,14 +681,14 @@ mod tests {
             %13 = call fn_ullong()
             %14 = call fn_float()
             %15 = call fn_double()
-            return cast<i32>(const 0)
+            return const 0
         }
 
         fn fn_double() -> f64
         {
 
           bb13:
-            return cast<f64>(const 2.71828)
+            return const 2.71828
         }
 
         fn fn_char() -> i8
@@ -861,7 +861,7 @@ mod tests {
           }
 
           bb1:
-            %x = cast<i32>(const 10)
+            %x = const 10
             return %x
         }
         ");
@@ -890,7 +890,7 @@ mod tests {
           }
 
           bb1:
-            %s.field_1 = cast<i32>(const 0)
+            %s.field_1 = const 0
             %s.field_0 = addr_of(%s)
             return deref(deref(deref(deref(deref(%s.field_0).field_0).field_0).field_0).field_0).field_1
         }
@@ -920,7 +920,7 @@ mod tests {
           }
 
           bb1:
-            %u.field_1 = cast<i32>(const 0)
+            %u.field_1 = const 0
             %u.field_0 = addr_of(%u)
             return deref(deref(deref(deref(deref(%u.field_0).field_0).field_0).field_0).field_0).field_1
         }
@@ -1081,7 +1081,7 @@ mod tests {
           }
 
           bb1:
-            %okabe = cast<i32>(const 1)
+            %okabe = const 1
             %3 = %okabe
             %4 = %okabe + const 1
             %okabe = %4
@@ -1122,7 +1122,7 @@ mod tests {
             br bb2
 
           bb2:
-            return cast<i32>(const 0)
+            return const 0
         }
         ");
     }
@@ -1157,19 +1157,19 @@ mod tests {
           }
 
           bb1:
-            %x = cast<i32>(const 2)
+            %x = const 2
             %p = cast<ptr<void>>(addr_of(%x))
             %3 = deref(cast<ptr<i32>>(%p)) != cast<i32>(const 2)
             cond_br %3, bb2, bb3
 
           bb2:
-            return cast<i32>(const 1)
+            return const 1
 
           bb3:
             br bb4
 
           bb4:
-            return cast<i32>(const 0)
+            return const 0
         }
         ");
     }
@@ -1223,7 +1223,7 @@ mod tests {
         {
 
           bb1:
-            return cast<i32>(const 0)
+            return const 0
         }
         ");
     }
@@ -1254,7 +1254,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @"
+        insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = struct anonymous { a: %t0, __anon_1: %t2, __anon_2: %t3, __anon_3: %t6 }
         type %t2 = union anonymous { b1: %t0, b2: %t0 }
@@ -1270,11 +1270,11 @@ mod tests {
           }
 
           bb1:
-            %v.field_0 = cast<i32>(const 1)
-            %v.field_1.field_0 = cast<i32>(const 2)
-            %v.field_2.field_0.field_0.field_0 = cast<i32>(const 3)
-            %v.field_3.field_0 = cast<i32>(const 4)
-            return cast<i32>(const 0)
+            %v.field_0 = const 1
+            %v.field_1.field_0 = const 2
+            %v.field_2.field_0.field_0.field_0 = const 3
+            %v.field_3.field_0 = const 4
+            return const 0
         }
         ");
     }
@@ -1293,7 +1293,7 @@ mod tests {
         type %t0 = i32
         type %t1 = fn() -> %t0
 
-        global @s: i32 = cast<i32>(const 42)
+        global @s: i32 = const 42
 
         fn main() -> i32
         {
@@ -1312,7 +1312,100 @@ mod tests {
         {
 
           bb1:
-            return cast<i32>(const 0)
+            return const 0
+        }
+        ");
+    }
+
+    #[test]
+    fn test_ternary_with_mixed_pointer_integer() {
+        let source = r#"
+            int main() {
+                int i = 1;
+                void *p;
+                int *q;
+
+                p = i ? 0 : (void*)0;
+                p = i ? (void*)0 : 0;
+                
+                // Result type should be int* if it matches q
+                q = i ? 0 : q;
+                q = i ? q : 0;
+
+                return (int)q;
+            }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = i32
+        type %t1 = ptr<%t2>
+        type %t2 = void
+        type %t3 = ptr<%t0>
+
+        fn main() -> i32
+        {
+          locals {
+            %i: i32
+            %p: ptr<void>
+            %q: ptr<i32>
+            %4: ptr<void>
+            %5: ptr<void>
+            %6: ptr<i32>
+            %7: ptr<i32>
+          }
+
+          bb1:
+            %i = const 1
+            cond_br %i, bb2, bb3
+
+          bb2:
+            %4 = cast<ptr<void>>(const 0)
+            br bb4
+
+          bb3:
+            %4 = cast<ptr<void>>(const 0)
+            br bb4
+
+          bb4:
+            %p = %4
+            cond_br %i, bb5, bb6
+
+          bb5:
+            %5 = cast<ptr<void>>(const 0)
+            br bb7
+
+          bb6:
+            %5 = cast<ptr<void>>(const 0)
+            br bb7
+
+          bb7:
+            %p = %5
+            cond_br %i, bb8, bb9
+
+          bb8:
+            %6 = cast<ptr<i32>>(const 0)
+            br bb10
+
+          bb9:
+            %6 = %q
+            br bb10
+
+          bb10:
+            %q = %6
+            cond_br %i, bb11, bb12
+
+          bb11:
+            %7 = %q
+            br bb13
+
+          bb12:
+            %7 = cast<ptr<i32>>(const 0)
+            br bb13
+
+          bb13:
+            %q = %7
+            return cast<i32>(%q)
         }
         ");
     }

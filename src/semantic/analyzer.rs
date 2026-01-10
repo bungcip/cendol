@@ -118,6 +118,17 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
+    fn is_null_pointer_constant(&self, node_ref: NodeRef) -> bool {
+        let node_kind = self.ast.get_kind(node_ref);
+        match node_kind {
+            NodeKind::LiteralInt(0) => true,
+            NodeKind::Cast(ty, inner) if ty.ty() == self.registry.type_void_ptr => {
+                self.is_null_pointer_constant(*inner)
+            }
+            _ => false,
+        }
+    }
+
     fn check_scalar_condition(&mut self, condition: NodeRef) {
         if let Some(cond_ty) = self.visit_node(condition)
             && !cond_ty.is_scalar()
@@ -384,15 +395,29 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn record_implicit_conversions(&mut self, lhs_ty: QualType, rhs_ty: QualType, rhs_ref: NodeRef) {
+        let idx = rhs_ref.index();
+
+        // Null pointer constant conversion (0 or (void*)0 -> T*)
+        if lhs_ty.is_pointer() && self.is_null_pointer_constant(rhs_ref) {
+            self.semantic_info.conversions[idx].push(ImplicitConversion::NullPointerConstant);
+            // If it's still not the same type, we might need a PointerCast after NullPointerConstant desugaring?
+            // Actually NullPointerConstant desugars to (T*)0 in many cases.
+            if lhs_ty.ty() != self.registry.type_void_ptr {
+                self.semantic_info.conversions[idx].push(ImplicitConversion::PointerCast {
+                    from: self.registry.type_void_ptr,
+                    to: lhs_ty.ty(),
+                });
+            }
+            return;
+        }
+
         // Array-to-pointer decay
         if lhs_ty.is_pointer() && rhs_ty.is_array() {
-            let idx = rhs_ref.index();
             self.semantic_info.conversions[idx].push(ImplicitConversion::PointerDecay);
         }
 
         // Qualifier adjustment
         if lhs_ty.ty() == rhs_ty.ty() && lhs_ty.qualifiers() != rhs_ty.qualifiers() {
-            let idx = rhs_ref.index();
             self.semantic_info.conversions[idx].push(ImplicitConversion::QualifierAdjust {
                 from: rhs_ty.qualifiers(),
                 to: lhs_ty.qualifiers(),
@@ -409,16 +434,12 @@ impl<'a> SemanticAnalyzer<'a> {
             && (lhs_ty.ty() != rhs_ty.ty() || is_literal)
         {
             // For pointers, it's pointer cast. For arithmetic, integer/float cast.
-            // We can distinguish if needed, but ImplicitConversion::IntegerCast naming might be misleading for floats.
-            // However, check if PointerCast is distinct.
             if lhs_ty.is_pointer() && rhs_ty.is_pointer() {
-                let idx = rhs_ref.index();
                 self.semantic_info.conversions[idx].push(ImplicitConversion::PointerCast {
                     from: rhs_ty.ty(),
                     to: lhs_ty.ty(),
                 });
             } else if lhs_ty.is_arithmetic() && rhs_ty.is_arithmetic() {
-                let idx = rhs_ref.index();
                 self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerCast {
                     from: rhs_ty.ty(),
                     to: lhs_ty.ty(),
@@ -718,8 +739,33 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(*cond);
                 let then_ty = self.visit_node(*then);
                 let else_ty = self.visit_node(*else_expr);
+
                 if let (Some(t), Some(e)) = (then_ty, else_ty) {
-                    usual_arithmetic_conversions(self.registry, t, e)
+                    let result_ty = match (t, e) {
+                        (t, e) if t.is_arithmetic() && e.is_arithmetic() => {
+                            usual_arithmetic_conversions(self.registry, t, e)
+                        }
+                        (t, e) if t.ty() == e.ty() => Some(t),
+                        (t, _) if t.is_pointer() && self.is_null_pointer_constant(*else_expr) => Some(t),
+                        (_, e) if e.is_pointer() && self.is_null_pointer_constant(*then) => Some(e),
+                        (t, e) if t.is_pointer() && e.is_pointer() => {
+                            // C11 6.5.15: pointer to void and pointer to object -> pointer to void
+                            if t.ty() == self.registry.type_void_ptr || e.ty() == self.registry.type_void_ptr {
+                                Some(QualType::unqualified(self.registry.type_void_ptr))
+                            } else {
+                                // Should check compatibility, for now just use one or common
+                                Some(t)
+                            }
+                        }
+                        _ => usual_arithmetic_conversions(self.registry, t, e),
+                    };
+
+                    if let Some(res) = result_ty {
+                        self.record_implicit_conversions(res, t, *then);
+                        self.record_implicit_conversions(res, e, *else_expr);
+                        return Some(res);
+                    }
+                    None
                 } else {
                     None
                 }
@@ -759,17 +805,10 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::SizeOfExpr(expr) => {
                 if let Some(ty) = self.visit_node(*expr) {
                     let type_ref = ty.ty();
-                    // Ensure layout is computed, as we need the size later.
-                    // This will also catch incomplete types and return an error.
-                    // However, we rely on is_complete for the specific error check first?
-                    // Actually, ensure_layout returns error if incomplete.
-                    // But we might want specific error message.
-                    // The original code checked is_complete.
                     if !self.registry.is_complete(type_ref) {
                         let span = self.ast.get_span(node_ref);
                         self.report_error(SemanticError::SizeOfIncompleteType { ty: type_ref, span });
                     } else {
-                        // For complete types, ensure layout is computed so MIR lowering doesn't panic
                         let _ = self.registry.ensure_layout(type_ref);
                     }
                 }
@@ -781,7 +820,6 @@ impl<'a> SemanticAnalyzer<'a> {
                     let span = self.ast.get_span(node_ref);
                     self.report_error(SemanticError::SizeOfIncompleteType { ty: type_ref, span });
                 } else {
-                    // For complete types, ensure layout is computed so MIR lowering doesn't panic
                     let _ = self.registry.ensure_layout(type_ref);
                 }
                 Some(QualType::unqualified(self.registry.type_long_unsigned))

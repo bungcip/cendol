@@ -589,13 +589,15 @@ impl<'a> AstToMirLowerer<'a> {
                 // Then
                 self.mir_builder.set_current_block(then_block);
                 let then_val = self.lower_expression(scope_id, *then, true);
-                self.emit_assignment(Place::Local(result_local), then_val);
+                let then_val_conv = self.apply_conversions(then_val, *then, mir_ty);
+                self.emit_assignment(Place::Local(result_local), then_val_conv);
                 self.mir_builder.set_terminator(Terminator::Goto(exit_block));
 
                 // Else
                 self.mir_builder.set_current_block(else_block);
                 let else_val = self.lower_expression(scope_id, *else_expr, true);
-                self.emit_assignment(Place::Local(result_local), else_val);
+                let else_val_conv = self.apply_conversions(else_val, *else_expr, mir_ty);
+                self.emit_assignment(Place::Local(result_local), else_val_conv);
                 self.mir_builder.set_terminator(Terminator::Goto(exit_block));
 
                 self.mir_builder.set_current_block(exit_block);
@@ -1607,61 +1609,120 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn emit_conversion(&mut self, operand: Operand, conv: &ImplicitConversion, target_type_id: TypeId) -> Operand {
-        // Represent the conversion as an Operand::Cast instead of creating
-        // a temporary local. This allows consumers to emit the cast
-        // directly into the final assignment, avoiding an extra temp
-        // instruction (e.g. avoid `%tmp = cast(...); dest = %tmp`).
-        match conv {
+        let to_mir_type = match conv {
             ImplicitConversion::IntegerCast { to, .. }
             | ImplicitConversion::IntegerPromotion { to, .. }
-            | ImplicitConversion::PointerCast { to, .. } => {
-                let to_mir_type = self.lower_type_to_mir(*to);
-                Operand::Cast(to_mir_type, Box::new(operand))
+            | ImplicitConversion::PointerCast { to, .. } => self.lower_type_to_mir(*to),
+            ImplicitConversion::NullPointerConstant => {
+                // Null pointer constant usually converts to void* first.
+                // However, we can use target_type_id if it's already a pointer.
+                let void_ptr_mir = self.lower_type_to_mir(self.registry.type_void_ptr);
+                if self.mir_builder.get_type(target_type_id).is_pointer() {
+                    target_type_id
+                } else {
+                    void_ptr_mir
+                }
             }
+            ImplicitConversion::PointerDecay => target_type_id,
+            ImplicitConversion::LValueToRValue => target_type_id,
+            ImplicitConversion::QualifierAdjust { .. } => target_type_id,
+        };
+
+        // Optimization: skip if already same type
+        if self.get_operand_type(&operand) == to_mir_type && !matches!(conv, ImplicitConversion::PointerDecay) {
+            return operand;
+        }
+
+        match conv {
+            ImplicitConversion::IntegerCast { .. }
+            | ImplicitConversion::IntegerPromotion { .. }
+            | ImplicitConversion::PointerCast { .. } => Operand::Cast(to_mir_type, Box::new(operand)),
+            ImplicitConversion::NullPointerConstant => Operand::Cast(
+                to_mir_type,
+                Box::new(Operand::Constant(self.create_constant(ConstValue::Int(0)))),
+            ),
             ImplicitConversion::PointerDecay => {
-                // Pointer decay means converting an array/function to a pointer.
-                // In MIR, array-to-pointer decay is represented by AddressOf + ArrayIndex(0).
-                // Or simply AddressOf if we treat array as value?
-                // Wait, if we have array type operand `[N]T`, we need `T*`.
-                // `operand` is `Copy(Place)`.
-                // If it is an array, we need address of first element.
-                // `&array[0]`.
-                // In MIR, we can use `Cast` if backend supports it, but Cranelift might not support Array->Ptr cast directly.
-                // Better to desugar it here.
-
                 if let Operand::Copy(place) = &operand {
-                    // Check if it is an array or function
-                    // We don't have easy access to the source type here without looking up the node again.
-                    // But we can assume if PointerDecay is requested, the source is an array/function.
-                    // Actually, if it's an array, `Operand::Copy(place)` loads the whole array?
-                    // No, `Copy` just means "use the value at this place".
-                    // For array, it means the array value.
-
-                    // We want address of first element.
-                    // `&place` -> `AddressOf(place)`.
-                    // But `AddressOf(place)` gives `[N]T*`. We want `T*`.
-                    // This is `BitCast` or `PointerCast`?
-
-                    // In C, array decays to pointer to first element.
-                    // `&array[0]`.
-
-                    // If we use `Operand::AddressOf(place)`, we get pointer to array.
-                    // Pointer to array `[N]T*` has same representation as `T*`.
-                    // So we can cast it.
-
                     let addr_of_array = Operand::AddressOf(place.clone());
                     Operand::Cast(target_type_id, Box::new(addr_of_array))
                 } else {
-                    // If it's not a place (e.g. string literal which is Constant), handling might differ.
-                    // But string literal is lowered to Constant(GlobalAddress), which IS a pointer.
-                    // So maybe no decay needed?
-
-                    // If we get here with non-place, fallback to generic cast
                     Operand::Cast(target_type_id, Box::new(operand))
                 }
             }
             _ => Operand::Cast(target_type_id, Box::new(operand)),
         }
+    }
+
+    fn get_operand_type(&mut self, operand: &Operand) -> TypeId {
+        match operand {
+            Operand::Copy(place) => self.get_place_type(place),
+            Operand::Constant(const_id) => {
+                let const_val = self.mir_builder.get_constants().get(const_id).unwrap().clone();
+                match const_val {
+                    ConstValue::Int(_) => self.lower_type_to_mir(self.registry.type_int),
+                    ConstValue::Float(_) => self.lower_type_to_mir(self.registry.type_double),
+                    ConstValue::Bool(_) => self.lower_type_to_mir(self.registry.type_bool),
+                    ConstValue::Null => self.lower_type_to_mir(self.registry.type_void_ptr),
+                    ConstValue::Zero => self.lower_type_to_mir(self.registry.type_void),
+                    ConstValue::Cast(ty, _) => ty,
+                    ConstValue::GlobalAddress(global_id) => self.get_global_type(global_id),
+                    ConstValue::FunctionAddress(func_id) => self.get_function_type(func_id),
+                    ConstValue::StructLiteral(_) | ConstValue::ArrayLiteral(_) => {
+                        panic!("Unexpected aggregate constant in get_operand_type")
+                    }
+                }
+            }
+            Operand::AddressOf(place) => {
+                let pointee = self.get_place_type(place);
+                self.mir_builder.add_type(MirType::Pointer { pointee })
+            }
+            Operand::Cast(ty, _) => *ty,
+        }
+    }
+
+    fn get_place_type(&mut self, place: &Place) -> TypeId {
+        match place {
+            Place::Local(local_id) => self.mir_builder.get_locals().get(local_id).unwrap().type_id,
+            Place::Global(global_id) => self.get_global_type(*global_id),
+            Place::Deref(operand) => {
+                let ptr_ty = self.get_operand_type(operand);
+                match self.mir_builder.get_type(ptr_ty) {
+                    MirType::Pointer { pointee } => *pointee,
+                    _ => panic!("Deref of non-pointer type"),
+                }
+            }
+            Place::StructField(base, field_idx) => {
+                let struct_ty = self.get_place_type(base);
+                match self.mir_builder.get_type(struct_ty) {
+                    MirType::Record { fields, .. } => fields[*field_idx].1,
+                    _ => panic!("StructField access on non-struct type"),
+                }
+            }
+            Place::ArrayIndex(base, _) => {
+                let array_ty = self.get_place_type(base);
+                match self.mir_builder.get_type(array_ty) {
+                    MirType::Array { element, .. } => *element,
+                    _ => panic!("ArrayIndex access on non-array type"),
+                }
+            }
+        }
+    }
+
+    fn get_global_type(&self, global_id: GlobalId) -> TypeId {
+        self.mir_builder.get_globals().get(&global_id).unwrap().type_id
+    }
+
+    fn get_function_type(&mut self, func_id: MirFunctionId) -> TypeId {
+        let func = self.mir_builder.get_functions().get(&func_id).unwrap();
+        let ret_ty = func.return_type;
+        let mut param_types = Vec::new();
+        for &param_id in &func.params {
+            param_types.push(self.mir_builder.get_locals().get(&param_id).unwrap().type_id);
+        }
+        self.mir_builder.add_type(MirType::Function {
+            return_type: ret_ty,
+            params: param_types,
+        })
     }
 
     fn apply_conversions(&mut self, operand: Operand, node_ref: NodeRef, target_type_id: TypeId) -> Operand {

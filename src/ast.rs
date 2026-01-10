@@ -82,10 +82,10 @@ impl Ast {
     }
 
     /// Add a node to the AST and return its reference
-    pub(crate) fn push_node(&mut self, node: Node) -> NodeRef {
+    pub(crate) fn push_node(&mut self, kind: NodeKind, span: SourceSpan) -> NodeRef {
         let index = self.kinds.len() as u32 + 1; // Start from 1 for NonZeroU32
-        self.kinds.push(node.kind);
-        self.spans.push(node.span);
+        self.kinds.push(kind);
+        self.spans.push(span);
         NodeRef::new(index).expect("NodeRef overflow")
     }
 

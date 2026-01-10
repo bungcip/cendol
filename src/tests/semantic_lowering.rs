@@ -1,6 +1,6 @@
 use super::semantic_common::setup_lowering;
 use crate::ast::NodeKind;
-use crate::semantic::{TypeKind, TypeQualifiers};
+use crate::semantic::TypeQualifiers;
 
 #[test]
 fn test_record_decl_members_populated() {
@@ -22,13 +22,29 @@ fn test_record_decl_members_populated() {
             found_record_decl = true;
 
             // Assert that members are populated
-            assert_eq!(record_decl.members.len(), 2, "RecordDecl should have 2 members");
+            assert_eq!(record_decl.member_len, 2, "RecordDecl should have 2 members");
 
-            let x = &record_decl.members[0];
-            assert_eq!(x.name.map(|n| n.as_str()), Some("x"));
+            let member_start_idx = record_decl.member_start.index();
 
-            let y = &record_decl.members[1];
-            assert_eq!(y.name.map(|n| n.as_str()), Some("y"));
+            // Check first member
+            let x_kind = &ast.kinds[member_start_idx];
+            if let NodeKind::FieldDecl(x) = x_kind {
+                assert_eq!(x.name.map(|n| n.as_str()), Some("x"));
+            } else {
+                panic!("Expected FieldDecl at index {}, found {:?}", member_start_idx, x_kind);
+            }
+
+            // Check second member
+            let y_kind = &ast.kinds[member_start_idx + 1];
+            if let NodeKind::FieldDecl(y) = y_kind {
+                assert_eq!(y.name.map(|n| n.as_str()), Some("y"));
+            } else {
+                panic!(
+                    "Expected FieldDecl at index {}, found {:?}",
+                    member_start_idx + 1,
+                    y_kind
+                );
+            }
         }
     }
 
@@ -77,7 +93,7 @@ fn test_enum_decl_members_populated() {
 
 #[test]
 fn test_struct_member_qualifiers_preserved() {
-    let (ast, registry) = setup_lowering(
+    let (ast, _registry) = setup_lowering(
         r#"
         struct S {
             const int x;
@@ -93,25 +109,33 @@ fn test_struct_member_qualifiers_preserved() {
             && decl.name.map(|n| n.as_str()) == Some("S")
         {
             found = true;
-            let members = &decl.members;
-            assert_eq!(members.len(), 2);
+            assert_eq!(decl.member_len, 2);
 
-            if let TypeKind::Record { members, .. } = &registry.get(decl.ty).kind {
-                let x_mem = &members[0];
-                // We expect CONST.
+            let member_start_idx = decl.member_start.index();
+
+            // Check first member x
+            let x_kind = &ast.kinds[member_start_idx];
+            if let NodeKind::FieldDecl(x_decl) = x_kind {
+                // We access the QualType directly from FieldDeclData
                 assert!(
-                    x_mem.member_type.qualifiers().contains(TypeQualifiers::CONST),
+                    x_decl.ty.qualifiers().contains(TypeQualifiers::CONST),
                     "Struct member 'x' should be const, but has qualifiers: {:?}",
-                    x_mem.member_type.qualifiers()
+                    x_decl.ty.qualifiers()
                 );
+            } else {
+                panic!("Expected FieldDecl for x");
+            }
 
-                let y_mem = &members[1];
-                // 'y' is volatile pointer to int.
+            // Check second member y
+            let y_kind = &ast.kinds[member_start_idx + 1];
+            if let NodeKind::FieldDecl(y_decl) = y_kind {
                 assert!(
-                    y_mem.member_type.qualifiers().contains(TypeQualifiers::VOLATILE),
+                    y_decl.ty.qualifiers().contains(TypeQualifiers::VOLATILE),
                     "Struct member 'y' should be volatile, but has qualifiers: {:?}",
-                    y_mem.member_type.qualifiers()
+                    y_decl.ty.qualifiers()
                 );
+            } else {
+                panic!("Expected FieldDecl for y");
             }
         }
     }

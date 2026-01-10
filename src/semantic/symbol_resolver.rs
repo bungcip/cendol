@@ -54,7 +54,7 @@ fn apply_parsed_declarator_recursive(
             let parsed_params: Vec<_> = ctx.parsed_ast.parsed_types.get_params(params).to_vec();
             let mut processed_params = Vec::new();
             for param in parsed_params {
-                let param_type = convert_parsed_type_to_qual_type(ctx, param.ty, param.span).unwrap_or_else(|_| {
+                let param_type = convert_to_qual_type(ctx, param.ty, param.span).unwrap_or_else(|_| {
                     // Create an error type if conversion fails
                     QualType::unqualified(ctx.registry.type_int)
                 });
@@ -184,7 +184,7 @@ fn convert_parsed_base_type_to_qual_type(
                 // Process member types separately to avoid borrowing conflicts
                 let mut member_types = Vec::new();
                 for parsed_member in &parsed_members {
-                    let member_type_ref = convert_parsed_type_to_qual_type(ctx, parsed_member.ty, span)?;
+                    let member_type_ref = convert_to_qual_type(ctx, parsed_member.ty, span)?;
                     member_types.push(member_type_ref);
                 }
 
@@ -267,7 +267,7 @@ fn convert_parsed_base_type_to_qual_type(
 }
 
 /// Convert a ParsedType to a TypeRef
-fn convert_parsed_type_to_qual_type(
+fn convert_to_qual_type(
     ctx: &mut LowerCtx,
     parsed_type: ParsedType,
     span: SourceSpan,
@@ -481,7 +481,7 @@ fn resolve_type_specifier(
         }
         ParsedTypeSpecifier::Atomic(parsed_type) => {
             // Convert the ParsedType to a TypeRef by applying the declarator to the base type
-            convert_parsed_type_to_qual_type(ctx, *parsed_type, span)
+            convert_to_qual_type(ctx, *parsed_type, span)
         }
         ParsedTypeSpecifier::Record(is_union, tag, definition) => {
             // ... resolve_record_tag works same args ...
@@ -890,9 +890,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     let lowered = self.lower_node_recursive(child);
                     semantic_children.extend(lowered);
                 }
-                let tu_node = self
-                    .ast
-                    .push_node(Node::new(NodeKind::TranslationUnit(semantic_children), span));
+                let tu_node = self.ast.push_node(NodeKind::TranslationUnit(semantic_children), span);
                 self.set_scope(tu_node, ScopeId::GLOBAL);
                 vec![tu_node]
             }
@@ -904,9 +902,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
                 self.symbol_table.pop_scope();
 
-                let node = self
-                    .ast
-                    .push_node(Node::new(NodeKind::CompoundStatement(semantic_stmts), span));
+                let node = self.ast.push_node(NodeKind::CompoundStatement(semantic_stmts), span);
                 self.set_scope(node, scope_id);
                 vec![node]
             }
@@ -916,31 +912,64 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 if decl_data.init_declarators.is_empty() {
                     if let Some(ty) = spec_info.base_type {
-                        if let crate::semantic::types::TypeKind::Record {
-                            tag, members, is_union, ..
-                        } = &self.registry.get(ty.ty()).kind
-                        {
-                            let fields = members
-                                .iter()
-                                .map(|m| crate::ast::nodes::FieldDeclData {
+                        // Extract needed data from registry to avoid borrowing self.registry during node creation
+                        let record_data =
+                            if let crate::semantic::types::TypeKind::Record {
+                                tag, members, is_union, ..
+                            } = &self.registry.get(ty.ty()).kind
+                            {
+                                Some((*tag, members.clone(), *is_union))
+                            } else {
+                                None
+                            };
+
+                        if let Some((tag, members, is_union)) = record_data {
+                            // Reserve slot for RecordDecl to ensure parent < child index
+                            let record_decl_idx = self.ast.push_node(NodeKind::Dummy, span);
+
+                            let mut member_len = 0u16;
+                            // We need to capture the start if there are members.
+                            let member_start_idx = self.ast.kinds.len() as u32 + 1; // 1-based index
+                            let member_start = NodeRef::new(member_start_idx).expect("NodeRef overflow");
+
+                            for m in members {
+                                let field_data = crate::ast::nodes::FieldDeclData {
                                     name: m.name,
                                     ty: m.member_type,
-                                })
-                                .collect();
-                            let node = self.ast.push_node(Node::new(
+                                };
+                                let field_node = self.ast.push_node(
+                                    NodeKind::FieldDecl(field_data),
+                                    m.span, // Use member span
+                                );
+                                self.set_scope(field_node, self.symbol_table.current_scope());
+                                member_len += 1;
+                            }
+
+                            // Replace the reserved dummy node with the actual RecordDecl
+                            self.ast.kinds[record_decl_idx.index()] =
                                 NodeKind::RecordDecl(crate::ast::nodes::RecordDeclData {
-                                    name: *tag,
+                                    name: tag,
                                     ty: ty.ty(),
-                                    members: fields,
-                                    is_union: *is_union,
-                                }),
-                                span,
-                            ));
-                            self.set_scope(node, self.symbol_table.current_scope());
-                            return vec![node];
-                        } else if let crate::semantic::types::TypeKind::Enum { tag, enumerators, .. } =
+                                    member_start,
+                                    member_len,
+                                    is_union,
+                                });
+
+                            self.set_scope(record_decl_idx, self.symbol_table.current_scope());
+
+                            return vec![record_decl_idx];
+                        }
+
+                        // Handle Enum
+                        let enum_data = if let crate::semantic::types::TypeKind::Enum { tag, enumerators, .. } =
                             &self.registry.get(ty.ty()).kind
                         {
+                            Some((*tag, enumerators.clone()))
+                        } else {
+                            None
+                        };
+
+                        if let Some((tag, enumerators)) = enum_data {
                             let members = enumerators
                                 .iter()
                                 .map(|e| crate::ast::nodes::EnumMember {
@@ -949,14 +978,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                                     span: e.span,
                                 })
                                 .collect();
-                            let node = self.ast.push_node(Node::new(
-                                NodeKind::EnumDecl(crate::ast::nodes::EnumDeclData {
-                                    name: *tag,
+                            let node = self.ast.push_node(
+                                NodeKind::EnumDecl(EnumDeclData {
+                                    name: tag,
                                     ty: ty.ty(),
                                     members,
                                 }),
                                 span,
-                            ));
+                            );
                             self.set_scope(node, self.symbol_table.current_scope());
                             return vec![node];
                         }
@@ -982,10 +1011,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                                 span,
                             });
                         }
-                        let node = self.ast.push_node(Node::new(
-                            NodeKind::TypedefDecl(TypedefDeclData { name, ty: final_ty }),
-                            span,
-                        ));
+                        let node = self
+                            .ast
+                            .push_node(NodeKind::TypedefDecl(TypedefDeclData { name, ty: final_ty }), span);
                         self.set_scope(node, self.symbol_table.current_scope());
                         nodes.push(node);
                         continue;
@@ -1010,7 +1038,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                             let first_def = self.symbol_table.get_symbol(existing).def_span;
                             self.report_error(SemanticError::Redefinition { name, first_def, span });
                         }
-                        let node = self.ast.push_node(Node::new(NodeKind::FunctionDecl(func_decl), span));
+                        let node = self.ast.push_node(NodeKind::FunctionDecl(func_decl), span);
                         self.set_scope(node, self.symbol_table.current_scope());
                         nodes.push(node);
                     } else {
@@ -1048,7 +1076,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                             let first_def = self.symbol_table.get_symbol(existing).def_span;
                             self.report_error(SemanticError::Redefinition { name, first_def, span });
                         }
-                        let node = self.ast.push_node(Node::new(NodeKind::VarDecl(var_decl), span));
+                        let node = self.ast.push_node(NodeKind::VarDecl(var_decl), span);
                         self.set_scope(node, self.symbol_table.current_scope());
                         nodes.push(node);
                     }
@@ -1109,7 +1137,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 self.symbol_table.pop_scope();
 
-                let node = self.ast.push_node(Node::new(
+                let node = self.ast.push_node(
                     NodeKind::Function(FunctionData {
                         symbol: func_sym_ref,
                         ty: final_ty.ty(),
@@ -1117,15 +1145,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         body: body_node,
                     }),
                     span,
-                ));
+                );
                 self.set_scope(node, self.symbol_table.current_scope());
                 vec![node]
             }
             ParsedNodeKind::StaticAssert(expr, msg) => {
                 let lowered_expr = self.lower_expression(expr);
-                let node = self
-                    .ast
-                    .push_node(Node::new(NodeKind::StaticAssert(lowered_expr, msg), span));
+                let node = self.ast.push_node(NodeKind::StaticAssert(lowered_expr, msg), span);
                 self.set_scope(node, self.symbol_table.current_scope());
                 vec![node]
             }
@@ -1133,27 +1159,27 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let cond = self.lower_expression(stmt.condition);
                 let then = self.lower_single_statement(stmt.then_branch);
                 let else_branch = stmt.else_branch.map(|b| self.lower_single_statement(b));
-                vec![self.ast.push_node(Node::new(
+                vec![self.ast.push_node(
                     NodeKind::If(crate::ast::IfStmt {
                         condition: cond,
                         then_branch: then,
                         else_branch,
                     }),
                     span,
-                ))]
+                )]
             }
             ParsedNodeKind::While(stmt) => {
                 let cond = self.lower_expression(stmt.condition);
                 let body = self.lower_single_statement(stmt.body);
-                vec![self.ast.push_node(Node::new(
-                    NodeKind::While(crate::ast::WhileStmt { condition: cond, body }),
-                    span,
-                ))]
+                vec![
+                    self.ast
+                        .push_node(NodeKind::While(crate::ast::WhileStmt { condition: cond, body }), span),
+                ]
             }
             ParsedNodeKind::DoWhile(body, cond) => {
                 let b = self.lower_single_statement(body);
                 let c = self.lower_expression(cond);
-                vec![self.ast.push_node(Node::new(NodeKind::DoWhile(b, c), span))]
+                vec![self.ast.push_node(NodeKind::DoWhile(b, c), span)]
             }
             ParsedNodeKind::For(stmt) => {
                 let scope_id = self.symbol_table.push_scope();
@@ -1165,7 +1191,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let body = self.lower_single_statement(stmt.body);
                 self.symbol_table.pop_scope();
 
-                let node = self.ast.push_node(Node::new(
+                let node = self.ast.push_node(
                     NodeKind::For(crate::ast::ForStmt {
                         init,
                         condition: cond,
@@ -1173,150 +1199,141 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         body,
                     }),
                     span,
-                ));
+                );
                 self.set_scope(node, scope_id);
                 vec![node]
             }
             ParsedNodeKind::Switch(cond, body) => {
                 let c = self.lower_expression(cond);
                 let b = self.lower_single_statement(body);
-                vec![self.ast.push_node(Node::new(NodeKind::Switch(c, b), span))]
+                vec![self.ast.push_node(NodeKind::Switch(c, b), span)]
             }
             ParsedNodeKind::Case(expr, stmt) => {
                 let e = self.lower_expression(expr);
                 let s = self.lower_single_statement(stmt);
-                vec![self.ast.push_node(Node::new(NodeKind::Case(e, s), span))]
+                vec![self.ast.push_node(NodeKind::Case(e, s), span)]
             }
             ParsedNodeKind::CaseRange(start, end, stmt) => {
                 let s_expr = self.lower_expression(start);
                 let e_expr = self.lower_expression(end);
                 let s_stmt = self.lower_single_statement(stmt);
-                vec![
-                    self.ast
-                        .push_node(Node::new(NodeKind::CaseRange(s_expr, e_expr, s_stmt), span)),
-                ]
+                vec![self.ast.push_node(NodeKind::CaseRange(s_expr, e_expr, s_stmt), span)]
             }
             ParsedNodeKind::Default(stmt) => {
                 let s = self.lower_single_statement(stmt);
-                vec![self.ast.push_node(Node::new(NodeKind::Default(s), span))]
+                vec![self.ast.push_node(NodeKind::Default(s), span)]
             }
             ParsedNodeKind::Break => {
-                vec![self.ast.push_node(Node::new(NodeKind::Break, span))]
+                vec![self.ast.push_node(NodeKind::Break, span)]
             }
             ParsedNodeKind::Continue => {
-                vec![self.ast.push_node(Node::new(NodeKind::Continue, span))]
+                vec![self.ast.push_node(NodeKind::Continue, span)]
             }
             ParsedNodeKind::Goto(name) => {
                 let sym = self.resolve_label(name, span);
-                vec![self.ast.push_node(Node::new(NodeKind::Goto(name, sym), span))]
+                vec![self.ast.push_node(NodeKind::Goto(name, sym), span)]
             }
             ParsedNodeKind::Label(name, inner) => {
                 let sym = self.define_label(name, span);
                 let s = self.lower_single_statement(inner);
-                vec![self.ast.push_node(Node::new(NodeKind::Label(name, s, sym), span))]
+                vec![self.ast.push_node(NodeKind::Label(name, s, sym), span)]
             }
             ParsedNodeKind::Return(expr) => {
                 let e = expr.map(|x| self.lower_expression(x));
-                vec![self.ast.push_node(Node::new(NodeKind::Return(e), span))]
+                vec![self.ast.push_node(NodeKind::Return(e), span)]
             }
             ParsedNodeKind::ExpressionStatement(expr) => {
                 let e = expr.map(|x| self.lower_expression(x));
-                vec![self.ast.push_node(Node::new(NodeKind::ExpressionStatement(e), span))]
+                vec![self.ast.push_node(NodeKind::ExpressionStatement(e), span)]
             }
             ParsedNodeKind::BinaryOp(op, lhs, rhs) => {
                 let l = self.lower_expression(lhs);
                 let r = self.lower_expression(rhs);
-                vec![self.ast.push_node(Node::new(NodeKind::BinaryOp(op, l, r), span))]
+                vec![self.ast.push_node(NodeKind::BinaryOp(op, l, r), span)]
             }
             ParsedNodeKind::Assignment(op, lhs, rhs) => {
                 let l = self.lower_expression(lhs);
                 let r = self.lower_expression(rhs);
-                vec![self.ast.push_node(Node::new(NodeKind::Assignment(op, l, r), span))]
+                vec![self.ast.push_node(NodeKind::Assignment(op, l, r), span)]
             }
             ParsedNodeKind::UnaryOp(op, operand) => {
                 let o = self.lower_expression(operand);
-                vec![self.ast.push_node(Node::new(NodeKind::UnaryOp(op, o), span))]
+                vec![self.ast.push_node(NodeKind::UnaryOp(op, o), span)]
             }
             ParsedNodeKind::LiteralInt(val) => {
-                vec![self.ast.push_node(Node::new(NodeKind::LiteralInt(val), span))]
+                vec![self.ast.push_node(NodeKind::LiteralInt(val), span)]
             }
             ParsedNodeKind::LiteralFloat(val) => {
-                vec![self.ast.push_node(Node::new(NodeKind::LiteralFloat(val), span))]
+                vec![self.ast.push_node(NodeKind::LiteralFloat(val), span)]
             }
             ParsedNodeKind::LiteralChar(val) => {
-                vec![self.ast.push_node(Node::new(NodeKind::LiteralChar(val), span))]
+                vec![self.ast.push_node(NodeKind::LiteralChar(val), span)]
             }
             ParsedNodeKind::LiteralString(val) => {
-                vec![self.ast.push_node(Node::new(NodeKind::LiteralString(val), span))]
+                vec![self.ast.push_node(NodeKind::LiteralString(val), span)]
             }
             ParsedNodeKind::Ident(name) => {
                 let sym = self.resolve_ident(name, span);
-                vec![self.ast.push_node(Node::new(NodeKind::Ident(name, sym), span))]
+                vec![self.ast.push_node(NodeKind::Ident(name, sym), span)]
             }
             ParsedNodeKind::FunctionCall(func, args) => {
                 let f = self.lower_expression(func);
                 let a = args.iter().map(|arg| self.lower_expression(*arg)).collect();
-                vec![self.ast.push_node(Node::new(NodeKind::FunctionCall(f, a), span))]
+                vec![self.ast.push_node(NodeKind::FunctionCall(f, a), span)]
             }
             ParsedNodeKind::MemberAccess(base, member, is_arrow) => {
                 let b = self.lower_expression(base);
-                vec![
-                    self.ast
-                        .push_node(Node::new(NodeKind::MemberAccess(b, member, is_arrow), span)),
-                ]
+                vec![self.ast.push_node(NodeKind::MemberAccess(b, member, is_arrow), span)]
             }
             ParsedNodeKind::Cast(ty_name, expr) => {
                 let e = self.lower_expression(expr);
-                let ty = convert_parsed_type_to_qual_type(self, ty_name, span)
+                let ty = convert_to_qual_type(self, ty_name, span)
                     .unwrap_or(QualType::unqualified(self.registry.type_error));
-                vec![self.ast.push_node(Node::new(NodeKind::Cast(ty, e), span))]
+                vec![self.ast.push_node(NodeKind::Cast(ty, e), span)]
             }
             ParsedNodeKind::PostIncrement(operand) => {
                 let o = self.lower_expression(operand);
-                vec![self.ast.push_node(Node::new(NodeKind::PostIncrement(o), span))]
+                vec![self.ast.push_node(NodeKind::PostIncrement(o), span)]
             }
             ParsedNodeKind::PostDecrement(operand) => {
                 let o = self.lower_expression(operand);
-                vec![self.ast.push_node(Node::new(NodeKind::PostDecrement(o), span))]
+                vec![self.ast.push_node(NodeKind::PostDecrement(o), span)]
             }
             ParsedNodeKind::IndexAccess(base, index) => {
                 let b = self.lower_expression(base);
                 let i = self.lower_expression(index);
-                vec![self.ast.push_node(Node::new(NodeKind::IndexAccess(b, i), span))]
+                vec![self.ast.push_node(NodeKind::IndexAccess(b, i), span)]
             }
             ParsedNodeKind::TernaryOp(cond, then_branch, else_branch) => {
                 let c = self.lower_expression(cond);
                 let t = self.lower_expression(then_branch);
                 let e = self.lower_expression(else_branch);
-                vec![self.ast.push_node(Node::new(NodeKind::TernaryOp(c, t, e), span))]
+                vec![self.ast.push_node(NodeKind::TernaryOp(c, t, e), span)]
             }
             ParsedNodeKind::GnuStatementExpression(stmt, expr) => {
                 let s = self.lower_expression(stmt);
                 let e = self.lower_expression(expr);
-                vec![
-                    self.ast
-                        .push_node(Node::new(NodeKind::GnuStatementExpression(s, e), span)),
-                ]
+                vec![self.ast.push_node(NodeKind::GnuStatementExpression(s, e), span)]
             }
             ParsedNodeKind::SizeOfExpr(expr) => {
                 let e = self.lower_expression(expr);
-                vec![self.ast.push_node(Node::new(NodeKind::SizeOfExpr(e), span))]
+                vec![self.ast.push_node(NodeKind::SizeOfExpr(e), span)]
             }
             ParsedNodeKind::SizeOfType(ty_name) => {
-                let ty = convert_parsed_type_to_qual_type(self, ty_name, span)
+                let ty = convert_to_qual_type(self, ty_name, span)
                     .unwrap_or(QualType::unqualified(self.registry.type_error));
-                vec![self.ast.push_node(Node::new(NodeKind::SizeOfType(ty), span))]
+                vec![self.ast.push_node(NodeKind::SizeOfType(ty), span)]
             }
             ParsedNodeKind::AlignOf(ty_name) => {
-                let ty = convert_parsed_type_to_qual_type(self, ty_name, span)
+                let ty = convert_to_qual_type(self, ty_name, span)
                     .unwrap_or(QualType::unqualified(self.registry.type_error));
-                vec![self.ast.push_node(Node::new(NodeKind::AlignOf(ty), span))]
+                vec![self.ast.push_node(NodeKind::AlignOf(ty), span)]
             }
             ParsedNodeKind::CompoundLiteral(ty_name, init) => {
-                let ty = convert_parsed_type_to_qual_type(self, ty_name, span)
+                let ty = convert_to_qual_type(self, ty_name, span)
                     .unwrap_or(QualType::unqualified(self.registry.type_error));
                 let i = self.lower_expression(init);
-                vec![self.ast.push_node(Node::new(NodeKind::CompoundLiteral(ty, i), span))]
+                vec![self.ast.push_node(NodeKind::CompoundLiteral(ty, i), span)]
             }
             ParsedNodeKind::GenericSelection(control, associations) => {
                 let c = self.lower_expression(control);
@@ -1324,21 +1341,18 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     .iter()
                     .map(|a| {
                         let ty = a.type_name.map(|t| {
-                            convert_parsed_type_to_qual_type(self, t, span)
+                            convert_to_qual_type(self, t, span)
                                 .unwrap_or(QualType::unqualified(self.registry.type_error))
                         });
                         let expr = self.lower_expression(a.result_expr);
-                        crate::ast::nodes::ResolvedGenericAssociation { ty, result_expr: expr }
+                        ResolvedGenericAssociation { ty, result_expr: expr }
                     })
                     .collect();
-                vec![
-                    self.ast
-                        .push_node(Node::new(NodeKind::GenericSelection(c, assoc), span)),
-                ]
+                vec![self.ast.push_node(NodeKind::GenericSelection(c, assoc), span)]
             }
             ParsedNodeKind::VaArg(va_list, type_ref) => {
                 let v = self.lower_expression(va_list);
-                vec![self.ast.push_node(Node::new(NodeKind::VaArg(v, type_ref), span))]
+                vec![self.ast.push_node(NodeKind::VaArg(v, type_ref), span)]
             }
             ParsedNodeKind::InitializerList(inits) => {
                 let lowered_inits = inits
@@ -1368,22 +1382,22 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         }
                     })
                     .collect();
-                vec![
-                    self.ast
-                        .push_node(Node::new(NodeKind::InitializerList(lowered_inits), span)),
-                ]
+                vec![self.ast.push_node(NodeKind::InitializerList(lowered_inits), span)]
             }
-            ParsedNodeKind::Dummy => {
-                vec![self.ast.push_node(Node::new(NodeKind::Dummy, span))]
+            ParsedNodeKind::EmptyStatement => {
+                vec![]
             }
-            _ => vec![self.ast.push_node(Node::new(NodeKind::Dummy, span))],
+            _ => {
+                // For unhandled nodes (or Dummy), push a Dummy node to avoid ICE
+                vec![self.ast.push_node(NodeKind::Dummy, span)]
+            }
         }
     }
 
     pub(crate) fn lower_expression(&mut self, node: ParsedNodeRef) -> NodeRef {
         match self.lower_node_recursive(node).first().cloned() {
             Some(n) => n,
-            None => self.ast.push_node(Node::new(NodeKind::Dummy, SourceSpan::default())),
+            None => self.ast.push_node(NodeKind::Dummy, SourceSpan::default()),
         }
     }
 
@@ -1391,7 +1405,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         self.lower_node_recursive(node)
             .first()
             .cloned()
-            .unwrap_or_else(|| self.ast.push_node(Node::new(NodeKind::Dummy, SourceSpan::default())))
+            .unwrap_or_else(|| self.ast.push_node(NodeKind::Dummy, SourceSpan::default()))
     }
 
     fn resolve_ident(&mut self, name: NameId, span: SourceSpan) -> SymbolRef {

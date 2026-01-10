@@ -78,7 +78,6 @@ pub enum NodeKind {
     Default(NodeRef /* statement */),
 
     ExpressionStatement(Option<NodeRef> /* expression */), // Expression followed by ';'
-    EmptyStatement,                                        // ';'
 
     // --- Declarations & Definitions ---
     // Removed Parser-only Declaration and FunctionDef variants.
@@ -92,6 +91,7 @@ pub enum NodeKind {
     FunctionDecl(FunctionDeclData),
     TypedefDecl(TypedefDeclData),
     RecordDecl(RecordDeclData),
+    FieldDecl(FieldDeclData),
     EnumDecl(EnumDeclData),
     Function(FunctionData),
 
@@ -194,7 +194,10 @@ pub struct TypedefDeclData {
 pub struct RecordDeclData {
     pub name: Option<NameId>,
     pub ty: TypeRef,
-    pub members: Vec<FieldDeclData>,
+    pub member_start: NodeRef,
+    /// index where FieldDecl located
+    pub member_len: u16,
+
     pub is_union: bool,
 }
 

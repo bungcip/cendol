@@ -663,7 +663,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.deferred_checks.push(DeferredCheck::StaticAssert(node_ref));
                 None
             }
-            NodeKind::Break | NodeKind::Continue | NodeKind::Goto(_, _) | NodeKind::EmptyStatement => None,
+            NodeKind::Break | NodeKind::Continue | NodeKind::Goto(_, _) => None,
             NodeKind::Label(_, stmt, _) => {
                 self.visit_node(*stmt);
                 None
@@ -816,8 +816,7 @@ impl<'a> SemanticAnalyzer<'a> {
             | NodeKind::Break
             | NodeKind::Continue
             | NodeKind::Goto(..)
-            | NodeKind::Label(..)
-            | NodeKind::EmptyStatement => self.visit_statement_node(node_ref, node_kind),
+            | NodeKind::Label(..) => self.visit_statement_node(node_ref, node_kind),
 
             // Expressions (Catch-all)
             _ => self.visit_expression_node(node_ref, node_kind),

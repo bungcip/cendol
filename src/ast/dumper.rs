@@ -176,10 +176,9 @@ impl AstDumper {
             }
             NodeKind::RecordDecl(record_decl) => {
                 type_refs.insert(record_decl.ty);
-                // Also collect from record members
-                for member in &record_decl.members {
-                    type_refs.insert(member.ty.ty());
-                }
+            }
+            NodeKind::FieldDecl(field_decl) => {
+                type_refs.insert(field_decl.ty.ty());
             }
             NodeKind::EnumDecl(enum_decl) => {
                 type_refs.insert(enum_decl.ty);
@@ -238,7 +237,6 @@ impl AstDumper {
             | NodeKind::CaseRange(_, _, _)
             | NodeKind::Default(_)
             | NodeKind::ExpressionStatement(_)
-            | NodeKind::EmptyStatement
             | NodeKind::InitializerList(_)
             | NodeKind::StaticAssert(_, _)
             | NodeKind::EnumConstant(_, _)
@@ -410,7 +408,7 @@ impl AstDumper {
                 "ExpressionStatement({})",
                 expr.map(|r| r.get().to_string()).unwrap_or("none".to_string())
             ),
-            NodeKind::EmptyStatement => println!("EmptyStatement"),
+
             // Declaration and FunctionDef removed
             NodeKind::Function(function_data) => {
                 // Get the function name from the symbol table
@@ -449,11 +447,16 @@ impl AstDumper {
             }
             NodeKind::RecordDecl(record_decl) => {
                 println!(
-                    "RecordDecl(name={:?}, ty={}, is_union={})",
+                    "RecordDecl(name={:?}, ty={}, is_union={}, members={}..{})",
                     record_decl.name,
                     record_decl.ty.get(),
-                    record_decl.is_union
+                    record_decl.is_union,
+                    record_decl.member_start.get(),
+                    record_decl.member_start.get() + record_decl.member_len as u32
                 )
+            }
+            NodeKind::FieldDecl(field_decl) => {
+                println!("FieldDecl(name={:?}, ty={})", field_decl.name, field_decl.ty)
             }
             NodeKind::EnumDecl(enum_decl) => {
                 println!(

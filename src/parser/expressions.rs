@@ -186,7 +186,7 @@ pub(crate) fn parse_expression(
 }
 
 /// Parse prefix expression
-pub(crate) fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let token = parser.current_token()?;
 
     debug!("parse_prefix: token={:?} at {}", token.kind, token.span);
@@ -370,7 +370,7 @@ fn parse_infix(
 }
 
 /// Parse GNU statement expression: ({ compound-statement })
-pub(crate) fn parse_gnu_statement_expression(
+fn parse_gnu_statement_expression(
     parser: &mut Parser,
     start_loc: SourceLoc,
 ) -> Result<ParsedNodeRef, ParseError> {
@@ -493,7 +493,7 @@ fn parse_postfix_decrement(
 }
 
 /// Parse _Generic selection (C11)
-pub(crate) fn parse_generic_selection(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_generic_selection(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let token = parser.expect(TokenKind::Generic)?;
     let start_loc = token.span.start();
 
@@ -557,7 +557,7 @@ pub(crate) fn parse_compound_literal_from_type_and_start(
 }
 
 /// Parse sizeof expression or type
-pub(crate) fn parse_sizeof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_sizeof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let token = parser.expect(TokenKind::Sizeof)?;
     let start_loc = token.span.start();
 
@@ -611,7 +611,7 @@ pub(crate) fn parse_sizeof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseEr
 }
 
 /// Parse _Alignof (C11)
-pub(crate) fn parse_alignof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_alignof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let token = parser.expect(TokenKind::Alignof)?;
     let start_loc = token.span.start();
 

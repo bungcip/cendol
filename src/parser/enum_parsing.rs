@@ -23,7 +23,7 @@ pub(crate) fn parse_enum_specifier(parser: &mut Parser) -> Result<ParsedTypeSpec
 }
 
 /// Parse enumerator list
-pub(crate) fn parse_enumerator_list(parser: &mut Parser) -> Result<Vec<ParsedNodeRef>, ParseError> {
+fn parse_enumerator_list(parser: &mut Parser) -> Result<Vec<ParsedNodeRef>, ParseError> {
     let mut enumerators = Vec::new();
 
     loop {
@@ -45,7 +45,7 @@ pub(crate) fn parse_enumerator_list(parser: &mut Parser) -> Result<Vec<ParsedNod
 }
 
 /// Parse enumerator
-pub(crate) fn parse_enumerator(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_enumerator(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let (name, mut span) = parser.expect_name()?;
     let value = if parser.accept(TokenKind::Assign).is_some() {
         let expr = parser.parse_expr_assignment()?;

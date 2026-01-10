@@ -15,7 +15,7 @@ pub(crate) fn parse_type_specifier(parser: &mut Parser) -> Result<ParsedTypeSpec
 }
 
 /// Parse type specifier with context
-pub(crate) fn parse_type_specifier_with_context(
+fn parse_type_specifier_with_context(
     parser: &mut Parser,
     in_struct_member: bool,
 ) -> Result<ParsedTypeSpecifier, ParseError> {

@@ -52,7 +52,7 @@ pub(crate) fn parse_record_specifier_with_context(
 }
 
 /// Parse struct declaration list
-pub(crate) fn parse_struct_declaration_list(parser: &mut Parser) -> Result<Vec<ParsedDeclarationData>, ParseError> {
+fn parse_struct_declaration_list(parser: &mut Parser) -> Result<Vec<ParsedDeclarationData>, ParseError> {
     let mut declarations = Vec::new();
 
     while !parser.is_token(TokenKind::RightBrace) {
@@ -64,7 +64,7 @@ pub(crate) fn parse_struct_declaration_list(parser: &mut Parser) -> Result<Vec<P
 }
 
 /// Parse struct declaration
-pub(crate) fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedDeclarationData, ParseError> {
+fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedDeclarationData, ParseError> {
     // Check if we have an anonymous struct/union
     let is_struct = parser.accept(TokenKind::Struct).is_some();
     let is_union = if !is_struct {

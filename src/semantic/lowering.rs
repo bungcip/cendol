@@ -1475,60 +1475,104 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 smallvec![node]
             }
             ParsedNodeKind::BinaryOp(op, lhs, rhs) => {
-                let node = self.push_dummy(span);
+                let node = self.get_or_push_slot(target_slots, span);
                 let l = self.lower_expression(*lhs);
                 let r = self.lower_expression(*rhs);
                 self.ast.kinds[node.index()] = NodeKind::BinaryOp(*op, l, r);
                 smallvec![node]
             }
             ParsedNodeKind::Assignment(op, lhs, rhs) => {
-                let node = self.push_dummy(span);
+                let node = self.get_or_push_slot(target_slots, span);
                 let l = self.lower_expression(*lhs);
                 let r = self.lower_expression(*rhs);
                 self.ast.kinds[node.index()] = NodeKind::Assignment(*op, l, r);
                 smallvec![node]
             }
             ParsedNodeKind::UnaryOp(op, operand) => {
-                let node = self.push_dummy(span);
+                let node = self.get_or_push_slot(target_slots, span);
                 let o = self.lower_expression(*operand);
                 self.ast.kinds[node.index()] = NodeKind::UnaryOp(*op, o);
                 smallvec![node]
             }
             ParsedNodeKind::LiteralInt(val) => {
-                smallvec![self.ast.push_node(NodeKind::LiteralInt(*val), span)]
+                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
+                    self.ast.kinds[target.index()] = NodeKind::LiteralInt(*val);
+                    self.ast.spans[target.index()] = span;
+                    *target
+                } else {
+                    self.ast.push_node(NodeKind::LiteralInt(*val), span)
+                };
+                smallvec![node]
             }
             ParsedNodeKind::LiteralFloat(val) => {
-                smallvec![self.ast.push_node(NodeKind::LiteralFloat(*val), span)]
+                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
+                    self.ast.kinds[target.index()] = NodeKind::LiteralFloat(*val);
+                    self.ast.spans[target.index()] = span;
+                    *target
+                } else {
+                    self.ast.push_node(NodeKind::LiteralFloat(*val), span)
+                };
+                smallvec![node]
             }
             ParsedNodeKind::LiteralChar(val) => {
-                smallvec![self.ast.push_node(NodeKind::LiteralChar(*val), span)]
+                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
+                    self.ast.kinds[target.index()] = NodeKind::LiteralChar(*val);
+                    self.ast.spans[target.index()] = span;
+                    *target
+                } else {
+                    self.ast.push_node(NodeKind::LiteralChar(*val), span)
+                };
+                smallvec![node]
             }
             ParsedNodeKind::LiteralString(val) => {
-                smallvec![self.ast.push_node(NodeKind::LiteralString(*val), span)]
+                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
+                    self.ast.kinds[target.index()] = NodeKind::LiteralString(*val);
+                    self.ast.spans[target.index()] = span;
+                    *target
+                } else {
+                    self.ast.push_node(NodeKind::LiteralString(*val), span)
+                };
+                smallvec![node]
             }
             ParsedNodeKind::Ident(name) => {
                 let sym = self.resolve_ident(*name, span);
-                smallvec![self.ast.push_node(NodeKind::Ident(*name, sym), span)]
+                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
+                    self.ast.kinds[target.index()] = NodeKind::Ident(*name, sym);
+                    self.ast.spans[target.index()] = span;
+                    *target
+                } else {
+                    self.ast.push_node(NodeKind::Ident(*name, sym), span)
+                };
+                smallvec![node]
             }
             ParsedNodeKind::FunctionCall(func, args) => {
-                // Reserve a slot for the FunctionCall node to ensure parent < child index
-                let call_node_idx = self.push_dummy(span);
+                // Reserve a slot for the FunctionCall node to ensure parent < child index (when necessary)
+                // If we have a target slot for the result, we can use it directly?
+                // But FunctionCall needs to know ranges of args.
+                // The structure is: CallNode -> FuncExpr, Arg1, Arg2...
+                // FuncExpr and Args can be anywhere, but Args must be contiguous.
+
+                let call_node_idx = self.get_or_push_slot(target_slots, span);
 
                 let f = self.lower_expression(*func);
 
-                // Lower arguments sequentially - they will be contiguous since nothing else is created between them
-                let mut arg_nodes: Vec<NodeRef> = Vec::with_capacity(args.len());
-                for &arg_parsed_ref in args {
-                    let arg_expr = self.lower_expression(arg_parsed_ref);
-                    arg_nodes.push(arg_expr);
+                // Reserve slots for arguments to ensure contiguity
+                let mut arg_dummies = Vec::with_capacity(args.len());
+                for _ in 0..args.len() {
+                    arg_dummies.push(self.push_dummy(span));
                 }
 
-                let arg_start = if !arg_nodes.is_empty() {
-                    arg_nodes[0]
+                // Lower arguments into reserved slots
+                for (i, &arg_parsed_ref) in args.iter().enumerate() {
+                    self.lower_expression_into(arg_parsed_ref, arg_dummies[i]);
+                }
+
+                let arg_start = if !arg_dummies.is_empty() {
+                    arg_dummies[0]
                 } else {
                     NodeRef::ROOT
                 };
-                let arg_len = arg_nodes.len() as u16;
+                let arg_len = arg_dummies.len() as u16;
 
                 // Replace the reserved dummy node with the actual FunctionCall
                 self.ast.kinds[call_node_idx.index()] = NodeKind::FunctionCall(CallExpr {
@@ -1540,13 +1584,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 smallvec![call_node_idx]
             }
             ParsedNodeKind::MemberAccess(base, member, is_arrow) => {
-                let node = self.push_dummy(span);
+                let node = self.get_or_push_slot(target_slots, span);
                 let b = self.lower_expression(*base);
                 self.ast.kinds[node.index()] = NodeKind::MemberAccess(b, *member, *is_arrow);
                 smallvec![node]
             }
             ParsedNodeKind::Cast(ty_name, expr) => {
-                let node = self.push_dummy(span);
+                let node = self.get_or_push_slot(target_slots, span);
                 let e = self.lower_expression(*expr);
                 let ty = convert_to_qual_type(self, *ty_name, span)
                     .unwrap_or(QualType::unqualified(self.registry.type_error));
@@ -1554,26 +1598,26 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 smallvec![node]
             }
             ParsedNodeKind::PostIncrement(operand) => {
-                let node = self.push_dummy(span);
+                let node = self.get_or_push_slot(target_slots, span);
                 let o = self.lower_expression(*operand);
                 self.ast.kinds[node.index()] = NodeKind::PostIncrement(o);
                 smallvec![node]
             }
             ParsedNodeKind::PostDecrement(operand) => {
-                let node = self.push_dummy(span);
+                let node = self.get_or_push_slot(target_slots, span);
                 let o = self.lower_expression(*operand);
                 self.ast.kinds[node.index()] = NodeKind::PostDecrement(o);
                 smallvec![node]
             }
             ParsedNodeKind::IndexAccess(base, index) => {
-                let node = self.push_dummy(span);
+                let node = self.get_or_push_slot(target_slots, span);
                 let b = self.lower_expression(*base);
                 let i = self.lower_expression(*index);
                 self.ast.kinds[node.index()] = NodeKind::IndexAccess(b, i);
                 smallvec![node]
             }
             ParsedNodeKind::TernaryOp(cond, then_branch, else_branch) => {
-                let node = self.push_dummy(span);
+                let node = self.get_or_push_slot(target_slots, span);
                 let c = self.lower_expression(*cond);
                 let t = self.lower_expression(*then_branch);
                 let e = self.lower_expression(*else_branch);
@@ -1581,14 +1625,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 smallvec![node]
             }
             ParsedNodeKind::GnuStatementExpression(stmt, expr) => {
-                let node = self.push_dummy(span);
+                let node = self.get_or_push_slot(target_slots, span);
                 let s = self.lower_expression(*stmt);
                 let e = self.lower_expression(*expr);
                 self.ast.kinds[node.index()] = NodeKind::GnuStatementExpression(s, e);
                 smallvec![node]
             }
             ParsedNodeKind::SizeOfExpr(expr) => {
-                let node = self.push_dummy(span);
+                let node = self.get_or_push_slot(target_slots, span);
                 let e = self.lower_expression(*expr);
                 self.ast.kinds[node.index()] = NodeKind::SizeOfExpr(e);
                 smallvec![node]
@@ -1712,6 +1756,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         match self.lower_node(node).first().cloned() {
             Some(n) => n,
             None => self.push_dummy(SourceSpan::default()),
+        }
+    }
+
+    pub(crate) fn lower_expression_into(&mut self, node: ParsedNodeRef, target: NodeRef) -> NodeRef {
+        match self.lower_node_entry(node, Some(&[target])).first().cloned() {
+            Some(n) => n,
+            None => target, // Should not happen if node lowering respects target
         }
     }
 

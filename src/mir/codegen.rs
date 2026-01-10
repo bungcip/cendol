@@ -1522,6 +1522,118 @@ fn lower_terminator(
     Ok(())
 }
 
+fn setup_signature(
+    func: &MirFunction,
+    mir: &SemaOutput,
+    func_ctx: &mut Signature,
+) -> Result<(Option<Type>, Vec<Type>), String> {
+    // Set up function signature using the actual return type from MIR
+    func_ctx.params.clear();
+
+    // Get the return type from MIR and convert to Cranelift type
+    let return_type = mir.get_type(func.return_type);
+    let return_type_opt = convert_type(return_type);
+
+    // Add parameters from MIR function signature
+    let mut param_types = Vec::new();
+    for &param_id in &func.params {
+        let param_local = mir.get_local(param_id);
+        let param_type = convert_type(mir.get_type(param_local.type_id)).unwrap();
+        func_ctx.params.push(AbiParam::new(param_type));
+        param_types.push(param_type);
+    }
+
+    // Only add return parameter if the function has a non-void return type
+    if let Some(return_type) = return_type_opt {
+        func_ctx.returns.push(AbiParam::new(return_type));
+    }
+
+    Ok((return_type_opt, param_types))
+}
+
+fn allocate_stack_slots(
+    func: &MirFunction,
+    mir: &SemaOutput,
+    builder: &mut FunctionBuilder,
+    clif_stack_slots: &mut HashMap<LocalId, StackSlot>,
+) -> Result<(), String> {
+    clif_stack_slots.clear(); // Clear for each function
+
+    // Combine locals and params for slot allocation
+    let all_locals: Vec<LocalId> = func.locals.iter().chain(func.params.iter()).cloned().collect();
+
+    for &local_id in &all_locals {
+        let local = mir.get_local(local_id);
+        let local_type = mir.get_type(local.type_id);
+        let size = mir_type_size(local_type, mir)?;
+
+        // Don't allocate space for zero-sized types
+        if size > 0 {
+            let slot = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, size, 0));
+            clif_stack_slots.insert(local_id, slot);
+        }
+    }
+    Ok(())
+}
+
+fn process_entry_block_params(
+    current_block_id: MirBlockId,
+    func: &MirFunction,
+    param_types: &[Type],
+    clif_block: Block,
+    builder: &mut FunctionBuilder,
+    clif_stack_slots: &HashMap<LocalId, StackSlot>,
+) {
+    // If this is the entry block, set up its parameters
+    if Some(current_block_id) == func.entry_block {
+        // Add function parameters as block parameters
+        for &param_type in param_types {
+            builder.append_block_param(clif_block, param_type);
+        }
+
+        // Store incoming parameter values into their stack slots
+        let param_values: Vec<Value> = builder.block_params(clif_block).to_vec();
+        for (&param_id, param_value) in func.params.iter().zip(param_values.into_iter()) {
+            if let Some(stack_slot) = clif_stack_slots.get(&param_id) {
+                builder.ins().stack_store(param_value, *stack_slot, 0);
+            }
+        }
+    }
+}
+
+fn finalize_function_processing(
+    func: &MirFunction,
+    module: &mut ObjectModule,
+    func_ctx: &mut cranelift::codegen::Context,
+    emit_kind: EmitKind,
+    compiled_functions: &mut HashMap<String, String>,
+) -> Result<(), String> {
+    // Now declare and define the function
+    let linkage = match func.kind {
+        MirFunctionKind::Extern => cranelift_module::Linkage::Import,
+        MirFunctionKind::Defined => cranelift_module::Linkage::Export,
+    };
+
+    let id = module
+        .declare_function(func.name.as_str(), linkage, &func_ctx.func.signature)
+        .map_err(|e| format!("Failed to declare function {}: {:?}", func.name, e))?;
+
+    // Only define the function body if it's a defined function (not extern)
+    if matches!(func.kind, MirFunctionKind::Defined) {
+        module
+            .define_function(id, func_ctx)
+            .map_err(|e| format!("Failed to define function {}: {:?}", func.name, e))?;
+    }
+
+    if emit_kind == EmitKind::Clif {
+        // Store the function IR string for dumping
+        let func_ir = func_ctx.func.to_string();
+        compiled_functions.insert(func.name.to_string(), func_ir);
+    }
+
+    Ok(())
+}
+
 /// MIR to Cranelift IR Lowerer
 pub(crate) struct MirToCraneliftLowerer {
     builder_context: FunctionBuilderContext,
@@ -1678,49 +1790,13 @@ impl MirToCraneliftLowerer {
         // Create a fresh context for this function
         let mut func_ctx = self.module.make_context();
 
-        // Set up function signature using the actual return type from MIR
-        func_ctx.func.signature.params.clear();
-
-        // Get the return type from MIR and convert to Cranelift type
-        let return_type = self.mir.get_type(func.return_type);
-        let return_type_opt = convert_type(return_type);
-
-        // Add parameters from MIR function signature
-        let mut param_types = Vec::new();
-        for &param_id in &func.params {
-            let param_local = self.mir.get_local(param_id);
-            let param_type = convert_type(self.mir.get_type(param_local.type_id)).unwrap();
-            func_ctx.func.signature.params.push(AbiParam::new(param_type));
-            param_types.push(param_type);
-        }
-
-        // Only add return parameter if the function has a non-void return type
-        if let Some(return_type) = return_type_opt {
-            func_ctx.func.signature.returns.push(AbiParam::new(return_type));
-        }
+        let (return_type_opt, param_types) = setup_signature(func, &self.mir, &mut func_ctx.func.signature)?;
 
         // Create a function builder with the fresh context
         let mut builder = FunctionBuilder::new(&mut func_ctx.func, &mut self.builder_context);
 
-        // Create variables for function parameters (will be defined when we switch to entry block)
-        // We'll handle this after creating all blocks
+        allocate_stack_slots(func, &self.mir, &mut builder, &mut self.clif_stack_slots)?;
 
-        self.clif_stack_slots.clear(); // Clear for each function
-
-        // Combine locals and params for slot allocation
-        let all_locals: Vec<LocalId> = func.locals.iter().chain(func.params.iter()).cloned().collect();
-
-        for &local_id in &all_locals {
-            let local = self.mir.get_local(local_id);
-            let local_type = self.mir.get_type(local.type_id);
-            let size = mir_type_size(local_type, &self.mir)?;
-
-            // Don't allocate space for zero-sized types
-            if size > 0 {
-                let slot = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, size, 0));
-                self.clif_stack_slots.insert(local_id, slot);
-            }
-        }
         // PHASE 1️⃣ — Create all Cranelift blocks first (no instructions)
         let mut clif_blocks = HashMap::new();
 
@@ -1745,21 +1821,14 @@ impl MirToCraneliftLowerer {
                 .ok_or_else(|| format!("Block {} not found in mapping", current_block_id.get()))?;
             builder.switch_to_block(*clif_block);
 
-            // If this is the entry block, set up its parameters
-            if Some(current_block_id) == func.entry_block {
-                // Add function parameters as block parameters
-                for &param_type in &param_types {
-                    builder.append_block_param(*clif_block, param_type);
-                }
-
-                // Store incoming parameter values into their stack slots
-                let param_values: Vec<Value> = builder.block_params(*clif_block).to_vec();
-                for (&param_id, param_value) in func.params.iter().zip(param_values.into_iter()) {
-                    if let Some(stack_slot) = self.clif_stack_slots.get(&param_id) {
-                        builder.ins().stack_store(param_value, *stack_slot, 0);
-                    }
-                }
-            }
+            process_entry_block_params(
+                current_block_id,
+                func,
+                &param_types,
+                *clif_block,
+                &mut builder,
+                &self.clif_stack_slots,
+            );
 
             // Get the MIR block
             let mir_block = self
@@ -1806,29 +1875,13 @@ impl MirToCraneliftLowerer {
         // Finalize the function
         builder.finalize();
 
-        // Now declare and define the function
-        let linkage = match func.kind {
-            MirFunctionKind::Extern => cranelift_module::Linkage::Import,
-            MirFunctionKind::Defined => cranelift_module::Linkage::Export,
-        };
-
-        let id = self
-            .module
-            .declare_function(func.name.as_str(), linkage, &func_ctx.func.signature)
-            .map_err(|e| format!("Failed to declare function {}: {:?}", func.name, e))?;
-
-        // Only define the function body if it's a defined function (not extern)
-        if matches!(func.kind, MirFunctionKind::Defined) {
-            self.module
-                .define_function(id, &mut func_ctx)
-                .map_err(|e| format!("Failed to define function {}: {:?}", func.name, e))?;
-        }
-
-        if self.emit_kind == EmitKind::Clif {
-            // Store the function IR string for dumping
-            let func_ir = func_ctx.func.to_string();
-            self.compiled_functions.insert(func.name.to_string(), func_ir);
-        }
+        finalize_function_processing(
+            func,
+            &mut self.module,
+            &mut func_ctx,
+            self.emit_kind,
+            &mut self.compiled_functions,
+        )?;
 
         Ok(())
     }

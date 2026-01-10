@@ -158,3 +158,53 @@ fn test_struct_member_qualifiers_preserved() {
     }
     assert!(found, "Did not find RecordDecl for 'S'");
 }
+
+#[test]
+fn test_function_call_args_contiguity() {
+    let (ast, _) = setup_lowering(
+        r#"
+        int add(int a, int b) { return a + b; }
+        int main() {
+            return add(1 + 2, 3);
+        }
+    "#,
+    );
+
+    let mut found_call = false;
+
+    // Iterate through all nodes to find the FunctionCall
+    for kind in &ast.kinds {
+        if let NodeKind::FunctionCall(call) = kind {
+            found_call = true;
+
+            // We expect 2 arguments
+            assert_eq!(call.arg_len, 2, "FunctionCall should have 2 arguments");
+
+            let arg_start_idx = call.arg_start.index();
+
+            // Check first argument: 1 + 2 (BinaryOp)
+            // Note: The BinaryOp node itself should be at arg_start_idx.
+            let first_arg = &ast.kinds[arg_start_idx];
+            if let NodeKind::BinaryOp(op, ..) = first_arg {
+                assert_eq!(*op, crate::ast::BinaryOp::Add, "First argument should be Add BinaryOp");
+            } else {
+                panic!("Expected BinaryOp at index {}, found {:?}", arg_start_idx, first_arg);
+            }
+
+            // Check second argument: 3 (LiteralInt)
+            // This node MUST be at arg_start_idx + 1 for contiguity to hold.
+            let second_arg = &ast.kinds[arg_start_idx + 1];
+            if let NodeKind::LiteralInt(val) = second_arg {
+                assert_eq!(*val, 3, "Second argument should be LiteralInt(3)");
+            } else {
+                panic!(
+                    "Expected LiteralInt at index {}, found {:?}",
+                    arg_start_idx + 1,
+                    second_arg
+                );
+            }
+        }
+    }
+
+    assert!(found_call, "Did not find FunctionCall node");
+}

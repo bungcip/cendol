@@ -757,18 +757,32 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(*ty)
             }
             NodeKind::SizeOfExpr(expr) => {
-                if let Some(ty) = self.visit_node(*expr)
-                    && !self.registry.is_complete(ty.ty())
-                {
-                    let span = self.ast.get_span(node_ref);
-                    self.report_error(SemanticError::SizeOfIncompleteType { ty: ty.ty(), span });
+                if let Some(ty) = self.visit_node(*expr) {
+                    let type_ref = ty.ty();
+                    // Ensure layout is computed, as we need the size later.
+                    // This will also catch incomplete types and return an error.
+                    // However, we rely on is_complete for the specific error check first?
+                    // Actually, ensure_layout returns error if incomplete.
+                    // But we might want specific error message.
+                    // The original code checked is_complete.
+                    if !self.registry.is_complete(type_ref) {
+                        let span = self.ast.get_span(node_ref);
+                        self.report_error(SemanticError::SizeOfIncompleteType { ty: type_ref, span });
+                    } else {
+                        // For complete types, ensure layout is computed so MIR lowering doesn't panic
+                        let _ = self.registry.ensure_layout(type_ref);
+                    }
                 }
                 Some(QualType::unqualified(self.registry.type_long_unsigned))
             }
             NodeKind::SizeOfType(ty) | NodeKind::AlignOf(ty) => {
-                if !self.registry.is_complete(ty.ty()) {
+                let type_ref = ty.ty();
+                if !self.registry.is_complete(type_ref) {
                     let span = self.ast.get_span(node_ref);
-                    self.report_error(SemanticError::SizeOfIncompleteType { ty: ty.ty(), span });
+                    self.report_error(SemanticError::SizeOfIncompleteType { ty: type_ref, span });
+                } else {
+                    // For complete types, ensure layout is computed so MIR lowering doesn't panic
+                    let _ = self.registry.ensure_layout(type_ref);
                 }
                 Some(QualType::unqualified(self.registry.type_long_unsigned))
             }

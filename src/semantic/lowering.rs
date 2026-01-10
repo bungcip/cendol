@@ -1334,7 +1334,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
 
                 // Important: Ensure layout for variable definitions
-                if let Err(_) = self.registry.ensure_layout(final_ty.ty()) {
+                if self.registry.ensure_layout(final_ty.ty()).is_err() {
                     // Swallow error here - get_layout will panic or we can't do much.
                     // But for valid C code like 'int a[]', this fails.
                     // However, we only need layout if it's used.

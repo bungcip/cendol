@@ -12,3 +12,12 @@ pub(crate) fn run_pipeline(source: &str, phase: CompilePhase) -> (CompilerDriver
     let result = driver.run_pipeline(phase).map_err(|e| format!("{:?}", e));
     (driver, result)
 }
+
+pub(crate) fn run_pipeline_to_mir(source: &str) -> PipelineOutputs {
+    let (driver, result) = run_pipeline(source, CompilePhase::Mir);
+    if let Err(e) = &result {
+        driver.print_diagnostics();
+        panic!("Pipeline failed: {}", e);
+    }
+    result.unwrap()
+}

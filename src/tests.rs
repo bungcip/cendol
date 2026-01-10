@@ -13,6 +13,7 @@ pub mod semantic_incomplete_type;
 pub mod semantic_lowering;
 pub mod semantic_lvalue;
 pub mod semantic_mir;
+pub mod semantic_sizeof;
 pub mod semantic_symbol_redefinition;
 pub mod semantic_types;
 pub mod semantic_validation;

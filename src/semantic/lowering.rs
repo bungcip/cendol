@@ -950,7 +950,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
 
                 // 2. Reserve contiguous slots for all top-level nodes
-                let decl_len = total_semantic_nodes as u32;
+                let decl_len = total_semantic_nodes as u16;
                 let mut reserved_slots = Vec::new();
                 for _ in 0..decl_len {
                     reserved_slots.push(self.push_dummy(span));
@@ -1027,7 +1027,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 smallvec![node]
             }
             // ... other top level kinds ...
-            _ => self.lower_node_recursive_rest(parsed_ref, target_slots),
+            _ => self.lower_node_rest(parsed_ref, target_slots),
         }
     }
 
@@ -1302,7 +1302,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     ty: final_ty,
                     storage: spec_info.storage,
                     init: init_expr,
-                    alignment: spec_info.alignment,
+                    alignment: spec_info.alignment.map(|a| a as u16),
                 };
                 if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
                     self.symbol_table
@@ -1330,7 +1330,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         nodes
     }
 
-    fn lower_node_recursive_rest(
+    fn lower_node_rest(
         &mut self,
         parsed_ref: ParsedNodeRef,
         target_slots: Option<&[NodeRef]>,
@@ -1649,20 +1649,37 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 for (i, init) in inits.iter().enumerate() {
                     let expr = self.lower_expression(init.initializer);
-                    let designation: Vec<_> = init
-                        .designation
-                        .iter()
-                        .map(|d| match d {
+
+                    let designator_count = init.designation.len() as u16;
+                    let mut designator_dummies = Vec::with_capacity(designator_count as usize);
+
+                    for _ in 0..designator_count {
+                        designator_dummies.push(self.push_dummy(span));
+                    }
+
+                    for (j, d) in init.designation.iter().enumerate() {
+                        let node_kind = match d {
                             ParsedDesignator::FieldName(name) => Designator::FieldName(*name),
                             ParsedDesignator::ArrayIndex(idx) => Designator::ArrayIndex(self.lower_expression(*idx)),
                             ParsedDesignator::GnuArrayRange(start, end) => {
                                 Designator::GnuArrayRange(self.lower_expression(*start), self.lower_expression(*end))
                             }
-                        })
-                        .collect();
+                        };
+                        let d_ref = designator_dummies[j];
+                        self.ast.kinds[d_ref.index()] = NodeKind::Designator(node_kind);
+                        // Designators don't really have scopes, but we can set it to current
+                        self.set_scope(d_ref, self.symbol_table.current_scope());
+                    }
+
+                    let designator_start = if designator_count > 0 {
+                        designator_dummies[0]
+                    } else {
+                        NodeRef::ROOT
+                    };
 
                     let di = DesignatedInitializer {
-                        designation,
+                        designator_start,
+                        designator_len: designator_count,
                         initializer: expr,
                     };
 
@@ -1789,34 +1806,38 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     let NodeKind::InitializerItem(init) = self.ast.get_kind(item_ref) else {
                         continue;
                     };
-                    if let Some(first_designator) = init.designation.first() {
-                        match first_designator {
-                            crate::ast::Designator::ArrayIndex(expr_ref) => {
-                                let const_ctx = ConstEvalCtx { ast: self.ast };
-                                if let Some(val) = const_eval::eval_const_expr(&const_ctx, *expr_ref) {
-                                    current_index = val;
-                                } else {
-                                    return None;
-                                }
-                            }
-                            crate::ast::Designator::GnuArrayRange(start, end) => {
-                                let const_ctx = ConstEvalCtx { ast: self.ast };
-                                if let (Some(start_val), Some(end_val)) = (
-                                    const_eval::eval_const_expr(&const_ctx, *start),
-                                    const_eval::eval_const_expr(&const_ctx, *end),
-                                ) {
-                                    if start_val > end_val {
+                    if init.designator_len > 0 {
+                        let first_designator_ref = init.designator_start;
+                        match self.ast.get_kind(first_designator_ref) {
+                            NodeKind::Designator(d) => match d {
+                                crate::ast::Designator::ArrayIndex(expr_ref) => {
+                                    let const_ctx = ConstEvalCtx { ast: self.ast };
+                                    if let Some(val) = const_eval::eval_const_expr(&const_ctx, *expr_ref) {
+                                        current_index = val;
+                                    } else {
                                         return None;
                                     }
-                                    current_index = end_val;
-                                } else {
+                                }
+                                crate::ast::Designator::GnuArrayRange(start, end) => {
+                                    let const_ctx = ConstEvalCtx { ast: self.ast };
+                                    if let (Some(start_val), Some(end_val)) = (
+                                        const_eval::eval_const_expr(&const_ctx, *start),
+                                        const_eval::eval_const_expr(&const_ctx, *end),
+                                    ) {
+                                        if start_val > end_val {
+                                            return None;
+                                        }
+                                        current_index = end_val;
+                                    } else {
+                                        return None;
+                                    }
+                                }
+                                crate::ast::Designator::FieldName(_) => {
+                                    // Should not happen in array initializer
                                     return None;
                                 }
-                            }
-                            crate::ast::Designator::FieldName(_) => {
-                                // Should not happen in array initializer
-                                return None;
-                            }
+                            },
+                            _ => return None,
                         }
                     }
 

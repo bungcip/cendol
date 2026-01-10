@@ -18,7 +18,7 @@ impl AstDumper {
                 continue;
             }
             print!("{}: ", i + 1);
-            Self::dump_parser_kind(kind, symbol_table);
+            Self::dump_parser_kind(kind, ast, symbol_table);
         }
     }
 
@@ -159,6 +159,7 @@ impl AstDumper {
     /// Collect TypeRefs from a NodeKind
     fn collect_type_refs_from_node(kind: &NodeKind, type_refs: &mut HashSet<TypeRef>) {
         match kind {
+            NodeKind::Designator(_) => {}
             NodeKind::Function(data) => {
                 type_refs.insert(data.ty);
             }
@@ -272,23 +273,26 @@ impl AstDumper {
     }
 
     /// Format a DesignatedInitializer for display
-    fn format_designated_initializer(init: &DesignatedInitializer) -> String {
+    fn format_designated_initializer(init: &DesignatedInitializer, ast: &Ast) -> String {
         let mut result = String::new();
-        for designator in &init.designation {
-            match designator {
-                Designator::FieldName(name) => {
-                    result.push_str(&format!(".{}", name));
-                }
-                Designator::ArrayIndex(index) => {
-                    result.push_str(&format!("[{}]", index.get()));
-                }
-                Designator::GnuArrayRange(start, end) => {
-                    result.push_str(&format!("[{} ... {}]", start.get(), end.get()));
-                }
+        for designator_ref in init.designator_start.range(init.designator_len) {
+            match ast.get_kind(designator_ref) {
+                NodeKind::Designator(d) => match d {
+                    Designator::FieldName(name) => {
+                        result.push_str(&format!(".{}", name));
+                    }
+                    Designator::ArrayIndex(index) => {
+                        result.push_str(&format!("[{}]", index.get()));
+                    }
+                    Designator::GnuArrayRange(start, end) => {
+                        result.push_str(&format!("[{} ... {}]", start.get(), end.get()));
+                    }
+                },
+                _ => result.push_str("<invalid designator>"),
             }
         }
 
-        if !init.designation.is_empty() {
+        if init.designator_len > 0 {
             result.push_str(" = ");
         }
 
@@ -297,13 +301,13 @@ impl AstDumper {
     }
 
     /// Dump a single AST node kind
-    fn dump_parser_kind(kind: &NodeKind, symbol_table: Option<&SymbolTable>) {
+    fn dump_parser_kind(kind: &NodeKind, ast: &Ast, symbol_table: Option<&SymbolTable>) {
         match kind {
             NodeKind::TranslationUnit(tu_data) => {
                 println!(
                     "TranslationUnit(decls={}..{}) (parser kind)",
                     tu_data.decl_start.get(),
-                    tu_data.decl_start.get() + tu_data.decl_len
+                    tu_data.decl_start.get() + tu_data.decl_len as u32
                 );
             }
             NodeKind::LiteralInt(i) => println!("LiteralInt({})", i),
@@ -495,8 +499,13 @@ impl AstDumper {
                 list.init_start.get() + list.init_len as u32
             ),
             NodeKind::InitializerItem(init) => {
-                println!("InitializerItem({})", Self::format_designated_initializer(init))
+                println!("InitializerItem({})", Self::format_designated_initializer(init, ast))
             }
+            NodeKind::Designator(d) => match d {
+                Designator::FieldName(name) => println!("Designator(.{})", name),
+                Designator::ArrayIndex(idx) => println!("Designator([{}])", idx.get()),
+                Designator::GnuArrayRange(start, end) => println!("Designator([{} ... {}])", start.get(), end.get()),
+            },
             NodeKind::Dummy => println!("DUMMY"),
         }
     }

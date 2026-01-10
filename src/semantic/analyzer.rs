@@ -800,16 +800,18 @@ impl<'a> SemanticAnalyzer<'a> {
                 None
             }
             NodeKind::InitializerItem(init) => {
-                for designator in &init.designation {
-                    match designator {
-                        Designator::ArrayIndex(expr_ref) => {
-                            self.visit_node(*expr_ref);
+                for designator_ref in init.designator_start.range(init.designator_len) {
+                    if let NodeKind::Designator(d) = self.ast.get_kind(designator_ref) {
+                        match d {
+                            Designator::ArrayIndex(expr_ref) => {
+                                self.visit_node(*expr_ref);
+                            }
+                            Designator::GnuArrayRange(start_ref, end_ref) => {
+                                self.visit_node(*start_ref);
+                                self.visit_node(*end_ref);
+                            }
+                            Designator::FieldName(_) => {}
                         }
-                        Designator::GnuArrayRange(start_ref, end_ref) => {
-                            self.visit_node(*start_ref);
-                            self.visit_node(*end_ref);
-                        }
-                        Designator::FieldName(_) => {}
                     }
                 }
                 self.visit_node(init.initializer);

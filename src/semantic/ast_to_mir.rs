@@ -212,8 +212,9 @@ impl<'a> AstToMirLowerer<'a> {
                 continue;
             };
             let init = init.clone();
-            let field_idx = if let Some(designator) = init.designation.first() {
-                if let Designator::FieldName(name) = designator {
+            let field_idx = if init.designator_len > 0 {
+                let designator_ref = init.designator_start;
+                if let NodeKind::Designator(Designator::FieldName(name)) = self.ast.get_kind(designator_ref) {
                     members.iter().position(|m| m.name == Some(*name)).unwrap()
                 } else {
                     panic!("Array designator for struct initializer");
@@ -500,7 +501,7 @@ impl<'a> AstToMirLowerer<'a> {
                 .create_global_with_init(var_decl.name, mir_type_id, false, final_init);
 
             if let Some(alignment) = var_decl.alignment {
-                self.mir_builder.set_global_alignment(global_id, alignment);
+                self.mir_builder.set_global_alignment(global_id, alignment as u32);
             }
 
             self.global_map.insert(entry_ref, global_id);
@@ -517,7 +518,7 @@ impl<'a> AstToMirLowerer<'a> {
         let local_id = self.mir_builder.create_local(Some(var_decl.name), mir_type_id, false);
 
         if let Some(alignment) = var_decl.alignment {
-            self.mir_builder.set_local_alignment(local_id, alignment);
+            self.mir_builder.set_local_alignment(local_id, alignment as u32);
         }
 
         self.local_map.insert(entry_ref, local_id);

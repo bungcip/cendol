@@ -443,7 +443,7 @@ impl<'a> MirDumper<'a> {
                         b'\t' => string_content.push_str("\\t"),
                         b'\\' => string_content.push_str("\\\\"),
                         b'"' => string_content.push_str("\\\""),
-                        b if b >= 32 && b <= 126 => string_content.push(b as char),
+                        b if (32..=126).contains(&b) => string_content.push(b as char),
                         _ => {
                             // Use hex escape for other non-printable characters
                             use std::fmt::Write;

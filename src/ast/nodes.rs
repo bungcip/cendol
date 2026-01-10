@@ -104,6 +104,7 @@ pub enum NodeKind {
     // --- InitializerList ---
     InitializerList(InitializerListData),
     InitializerItem(DesignatedInitializer),
+    Designator(Designator),
 
     // --- Dummy Node ---
     Dummy,
@@ -256,18 +257,20 @@ impl NodeKind {
             }
 
             NodeKind::InitializerItem(item) => {
-                for designator in &item.designation {
-                    match designator {
-                        Designator::ArrayIndex(idx) => f(*idx),
-                        Designator::GnuArrayRange(start, end) => {
-                            f(*start);
-                            f(*end);
-                        }
-                        Designator::FieldName(_) => {}
-                    }
+                for designator in item.designator_start.range(item.designator_len) {
+                    f(designator);
                 }
                 f(item.initializer);
             }
+
+            NodeKind::Designator(d) => match d {
+                Designator::ArrayIndex(idx) => f(*idx),
+                Designator::GnuArrayRange(start, end) => {
+                    f(*start);
+                    f(*end);
+                }
+                Designator::FieldName(_) => {}
+            },
         }
     }
 }
@@ -307,7 +310,7 @@ pub struct CompoundStmtData {
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct TranslationUnitData {
     pub decl_start: NodeRef,
-    pub decl_len: u32,
+    pub decl_len: u16,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -338,7 +341,7 @@ pub struct VarDeclData {
     pub ty: QualType,
     pub storage: Option<StorageClass>,
     pub init: Option<NodeRef>,  // InitializerList or Expression
-    pub alignment: Option<u32>, // Max alignment in bytes
+    pub alignment: Option<u16>, // Max alignment in bytes
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -501,7 +504,8 @@ pub enum ArraySize {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DesignatedInitializer {
-    pub designation: Vec<Designator>,
+    pub designator_start: NodeRef,
+    pub designator_len: u16,
     pub initializer: NodeRef,
 }
 

@@ -190,7 +190,7 @@ mod tests {
         // String literals
         let string_literals = vec![
             ("\"hello\"", TokenKind::StringLiteral(StringId::new("hello"))),
-            ("\"world\\n\"", TokenKind::StringLiteral(StringId::new("world\\n"))),
+            ("\"world\\n\"", TokenKind::StringLiteral(StringId::new("world\n"))),
         ];
 
         for (text, expected_kind) in string_literals {
@@ -228,7 +228,7 @@ mod tests {
             // Multiple concatenations
             ("\"a\" \"b\" \"c\"", "abc"),
             // With escape sequences
-            ("\"hello\\n\" \"world\"", "hello\\nworld"),
+            ("\"hello\\n\" \"world\"", "hello\nworld"),
             // Mixed quotes and content
             ("\"start\" \" middle \" \"end\"", "start middle end"),
         ];

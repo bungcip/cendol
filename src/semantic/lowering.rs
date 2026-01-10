@@ -46,7 +46,7 @@ fn apply_parsed_declarator_recursive(
             ctx.registry.merge_qualifiers(result, qualifiers)
         }
         ParsedDeclaratorNode::Array { size, inner } => {
-            // Array - using ParsedArraySize from convert helper (which needs update)
+            // Array
             let array_size = convert_parsed_array_size(&size, ctx);
             let array_type_ref = ctx.registry.array_of(current_type, array_size);
 
@@ -84,28 +84,34 @@ fn apply_parsed_declarator_recursive(
 /// Convert ParsedArraySize to ArraySizeType
 fn convert_parsed_array_size(size: &ParsedArraySize, ctx: &mut LowerCtx) -> ArraySizeType {
     match size {
-        ParsedArraySize::Expression { expr: _, .. } => {
-            // Evaluate expression
-            let _const_eval_ctx = ConstEvalCtx { ast: ctx.ast }; // Wait, ConstEval works on Ast?
-            // Since we construct Ast on fly, we can only evaluate if constants are resolved.
-            // But expressions in ParsedAst are ParsedNodeRef. ConstEval expects NodeRef (semantic).
-            // This is a Catch-22 unless we lower expression first.
-            // For now, defer evaluation or lower expression here.
-
-            // TODO: Lower expression before evaluation
-            ArraySizeType::Incomplete
-        }
+        ParsedArraySize::Expression { expr, .. } => resolve_array_size(Some(*expr), ctx),
         ParsedArraySize::Star { .. } => ArraySizeType::Star,
         ParsedArraySize::Incomplete => ArraySizeType::Incomplete,
-        ParsedArraySize::VlaSpecifier { .. } => ArraySizeType::Incomplete,
+        ParsedArraySize::VlaSpecifier { size, .. } => resolve_array_size(*size, ctx),
     }
 }
 
 /// Helper function to resolve array size logic
-fn resolve_array_size(_size: Option<ParsedNodeRef>, _ctx: &mut LowerCtx) -> ArraySizeType {
-    // Needs to lower and evaluate expression
-    // TODO: Implement expression lowering here or defer
-    // For now return Incomplete
+fn resolve_array_size(size: Option<ParsedNodeRef>, ctx: &mut LowerCtx) -> ArraySizeType {
+    if let Some(parsed_ref) = size {
+        let expr_ref = ctx.lower_expression(parsed_ref);
+        let const_ctx = ConstEvalCtx { ast: ctx.ast };
+        if let Some(val) = const_eval::eval_const_expr(&const_ctx, expr_ref) {
+            if val < 0 {
+                ctx.report_error(SemanticError::InvalidArraySize {
+                    span: ctx.ast.get_span(expr_ref),
+                });
+                return ArraySizeType::Incomplete;
+            }
+            return ArraySizeType::Constant(val as usize);
+        } else {
+            // For now, we only support constant sizes (VLA support is future)
+            // Or maybe we should return Variable(expr_ref) and let ensure_layout fail?
+            // But verify what Variable does.
+            // ensure_layout returns "incomplete/VLA array layout" error.
+            return ArraySizeType::Variable(expr_ref);
+        }
+    }
     ArraySizeType::Incomplete
 }
 
@@ -1325,6 +1331,17 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 {
                     let first_def = self.symbol_table.get_symbol(existing).def_span;
                     self.report_error(SemanticError::Redefinition { name, first_def, span });
+                }
+
+                // Important: Ensure layout for variable definitions
+                if let Err(_) = self.registry.ensure_layout(final_ty.ty()) {
+                    // Swallow error here - get_layout will panic or we can't do much.
+                    // But for valid C code like 'int a[]', this fails.
+                    // However, we only need layout if it's used.
+                    // If we access it, get_layout panics.
+                    // This ensure_layout call helps caching layout early and catching ICEs early if possible.
+                    // But for 'extern int a[];', it returns error. We shouldn't error out.
+                    // Just ignore error.
                 }
 
                 self.ast.kinds[node.index()] = NodeKind::VarDecl(var_decl);

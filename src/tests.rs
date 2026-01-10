@@ -6,6 +6,7 @@ pub mod pp_lexer;
 pub mod pp_pasting;
 pub mod preprocessor;
 pub mod semantic_array_init_bug;
+pub mod semantic_arrays;
 pub mod semantic_common;
 pub mod semantic_generic;
 pub mod semantic_incomplete_type;

@@ -33,7 +33,6 @@ pub(crate) struct AstToMirLowerer<'a> {
     registry: &'a TypeRegistry,
     local_map: HashMap<SymbolRef, LocalId>,
     global_map: HashMap<SymbolRef, GlobalId>,
-    #[allow(unused)]
     label_map: HashMap<NameId, MirBlockId>,
     type_cache: HashMap<TypeRef, TypeId>,
     type_conversion_in_progress: HashSet<TypeRef>,

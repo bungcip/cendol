@@ -791,22 +791,10 @@ fn lower_function_parameters(params: &[ParsedParamData], ctx: &mut LowerCtx) -> 
 
             FunctionParameter {
                 param_type: decayed_ty,
-                name: param.declarator.as_ref().and_then(extract_identifier_from_declarator),
+                name: param.declarator.as_ref().and_then(|d| d.extract_identifier()),
             }
         })
         .collect()
-}
-
-// Local helper to exact identifier from ParsedDeclarator (duplicate of struct_lowering one, should unify later)
-fn extract_identifier_from_declarator(decl: &ParsedDeclarator) -> Option<NameId> {
-    match decl {
-        ParsedDeclarator::Identifier(name, _) => Some(*name),
-        ParsedDeclarator::Pointer(_, inner) => inner.as_ref().and_then(|d| extract_identifier_from_declarator(d)),
-        ParsedDeclarator::Array(inner, _) => extract_identifier_from_declarator(inner),
-        ParsedDeclarator::Function { inner, .. } => extract_identifier_from_declarator(inner),
-        ParsedDeclarator::BitField(inner, _) => extract_identifier_from_declarator(inner),
-        _ => None,
-    }
 }
 
 /// Apply declarator transformations to a base type
@@ -1090,8 +1078,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
 
         let final_ty = apply_ast_declarator(base_ty.ty(), &func_def.declarator, self);
-        let func_name =
-            extract_identifier_from_declarator(&func_def.declarator).expect("Function definition must have a name");
+        let func_name = func_def
+            .declarator
+            .extract_identifier()
+            .expect("Function definition must have a name");
 
         if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) =
             self.symbol_table.define_function(func_name, final_ty.ty(), true, span)
@@ -1255,7 +1245,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             let final_ty = apply_ast_declarator(base_ty.ty(), &init.declarator, self);
             let final_ty = self.registry.merge_qualifiers(final_ty, spec_info.qualifiers);
 
-            let name = extract_identifier_from_declarator(&init.declarator).expect("Declarator must have identifier");
+            let name = init
+                .declarator
+                .extract_identifier()
+                .expect("Declarator must have identifier");
 
             let node = if let Some(slots) = target_slots {
                 slots[i]
@@ -1948,7 +1941,7 @@ pub(crate) fn lower_struct_members(
         for init_declarator in &decl.init_declarators {
             let (bit_field_size, base_declarator) = extract_bit_field_width(&init_declarator.declarator, ctx);
 
-            let member_name = extract_identifier_from_declarator(base_declarator);
+            let member_name = base_declarator.extract_identifier();
 
             let member_type = if let Some(base_type_ref) = spec_info.base_type {
                 // Manually re-apply qualifiers from the base type.

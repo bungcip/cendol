@@ -356,6 +356,8 @@ pub enum PPError {
     CircularInclude,
     #[error("Expected end of directive")]
     ExpectedEod,
+    #[error("Unknown pragma: {0}")]
+    UnknownPragma(String),
 }
 
 impl PPError {
@@ -371,6 +373,7 @@ impl From<PPError> for Diagnostic {
     fn from(val: PPError) -> Self {
         let level = match &val {
             PPError::ErrorDirective(_) => DiagnosticLevel::Error,
+            PPError::UnknownPragma(_) => DiagnosticLevel::Error,
             _ => DiagnosticLevel::Error,
         };
 
@@ -1811,11 +1814,30 @@ impl<'src> Preprocessor<'src> {
                     if let Some(lexer) = self.lexer_stack.last() {
                         self.once_included.insert(lexer.source_id);
                     }
+                } else {
+                    let diag = Diagnostic {
+                        level: DiagnosticLevel::Error,
+                        message: format!("Unknown pragma '{}'", pragma_name),
+                        span: SourceSpan::new(pragma_token.location, pragma_token.location),
+                        code: Some("unknown_pragma".to_string()),
+                        hints: vec!["Only '#pragma once' is supported".to_string()],
+                        related: Vec::new(),
+                    };
+                    self.diag.report_diagnostic(diag);
+                    return Err(PPError::UnknownPragma(pragma_name.to_string()));
                 }
-                // For now, ignore other pragmas
             }
             _ => {
-                // Invalid pragma, but we'll ignore it for now
+                let diag = Diagnostic {
+                    level: DiagnosticLevel::Error,
+                    message: "Invalid pragma directive".to_string(),
+                    span: SourceSpan::new(pragma_token.location, pragma_token.location),
+                    code: Some("invalid_pragma".to_string()),
+                    hints: vec!["Pragma directive requires an identifier".to_string()],
+                    related: Vec::new(),
+                };
+                self.diag.report_diagnostic(diag);
+                return Err(PPError::InvalidDirective);
             }
         }
         // Skip to end of line

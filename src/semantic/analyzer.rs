@@ -817,6 +817,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(init.initializer);
                 None
             }
+            NodeKind::CallArg(expr) => self.visit_node(*expr),
             _ => None,
         }
     }

@@ -1516,19 +1516,28 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 let f = self.lower_expression(*func);
 
-                // Lower arguments sequentially - they will be contiguous since nothing else is created between them
-                let mut arg_nodes: Vec<NodeRef> = Vec::with_capacity(args.len());
-                for &arg_parsed_ref in args {
-                    let arg_expr = self.lower_expression(arg_parsed_ref);
-                    arg_nodes.push(arg_expr);
+                // Reserve slots for CallArgs to ensure they are contiguous
+                let mut arg_wrapper_slots = Vec::with_capacity(args.len());
+                for _ in 0..args.len() {
+                    arg_wrapper_slots.push(self.push_dummy(span));
                 }
 
-                let arg_start = if !arg_nodes.is_empty() {
-                    arg_nodes[0]
+                // Lower arguments into wrapper slots
+                for (i, &arg_parsed_ref) in args.iter().enumerate() {
+                    let arg_expr = self.lower_expression(arg_parsed_ref);
+                    let wrapper_ref = arg_wrapper_slots[i];
+
+                    // Set scope for the CallArg node
+                    self.set_scope(wrapper_ref, self.symbol_table.current_scope());
+                    self.ast.kinds[wrapper_ref.index()] = NodeKind::CallArg(arg_expr);
+                }
+
+                let arg_start = if !arg_wrapper_slots.is_empty() {
+                    arg_wrapper_slots[0]
                 } else {
                     NodeRef::ROOT
                 };
-                let arg_len = arg_nodes.len() as u16;
+                let arg_len = arg_wrapper_slots.len() as u16;
 
                 // Replace the reserved dummy node with the actual FunctionCall
                 self.ast.kinds[call_node_idx.index()] = NodeKind::FunctionCall(CallExpr {

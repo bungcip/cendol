@@ -255,11 +255,14 @@ impl CompilerDriver {
             match kind {
                 NodeKind::Ident(name, ..) if ast.get_resolved_type(node_ref).is_none() => {
                     let span = ast.get_span(node_ref);
-                    panic!(
-                        "ICE: ident '{}' still not have resolved type: {:?}",
+                    let loc = self.source_manager.get_line_column(span.start());
+                    eprintln!(
+                        "ICE Debug: Orphan Ident '{}' at {:?} (Node Index: {})",
                         name,
-                        self.source_manager.get_line_column(span.start())
+                        loc,
+                        i + 1
                     );
+                    panic!("ICE: ident '{}' still not have resolved type: {:?}", name, loc);
                 }
                 _ => {}
             }

@@ -105,6 +105,7 @@ pub enum NodeKind {
     InitializerList(InitializerListData),
     InitializerItem(DesignatedInitializer),
     Designator(Designator),
+    CallArg(NodeRef),
 
     // --- Dummy Node ---
     Dummy,
@@ -138,7 +139,8 @@ impl NodeKind {
             | NodeKind::CompoundLiteral(_, child)
             | NodeKind::Label(_, child, _)
             | NodeKind::Default(child)
-            | NodeKind::StaticAssert(child, _) => f(*child),
+            | NodeKind::StaticAssert(child, _)
+            | NodeKind::CallArg(child) => f(*child),
 
             NodeKind::BinaryOp(_, lhs, rhs)
             | NodeKind::GnuStatementExpression(lhs, rhs)

@@ -257,7 +257,8 @@ impl AstDumper {
             | NodeKind::Assignment(_, _, _)
             | NodeKind::MemberAccess(_, _, _)
             | NodeKind::IndexAccess(_, _)
-            | NodeKind::SizeOfExpr(_) => {
+            | NodeKind::SizeOfExpr(_)
+            | NodeKind::CallArg(_) => {
                 // These don't directly contain TypeRefs, they will be handled when we process child nodes
             }
         }
@@ -506,6 +507,7 @@ impl AstDumper {
                 Designator::ArrayIndex(idx) => println!("Designator([{}])", idx.get()),
                 Designator::GnuArrayRange(start, end) => println!("Designator([{} ... {}])", start.get(), end.get()),
             },
+            NodeKind::CallArg(expr) => println!("CallArg({})", expr.get()),
             NodeKind::Dummy => println!("DUMMY"),
         }
     }

@@ -659,6 +659,7 @@ impl<'a> AstToMirLowerer<'a> {
                 // Should be lowered in context of assignment usually.
                 Operand::Constant(self.create_constant(ConstValue::Int(0)))
             }
+            NodeKind::CallArg(inner) => self.lower_expression(scope_id, *inner, need_value),
             _ => Operand::Constant(self.create_constant(ConstValue::Int(0))),
         }
     }

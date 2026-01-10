@@ -809,3 +809,138 @@ int x = M;
     - []
     "#);
 }
+
+#[test]
+fn test_digraphs_simple() {
+    let src = r#"
+int x = 1;
+<%
+    x = 2;
+%>
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: x
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: LeftBrace
+      text: "{"
+    - kind: Identifier
+      text: x
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "2"
+    - kind: Semicolon
+      text: ;
+    - kind: RightBrace
+      text: "}"
+    "#);
+}
+
+#[test]
+fn test_digraphs_array() {
+    let src = r#"
+int a<:10:>;
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: a
+    - kind: LeftBracket
+      text: "["
+    - kind: Number
+      text: "10"
+    - kind: RightBracket
+      text: "]"
+    - kind: Semicolon
+      text: ;
+    "#);
+}
+
+#[test]
+fn test_digraphs_directive() {
+    let src = r#"
+%:define A 1
+int x = A;
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: x
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    "#);
+}
+
+#[test]
+fn test_digraphs_hashhash() {
+    let src = r#"
+#define PASTE(a,b) a %:%: b
+int foobar = 1;
+int x = PASTE(foo, bar);
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: foobar
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: x
+    - kind: Assign
+      text: "="
+    - kind: Identifier
+      text: foobar
+    - kind: Semicolon
+      text: ;
+    "#);
+}
+
+#[test]
+fn test_digraphs_stringify() {
+    let src = r#"
+%:define STR(x) %:x
+const char* s = STR(test);
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: const
+    - kind: Identifier
+      text: char
+    - kind: Star
+      text: "*"
+    - kind: Identifier
+      text: s
+    - kind: Assign
+      text: "="
+    - kind: StringLiteral
+      text: "\"test\""
+    - kind: Semicolon
+      text: ;
+    "#);
+}

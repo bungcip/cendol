@@ -1,0 +1,18 @@
+---
+source: src/tests/pp_digraphs_extra.rs
+expression: tokens
+---
+- kind: Identifier
+  text: const
+- kind: Identifier
+  text: char
+- kind: Star
+  text: "*"
+- kind: Identifier
+  text: s
+- kind: Assign
+  text: "="
+- kind: StringLiteral
+  text: "\"test\""
+- kind: Semicolon
+  text: ;

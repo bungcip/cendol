@@ -1,0 +1,24 @@
+---
+source: src/tests/pp_digraphs_extra.rs
+expression: tokens
+---
+- kind: Identifier
+  text: int
+- kind: Identifier
+  text: foobar
+- kind: Assign
+  text: "="
+- kind: Number
+  text: "1"
+- kind: Semicolon
+  text: ;
+- kind: Identifier
+  text: int
+- kind: Identifier
+  text: x
+- kind: Assign
+  text: "="
+- kind: Identifier
+  text: foobar
+- kind: Semicolon
+  text: ;

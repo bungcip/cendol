@@ -1278,4 +1278,42 @@ mod tests {
         }
         ");
     }
+    #[test]
+    fn test_global_after_function() {
+        let source = r#"
+            int zero() { return 0; }
+            int s = 42;
+            int main() {
+                return s + zero();
+            }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = i32
+        type %t1 = fn() -> %t0
+
+        global @s: i32 = cast<i32>(const 42)
+
+        fn main() -> i32
+        {
+          locals {
+            %1: i32
+            %2: i32
+          }
+
+          bb2:
+            %1 = call zero()
+            %2 = @s + %1
+            return %2
+        }
+
+        fn zero() -> i32
+        {
+
+          bb1:
+            return cast<i32>(const 0)
+        }
+        ");
+    }
 }

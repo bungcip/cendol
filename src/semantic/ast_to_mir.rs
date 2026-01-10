@@ -433,6 +433,7 @@ impl<'a> AstToMirLowerer<'a> {
 
         // Parameter locals are now created in `define_function`. We just need to
         // map the SymbolRef to the LocalId.
+        self.local_map.clear();
         let scope_id = self.ast.scope_of(node_ref);
         let mir_function = self.mir_builder.get_functions().get(&func_id).unwrap().clone();
 
@@ -444,6 +445,9 @@ impl<'a> AstToMirLowerer<'a> {
         }
 
         self.lower_node_ref(function_data.body, scope_id);
+
+        self.current_function = None;
+        self.current_block = None;
     }
 
     fn lower_var_declaration(&mut self, scope_id: ScopeId, var_decl: &VarDeclData, _span: SourceSpan) {

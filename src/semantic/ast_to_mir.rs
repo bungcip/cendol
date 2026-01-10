@@ -1457,10 +1457,10 @@ impl<'a> AstToMirLowerer<'a> {
             },
             TypeKind::Long {
                 is_signed,
-                is_long_long,
+                is_long_long: _,
             } => MirType::Int {
                 is_signed: *is_signed,
-                width: if *is_long_long { 64 } else { 32 },
+                width: 64, // Always 64-bit for now (LP64 model)
             },
             TypeKind::Float => MirType::Float { width: 32 },
             TypeKind::Double { is_long_double } => MirType::Float {

@@ -1264,7 +1264,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             let init_expr = init.initializer.map(|init_node| self.lower_expression(init_node));
 
-            let is_func = matches!(init.declarator, ParsedDeclarator::Function { .. });
+            let is_func = final_ty.is_function();
 
             if is_func {
                 let func_decl = FunctionDeclData {

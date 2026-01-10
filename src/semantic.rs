@@ -31,5 +31,3 @@ pub use types::{
     TypeQualifiers, TypeRef,
 };
 
-#[cfg(test)]
-mod tests_compound_assign;

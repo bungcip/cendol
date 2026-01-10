@@ -17,3 +17,4 @@ pub mod semantic_types;
 pub mod semantic_validation;
 pub mod source_manager;
 pub mod test_utils;
+pub mod compound_assign;

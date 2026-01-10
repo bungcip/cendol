@@ -15,7 +15,7 @@ use crate::mir::{
 use crate::semantic::output::SemaOutput;
 use cranelift::codegen::ir::{StackSlot, StackSlotData, StackSlotKind};
 use cranelift::prelude::{
-    AbiParam, FloatCC, FunctionBuilderContext, InstBuilder, IntCC, MemFlags, Signature, Type, Value, types,
+    AbiParam, Block, FloatCC, FunctionBuilderContext, InstBuilder, IntCC, MemFlags, Signature, Type, Value, types,
 };
 use cranelift_frontend::FunctionBuilder;
 use cranelift_module::{DataDescription, Linkage, Module};
@@ -86,10 +86,158 @@ pub(crate) fn get_type_layout(mir_type: &MirType, _mir: &SemaOutput) -> Result<M
     Ok(mir_type.clone())
 }
 
+/// Helper to emit integer constants
+fn emit_const_int(val: i64, layout: &MirType, output: &mut Vec<u8>) -> Result<(), String> {
+    match layout {
+        MirType::Int { width, .. } => match width {
+            8 | 16 | 32 | 64 => {
+                let bytes = val.to_le_bytes();
+                let size = (width / 8) as usize;
+                output.extend_from_slice(&bytes[0..size]);
+            }
+            _ => {
+                let bytes = (val as i32).to_le_bytes();
+                output.extend_from_slice(&bytes);
+            }
+        },
+        MirType::Bool => {
+            let byte = if val != 0 { 1u8 } else { 0u8 };
+            output.push(byte);
+        }
+        MirType::Pointer { .. } => {
+            let bytes = (val).to_le_bytes();
+            output.extend_from_slice(&bytes);
+        }
+        _ => {
+            let bytes = (val as i32).to_le_bytes();
+            output.extend_from_slice(&bytes);
+        }
+    }
+    Ok(())
+}
+
+/// Helper to emit float constants
+fn emit_const_float(val: f64, layout: &MirType, output: &mut Vec<u8>) -> Result<(), String> {
+    match layout {
+        MirType::Float { width } => match width {
+            32 => {
+                let bytes = (val as f32).to_bits().to_le_bytes();
+                output.extend_from_slice(&bytes);
+            }
+            64 => {
+                let bytes = val.to_bits().to_le_bytes();
+                output.extend_from_slice(&bytes);
+            }
+            _ => {
+                let bytes = (val as f32).to_bits().to_le_bytes();
+                output.extend_from_slice(&bytes);
+            }
+        },
+        _ => {
+            let bytes = val.to_bits().to_le_bytes();
+            output.extend_from_slice(&bytes);
+        }
+    }
+    Ok(())
+}
+
+/// Helper to emit struct constants
+fn emit_const_struct(
+    fields: &[(usize, ConstValueId)],
+    layout: &MirType,
+    output: &mut Vec<u8>,
+    mir: &SemaOutput,
+) -> Result<(), String> {
+    match layout {
+        MirType::Record {
+            layout: record_layout,
+            fields: type_fields,
+            ..
+        } => {
+            // Initialize the entire struct with zeros
+            let struct_size = record_layout.size as usize;
+            let mut struct_bytes = vec![0u8; struct_size];
+
+            // Emit each field at its proper offset
+            for (field_index, field_const_id) in fields {
+                if *field_index < record_layout.field_offsets.len() {
+                    let field_offset = record_layout.field_offsets[*field_index] as usize;
+
+                    let (_field_name, field_type_id) = type_fields
+                        .get(*field_index)
+                        .ok_or_else(|| format!("Field index {} out of bounds", field_index))?;
+
+                    let field_type = mir.get_type(*field_type_id);
+
+                    let mut field_bytes = Vec::new();
+                    emit_const(*field_const_id, field_type, &mut field_bytes, mir)?;
+
+                    // Copy the field bytes into the struct buffer
+                    // Make sure we don't overflow the struct buffer
+                    if field_offset + field_bytes.len() <= struct_size {
+                        struct_bytes[field_offset..field_offset + field_bytes.len()].copy_from_slice(&field_bytes);
+                    } else {
+                        return Err(format!(
+                            "Field emission overflow: offset {} + size {} > struct size {}",
+                            field_offset,
+                            field_bytes.len(),
+                            struct_size
+                        ));
+                    }
+                }
+            }
+            output.extend_from_slice(&struct_bytes);
+            Ok(())
+        }
+        _ => Err("StructLiteral with non-record type".to_string()),
+    }
+}
+
+/// Helper to emit array constants
+fn emit_const_array(
+    elements: &[ConstValueId],
+    layout: &MirType,
+    output: &mut Vec<u8>,
+    mir: &SemaOutput,
+) -> Result<(), String> {
+    match layout {
+        MirType::Array {
+            element,
+            size,
+            layout: array_layout,
+        } => {
+            // Emit each element according to the array layout
+            for (i, element_const_id) in elements.iter().enumerate() {
+                if i >= *size {
+                    break; // Don't emit more elements than the array size
+                }
+
+                let element_type = mir.get_type(*element);
+                emit_const(*element_const_id, element_type, output, mir)?;
+
+                // Add padding if needed for stride > element size
+                let element_size = mir_type_size(element_type, mir)? as usize;
+                if array_layout.stride as usize > element_size {
+                    let padding = array_layout.stride as usize - element_size;
+                    output.extend_from_slice(&vec![0u8; padding]);
+                }
+            }
+
+            // Fill remaining space with zeros if array is partially initialized
+            let emitted_size = elements.len() * array_layout.stride as usize;
+            if emitted_size < array_layout.size as usize {
+                let remaining = array_layout.size as usize - emitted_size;
+                output.extend_from_slice(&vec![0u8; remaining]);
+            }
+            Ok(())
+        }
+        _ => Err("ArrayLiteral with non-array type".to_string()),
+    }
+}
+
 /// Emit a constant value to the output buffer based on its type layout
 pub(crate) fn emit_const(
     const_id: ConstValueId,
-    _type_id: TypeId,
     layout: &MirType,
     output: &mut Vec<u8>,
     mir: &SemaOutput,
@@ -100,168 +248,102 @@ pub(crate) fn emit_const(
         .ok_or_else(|| format!("Constant ID {} not found", const_id.get()))?;
 
     match const_value {
-        ConstValue::Int(val) => {
-            match layout {
-                MirType::Int { width, is_signed: _ } => match width {
-                    8 | 16 | 32 | 64 => {
-                        let bytes = val.to_le_bytes();
-                        let size = (width / 8) as usize;
-                        output.extend_from_slice(&bytes[0..size]);
-                    }
-                    _ => {
-                        let bytes = (*val as i32).to_le_bytes();
-                        output.extend_from_slice(&bytes);
-                    }
-                },
-                MirType::Bool => {
-                    let byte = if *val != 0 { 1u8 } else { 0u8 };
-                    output.push(byte);
-                }
-                MirType::Pointer { .. } => {
-                    // For pointers, treat as 64-bit integer
-                    let bytes = (*val).to_le_bytes();
-                    output.extend_from_slice(&bytes);
-                }
-                _ => {
-                    // Default to 32-bit integer representation
-                    let bytes = (*val as i32).to_le_bytes();
-                    output.extend_from_slice(&bytes);
-                }
-            }
-        }
-        ConstValue::Float(val) => {
-            match layout {
-                MirType::Float { width } => match width {
-                    32 => {
-                        let bytes = (*val as f32).to_bits().to_le_bytes();
-                        output.extend_from_slice(&bytes);
-                    }
-                    64 => {
-                        let bytes = val.to_bits().to_le_bytes();
-                        output.extend_from_slice(&bytes);
-                    }
-                    _ => {
-                        let bytes = (*val as f32).to_bits().to_le_bytes();
-                        output.extend_from_slice(&bytes);
-                    }
-                },
-                _ => {
-                    // Default to 64-bit float representation
-                    let bytes = val.to_bits().to_le_bytes();
-                    output.extend_from_slice(&bytes);
-                }
-            }
-        }
+        ConstValue::Int(val) => emit_const_int(*val, layout, output),
+        ConstValue::Float(val) => emit_const_float(*val, layout, output),
         ConstValue::Bool(val) => {
             let byte = if *val { 1u8 } else { 0u8 };
             output.push(byte);
+            Ok(())
         }
         ConstValue::Null => {
             // Emit null as all zeros (pointer-sized)
             let null_bytes = 0i64.to_le_bytes();
             output.extend_from_slice(&null_bytes);
+            Ok(())
         }
         ConstValue::Zero => {
             // Emit zeros for the entire type size
             let size = mir_type_size(layout, mir)? as usize;
             output.extend_from_slice(&vec![0u8; size]);
+            Ok(())
         }
         ConstValue::GlobalAddress(global_id) => {
             // For global addresses, emit as pointer-sized integer
             let addr_bytes = (global_id.get() as i64).to_le_bytes();
             output.extend_from_slice(&addr_bytes);
+            Ok(())
         }
         ConstValue::FunctionAddress(func_id) => {
             // For function addresses, emit as pointer-sized integer
             let addr_bytes = (func_id.get() as i64).to_le_bytes();
             output.extend_from_slice(&addr_bytes);
+            Ok(())
         }
-        ConstValue::StructLiteral(fields) => {
-            match layout {
-                MirType::Record {
-                    layout: record_layout,
-                    fields: type_fields,
-                    ..
-                } => {
-                    // Initialize the entire struct with zeros
-                    let struct_size = record_layout.size as usize;
-                    let mut struct_bytes = vec![0u8; struct_size];
-
-                    // Emit each field at its proper offset
-                    for (field_index, field_const_id) in fields {
-                        if *field_index < record_layout.field_offsets.len() {
-                            let field_offset = record_layout.field_offsets[*field_index] as usize;
-
-                            let (_field_name, field_type_id) = type_fields
-                                .get(*field_index)
-                                .ok_or_else(|| format!("Field index {} out of bounds", field_index))?;
-
-                            let field_type = mir.get_type(*field_type_id);
-
-                            let mut field_bytes = Vec::new();
-                            emit_const(*field_const_id, *field_type_id, field_type, &mut field_bytes, mir)?;
-
-                            // Copy the field bytes into the struct buffer
-                            // Make sure we don't overflow the struct buffer
-                            if field_offset + field_bytes.len() <= struct_size {
-                                struct_bytes[field_offset..field_offset + field_bytes.len()]
-                                    .copy_from_slice(&field_bytes);
-                            } else {
-                                return Err(format!(
-                                    "Field emission overflow: offset {} + size {} > struct size {}",
-                                    field_offset,
-                                    field_bytes.len(),
-                                    struct_size
-                                ));
-                            }
-                        }
-                    }
-                    output.extend_from_slice(&struct_bytes);
-                }
-                _ => return Err("StructLiteral with non-record type".to_string()),
-            }
-        }
-        ConstValue::ArrayLiteral(elements) => {
-            match layout {
-                MirType::Array {
-                    element,
-                    size,
-                    layout: array_layout,
-                } => {
-                    // Emit each element according to the array layout
-                    for (i, element_const_id) in elements.iter().enumerate() {
-                        if i >= *size {
-                            break; // Don't emit more elements than the array size
-                        }
-
-                        let element_type = mir.get_type(*element);
-                        emit_const(*element_const_id, *element, element_type, output, mir)?;
-
-                        // Add padding if needed for stride > element size
-                        let element_size = mir_type_size(element_type, mir)? as usize;
-                        if array_layout.stride as usize > element_size {
-                            let padding = array_layout.stride as usize - element_size;
-                            output.extend_from_slice(&vec![0u8; padding]);
-                        }
-                    }
-
-                    // Fill remaining space with zeros if array is partially initialized
-                    let emitted_size = elements.len() * array_layout.stride as usize;
-                    if emitted_size < array_layout.size as usize {
-                        let remaining = array_layout.size as usize - emitted_size;
-                        output.extend_from_slice(&vec![0u8; remaining]);
-                    }
-                }
-                _ => return Err("ArrayLiteral with non-array type".to_string()),
-            }
-        }
+        ConstValue::StructLiteral(fields) => emit_const_struct(fields, layout, output, mir),
+        ConstValue::ArrayLiteral(elements) => emit_const_array(elements, layout, output, mir),
         ConstValue::Cast(_type_id, inner_id) => {
             // For now, just emit the inner constant. The layout already determines the size/format.
-            emit_const(*inner_id, *_type_id, layout, output, mir)?;
+            emit_const(*inner_id, layout, output, mir)
         }
     }
+}
 
-    Ok(())
+/// Helper to prepare a function signature for a call
+fn prepare_call_signature(
+    call_conv: cranelift::codegen::isa::CallConv,
+    return_type_id: TypeId,
+    param_types: &[TypeId],
+    args: &[Operand],
+    mir: &SemaOutput,
+) -> Signature {
+    let mut sig = Signature::new(call_conv);
+
+    // Return type
+    if let Some(ret_type) = convert_type(mir.get_type(return_type_id)) {
+        sig.returns.push(AbiParam::new(ret_type));
+    }
+
+    // Fixed parameters
+    for &param_type_id in param_types {
+        let param_type = convert_type(mir.get_type(param_type_id)).unwrap();
+        sig.params.push(AbiParam::new(param_type));
+    }
+
+    // Variadic arguments (if any)
+    for arg in args.iter().skip(param_types.len()) {
+        let arg_type = get_operand_cranelift_type(arg, mir).unwrap_or(types::I32);
+        sig.params.push(AbiParam::new(arg_type));
+    }
+
+    sig
+}
+
+/// Helper to resolve call arguments to values
+fn resolve_call_arguments(
+    args: &[Operand],
+    sig: &Signature,
+    builder: &mut FunctionBuilder,
+    cranelift_stack_slots: &HashMap<LocalId, StackSlot>,
+    mir: &SemaOutput,
+    module: &mut ObjectModule,
+) -> Result<Vec<Value>, String> {
+    let mut arg_values = Vec::new();
+    for (i, arg) in args.iter().enumerate() {
+        if i >= sig.params.len() {
+            return Err(format!(
+                "Argument count mismatch: expected at most {}, got {}",
+                sig.params.len(),
+                args.len()
+            ));
+        }
+
+        let param_type = sig.params[i].value_type;
+        match resolve_operand_to_value(arg, builder, param_type, cranelift_stack_slots, mir, module) {
+            Ok(value) => arg_values.push(value),
+            Err(e) => return Err(format!("Failed to resolve function argument: {}", e)),
+        }
+    }
+    Ok(arg_values)
 }
 
 /// Standalone function to emit a proper function call that actually invokes the function
@@ -275,30 +357,21 @@ fn emit_function_call_impl(
 ) -> Result<Value, String> {
     match call_target {
         CallTarget::Direct(func_id) => {
-            // Look up the function in our MIR functions
             let func = mir.get_function(*func_id);
 
-            // Get the return type for this function
-            let return_type = convert_type(mir.get_type(func.return_type));
+            // Collect parameter types
+            let param_types: Vec<TypeId> = func.params.iter().map(|&p| mir.get_local(p).type_id).collect();
 
-            // If it's a variadic function, we must use an indirect call via the function's address
-            // to support different signatures at different call sites without redeclaring the function
-            // with conflicting signatures in Cranelift.
             if func.is_variadic {
                 // 1. Declare the function with its canonical signature (fixed params only)
-                let mut canonical_sig = Signature::new(builder.func.signature.call_conv);
-
-                // Add fixed parameters
-                for &param_id in &func.params {
-                    let param_local = mir.get_local(param_id);
-                    let param_type = convert_type(mir.get_type(param_local.type_id)).unwrap();
-                    canonical_sig.params.push(AbiParam::new(param_type));
-                }
-
-                // Add return type
-                if let Some(ret_type) = return_type {
-                    canonical_sig.returns.push(AbiParam::new(ret_type));
-                }
+                // We pass empty args here so it only creates fixed params signature
+                let canonical_sig = prepare_call_signature(
+                    builder.func.signature.call_conv,
+                    func.return_type,
+                    &param_types,
+                    &[], // No extra args for canonical declaration
+                    mir,
+                );
 
                 let linkage = match func.kind {
                     MirFunctionKind::Extern => cranelift_module::Linkage::Import,
@@ -314,35 +387,16 @@ fn emit_function_call_impl(
                 let func_addr = builder.ins().func_addr(types::I64, func_ref);
 
                 // 3. Construct the call-site signature with all arguments (fixed + variadic)
-                let mut call_sig = Signature::new(builder.func.signature.call_conv);
-
-                // Add fixed parameters
-                for &param_id in &func.params {
-                    let param_local = mir.get_local(param_id);
-                    let param_type = convert_type(mir.get_type(param_local.type_id)).unwrap();
-                    call_sig.params.push(AbiParam::new(param_type));
-                }
-
-                // Add variadic arguments
-                for arg in args.iter().skip(func.params.len()) {
-                    let arg_type = get_operand_cranelift_type(arg, mir).unwrap_or(types::I32);
-                    call_sig.params.push(AbiParam::new(arg_type));
-                }
-
-                // Add return type
-                if let Some(ret_type) = return_type {
-                    call_sig.returns.push(AbiParam::new(ret_type));
-                }
+                let call_sig = prepare_call_signature(
+                    builder.func.signature.call_conv,
+                    func.return_type,
+                    &param_types,
+                    args,
+                    mir,
+                );
 
                 // 4. Resolve arguments
-                let mut arg_values = Vec::new();
-                for (i, arg) in args.iter().enumerate() {
-                    let param_type = call_sig.params[i].value_type;
-                    match resolve_operand_to_value(arg, builder, param_type, cranelift_stack_slots, mir, module) {
-                        Ok(value) => arg_values.push(value),
-                        Err(e) => return Err(format!("Failed to resolve variadic function argument: {}", e)),
-                    }
-                }
+                let arg_values = resolve_call_arguments(args, &call_sig, builder, cranelift_stack_slots, mir, module)?;
 
                 // 5. Perform indirect call
                 let sig_ref = builder.import_signature(call_sig);
@@ -356,26 +410,17 @@ fn emit_function_call_impl(
                 }
             } else {
                 // Regular (non-variadic) function call
-                let mut sig = Signature::new(builder.func.signature.call_conv);
+                let sig = prepare_call_signature(
+                    builder.func.signature.call_conv,
+                    func.return_type,
+                    &param_types,
+                    args,
+                    mir,
+                );
 
-                if let Some(ret_type) = return_type {
-                    sig.returns.push(AbiParam::new(ret_type));
-                }
-
-                for &param_id in &func.params {
-                    let param_local = mir.get_local(param_id);
-                    let param_type = convert_type(mir.get_type(param_local.type_id)).unwrap();
-                    sig.params.push(AbiParam::new(param_type));
-                }
-
-                let mut arg_values = Vec::new();
-                for (i, arg) in args.iter().enumerate() {
-                    let param_type = sig.params[i].value_type;
-                    match resolve_operand_to_value(arg, builder, param_type, cranelift_stack_slots, mir, module) {
-                        Ok(value) => arg_values.push(value),
-                        Err(e) => return Err(format!("Failed to resolve function argument: {}", e)),
-                    }
-                }
+                // Resolve arguments before declaring function to ensure types match?
+                // No, we resolve against the signature.
+                let arg_values = resolve_call_arguments(args, &sig, builder, cranelift_stack_slots, mir, module)?;
 
                 let linkage = match func.kind {
                     MirFunctionKind::Extern => cranelift_module::Linkage::Import,
@@ -405,9 +450,9 @@ fn emit_function_call_impl(
             let func_ptr_type = mir.get_type(func_ptr_type_id);
 
             // 2. It must be a pointer to a function OR a function type (if it was dereferenced)
-            let ((return_type_id, param_type_ids), is_function_type) = match func_ptr_type {
+            let ((return_type_id, param_types), is_function_type) = match func_ptr_type {
                 MirType::Pointer { pointee } => match mir.get_type(*pointee) {
-                    MirType::Function { return_type, params } => ((*return_type, params), false),
+                    MirType::Function { return_type, params } => ((*return_type, params.clone()), false),
                     _ => {
                         return Err(format!(
                             "Indirect call operand points to non-function type: {:?}",
@@ -415,32 +460,18 @@ fn emit_function_call_impl(
                         ));
                     }
                 },
-                MirType::Function { return_type, params } => ((*return_type, params), true),
+                MirType::Function { return_type, params } => ((*return_type, params.clone()), true),
                 _ => return Err(format!("Indirect call operand is not a pointer: {:?}", func_ptr_type)),
             };
 
             // 3. Construct the signature
-            let mut sig = Signature::new(builder.func.signature.call_conv);
-
-            // Return type
-            let return_type_opt = convert_type(mir.get_type(return_type_id));
-            if let Some(ret_type) = return_type_opt {
-                sig.returns.push(AbiParam::new(ret_type));
-            }
-
-            // Params
-            // First add fixed parameters from the function type
-            for &param_type_id in param_type_ids {
-                let param_type = convert_type(mir.get_type(param_type_id)).unwrap();
-                sig.params.push(AbiParam::new(param_type));
-            }
-
-            // If there are more arguments than parameters, it's a variadic call.
-            // Add the extra arguments to the signature.
-            for arg in args.iter().skip(param_type_ids.len()) {
-                let arg_type = get_operand_cranelift_type(arg, mir).unwrap_or(types::I32);
-                sig.params.push(AbiParam::new(arg_type));
-            }
+            let sig = prepare_call_signature(
+                builder.func.signature.call_conv,
+                return_type_id,
+                &param_types,
+                args,
+                mir,
+            );
 
             // 4. Resolve the function pointer operand to a value
             let callee_val = if is_function_type {
@@ -464,24 +495,7 @@ fn emit_function_call_impl(
             };
 
             // 5. Resolve arguments
-            let mut arg_values = Vec::new();
-            for (i, arg) in args.iter().enumerate() {
-                // Ensure we have a parameter type for this argument
-                // This handles both fixed and variadic arguments because we extended sig.params above
-                if i >= sig.params.len() {
-                    return Err(format!(
-                        "Argument count mismatch: expected at most {}, got {}",
-                        sig.params.len(),
-                        args.len()
-                    ));
-                }
-
-                let param_type = sig.params[i].value_type;
-                match resolve_operand_to_value(arg, builder, param_type, cranelift_stack_slots, mir, module) {
-                    Ok(value) => arg_values.push(value),
-                    Err(e) => return Err(format!("Failed to resolve indirect call argument: {}", e)),
-                }
-            }
+            let arg_values = resolve_call_arguments(args, &sig, builder, cranelift_stack_slots, mir, module)?;
 
             // 6. Import signature
             let sig_ref = builder.import_signature(sig);
@@ -504,23 +518,6 @@ fn emit_function_call_impl(
 fn emit_type_conversion(val: Value, from: Type, to: Type, is_signed: bool, builder: &mut FunctionBuilder) -> Value {
     if from == to {
         return val;
-    }
-
-    // Integer to Integer
-    if from.is_int() && to.is_int() {
-        let from_width = from.bits();
-        let to_width = to.bits();
-        if from_width < to_width {
-            return if is_signed {
-                builder.ins().sextend(to, val)
-            } else {
-                builder.ins().uextend(to, val)
-            };
-        } else if from_width > to_width {
-            return builder.ins().ireduce(to, val);
-        } else {
-            return builder.ins().bitcast(to, MemFlags::new(), val);
-        }
     }
 
     // Float to Float
@@ -554,7 +551,7 @@ fn emit_type_conversion(val: Value, from: Type, to: Type, is_signed: bool, build
         };
     }
 
-    // Fallback logic for other cases (e.g. pointers treated as integers)
+    // General Integer/Pointer/Bool conversions (Extension/Reduction/Bitcast)
     let from_width = from.bits();
     let to_width = to.bits();
 
@@ -569,7 +566,9 @@ fn emit_type_conversion(val: Value, from: Type, to: Type, is_signed: bool, build
         // Reduction
         builder.ins().ireduce(to, val)
     } else {
-        // Same width, diff types
+        // Same width, diff types (e.g. I64 <-> F64 bitcast, or I32 <-> F32 bitcast, or Pointer types)
+        // Note: Float bitcasts usually handled above if involving floats, but check standard bitcast rules.
+        // Actually bitcast works for any same-sized types.
         builder.ins().bitcast(to, MemFlags::new(), val)
     }
 }
@@ -1057,6 +1056,472 @@ fn resolve_place_to_addr(
         }
     }
 }
+/// Helper to lower a single MIR statement
+fn lower_statement(
+    stmt: &MirStmt,
+    builder: &mut FunctionBuilder,
+    mir: &SemaOutput,
+    clif_stack_slots: &HashMap<LocalId, StackSlot>,
+    module: &mut ObjectModule,
+) -> Result<(), String> {
+    match stmt {
+        MirStmt::Assign(place, rvalue) => {
+            let place_type_id = get_place_type_id(place, mir)?;
+            let place_mir_type = mir.get_type(place_type_id);
+            let expected_type = convert_type(place_mir_type).ok_or_else(|| "Cannot assign to void type".to_string())?;
+
+            // Process the rvalue to get a Cranelift value first
+            let rvalue_result = match rvalue {
+                Rvalue::Use(operand) => {
+                    resolve_operand_to_value(operand, builder, expected_type, clif_stack_slots, mir, module)
+                }
+                Rvalue::Cast(type_id, operand) => {
+                    let inner_cranelift_type = get_operand_cranelift_type(operand, mir)?;
+                    let inner_val = resolve_operand_to_value(
+                        operand,
+                        builder,
+                        inner_cranelift_type,
+                        clif_stack_slots,
+                        mir,
+                        module,
+                    )?;
+
+                    let target_mir_type = mir.get_type(*type_id);
+                    let target_cranelift_type =
+                        convert_type(target_mir_type).ok_or_else(|| "Cannot cast to void type".to_string())?;
+
+                    let converted = emit_type_conversion(
+                        inner_val,
+                        inner_cranelift_type,
+                        target_cranelift_type,
+                        is_operand_signed(operand, mir),
+                        builder,
+                    );
+
+                    Ok(emit_type_conversion(
+                        converted,
+                        target_cranelift_type,
+                        expected_type,
+                        target_mir_type.is_signed(),
+                        builder,
+                    ))
+                }
+                Rvalue::UnaryOp(op, operand) => {
+                    let operand_cranelift_type = get_operand_cranelift_type(operand, mir)?;
+                    let val = resolve_operand_to_value(
+                        operand,
+                        builder,
+                        operand_cranelift_type,
+                        clif_stack_slots,
+                        mir,
+                        module,
+                    )?;
+
+                    match op {
+                        UnaryOp::Neg => Ok(builder.ins().ineg(val)),
+                        UnaryOp::LogicalNot => {
+                            let is_zero = builder.ins().icmp_imm(IntCC::Equal, val, 0);
+                            Ok(builder.ins().uextend(expected_type, is_zero))
+                        }
+                        UnaryOp::BitwiseNot => Ok(builder.ins().bnot(val)),
+                        _ => Err(format!("Unsupported unary op in Assign: {:?}", op)),
+                    }
+                }
+                Rvalue::PtrAdd(base, offset) => {
+                    let base_type_id = get_operand_type_id(base, mir)?;
+                    let base_type = mir.get_type(base_type_id);
+                    let pointee_size = if let MirType::Pointer { pointee } = base_type {
+                        let pointee_type = mir.get_type(*pointee);
+                        mir_type_size(pointee_type, mir)?
+                    } else {
+                        return Err("PtrAdd base is not a pointer type".to_string());
+                    };
+
+                    let base_val = resolve_operand_to_value(base, builder, types::I64, clif_stack_slots, mir, module)?;
+                    let offset_val =
+                        resolve_operand_to_value(offset, builder, types::I64, clif_stack_slots, mir, module)?;
+
+                    let scaled_offset = if pointee_size > 1 {
+                        let size_val = builder.ins().iconst(types::I64, pointee_size as i64);
+                        builder.ins().imul(offset_val, size_val)
+                    } else {
+                        offset_val
+                    };
+                    Ok(builder.ins().iadd(base_val, scaled_offset))
+                }
+                Rvalue::PtrSub(base, offset) => {
+                    let base_type_id = get_operand_type_id(base, mir)?;
+                    let base_type = mir.get_type(base_type_id);
+                    let pointee_size = if let MirType::Pointer { pointee } = base_type {
+                        let pointee_type = mir.get_type(*pointee);
+                        mir_type_size(pointee_type, mir)?
+                    } else {
+                        return Err("PtrSub base is not a pointer type".to_string());
+                    };
+
+                    let base_val = resolve_operand_to_value(base, builder, types::I64, clif_stack_slots, mir, module)?;
+                    let offset_val =
+                        resolve_operand_to_value(offset, builder, types::I64, clif_stack_slots, mir, module)?;
+
+                    let scaled_offset = if pointee_size > 1 {
+                        let size_val = builder.ins().iconst(types::I64, pointee_size as i64);
+                        builder.ins().imul(offset_val, size_val)
+                    } else {
+                        offset_val
+                    };
+                    Ok(builder.ins().isub(base_val, scaled_offset))
+                }
+                Rvalue::PtrDiff(left, right) => {
+                    let left_type_id = get_operand_type_id(left, mir)?;
+                    let left_type = mir.get_type(left_type_id);
+                    let pointee_size = if let MirType::Pointer { pointee } = left_type {
+                        let pointee_type = mir.get_type(*pointee);
+                        mir_type_size(pointee_type, mir)?
+                    } else {
+                        return Err("PtrDiff left operand is not a pointer type".to_string());
+                    };
+
+                    let left_val = resolve_operand_to_value(left, builder, types::I64, clif_stack_slots, mir, module)?;
+                    let right_val =
+                        resolve_operand_to_value(right, builder, types::I64, clif_stack_slots, mir, module)?;
+
+                    let diff = builder.ins().isub(left_val, right_val);
+                    if pointee_size > 1 {
+                        let size_val = builder.ins().iconst(types::I64, pointee_size as i64);
+                        Ok(builder.ins().sdiv(diff, size_val))
+                    } else {
+                        Ok(diff)
+                    }
+                }
+                Rvalue::Load(operand) => {
+                    let addr = resolve_operand_to_value(operand, builder, types::I64, clif_stack_slots, mir, module)?;
+                    Ok(builder.ins().load(expected_type, MemFlags::new(), addr, 0))
+                }
+                Rvalue::Call(call_target, args) => {
+                    emit_function_call_impl(call_target, args, builder, mir, clif_stack_slots, module)
+                }
+                Rvalue::BinaryOp(op, left_operand, right_operand) => {
+                    // For binary operations, we need to determine the correct types
+                    // based on the operands themselves, not hardcode I32
+                    let left_cranelift_type = get_operand_cranelift_type(left_operand, mir)
+                        .map_err(|e| format!("Failed to get left operand type: {}", e))?;
+                    let right_cranelift_type = get_operand_cranelift_type(right_operand, mir)
+                        .map_err(|e| format!("Failed to get right operand type: {}", e))?;
+
+                    // For Add/Sub operations, check if we have pointer arithmetic
+                    // If one operand is a pointer and the other is an integer constant,
+                    // ensure the constant is pointer-sized (i64)
+                    let (final_left_type, final_right_type) = match op {
+                        BinaryOp::Add | BinaryOp::Sub => {
+                            if left_cranelift_type == types::I64 && right_cranelift_type == types::I32 {
+                                // Pointer + int constant
+                                (types::I64, types::I64)
+                            } else if left_cranelift_type == types::I32 && right_cranelift_type == types::I64 {
+                                // int constant + pointer
+                                (types::I64, types::I64)
+                            } else {
+                                (left_cranelift_type, right_cranelift_type)
+                            }
+                        }
+                        _ => (left_cranelift_type, right_cranelift_type),
+                    };
+
+                    let left_val = resolve_operand_to_value(
+                        left_operand,
+                        builder,
+                        final_left_type,
+                        clif_stack_slots,
+                        mir,
+                        module,
+                    )?;
+
+                    let right_val = resolve_operand_to_value(
+                        right_operand,
+                        builder,
+                        final_right_type,
+                        clif_stack_slots,
+                        mir,
+                        module,
+                    )?;
+
+                    let result_val = match op {
+                        BinaryOp::Add => builder.ins().iadd(left_val, right_val),
+                        BinaryOp::Sub => builder.ins().isub(left_val, right_val),
+                        BinaryOp::Mul => builder.ins().imul(left_val, right_val),
+                        BinaryOp::Div => builder.ins().sdiv(left_val, right_val),
+                        BinaryOp::Mod => builder.ins().srem(left_val, right_val),
+                        BinaryOp::BitAnd => builder.ins().band(left_val, right_val),
+                        BinaryOp::BitOr => builder.ins().bor(left_val, right_val),
+                        BinaryOp::BitXor => builder.ins().bxor(left_val, right_val),
+                        BinaryOp::LShift => builder.ins().ishl(left_val, right_val),
+                        BinaryOp::RShift => builder.ins().sshr(left_val, right_val),
+                        BinaryOp::Equal => {
+                            let cmp_val = if final_left_type.is_float() {
+                                builder.ins().fcmp(FloatCC::Equal, left_val, right_val)
+                            } else {
+                                builder.ins().icmp(IntCC::Equal, left_val, right_val)
+                            };
+                            builder.ins().uextend(types::I32, cmp_val)
+                        }
+                        BinaryOp::NotEqual => {
+                            let cmp_val = if final_left_type.is_float() {
+                                builder.ins().fcmp(FloatCC::NotEqual, left_val, right_val)
+                            } else {
+                                builder.ins().icmp(IntCC::NotEqual, left_val, right_val)
+                            };
+                            builder.ins().uextend(types::I32, cmp_val)
+                        }
+                        BinaryOp::Less => {
+                            let cmp_val = if final_left_type.is_float() {
+                                builder.ins().fcmp(FloatCC::LessThan, left_val, right_val)
+                            } else {
+                                builder.ins().icmp(IntCC::SignedLessThan, left_val, right_val)
+                            };
+                            builder.ins().uextend(types::I32, cmp_val)
+                        }
+                        BinaryOp::LessEqual => {
+                            let cmp_val = if final_left_type.is_float() {
+                                builder.ins().fcmp(FloatCC::LessThanOrEqual, left_val, right_val)
+                            } else {
+                                builder.ins().icmp(IntCC::SignedLessThanOrEqual, left_val, right_val)
+                            };
+                            builder.ins().uextend(types::I32, cmp_val)
+                        }
+                        BinaryOp::Greater => {
+                            let cmp_val = if final_left_type.is_float() {
+                                builder.ins().fcmp(FloatCC::GreaterThan, left_val, right_val)
+                            } else {
+                                builder.ins().icmp(IntCC::SignedGreaterThan, left_val, right_val)
+                            };
+                            builder.ins().uextend(types::I32, cmp_val)
+                        }
+                        BinaryOp::GreaterEqual => {
+                            let cmp_val = if final_left_type.is_float() {
+                                builder.ins().fcmp(FloatCC::GreaterThanOrEqual, left_val, right_val)
+                            } else {
+                                builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, left_val, right_val)
+                            };
+                            builder.ins().uextend(types::I32, cmp_val)
+                        }
+                        BinaryOp::LogicAnd | BinaryOp::LogicOr => builder.ins().band(left_val, right_val),
+                        BinaryOp::Comma => right_val,
+                    };
+                    let from_type = match op {
+                        BinaryOp::Equal
+                        | BinaryOp::NotEqual
+                        | BinaryOp::Less
+                        | BinaryOp::LessEqual
+                        | BinaryOp::Greater
+                        | BinaryOp::GreaterEqual => types::I32,
+                        _ => final_left_type,
+                    };
+
+                    Ok(emit_type_conversion(
+                        result_val,
+                        from_type,
+                        expected_type,
+                        true,
+                        builder,
+                    ))
+                }
+                _ => Ok(builder.ins().iconst(expected_type, 0)),
+            };
+
+            // Now, assign the resolved value to the place
+            if let Ok(value) = rvalue_result {
+                match place {
+                    Place::Local(local_id) => {
+                        // Check if this local has a stack slot (non-void types)
+                        if let Some(stack_slot) = clif_stack_slots.get(local_id) {
+                            builder.ins().stack_store(value, *stack_slot, 0);
+                        } else {
+                            // This local doesn't have a stack slot (likely a void type)
+                            // Check if it's actually a void type to provide a better warning
+                            if let Some(local) = mir.locals.get(local_id)
+                                && let Some(local_type) = mir.types.get(&local.type_id)
+                                && !matches!(local_type, MirType::Void)
+                            {
+                                eprintln!("Warning: Stack slot not found for local {}", local_id.get());
+                            }
+                        }
+                    }
+                    _ => {
+                        // This covers StructField, ArrayIndex, Deref, and Global assignments
+                        match resolve_place_to_addr(place, builder, clif_stack_slots, mir, module) {
+                            Ok(addr) => {
+                                builder.ins().store(MemFlags::new(), value, addr, 0);
+                            }
+                            Err(e) => {
+                                eprintln!("Warning: Failed to resolve place address for assignment: {}", e);
+                            }
+                        }
+                    }
+                }
+            } else if let Err(e) = rvalue_result {
+                eprintln!("Warning: Failed to resolve rvalue: {}", e);
+            }
+        }
+
+        MirStmt::Store(operand, place) => {
+            // We need to determine the correct type for the operand
+            let place_type_id = get_place_type_id(place, mir)?;
+            let place_type = mir.get_type(place_type_id);
+            let cranelift_type = convert_type(place_type).ok_or_else(|| "Cannot store to a void type".to_string())?;
+
+            let value = resolve_operand_to_value(operand, builder, cranelift_type, clif_stack_slots, mir, module)?;
+
+            // Now, store the value into the place
+            match place {
+                Place::Local(local_id) => {
+                    let stack_slot = clif_stack_slots
+                        .get(local_id)
+                        .ok_or_else(|| format!("Stack slot not found for local {}", local_id.get()))?;
+                    builder.ins().stack_store(value, *stack_slot, 0);
+                }
+                _ => {
+                    // For other places, resolve to an address and store
+                    let addr = resolve_place_to_addr(place, builder, clif_stack_slots, mir, module)?;
+                    builder.ins().store(MemFlags::new(), value, addr, 0);
+                }
+            }
+        }
+
+        MirStmt::Call(call_target, args) => {
+            // Handle function calls that don't return values (side-effect only calls)
+            // This is used for void function calls or calls where the result is ignored
+            let _ = emit_function_call_impl(call_target, args, builder, mir, clif_stack_slots, module)?; // Ignore return value as this is a side-effect only call
+        }
+
+        MirStmt::Alloc(place, type_id) => {
+            // Get the size of the type to be allocated
+            let alloc_type = mir.get_type(*type_id);
+            let size = mir_type_size(alloc_type, mir)?;
+
+            // Define the `malloc` function signature (size_t -> void*)
+            // In Cranelift, this would be (i64) -> i64 for a 64-bit target
+            let mut malloc_sig = Signature::new(builder.func.signature.call_conv);
+            malloc_sig.params.push(AbiParam::new(types::I64));
+            malloc_sig.returns.push(AbiParam::new(types::I64));
+
+            // Declare `malloc` if not already declared
+            let malloc_func = module
+                .declare_function("malloc", Linkage::Import, &malloc_sig)
+                .map_err(|e| format!("Failed to declare malloc: {:?}", e))?;
+            let local_malloc = module.declare_func_in_func(malloc_func, builder.func);
+
+            // Call `malloc` with the calculated size
+            let size_val = builder.ins().iconst(types::I64, size as i64);
+            let call_inst = builder.ins().call(local_malloc, &[size_val]);
+            let alloc_ptr = builder.inst_results(call_inst)[0];
+
+            // Store the returned pointer into the destination place
+            match place {
+                Place::Local(local_id) => {
+                    if let Some(stack_slot) = clif_stack_slots.get(local_id) {
+                        builder.ins().stack_store(alloc_ptr, *stack_slot, 0);
+                    } else {
+                        eprintln!("Warning: Stack slot not found for local {}", local_id.get());
+                    }
+                }
+                _ => {
+                    let addr = resolve_place_to_addr(place, builder, clif_stack_slots, mir, module)?;
+                    builder.ins().store(MemFlags::new(), alloc_ptr, addr, 0);
+                }
+            }
+        }
+
+        MirStmt::Dealloc(operand) => {
+            // Resolve the operand to get the pointer to be freed
+            let ptr_val = resolve_operand_to_value(
+                operand,
+                builder,
+                types::I64, // Pointers are i64
+                clif_stack_slots,
+                mir,
+                module,
+            )?;
+
+            // Define the `free` function signature (void* -> void)
+            let mut free_sig = Signature::new(builder.func.signature.call_conv);
+            free_sig.params.push(AbiParam::new(types::I64));
+
+            // Declare `free` if not already declared
+            let free_func = module
+                .declare_function("free", Linkage::Import, &free_sig)
+                .map_err(|e| format!("Failed to declare free: {:?}", e))?;
+            let local_free = module.declare_func_in_func(free_func, builder.func);
+
+            // Call `free` with the pointer
+            builder.ins().call(local_free, &[ptr_val]);
+        }
+    }
+    Ok(())
+}
+
+/// Helper to lower a terminator
+fn lower_terminator(
+    terminator: &Terminator,
+    builder: &mut FunctionBuilder,
+    clif_blocks: &HashMap<MirBlockId, Block>,
+    worklist: &mut Vec<MirBlockId>,
+    return_type_opt: Option<Type>,
+    mir: &SemaOutput,
+    clif_stack_slots: &HashMap<LocalId, StackSlot>,
+    module: &mut ObjectModule,
+) -> Result<(), String> {
+    match terminator {
+        Terminator::Goto(target) => {
+            let target_cl_block = clif_blocks
+                .get(target)
+                .ok_or_else(|| format!("Target block {} not found", target.get()))?;
+            builder.ins().jump(*target_cl_block, &[]);
+            worklist.push(*target);
+        }
+
+        Terminator::If(cond, then_bb, else_bb) => {
+            let cond_val = resolve_operand_to_value(cond, builder, types::I32, clif_stack_slots, mir, module)?;
+
+            let then_cl_block = clif_blocks
+                .get(then_bb)
+                .ok_or_else(|| format!("'Then' block {} not found", then_bb.get()))?;
+            let else_cl_block = clif_blocks
+                .get(else_bb)
+                .ok_or_else(|| format!("'Else' block {} not found", else_bb.get()))?;
+
+            builder.ins().brif(cond_val, *then_cl_block, &[], *else_cl_block, &[]);
+
+            worklist.push(*then_bb);
+            worklist.push(*else_bb);
+        }
+
+        Terminator::Return(opt) => {
+            if let Some(operand) = opt {
+                if let Some(ret_type) = return_type_opt {
+                    let return_value =
+                        resolve_operand_to_value(operand, builder, ret_type, clif_stack_slots, mir, module)?;
+                    builder.ins().return_(&[return_value]);
+                } else {
+                    return Err("Returning a value from a void function".to_string());
+                }
+            } else {
+                builder.ins().return_(&[]);
+            }
+        }
+
+        Terminator::Unreachable => {
+            // For unreachable, default to appropriate return based on function type
+            if let Some(ret_type) = return_type_opt {
+                let return_value = builder.ins().iconst(ret_type, 0);
+                builder.ins().return_(&[return_value]);
+            } else {
+                // Void function
+                builder.ins().return_(&[]);
+            }
+        }
+    }
+    Ok(())
+}
+
 /// MIR to Cranelift IR Lowerer
 pub(crate) struct MirToCraneliftLowerer {
     builder_context: FunctionBuilderContext,
@@ -1116,7 +1581,7 @@ impl MirToCraneliftLowerer {
                     .map_err(|e| format!("Failed to get layout for global {}: {}", global.name, e))?;
 
                 let mut initial_value_bytes = Vec::new();
-                emit_const(const_id, global.type_id, &layout, &mut initial_value_bytes, &self.mir)
+                emit_const(const_id, &layout, &mut initial_value_bytes, &self.mir)
                     .map_err(|e| format!("Failed to emit constant for global {}: {}", global.name, e))?;
                 data_description.define(initial_value_bytes.into_boxed_slice());
             } else {
@@ -1314,560 +1779,22 @@ impl MirToCraneliftLowerer {
 
             // Process statements
             for stmt in &statements_to_process {
-                match stmt {
-                    MirStmt::Assign(place, rvalue) => {
-                        let place_type_id = get_place_type_id(place, &self.mir)?;
-                        let place_mir_type = self.mir.get_type(place_type_id);
-                        let expected_type =
-                            convert_type(place_mir_type).ok_or_else(|| "Cannot assign to void type".to_string())?;
-
-                        // Process the rvalue to get a Cranelift value first
-                        let rvalue_result = match rvalue {
-                            Rvalue::Use(operand) => resolve_operand_to_value(
-                                operand,
-                                &mut builder,
-                                expected_type,
-                                &self.clif_stack_slots,
-                                &self.mir,
-                                &mut self.module,
-                            ),
-                            Rvalue::Cast(type_id, operand) => {
-                                let inner_cranelift_type = get_operand_cranelift_type(operand, &self.mir)?;
-                                let inner_val = resolve_operand_to_value(
-                                    operand,
-                                    &mut builder,
-                                    inner_cranelift_type,
-                                    &self.clif_stack_slots,
-                                    &self.mir,
-                                    &mut self.module,
-                                )?;
-
-                                let target_mir_type = self.mir.get_type(*type_id);
-                                let target_cranelift_type = convert_type(target_mir_type)
-                                    .ok_or_else(|| "Cannot cast to void type".to_string())?;
-
-                                let converted = emit_type_conversion(
-                                    inner_val,
-                                    inner_cranelift_type,
-                                    target_cranelift_type,
-                                    is_operand_signed(operand, &self.mir),
-                                    &mut builder,
-                                );
-
-                                Ok(emit_type_conversion(
-                                    converted,
-                                    target_cranelift_type,
-                                    expected_type,
-                                    target_mir_type.is_signed(),
-                                    &mut builder,
-                                ))
-                            }
-                            Rvalue::UnaryOp(op, operand) => {
-                                let operand_cranelift_type = get_operand_cranelift_type(operand, &self.mir)?;
-                                let val = resolve_operand_to_value(
-                                    operand,
-                                    &mut builder,
-                                    operand_cranelift_type,
-                                    &self.clif_stack_slots,
-                                    &self.mir,
-                                    &mut self.module,
-                                )?;
-
-                                match op {
-                                    UnaryOp::Neg => Ok(builder.ins().ineg(val)),
-                                    UnaryOp::LogicalNot => {
-                                        let is_zero = builder.ins().icmp_imm(IntCC::Equal, val, 0);
-                                        Ok(builder.ins().uextend(expected_type, is_zero))
-                                    }
-                                    UnaryOp::BitwiseNot => Ok(builder.ins().bnot(val)),
-                                    _ => Err(format!("Unsupported unary op in Assign: {:?}", op)),
-                                }
-                            }
-                            Rvalue::PtrAdd(base, offset) => {
-                                let base_type_id = get_operand_type_id(base, &self.mir)?;
-                                let base_type = self.mir.get_type(base_type_id);
-                                let pointee_size = if let MirType::Pointer { pointee } = base_type {
-                                    let pointee_type = self.mir.get_type(*pointee);
-                                    mir_type_size(pointee_type, &self.mir)?
-                                } else {
-                                    return Err("PtrAdd base is not a pointer type".to_string());
-                                };
-
-                                let base_val = resolve_operand_to_value(
-                                    base,
-                                    &mut builder,
-                                    types::I64,
-                                    &self.clif_stack_slots,
-                                    &self.mir,
-                                    &mut self.module,
-                                )?;
-                                let offset_val = resolve_operand_to_value(
-                                    offset,
-                                    &mut builder,
-                                    types::I64,
-                                    &self.clif_stack_slots,
-                                    &self.mir,
-                                    &mut self.module,
-                                )?;
-
-                                let scaled_offset = if pointee_size > 1 {
-                                    let size_val = builder.ins().iconst(types::I64, pointee_size as i64);
-                                    builder.ins().imul(offset_val, size_val)
-                                } else {
-                                    offset_val
-                                };
-                                Ok(builder.ins().iadd(base_val, scaled_offset))
-                            }
-                            Rvalue::PtrSub(base, offset) => {
-                                let base_type_id = get_operand_type_id(base, &self.mir)?;
-                                let base_type = self.mir.get_type(base_type_id);
-                                let pointee_size = if let MirType::Pointer { pointee } = base_type {
-                                    let pointee_type = self.mir.get_type(*pointee);
-                                    mir_type_size(pointee_type, &self.mir)?
-                                } else {
-                                    return Err("PtrSub base is not a pointer type".to_string());
-                                };
-
-                                let base_val = resolve_operand_to_value(
-                                    base,
-                                    &mut builder,
-                                    types::I64,
-                                    &self.clif_stack_slots,
-                                    &self.mir,
-                                    &mut self.module,
-                                )?;
-                                let offset_val = resolve_operand_to_value(
-                                    offset,
-                                    &mut builder,
-                                    types::I64,
-                                    &self.clif_stack_slots,
-                                    &self.mir,
-                                    &mut self.module,
-                                )?;
-
-                                let scaled_offset = if pointee_size > 1 {
-                                    let size_val = builder.ins().iconst(types::I64, pointee_size as i64);
-                                    builder.ins().imul(offset_val, size_val)
-                                } else {
-                                    offset_val
-                                };
-                                Ok(builder.ins().isub(base_val, scaled_offset))
-                            }
-                            Rvalue::PtrDiff(left, right) => {
-                                let left_type_id = get_operand_type_id(left, &self.mir)?;
-                                let left_type = self.mir.get_type(left_type_id);
-                                let pointee_size = if let MirType::Pointer { pointee } = left_type {
-                                    let pointee_type = self.mir.get_type(*pointee);
-                                    mir_type_size(pointee_type, &self.mir)?
-                                } else {
-                                    return Err("PtrDiff left operand is not a pointer type".to_string());
-                                };
-
-                                let left_val = resolve_operand_to_value(
-                                    left,
-                                    &mut builder,
-                                    types::I64,
-                                    &self.clif_stack_slots,
-                                    &self.mir,
-                                    &mut self.module,
-                                )?;
-                                let right_val = resolve_operand_to_value(
-                                    right,
-                                    &mut builder,
-                                    types::I64,
-                                    &self.clif_stack_slots,
-                                    &self.mir,
-                                    &mut self.module,
-                                )?;
-
-                                let diff = builder.ins().isub(left_val, right_val);
-                                if pointee_size > 1 {
-                                    let size_val = builder.ins().iconst(types::I64, pointee_size as i64);
-                                    Ok(builder.ins().sdiv(diff, size_val))
-                                } else {
-                                    Ok(diff)
-                                }
-                            }
-                            Rvalue::Load(operand) => {
-                                let addr = resolve_operand_to_value(
-                                    operand,
-                                    &mut builder,
-                                    types::I64,
-                                    &self.clif_stack_slots,
-                                    &self.mir,
-                                    &mut self.module,
-                                )?;
-                                Ok(builder.ins().load(expected_type, MemFlags::new(), addr, 0))
-                            }
-                            Rvalue::Call(call_target, args) => emit_function_call_impl(
-                                call_target,
-                                args,
-                                &mut builder,
-                                &self.mir,
-                                &self.clif_stack_slots,
-                                &mut self.module,
-                            ),
-                            Rvalue::BinaryOp(op, left_operand, right_operand) => {
-                                // For binary operations, we need to determine the correct types
-                                // based on the operands themselves, not hardcode I32
-                                let left_cranelift_type = get_operand_cranelift_type(left_operand, &self.mir)
-                                    .map_err(|e| format!("Failed to get left operand type: {}", e))?;
-                                let right_cranelift_type = get_operand_cranelift_type(right_operand, &self.mir)
-                                    .map_err(|e| format!("Failed to get right operand type: {}", e))?;
-
-                                // For Add/Sub operations, check if we have pointer arithmetic
-                                // If one operand is a pointer and the other is an integer constant,
-                                // ensure the constant is pointer-sized (i64)
-                                let (final_left_type, final_right_type) = match op {
-                                    BinaryOp::Add | BinaryOp::Sub => {
-                                        if left_cranelift_type == types::I64 && right_cranelift_type == types::I32 {
-                                            // Pointer + int constant
-                                            (types::I64, types::I64)
-                                        } else if left_cranelift_type == types::I32
-                                            && right_cranelift_type == types::I64
-                                        {
-                                            // int constant + pointer
-                                            (types::I64, types::I64)
-                                        } else {
-                                            (left_cranelift_type, right_cranelift_type)
-                                        }
-                                    }
-                                    _ => (left_cranelift_type, right_cranelift_type),
-                                };
-
-                                let left_val = resolve_operand_to_value(
-                                    left_operand,
-                                    &mut builder,
-                                    final_left_type,
-                                    &self.clif_stack_slots,
-                                    &self.mir,
-                                    &mut self.module,
-                                )?;
-
-                                let right_val = resolve_operand_to_value(
-                                    right_operand,
-                                    &mut builder,
-                                    final_right_type,
-                                    &self.clif_stack_slots,
-                                    &self.mir,
-                                    &mut self.module,
-                                )?;
-
-                                let result_val = match op {
-                                    BinaryOp::Add => builder.ins().iadd(left_val, right_val),
-                                    BinaryOp::Sub => builder.ins().isub(left_val, right_val),
-                                    BinaryOp::Mul => builder.ins().imul(left_val, right_val),
-                                    BinaryOp::Div => builder.ins().sdiv(left_val, right_val),
-                                    BinaryOp::Mod => builder.ins().srem(left_val, right_val),
-                                    BinaryOp::BitAnd => builder.ins().band(left_val, right_val),
-                                    BinaryOp::BitOr => builder.ins().bor(left_val, right_val),
-                                    BinaryOp::BitXor => builder.ins().bxor(left_val, right_val),
-                                    BinaryOp::LShift => builder.ins().ishl(left_val, right_val),
-                                    BinaryOp::RShift => builder.ins().sshr(left_val, right_val),
-                                    BinaryOp::Equal => {
-                                        let cmp_val = if final_left_type.is_float() {
-                                            builder.ins().fcmp(FloatCC::Equal, left_val, right_val)
-                                        } else {
-                                            builder.ins().icmp(IntCC::Equal, left_val, right_val)
-                                        };
-                                        builder.ins().uextend(types::I32, cmp_val)
-                                    }
-                                    BinaryOp::NotEqual => {
-                                        let cmp_val = if final_left_type.is_float() {
-                                            builder.ins().fcmp(FloatCC::NotEqual, left_val, right_val)
-                                        } else {
-                                            builder.ins().icmp(IntCC::NotEqual, left_val, right_val)
-                                        };
-                                        builder.ins().uextend(types::I32, cmp_val)
-                                    }
-                                    BinaryOp::Less => {
-                                        let cmp_val = if final_left_type.is_float() {
-                                            builder.ins().fcmp(FloatCC::LessThan, left_val, right_val)
-                                        } else {
-                                            builder.ins().icmp(IntCC::SignedLessThan, left_val, right_val)
-                                        };
-                                        builder.ins().uextend(types::I32, cmp_val)
-                                    }
-                                    BinaryOp::LessEqual => {
-                                        let cmp_val = if final_left_type.is_float() {
-                                            builder.ins().fcmp(FloatCC::LessThanOrEqual, left_val, right_val)
-                                        } else {
-                                            builder.ins().icmp(IntCC::SignedLessThanOrEqual, left_val, right_val)
-                                        };
-                                        builder.ins().uextend(types::I32, cmp_val)
-                                    }
-                                    BinaryOp::Greater => {
-                                        let cmp_val = if final_left_type.is_float() {
-                                            builder.ins().fcmp(FloatCC::GreaterThan, left_val, right_val)
-                                        } else {
-                                            builder.ins().icmp(IntCC::SignedGreaterThan, left_val, right_val)
-                                        };
-                                        builder.ins().uextend(types::I32, cmp_val)
-                                    }
-                                    BinaryOp::GreaterEqual => {
-                                        let cmp_val = if final_left_type.is_float() {
-                                            builder.ins().fcmp(FloatCC::GreaterThanOrEqual, left_val, right_val)
-                                        } else {
-                                            builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, left_val, right_val)
-                                        };
-                                        builder.ins().uextend(types::I32, cmp_val)
-                                    }
-                                    BinaryOp::LogicAnd | BinaryOp::LogicOr => builder.ins().band(left_val, right_val),
-                                    BinaryOp::Comma => right_val,
-                                };
-                                let from_type = match op {
-                                    BinaryOp::Equal
-                                    | BinaryOp::NotEqual
-                                    | BinaryOp::Less
-                                    | BinaryOp::LessEqual
-                                    | BinaryOp::Greater
-                                    | BinaryOp::GreaterEqual => types::I32,
-                                    _ => final_left_type,
-                                };
-
-                                Ok(emit_type_conversion(
-                                    result_val,
-                                    from_type,
-                                    expected_type,
-                                    true,
-                                    &mut builder,
-                                ))
-                            }
-                            _ => Ok(builder.ins().iconst(expected_type, 0)),
-                        };
-
-                        // Now, assign the resolved value to the place
-                        if let Ok(value) = rvalue_result {
-                            match place {
-                                Place::Local(local_id) => {
-                                    // Check if this local has a stack slot (non-void types)
-                                    if let Some(stack_slot) = self.clif_stack_slots.get(local_id) {
-                                        builder.ins().stack_store(value, *stack_slot, 0);
-                                    } else {
-                                        // This local doesn't have a stack slot (likely a void type)
-                                        // Check if it's actually a void type to provide a better warning
-                                        if let Some(local) = self.mir.locals.get(local_id)
-                                            && let Some(local_type) = self.mir.types.get(&local.type_id)
-                                            && !matches!(local_type, MirType::Void)
-                                        {
-                                            eprintln!("Warning: Stack slot not found for local {}", local_id.get());
-                                        }
-                                    }
-                                }
-                                _ => {
-                                    // This covers StructField, ArrayIndex, Deref, and Global assignments
-                                    match resolve_place_to_addr(
-                                        place,
-                                        &mut builder,
-                                        &self.clif_stack_slots,
-                                        &self.mir,
-                                        &mut self.module,
-                                    ) {
-                                        Ok(addr) => {
-                                            builder.ins().store(MemFlags::new(), value, addr, 0);
-                                        }
-                                        Err(e) => {
-                                            eprintln!("Warning: Failed to resolve place address for assignment: {}", e);
-                                        }
-                                    }
-                                }
-                            }
-                        } else if let Err(e) = rvalue_result {
-                            eprintln!("Warning: Failed to resolve rvalue: {}", e);
-                        }
-                    }
-
-                    MirStmt::Store(operand, place) => {
-                        // We need to determine the correct type for the operand
-                        let place_type_id = get_place_type_id(place, &self.mir)?;
-                        let place_type = self.mir.get_type(place_type_id);
-                        let cranelift_type =
-                            convert_type(place_type).ok_or_else(|| "Cannot store to a void type".to_string())?;
-
-                        let value = resolve_operand_to_value(
-                            operand,
-                            &mut builder,
-                            cranelift_type,
-                            &self.clif_stack_slots,
-                            &self.mir,
-                            &mut self.module,
-                        )?;
-
-                        // Now, store the value into the place
-                        match place {
-                            Place::Local(local_id) => {
-                                let stack_slot = self
-                                    .clif_stack_slots
-                                    .get(local_id)
-                                    .ok_or_else(|| format!("Stack slot not found for local {}", local_id.get()))?;
-                                builder.ins().stack_store(value, *stack_slot, 0);
-                            }
-                            _ => {
-                                // For other places, resolve to an address and store
-                                let addr = resolve_place_to_addr(
-                                    place,
-                                    &mut builder,
-                                    &self.clif_stack_slots,
-                                    &self.mir,
-                                    &mut self.module,
-                                )?;
-                                builder.ins().store(MemFlags::new(), value, addr, 0);
-                            }
-                        }
-                    }
-
-                    MirStmt::Call(call_target, args) => {
-                        // Handle function calls that don't return values (side-effect only calls)
-                        // This is used for void function calls or calls where the result is ignored
-                        let _ = emit_function_call_impl(
-                            call_target,
-                            args,
-                            &mut builder,
-                            &self.mir,
-                            &self.clif_stack_slots,
-                            &mut self.module,
-                        )?; // Ignore return value as this is a side-effect only call
-                    }
-
-                    MirStmt::Alloc(place, type_id) => {
-                        // Get the size of the type to be allocated
-                        let alloc_type = self.mir.get_type(*type_id);
-                        let size = mir_type_size(alloc_type, &self.mir)?;
-
-                        // Define the `malloc` function signature (size_t -> void*)
-                        // In Cranelift, this would be (i64) -> i64 for a 64-bit target
-                        let mut malloc_sig = Signature::new(builder.func.signature.call_conv);
-                        malloc_sig.params.push(AbiParam::new(types::I64));
-                        malloc_sig.returns.push(AbiParam::new(types::I64));
-
-                        // Declare `malloc` if not already declared
-                        let malloc_func = self
-                            .module
-                            .declare_function("malloc", Linkage::Import, &malloc_sig)
-                            .map_err(|e| format!("Failed to declare malloc: {:?}", e))?;
-                        let local_malloc = self.module.declare_func_in_func(malloc_func, builder.func);
-
-                        // Call `malloc` with the calculated size
-                        let size_val = builder.ins().iconst(types::I64, size as i64);
-                        let call_inst = builder.ins().call(local_malloc, &[size_val]);
-                        let alloc_ptr = builder.inst_results(call_inst)[0];
-
-                        // Store the returned pointer into the destination place
-                        match place {
-                            Place::Local(local_id) => {
-                                if let Some(stack_slot) = self.clif_stack_slots.get(local_id) {
-                                    builder.ins().stack_store(alloc_ptr, *stack_slot, 0);
-                                } else {
-                                    eprintln!("Warning: Stack slot not found for local {}", local_id.get());
-                                }
-                            }
-                            _ => {
-                                let addr = resolve_place_to_addr(
-                                    place,
-                                    &mut builder,
-                                    &self.clif_stack_slots,
-                                    &self.mir,
-                                    &mut self.module,
-                                )?;
-                                builder.ins().store(MemFlags::new(), alloc_ptr, addr, 0);
-                            }
-                        }
-                    }
-
-                    MirStmt::Dealloc(operand) => {
-                        // Resolve the operand to get the pointer to be freed
-                        let ptr_val = resolve_operand_to_value(
-                            operand,
-                            &mut builder,
-                            types::I64, // Pointers are i64
-                            &self.clif_stack_slots,
-                            &self.mir,
-                            &mut self.module,
-                        )?;
-
-                        // Define the `free` function signature (void* -> void)
-                        let mut free_sig = Signature::new(builder.func.signature.call_conv);
-                        free_sig.params.push(AbiParam::new(types::I64));
-
-                        // Declare `free` if not already declared
-                        let free_func = self
-                            .module
-                            .declare_function("free", Linkage::Import, &free_sig)
-                            .map_err(|e| format!("Failed to declare free: {:?}", e))?;
-                        let local_free = self.module.declare_func_in_func(free_func, builder.func);
-
-                        // Call `free` with the pointer
-                        builder.ins().call(local_free, &[ptr_val]);
-                    }
-                }
+                lower_statement(stmt, &mut builder, &self.mir, &self.clif_stack_slots, &mut self.module)?;
             }
 
             // ========================================================================
             // SECTION 2: Process terminator (control flow)
             // ========================================================================
-            match &mir_block.terminator {
-                Terminator::Goto(target) => {
-                    let target_cl_block = clif_blocks
-                        .get(target)
-                        .ok_or_else(|| format!("Target block {} not found", target.get()))?;
-                    builder.ins().jump(*target_cl_block, &[]);
-                    worklist.push(*target);
-                }
-
-                Terminator::If(cond, then_bb, else_bb) => {
-                    let cond_val = resolve_operand_to_value(
-                        cond,
-                        &mut builder,
-                        types::I32,
-                        &self.clif_stack_slots,
-                        &self.mir,
-                        &mut self.module,
-                    )?;
-
-                    let then_cl_block = clif_blocks
-                        .get(then_bb)
-                        .ok_or_else(|| format!("'Then' block {} not found", then_bb.get()))?;
-                    let else_cl_block = clif_blocks
-                        .get(else_bb)
-                        .ok_or_else(|| format!("'Else' block {} not found", else_bb.get()))?;
-
-                    builder.ins().brif(cond_val, *then_cl_block, &[], *else_cl_block, &[]);
-
-                    worklist.push(*then_bb);
-                    worklist.push(*else_bb);
-                }
-
-                Terminator::Return(opt) => {
-                    if let Some(operand) = opt {
-                        if let Some(ret_type) = return_type_opt {
-                            let return_value = resolve_operand_to_value(
-                                operand,
-                                &mut builder,
-                                ret_type,
-                                &self.clif_stack_slots,
-                                &self.mir,
-                                &mut self.module,
-                            )?;
-                            builder.ins().return_(&[return_value]);
-                        } else {
-                            return Err("Returning a value from a void function".to_string());
-                        }
-                    } else {
-                        builder.ins().return_(&[]);
-                    }
-                }
-
-                Terminator::Unreachable => {
-                    // For unreachable, default to appropriate return based on function type
-                    if let Some(ret_type) = return_type_opt {
-                        let return_value = builder.ins().iconst(ret_type, 0);
-                        builder.ins().return_(&[return_value]);
-                    } else {
-                        // Void function
-                        builder.ins().return_(&[]);
-                    }
-                }
-            }
+            lower_terminator(
+                &mir_block.terminator,
+                &mut builder,
+                &clif_blocks,
+                &mut worklist,
+                return_type_opt,
+                &self.mir,
+                &self.clif_stack_slots,
+                &mut self.module,
+            )?;
         }
 
         // PHASE 3️⃣ — Seal blocks with correct order

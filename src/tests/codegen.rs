@@ -64,7 +64,7 @@ fn test_emit_const_struct_literal() {
 
     // 4. Emit Constant
     let mut output = Vec::new();
-    emit_const(struct_const_id, struct_type_id, &struct_type, &mut output, &sema_output).expect("emit_const failed");
+    emit_const(struct_const_id, &struct_type, &mut output, &sema_output).expect("emit_const failed");
 
     // 5. Verify Output
     let expected = vec![0x11, 0x11, 0x11, 0x11, 0x22, 0x22, 0x22, 0x22];

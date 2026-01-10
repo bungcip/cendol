@@ -781,17 +781,50 @@ impl<'src> Lexer<'src> {
         while let Some(c) = chars.next() {
             if c == '\\' {
                 match chars.peek() {
-                    Some('n') => { chars.next(); result.push('\n'); }
-                    Some('t') => { chars.next(); result.push('\t'); }
-                    Some('r') => { chars.next(); result.push('\r'); }
-                    Some('b') => { chars.next(); result.push('\u{0008}'); } // Backspace
-                    Some('f') => { chars.next(); result.push('\u{000C}'); } // Form feed
-                    Some('v') => { chars.next(); result.push('\u{000B}'); } // Vertical tab
-                    Some('a') => { chars.next(); result.push('\u{0007}'); } // Alert
-                    Some('\\') => { chars.next(); result.push('\\'); }
-                    Some('\'') => { chars.next(); result.push('\''); }
-                    Some('"') => { chars.next(); result.push('"'); }
-                    Some('?') => { chars.next(); result.push('?'); }
+                    Some('n') => {
+                        chars.next();
+                        result.push('\n');
+                    }
+                    Some('t') => {
+                        chars.next();
+                        result.push('\t');
+                    }
+                    Some('r') => {
+                        chars.next();
+                        result.push('\r');
+                    }
+                    Some('b') => {
+                        chars.next();
+                        result.push('\u{0008}');
+                    } // Backspace
+                    Some('f') => {
+                        chars.next();
+                        result.push('\u{000C}');
+                    } // Form feed
+                    Some('v') => {
+                        chars.next();
+                        result.push('\u{000B}');
+                    } // Vertical tab
+                    Some('a') => {
+                        chars.next();
+                        result.push('\u{0007}');
+                    } // Alert
+                    Some('\\') => {
+                        chars.next();
+                        result.push('\\');
+                    }
+                    Some('\'') => {
+                        chars.next();
+                        result.push('\'');
+                    }
+                    Some('"') => {
+                        chars.next();
+                        result.push('"');
+                    }
+                    Some('?') => {
+                        chars.next();
+                        result.push('?');
+                    }
                     Some('x') => {
                         // Hex escape
                         chars.next(); // consume 'x'
@@ -807,47 +840,47 @@ impl<'src> Lexer<'src> {
                                 break;
                             }
                         }
-                         if has_digits {
-                             // Limit to valid Unicode scalar value range since we must produce a String
-                             let char_val = if val > 0x10FFFF {
-                                 0xFFFD // Replacement character
-                             } else {
-                                 val as u32
-                             };
+                        if has_digits {
+                            // Limit to valid Unicode scalar value range since we must produce a String
+                            let char_val = if val > 0x10FFFF {
+                                0xFFFD // Replacement character
+                            } else {
+                                val as u32
+                            };
 
-                             if let Some(c) = std::char::from_u32(char_val) {
-                                 result.push(c);
-                             } else {
-                                 // Fallback for invalid unicode scalars (e.g. surrogates)
-                                 result.push(std::char::REPLACEMENT_CHARACTER);
-                             }
-                         } else {
-                             // \x with no digits is technically undefined/error.
-                             // Keep \x
-                             result.push('x');
-                         }
+                            if let Some(c) = std::char::from_u32(char_val) {
+                                result.push(c);
+                            } else {
+                                // Fallback for invalid unicode scalars (e.g. surrogates)
+                                result.push(std::char::REPLACEMENT_CHARACTER);
+                            }
+                        } else {
+                            // \x with no digits is technically undefined/error.
+                            // Keep \x
+                            result.push('x');
+                        }
                     }
                     Some(c) if c.is_digit(8) => {
-                         // Octal escape
-                         // Up to 3 digits
-                         let mut val = 0u32;
-                         for _ in 0..3 {
-                             if let Some(&ch) = chars.peek() {
-                                 if let Some(digit) = ch.to_digit(8) {
-                                     val = val * 8 + digit;
-                                     chars.next();
-                                 } else {
-                                     break;
-                                 }
-                             } else {
-                                 break;
-                             }
-                         }
-                         if let Some(c) = std::char::from_u32(val) {
-                             result.push(c);
-                         } else {
-                             result.push(std::char::REPLACEMENT_CHARACTER);
-                         }
+                        // Octal escape
+                        // Up to 3 digits
+                        let mut val = 0u32;
+                        for _ in 0..3 {
+                            if let Some(&ch) = chars.peek() {
+                                if let Some(digit) = ch.to_digit(8) {
+                                    val = val * 8 + digit;
+                                    chars.next();
+                                } else {
+                                    break;
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+                        if let Some(c) = std::char::from_u32(val) {
+                            result.push(c);
+                        } else {
+                            result.push(std::char::REPLACEMENT_CHARACTER);
+                        }
                     }
                     Some(c) => {
                         // Unknown escape, keep char (standard says undefined)

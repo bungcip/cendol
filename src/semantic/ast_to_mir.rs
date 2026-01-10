@@ -565,7 +565,6 @@ impl<'a> AstToMirLowerer<'a> {
                 self.lower_assignment_expr(scope_id, op, *left_ref, *right_ref, mir_ty)
             }
             NodeKind::FunctionCall(call_expr) => self.lower_function_call(scope_id, call_expr, mir_ty),
-            NodeKind::CallArg(arg_expr) => self.lower_expression(scope_id, *arg_expr, need_value),
             NodeKind::MemberAccess(obj_ref, field_name, is_arrow) => {
                 self.lower_member_access(scope_id, *obj_ref, field_name, *is_arrow)
             }

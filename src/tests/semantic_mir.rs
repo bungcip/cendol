@@ -556,7 +556,7 @@ mod tests {
           }
 
           bb2:
-            %3 = call foo(const 5)
+            %3 = call foo(cast<i32>(const 5))
             return %3
         }
 

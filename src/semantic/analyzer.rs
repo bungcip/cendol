@@ -452,23 +452,13 @@ impl<'a> SemanticAnalyzer<'a> {
         } = &func_kind
         {
             for (i, arg_node_ref) in call_expr.arg_start.range(call_expr.arg_len).enumerate() {
-                // We expect CallArg at this position
-                // However, visit_node on CallArg will recurse to the inner expression
-                // But we need the inner expression NodeRef for implicit conversion record?
-                // Actually record_implicit_conversions takes node_ref.
-                // If we pass CallArg node_ref, is that okay?
-                // Usually we want the usage site to match.
-                // Let's see: visit_node(CallArg) -> visits inner -> returns type.
-                // implicit conversion is recorded on the node_ref.
-                // If we record on CallArg node, then codegen must look at CallArg node.
-                // Or we can peek the inner node.
-
+                // Visit the argument expression directly
                 let arg_ty = self.visit_node(arg_node_ref);
 
                 if i < parameters.len() {
                     let param_ty = parameters[i].param_type;
                     if let Some(actual_arg_ty) = arg_ty {
-                        // We record on the CallArg node
+                        // Record implicit conversion on the argument node
                         self.record_implicit_conversions(param_ty, actual_arg_ty, arg_node_ref);
                     }
                 }
@@ -760,7 +750,6 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_assignment(*op, *lhs, *rhs, span)
             }
             NodeKind::FunctionCall(call_expr) => self.visit_function_call(call_expr),
-            NodeKind::CallArg(arg_expr) => self.visit_node(*arg_expr),
             NodeKind::MemberAccess(obj, field_name, is_arrow) => self.visit_member_access(*obj, *field_name, *is_arrow),
             NodeKind::IndexAccess(arr, idx) => self.visit_index_access(*arr, *idx),
             NodeKind::Cast(ty, expr) => {

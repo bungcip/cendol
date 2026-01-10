@@ -1576,24 +1576,22 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 let f = self.lower_expression(*func);
 
-                let mut arg_len = 0u16;
-                let arg_start_idx = self.ast.kinds.len() as u32 + 1;
-                let arg_start = NodeRef::new(arg_start_idx).expect("NodeRef overflow");
-
-                // Reserve all CallArg nodes upfront to keep them contiguous and ensured parent < child
-                let mut call_arg_nodes = Vec::with_capacity(args.len());
-                for _ in 0..args.len() {
-                    call_arg_nodes.push(self.push_dummy(span));
-                }
-
-                for (i, &arg_parsed_ref) in args.iter().enumerate() {
+                // Lower arguments sequentially - they will be contiguous since nothing else is created between them
+                let mut arg_nodes: Vec<NodeRef> = Vec::with_capacity(args.len());
+                for &arg_parsed_ref in args {
                     let arg_expr = self.lower_expression(arg_parsed_ref);
-                    self.ast.kinds[call_arg_nodes[i].index()] = NodeKind::CallArg(arg_expr);
-                    arg_len += 1;
+                    arg_nodes.push(arg_expr);
                 }
+
+                let arg_start = if !arg_nodes.is_empty() {
+                    arg_nodes[0]
+                } else {
+                    NodeRef::ROOT
+                };
+                let arg_len = arg_nodes.len() as u16;
 
                 // Replace the reserved dummy node with the actual FunctionCall
-                self.ast.kinds[call_node_idx.index()] = NodeKind::FunctionCall(crate::ast::nodes::CallExpr {
+                self.ast.kinds[call_node_idx.index()] = NodeKind::FunctionCall(CallExpr {
                     callee: f,
                     arg_start,
                     arg_len,
@@ -1729,20 +1727,15 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         .designation
                         .iter()
                         .map(|d| match d {
-                            ParsedDesignator::FieldName(name) => crate::ast::nodes::Designator::FieldName(*name),
-                            ParsedDesignator::ArrayIndex(idx) => {
-                                crate::ast::nodes::Designator::ArrayIndex(self.lower_expression(*idx))
-                            }
+                            ParsedDesignator::FieldName(name) => Designator::FieldName(*name),
+                            ParsedDesignator::ArrayIndex(idx) => Designator::ArrayIndex(self.lower_expression(*idx)),
                             ParsedDesignator::GnuArrayRange(start, end) => {
-                                crate::ast::nodes::Designator::GnuArrayRange(
-                                    self.lower_expression(*start),
-                                    self.lower_expression(*end),
-                                )
+                                Designator::GnuArrayRange(self.lower_expression(*start), self.lower_expression(*end))
                             }
                         })
                         .collect();
 
-                    let di = crate::ast::nodes::DesignatedInitializer {
+                    let di = DesignatedInitializer {
                         designation,
                         initializer: expr,
                     };

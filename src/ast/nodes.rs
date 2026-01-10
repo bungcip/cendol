@@ -39,7 +39,7 @@ pub enum NodeKind {
 
     Assignment(BinaryOp, NodeRef /* lhs */, NodeRef /* rhs */),
     FunctionCall(CallExpr),
-    CallArg(NodeRef),
+
     MemberAccess(
         NodeRef, /* object */
         NameId,  /* field */
@@ -132,7 +132,6 @@ impl NodeKind {
             NodeKind::UnaryOp(_, child)
             | NodeKind::PostIncrement(child)
             | NodeKind::PostDecrement(child)
-            | NodeKind::CallArg(child)
             | NodeKind::MemberAccess(child, ..)
             | NodeKind::Cast(_, child)
             | NodeKind::SizeOfExpr(child)

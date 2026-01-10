@@ -100,8 +100,8 @@ impl CompilerDriver {
         }
 
         // semantic lowering (Symbol Resolution & AST Construction)
-        let (ast, symbol_table, registry) = self.run_symbol_resolver(parsed_ast)?;
-        if stop_after == CompilePhase::SymbolResolver {
+        let (ast, symbol_table, registry) = self.run_semantic_lowering(parsed_ast)?;
+        if stop_after == CompilePhase::SemanticLowering {
             out.ast = Some(ast);
             out.type_registry = Some(registry);
             out.symbol_table = Some(symbol_table);
@@ -109,7 +109,7 @@ impl CompilerDriver {
         }
 
         // semantic analyzer & MIR generation phase
-        let sema_output = self.run_semantic(ast, symbol_table, registry)?;
+        let sema_output = self.run_semantic_analyzer(ast, symbol_table, registry)?;
         if stop_after == CompilePhase::Mir {
             out.sema_output = Some(sema_output);
             return Ok(out);
@@ -177,7 +177,7 @@ impl CompilerDriver {
         }
     }
 
-    fn run_symbol_resolver(
+    fn run_semantic_lowering(
         &mut self,
         parsed_ast: ParsedAst,
     ) -> Result<(Ast, SymbolTable, TypeRegistry), PipelineError> {
@@ -185,10 +185,8 @@ impl CompilerDriver {
         let mut registry = TypeRegistry::new();
         let mut ast = Ast::new();
 
-        use crate::semantic::symbol_resolver::run_symbol_resolver;
-        // Assuming conversion function:
-        // pub fn run_symbol_resolver(parsed_ast: ParsedAst, diagnostics: &mut DiagnosticEngine, symbol_table: &mut SymbolTable, registry: &mut TypeRegistry) -> Vec<Option<ScopeId>>
-        let scope_map = run_symbol_resolver(
+        use crate::semantic::lowering::run_semantic_lowering;
+        let scope_map = run_semantic_lowering(
             &parsed_ast,
             &mut ast,
             &mut self.diagnostics,
@@ -238,7 +236,7 @@ impl CompilerDriver {
         Ok((ast, symbol_table, registry))
     }
 
-    fn run_semantic(
+    fn run_semantic_analyzer(
         &mut self,
         mut ast: Ast,
         symbol_table: SymbolTable,

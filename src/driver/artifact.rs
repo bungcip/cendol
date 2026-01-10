@@ -15,7 +15,7 @@ pub enum CompilePhase {
     Preprocess,
     Lex,
     Parse,
-    SymbolResolver,
+    SemanticLowering,
     Mir,
     Cranelift,
     #[default]

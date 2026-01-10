@@ -48,7 +48,7 @@ pub fn setup_mir(source: &str) -> String {
 }
 
 pub fn setup_lowering(source: &str) -> (Ast, TypeRegistry) {
-    let (driver, result) = test_utils::run_pipeline(source, CompilePhase::SymbolResolver);
+    let (driver, result) = test_utils::run_pipeline(source, CompilePhase::SemanticLowering);
     let out = match result {
         Ok(out) => out,
         Err(_) => panic!("failed to run: {:?}", driver.get_diagnostics()),

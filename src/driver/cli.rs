@@ -32,9 +32,9 @@ pub struct Cli {
     #[clap(long)]
     pub dump_ast_after_parser: bool,
 
-    /// Dump AST after symbol resolver phase
+    /// Dump AST after semantic lowering phase
     #[clap(long)]
-    pub dump_ast_after_symbol_resolver: bool,
+    pub dump_ast_after_semantic_lowering: bool,
 
     /// Dump MIR (Mid-level Intermediate Representation) to console
     #[clap(long)]
@@ -219,8 +219,8 @@ impl Cli {
             CompilePhase::Preprocess
         } else if self.dump_ast_after_parser {
             CompilePhase::Parse
-        } else if self.dump_ast_after_symbol_resolver {
-            CompilePhase::SymbolResolver
+        } else if self.dump_ast_after_semantic_lowering {
+            CompilePhase::SemanticLowering
         } else if self.dump_mir {
             CompilePhase::Mir
         } else if self.dump_cranelift {

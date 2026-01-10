@@ -272,7 +272,7 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
 }
 
 /// Parse function definition
-pub(crate) fn parse_function_definition(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_function_definition(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let start_loc = parser.current_token()?.span.start();
     let dummy = parser.push_dummy();
 
@@ -356,7 +356,7 @@ pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<ParsedNodeRe
 }
 
 /// Parse static assert (C11)
-pub(crate) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<ParsedNodeRef, ParseError> {
+fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<ParsedNodeRef, ParseError> {
     // already consumed `_Static_assert`
     let start_loc = start_token.span.start();
     parser.expect(TokenKind::LeftParen)?;

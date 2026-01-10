@@ -775,6 +775,14 @@ impl<'src> Lexer<'src> {
 
     /// Unescape C11 string literal content
     fn unescape_string(s: &str) -> String {
+        // ⚡ Bolt: Fast path for strings with no escape sequences.
+        // This avoids allocating a new string and iterating over it when no
+        // unescaping is necessary. It makes the common case of simple strings
+        // much faster.
+        if !s.contains('\\') {
+            return s.to_string();
+        }
+
         let mut result = String::with_capacity(s.len());
         let mut chars = s.chars().peekable();
 

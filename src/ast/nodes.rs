@@ -59,7 +59,6 @@ pub enum NodeKind {
 
     // --- Statements (Complex statements are separate structs) ---
     CompoundStatement(CompoundStmtData),
-    BlockItem(NodeRef),
     If(IfStmt),
     While(WhileStmt),
     DoWhile(NodeRef /* body */, NodeRef /* condition */),
@@ -139,7 +138,6 @@ impl NodeKind {
             | NodeKind::SizeOfExpr(child)
             | NodeKind::CompoundLiteral(_, child)
             | NodeKind::VaArg(child, _)
-            | NodeKind::BlockItem(child)
             | NodeKind::Label(_, child, _)
             | NodeKind::Default(child)
             | NodeKind::StaticAssert(child, _) => f(*child),
@@ -163,15 +161,15 @@ impl NodeKind {
 
             NodeKind::FunctionCall(call) => {
                 f(call.callee);
-                for i in 0..call.arg_len {
-                    f(NodeRef::new(call.arg_start.get() + i as u32).unwrap());
+                for child in call.arg_start.range(call.arg_len) {
+                    f(child);
                 }
             }
 
             NodeKind::GenericSelection(gs) => {
                 f(gs.control);
-                for i in 0..gs.assoc_len {
-                    f(NodeRef::new(gs.assoc_start.get() + i as u32).unwrap());
+                for child in gs.assoc_start.range(gs.assoc_len) {
+                    f(child);
                 }
             }
 
@@ -180,8 +178,8 @@ impl NodeKind {
             }
 
             NodeKind::CompoundStatement(cs) => {
-                for i in 0..cs.stmt_len {
-                    f(NodeRef::new(cs.stmt_start.get() + i as u32).unwrap());
+                for child in cs.stmt_start.range(cs.stmt_len) {
+                    f(child);
                 }
             }
 
@@ -230,33 +228,33 @@ impl NodeKind {
             }
 
             NodeKind::RecordDecl(data) => {
-                for i in 0..data.member_len {
-                    f(NodeRef::new(data.member_start.get() + i as u32).unwrap());
+                for child in data.member_start.range(data.member_len) {
+                    f(child);
                 }
             }
 
             NodeKind::EnumDecl(data) => {
-                for i in 0..data.member_len {
-                    f(NodeRef::new(data.member_start.get() + i as u32).unwrap());
+                for child in data.member_start.range(data.member_len) {
+                    f(child);
                 }
             }
 
             NodeKind::Function(data) => {
-                for i in 0..data.param_len {
-                    f(NodeRef::new(data.param_start.get() + i as u32).unwrap());
+                for child in data.param_start.range(data.param_len) {
+                    f(child);
                 }
                 f(data.body);
             }
 
             NodeKind::TranslationUnit(data) => {
-                for i in 0..data.decl_len {
-                    f(NodeRef::new(data.decl_start.get() + i).unwrap());
+                for child in data.decl_start.range(data.decl_len) {
+                    f(child);
                 }
             }
 
             NodeKind::InitializerList(data) => {
-                for i in 0..data.init_len {
-                    f(NodeRef::new(data.init_start.get() + i as u32).unwrap());
+                for child in data.init_start.range(data.init_len) {
+                    f(child);
                 }
             }
 

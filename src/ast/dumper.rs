@@ -223,7 +223,6 @@ impl AstDumper {
             // Statement types that don't directly contain TypeRefs
             NodeKind::TranslationUnit(_)
             | NodeKind::CompoundStatement(_)
-            | NodeKind::BlockItem(_)
             | NodeKind::If(_)
             | NodeKind::While(_)
             | NodeKind::DoWhile(_, _)
@@ -378,9 +377,6 @@ impl AstDumper {
                     cs.stmt_start.get(),
                     cs.stmt_start.get() + cs.stmt_len as u32
                 )
-            }
-            NodeKind::BlockItem(stmt) => {
-                println!("BlockItem({})", stmt.get())
             }
             NodeKind::If(if_stmt) => println!(
                 "If(condition={}, then={}, else={})",

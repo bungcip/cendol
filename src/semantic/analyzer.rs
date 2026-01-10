@@ -451,10 +451,7 @@ impl<'a> SemanticAnalyzer<'a> {
             ..
         } = &func_kind
         {
-            for i in 0..call_expr.arg_len {
-                let arg_idx = call_expr.arg_start.get() + i as u32;
-                let arg_node_ref = NodeRef::new(arg_idx).expect("Invalid arg index");
-
+            for (i, arg_node_ref) in call_expr.arg_start.range(call_expr.arg_len).enumerate() {
                 // We expect CallArg at this position
                 // However, visit_node on CallArg will recurse to the inner expression
                 // But we need the inner expression NodeRef for implicit conversion record?
@@ -468,8 +465,8 @@ impl<'a> SemanticAnalyzer<'a> {
 
                 let arg_ty = self.visit_node(arg_node_ref);
 
-                if (i as usize) < parameters.len() {
-                    let param_ty = parameters[i as usize].param_type;
+                if i < parameters.len() {
+                    let param_ty = parameters[i].param_type;
                     if let Some(actual_arg_ty) = arg_ty {
                         // We record on the CallArg node
                         self.record_implicit_conversions(param_ty, actual_arg_ty, arg_node_ref);
@@ -477,9 +474,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
         } else {
-            for i in 0..call_expr.arg_len {
-                let arg_idx = call_expr.arg_start.get() + i as u32;
-                let arg_node_ref = NodeRef::new(arg_idx).expect("Invalid arg index");
+            for arg_node_ref in call_expr.arg_start.range(call_expr.arg_len) {
                 self.visit_node(arg_node_ref);
             }
         }
@@ -572,8 +567,7 @@ impl<'a> SemanticAnalyzer<'a> {
     fn visit_declaration_node(&mut self, _node_ref: NodeRef, kind: &NodeKind) -> Option<QualType> {
         match kind {
             NodeKind::TranslationUnit(tu_data) => {
-                for i in 0..tu_data.decl_len {
-                    let decl_ref = NodeRef::new(tu_data.decl_start.get() + i).expect("NodeRef overflow");
+                for decl_ref in tu_data.decl_start.range(tu_data.decl_len) {
                     self.visit_node(decl_ref);
                 }
                 None
@@ -584,8 +578,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     self.current_function_ret_type = Some(QualType::unqualified(return_type));
                 };
 
-                for i in 0..data.param_len {
-                    let param_ref = NodeRef::new(data.param_start.get() + i as u32).unwrap();
+                for param_ref in data.param_start.range(data.param_len) {
                     self.visit_node(param_ref);
                 }
 
@@ -635,17 +628,13 @@ impl<'a> SemanticAnalyzer<'a> {
         // let node = self.ast.get_node(node_ref); // For span access if needed
         match kind {
             NodeKind::CompoundStatement(cs) => {
-                for i in 0..cs.stmt_len {
-                    let item_ref = NodeRef::new(cs.stmt_start.get() + i as u32).unwrap();
+                for item_ref in cs.stmt_start.range(cs.stmt_len) {
                     self.visit_node(item_ref);
                 }
                 self.process_deferred_checks();
                 None
             }
-            NodeKind::BlockItem(stmt) => {
-                self.visit_node(*stmt);
-                None
-            }
+
             NodeKind::If(stmt) => {
                 self.visit_if_statement(stmt);
                 None
@@ -751,9 +740,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     if cs.stmt_len > 0 {
                         let last_item_idx = cs.stmt_start.get() + (cs.stmt_len - 1) as u32;
                         let last_item_ref = NodeRef::new(last_item_idx).unwrap();
-                        if let NodeKind::BlockItem(last_node) = self.ast.get_kind(last_item_ref)
-                            && let NodeKind::ExpressionStatement(Some(expr)) = self.ast.get_kind(*last_node).clone()
-                        {
+                        if let NodeKind::ExpressionStatement(Some(expr)) = self.ast.get_kind(last_item_ref).clone() {
                             return self.visit_node(expr);
                         }
                     }
@@ -808,8 +795,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(QualType::unqualified(*ty))
             }
             NodeKind::InitializerList(list) => {
-                for i in 0..list.init_len {
-                    let item_ref = NodeRef::new(list.init_start.get() + i as u32).unwrap();
+                for item_ref in list.init_start.range(list.init_len) {
                     self.visit_node(item_ref);
                 }
                 None
@@ -852,7 +838,6 @@ impl<'a> SemanticAnalyzer<'a> {
 
             // Statements
             NodeKind::CompoundStatement(_)
-            | NodeKind::BlockItem(_)
             | NodeKind::If(_)
             | NodeKind::While(_)
             | NodeKind::DoWhile(..)
@@ -932,10 +917,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let mut selected_expr_ref = None;
         let mut default_expr_ref = None;
 
-        for i in 0..gs.assoc_len {
-            let assoc_idx = gs.assoc_start.get() + i as u32;
-            let assoc_node_ref = NodeRef::new(assoc_idx).expect("Invalid association index");
-
+        for assoc_node_ref in gs.assoc_start.range(gs.assoc_len) {
             if let NodeKind::GenericAssociation(ga) = self.ast.get_kind(assoc_node_ref).clone() {
                 self.visit_node(assoc_node_ref);
 

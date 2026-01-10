@@ -61,6 +61,8 @@ pub struct Ast {
 pub struct NodeRef(NonZeroU32);
 
 impl NodeRef {
+    pub const ROOT: NodeRef = NodeRef(NonZeroU32::new(1).unwrap());
+
     pub fn new(value: u32) -> Option<Self> {
         NonZeroU32::new(value).map(Self)
     }
@@ -72,7 +74,46 @@ impl NodeRef {
     pub fn index(self) -> usize {
         (self.get() - 1) as usize
     }
+
+    /// Create an iterator over a range of consecutive NodeRefs, starting from `self`.
+    #[inline]
+    pub fn range(self, len: impl Into<u32>) -> NodeRefRange {
+        NodeRefRange {
+            current: self.get(),
+            end: self.get() + len.into(),
+        }
+    }
 }
+
+/// An iterator over a contiguous range of `NodeRef`s.
+#[derive(Clone, Debug)]
+pub struct NodeRefRange {
+    current: u32,
+    end: u32,
+}
+
+impl Iterator for NodeRefRange {
+    type Item = NodeRef;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current < self.end {
+            let node = NodeRef::new(self.current).expect("NodeRef overflow in range");
+            self.current += 1;
+            Some(node)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = (self.end - self.current) as usize;
+        (len, Some(len))
+    }
+}
+
+impl ExactSizeIterator for NodeRefRange {}
 
 impl Ast {
     /// Create a new empty AST

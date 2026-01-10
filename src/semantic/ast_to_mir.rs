@@ -155,15 +155,14 @@ impl<'a> AstToMirLowerer<'a> {
                         }
                     }
                 }
-                for i in 0..tu_data.decl_len {
-                    let child_ref = NodeRef::new(tu_data.decl_start.get() + i).expect("NodeRef overflow");
+                for child_ref in tu_data.decl_start.range(tu_data.decl_len) {
                     self.lower_node_ref(child_ref, ScopeId::GLOBAL);
                 }
             }
             NodeKind::Function(function_data) => self.lower_function(node_ref, &function_data),
             NodeKind::VarDecl(var_decl) => self.lower_var_declaration(scope_id, &var_decl, node_span),
             NodeKind::CompoundStatement(cs) => self.lower_compound_statement(node_ref, &cs),
-            NodeKind::BlockItem(_) => {} // Handled within CompoundStatement
+
             _ => self.try_lower_as_statement(scope_id, node_ref),
         }
     }
@@ -209,8 +208,7 @@ impl<'a> AstToMirLowerer<'a> {
         // initializer.
         let (_rec_size, _rec_align, field_layouts, _) = self.registry.get_record_layout(target_ty.ty());
 
-        for i in 0..list_data.init_len {
-            let item_ref = NodeRef::new(list_data.init_start.get() + i as u32).unwrap();
+        for item_ref in list_data.init_start.range(list_data.init_len) {
             let NodeKind::InitializerItem(init) = self.ast.get_kind(item_ref) else {
                 continue;
             };
@@ -287,8 +285,7 @@ impl<'a> AstToMirLowerer<'a> {
         target_ty: QualType,
     ) -> Operand {
         let mut elements = Vec::new();
-        for i in 0..list_data.init_len {
-            let item_ref = NodeRef::new(list_data.init_start.get() + i as u32).unwrap();
+        for item_ref in list_data.init_start.range(list_data.init_len) {
             let NodeKind::InitializerItem(init) = self.ast.get_kind(item_ref) else {
                 continue;
             };
@@ -393,21 +390,14 @@ impl<'a> AstToMirLowerer<'a> {
 
     fn lower_compound_statement(&mut self, node_ref: NodeRef, cs: &nodes::CompoundStmtData) {
         let scope_id = self.ast.scope_of(node_ref);
-        for i in 0..cs.stmt_len {
-            let item_ref = NodeRef::new(cs.stmt_start.get() + i as u32).unwrap();
-            let NodeKind::BlockItem(stmt_ref) = self.ast.get_kind(item_ref) else {
-                continue;
-            };
-            let stmt_ref = *stmt_ref;
-
+        for stmt_ref in cs.stmt_start.range(cs.stmt_len) {
+            let node_kind = self.ast.get_kind(stmt_ref);
             if self.mir_builder.current_block_has_terminator() {
-                let next_node_kind = self.ast.get_kind(stmt_ref);
-                if let NodeKind::Label(..) = next_node_kind {
+                if let NodeKind::Label(..) = node_kind {
                     // This is a label, which is a valid entry point.
                     // Let lower_node_ref handle it, it will switch to a new block.
                 } else {
                     // This statement is unreachable. Skip it.
-                    // A warning for unreachable code should be emitted in a separate analysis pass.
                     continue;
                 }
             }
@@ -446,10 +436,9 @@ impl<'a> AstToMirLowerer<'a> {
         let scope_id = self.ast.scope_of(node_ref);
         let mir_function = self.mir_builder.get_functions().get(&func_id).unwrap().clone();
 
-        for i in 0..function_data.param_len {
-            let param_ref = NodeRef::new(function_data.param_start.get() + i as u32).unwrap();
+        for (i, param_ref) in function_data.param_start.range(function_data.param_len).enumerate() {
             if let NodeKind::Param(param_data) = self.ast.get_kind(param_ref) {
-                let local_id = mir_function.params[i as usize];
+                let local_id = mir_function.params[i];
                 self.local_map.insert(param_data.symbol, local_id);
             }
         }
@@ -638,9 +627,7 @@ impl<'a> AstToMirLowerer<'a> {
                 let mut selected_expr = None;
                 let mut default_expr = None;
 
-                for i in 0..gs.assoc_len {
-                    let assoc_idx = gs.assoc_start.get() + i as u32;
-                    let assoc_node_ref = NodeRef::new(assoc_idx).expect("Invalid association index");
+                for assoc_node_ref in gs.assoc_start.range(gs.assoc_len) {
                     if let NodeKind::GenericAssociation(ga) = self.ast.get_kind(assoc_node_ref) {
                         if let Some(ty) = ga.ty {
                             if self.registry.is_compatible(unqualified_ctrl, ty) {
@@ -1082,10 +1069,7 @@ impl<'a> AstToMirLowerer<'a> {
             None
         };
 
-        for i in 0..call_expr.arg_len {
-            let arg_idx = call_expr.arg_start.get() + i as u32;
-            let arg_ref = NodeRef::new(arg_idx).expect("Invalid arg index");
-
+        for (i, arg_ref) in call_expr.arg_start.range(call_expr.arg_len).enumerate() {
             // Note: lower_expression(CallArg) will just lower the inner expression.
             // But we use arg_ref (the CallArg node) for implicit conversion lookup.
             let arg_operand = self.lower_expression(scope_id, arg_ref, true);
@@ -1097,8 +1081,8 @@ impl<'a> AstToMirLowerer<'a> {
 
             // Use the parameter type as the target type for conversions, if available
             let target_mir_ty = if let Some(ref param_types_vec) = param_types {
-                if (i as usize) < param_types_vec.len() {
-                    param_types_vec[i as usize]
+                if i < param_types_vec.len() {
+                    param_types_vec[i]
                 } else {
                     // For variadic arguments, use the argument's own type
                     arg_mir_ty
@@ -1860,11 +1844,8 @@ impl<'a> AstToMirLowerer<'a> {
                 self.scan_for_labels(inner_stmt);
             }
             NodeKind::CompoundStatement(cs) => {
-                for i in 0..cs.stmt_len {
-                    let item_ref = NodeRef::new(cs.stmt_start.get() + i as u32).unwrap();
-                    if let NodeKind::BlockItem(stmt_ref) = self.ast.get_kind(item_ref) {
-                        self.scan_for_labels(*stmt_ref);
-                    }
+                for stmt_ref in cs.stmt_start.range(cs.stmt_len) {
+                    self.scan_for_labels(stmt_ref);
                 }
             }
             // Add other statement types that can contain labels, like loops and conditionals

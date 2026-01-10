@@ -104,7 +104,7 @@ pub enum PathOrBuffer {
 }
 
 /// Configuration for compilation
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct CompileConfig {
     pub input_files: Vec<PathOrBuffer>,
     pub output_path: Option<PathBuf>,
@@ -117,6 +117,25 @@ pub struct CompileConfig {
     pub defines: Vec<(String, Option<String>)>, // NAME -> VALUE
     pub warnings: Vec<String>,
     pub lang_options: LangOptions,
+    pub target: Triple,
+}
+
+impl Default for CompileConfig {
+    fn default() -> Self {
+        Self {
+            input_files: Vec::new(),
+            output_path: None,
+            stop_after: CompilePhase::EmitObject,
+            verbose: false,
+            preprocessor: crate::pp::PPConfig::default(),
+            suppress_line_markers: false,
+            include_paths: Vec::new(),
+            defines: Vec::new(),
+            warnings: Vec::new(),
+            lang_options: LangOptions::default(),
+            target: Triple::host(),
+        }
+    }
 }
 
 impl CompileConfig {
@@ -130,6 +149,7 @@ impl CompileConfig {
         Self {
             input_files: vec![PathOrBuffer::Buffer(filename.to_string(), source)],
             stop_after,
+            target: Triple::host(),
             ..Default::default()
         }
     }
@@ -229,6 +249,13 @@ impl Cli {
             CompilePhase::EmitObject
         };
 
+        let target_triple = if let Some(t) = self.target {
+            t.parse::<Triple>()
+                .map_err(|e| format!("Invalid target triple: {}", e))?
+        } else {
+            Triple::host()
+        };
+
         Ok(CompileConfig {
             input_files: self.input_files.into_iter().map(PathOrBuffer::Path).collect(),
             output_path: self.output,
@@ -237,12 +264,7 @@ impl Cli {
             preprocessor: crate::pp::PPConfig {
                 max_include_depth: self.preprocessor.max_include_depth,
                 system_include_paths,
-                target: if let Some(t) = self.target {
-                    t.parse::<Triple>()
-                        .map_err(|e| format!("Invalid target triple: {}", e))?
-                } else {
-                    Triple::host()
-                },
+                target: target_triple.clone(),
                 ..Default::default()
             },
             suppress_line_markers: self.suppress_line_markers,
@@ -250,6 +272,7 @@ impl Cli {
             defines,
             warnings,
             lang_options,
+            target: target_triple,
         })
     }
 }

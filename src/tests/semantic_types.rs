@@ -81,7 +81,7 @@ fn test_typeref_invalid_combinations() {
 
 #[test]
 fn test_typeregistry_inline_logic() {
-    let mut reg = TypeRegistry::new();
+    let mut reg = TypeRegistry::new(target_lexicon::Triple::host());
     let int_ty = reg.type_int;
     assert!(int_ty.is_builtin());
 
@@ -123,7 +123,7 @@ fn test_typeregistry_inline_logic() {
 
 #[test]
 fn test_typeregistry_array_logic() {
-    let mut reg = TypeRegistry::new();
+    let mut reg = TypeRegistry::new(target_lexicon::Triple::host());
     let int_ty = reg.type_int;
 
     // int[10] (Inline)
@@ -163,7 +163,7 @@ fn test_typeregistry_array_logic() {
 
 #[test]
 fn test_reconstruct_type() {
-    let mut reg = TypeRegistry::new();
+    let mut reg = TypeRegistry::new(target_lexicon::Triple::host());
     let int_ty = reg.type_int;
 
     // Reconstruct int*

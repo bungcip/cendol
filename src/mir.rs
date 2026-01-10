@@ -657,6 +657,10 @@ impl MirBuilder {
         }
     }
 
+    pub fn get_type(&self, type_id: TypeId) -> &MirType {
+        self.types.get(&type_id).expect("Type ID not found in MirBuilder")
+    }
+
     /// Create a constant value
     pub fn create_constant(&mut self, value: ConstValue) -> ConstValueId {
         let const_id = ConstValueId::new(self.next_const_id).unwrap();

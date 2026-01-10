@@ -1223,7 +1223,25 @@ fn lower_statement(
                                 (left_cranelift_type, right_cranelift_type)
                             }
                         }
-                        _ => (left_cranelift_type, right_cranelift_type),
+                        _ => {
+                            // Fix for mixed types in comparison/bitwise ops involving constants.
+                            // If we have I32 constant vs I64, promote constant to I64.
+                            if left_cranelift_type == types::I32 && right_cranelift_type == types::I64 {
+                                if matches!(left_operand, Operand::Constant(_)) {
+                                    (types::I64, types::I64)
+                                } else {
+                                    (left_cranelift_type, right_cranelift_type)
+                                }
+                            } else if left_cranelift_type == types::I64 && right_cranelift_type == types::I32 {
+                                if matches!(right_operand, Operand::Constant(_)) {
+                                    (types::I64, types::I64)
+                                } else {
+                                    (left_cranelift_type, right_cranelift_type)
+                                }
+                            } else {
+                                (left_cranelift_type, right_cranelift_type)
+                            }
+                        }
                     };
 
                     let left_val = resolve_operand_to_value(

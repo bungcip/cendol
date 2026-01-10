@@ -626,14 +626,14 @@ mod tests {
         type %t0 = i32
         type %t1 = f64
         type %t2 = i8
-        type %t3 = u32
+        type %t3 = u64
         type %t4 = void
         type %t5 = u8
         type %t6 = u32
         type %t7 = i16
         type %t8 = f32
         type %t9 = i64
-        type %t10 = i32
+        type %t10 = i64
         type %t11 = u16
         type %t12 = u64
         type %t13 = fn() -> %t4
@@ -659,8 +659,8 @@ mod tests {
             %7: u16
             %8: i32
             %9: u32
-            %10: i32
-            %11: u32
+            %10: i64
+            %11: u64
             %12: i64
             %13: u64
             %14: f32
@@ -698,11 +698,11 @@ mod tests {
             return cast<i8>(const 97)
         }
 
-        fn fn_ulong() -> u32
+        fn fn_ulong() -> u64
         {
 
           bb9:
-            return cast<u32>(const 200000)
+            return cast<u64>(const 200000)
         }
 
         fn fn_void() -> void
@@ -766,11 +766,11 @@ mod tests {
             return cast<i64>(%3)
         }
 
-        fn fn_long() -> i32
+        fn fn_long() -> i64
         {
 
           bb8:
-            return cast<i32>(const 100000)
+            return cast<i64>(const 100000)
         }
 
         fn fn_ushort() -> u16

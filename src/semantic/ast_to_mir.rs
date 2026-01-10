@@ -848,13 +848,65 @@ impl<'a> AstToMirLowerer<'a> {
             return self.emit_rvalue_to_operand(rval, mir_ty);
         }
 
-        // Apply any recorded implicit conversions (e.g., integer promotions)
+        // Apply implicit conversions from semantic info first to match AST
         let lhs_converted = self.apply_conversions(lhs, left_ref, mir_ty);
         let rhs_converted = self.apply_conversions(rhs, right_ref, mir_ty);
 
+        // Get the resolved types of the operands
+        // Note: The operands might have been casted by apply_conversions, so we should arguably track that.
+        // However, apply_conversions relies on semantic_info.
+        // If semantic_info says "cast to T", lhs_converted is now type T (wrapped in Cast).
+        // If semantic_info says nothing, lhs_converted is type of left_ref.
+
+        // We want to ensure that if the operand is a constant, it is strictly typed to the expected common type.
+        // For binary ops, semantic analyzer should have already unified types to a common type via implicit casts.
+        // So we just need to ensure that the final MirType used for the operation is explicit.
+
+        // Is mir_ty the result type or the computation type?
+        // For comparisons (<, >), mir_ty is i32 (0 or 1). Computation is on common type of operands.
+        // For arithmetic (+, -), mir_ty is the result type (which is usually the common type).
+
+        // We need to find the common type for computation.
+        // If it's a comparison, we can't use mir_ty.
+        // We should look at the type of the operands *after* conversion.
+        // If analyzer did its job, lhs and rhs should be converted to same type.
+        // Converting them to explicit casts if they are constants prevents "naked" constant ambiguity.
+
+        let lhs_final = self.ensure_explicit_cast(lhs_converted, left_ref);
+        let rhs_final = self.ensure_explicit_cast(rhs_converted, right_ref);
+
         let mir_op = self.map_ast_binary_op_to_mir(op);
-        let rval = Rvalue::BinaryOp(mir_op, lhs_converted, rhs_converted);
+        let rval = Rvalue::BinaryOp(mir_op, lhs_final, rhs_final);
         self.emit_rvalue_to_operand(rval, mir_ty)
+    }
+
+    /// Helper to ensure constants are explicitly cast if they are not the default i32
+    fn ensure_explicit_cast(&mut self, operand: Operand, node_ref: NodeRef) -> Operand {
+        match operand {
+            Operand::Constant(_) => {
+                // Check the resolved type of the node.
+                // If conversions were applied, `operand` passed here is the INNER constant,
+                // but wait, apply_conversions returns Operand::Cast if converted.
+                // So if we are here seeing Operand::Constant, it means NO conversion was applied.
+                // Thus the constant has the type of `node_ref`.
+                if let Some(ty) = self.ast.get_resolved_type(node_ref) {
+                    let mir_type_id = self.lower_type_to_mir(ty.ty());
+                    // If it's not a standard I32, wrap in Cast to be explicit.
+                    // Actually, adhering to user request "make it explicit", we should perhaps ALWAYS cast constants?
+                    // Or at least for potential ambiguity (u64, i64, pointers).
+                    // Checking against i32:
+                    if let MirType::Int { width: 32, .. } = self.mir_builder.get_type(mir_type_id) {
+                        // Default is i32, so maybe optional. But user said "all const casted".
+                        Operand::Cast(mir_type_id, Box::new(operand))
+                    } else {
+                        Operand::Cast(mir_type_id, Box::new(operand))
+                    }
+                } else {
+                    operand
+                }
+            }
+            _ => operand,
+        }
     }
 
     fn lower_logical_op(

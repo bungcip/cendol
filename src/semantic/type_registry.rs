@@ -8,6 +8,7 @@ use std::borrow::Cow;
 use crate::source_manager::SourceSpan;
 use crate::{ast::NameId, diagnostic::SemanticError, semantic::QualType};
 use hashbrown::{HashMap, HashSet};
+use target_lexicon::{PointerWidth, Triple};
 
 use super::types::TypeClass;
 use super::types::{FieldLayout, LayoutKind};
@@ -22,6 +23,8 @@ use super::{
 /// - Types are never removed
 /// - Canonical types are reused when possible
 pub struct TypeRegistry {
+    pub target_triple: Triple,
+
     // Index 0 is dummy.
     // Index 1..16 are builtins.
     // Index 17+ are allocated types.
@@ -57,14 +60,15 @@ pub struct TypeRegistry {
 
 impl Default for TypeRegistry {
     fn default() -> Self {
-        Self::new()
+        Self::new(Triple::host())
     }
 }
 
 impl TypeRegistry {
     /// Create a new TypeRegistry with builtin types initialized.
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(target_triple: Triple) -> Self {
         let mut reg = TypeRegistry {
+            target_triple,
             types: Vec::new(),
             pointer_cache: HashMap::new(),
             array_cache: HashMap::new(),
@@ -553,10 +557,33 @@ impl TypeRegistry {
                 alignment: 4,
                 kind: LayoutKind::Scalar,
             },
-            TypeKind::Long { .. } | TypeKind::Double { is_long_double: false } | TypeKind::Pointer { .. } => {
+            TypeKind::Long { .. } | TypeKind::Double { is_long_double: false } => {
+                let size = if matches!(type_kind, TypeKind::Long { .. }) {
+                    match self.target_triple.pointer_width() {
+                        Ok(PointerWidth::U16) => 2,
+                        Ok(PointerWidth::U32) => 4,
+                        Ok(PointerWidth::U64) => 8,
+                        Err(_) => 8, // Default to 64-bit if unknown
+                    }
+                } else {
+                    8 // Double is 64-bit
+                };
                 TypeLayout {
-                    size: 8,
-                    alignment: 8,
+                    size,
+                    alignment: size,
+                    kind: LayoutKind::Scalar,
+                }
+            }
+            TypeKind::Pointer { .. } => {
+                let size = match self.target_triple.pointer_width() {
+                    Ok(PointerWidth::U16) => 2,
+                    Ok(PointerWidth::U32) => 4,
+                    Ok(PointerWidth::U64) => 8,
+                    Err(_) => 8,
+                };
+                TypeLayout {
+                    size,
+                    alignment: size,
                     kind: LayoutKind::Scalar,
                 }
             }

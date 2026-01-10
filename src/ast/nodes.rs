@@ -38,7 +38,8 @@ pub enum NodeKind {
     PostDecrement(NodeRef),
 
     Assignment(BinaryOp, NodeRef /* lhs */, NodeRef /* rhs */),
-    FunctionCall(NodeRef /* func */, Vec<NodeRef> /* args */),
+    FunctionCall(CallExpr),
+    CallArg(NodeRef),
     MemberAccess(
         NodeRef, /* object */
         NameId,  /* field */
@@ -205,6 +206,13 @@ pub struct RecordDeclData {
 pub struct FieldDeclData {
     pub name: Option<NameId>,
     pub ty: QualType, // object type
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CallExpr {
+    pub callee: NodeRef,
+    pub arg_start: NodeRef, // index where CallArg located
+    pub arg_len: u16,
 }
 
 #[derive(Debug, Clone, Serialize)]

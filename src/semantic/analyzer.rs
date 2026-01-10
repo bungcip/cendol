@@ -427,8 +427,8 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn visit_function_call(&mut self, func_ref: NodeRef, args: &[NodeRef]) -> Option<QualType> {
-        let func_ty = self.visit_node(func_ref)?;
+    fn visit_function_call(&mut self, call_expr: &crate::ast::nodes::CallExpr) -> Option<QualType> {
+        let func_ty = self.visit_node(call_expr.callee)?;
 
         let func_ty_ref = func_ty.ty();
         // Resolve function type (might be pointer to function)
@@ -451,18 +451,36 @@ impl<'a> SemanticAnalyzer<'a> {
             ..
         } = &func_kind
         {
-            for (i, arg_ref) in args.iter().enumerate() {
-                let arg_ty = self.visit_node(*arg_ref);
-                if i < parameters.len() {
-                    let param_ty = parameters[i].param_type;
+            for i in 0..call_expr.arg_len {
+                let arg_idx = call_expr.arg_start.get() + i as u32;
+                let arg_node_ref = NodeRef::new(arg_idx).expect("Invalid arg index");
+
+                // We expect CallArg at this position
+                // However, visit_node on CallArg will recurse to the inner expression
+                // But we need the inner expression NodeRef for implicit conversion record?
+                // Actually record_implicit_conversions takes node_ref.
+                // If we pass CallArg node_ref, is that okay?
+                // Usually we want the usage site to match.
+                // Let's see: visit_node(CallArg) -> visits inner -> returns type.
+                // implicit conversion is recorded on the node_ref.
+                // If we record on CallArg node, then codegen must look at CallArg node.
+                // Or we can peek the inner node.
+
+                let arg_ty = self.visit_node(arg_node_ref);
+
+                if (i as usize) < parameters.len() {
+                    let param_ty = parameters[i as usize].param_type;
                     if let Some(actual_arg_ty) = arg_ty {
-                        self.record_implicit_conversions(param_ty, actual_arg_ty, *arg_ref);
+                        // We record on the CallArg node
+                        self.record_implicit_conversions(param_ty, actual_arg_ty, arg_node_ref);
                     }
                 }
             }
         } else {
-            for arg in args {
-                self.visit_node(*arg);
+            for i in 0..call_expr.arg_len {
+                let arg_idx = call_expr.arg_start.get() + i as u32;
+                let arg_node_ref = NodeRef::new(arg_idx).expect("Invalid arg index");
+                self.visit_node(arg_node_ref);
             }
         }
 
@@ -733,7 +751,8 @@ impl<'a> SemanticAnalyzer<'a> {
                 let span = self.ast.get_span(node_ref);
                 self.visit_assignment(*op, *lhs, *rhs, span)
             }
-            NodeKind::FunctionCall(func, args) => self.visit_function_call(*func, args),
+            NodeKind::FunctionCall(call_expr) => self.visit_function_call(call_expr),
+            NodeKind::CallArg(arg_expr) => self.visit_node(*arg_expr),
             NodeKind::MemberAccess(obj, field_name, is_arrow) => self.visit_member_access(*obj, *field_name, *is_arrow),
             NodeKind::IndexAccess(arr, idx) => self.visit_index_access(*arr, *idx),
             NodeKind::Cast(ty, expr) => {

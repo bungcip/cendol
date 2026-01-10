@@ -53,7 +53,6 @@ pub struct Ast {
     pub spans: Vec<SourceSpan>,
     scope_map: Vec<Option<ScopeId>>,         // index = NodeRef
     pub semantic_info: Option<SemanticInfo>, // Populated after type resolution
-    root: Option<NodeRef>,
 }
 
 /// Node reference type for referencing child nodes.
@@ -89,6 +88,11 @@ impl Ast {
         NodeRef::new(index).expect("NodeRef overflow")
     }
 
+    /// Add a dummy node to the AST and return its reference
+    pub(crate) fn push_dummy(&mut self, span: SourceSpan) -> NodeRef {
+        self.push_node(NodeKind::Dummy, span)
+    }
+
     /// Get node kind by reference
     pub fn get_kind(&self, node_ref: NodeRef) -> &NodeKind {
         &self.kinds[node_ref.index()]
@@ -101,11 +105,7 @@ impl Ast {
 
     /// get root node ref
     pub fn get_root(&self) -> NodeRef {
-        self.root.unwrap_or(NodeRef::new(1).unwrap())
-    }
-
-    pub fn set_root(&mut self, root: NodeRef) {
-        self.root = Some(root);
+        NodeRef::new(1).expect("ICE: AST is empty")
     }
 
     pub fn scope_of(&self, node_ref: NodeRef) -> ScopeId {

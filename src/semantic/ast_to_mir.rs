@@ -562,7 +562,8 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::Assignment(op, left_ref, right_ref) => {
                 self.lower_assignment_expr(scope_id, op, *left_ref, *right_ref, mir_ty)
             }
-            NodeKind::FunctionCall(func_ref, args) => self.lower_function_call(scope_id, *func_ref, args, mir_ty),
+            NodeKind::FunctionCall(call_expr) => self.lower_function_call(scope_id, call_expr, mir_ty),
+            NodeKind::CallArg(arg_expr) => self.lower_expression(scope_id, *arg_expr, need_value),
             NodeKind::MemberAccess(obj_ref, field_name, is_arrow) => {
                 self.lower_member_access(scope_id, *obj_ref, field_name, *is_arrow)
             }
@@ -1036,19 +1037,13 @@ impl<'a> AstToMirLowerer<'a> {
         rhs_converted // C assignment expressions evaluate to the assigned value
     }
 
-    fn lower_function_call(
-        &mut self,
-        scope_id: ScopeId,
-        func_ref: NodeRef,
-        args: &[NodeRef],
-        mir_ty: TypeId,
-    ) -> Operand {
-        let callee = self.lower_expression(scope_id, func_ref, true);
+    fn lower_function_call(&mut self, scope_id: ScopeId, call_expr: &nodes::CallExpr, mir_ty: TypeId) -> Operand {
+        let callee = self.lower_expression(scope_id, call_expr.callee, true);
 
         let mut arg_operands = Vec::new();
 
         // Get the function type to determine parameter types for conversions
-        let func_node_kind = self.ast.get_kind(func_ref);
+        let func_node_kind = self.ast.get_kind(call_expr.callee);
         let func_type = if let NodeKind::Ident(_, symbol_ref) = func_node_kind {
             let resolved_symbol = *symbol_ref;
             let func_entry = self.symbol_table.get_symbol(resolved_symbol);
@@ -1072,16 +1067,23 @@ impl<'a> AstToMirLowerer<'a> {
             None
         };
 
-        for (i, arg) in args.iter().enumerate() {
-            let arg_operand = self.lower_expression(scope_id, *arg, true);
+        for i in 0..call_expr.arg_len {
+            let arg_idx = call_expr.arg_start.get() + i as u32;
+            let arg_ref = NodeRef::new(arg_idx).expect("Invalid arg index");
+
+            // Note: lower_expression(CallArg) will just lower the inner expression.
+            // But we use arg_ref (the CallArg node) for implicit conversion lookup.
+            let arg_operand = self.lower_expression(scope_id, arg_ref, true);
+
             // Apply conversions for function arguments if needed
-            let arg_ty = self.ast.get_resolved_type(*arg).unwrap();
+            // The resolved type of CallArg is same as inner expr.
+            let arg_ty = self.ast.get_resolved_type(arg_ref).unwrap();
             let arg_mir_ty = self.lower_type_to_mir(arg_ty.ty());
 
             // Use the parameter type as the target type for conversions, if available
             let target_mir_ty = if let Some(ref param_types_vec) = param_types {
-                if i < param_types_vec.len() {
-                    param_types_vec[i]
+                if (i as usize) < param_types_vec.len() {
+                    param_types_vec[i as usize]
                 } else {
                     // For variadic arguments, use the argument's own type
                     arg_mir_ty
@@ -1090,7 +1092,7 @@ impl<'a> AstToMirLowerer<'a> {
                 arg_mir_ty
             };
 
-            let converted_arg = self.apply_conversions(arg_operand, *arg, target_mir_ty);
+            let converted_arg = self.apply_conversions(arg_operand, arg_ref, target_mir_ty);
             arg_operands.push(converted_arg);
         }
 
@@ -1106,8 +1108,8 @@ impl<'a> AstToMirLowerer<'a> {
 
         // Check if this is a void function call - if so, we use MirStmt::Call
         // Otherwise, we use Rvalue::Call and create a temporary local
-        let func_node_kind = self.ast.get_kind(func_ref);
-        if self.ast.get_resolved_type(func_ref).is_some()
+        let func_node_kind = self.ast.get_kind(call_expr.callee);
+        if self.ast.get_resolved_type(call_expr.callee).is_some()
             && let NodeKind::Ident(_, symbol_ref) = func_node_kind
         {
             let resolved_symbol = *symbol_ref;

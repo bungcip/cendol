@@ -250,7 +250,8 @@ impl AstDumper {
             }
 
             // Expression nodes with NodeRef children - types handled during traversal
-            NodeKind::FunctionCall(_, _)
+            NodeKind::FunctionCall(_)
+            | NodeKind::CallArg(_)
             | NodeKind::BinaryOp(_, _, _)
             | NodeKind::UnaryOp(_, _)
             | NodeKind::TernaryOp(_, _, _)
@@ -325,11 +326,13 @@ impl AstDumper {
             NodeKind::Assignment(op, lhs, rhs) => {
                 println!("Assignment({:?}, {}, {})", op, lhs.get(), rhs.get())
             }
-            NodeKind::FunctionCall(func, args) => println!(
-                "FunctionCall({}, [{}])",
-                func.get(),
-                args.iter().map(|&r| r.get().to_string()).join(", ")
+            NodeKind::FunctionCall(call_expr) => println!(
+                "FunctionCall(callee={}, args={}..{})",
+                call_expr.callee.get(),
+                call_expr.arg_start.get(),
+                call_expr.arg_start.get() + call_expr.arg_len as u32
             ),
+            NodeKind::CallArg(arg_expr) => println!("CallArg({})", arg_expr.get()),
             NodeKind::MemberAccess(obj, field, is_arrow) => println!(
                 "MemberAccess({}, {}, {})",
                 obj.get(),

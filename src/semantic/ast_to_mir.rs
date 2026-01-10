@@ -15,6 +15,7 @@ use crate::semantic::SymbolRef;
 use crate::semantic::SymbolTable;
 use crate::semantic::TypeKind;
 use crate::semantic::ValueCategory;
+use crate::semantic::const_eval::{ConstEvalCtx, eval_const_expr};
 use crate::semantic::output::SemaOutput;
 use crate::semantic::{DefinitionState, TypeRef, TypeRegistry};
 use crate::semantic::{ImplicitConversion, Namespace, ScopeId};
@@ -543,6 +544,17 @@ impl<'a> AstToMirLowerer<'a> {
 
         let mir_ty = self.lower_type_to_mir(ty.ty());
 
+        // Attempt constant folding for arithmetic/logical operations that are not simple literals
+        if matches!(
+            node_kind,
+            NodeKind::BinaryOp(..) | NodeKind::UnaryOp(..) | NodeKind::TernaryOp(..)
+        ) {
+            let ctx = ConstEvalCtx { ast: self.ast };
+            if let Some(val) = eval_const_expr(&ctx, expr_ref) {
+                return Operand::Constant(self.create_constant(ConstValue::Int(val)));
+            }
+        }
+
         match &node_kind {
             NodeKind::LiteralInt(val) => Operand::Constant(self.create_constant(ConstValue::Int(*val))),
             NodeKind::LiteralFloat(val) => Operand::Constant(self.create_constant(ConstValue::Float(*val))),
@@ -855,28 +867,38 @@ impl<'a> AstToMirLowerer<'a> {
         }
 
         // Apply implicit conversions from semantic info first to match AST
-        let lhs_converted = self.apply_conversions(lhs, left_ref, mir_ty);
-        let rhs_converted = self.apply_conversions(rhs, right_ref, mir_ty);
+        let mut lhs_converted = self.apply_conversions(lhs, left_ref, mir_ty);
+        let mut rhs_converted = self.apply_conversions(rhs, right_ref, mir_ty);
 
-        // Get the resolved types of the operands
-        // Note: The operands might have been casted by apply_conversions, so we should arguably track that.
-        // However, apply_conversions relies on semantic_info.
-        // If semantic_info says "cast to T", lhs_converted is now type T (wrapped in Cast).
-        // If semantic_info says nothing, lhs_converted is type of left_ref.
+        // Ensure both operands have the same type for MIR operations.
+        // Some operations like comparisons have mir_ty as i32 (the result),
+        // but operands might be i64. We should use a common type.
+        let lhs_mir_ty = self.get_operand_type(&lhs_converted);
+        let rhs_mir_ty = self.get_operand_type(&rhs_converted);
 
-        // We want to ensure that if the operand is a constant, it is strictly typed to the expected common type.
-        // For binary ops, semantic analyzer should have already unified types to a common type via implicit casts.
-        // So we just need to ensure that the final MirType used for the operation is explicit.
+        if lhs_mir_ty != rhs_mir_ty {
+            // Unify to the larger type or just handle common cases.
+            // For now, if one is i64 and other is i32, promote i32 to i64.
+            let lhs_mir = self.mir_builder.get_type(lhs_mir_ty);
+            let rhs_mir = self.mir_builder.get_type(rhs_mir_ty);
 
-        // Is mir_ty the result type or the computation type?
-        // For comparisons (<, >), mir_ty is i32 (0 or 1). Computation is on common type of operands.
-        // For arithmetic (+, -), mir_ty is the result type (which is usually the common type).
-
-        // We need to find the common type for computation.
-        // If it's a comparison, we can't use mir_ty.
-        // We should look at the type of the operands *after* conversion.
-        // If analyzer did its job, lhs and rhs should be converted to same type.
-        // Converting them to explicit casts if they are constants prevents "naked" constant ambiguity.
+            match (lhs_mir, rhs_mir) {
+                (MirType::Int { width: w1, .. }, MirType::Int { width: w2, .. }) => {
+                    if w1 > w2 {
+                        rhs_converted = Operand::Cast(lhs_mir_ty, Box::new(rhs_converted));
+                    } else if w2 > w1 {
+                        lhs_converted = Operand::Cast(rhs_mir_ty, Box::new(lhs_converted));
+                    }
+                }
+                (MirType::Pointer { .. }, MirType::Int { .. }) => {
+                    rhs_converted = Operand::Cast(lhs_mir_ty, Box::new(rhs_converted));
+                }
+                (MirType::Int { .. }, MirType::Pointer { .. }) => {
+                    lhs_converted = Operand::Cast(rhs_mir_ty, Box::new(lhs_converted));
+                }
+                _ => {} // Fallback for floats etc if needed
+            }
+        }
 
         let lhs_final = self.ensure_explicit_cast(lhs_converted, left_ref);
         let rhs_final = self.ensure_explicit_cast(rhs_converted, right_ref);
@@ -1158,22 +1180,13 @@ impl<'a> AstToMirLowerer<'a> {
 
         // Check if this is a void function call - if so, we use MirStmt::Call
         // Otherwise, we use Rvalue::Call and create a temporary local
-        let func_node_kind = self.ast.get_kind(call_expr.callee);
-        if self.ast.get_resolved_type(call_expr.callee).is_some()
-            && let NodeKind::Ident(_, symbol_ref) = func_node_kind
-        {
-            let resolved_symbol = *symbol_ref;
-            let func_entry = self.symbol_table.get_symbol(resolved_symbol);
-            let func_type = self.registry.get(func_entry.type_info);
-            if let TypeKind::Function { return_type, .. } = &func_type.kind
-                && self.registry.get(*return_type).kind == TypeKind::Void
-            {
-                // Void function call - use MirStmt::Call for side effects only
-                let stmt = MirStmt::Call(call_target, arg_operands);
-                self.mir_builder.add_statement(stmt);
-                // Return a dummy operand for void functions
-                return Operand::Constant(self.create_constant(ConstValue::Int(0)));
-            }
+        let is_void = matches!(self.mir_builder.get_type(mir_ty), MirType::Void);
+        if is_void {
+            // Void function call - use MirStmt::Call for side effects only
+            let stmt = MirStmt::Call(call_target, arg_operands);
+            self.mir_builder.add_statement(stmt);
+            // Return a dummy operand for void functions
+            return Operand::Constant(self.create_constant(ConstValue::Int(0)));
         }
 
         // Non-void function call - use Rvalue::Call and store result
@@ -1629,7 +1642,8 @@ impl<'a> AstToMirLowerer<'a> {
         };
 
         // Optimization: skip if already same type
-        if self.get_operand_type(&operand) == to_mir_type && !matches!(conv, ImplicitConversion::PointerDecay) {
+        let current_ty = self.get_operand_type(&operand);
+        if current_ty == to_mir_type && !matches!(conv, ImplicitConversion::PointerDecay) {
             return operand;
         }
 
@@ -1699,10 +1713,11 @@ impl<'a> AstToMirLowerer<'a> {
                 }
             }
             Place::ArrayIndex(base, _) => {
-                let array_ty = self.get_place_type(base);
-                match self.mir_builder.get_type(array_ty) {
+                let base_ty = self.get_place_type(base);
+                match self.mir_builder.get_type(base_ty) {
                     MirType::Array { element, .. } => *element,
-                    _ => panic!("ArrayIndex access on non-array type"),
+                    MirType::Pointer { pointee, .. } => *pointee,
+                    _ => panic!("ArrayIndex access on non-array, non-pointer type"),
                 }
             }
         }

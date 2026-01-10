@@ -46,7 +46,7 @@ impl AstDumper {
         for ty_ref in sorted_type_refs {
             let ty = registry.get(ty_ref);
             let formatted_type = Self::format_type_kind_user_friendly(&ty.kind, registry);
-            println!("TypeRef({}): {}", ty_ref.get(), formatted_type);
+            println!("TypeRef({}): {}", ty_ref.base(), formatted_type);
         }
     }
 

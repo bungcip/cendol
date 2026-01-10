@@ -17,6 +17,7 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
     let node_kind = ctx.ast.get_kind(expr_node_ref);
     match node_kind {
         NodeKind::LiteralInt(val) => Some(*val),
+        NodeKind::LiteralChar(val) => Some(*val as i64),
         NodeKind::BinaryOp(op, left_ref, right_ref) => {
             let left_val = eval_const_expr(ctx, *left_ref)?;
             let right_val = eval_const_expr(ctx, *right_ref)?;

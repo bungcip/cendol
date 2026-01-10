@@ -712,7 +712,7 @@ impl<'a> SemanticAnalyzer<'a> {
         match kind {
             NodeKind::LiteralInt(_) => Some(QualType::unqualified(self.registry.type_int)),
             NodeKind::LiteralFloat(_) => Some(QualType::unqualified(self.registry.type_double)),
-            NodeKind::LiteralChar(_) => Some(QualType::unqualified(self.registry.type_char)),
+            NodeKind::LiteralChar(_) => Some(QualType::unqualified(self.registry.type_int)),
             NodeKind::LiteralString(name) => {
                 let char_type = self.registry.type_char;
                 let array_size = name.as_str().len() + 1;

@@ -781,7 +781,7 @@ fn lower_function_parameters(params: &[ParsedParamData], ctx: &mut LowerCtx) -> 
                 .unwrap_or_else(|| QualType::unqualified(ctx.registry.type_int));
 
             let final_ty = if let Some(declarator) = &param.declarator {
-                apply_ast_declarator(base_ty.ty(), declarator, ctx)
+                apply_declarator(base_ty.ty(), declarator, ctx)
             } else {
                 base_ty
             };
@@ -791,42 +791,36 @@ fn lower_function_parameters(params: &[ParsedParamData], ctx: &mut LowerCtx) -> 
 
             FunctionParameter {
                 param_type: decayed_ty,
-                name: param.declarator.as_ref().and_then(extract_identifier_from_declarator),
+                name: param.declarator.as_ref().and_then(extract_name),
             }
         })
         .collect()
 }
 
-// Local helper to exact identifier from ParsedDeclarator (duplicate of struct_lowering one, should unify later)
-fn extract_identifier_from_declarator(decl: &ParsedDeclarator) -> Option<NameId> {
+fn extract_name(decl: &ParsedDeclarator) -> Option<NameId> {
     match decl {
         ParsedDeclarator::Identifier(name, _) => Some(*name),
-        ParsedDeclarator::Pointer(_, inner) => inner.as_ref().and_then(|d| extract_identifier_from_declarator(d)),
-        ParsedDeclarator::Array(inner, _) => extract_identifier_from_declarator(inner),
-        ParsedDeclarator::Function { inner, .. } => extract_identifier_from_declarator(inner),
-        ParsedDeclarator::BitField(inner, _) => extract_identifier_from_declarator(inner),
+        ParsedDeclarator::Pointer(_, inner) => inner.as_ref().and_then(|d| extract_name(d)),
+        ParsedDeclarator::Array(inner, _) => extract_name(inner),
+        ParsedDeclarator::Function { inner, .. } => extract_name(inner),
+        ParsedDeclarator::BitField(inner, _) => extract_name(inner),
         _ => None,
     }
 }
 
 /// Apply declarator transformations to a base type
-pub(crate) fn apply_ast_declarator(base_type: TypeRef, declarator: &ParsedDeclarator, ctx: &mut LowerCtx) -> QualType {
+pub(crate) fn apply_declarator(base_type: TypeRef, declarator: &ParsedDeclarator, ctx: &mut LowerCtx) -> QualType {
     match declarator {
         ParsedDeclarator::Pointer(qualifiers, next) => {
-            let pointer_type_ref = ctx.registry.pointer_to(base_type);
-
+            let ty = ctx.registry.pointer_to(base_type);
             if let Some(next_decl) = next {
-                let result = apply_ast_declarator(pointer_type_ref, next_decl, ctx);
+                let result = apply_declarator(ty, next_decl, ctx);
                 ctx.registry.merge_qualifiers(result, *qualifiers)
             } else {
-                QualType::new(pointer_type_ref, *qualifiers)
+                QualType::new(ty, *qualifiers)
             }
         }
-        ParsedDeclarator::Identifier(_, qualifiers) => {
-            let base_type_ref = base_type;
-            ctx.registry
-                .merge_qualifiers(QualType::unqualified(base_type_ref), *qualifiers)
-        }
+        ParsedDeclarator::Identifier(_, qualifiers) => QualType::new(base_type, *qualifiers),
         ParsedDeclarator::Array(base, size) => {
             let array_size = match size {
                 ParsedArraySize::Expression { expr, qualifiers: _ } => resolve_array_size(Some(*expr), ctx), // TODO: resolve_array_size needs ParsedNodeRef support
@@ -839,8 +833,8 @@ pub(crate) fn apply_ast_declarator(base_type: TypeRef, declarator: &ParsedDeclar
                 } => resolve_array_size(*size, ctx),
             };
 
-            let array_type_ref = ctx.registry.array_of(base_type, array_size);
-            apply_ast_declarator(array_type_ref, base, ctx)
+            let ty = ctx.registry.array_of(base_type, array_size);
+            apply_declarator(ty, base, ctx)
         }
         ParsedDeclarator::Function {
             inner: base,
@@ -848,20 +842,20 @@ pub(crate) fn apply_ast_declarator(base_type: TypeRef, declarator: &ParsedDeclar
             is_variadic,
         } => {
             let parameters = lower_function_parameters(params, ctx);
-            let function_type_ref = ctx.registry.function_type(base_type, parameters, *is_variadic);
-            apply_ast_declarator(function_type_ref, base, ctx)
+            let ty = ctx.registry.function_type(base_type, parameters, *is_variadic);
+            apply_declarator(ty, base, ctx)
         }
         ParsedDeclarator::AnonymousRecord(is_union, members) => {
             // Use struct_lowering helper
-            let record_type_ref = ctx.registry.declare_record(None, *is_union);
+            let ty = ctx.registry.declare_record(None, *is_union);
             let struct_members = lower_struct_members(members, ctx, SourceSpan::empty());
-            ctx.registry.complete_record(record_type_ref, struct_members);
-            let _ = ctx.registry.ensure_layout(record_type_ref);
-            QualType::unqualified(record_type_ref)
+            ctx.registry.complete_record(ty, struct_members);
+            let _ = ctx.registry.ensure_layout(ty);
+            QualType::unqualified(ty)
         }
         ParsedDeclarator::BitField(base, _) => {
             // Bitfield logic handled in struct lowering usually. Here just type application.
-            apply_ast_declarator(base_type, base, ctx)
+            apply_declarator(base_type, base, ctx)
         }
         ParsedDeclarator::Abstract => QualType::unqualified(base_type),
     }
@@ -887,15 +881,6 @@ pub(crate) fn run_semantic_lowering(
     symbol_table: &mut SymbolTable,
     registry: &mut TypeRegistry,
 ) -> Vec<Option<ScopeId>> {
-    // Check if we have a root node to start traversal from
-    let root_node_ref = parsed_ast.get_root();
-
-    // We also resize the semantic AST to hold expected number of nodes? No, we build it.
-    // But we need scope map for SEMANTIC nodes.
-    // We can't pre-size it easily because 1 parsed declaration -> N semantic declarations.
-    // We'll let it grow.
-    let _scope_map: Vec<Option<ScopeId>> = Vec::new();
-
     // Finalize tentative definitions
     finalize_tentative_definitions(symbol_table);
 
@@ -903,17 +888,18 @@ pub(crate) fn run_semantic_lowering(
     let mut lower_ctx = LowerCtx::new(parsed_ast, ast, diag, symbol_table, registry);
 
     // Perform recursive scope-aware lowering starting from root
-    let _semantic_roots = lower_ctx.lower_node_recursive(root_node_ref);
+    let root = parsed_ast.get_root();
+    lower_ctx.lower_node(root);
 
     lower_ctx.scope_map
 }
 
 impl<'a, 'src> LowerCtx<'a, 'src> {
-    pub(crate) fn lower_node_recursive(&mut self, parsed_ref: ParsedNodeRef) -> SmallVec<[NodeRef; 1]> {
-        self.lower_node_recursive_entry(parsed_ref, None)
+    pub(crate) fn lower_node(&mut self, parsed_ref: ParsedNodeRef) -> SmallVec<[NodeRef; 1]> {
+        self.lower_node_entry(parsed_ref, None)
     }
 
-    fn lower_node_recursive_entry(
+    fn lower_node_entry(
         &mut self,
         parsed_ref: ParsedNodeRef,
         target_slots: Option<&[NodeRef]>,
@@ -941,7 +927,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                             if !decl.init_declarators.is_empty() {
                                 decl.init_declarators.len()
                             } else if let Some(spec) = decl.specifiers.iter().find_map(|s| {
-                                if let crate::ast::parsed::ParsedDeclSpecifier::TypeSpecifier(ts) = s {
+                                if let ParsedDeclSpecifier::TypeSpecifier(ts) = s {
                                     Some(ts)
                                 } else {
                                     None
@@ -995,13 +981,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 // Use target slot if provided, otherwise reserve new slot
                 // Note: We set scope AFTER push_scope since CompoundStatement creates a new scope
-                let compound_stmt_node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    *target
-                } else {
-                    // push_dummy sets scope to current scope, but we've already pushed a new one
-                    self.ast.push_dummy(span)
-                };
-                self.set_scope(compound_stmt_node, self.symbol_table.current_scope());
+                let node = self.get_or_push_slot(target_slots, span);
 
                 // Count total semantic nodes
                 let mut total_stmt_nodes = 0;
@@ -1028,7 +1008,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     let count = self.count_semantic_nodes(stmt_ref);
                     if count > 0 {
                         let target_slots = &stmt_slots[current_slot_idx..current_slot_idx + count];
-                        self.lower_node_recursive_entry(stmt_ref, Some(target_slots));
+                        self.lower_node_entry(stmt_ref, Some(target_slots));
                         current_slot_idx += count;
                     }
                 }
@@ -1036,10 +1016,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.symbol_table.pop_scope();
 
                 // Replace dummy node with actual CompoundStatement
-                self.ast.kinds[compound_stmt_node.index()] =
-                    NodeKind::CompoundStatement(CompoundStmtData { stmt_start, stmt_len });
+                self.ast.kinds[node.index()] = NodeKind::CompoundStatement(CompoundStmtData { stmt_start, stmt_len });
 
-                smallvec![compound_stmt_node]
+                smallvec![node]
             }
             ParsedNodeKind::Declaration(decl_data) => self.lower_declaration(&decl_data, span, target_slots),
             ParsedNodeKind::FunctionDef(func_def) => {
@@ -1089,9 +1068,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             .base_type
             .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
 
-        let final_ty = apply_ast_declarator(base_ty.ty(), &func_def.declarator, self);
-        let func_name =
-            extract_identifier_from_declarator(&func_def.declarator).expect("Function definition must have a name");
+        let final_ty = apply_declarator(base_ty.ty(), &func_def.declarator, self);
+        let func_name = extract_name(&func_def.declarator).expect("Function definition must have a name");
 
         if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) =
             self.symbol_table.define_function(func_name, final_ty.ty(), true, span)
@@ -1252,10 +1230,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let mut nodes = SmallVec::new();
 
         for (i, init) in decl.init_declarators.iter().enumerate() {
-            let final_ty = apply_ast_declarator(base_ty.ty(), &init.declarator, self);
+            let final_ty = apply_declarator(base_ty.ty(), &init.declarator, self);
             let final_ty = self.registry.merge_qualifiers(final_ty, spec_info.qualifiers);
 
-            let name = extract_identifier_from_declarator(&init.declarator).expect("Declarator must have identifier");
+            let name = extract_name(&init.declarator).expect("Declarator must have identifier");
 
             let node = if let Some(slots) = target_slots {
                 slots[i]
@@ -1398,9 +1376,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let scope_id = self.symbol_table.push_scope();
                 self.set_scope(node, scope_id);
 
-                let init = stmt
-                    .init
-                    .map(|i| self.lower_node_recursive(i).first().cloned().unwrap());
+                let init = stmt.init.map(|i| self.lower_node(i).first().cloned().unwrap());
                 let cond = stmt.condition.map(|c| self.lower_expression(c));
                 let inc = stmt.increment.map(|i| self.lower_expression(i));
                 let body = self.lower_single_statement(stmt.body);
@@ -1713,14 +1689,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     pub(crate) fn lower_expression(&mut self, node: ParsedNodeRef) -> NodeRef {
-        match self.lower_node_recursive(node).first().cloned() {
+        match self.lower_node(node).first().cloned() {
             Some(n) => n,
             None => self.push_dummy(SourceSpan::default()),
         }
     }
 
     pub(crate) fn lower_single_statement(&mut self, node: ParsedNodeRef) -> NodeRef {
-        self.lower_node_recursive(node)
+        self.lower_node(node)
             .first()
             .cloned()
             .unwrap_or_else(|| self.push_dummy(SourceSpan::default()))
@@ -1948,11 +1924,11 @@ pub(crate) fn lower_struct_members(
         for init_declarator in &decl.init_declarators {
             let (bit_field_size, base_declarator) = extract_bit_field_width(&init_declarator.declarator, ctx);
 
-            let member_name = extract_identifier_from_declarator(base_declarator);
+            let member_name = extract_name(base_declarator);
 
             let member_type = if let Some(base_type_ref) = spec_info.base_type {
                 // Manually re-apply qualifiers from the base type.
-                let ty = apply_ast_declarator(base_type_ref.ty(), base_declarator, ctx);
+                let ty = apply_declarator(base_type_ref.ty(), base_declarator, ctx);
                 ctx.registry.merge_qualifiers(ty, spec_info.qualifiers)
             } else {
                 QualType::unqualified(ctx.registry.type_int)

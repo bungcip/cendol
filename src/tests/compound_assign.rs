@@ -25,8 +25,8 @@ fn run_c_code(source: &str) -> i32 {
 
     // Check for compilation errors
     if result.is_err() || driver.source_manager.get_file_id("test.c").is_none() {
-         driver.print_diagnostics();
-         panic!("Compilation failed");
+        driver.print_diagnostics();
+        panic!("Compilation failed");
     }
 
     let run_output = Command::new(exe_path).output().expect("Failed to execute");

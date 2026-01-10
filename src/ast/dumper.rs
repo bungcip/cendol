@@ -304,11 +304,13 @@ impl AstDumper {
     fn dump_parser_kind(kind: &NodeKind, ast: &Ast, symbol_table: Option<&SymbolTable>) {
         match kind {
             NodeKind::TranslationUnit(tu_data) => {
-                println!(
-                    "TranslationUnit(decls={}..{}) (parser kind)",
-                    tu_data.decl_start.get(),
-                    tu_data.decl_start.get() + tu_data.decl_len as u32
-                );
+                let start = tu_data.decl_start.get();
+                if tu_data.decl_len > 0 {
+                    let last = start + tu_data.decl_len as u32 - 1;
+                    println!("TranslationUnit(decls={}..{}) (parser kind)", start, last);
+                } else {
+                    println!("TranslationUnit(decls=[]) (parser kind)");
+                }
             }
             NodeKind::LiteralInt(i) => println!("LiteralInt({})", i),
             NodeKind::LiteralFloat(f) => println!("LiteralFloat({})", f),
@@ -327,12 +329,20 @@ impl AstDumper {
             NodeKind::Assignment(op, lhs, rhs) => {
                 println!("Assignment({:?}, {}, {})", op, lhs.get(), rhs.get())
             }
-            NodeKind::FunctionCall(call_expr) => println!(
-                "FunctionCall(callee={}, args={}..{})",
-                call_expr.callee.get(),
-                call_expr.arg_start.get(),
-                call_expr.arg_start.get() + call_expr.arg_len as u32
-            ),
+            NodeKind::FunctionCall(call_expr) => {
+                let start = call_expr.arg_start.get();
+                if call_expr.arg_len > 0 {
+                    let last = start + call_expr.arg_len as u32 - 1;
+                    println!(
+                        "FunctionCall(callee={}, args={}..{})",
+                        call_expr.callee.get(),
+                        start,
+                        last
+                    );
+                } else {
+                    println!("FunctionCall(callee={}, args=[])", call_expr.callee.get());
+                }
+            }
 
             NodeKind::MemberAccess(obj, field, is_arrow) => println!(
                 "MemberAccess({}, {}, {})",
@@ -352,12 +362,18 @@ impl AstDumper {
             }
 
             NodeKind::GenericSelection(gs) => {
-                println!(
-                    "GenericSelection(control={}, associations={}..{})",
-                    gs.control.get(),
-                    gs.assoc_start.get(),
-                    gs.assoc_start.get() + gs.assoc_len as u32
-                )
+                let start = gs.assoc_start.get();
+                if gs.assoc_len > 0 {
+                    let last = start + gs.assoc_len as u32 - 1;
+                    println!(
+                        "GenericSelection(control={}, associations={}..{})",
+                        gs.control.get(),
+                        start,
+                        last
+                    );
+                } else {
+                    println!("GenericSelection(control={}, associations=[])", gs.control.get());
+                }
             }
             NodeKind::GenericAssociation(ga) => {
                 println!(
@@ -370,11 +386,13 @@ impl AstDumper {
                 println!("GnuStatementExpression({}, {})", compound_stmt.get(), result_expr.get())
             }
             NodeKind::CompoundStatement(cs) => {
-                println!(
-                    "CompoundStatement(stmts={}..{})",
-                    cs.stmt_start.get(),
-                    cs.stmt_start.get() + cs.stmt_len as u32
-                )
+                let start = cs.stmt_start.get();
+                if cs.stmt_len > 0 {
+                    let last = start + cs.stmt_len as u32 - 1;
+                    println!("CompoundStatement(stmts={}..{})", start, last);
+                } else {
+                    println!("CompoundStatement(stmts=[])");
+                }
             }
             NodeKind::If(if_stmt) => println!(
                 "If(condition={}, then={}, else={})",
@@ -430,15 +448,27 @@ impl AstDumper {
             // Declaration and FunctionDef removed
             NodeKind::Function(data) => {
                 let func_name = Self::get_function_name(data.symbol, symbol_table);
-                println!(
-                    "Function(name={}, symbol={:?}, ty={}, params_start={}, params_len={}, body={})",
-                    func_name,
-                    data.symbol,
-                    data.ty,
-                    data.param_start.get(),
-                    data.param_len,
-                    data.body.get()
-                )
+                let start = data.param_start.get();
+                if data.param_len > 0 {
+                    let last = start + data.param_len as u32 - 1;
+                    println!(
+                        "Function(name={}, symbol={:?}, ty={}, params={}..{}, body={})",
+                        func_name,
+                        data.symbol,
+                        data.ty,
+                        start,
+                        last,
+                        data.body.get()
+                    );
+                } else {
+                    println!(
+                        "Function(name={}, symbol={:?}, ty={}, params=[], body={})",
+                        func_name,
+                        data.symbol,
+                        data.ty,
+                        data.body.get()
+                    );
+                }
             }
             NodeKind::Param(data) => {
                 println!("Param(symbol={:?}, ty={:?})", data.symbol, data.ty)
@@ -469,35 +499,60 @@ impl AstDumper {
                 println!("TypedefDecl(name={}, ty={})", typedef_decl.name, typedef_decl.ty)
             }
             NodeKind::RecordDecl(record_decl) => {
-                println!(
-                    "RecordDecl(name={:?}, ty={}, is_union={}, members={}..{})",
-                    record_decl.name,
-                    record_decl.ty.get(),
-                    record_decl.is_union,
-                    record_decl.member_start.get(),
-                    record_decl.member_start.get() + record_decl.member_len as u32
-                )
+                let start = record_decl.member_start.get();
+                if record_decl.member_len > 0 {
+                    let last = start + record_decl.member_len as u32 - 1;
+                    println!(
+                        "RecordDecl(name={:?}, ty={}, is_union={}, members={}..{})",
+                        record_decl.name,
+                        record_decl.ty.get(),
+                        record_decl.is_union,
+                        start,
+                        last
+                    );
+                } else {
+                    println!(
+                        "RecordDecl(name={:?}, ty={}, is_union={}, members=[])",
+                        record_decl.name,
+                        record_decl.ty.get(),
+                        record_decl.is_union
+                    );
+                }
             }
             NodeKind::FieldDecl(field_decl) => {
                 println!("FieldDecl(name={:?}, ty={})", field_decl.name, field_decl.ty)
             }
             NodeKind::EnumDecl(enum_decl) => {
-                println!(
-                    "EnumDecl(name={:?}, ty={}, members={}..{})",
-                    enum_decl.name,
-                    enum_decl.ty.get(),
-                    enum_decl.member_start.get(),
-                    enum_decl.member_start.get() + enum_decl.member_len as u32
-                )
+                let start = enum_decl.member_start.get();
+                if enum_decl.member_len > 0 {
+                    let last = start + enum_decl.member_len as u32 - 1;
+                    println!(
+                        "EnumDecl(name={:?}, ty={}, members={}..{})",
+                        enum_decl.name,
+                        enum_decl.ty.get(),
+                        start,
+                        last
+                    );
+                } else {
+                    println!(
+                        "EnumDecl(name={:?}, ty={}, members=[])",
+                        enum_decl.name,
+                        enum_decl.ty.get()
+                    );
+                }
             }
             NodeKind::EnumMember(enum_member) => {
                 println!("EnumMember(name={}, value={})", enum_member.name, enum_member.value)
             }
-            NodeKind::InitializerList(list) => println!(
-                "InitializerList(inits={}..{})",
-                list.init_start.get(),
-                list.init_start.get() + list.init_len as u32
-            ),
+            NodeKind::InitializerList(list) => {
+                let start = list.init_start.get();
+                if list.init_len > 0 {
+                    let last = start + list.init_len as u32 - 1;
+                    println!("InitializerList(inits={}..{})", start, last);
+                } else {
+                    println!("InitializerList(inits=[])");
+                }
+            }
             NodeKind::InitializerItem(init) => {
                 println!("InitializerItem({})", Self::format_designated_initializer(init, ast))
             }

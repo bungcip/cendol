@@ -1638,17 +1638,35 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 smallvec![node]
             }
             ParsedNodeKind::SizeOfType(ty_name) => {
-                let ty = convert_to_qual_type(self, *ty_name, span)
-                    .unwrap_or(QualType::unqualified(self.registry.type_error));
-                smallvec![self.ast.push_node(NodeKind::SizeOfType(ty), span)]
+                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
+                    let ty = convert_to_qual_type(self, *ty_name, span)
+                        .unwrap_or(QualType::unqualified(self.registry.type_error));
+                    self.ast.kinds[target.index()] = NodeKind::SizeOfType(ty);
+                    self.ast.spans[target.index()] = span;
+                    *target
+                } else {
+                    let ty = convert_to_qual_type(self, *ty_name, span)
+                        .unwrap_or(QualType::unqualified(self.registry.type_error));
+                    self.ast.push_node(NodeKind::SizeOfType(ty), span)
+                };
+                smallvec![node]
             }
             ParsedNodeKind::AlignOf(ty_name) => {
-                let ty = convert_to_qual_type(self, *ty_name, span)
-                    .unwrap_or(QualType::unqualified(self.registry.type_error));
-                smallvec![self.ast.push_node(NodeKind::AlignOf(ty), span)]
+                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
+                    let ty = convert_to_qual_type(self, *ty_name, span)
+                        .unwrap_or(QualType::unqualified(self.registry.type_error));
+                    self.ast.kinds[target.index()] = NodeKind::AlignOf(ty);
+                    self.ast.spans[target.index()] = span;
+                    *target
+                } else {
+                    let ty = convert_to_qual_type(self, *ty_name, span)
+                        .unwrap_or(QualType::unqualified(self.registry.type_error));
+                    self.ast.push_node(NodeKind::AlignOf(ty), span)
+                };
+                smallvec![node]
             }
             ParsedNodeKind::CompoundLiteral(ty_name, init) => {
-                let node = self.push_dummy(span);
+                let node = self.get_or_push_slot(target_slots, span);
                 let ty = convert_to_qual_type(self, *ty_name, span)
                     .unwrap_or(QualType::unqualified(self.registry.type_error));
                 let i = self.lower_expression(*init);
@@ -1656,7 +1674,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 smallvec![node]
             }
             ParsedNodeKind::GenericSelection(control, associations) => {
-                let node = self.push_dummy(span);
+                let node = self.get_or_push_slot(target_slots, span);
                 let c = self.lower_expression(*control);
 
                 let assoc_len = associations.len() as u16;
@@ -1686,7 +1704,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 smallvec![node]
             }
             ParsedNodeKind::InitializerList(inits) => {
-                let node = self.push_dummy(span);
+                let node = self.get_or_push_slot(target_slots, span);
 
                 // Reserve slots for InitializerItems to ensure parent < child index
                 let mut init_dummies = Vec::new();

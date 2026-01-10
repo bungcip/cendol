@@ -1,4 +1,5 @@
 pub mod codegen;
+pub mod compound_assign;
 pub mod lexer;
 pub mod parser;
 pub mod pp_common;
@@ -18,4 +19,3 @@ pub mod semantic_types;
 pub mod semantic_validation;
 pub mod source_manager;
 pub mod test_utils;
-pub mod compound_assign;

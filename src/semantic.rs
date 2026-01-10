@@ -30,4 +30,3 @@ pub use types::{
     ArraySizeType, BuiltinType, EnumConstant, FunctionParameter, QualType, StructMember, Type, TypeKind, TypeLayout,
     TypeQualifiers, TypeRef,
 };
-

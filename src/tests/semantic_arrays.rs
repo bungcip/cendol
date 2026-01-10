@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use crate::tests::test_utils;
-    use crate::semantic::{ArraySizeType, TypeKind};
     use crate::driver::artifact::CompilePhase;
+    use crate::semantic::{ArraySizeType, TypeKind};
+    use crate::tests::test_utils;
 
     #[test]
     fn test_array_declaration_with_constant_size() {
@@ -38,14 +38,17 @@ mod tests {
             panic!("Root is not TranslationUnit");
         };
 
-        let main_func = global_decls.filter(|d| {
-            if let crate::ast::NodeKind::Function(f) = &ast.kinds[d.index()] {
-                let name = symbol_table.get_symbol(f.symbol).name;
-                name.to_string() == "main"
-            } else {
-                false
-            }
-        }).next().expect("Main function not found");
+        let main_func = global_decls
+            .filter(|d| {
+                if let crate::ast::NodeKind::Function(f) = &ast.kinds[d.index()] {
+                    let name = symbol_table.get_symbol(f.symbol).name;
+                    name.to_string() == "main"
+                } else {
+                    false
+                }
+            })
+            .next()
+            .expect("Main function not found");
 
         if let crate::ast::NodeKind::Function(f) = &ast.kinds[main_func.index()] {
             // Find 'arr' declaration in body
@@ -53,17 +56,17 @@ mod tests {
             // Body is a CompoundStatement
             if let crate::ast::NodeKind::CompoundStatement(cs) = &ast.kinds[body.index()] {
                 // Find VarDecl in statements
-                let arr_decl = cs.stmt_start.range(cs.stmt_len).find_map(|idx| {
-                     if let crate::ast::NodeKind::VarDecl(v) = &ast.kinds[idx.index()] {
-                         if v.name.to_string() == "arr" {
-                             Some(v)
-                         } else {
-                             None
-                         }
-                     } else {
-                         None
-                     }
-                }).expect("arr declaration not found");
+                let arr_decl = cs
+                    .stmt_start
+                    .range(cs.stmt_len)
+                    .find_map(|idx| {
+                        if let crate::ast::NodeKind::VarDecl(v) = &ast.kinds[idx.index()] {
+                            if v.name.to_string() == "arr" { Some(v) } else { None }
+                        } else {
+                            None
+                        }
+                    })
+                    .expect("arr declaration not found");
 
                 // Check type of arr
                 let ty_ref = arr_decl.ty.ty();

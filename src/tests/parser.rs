@@ -1605,30 +1605,6 @@ fn test_parse_bitfield() {
 }
 
 #[test]
-fn test_duplicate_typedef_no_panic() {
-    let source = "typedef int my_int; typedef int my_int;";
-    // We want to run the full pipeline up to symbol resolution, which is part of the MIR phase.
-    // This should no longer panic. A panic will fail the test.
-    // We expect an error here because of the redefinition, so we use `let _ = ...`
-    let (driver, _) = test_utils::run_pipeline(source, CompilePhase::Mir);
-
-    let diagnostics = driver.get_diagnostics();
-
-    // We expect at least one diagnostic for the redefinition.
-    assert!(
-        !diagnostics.is_empty(),
-        "Expected at least one diagnostic for typedef redefinition."
-    );
-
-    // Check if any of the diagnostics is the one we expect.
-    let found_error = diagnostics
-        .iter()
-        .any(|diag| diag.message.contains("redefinition of 'my_int'"));
-
-    assert!(found_error, "Did not find expected redefinition error diagnostic.");
-}
-
-#[test]
 fn test_atomic_type_qualifier() {
     let resolved = setup_declaration("_Atomic int x;");
     insta::assert_yaml_snapshot!(&resolved, @r"

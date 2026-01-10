@@ -3,7 +3,6 @@
 //! This module handles AST dumping for debugging and visualization.
 
 use hashbrown::HashSet;
-use itertools::Itertools;
 
 use crate::ast::{Ast, DesignatedInitializer, Designator, NodeKind};
 use crate::semantic::{ArraySizeType, SymbolRef, SymbolTable, TypeKind, TypeRef, TypeRegistry};
@@ -164,12 +163,11 @@ impl AstDumper {
             NodeKind::VaArg(_, ty_ref) => {
                 type_refs.insert(*ty_ref);
             }
-            NodeKind::Function(func_data) => {
-                type_refs.insert(func_data.ty);
-                // Also collect from function parameters
-                for param in &func_data.params {
-                    type_refs.insert(param.ty.ty());
-                }
+            NodeKind::Function(data) => {
+                type_refs.insert(data.ty);
+            }
+            NodeKind::Param(data) => {
+                type_refs.insert(data.ty.ty());
             }
             NodeKind::FunctionDecl(func_decl) => {
                 type_refs.insert(func_decl.ty);
@@ -225,6 +223,7 @@ impl AstDumper {
             // Statement types that don't directly contain TypeRefs
             NodeKind::TranslationUnit(_)
             | NodeKind::CompoundStatement(_)
+            | NodeKind::BlockItem(_)
             | NodeKind::If(_)
             | NodeKind::While(_)
             | NodeKind::DoWhile(_, _)
@@ -240,6 +239,7 @@ impl AstDumper {
             | NodeKind::Default(_)
             | NodeKind::ExpressionStatement(_)
             | NodeKind::InitializerList(_)
+            | NodeKind::InitializerItem(_)
             | NodeKind::StaticAssert(_, _)
             | NodeKind::EnumConstant(_, _)
             | NodeKind::Dummy => {
@@ -305,10 +305,11 @@ impl AstDumper {
     /// Dump a single AST node kind
     fn dump_parser_kind(kind: &NodeKind, symbol_table: Option<&SymbolTable>) {
         match kind {
-            NodeKind::TranslationUnit(tu) => {
+            NodeKind::TranslationUnit(tu_data) => {
                 println!(
-                    "TranslationUnit([{}])",
-                    tu.iter().map(|&r| r.get().to_string()).join(", ")
+                    "TranslationUnit(decls={}..{}) (parser kind)",
+                    tu_data.decl_start.get(),
+                    tu_data.decl_start.get() + tu_data.decl_len
                 );
             }
             NodeKind::LiteralInt(i) => println!("LiteralInt({})", i),
@@ -371,10 +372,16 @@ impl AstDumper {
             NodeKind::GnuStatementExpression(compound_stmt, result_expr) => {
                 println!("GnuStatementExpression({}, {})", compound_stmt.get(), result_expr.get())
             }
-            NodeKind::CompoundStatement(stmts) => println!(
-                "CompoundStatement([{}])",
-                stmts.iter().map(|&r| r.get().to_string()).join(", ")
-            ),
+            NodeKind::CompoundStatement(cs) => {
+                println!(
+                    "CompoundStatement(stmts={}..{})",
+                    cs.stmt_start.get(),
+                    cs.stmt_start.get() + cs.stmt_len as u32
+                )
+            }
+            NodeKind::BlockItem(stmt) => {
+                println!("BlockItem({})", stmt.get())
+            }
             NodeKind::If(if_stmt) => println!(
                 "If(condition={}, then={}, else={})",
                 if_stmt.condition.get(),
@@ -427,15 +434,20 @@ impl AstDumper {
             ),
 
             // Declaration and FunctionDef removed
-            NodeKind::Function(function_data) => {
-                // Get the function name from the symbol table
-                let func_name = Self::get_function_name(function_data.symbol, symbol_table);
+            NodeKind::Function(data) => {
+                let func_name = Self::get_function_name(data.symbol, symbol_table);
                 println!(
-                    "Function(name={}, ty={}, body={})",
+                    "Function(name={}, symbol={:?}, ty={}, params_start={}, params_len={}, body={})",
                     func_name,
-                    function_data.ty,
-                    function_data.body.get()
+                    data.symbol,
+                    data.ty,
+                    data.param_start.get(),
+                    data.param_len,
+                    data.body.get()
                 )
+            }
+            NodeKind::Param(data) => {
+                println!("Param(symbol={:?}, ty={:?})", data.symbol, data.ty)
             }
             NodeKind::EnumConstant(name, value) => println!(
                 "EnumConstant({}, {})",
@@ -488,9 +500,13 @@ impl AstDumper {
                 println!("EnumMember(name={}, value={})", enum_member.name, enum_member.value)
             }
             NodeKind::InitializerList(list) => println!(
-                "InitializerList([{}])",
-                list.iter().map(Self::format_designated_initializer).join(", ")
+                "InitializerList(inits={}..{})",
+                list.init_start.get(),
+                list.init_start.get() + list.init_len as u32
             ),
+            NodeKind::InitializerItem(init) => {
+                println!("InitializerItem({})", Self::format_designated_initializer(init))
+            }
             NodeKind::Dummy => println!("DUMMY"),
         }
     }

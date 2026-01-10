@@ -571,9 +571,10 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn visit_declaration_node(&mut self, _node_ref: NodeRef, kind: &NodeKind) -> Option<QualType> {
         match kind {
-            NodeKind::TranslationUnit(nodes) => {
-                for child in nodes {
-                    self.visit_node(*child);
+            NodeKind::TranslationUnit(tu_data) => {
+                for i in 0..tu_data.decl_len {
+                    let decl_ref = NodeRef::new(tu_data.decl_start.get() + i).expect("NodeRef overflow");
+                    self.visit_node(decl_ref);
                 }
                 None
             }
@@ -582,10 +583,17 @@ impl<'a> SemanticAnalyzer<'a> {
                 if let TypeKind::Function { return_type, .. } = func_ty.kind.clone() {
                     self.current_function_ret_type = Some(QualType::unqualified(return_type));
                 };
+
+                for i in 0..data.param_len {
+                    let param_ref = NodeRef::new(data.param_start.get() + i as u32).unwrap();
+                    self.visit_node(param_ref);
+                }
+
                 self.visit_node(data.body);
                 self.current_function_ret_type = None;
                 None
             }
+            NodeKind::Param(_) => None,
             NodeKind::VarDecl(data) => {
                 let _ = self.registry.ensure_layout(data.ty.ty());
                 if let Some(init_ref) = data.init {
@@ -626,11 +634,16 @@ impl<'a> SemanticAnalyzer<'a> {
     fn visit_statement_node(&mut self, node_ref: NodeRef, kind: &NodeKind) -> Option<QualType> {
         // let node = self.ast.get_node(node_ref); // For span access if needed
         match kind {
-            NodeKind::CompoundStatement(nodes) => {
-                for child in nodes {
-                    self.visit_node(*child);
+            NodeKind::CompoundStatement(cs) => {
+                for i in 0..cs.stmt_len {
+                    let item_ref = NodeRef::new(cs.stmt_start.get() + i as u32).unwrap();
+                    self.visit_node(item_ref);
                 }
                 self.process_deferred_checks();
+                None
+            }
+            NodeKind::BlockItem(stmt) => {
+                self.visit_node(*stmt);
                 None
             }
             NodeKind::If(stmt) => {
@@ -733,12 +746,16 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
             NodeKind::GnuStatementExpression(stmt, _) => {
-                if let NodeKind::CompoundStatement(nodes) = self.ast.get_kind(*stmt) {
+                if let NodeKind::CompoundStatement(cs) = self.ast.get_kind(*stmt) {
                     self.visit_node(*stmt);
-                    if let Some(last_node) = nodes.last()
-                        && let NodeKind::ExpressionStatement(Some(expr)) = self.ast.get_kind(*last_node).clone()
-                    {
-                        return self.visit_node(expr);
+                    if cs.stmt_len > 0 {
+                        let last_item_idx = cs.stmt_start.get() + (cs.stmt_len - 1) as u32;
+                        let last_item_ref = NodeRef::new(last_item_idx).unwrap();
+                        if let NodeKind::BlockItem(last_node) = self.ast.get_kind(last_item_ref)
+                            && let NodeKind::ExpressionStatement(Some(expr)) = self.ast.get_kind(*last_node).clone()
+                        {
+                            return self.visit_node(expr);
+                        }
                     }
                 }
                 None
@@ -790,22 +807,27 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(*expr);
                 Some(QualType::unqualified(*ty))
             }
-            NodeKind::InitializerList(inits) => {
-                for init in inits {
-                    for designator in &init.designation {
-                        match designator {
-                            Designator::ArrayIndex(expr_ref) => {
-                                self.visit_node(*expr_ref);
-                            }
-                            Designator::GnuArrayRange(start_ref, end_ref) => {
-                                self.visit_node(*start_ref);
-                                self.visit_node(*end_ref);
-                            }
-                            Designator::FieldName(_) => {}
-                        }
-                    }
-                    self.visit_node(init.initializer);
+            NodeKind::InitializerList(list) => {
+                for i in 0..list.init_len {
+                    let item_ref = NodeRef::new(list.init_start.get() + i as u32).unwrap();
+                    self.visit_node(item_ref);
                 }
+                None
+            }
+            NodeKind::InitializerItem(init) => {
+                for designator in &init.designation {
+                    match designator {
+                        Designator::ArrayIndex(expr_ref) => {
+                            self.visit_node(*expr_ref);
+                        }
+                        Designator::GnuArrayRange(start_ref, end_ref) => {
+                            self.visit_node(*start_ref);
+                            self.visit_node(*end_ref);
+                        }
+                        Designator::FieldName(_) => {}
+                    }
+                }
+                self.visit_node(init.initializer);
                 None
             }
             _ => None,
@@ -825,10 +847,12 @@ impl<'a> SemanticAnalyzer<'a> {
             | NodeKind::EnumMember(_)
             | NodeKind::TypedefDecl(_)
             | NodeKind::EnumConstant(..)
+            | NodeKind::Param(_)
             | NodeKind::FunctionDecl(_) => self.visit_declaration_node(node_ref, node_kind),
 
             // Statements
             NodeKind::CompoundStatement(_)
+            | NodeKind::BlockItem(_)
             | NodeKind::If(_)
             | NodeKind::While(_)
             | NodeKind::DoWhile(..)

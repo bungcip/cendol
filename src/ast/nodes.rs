@@ -58,7 +58,8 @@ pub enum NodeKind {
     VaArg(NodeRef /* va_list_expr */, TypeRef), // va_arg macro expansion
 
     // --- Statements (Complex statements are separate structs) ---
-    CompoundStatement(Vec<NodeRef> /* block items */),
+    CompoundStatement(CompoundStmtData),
+    BlockItem(NodeRef),
     If(IfStmt),
     While(WhileStmt),
     DoWhile(NodeRef /* body */, NodeRef /* condition */),
@@ -97,15 +98,183 @@ pub enum NodeKind {
     EnumDecl(EnumDeclData),
     EnumMember(EnumMemberData),
     Function(FunctionData),
+    Param(ParamData),
 
     // --- Top Level ---
-    TranslationUnit(Vec<NodeRef> /* top-level declarations */),
+    TranslationUnit(TranslationUnitData),
 
     // --- InitializerList ---
-    InitializerList(Vec<DesignatedInitializer>),
+    InitializerList(InitializerListData),
+    InitializerItem(DesignatedInitializer),
 
     // --- Dummy Node ---
     Dummy,
+}
+
+impl NodeKind {
+    pub fn visit_children<F: FnMut(NodeRef)>(&self, mut f: F) {
+        match self {
+            NodeKind::LiteralInt(_)
+            | NodeKind::LiteralFloat(_)
+            | NodeKind::LiteralString(_)
+            | NodeKind::LiteralChar(_)
+            | NodeKind::Ident(..)
+            | NodeKind::SizeOfType(_)
+            | NodeKind::AlignOf(_)
+            | NodeKind::Break
+            | NodeKind::Continue
+            | NodeKind::Goto(..)
+            | NodeKind::TypedefDecl(_)
+            | NodeKind::FieldDecl(_)
+            | NodeKind::EnumMember(_)
+            | NodeKind::Param(_)
+            | NodeKind::Dummy => {}
+
+            NodeKind::UnaryOp(_, child)
+            | NodeKind::PostIncrement(child)
+            | NodeKind::PostDecrement(child)
+            | NodeKind::CallArg(child)
+            | NodeKind::MemberAccess(child, ..)
+            | NodeKind::Cast(_, child)
+            | NodeKind::SizeOfExpr(child)
+            | NodeKind::CompoundLiteral(_, child)
+            | NodeKind::VaArg(child, _)
+            | NodeKind::BlockItem(child)
+            | NodeKind::Label(_, child, _)
+            | NodeKind::Default(child)
+            | NodeKind::StaticAssert(child, _) => f(*child),
+
+            NodeKind::BinaryOp(_, lhs, rhs)
+            | NodeKind::GnuStatementExpression(lhs, rhs)
+            | NodeKind::Assignment(_, lhs, rhs)
+            | NodeKind::IndexAccess(lhs, rhs)
+            | NodeKind::DoWhile(lhs, rhs)
+            | NodeKind::Switch(lhs, rhs)
+            | NodeKind::Case(lhs, rhs) => {
+                f(*lhs);
+                f(*rhs);
+            }
+
+            NodeKind::TernaryOp(c1, c2, c3) | NodeKind::CaseRange(c1, c2, c3) => {
+                f(*c1);
+                f(*c2);
+                f(*c3);
+            }
+
+            NodeKind::FunctionCall(call) => {
+                f(call.callee);
+                for i in 0..call.arg_len {
+                    f(NodeRef::new(call.arg_start.get() + i as u32).unwrap());
+                }
+            }
+
+            NodeKind::GenericSelection(gs) => {
+                f(gs.control);
+                for i in 0..gs.assoc_len {
+                    f(NodeRef::new(gs.assoc_start.get() + i as u32).unwrap());
+                }
+            }
+
+            NodeKind::GenericAssociation(ga) => {
+                f(ga.result_expr);
+            }
+
+            NodeKind::CompoundStatement(cs) => {
+                for i in 0..cs.stmt_len {
+                    f(NodeRef::new(cs.stmt_start.get() + i as u32).unwrap());
+                }
+            }
+
+            NodeKind::If(stmt) => {
+                f(stmt.condition);
+                f(stmt.then_branch);
+                if let Some(else_branch) = stmt.else_branch {
+                    f(else_branch);
+                }
+            }
+
+            NodeKind::While(stmt) => {
+                f(stmt.condition);
+                f(stmt.body);
+            }
+
+            NodeKind::For(stmt) => {
+                if let Some(init) = stmt.init {
+                    f(init);
+                }
+                if let Some(cond) = stmt.condition {
+                    f(cond);
+                }
+                if let Some(inc) = stmt.increment {
+                    f(inc);
+                }
+                f(stmt.body);
+            }
+
+            NodeKind::Return(expr) | NodeKind::ExpressionStatement(expr) | NodeKind::EnumConstant(_, expr) => {
+                if let Some(child) = expr {
+                    f(*child);
+                }
+            }
+
+            NodeKind::VarDecl(data) => {
+                if let Some(init) = data.init {
+                    f(init);
+                }
+            }
+
+            NodeKind::FunctionDecl(data) => {
+                if let Some(body) = data.body {
+                    f(body);
+                }
+            }
+
+            NodeKind::RecordDecl(data) => {
+                for i in 0..data.member_len {
+                    f(NodeRef::new(data.member_start.get() + i as u32).unwrap());
+                }
+            }
+
+            NodeKind::EnumDecl(data) => {
+                for i in 0..data.member_len {
+                    f(NodeRef::new(data.member_start.get() + i as u32).unwrap());
+                }
+            }
+
+            NodeKind::Function(data) => {
+                for i in 0..data.param_len {
+                    f(NodeRef::new(data.param_start.get() + i as u32).unwrap());
+                }
+                f(data.body);
+            }
+
+            NodeKind::TranslationUnit(data) => {
+                for i in 0..data.decl_len {
+                    f(NodeRef::new(data.decl_start.get() + i).unwrap());
+                }
+            }
+
+            NodeKind::InitializerList(data) => {
+                for i in 0..data.init_len {
+                    f(NodeRef::new(data.init_start.get() + i as u32).unwrap());
+                }
+            }
+
+            NodeKind::InitializerItem(item) => {
+                for designator in &item.designation {
+                    match designator {
+                        Designator::ArrayIndex(idx) => f(*idx),
+                        Designator::GnuArrayRange(start, end) => {
+                            f(*start);
+                            f(*end);
+                        }
+                        Designator::FieldName(_) => {}
+                    }
+                }
+                f(item.initializer);
+            }
+        }
+    }
 }
 
 // Structs for Large/Indirect Variants (to keep NodeKind size small and cache-friendly)
@@ -134,16 +303,35 @@ pub struct ForStmt {
 }
 
 // Semantic node data structures (type-resolved)
-#[derive(Debug, Clone, Serialize)]
-pub struct FunctionData {
-    pub symbol: SymbolRef,
-    pub ty: TypeRef,            // function type, not the return type
-    pub params: Vec<ParamDecl>, // normalized params
-    pub body: NodeRef,          // compound statement
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct CompoundStmtData {
+    pub stmt_start: NodeRef,
+    pub stmt_len: u16,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct TranslationUnitData {
+    pub decl_start: NodeRef,
+    pub decl_len: u32,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct InitializerListData {
+    pub init_start: NodeRef,
+    pub init_len: u16,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct ParamDecl {
+pub struct FunctionData {
+    pub symbol: SymbolRef,
+    pub ty: TypeRef, // function type, not the return type
+    pub param_start: NodeRef,
+    pub param_len: u16,
+    pub body: NodeRef, // compound statement
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ParamData {
     pub symbol: SymbolRef,
     pub ty: QualType,
 }
@@ -298,16 +486,6 @@ impl BinaryOp {
         )
     }
 }
-
-// Function specifiers
-bitflags::bitflags! {
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
-    pub struct FunctionSpecifiers: u8 {
-        const INLINE = 1 << 0;
-        const NORETURN = 1 << 1; // C11 _Noreturn
-    }
-}
-
 // Array sizes
 #[derive(Debug, Clone, Serialize)]
 pub enum ArraySize {
@@ -324,13 +502,6 @@ pub enum ArraySize {
         qualifiers: TypeQualifiers,
         size: Option<NodeRef>,
     }, // for VLA
-}
-
-// Initializers
-#[derive(Debug, Clone, Serialize)]
-pub enum Initializer {
-    Expression(NodeRef),              // = 5
-    List(Vec<DesignatedInitializer>), // = { .x = 1, [0] = 2 }
 }
 
 #[derive(Debug, Clone, Serialize)]

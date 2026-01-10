@@ -2,6 +2,7 @@ use crate::{
     ast::{BinaryOp, NameId, ParsedType, SourceSpan, UnaryOp},
     semantic::TypeQualifiers,
 };
+use serde::Serialize;
 use std::num::NonZeroU32;
 use thin_vec::ThinVec;
 
@@ -180,7 +181,7 @@ pub struct ParsedFunctionDefData {
 pub enum ParsedDeclSpecifier {
     StorageClass(crate::ast::nodes::StorageClass),
     TypeQualifier(crate::ast::nodes::TypeQualifier),
-    FunctionSpecifiers(crate::ast::nodes::FunctionSpecifiers),
+    FunctionSpecifiers(FunctionSpecifiers),
     AlignmentSpecifier(ParsedAlignmentSpecifier),
     TypeSpecifier(ParsedTypeSpecifier),
     Attribute,
@@ -295,3 +296,12 @@ pub enum ParsedDesignatedInitializerDesignator {
 
 // Renaming alias for compatibility while refactoring
 pub type ParsedDesignator = ParsedDesignatedInitializerDesignator;
+
+// Function specifiers
+bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
+    pub struct FunctionSpecifiers: u8 {
+        const INLINE = 1 << 0;
+        const NORETURN = 1 << 1; // C11 _Noreturn
+    }
+}

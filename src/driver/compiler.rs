@@ -221,6 +221,20 @@ impl CompilerDriver {
             }
         }
 
+        #[cfg(debug_assertions)]
+        for (i, kind) in ast.kinds.iter().enumerate() {
+            let parent_idx = i + 1;
+            kind.visit_children(|child| {
+                let child_idx = child.get() as usize;
+                if child_idx <= parent_idx {
+                    panic!(
+                        "ICE: AST invariant violation: parent index ({}) >= child index ({}) for node {:?}",
+                        parent_idx, child_idx, kind
+                    );
+                }
+            });
+        }
+
         Ok((ast, symbol_table, registry))
     }
 
@@ -230,61 +244,6 @@ impl CompilerDriver {
         symbol_table: SymbolTable,
         mut registry: TypeRegistry,
     ) -> Result<SemaOutput, PipelineError> {
-        let unresolved_idents: Vec<(usize, crate::ast::NameId, crate::ast::SourceSpan)> = Vec::new();
-        let unresolved_gotos: Vec<(usize, crate::ast::NameId, crate::ast::SourceSpan)> = Vec::new();
-        let unresolved_labels: Vec<(usize, crate::ast::NameId, crate::ast::SourceSpan)> = Vec::new();
-
-        if !unresolved_idents.is_empty() || !unresolved_gotos.is_empty() || !unresolved_labels.is_empty() {
-            eprintln!("Unresolved identifiers (index, name, span start):");
-            // ... printing code same as before ...
-            for (i, name, span) in &unresolved_idents {
-                let scope_opt = ast.get_scope_map().get(*i).and_then(|x| *x);
-                let scope_str = match scope_opt {
-                    Some(s) => s.get().to_string(),
-                    None => "<none>".to_string(),
-                };
-                eprintln!(
-                    "  ident idx={} name={:?} pos={:?} scope={}",
-                    i,
-                    name,
-                    self.source_manager.get_line_column(span.start()),
-                    scope_str
-                );
-            }
-            for (i, name, span) in &unresolved_gotos {
-                // ...
-                let scope_opt = ast.get_scope_map().get(*i).and_then(|x| *x);
-                let scope_str = match scope_opt {
-                    Some(s) => s.get().to_string(),
-                    None => "<none>".to_string(),
-                };
-                eprintln!(
-                    "  goto  idx={} name={:?} pos={:?} scope={}",
-                    i,
-                    name,
-                    self.source_manager.get_line_column(span.start()),
-                    scope_str
-                );
-            }
-            for (i, name, span) in &unresolved_labels {
-                // ...
-                let scope_opt = ast.get_scope_map().get(*i).and_then(|x| *x);
-                let scope_str = match scope_opt {
-                    Some(s) => s.get().to_string(),
-                    None => "<none>".to_string(),
-                };
-                eprintln!(
-                    "  label idx={} name={:?} pos={:?} scope={}",
-                    i,
-                    name,
-                    self.source_manager.get_line_column(span.start()),
-                    scope_str
-                );
-            }
-
-            panic!("ICE: unresolved name bindings found");
-        }
-
         use crate::semantic::analyzer::run_semantic_analyzer;
         let semantic_info = run_semantic_analyzer(&ast, &mut self.diagnostics, &symbol_table, &mut registry);
         self.check_diagnostics_and_return_if_error()?;

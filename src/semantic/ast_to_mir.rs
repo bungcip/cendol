@@ -91,7 +91,7 @@ impl<'a> AstToMirLowerer<'a> {
         let node_span = self.ast.get_span(node_ref);
 
         match node_kind {
-            NodeKind::TranslationUnit(nodes) => {
+            NodeKind::TranslationUnit(tu_data) => {
                 // Ensure all global functions (including declarations) have a MIR representation.
                 // This is done before traversing the AST to ensure that function calls
                 // can be resolved even if the function is defined later in the file or is external.
@@ -155,13 +155,15 @@ impl<'a> AstToMirLowerer<'a> {
                         }
                     }
                 }
-                for child_ref in nodes {
+                for i in 0..tu_data.decl_len {
+                    let child_ref = NodeRef::new(tu_data.decl_start.get() + i).expect("NodeRef overflow");
                     self.lower_node_ref(child_ref, ScopeId::GLOBAL);
                 }
             }
             NodeKind::Function(function_data) => self.lower_function(node_ref, &function_data),
             NodeKind::VarDecl(var_decl) => self.lower_var_declaration(scope_id, &var_decl, node_span),
-            NodeKind::CompoundStatement(nodes) => self.lower_compound_statement(node_ref, &nodes),
+            NodeKind::CompoundStatement(cs) => self.lower_compound_statement(node_ref, &cs),
+            NodeKind::BlockItem(_) => {} // Handled within CompoundStatement
             _ => self.try_lower_as_statement(scope_id, node_ref),
         }
     }
@@ -179,21 +181,12 @@ impl<'a> AstToMirLowerer<'a> {
                 self.lower_expression(scope_id, expr_ref, false);
             }
             NodeKind::Break => {
-                if let Some(target) = self.break_target {
-                    self.mir_builder.set_terminator(Terminator::Goto(target));
-                } else {
-                    // This should be caught by semantic analysis as a compile error
-                    // For now, we'll just panic as this indicates a bug in the analyzer
-                    panic!("Break statement outside of loop or switch");
-                }
+                let target = self.break_target.unwrap();
+                self.mir_builder.set_terminator(Terminator::Goto(target));
             }
             NodeKind::Continue => {
-                if let Some(target) = self.continue_target {
-                    self.mir_builder.set_terminator(Terminator::Goto(target));
-                } else {
-                    // This should be caught by semantic analysis as a compile error
-                    panic!("Continue statement outside of loop");
-                }
+                let target = self.continue_target.unwrap();
+                self.mir_builder.set_terminator(Terminator::Goto(target));
             }
             NodeKind::Goto(label_name, _) => self.lower_goto_statement(&label_name),
             NodeKind::Label(label_name, statement, _) => self.lower_label_statement(scope_id, &label_name, statement),
@@ -204,7 +197,7 @@ impl<'a> AstToMirLowerer<'a> {
     fn lower_initializer_list(
         &mut self,
         scope_id: ScopeId,
-        inits: &[nodes::DesignatedInitializer],
+        list_data: &nodes::InitializerListData,
         members: &[StructMember],
         target_ty: QualType,
     ) -> Operand {
@@ -216,7 +209,12 @@ impl<'a> AstToMirLowerer<'a> {
         // initializer.
         let (_rec_size, _rec_align, field_layouts, _) = self.registry.get_record_layout(target_ty.ty());
 
-        for init in inits {
+        for i in 0..list_data.init_len {
+            let item_ref = NodeRef::new(list_data.init_start.get() + i as u32).unwrap();
+            let NodeKind::InitializerItem(init) = self.ast.get_kind(item_ref) else {
+                continue;
+            };
+            let init = init.clone();
             let field_idx = if let Some(designator) = init.designation.first() {
                 if let Designator::FieldName(name) = designator {
                     members.iter().position(|m| m.name == Some(*name)).unwrap()
@@ -283,13 +281,17 @@ impl<'a> AstToMirLowerer<'a> {
     fn lower_array_initializer(
         &mut self,
         scope_id: ScopeId,
-        inits: &[nodes::DesignatedInitializer],
+        list_data: &nodes::InitializerListData,
         element_ty: QualType,
         _size: usize,
         target_ty: QualType,
     ) -> Operand {
         let mut elements = Vec::new();
-        for init in inits {
+        for i in 0..list_data.init_len {
+            let item_ref = NodeRef::new(list_data.init_start.get() + i as u32).unwrap();
+            let NodeKind::InitializerItem(init) = self.ast.get_kind(item_ref) else {
+                continue;
+            };
             // For now, only sequential initialization is supported.
             // Designators for arrays are ignored for now to keep it simple.
             let operand = self.lower_initializer(scope_id, init.initializer, element_ty);
@@ -372,13 +374,13 @@ impl<'a> AstToMirLowerer<'a> {
         let target_ty_kind = self.registry.get(target_ty.ty()).kind.clone();
 
         match (init_node_kind, target_ty_kind) {
-            (NodeKind::InitializerList(inits), TypeKind::Record { members, .. }) => {
-                self.lower_initializer_list(scope_id, &inits, &members, target_ty)
+            (NodeKind::InitializerList(list), TypeKind::Record { members, .. }) => {
+                self.lower_initializer_list(scope_id, &list, &members, target_ty)
             }
-            (NodeKind::InitializerList(inits), TypeKind::Array { element_type, size }) => {
+            (NodeKind::InitializerList(list), TypeKind::Array { element_type, size }) => {
                 let element_ty = QualType::unqualified(element_type);
                 let array_size = if let ArraySizeType::Constant(s) = size { s } else { 0 };
-                self.lower_array_initializer(scope_id, &inits, element_ty, array_size, target_ty)
+                self.lower_array_initializer(scope_id, &list, element_ty, array_size, target_ty)
             }
             _ => {
                 // It's a simple expression initializer.
@@ -389,9 +391,15 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn lower_compound_statement(&mut self, node_ref: NodeRef, nodes: &[NodeRef]) {
+    fn lower_compound_statement(&mut self, node_ref: NodeRef, cs: &nodes::CompoundStmtData) {
         let scope_id = self.ast.scope_of(node_ref);
-        for &stmt_ref in nodes.iter() {
+        for i in 0..cs.stmt_len {
+            let item_ref = NodeRef::new(cs.stmt_start.get() + i as u32).unwrap();
+            let NodeKind::BlockItem(stmt_ref) = self.ast.get_kind(item_ref) else {
+                continue;
+            };
+            let stmt_ref = *stmt_ref;
+
             if self.mir_builder.current_block_has_terminator() {
                 let next_node_kind = self.ast.get_kind(stmt_ref);
                 if let NodeKind::Label(..) = next_node_kind {
@@ -437,8 +445,13 @@ impl<'a> AstToMirLowerer<'a> {
         // map the SymbolRef to the LocalId.
         let scope_id = self.ast.scope_of(node_ref);
         let mir_function = self.mir_builder.get_functions().get(&func_id).unwrap().clone();
-        for (param_decl, local_id) in function_data.params.iter().zip(mir_function.params.iter()) {
-            self.local_map.insert(param_decl.symbol, *local_id);
+
+        for i in 0..function_data.param_len {
+            let param_ref = NodeRef::new(function_data.param_start.get() + i as u32).unwrap();
+            if let NodeKind::Param(param_data) = self.ast.get_kind(param_ref) {
+                let local_id = mir_function.params[i as usize];
+                self.local_map.insert(param_data.symbol, local_id);
+            }
         }
 
         self.lower_node_ref(function_data.body, scope_id);
@@ -657,17 +670,15 @@ impl<'a> AstToMirLowerer<'a> {
                 // Skip for now.
                 Operand::Constant(self.create_constant(ConstValue::Int(0)))
             }
-            NodeKind::InitializerList(_inits) => {
-                // Should be lowered in context of assignment usually, but if used as rvalue?
-                // It's not valid C expression except in compound literal.
-                // If here, maybe extension?
-                Operand::Constant(self.create_constant(ConstValue::Int(0)))
-            }
             NodeKind::Cast(_ty, operand_ref) => {
                 let operand = self.lower_expression(scope_id, *operand_ref, true);
                 Operand::Cast(mir_ty, Box::new(operand))
             }
             NodeKind::CompoundLiteral(ty, init_ref) => self.lower_compound_literal(scope_id, *ty, *init_ref),
+            NodeKind::InitializerList(_) | NodeKind::InitializerItem(_) => {
+                // Should be lowered in context of assignment usually.
+                Operand::Constant(self.create_constant(ConstValue::Int(0)))
+            }
             _ => Operand::Constant(self.create_constant(ConstValue::Int(0))),
         }
     }
@@ -1848,9 +1859,12 @@ impl<'a> AstToMirLowerer<'a> {
                 }
                 self.scan_for_labels(inner_stmt);
             }
-            NodeKind::CompoundStatement(items) => {
-                for &item in &items {
-                    self.scan_for_labels(item);
+            NodeKind::CompoundStatement(cs) => {
+                for i in 0..cs.stmt_len {
+                    let item_ref = NodeRef::new(cs.stmt_start.get() + i as u32).unwrap();
+                    if let NodeKind::BlockItem(stmt_ref) = self.ast.get_kind(item_ref) {
+                        self.scan_for_labels(*stmt_ref);
+                    }
                 }
             }
             // Add other statement types that can contain labels, like loops and conditionals

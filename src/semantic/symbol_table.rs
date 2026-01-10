@@ -33,7 +33,6 @@ pub struct Symbol {
     pub name: NameId,
     pub kind: SymbolKind, // e.g., Variable, Function, Typedef
     pub type_info: TypeRef,
-    #[allow(unused)]
     pub scope_id: ScopeId, // Reference to the scope where it's defined
     pub def_span: SourceSpan,
     pub def_state: DefinitionState,

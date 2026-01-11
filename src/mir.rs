@@ -300,16 +300,12 @@ pub enum MirType {
         is_union: bool,
         layout: MirRecordLayout,
     },
-    Enum {
-        name: NameId,
-        variants: Vec<(NameId, i64)>,
-    },
 }
 impl MirType {
     pub fn is_signed(&self) -> bool {
         match self {
             MirType::I8 | MirType::I16 | MirType::I32 | MirType::I64 => true,
-            MirType::Enum { .. } => true, // Enums are generally treated as signed
+
             _ => false,
         }
     }
@@ -956,7 +952,6 @@ impl fmt::Display for MirType {
                 let kind = if *is_union { "union" } else { "struct" };
                 write!(f, "{} {} {{ {:?} }}", kind, name, fields)
             }
-            MirType::Enum { name, variants } => write!(f, "enum {} {{ {:?} }}", name, variants),
         }
     }
 }

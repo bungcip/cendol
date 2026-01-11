@@ -511,9 +511,7 @@ impl MirValidator {
                 let from_ty = self.validate_operand(sema_output, op);
                 if let (Some(from), true) = (from_ty, sema_output.types.contains_key(type_id)) {
                     // basic invalid cast check: disallow casts from record/array/enum/function to non-pointer/scalar types
-                    if let Some(MirType::Record { .. } | MirType::Array { .. } | MirType::Enum { .. }) =
-                        sema_output.types.get(&from)
-                    {
+                    if let Some(MirType::Record { .. } | MirType::Array { .. }) = sema_output.types.get(&from) {
                         if let Some(MirType::Pointer { .. }) = sema_output.types.get(type_id) {
                             // pointer casts allowed
                             // pointer casts allowed

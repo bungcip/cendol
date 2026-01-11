@@ -56,7 +56,6 @@ fn convert_type(mir_type: &MirType) -> Option<Type> {
         MirType::Array { .. } => Some(types::I32), // Arrays - need element type context
         MirType::Record { .. } => Some(types::I32), // Records - need field context
         MirType::Function { .. } => Some(types::I64), // Function pointers
-        MirType::Enum { .. } => Some(types::I32),  // Enums as integers
     }
 }
 

@@ -200,13 +200,6 @@ impl<'a> MirDumper<'a> {
                 let kind = if *is_union { "union" } else { "struct" };
                 format!("type {} = {} {} {{ {} }}", type_name, kind, name, field_strs.join(", "))
             }
-            MirType::Enum { name, variants } => {
-                let variant_strs: Vec<String> = variants
-                    .iter()
-                    .map(|(vname, val)| format!("{} = {}", vname, val))
-                    .collect();
-                format!("type {} = enum {} {{ {} }}", type_name, name, variant_strs.join(", "))
-            }
         }
     }
 
@@ -367,13 +360,6 @@ impl<'a> MirDumper<'a> {
                 MirType::Record { .. } => {
                     // For aggregate types, use the type ID to keep output concise
                     format!("%t{}", type_index)
-                }
-                MirType::Enum { name, variants } => {
-                    let variant_strs: Vec<String> = variants
-                        .iter()
-                        .map(|(vname, val)| format!("{} = {}", vname, val))
-                        .collect();
-                    format!("enum {} {{ {} }}", name, variant_strs.join(", "))
                 }
             }
         } else {

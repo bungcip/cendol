@@ -107,4 +107,21 @@ fn rejects_invalid_lvalue_assignments() {
         5,
         13,
     );
+
+    // Assignment to a function identifier (which is a non-modifiable lvalue)
+    let driver = run_fail(
+        r#"
+        void my_func() {}
+        int main() {
+            my_func = 1;
+        }
+    "#,
+        CompilePhase::Mir,
+    );
+    check_diagnostic(
+        &driver,
+        "Expression is not assignable (lvalue is a function)",
+        4,
+        13,
+    );
 }

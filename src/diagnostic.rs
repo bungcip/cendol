@@ -187,6 +187,8 @@ pub enum SemanticError {
     },
     #[error("Expression is not assignable (not an lvalue)")]
     NotAnLvalue { span: SourceSpan },
+    #[error("Expression is not assignable (lvalue is {reason})")]
+    NotModifiableLvalue { reason: &'static str, span: SourceSpan },
     #[error("Invalid operands for binary operation: have '{left_ty}' and '{right_ty}'")]
     InvalidBinaryOperands {
         left_ty: String,
@@ -247,6 +249,7 @@ impl SemanticError {
             SemanticError::Redefinition { span, .. } => *span,
             SemanticError::TypeMismatch { span, .. } => *span,
             SemanticError::NotAnLvalue { span } => *span,
+            SemanticError::NotModifiableLvalue { span, .. } => *span,
             SemanticError::InvalidBinaryOperands { span, .. } => *span,
             SemanticError::InvalidUnaryOperand { span, .. } => *span,
             SemanticError::NonConstantInitializer { span } => *span,

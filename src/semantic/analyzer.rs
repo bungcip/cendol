@@ -117,6 +117,39 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
+    fn is_modifiable_lvalue(&self, node_ref: NodeRef, ty: QualType) -> Result<(), &'static str> {
+        // Must be an l-value to be a modifiable l-value.
+        if !self.is_lvalue(node_ref) {
+            return Err("not an lvalue");
+        }
+
+        // C11 6.3.2.1p1: A modifiable lvalue is an lvalue that does not have array type,
+        // does not have an incomplete type, and does not have a const-qualified type.
+        if ty.is_array() {
+            return Err("an array");
+        }
+        if ty.is_function() {
+            return Err("a function");
+        }
+        if ty.is_const() {
+            return Err("const-qualified");
+        }
+        if !self.registry.is_complete(ty.ty()) {
+            return Err("an incomplete type");
+        }
+
+        // C11 6.3.2.1p1: ...and if it is a structure or union, does not have any member
+        // (including, recursively, any member of all contained structures or unions)
+        // with a const-qualified type.
+        if ty.is_record() {
+            // NOTE: This check is incomplete. A full recursive check of members
+            // for const qualifiers is required for full C11 compliance.
+            // For now, we only check the top-level const qualifier on the type itself.
+        }
+
+        Ok(())
+    }
+
     fn is_null_pointer_constant(&self, node_ref: NodeRef) -> bool {
         let node_kind = self.ast.get_kind(node_ref);
         match node_kind {
@@ -210,8 +243,12 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
             UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
-                if !self.is_lvalue(operand_ref) {
-                    self.report_error(SemanticError::NotAnLvalue { span: full_span });
+                if let Err(reason) = self.is_modifiable_lvalue(operand_ref, operand_ty) {
+                    if reason == "not an lvalue" {
+                        self.report_error(SemanticError::NotAnLvalue { span: full_span });
+                    } else {
+                        self.report_error(SemanticError::NotModifiableLvalue { reason, span: full_span });
+                    }
                 }
                 if operand_ty.is_scalar() { Some(operand_ty) } else { None }
             }
@@ -377,8 +414,12 @@ impl<'a> SemanticAnalyzer<'a> {
         let lhs_ty = self.visit_node(lhs_ref)?;
         let rhs_ty = self.visit_node(rhs_ref)?;
 
-        if !self.is_lvalue(lhs_ref) {
-            self.report_error(SemanticError::NotAnLvalue { span: full_span });
+        if let Err(reason) = self.is_modifiable_lvalue(lhs_ref, lhs_ty) {
+            if reason == "not an lvalue" {
+                self.report_error(SemanticError::NotAnLvalue { span: full_span });
+            } else {
+                self.report_error(SemanticError::NotModifiableLvalue { reason, span: full_span });
+            }
         }
 
         // Check assignment constraints (C11 6.5.16.1)
@@ -884,9 +925,15 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::PostIncrement(expr) | NodeKind::PostDecrement(expr) => {
                 let ty = self.visit_node(*expr);
-                if !self.is_lvalue(*expr) {
-                    let span = self.ast.get_span(node_ref);
-                    self.report_error(SemanticError::NotAnLvalue { span });
+                if let Some(ty) = ty {
+                    if let Err(reason) = self.is_modifiable_lvalue(*expr, ty) {
+                        let span = self.ast.get_span(node_ref);
+                        if reason == "not an lvalue" {
+                            self.report_error(SemanticError::NotAnLvalue { span });
+                        } else {
+                            self.report_error(SemanticError::NotModifiableLvalue { reason, span });
+                        }
+                    }
                 }
                 ty
             }

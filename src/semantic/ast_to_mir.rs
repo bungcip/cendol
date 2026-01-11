@@ -1213,14 +1213,25 @@ impl<'a> AstToMirLowerer<'a> {
                 if i < param_types_vec.len() {
                     param_types_vec[i]
                 } else {
-                    // For variadic arguments, use the argument's own type
-                    arg_mir_ty
+                    // For variadic arguments, perform default argument promotions
+                    // Array decays to pointer
+                    if let MirType::Array { element, .. } = self.mir_builder.get_type(arg_mir_ty) {
+                        self.mir_builder.add_type(MirType::Pointer { pointee: *element })
+                    } else {
+                        arg_mir_ty
+                    }
                 }
             } else {
-                arg_mir_ty
+                // For unprototyped functions, also perform default argument promotions
+                if let MirType::Array { element, .. } = self.mir_builder.get_type(arg_mir_ty) {
+                    self.mir_builder.add_type(MirType::Pointer { pointee: *element })
+                } else {
+                    arg_mir_ty
+                }
             };
 
             let converted_arg = self.apply_conversions(arg_operand, arg_ref, target_mir_ty);
+
             arg_operands.push(converted_arg);
         }
 

@@ -653,34 +653,34 @@ mod tests {
         fn main() -> i32
         {
           locals {
-            %4: i8
-            %5: u8
-            %6: i16
-            %7: u16
-            %8: i32
-            %9: u32
-            %10: i64
-            %11: u64
-            %12: i64
-            %13: u64
-            %14: f32
-            %15: f64
+            %1: i8
+            %2: u8
+            %3: i16
+            %4: u16
+            %5: i32
+            %6: u32
+            %7: i64
+            %8: u64
+            %9: i64
+            %10: u64
+            %11: f32
+            %12: f64
           }
 
           bb14:
             call fn_void()
-            %4 = call fn_char()
-            %5 = call fn_uchar()
-            %6 = call fn_short()
-            %7 = call fn_ushort()
-            %8 = call fn_int()
-            %9 = call fn_uint()
-            %10 = call fn_long()
-            %11 = call fn_ulong()
-            %12 = call fn_llong()
-            %13 = call fn_ullong()
-            %14 = call fn_float()
-            %15 = call fn_double()
+            %1 = call fn_char()
+            %2 = call fn_uchar()
+            %3 = call fn_short()
+            %4 = call fn_ushort()
+            %5 = call fn_int()
+            %6 = call fn_uint()
+            %7 = call fn_long()
+            %8 = call fn_ulong()
+            %9 = call fn_llong()
+            %10 = call fn_ullong()
+            %11 = call fn_float()
+            %12 = call fn_double()
             return const 0
         }
 
@@ -728,24 +728,16 @@ mod tests {
 
         fn fn_short() -> i16
         {
-          locals {
-            %1: i32
-          }
 
           bb4:
-            %1 = - const 7
-            return cast<i16>(%1)
+            return cast<i16>(const -7)
         }
 
         fn fn_int() -> i32
         {
-          locals {
-            %2: i32
-          }
 
           bb6:
-            %2 = - const 1
-            return %2
+            return const -1
         }
 
         fn fn_float() -> f32
@@ -757,13 +749,9 @@ mod tests {
 
         fn fn_llong() -> i64
         {
-          locals {
-            %3: i32
-          }
 
           bb10:
-            %3 = - const 3000000000
-            return cast<i64>(%3)
+            return cast<i64>(const -3000000000)
         }
 
         fn fn_long() -> i64
@@ -1036,7 +1024,7 @@ mod tests {
           }
 
           bb1:
-            %2 = call printf(cast<ptr<i8>>(const @.L.str0), const 42, const @.L.str1)
+            %2 = call printf(cast<ptr<i8>>(const @.L.str0), const 42, cast<ptr<i8>>(const @.L.str1))
             return %2
         }
 

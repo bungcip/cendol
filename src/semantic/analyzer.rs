@@ -489,9 +489,18 @@ impl<'a> SemanticAnalyzer<'a> {
                     // to the types of the corresponding parameters... The ellipsis notation in a function
                     // prototype declarator causes argument type conversion to stop after the last declared
                     // parameter. The default argument promotions are performed on trailing arguments."
-                    if let Some(actual_arg_ty) = arg_ty {
+                    if let Some(mut actual_arg_ty) = arg_ty {
+                        // Explicitly handle array/function decay for variadic arguments first
+                        if actual_arg_ty.is_array() || actual_arg_ty.is_function() {
+                            self.semantic_info.conversions[arg_node_ref.index()].push(ImplicitConversion::PointerDecay);
+                            actual_arg_ty = self.registry.decay(actual_arg_ty);
+                        }
+
                         let promoted_ty =
                             crate::semantic::conversions::default_argument_promotions(self.registry, actual_arg_ty);
+
+                        // Only record additional conversions if promotion actually changed the type
+                        // (Note: record_implicit_conversions handles IntegerCast/PointerCast etc)
                         if promoted_ty.ty() != actual_arg_ty.ty() {
                             self.record_implicit_conversions(promoted_ty, actual_arg_ty, arg_node_ref);
                         }

@@ -2,7 +2,7 @@
 #define _STDIO_H
 
 #define NULL 0
-#define EOF (-1)
+#define EOF -1
 
 typedef unsigned long size_t;
 

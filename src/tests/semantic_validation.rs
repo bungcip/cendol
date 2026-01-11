@@ -167,3 +167,23 @@ fn test_static_assert_logical() {
         CompilePhase::Mir,
     );
 }
+
+#[test]
+fn test_const_eval_negative_numbers() {
+    run_pass(
+        r#"
+        _Static_assert(-1 < 0, "Negative one should be less than zero");
+        _Static_assert(-1 == -1, "Negative one should equal negative one");
+        _Static_assert(0 - 1 == -1, "Subtraction should yield negative");
+        _Static_assert(+1 == 1, "Unary plus should work");
+        
+        // Bitwise not: ~0 is -1 (in 2s complement)
+        _Static_assert(~0 == -1, "Bitwise not of zero should be -1");
+        
+        int main() {
+            return 0;
+        }
+    "#,
+        CompilePhase::Mir,
+    );
+}

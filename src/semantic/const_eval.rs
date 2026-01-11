@@ -47,6 +47,9 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
             let operand_val = eval_const_expr(ctx, *operand_ref)?;
             match op {
                 UnaryOp::LogicNot => Some((operand_val == 0) as i64),
+                UnaryOp::Plus => Some(operand_val),
+                UnaryOp::Minus => Some(operand_val.wrapping_neg()),
+                UnaryOp::BitNot => Some(!operand_val),
                 _ => None,
             }
         }

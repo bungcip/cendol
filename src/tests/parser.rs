@@ -1821,3 +1821,15 @@ fn test_ambiguous_compound_statement_with_typedef() {
             - name: x
     "#);
 }
+#[test]
+fn test_void_pointer_param() {
+    let resolved = setup_declaration("void* memcpy(void* dest, const void* src, unsigned long n);");
+    insta::assert_yaml_snapshot!(&resolved, @r#"
+    Declaration:
+      specifiers:
+        - void
+      init_declarators:
+        - name: memcpy
+          kind: "pointer to function(void pointer, void pointer, unsigned long) -> int"
+    "#);
+}

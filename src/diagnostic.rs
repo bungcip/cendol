@@ -214,6 +214,14 @@ pub enum SemanticError {
     // Errors related to declaration specifiers
     #[error("conflicting storage class specifiers")]
     ConflictingStorageClasses { span: SourceSpan },
+    #[error("member reference base type '{ty}' is not a structure or union")]
+    MemberAccessOnNonRecord { ty: String, span: SourceSpan },
+    #[error("no member named '{name}' in '{ty}'")]
+    MemberNotFound {
+        name: NameId,
+        ty: String,
+        span: SourceSpan,
+    },
     #[error("expected a typedef name, found {found}")]
     ExpectedTypedefName { found: String, span: SourceSpan },
     #[error("missing type specifier in declaration")]
@@ -252,6 +260,8 @@ impl SemanticError {
             SemanticError::InvalidBitfieldWidth { span } => *span,
             SemanticError::NonConstantBitfieldWidth { span } => *span,
             SemanticError::ConflictingStorageClasses { span } => *span,
+            SemanticError::MemberAccessOnNonRecord { span, .. } => *span,
+            SemanticError::MemberNotFound { span, .. } => *span,
             SemanticError::ExpectedTypedefName { span, .. } => *span,
             SemanticError::MissingTypeSpecifier { span } => *span,
             SemanticError::StaticAssertFailed { span, .. } => *span,

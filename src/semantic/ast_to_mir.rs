@@ -380,6 +380,22 @@ impl<'a> AstToMirLowerer<'a> {
                 let array_size = if let ArraySizeType::Constant(s) = size { s } else { 0 };
                 self.lower_array_initializer(scope_id, &list, element_ty, array_size, target_ty)
             }
+            (NodeKind::LiteralString(val), TypeKind::Array { element_type, size }) => {
+                let element_ty_kind = &self.registry.get(element_type).kind;
+                if matches!(element_ty_kind, TypeKind::Char { .. }) {
+                    let fixed_size = if let ArraySizeType::Constant(s) = size {
+                        Some(s)
+                    } else {
+                        None
+                    };
+                    let array_const_id = self.create_string_array_const(&val, fixed_size);
+                    Operand::Constant(array_const_id)
+                } else {
+                    let operand = self.lower_expression(scope_id, init_ref, true);
+                    let mir_target_ty = self.lower_type_to_mir(target_ty.ty());
+                    self.apply_conversions(operand, init_ref, mir_target_ty)
+                }
+            }
             _ => {
                 // It's a simple expression initializer.
                 let operand = self.lower_expression(scope_id, init_ref, true);
@@ -750,27 +766,34 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
+    fn create_string_array_const(&mut self, val: &NameId, fixed_size: Option<usize>) -> ConstValueId {
+        let string_content = val.as_str();
+        let mut char_constants = Vec::new();
+        let bytes = string_content.as_bytes();
+
+        if let Some(size) = fixed_size {
+            for i in 0..size {
+                let byte_val = if i < bytes.len() { bytes[i] } else { 0 };
+                let char_const = ConstValue::Int(byte_val as i64);
+                char_constants.push(self.create_constant(char_const));
+            }
+        } else {
+            for &byte in bytes {
+                let char_const = ConstValue::Int(byte as i64);
+                char_constants.push(self.create_constant(char_const));
+            }
+            let null_const = ConstValue::Int(0);
+            char_constants.push(self.create_constant(null_const));
+        }
+
+        let array_const = ConstValue::ArrayLiteral(char_constants);
+        self.create_constant(array_const)
+    }
+
     fn lower_literal_string(&mut self, val: &NameId, ty: &QualType) -> Operand {
         let string_type = self.lower_type_to_mir(ty.ty());
 
-        // Convert string literal to array of character constants
-        let string_content = val.as_str();
-        let mut char_constants = Vec::new();
-
-        // Add each character as a constant, including null terminator
-        for &byte in string_content.as_bytes() {
-            let char_const = ConstValue::Int(byte as i64);
-            let char_const_id = self.create_constant(char_const);
-            char_constants.push(char_const_id);
-        }
-
-        // Add null terminator
-        let null_const = ConstValue::Int(0);
-        let null_const_id = self.create_constant(null_const);
-        char_constants.push(null_const_id);
-
-        let array_const = ConstValue::ArrayLiteral(char_constants);
-        let array_const_id = self.create_constant(array_const);
+        let array_const_id = self.create_string_array_const(val, None);
 
         let global_name = self.mir_builder.get_next_anonymous_global_name();
         let global_id = self

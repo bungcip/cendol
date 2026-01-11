@@ -307,6 +307,7 @@ pub struct Preprocessor<'src> {
     // State
     include_depth: usize,
     max_include_depth: usize,
+    counter: u32,
 }
 
 /// Preprocessor errors
@@ -444,10 +445,18 @@ impl<'src> Preprocessor<'src> {
             include_depth: 0,
             max_include_depth: config.max_include_depth,
             target: config.target.clone(),
+            counter: 0,
         };
 
         preprocessor.initialize_builtin_macros();
         preprocessor
+    }
+
+    /// Get the next value for __COUNTER__
+    fn get_next_counter(&mut self) -> u32 {
+        let val = self.counter;
+        self.counter += 1;
+        val
     }
 
     /// Initialize built-in macros
@@ -764,6 +773,16 @@ impl<'src> Preprocessor<'src> {
                                 PPTokenFlags::empty(),
                                 token.location,
                                 filename.len() as u16,
+                            ));
+                        } else if sym_str == "__COUNTER__" {
+                            let val = self.get_next_counter();
+                            let val_str = val.to_string();
+                            let val_symbol = StringId::new(&val_str);
+                            result_tokens.push(PPToken::new(
+                                PPTokenKind::Number(val_symbol),
+                                PPTokenFlags::empty(),
+                                token.location,
+                                val_str.len() as u16,
                             ));
                         } else if sym_str == "_Pragma" {
                             self.handle_pragma_operator()?;
@@ -2419,6 +2438,20 @@ impl<'src> Preprocessor<'src> {
                         PPTokenFlags::empty(),
                         token.location,
                         line_str.len() as u16,
+                    );
+                    tokens[i] = number_token;
+                    i += 1;
+                    continue;
+                }
+                PPTokenKind::Identifier(symbol) if symbol.as_str() == "__COUNTER__" => {
+                    let val = self.get_next_counter();
+                    let val_str = val.to_string();
+                    let val_symbol = StringId::new(&val_str);
+                    let number_token = PPToken::new(
+                        PPTokenKind::Number(val_symbol),
+                        PPTokenFlags::empty(),
+                        token.location,
+                        val_str.len() as u16,
                     );
                     tokens[i] = number_token;
                     i += 1;

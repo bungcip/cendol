@@ -888,21 +888,18 @@ impl<'a> AstToMirLowerer<'a> {
             let lhs_mir = self.mir_builder.get_type(lhs_mir_ty);
             let rhs_mir = self.mir_builder.get_type(rhs_mir_ty);
 
-            match (lhs_mir, rhs_mir) {
-                (MirType::Int { width: w1, .. }, MirType::Int { width: w2, .. }) => {
-                    if w1 > w2 {
-                        rhs = Operand::Cast(lhs_mir_ty, Box::new(rhs));
-                    } else if w2 > w1 {
-                        lhs = Operand::Cast(rhs_mir_ty, Box::new(lhs));
-                    }
-                }
-                (MirType::Pointer { .. }, MirType::Int { .. }) => {
+            if lhs_mir.is_int() && rhs_mir.is_int() {
+                let w1 = lhs_mir.width();
+                let w2 = rhs_mir.width();
+                if w1 > w2 {
                     rhs = Operand::Cast(lhs_mir_ty, Box::new(rhs));
-                }
-                (MirType::Int { .. }, MirType::Pointer { .. }) => {
+                } else if w2 > w1 {
                     lhs = Operand::Cast(rhs_mir_ty, Box::new(lhs));
                 }
-                _ => {} // Fallback for floats etc if needed
+            } else if lhs_mir.is_pointer() && rhs_mir.is_int() {
+                rhs = Operand::Cast(lhs_mir_ty, Box::new(rhs));
+            } else if lhs_mir.is_int() && rhs_mir.is_pointer() {
+                lhs = Operand::Cast(rhs_mir_ty, Box::new(lhs));
             }
         }
         (lhs, rhs)
@@ -974,7 +971,7 @@ impl<'a> AstToMirLowerer<'a> {
             Operand::Constant(_) => {
                 if let Some(ty) = self.ast.get_resolved_type(node_ref) {
                     let mir_type_id = self.lower_type_to_mir(ty.ty());
-                    if let MirType::Int { width: 32, .. } = self.mir_builder.get_type(mir_type_id) {
+                    if let MirType::I32 = self.mir_builder.get_type(mir_type_id) {
                         Operand::Cast(mir_type_id, Box::new(operand))
                     } else {
                         Operand::Cast(mir_type_id, Box::new(operand))
@@ -1573,29 +1570,39 @@ impl<'a> AstToMirLowerer<'a> {
         let mir_type = match &ast_type_kind {
             TypeKind::Void => MirType::Void,
             TypeKind::Bool => MirType::Bool,
-            TypeKind::Char { is_signed } => MirType::Int {
-                is_signed: *is_signed,
-                width: 8,
-            },
-            TypeKind::Short { is_signed } => MirType::Int {
-                is_signed: *is_signed,
-                width: 16,
-            },
-            TypeKind::Int { is_signed } => MirType::Int {
-                is_signed: *is_signed,
-                width: 32,
-            },
+            TypeKind::Char { is_signed } => {
+                if *is_signed {
+                    MirType::I8
+                } else {
+                    MirType::U8
+                }
+            }
+            TypeKind::Short { is_signed } => {
+                if *is_signed {
+                    MirType::I16
+                } else {
+                    MirType::U16
+                }
+            }
+            TypeKind::Int { is_signed } => {
+                if *is_signed {
+                    MirType::I32
+                } else {
+                    MirType::U32
+                }
+            }
             TypeKind::Long {
                 is_signed,
                 is_long_long: _,
-            } => MirType::Int {
-                is_signed: *is_signed,
-                width: 64, // Always 64-bit for now (LP64 model)
-            },
-            TypeKind::Float => MirType::Float { width: 32 },
-            TypeKind::Double { is_long_double } => MirType::Float {
-                width: if *is_long_double { 80 } else { 64 },
-            },
+            } => {
+                if *is_signed {
+                    MirType::I64
+                } else {
+                    MirType::U64
+                }
+            }
+            TypeKind::Float => MirType::F32,
+            TypeKind::Double { .. } => MirType::F64,
             TypeKind::Pointer { pointee } => MirType::Pointer {
                 pointee: self.lower_type_to_mir(*pointee),
             },
@@ -1661,10 +1668,7 @@ impl<'a> AstToMirLowerer<'a> {
                     },
                 }
             }
-            _ => MirType::Int {
-                is_signed: true,
-                width: 32,
-            },
+            _ => MirType::I32,
         };
 
         // Remove from in-progress set
@@ -1815,10 +1819,7 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn get_int_type(&mut self) -> TypeId {
-        self.mir_builder.add_type(MirType::Int {
-            is_signed: true,
-            width: 32,
-        })
+        self.mir_builder.add_type(MirType::I32)
     }
 
     fn create_temp_local(&mut self, type_id: TypeId) -> (LocalId, Place) {

@@ -252,7 +252,7 @@ impl MirValidator {
                         let _bool_ty = self.find_bool_type(sema_output);
                         let is_bool_or_int = |tid: TypeId| {
                             if let Some(ty) = sema_output.types.get(&tid) {
-                                matches!(ty, MirType::Bool | MirType::Int { .. })
+                                ty.is_int()
                             } else {
                                 false
                             }
@@ -516,10 +516,12 @@ impl MirValidator {
                     {
                         if let Some(MirType::Pointer { .. }) = sema_output.types.get(type_id) {
                             // pointer casts allowed
-                        } else if let MirType::Int { .. } | MirType::Float { .. } | MirType::Bool =
-                            sema_output.types.get(type_id).unwrap()
-                        {
-                            self.errors.push(ValidationError::InvalidCast(from, *type_id));
+                            // pointer casts allowed
+                        } else {
+                            let type_obj = sema_output.types.get(type_id).unwrap();
+                            if type_obj.is_int() || type_obj.is_float() {
+                                self.errors.push(ValidationError::InvalidCast(from, *type_id));
+                            }
                         }
                     }
                 }

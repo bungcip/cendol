@@ -157,11 +157,17 @@ impl<'a> MirDumper<'a> {
         match mir_type {
             MirType::Void => format!("type {} = void", type_name),
             MirType::Bool => format!("type {} = bool", type_name),
-            MirType::Int { is_signed, width } => {
-                let base_type = if *is_signed { "i" } else { "u" };
-                format!("type {} = {}{}", type_name, base_type, width)
-            }
-            MirType::Float { width } => format!("type {} = f{}", type_name, width),
+
+            MirType::I8 => format!("type {} = i8", type_name),
+            MirType::I16 => format!("type {} = i16", type_name),
+            MirType::I32 => format!("type {} = i32", type_name),
+            MirType::I64 => format!("type {} = i64", type_name),
+            MirType::U8 => format!("type {} = u8", type_name),
+            MirType::U16 => format!("type {} = u16", type_name),
+            MirType::U32 => format!("type {} = u32", type_name),
+            MirType::U64 => format!("type {} = u64", type_name),
+            MirType::F32 => format!("type {} = f32", type_name),
+            MirType::F64 => format!("type {} = f64", type_name),
             MirType::Pointer { pointee } => {
                 let pointee_index = self.get_type_index_from_type_id(*pointee);
                 format!("type {} = ptr<%t{}>", type_name, pointee_index)
@@ -334,10 +340,17 @@ impl<'a> MirDumper<'a> {
             match mir_type {
                 MirType::Void => "void".to_string(),
                 MirType::Bool => "bool".to_string(),
-                MirType::Int { is_signed, width } => {
-                    format!("{}{}", if *is_signed { "i" } else { "u" }, width)
-                }
-                MirType::Float { width } => format!("f{}", width),
+
+                MirType::I8 => "i8".to_string(),
+                MirType::I16 => "i16".to_string(),
+                MirType::I32 => "i32".to_string(),
+                MirType::I64 => "i64".to_string(),
+                MirType::U8 => "u8".to_string(),
+                MirType::U16 => "u16".to_string(),
+                MirType::U32 => "u32".to_string(),
+                MirType::U64 => "u64".to_string(),
+                MirType::F32 => "f32".to_string(),
+                MirType::F64 => "f64".to_string(),
                 MirType::Pointer { pointee } => {
                     let pointee_type = self.type_to_string(*pointee);
                     format!("ptr<{}>", pointee_type)

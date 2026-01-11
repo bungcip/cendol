@@ -15,13 +15,7 @@ fn test_emit_const_struct_literal() {
     // 1. Setup Types
     let mut types = HashMap::new();
     let int_type_id = TypeId::new(1).unwrap();
-    types.insert(
-        int_type_id,
-        MirType::Int {
-            width: 32,
-            is_signed: true,
-        },
-    );
+    types.insert(int_type_id, MirType::I32);
 
     let struct_type_id = TypeId::new(2).unwrap();
     let record_layout = MirRecordLayout {
@@ -84,13 +78,7 @@ fn test_store_statement_lowering() {
     let mut types = HashMap::new();
     let int_type_id = TypeId::new(1).unwrap();
     let void_type_id = TypeId::new(2).unwrap();
-    types.insert(
-        int_type_id,
-        MirType::Int {
-            width: 32,
-            is_signed: true,
-        },
-    );
+    types.insert(int_type_id, MirType::I32);
     types.insert(void_type_id, MirType::Void);
 
     let mut constants = HashMap::new();
@@ -167,13 +155,7 @@ fn test_store_deref_pointer() {
     let int_type_id = TypeId::new(1).unwrap();
     let ptr_type_id = TypeId::new(2).unwrap();
     let void_type_id = TypeId::new(3).unwrap();
-    types.insert(
-        int_type_id,
-        MirType::Int {
-            width: 32,
-            is_signed: true,
-        },
-    );
+    types.insert(int_type_id, MirType::I32);
     types.insert(ptr_type_id, MirType::Pointer { pointee: int_type_id });
     types.insert(void_type_id, MirType::Void);
 
@@ -392,13 +374,7 @@ fn test_alloc_dealloc_codegen() {
     let int_type_id = TypeId::new(1).unwrap();
     let ptr_type_id = TypeId::new(2).unwrap();
     let void_type_id = TypeId::new(3).unwrap();
-    types.insert(
-        int_type_id,
-        MirType::Int {
-            width: 32,
-            is_signed: true,
-        },
-    );
+    types.insert(int_type_id, MirType::I32);
     types.insert(ptr_type_id, MirType::Pointer { pointee: int_type_id });
     types.insert(void_type_id, MirType::Void);
 
@@ -497,13 +473,7 @@ mod tests {
         // Setup Types
         let mut types = HashMap::new();
         let int_type_id = TypeId::new(1).unwrap();
-        types.insert(
-            int_type_id,
-            MirType::Int {
-                width: 32,
-                is_signed: true,
-            },
-        );
+        types.insert(int_type_id, MirType::I32);
 
         // fn(i32) -> i32
         let func_type_id = TypeId::new(2).unwrap();

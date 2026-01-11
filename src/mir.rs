@@ -271,13 +271,17 @@ pub enum UnaryFloatOp {
 pub enum MirType {
     Void,
     Bool,
-    Int {
-        is_signed: bool,
-        width: u8,
-    },
-    Float {
-        width: u8,
-    },
+
+    I8,
+    I16,
+    I32,
+    I64,
+    U8,
+    U16,
+    U32,
+    U64,
+    F32,
+    F64,
     Pointer {
         pointee: TypeId,
     },
@@ -304,7 +308,7 @@ pub enum MirType {
 impl MirType {
     pub fn is_signed(&self) -> bool {
         match self {
-            MirType::Int { is_signed, .. } => *is_signed,
+            MirType::I8 | MirType::I16 | MirType::I32 | MirType::I64 => true,
             MirType::Enum { .. } => true, // Enums are generally treated as signed
             _ => false,
         }
@@ -315,11 +319,33 @@ impl MirType {
     }
 
     pub fn is_float(&self) -> bool {
-        matches!(self, MirType::Float { .. })
+        matches!(self, MirType::F32 | MirType::F64)
     }
 
     pub fn is_int(&self) -> bool {
-        matches!(self, MirType::Int { .. } | MirType::Bool)
+        matches!(
+            self,
+            MirType::I8
+                | MirType::I16
+                | MirType::I32
+                | MirType::I64
+                | MirType::U8
+                | MirType::U16
+                | MirType::U32
+                | MirType::U64
+                | MirType::Bool
+        )
+    }
+
+    pub fn width(&self) -> u32 {
+        match self {
+            MirType::I8 | MirType::U8 | MirType::Bool => 8,
+            MirType::I16 | MirType::U16 => 16,
+            MirType::I32 | MirType::U32 | MirType::F32 => 32,
+            MirType::I64 | MirType::U64 | MirType::F64 => 64,
+            MirType::Pointer { .. } => 64, // Assume 64-bit pointers
+            _ => 0,                        // Others have no intrinsic "width" in this context
+        }
     }
 }
 
@@ -910,8 +936,17 @@ impl fmt::Display for MirType {
         match self {
             MirType::Void => write!(f, "void"),
             MirType::Bool => write!(f, "bool"),
-            MirType::Int { is_signed, width } => write!(f, "{}{}", if *is_signed { "i" } else { "u" }, width),
-            MirType::Float { width } => write!(f, "f{}", width),
+
+            MirType::I8 => write!(f, "i8"),
+            MirType::I16 => write!(f, "i16"),
+            MirType::I32 => write!(f, "i32"),
+            MirType::I64 => write!(f, "i64"),
+            MirType::U8 => write!(f, "u8"),
+            MirType::U16 => write!(f, "u16"),
+            MirType::U32 => write!(f, "u32"),
+            MirType::U64 => write!(f, "u64"),
+            MirType::F32 => write!(f, "f32"),
+            MirType::F64 => write!(f, "f64"),
             MirType::Pointer { pointee } => write!(f, "*{}", pointee.get()),
             MirType::Array { element, size, .. } => write!(f, "[{}]{}", size, element.get()),
             MirType::Function { return_type, params } => write!(f, "fn({:?}) -> {}", params, return_type.get()),

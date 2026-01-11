@@ -43,36 +43,33 @@ pub enum ClifOutput {
 fn convert_type(mir_type: &MirType) -> Option<Type> {
     match mir_type {
         MirType::Void => None,
-        MirType::Int { width, is_signed: _ } => {
-            match width {
-                8 => Some(types::I8),
-                16 => Some(types::I16),
-                32 => Some(types::I32),
-                64 => Some(types::I64),
-                _ => Some(types::I32), // Default to 32-bit
-            }
-        }
-        MirType::Float { width } => {
-            match width {
-                32 => Some(types::F32),
-                64 => Some(types::F64),
-                _ => Some(types::F32), // Default to 32-bit float
-            }
-        }
+        MirType::Bool => Some(types::I8), // Booleans as i8 (standard C)
+
+        MirType::I8 | MirType::U8 => Some(types::I8),
+        MirType::I16 | MirType::U16 => Some(types::I16),
+        MirType::I32 | MirType::U32 => Some(types::I32),
+        MirType::I64 | MirType::U64 => Some(types::I64),
+        MirType::F32 => Some(types::F32),
+        MirType::F64 => Some(types::F64),
         MirType::Pointer { .. } => Some(types::I64), // Pointers are 64-bit on most modern systems
-        MirType::Bool => Some(types::I32),           // Booleans as 32-bit integers
-        MirType::Array { .. } => Some(types::I32),   // Arrays - need element type context
-        MirType::Record { .. } => Some(types::I32),  // Records - need field context
+
+        MirType::Array { .. } => Some(types::I32), // Arrays - need element type context
+        MirType::Record { .. } => Some(types::I32), // Records - need field context
         MirType::Function { .. } => Some(types::I64), // Function pointers
-        MirType::Enum { .. } => Some(types::I32),    // Enums as integers
+        MirType::Enum { .. } => Some(types::I32),  // Enums as integers
     }
 }
 
 /// Helper function to get the size of a MIR type in bytes
 pub(crate) fn mir_type_size(mir_type: &MirType, _mir: &SemaOutput) -> Result<u32, String> {
     match mir_type {
-        MirType::Int { width, .. } => Ok((*width / 8) as u32),
-        MirType::Float { width } => Ok((*width / 8) as u32),
+        MirType::I8 | MirType::U8 => Ok(1),
+        MirType::I16 | MirType::U16 => Ok(2),
+        MirType::I32 | MirType::U32 => Ok(4),
+        MirType::I64 | MirType::U64 => Ok(8),
+        MirType::F32 => Ok(4),
+        MirType::F64 => Ok(8),
+
         MirType::Pointer { .. } => Ok(8), // Assuming 64-bit pointers for now
         MirType::Array { layout, .. } => Ok(layout.size as u32),
         MirType::Record { layout, .. } => Ok(layout.size as u32),
@@ -91,17 +88,22 @@ pub(crate) fn get_type_layout(mir_type: &MirType, _mir: &SemaOutput) -> Result<M
 /// Helper to emit integer constants
 fn emit_const_int(val: i64, layout: &MirType, output: &mut Vec<u8>) -> Result<(), String> {
     match layout {
-        MirType::Int { width, .. } => match width {
-            8 | 16 | 32 | 64 => {
-                let bytes = val.to_le_bytes();
-                let size = (width / 8) as usize;
-                output.extend_from_slice(&bytes[0..size]);
-            }
-            _ => {
-                let bytes = (val as i32).to_le_bytes();
-                output.extend_from_slice(&bytes);
-            }
-        },
+        MirType::I8 | MirType::U8 => {
+            let bytes = (val as i8).to_le_bytes();
+            output.extend_from_slice(&bytes);
+        }
+        MirType::I16 | MirType::U16 => {
+            let bytes = (val as i16).to_le_bytes();
+            output.extend_from_slice(&bytes);
+        }
+        MirType::I32 | MirType::U32 => {
+            let bytes = (val as i32).to_le_bytes();
+            output.extend_from_slice(&bytes);
+        }
+        MirType::I64 | MirType::U64 => {
+            let bytes = val.to_le_bytes();
+            output.extend_from_slice(&bytes);
+        }
         MirType::Bool => {
             let byte = if val != 0 { 1u8 } else { 0u8 };
             output.push(byte);
@@ -121,20 +123,14 @@ fn emit_const_int(val: i64, layout: &MirType, output: &mut Vec<u8>) -> Result<()
 /// Helper to emit float constants
 fn emit_const_float(val: f64, layout: &MirType, output: &mut Vec<u8>) -> Result<(), String> {
     match layout {
-        MirType::Float { width } => match width {
-            32 => {
-                let bytes = (val as f32).to_bits().to_le_bytes();
-                output.extend_from_slice(&bytes);
-            }
-            64 => {
-                let bytes = val.to_bits().to_le_bytes();
-                output.extend_from_slice(&bytes);
-            }
-            _ => {
-                let bytes = (val as f32).to_bits().to_le_bytes();
-                output.extend_from_slice(&bytes);
-            }
-        },
+        MirType::F32 => {
+            let bytes = (val as f32).to_bits().to_le_bytes();
+            output.extend_from_slice(&bytes);
+        }
+        MirType::F64 => {
+            let bytes = val.to_bits().to_le_bytes();
+            output.extend_from_slice(&bytes);
+        }
         _ => {
             let bytes = val.to_bits().to_le_bytes();
             output.extend_from_slice(&bytes);
@@ -820,22 +816,16 @@ fn get_operand_cranelift_type(operand: &Operand, mir: &SemaOutput) -> Result<Typ
 fn is_operand_signed(operand: &Operand, mir: &SemaOutput) -> bool {
     match operand {
         Operand::Copy(place) => {
-            if let Ok(type_id) = get_place_type_id(place, mir)
-                && let MirType::Int { is_signed, .. } = mir.get_type(type_id)
-            {
-                return *is_signed;
+            if let Ok(type_id) = get_place_type_id(place, mir) {
+                return mir.get_type(type_id).is_signed();
             }
         }
         Operand::Cast(type_id, _) => {
-            if let MirType::Int { is_signed, .. } = mir.get_type(*type_id) {
-                return *is_signed;
-            }
+            return mir.get_type(*type_id).is_signed();
         }
         Operand::Constant(const_id) => {
-            if let Some(ConstValue::Cast(type_id, _)) = mir.constants.get(const_id)
-                && let MirType::Int { is_signed, .. } = mir.get_type(*type_id)
-            {
-                return *is_signed;
+            if let Some(ConstValue::Cast(type_id, _)) = mir.constants.get(const_id) {
+                return mir.get_type(*type_id).is_signed();
             }
             // Default to signed for integer constants
             return true;

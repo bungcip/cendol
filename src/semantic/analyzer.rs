@@ -582,7 +582,13 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn visit_member_access(&mut self, obj_ref: NodeRef, field_name: NameId, is_arrow: bool) -> Option<QualType> {
+    fn visit_member_access(
+        &mut self,
+        obj_ref: NodeRef,
+        field_name: NameId,
+        is_arrow: bool,
+        span: SourceSpan,
+    ) -> Option<QualType> {
         let obj_ty = self.visit_node(obj_ref)?;
 
         let record_ty_ref = if is_arrow {
@@ -621,11 +627,23 @@ impl<'a> SemanticAnalyzer<'a> {
             None
         }
 
+        if !record_ty_ref.is_record() {
+            let ty_str = self.registry.get(record_ty_ref).kind.to_string();
+            self.report_error(SemanticError::MemberAccessOnNonRecord { ty: ty_str, span });
+            return None;
+        }
+
         if let Some(ty) = find_member(self.registry, record_ty_ref, field_name) {
             return Some(ty);
         }
 
-        None // Error: field not found or not a struct/union
+        let ty_str = self.registry.get(record_ty_ref).kind.to_string();
+        self.report_error(SemanticError::MemberNotFound {
+            name: field_name,
+            ty: ty_str,
+            span,
+        });
+        None
     }
 
     fn visit_index_access(&mut self, arr_ref: NodeRef, idx_ref: NodeRef) -> Option<QualType> {
@@ -877,7 +895,10 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_assignment(*op, *lhs, *rhs, span)
             }
             NodeKind::FunctionCall(call_expr) => self.visit_function_call(call_expr),
-            NodeKind::MemberAccess(obj, field_name, is_arrow) => self.visit_member_access(*obj, *field_name, *is_arrow),
+            NodeKind::MemberAccess(obj, field_name, is_arrow) => {
+                let span = self.ast.get_span(node_ref);
+                self.visit_member_access(*obj, *field_name, *is_arrow, span)
+            }
             NodeKind::IndexAccess(arr, idx) => self.visit_index_access(*arr, *idx),
             NodeKind::Cast(ty, expr) => {
                 self.visit_node(*expr);

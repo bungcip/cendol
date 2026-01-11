@@ -352,7 +352,7 @@ impl TypeRegistry {
     ) -> TypeRef {
         let key = FnSigKey {
             return_type,
-            params: params.iter().map(|p| p.param_type.ty()).collect(),
+            params: params.iter().map(|p| p.param_type).collect(),
             is_variadic,
         };
 
@@ -786,6 +786,6 @@ impl TypeRegistry {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct FnSigKey {
     return_type: TypeRef,
-    params: Vec<TypeRef>,
+    params: Vec<QualType>,
     is_variadic: bool,
 }

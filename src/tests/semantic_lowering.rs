@@ -1,10 +1,192 @@
 use super::semantic_common::setup_lowering;
-use crate::ast::NodeKind;
-use crate::semantic::TypeQualifiers;
+use crate::ast::{Ast, NodeKind, NodeRef};
+use crate::semantic::{QualType, SymbolTable, TypeQualifiers, TypeRegistry};
+use serde::Serialize;
+
+#[derive(Debug, Serialize)]
+enum ResolvedAstNode {
+    TranslationUnit(Vec<ResolvedAstNode>),
+    VarDecl {
+        name: String,
+        ty: String,
+        init: Option<Box<ResolvedAstNode>>,
+    },
+    RecordDecl {
+        name: String,
+        members: Vec<ResolvedAstNode>,
+    },
+    FieldDecl {
+        name: String,
+        ty: String,
+    },
+    EnumDecl {
+        name: String,
+        members: Vec<ResolvedAstNode>,
+    },
+    EnumMember {
+        name: String,
+        value: i64,
+    },
+    Function {
+        name: String,
+        body: Box<ResolvedAstNode>,
+    },
+    FunctionCall {
+        callee: Box<ResolvedAstNode>,
+        args: Vec<ResolvedAstNode>,
+    },
+    BinaryOp {
+        op: String,
+        lhs: Box<ResolvedAstNode>,
+        rhs: Box<ResolvedAstNode>,
+    },
+    CompoundStatement(Vec<ResolvedAstNode>),
+    Return(Option<Box<ResolvedAstNode>>),
+    LiteralInt(i64),
+    Ident(String),
+    // Fallback for nodes we haven't explicitly mapped yet
+    #[serde(untagged)]
+    Other(String),
+}
+
+fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, node_ref: NodeRef) -> ResolvedAstNode {
+    let kind = ast.get_kind(node_ref);
+    
+    match kind {
+        NodeKind::TranslationUnit(data) => {
+             let nodes = data.decl_start.range(data.decl_len)
+                 .map(|child_ref| resolve_node(ast, registry, symbol_table, child_ref))
+                 .collect();
+             ResolvedAstNode::TranslationUnit(nodes)
+        }
+        NodeKind::VarDecl(data) => {
+            ResolvedAstNode::VarDecl {
+                name: data.name.as_str().to_string(),
+                ty: display_qual_type(registry, data.ty),
+                init: data.init.map(|r| Box::new(resolve_node(ast, registry, symbol_table, r))),
+            }
+        }
+        NodeKind::RecordDecl(data) => {
+            let members = data.member_start.range(data.member_len)
+                .map(|child_ref| resolve_node(ast, registry, symbol_table, child_ref))
+                .collect();
+            ResolvedAstNode::RecordDecl {
+                name: data.name.map(|n| n.as_str().to_string()).unwrap_or_else(|| "<anon>".to_string()),
+                members,
+            }
+        }
+        NodeKind::FieldDecl(data) => {
+            ResolvedAstNode::FieldDecl {
+                name: data.name.map(|n| n.as_str().to_string()).unwrap_or_else(|| "<anon>".to_string()),
+                ty: display_qual_type(registry, data.ty),
+            }
+        }
+        NodeKind::EnumDecl(data) => {
+            let members = data.member_start.range(data.member_len)
+                .map(|child_ref| resolve_node(ast, registry, symbol_table, child_ref))
+                .collect();
+            ResolvedAstNode::EnumDecl {
+                name: data.name.map(|n| n.as_str().to_string()).unwrap_or_else(|| "<anon>".to_string()),
+                members,
+            }
+        }
+        NodeKind::EnumMember(data) => {
+            ResolvedAstNode::EnumMember {
+                name: data.name.as_str().to_string(),
+                value: data.value,
+            }
+        }
+        NodeKind::Function(data) => {
+            // Retrieve symbol from symbol table
+            // Since data.symbol is SymbolRef (private/opaque alias), we need to access via SymbolTable
+            // Wait, SymbolTable::get_symbol takes SymbolRef.
+            // But SymbolRef type inside src/ast.rs might be differentalias from src/semantic/symbol_table.rs?
+            // "pub use crate::semantic::{..., SymbolRef, ...};" in ast.rs
+            // So they are same.
+            
+            // Wait, SymbolRef is NonZeroU32.
+            let symbol = symbol_table.get_symbol(data.symbol);
+            ResolvedAstNode::Function {
+                name: symbol.name.as_str().to_string(),
+                body: Box::new(resolve_node(ast, registry, symbol_table, data.body)),
+            }
+        }
+        NodeKind::FunctionCall(call) => {
+            let args = call.arg_start.range(call.arg_len)
+                .map(|child_ref| resolve_node(ast, registry, symbol_table, child_ref))
+                .collect();
+            ResolvedAstNode::FunctionCall {
+                callee: Box::new(resolve_node(ast, registry, symbol_table, call.callee)),
+                args,
+            }
+        }
+        NodeKind::BinaryOp(op, lhs, rhs) => {
+            ResolvedAstNode::BinaryOp {
+                op: format!("{:?}", op),
+                lhs: Box::new(resolve_node(ast, registry, symbol_table, *lhs)),
+                rhs: Box::new(resolve_node(ast, registry, symbol_table, *rhs)),
+            }
+        }
+        NodeKind::CompoundStatement(data) => {
+            let stmts = data.stmt_start.range(data.stmt_len)
+                .map(|child_ref| resolve_node(ast, registry, symbol_table, child_ref))
+                .collect();
+            ResolvedAstNode::CompoundStatement(stmts)
+        }
+        NodeKind::Return(expr) => {
+            ResolvedAstNode::Return(expr.map(|r| Box::new(resolve_node(ast, registry, symbol_table, r))))
+        }
+        NodeKind::LiteralInt(val) => ResolvedAstNode::LiteralInt(*val),
+        NodeKind::Ident(name, _) => ResolvedAstNode::Ident(name.as_str().to_string()),
+        _ => ResolvedAstNode::Other(format!("{:?}", kind)),
+    }
+}
+
+fn display_qual_type(registry: &TypeRegistry, qt: QualType) -> String {
+    let mut s = String::new();
+    if qt.is_const() { s.push_str("const "); }
+    if qt.qualifiers().contains(TypeQualifiers::VOLATILE) { s.push_str("volatile "); }
+    if qt.qualifiers().contains(TypeQualifiers::RESTRICT) { s.push_str("restrict "); }
+    if qt.qualifiers().contains(TypeQualifiers::ATOMIC) { s.push_str("_Atomic "); }
+    
+    let ty_ref = qt.ty();
+    let type_cow = registry.get(ty_ref);
+    use crate::semantic::TypeKind;
+    let kind = &type_cow.kind;
+    
+    match kind {
+        TypeKind::Pointer { pointee } => {
+            // Recursively display pointee type
+            // Note: We strip qualifiers from pointee as TypeRef doesn't store them?
+            // This is a known ambiguity/limitation investigation point.
+            // For now, assume pointee is unqualified.
+            let pointee_qt = QualType::unqualified(*pointee);
+            let inner = display_qual_type(registry, pointee_qt);
+            s.push_str(&format!("{} *", inner));
+        }
+        _ => s.push_str(&format!("{}", kind)),
+    }
+    s.trim().to_string()
+}
+
+#[test]
+fn test_const_pointer_init() {
+    let (ast, registry, symbol_table) = setup_lowering("const int *p = 0;");
+    let root = ast.get_root();
+    let resolved = resolve_node(&ast, &registry, &symbol_table, root);
+    insta::assert_yaml_snapshot!(resolved, @r###"
+    TranslationUnit:
+      - VarDecl:
+          name: p
+          ty: const int *
+          init:
+            LiteralInt: 0
+    "###);
+}
 
 #[test]
 fn test_record_decl_members_populated() {
-    let (ast, _) = setup_lowering(
+    let (ast, registry, symbol_table) = setup_lowering(
         r#"
         struct Point {
             int x;
@@ -12,48 +194,25 @@ fn test_record_decl_members_populated() {
         };
     "#,
     );
-
-    // Find the RecordDecl node
-    let mut found_record_decl = false;
-    for kind in &ast.kinds {
-        if let NodeKind::RecordDecl(record_decl) = kind
-            && record_decl.name.map(|n| n.as_str()) == Some("Point")
-        {
-            found_record_decl = true;
-
-            // Assert that members are populated
-            assert_eq!(record_decl.member_len, 2, "RecordDecl should have 2 members");
-
-            let member_start_idx = record_decl.member_start.index();
-
-            // Check first member
-            let x_kind = &ast.kinds[member_start_idx];
-            if let NodeKind::FieldDecl(x) = x_kind {
-                assert_eq!(x.name.map(|n| n.as_str()), Some("x"));
-            } else {
-                panic!("Expected FieldDecl at index {}, found {:?}", member_start_idx, x_kind);
-            }
-
-            // Check second member
-            let y_kind = &ast.kinds[member_start_idx + 1];
-            if let NodeKind::FieldDecl(y) = y_kind {
-                assert_eq!(y.name.map(|n| n.as_str()), Some("y"));
-            } else {
-                panic!(
-                    "Expected FieldDecl at index {}, found {:?}",
-                    member_start_idx + 1,
-                    y_kind
-                );
-            }
-        }
-    }
-
-    assert!(found_record_decl, "Did not find RecordDecl for 'Point'");
+    let root = ast.get_root();
+    let resolved = resolve_node(&ast, &registry, &symbol_table, root);
+    insta::assert_yaml_snapshot!(resolved, @r###"
+    TranslationUnit:
+      - RecordDecl:
+          name: Point
+          members:
+            - FieldDecl:
+                name: x
+                ty: int
+            - FieldDecl:
+                name: y
+                ty: int
+    "###);
 }
 
 #[test]
 fn test_enum_decl_members_populated() {
-    let (ast, _) = setup_lowering(
+    let (ast, registry, symbol_table) = setup_lowering(
         r#"
         enum Color {
             RED,
@@ -63,54 +222,28 @@ fn test_enum_decl_members_populated() {
     "#,
     );
 
-    // Find the EnumDecl node
-    let mut found_enum_decl = false;
-    for kind in &ast.kinds {
-        if let NodeKind::EnumDecl(enum_decl) = kind
-            && enum_decl.name.map(|n| n.as_str()) == Some("Color")
-        {
-            found_enum_decl = true;
-
-            // Assert that members are populated
-            assert_eq!(enum_decl.member_len, 3, "EnumDecl should have 3 members");
-
-            let member_start_idx = enum_decl.member_start.index();
-
-            // Check first member RED
-            let red_kind = &ast.kinds[member_start_idx];
-            if let NodeKind::EnumMember(red) = red_kind {
-                assert_eq!(red.name.as_str(), "RED");
-                assert_eq!(red.value, 0);
-            } else {
-                panic!("Expected EnumMember at index {}", member_start_idx);
-            }
-
-            // Check second member GREEN
-            let green_kind = &ast.kinds[member_start_idx + 1];
-            if let NodeKind::EnumMember(green) = green_kind {
-                assert_eq!(green.name.as_str(), "GREEN");
-                assert_eq!(green.value, 1);
-            } else {
-                panic!("Expected EnumMember at index {}", member_start_idx + 1);
-            }
-
-            // Check third member BLUE
-            let blue_kind = &ast.kinds[member_start_idx + 2];
-            if let NodeKind::EnumMember(blue) = blue_kind {
-                assert_eq!(blue.name.as_str(), "BLUE");
-                assert_eq!(blue.value, 2);
-            } else {
-                panic!("Expected EnumMember at index {}", member_start_idx + 2);
-            }
-        }
-    }
-
-    assert!(found_enum_decl, "Did not find EnumDecl for 'Color'");
+    let root = ast.get_root();
+    let resolved = resolve_node(&ast, &registry, &symbol_table, root);
+    insta::assert_yaml_snapshot!(resolved, @r###"
+    TranslationUnit:
+      - EnumDecl:
+          name: Color
+          members:
+            - EnumMember:
+                name: RED
+                value: 0
+            - EnumMember:
+                name: GREEN
+                value: 1
+            - EnumMember:
+                name: BLUE
+                value: 2
+    "###);
 }
 
 #[test]
 fn test_struct_member_qualifiers_preserved() {
-    let (ast, _registry) = setup_lowering(
+    let (ast, registry, symbol_table) = setup_lowering(
         r#"
         struct S {
             const int x;
@@ -119,49 +252,25 @@ fn test_struct_member_qualifiers_preserved() {
     "#,
     );
 
-    // Find RecordDecl
-    let mut found = false;
-    for kind in &ast.kinds {
-        if let NodeKind::RecordDecl(decl) = kind
-            && decl.name.map(|n| n.as_str()) == Some("S")
-        {
-            found = true;
-            assert_eq!(decl.member_len, 2);
-
-            let member_start_idx = decl.member_start.index();
-
-            // Check first member x
-            let x_kind = &ast.kinds[member_start_idx];
-            if let NodeKind::FieldDecl(x_decl) = x_kind {
-                // We access the QualType directly from FieldDeclData
-                assert!(
-                    x_decl.ty.qualifiers().contains(TypeQualifiers::CONST),
-                    "Struct member 'x' should be const, but has qualifiers: {:?}",
-                    x_decl.ty.qualifiers()
-                );
-            } else {
-                panic!("Expected FieldDecl for x");
-            }
-
-            // Check second member y
-            let y_kind = &ast.kinds[member_start_idx + 1];
-            if let NodeKind::FieldDecl(y_decl) = y_kind {
-                assert!(
-                    y_decl.ty.qualifiers().contains(TypeQualifiers::VOLATILE),
-                    "Struct member 'y' should be volatile, but has qualifiers: {:?}",
-                    y_decl.ty.qualifiers()
-                );
-            } else {
-                panic!("Expected FieldDecl for y");
-            }
-        }
-    }
-    assert!(found, "Did not find RecordDecl for 'S'");
+    let root = ast.get_root();
+    let resolved = resolve_node(&ast, &registry, &symbol_table, root);
+    insta::assert_yaml_snapshot!(resolved, @r###"
+    TranslationUnit:
+      - RecordDecl:
+          name: S
+          members:
+            - FieldDecl:
+                name: x
+                ty: const int
+            - FieldDecl:
+                name: y
+                ty: volatile int *
+    "###);
 }
 
 #[test]
 fn test_function_call_args_contiguity() {
-    let (ast, _) = setup_lowering(
+    let (ast, registry, symbol_table) = setup_lowering(
         r#"
         int add(int a, int b) { return a + b; }
         int main() {
@@ -170,41 +279,36 @@ fn test_function_call_args_contiguity() {
     "#,
     );
 
-    let mut found_call = false;
-
-    // Iterate through all nodes to find the FunctionCall
-    for kind in &ast.kinds {
-        if let NodeKind::FunctionCall(call) = kind {
-            found_call = true;
-
-            // We expect 2 arguments
-            assert_eq!(call.arg_len, 2, "FunctionCall should have 2 arguments");
-
-            let arg_start_idx = call.arg_start.index();
-
-            // Check first argument: 1 + 2 (BinaryOp)
-            // Note: The BinaryOp node itself should be at arg_start_idx.
-            let first_arg = &ast.kinds[arg_start_idx];
-            if let NodeKind::BinaryOp(op, ..) = first_arg {
-                assert_eq!(*op, crate::ast::BinaryOp::Add, "First argument should be Add BinaryOp");
-            } else {
-                panic!("Expected BinaryOp at index {}, found {:?}", arg_start_idx, first_arg);
-            }
-
-            // Check second argument: 3 (LiteralInt)
-            // This node MUST be at arg_start_idx + 1 for contiguity to hold.
-            let second_arg = &ast.kinds[arg_start_idx + 1];
-            if let NodeKind::LiteralInt(val) = second_arg {
-                assert_eq!(*val, 3, "Second argument should be LiteralInt(3)");
-            } else {
-                panic!(
-                    "Expected LiteralInt at index {}, found {:?}",
-                    arg_start_idx + 1,
-                    second_arg
-                );
-            }
-        }
-    }
-
-    assert!(found_call, "Did not find FunctionCall node");
+    let root = ast.get_root();
+    let resolved = resolve_node(&ast, &registry, &symbol_table, root);
+    insta::assert_yaml_snapshot!(resolved, @r###"
+    TranslationUnit:
+      - Function:
+          name: add
+          body:
+            CompoundStatement:
+              - Return:
+                  BinaryOp:
+                    op: Add
+                    lhs:
+                      Ident: a
+                    rhs:
+                      Ident: b
+      - Function:
+          name: main
+          body:
+            CompoundStatement:
+              - Return:
+                  FunctionCall:
+                    callee:
+                      Ident: add
+                    args:
+                      - BinaryOp:
+                          op: Add
+                          lhs:
+                            LiteralInt: 1
+                          rhs:
+                            LiteralInt: 2
+                      - LiteralInt: 3
+    "###);
 }

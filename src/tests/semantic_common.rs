@@ -47,7 +47,7 @@ pub fn setup_mir(source: &str) -> String {
     dumper.generate_mir_dump().expect("Failed to generate MIR dump")
 }
 
-pub fn setup_lowering(source: &str) -> (Ast, TypeRegistry) {
+pub fn setup_lowering(source: &str) -> (Ast, TypeRegistry, crate::semantic::SymbolTable) {
     let (driver, result) = test_utils::run_pipeline(source, CompilePhase::SemanticLowering);
     let out = match result {
         Ok(out) => out,
@@ -58,6 +58,7 @@ pub fn setup_lowering(source: &str) -> (Ast, TypeRegistry) {
     (
         unit.ast.expect("No AST available"),
         unit.type_registry.expect("No TypeRegistry available"),
+        unit.symbol_table.expect("No SymbolTable available"),
     )
 }
 

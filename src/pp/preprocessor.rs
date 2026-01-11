@@ -361,7 +361,7 @@ pub enum PPError {
 }
 
 impl PPError {
-    pub fn span(&self) -> SourceSpan {
+    pub(crate) fn span(&self) -> SourceSpan {
         match self {
             PPError::InvalidMacroParameter { span } => *span,
             _ => SourceSpan::new(SourceLoc::builtin(), SourceLoc::builtin()),

@@ -19,7 +19,7 @@ pub struct SemanticInfo {
 }
 
 impl SemanticInfo {
-    pub fn with_capacity(n: usize) -> Self {
+    pub(crate) fn with_capacity(n: usize) -> Self {
         use smallvec::SmallVec;
         Self {
             types: vec![None; n],

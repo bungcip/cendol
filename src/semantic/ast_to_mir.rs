@@ -587,92 +587,19 @@ impl<'a> AstToMirLowerer<'a> {
             }
             NodeKind::IndexAccess(arr_ref, idx_ref) => self.lower_index_access(scope_id, *arr_ref, *idx_ref),
             NodeKind::TernaryOp(cond, then, else_expr) => {
-                let cond_op = self.lower_expression(scope_id, *cond, true);
-
-                let then_block = self.mir_builder.create_block();
-                let else_block = self.mir_builder.create_block();
-                let exit_block = self.mir_builder.create_block();
-
-                self.mir_builder
-                    .set_terminator(Terminator::If(cond_op, then_block, else_block));
-
-                // Result local
-                let result_local = self.mir_builder.create_local(None, mir_ty, false);
-
-                // Then
-                self.mir_builder.set_current_block(then_block);
-                let then_val = self.lower_expression(scope_id, *then, true);
-                let then_val_conv = self.apply_conversions(then_val, *then, mir_ty);
-                self.emit_assignment(Place::Local(result_local), then_val_conv);
-                self.mir_builder.set_terminator(Terminator::Goto(exit_block));
-
-                // Else
-                self.mir_builder.set_current_block(else_block);
-                let else_val = self.lower_expression(scope_id, *else_expr, true);
-                let else_val_conv = self.apply_conversions(else_val, *else_expr, mir_ty);
-                self.emit_assignment(Place::Local(result_local), else_val_conv);
-                self.mir_builder.set_terminator(Terminator::Goto(exit_block));
-
-                self.mir_builder.set_current_block(exit_block);
-
-                Operand::Copy(Box::new(Place::Local(result_local)))
+                self.lower_ternary_op(scope_id, *cond, *then, *else_expr, mir_ty)
             }
-            NodeKind::SizeOfExpr(expr) => {
-                let operand_ty = self
-                    .ast
-                    .get_resolved_type(*expr)
-                    .expect("SizeOf operand type missing")
-                    .ty();
-                let size = self.registry.get_layout(operand_ty).size;
-                Operand::Constant(self.create_constant(ConstValue::Int(size as i64)))
-            }
-            NodeKind::SizeOfType(ty) => {
-                let size = self.registry.get_layout(ty.ty()).size;
-                Operand::Constant(self.create_constant(ConstValue::Int(size as i64)))
-            }
-            NodeKind::AlignOf(ty) => {
-                let align = self.registry.get_layout(ty.ty()).alignment;
-                Operand::Constant(self.create_constant(ConstValue::Int(align as i64)))
-            }
-            NodeKind::GenericSelection(gs) => {
-                let ctrl_ty = self
-                    .ast
-                    .get_resolved_type(gs.control)
-                    .expect("Controlling expr type missing")
-                    .ty();
-                let unqualified_ctrl = self.registry.strip_all(QualType::unqualified(ctrl_ty));
-
-                let mut selected_expr = None;
-                let mut default_expr = None;
-
-                for assoc_node_ref in gs.assoc_start.range(gs.assoc_len) {
-                    if let NodeKind::GenericAssociation(ga) = self.ast.get_kind(assoc_node_ref) {
-                        if let Some(ty) = ga.ty {
-                            if self.registry.is_compatible(unqualified_ctrl, ty) {
-                                selected_expr = Some(ga.result_expr);
-                                break;
-                            }
-                        } else {
-                            default_expr = Some(ga.result_expr);
-                        }
-                    }
-                }
-
-                let expr_to_lower = selected_expr
-                    .or(default_expr)
-                    .expect("Generic selection failed (should be caught by Analyzer)");
-                self.lower_expression(scope_id, expr_to_lower, need_value)
-            }
+            NodeKind::SizeOfExpr(expr) => self.lower_sizeof_expr(*expr),
+            NodeKind::SizeOfType(ty) => self.lower_sizeof_type(ty),
+            NodeKind::AlignOf(ty) => self.lower_alignof_type(ty),
+            NodeKind::GenericSelection(gs) => self.lower_generic_selection(scope_id, gs, need_value),
             NodeKind::GnuStatementExpression(_stmt, _) => {
                 // Very Simplified: lower statement, if it sets result, use it.
                 // But statement lowering doesn't return operand.
                 // Skip for now.
                 Operand::Constant(self.create_constant(ConstValue::Int(0)))
             }
-            NodeKind::Cast(_ty, operand_ref) => {
-                let operand = self.lower_expression(scope_id, *operand_ref, true);
-                Operand::Cast(mir_ty, Box::new(operand))
-            }
+            NodeKind::Cast(_ty, operand_ref) => self.lower_cast(scope_id, *operand_ref, mir_ty),
             NodeKind::CompoundLiteral(ty, init_ref) => self.lower_compound_literal(scope_id, *ty, *init_ref),
             NodeKind::InitializerList(_) | NodeKind::InitializerItem(_) => {
                 // Should be lowered in context of assignment usually.
@@ -680,6 +607,105 @@ impl<'a> AstToMirLowerer<'a> {
             }
             _ => Operand::Constant(self.create_constant(ConstValue::Int(0))),
         }
+    }
+
+    fn lower_ternary_op(
+        &mut self,
+        scope_id: ScopeId,
+        cond: NodeRef,
+        then_expr: NodeRef,
+        else_expr: NodeRef,
+        mir_ty: TypeId,
+    ) -> Operand {
+        let cond_op = self.lower_expression(scope_id, cond, true);
+
+        let then_block = self.mir_builder.create_block();
+        let else_block = self.mir_builder.create_block();
+        let exit_block = self.mir_builder.create_block();
+
+        self.mir_builder
+            .set_terminator(Terminator::If(cond_op, then_block, else_block));
+
+        // Result local
+        let result_local = self.mir_builder.create_local(None, mir_ty, false);
+
+        // Then
+        self.mir_builder.set_current_block(then_block);
+        let then_val = self.lower_expression(scope_id, then_expr, true);
+        let then_val_conv = self.apply_conversions(then_val, then_expr, mir_ty);
+        self.emit_assignment(Place::Local(result_local), then_val_conv);
+        self.mir_builder.set_terminator(Terminator::Goto(exit_block));
+
+        // Else
+        self.mir_builder.set_current_block(else_block);
+        let else_val = self.lower_expression(scope_id, else_expr, true);
+        let else_val_conv = self.apply_conversions(else_val, else_expr, mir_ty);
+        self.emit_assignment(Place::Local(result_local), else_val_conv);
+        self.mir_builder.set_terminator(Terminator::Goto(exit_block));
+
+        self.mir_builder.set_current_block(exit_block);
+
+        Operand::Copy(Box::new(Place::Local(result_local)))
+    }
+
+    fn lower_sizeof_expr(&mut self, expr: NodeRef) -> Operand {
+        let operand_ty = self
+            .ast
+            .get_resolved_type(expr)
+            .expect("SizeOf operand type missing")
+            .ty();
+        let size = self.registry.get_layout(operand_ty).size;
+        Operand::Constant(self.create_constant(ConstValue::Int(size as i64)))
+    }
+
+    fn lower_sizeof_type(&mut self, ty: &QualType) -> Operand {
+        let size = self.registry.get_layout(ty.ty()).size;
+        Operand::Constant(self.create_constant(ConstValue::Int(size as i64)))
+    }
+
+    fn lower_alignof_type(&mut self, ty: &QualType) -> Operand {
+        let align = self.registry.get_layout(ty.ty()).alignment;
+        Operand::Constant(self.create_constant(ConstValue::Int(align as i64)))
+    }
+
+    fn lower_generic_selection(
+        &mut self,
+        scope_id: ScopeId,
+        gs: &nodes::GenericSelectionData,
+        need_value: bool,
+    ) -> Operand {
+        let ctrl_ty = self
+            .ast
+            .get_resolved_type(gs.control)
+            .expect("Controlling expr type missing")
+            .ty();
+        let unqualified_ctrl = self.registry.strip_all(QualType::unqualified(ctrl_ty));
+
+        let mut selected_expr = None;
+        let mut default_expr = None;
+
+        for assoc_node_ref in gs.assoc_start.range(gs.assoc_len) {
+            if let NodeKind::GenericAssociation(ga) = self.ast.get_kind(assoc_node_ref) {
+                if let Some(ty) = ga.ty {
+                    if self.registry.is_compatible(unqualified_ctrl, ty) {
+                        selected_expr = Some(ga.result_expr);
+                        break;
+                    }
+                } else {
+                    default_expr = Some(ga.result_expr);
+                }
+            }
+        }
+
+        let expr_to_lower = selected_expr
+            .or(default_expr)
+            .expect("Generic selection failed (should be caught by Analyzer)");
+        self.lower_expression(scope_id, expr_to_lower, need_value)
+    }
+
+    fn lower_cast(&mut self, scope_id: ScopeId, operand_ref: NodeRef, mir_ty: TypeId) -> Operand {
+        let operand = self.lower_expression(scope_id, operand_ref, true);
+        Operand::Cast(mir_ty, Box::new(operand))
     }
 
     fn lower_compound_literal(&mut self, scope_id: ScopeId, ty: QualType, init_ref: NodeRef) -> Operand {
@@ -841,6 +867,39 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
+    fn unify_binary_operands(
+        &mut self,
+        mut lhs: Operand,
+        mut rhs: Operand,
+        lhs_mir_ty: TypeId,
+        rhs_mir_ty: TypeId,
+    ) -> (Operand, Operand) {
+        if lhs_mir_ty != rhs_mir_ty {
+            // Unify to the larger type or just handle common cases.
+            // For now, if one is i64 and other is i32, promote i32 to i64.
+            let lhs_mir = self.mir_builder.get_type(lhs_mir_ty);
+            let rhs_mir = self.mir_builder.get_type(rhs_mir_ty);
+
+            match (lhs_mir, rhs_mir) {
+                (MirType::Int { width: w1, .. }, MirType::Int { width: w2, .. }) => {
+                    if w1 > w2 {
+                        rhs = Operand::Cast(lhs_mir_ty, Box::new(rhs));
+                    } else if w2 > w1 {
+                        lhs = Operand::Cast(rhs_mir_ty, Box::new(lhs));
+                    }
+                }
+                (MirType::Pointer { .. }, MirType::Int { .. }) => {
+                    rhs = Operand::Cast(lhs_mir_ty, Box::new(rhs));
+                }
+                (MirType::Int { .. }, MirType::Pointer { .. }) => {
+                    lhs = Operand::Cast(rhs_mir_ty, Box::new(lhs));
+                }
+                _ => {} // Fallback for floats etc if needed
+            }
+        }
+        (lhs, rhs)
+    }
+
     fn lower_binary_op_expr(
         &mut self,
         scope_id: ScopeId,
@@ -868,8 +927,8 @@ impl<'a> AstToMirLowerer<'a> {
         }
 
         // Apply implicit conversions from semantic info first to match AST
-        let mut lhs_converted = self.apply_conversions(lhs, left_ref, mir_ty);
-        let mut rhs_converted = self.apply_conversions(rhs, right_ref, mir_ty);
+        let lhs_converted = self.apply_conversions(lhs, left_ref, mir_ty);
+        let rhs_converted = self.apply_conversions(rhs, right_ref, mir_ty);
 
         // Ensure both operands have the same type for MIR operations.
         // Some operations like comparisons have mir_ty as i32 (the result),
@@ -877,29 +936,8 @@ impl<'a> AstToMirLowerer<'a> {
         let lhs_mir_ty = self.get_operand_type(&lhs_converted);
         let rhs_mir_ty = self.get_operand_type(&rhs_converted);
 
-        if lhs_mir_ty != rhs_mir_ty {
-            // Unify to the larger type or just handle common cases.
-            // For now, if one is i64 and other is i32, promote i32 to i64.
-            let lhs_mir = self.mir_builder.get_type(lhs_mir_ty);
-            let rhs_mir = self.mir_builder.get_type(rhs_mir_ty);
-
-            match (lhs_mir, rhs_mir) {
-                (MirType::Int { width: w1, .. }, MirType::Int { width: w2, .. }) => {
-                    if w1 > w2 {
-                        rhs_converted = Operand::Cast(lhs_mir_ty, Box::new(rhs_converted));
-                    } else if w2 > w1 {
-                        lhs_converted = Operand::Cast(rhs_mir_ty, Box::new(lhs_converted));
-                    }
-                }
-                (MirType::Pointer { .. }, MirType::Int { .. }) => {
-                    rhs_converted = Operand::Cast(lhs_mir_ty, Box::new(rhs_converted));
-                }
-                (MirType::Int { .. }, MirType::Pointer { .. }) => {
-                    lhs_converted = Operand::Cast(rhs_mir_ty, Box::new(lhs_converted));
-                }
-                _ => {} // Fallback for floats etc if needed
-            }
-        }
+        let (lhs_converted, rhs_converted) =
+            self.unify_binary_operands(lhs_converted, rhs_converted, lhs_mir_ty, rhs_mir_ty);
 
         let lhs_final = self.ensure_explicit_cast(lhs_converted, left_ref);
         let rhs_final = self.ensure_explicit_cast(rhs_converted, right_ref);

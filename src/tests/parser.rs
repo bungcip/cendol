@@ -63,8 +63,16 @@ enum ResolvedNodeKind {
         Option<Box<ResolvedNodeKind>>,
         Box<ResolvedNodeKind>,
     ), // For statement
-    Empty,                                  // Empty statement
-                                            // Add more as needed for tests
+    StaticAssert(Box<ResolvedNodeKind>, String),
+    CompoundLiteral(String, Box<ResolvedNodeKind>),
+    FunctionDef {
+        specifiers: Vec<String>,
+        declarator: Box<ResolvedInitDeclarator>,
+        body: Box<ResolvedNodeKind>,
+    },
+    TranslationUnit(Vec<ResolvedNodeKind>),
+    Empty, // Empty statement
+           // Add more as needed for tests
 }
 
 /// Simplified resolved generic association for testing
@@ -82,6 +90,71 @@ struct ResolvedInitDeclarator {
     kind: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     initializer: Option<ResolvedNodeKind>,
+}
+
+fn resolve_specifiers(ast: &ParsedAst, specifiers: &[ParsedDeclSpecifier]) -> Vec<String> {
+    specifiers
+        .iter()
+        .map(|s| match s {
+            ParsedDeclSpecifier::TypeSpecifier(ts) => match ts {
+                ParsedTypeSpecifier::Void => "void".to_string(),
+                ParsedTypeSpecifier::Bool => "_Bool".to_string(),
+                ParsedTypeSpecifier::Char => "char".to_string(),
+                ParsedTypeSpecifier::Short => "short".to_string(),
+                ParsedTypeSpecifier::Int => "int".to_string(),
+                ParsedTypeSpecifier::Long => "long".to_string(),
+                ParsedTypeSpecifier::Float => "float".to_string(),
+                ParsedTypeSpecifier::Double => "double".to_string(),
+                ParsedTypeSpecifier::Signed => "signed".to_string(),
+                ParsedTypeSpecifier::Unsigned => "unsigned".to_string(),
+                ParsedTypeSpecifier::Complex => "_Complex".to_string(),
+                ParsedTypeSpecifier::TypedefName(name) => format!("TypedefName({:?})", name.to_string()),
+                ParsedTypeSpecifier::Enum(tag, enumerators) => {
+                    let tag_str = tag.as_ref().map(|s| s.as_str()).unwrap_or("");
+                    if let Some(enums) = enumerators {
+                        let enum_parts: Vec<String> = enums
+                            .iter()
+                            .map(|&node_ref| match &ast.get_node(node_ref).kind {
+                                ParsedNodeKind::EnumConstant(name, Some(value_expr)) => {
+                                    let value = resolve_node(ast, *value_expr);
+                                    match value {
+                                        ResolvedNodeKind::LiteralInt(val) => format!("{} = {}", name, val),
+                                        _ => format!("{} = <expr>", name),
+                                    }
+                                }
+                                ParsedNodeKind::EnumConstant(name, None) => name.to_string(),
+                                _ => "<invalid>".to_string(),
+                            })
+                            .collect();
+                        format!("enum {} {{ {} }}", tag_str, enum_parts.join(", "))
+                    } else {
+                        format!("enum {}", tag_str)
+                    }
+                }
+                ParsedTypeSpecifier::Record(is_union, tag, def) => {
+                    let record_kind = if *is_union { "union" } else { "struct" };
+                    let tag_str = tag.as_ref().map(|s| s.as_str()).unwrap_or("");
+                    let has_body = def.as_ref().is_some_and(|d| d.members.is_some());
+
+                    let mut s = record_kind.to_string();
+                    if !tag_str.is_empty() {
+                        s.push(' ');
+                        s.push_str(tag_str);
+                    }
+                    if has_body {
+                        s.push_str(" { ... }");
+                    }
+                    s
+                }
+                _ => format!("{:?}", ts),
+            },
+            ParsedDeclSpecifier::StorageClass(sc) => format!("{:?}", sc),
+            ParsedDeclSpecifier::TypeQualifier(tq) => format!("TypeQualifier({:?})", tq),
+            ParsedDeclSpecifier::FunctionSpecifiers(fs) => format!("{:?}", fs),
+            ParsedDeclSpecifier::AlignmentSpecifier(aspec) => format!("{:?}", aspec),
+            ParsedDeclSpecifier::Attribute => "__attribute__".to_string(),
+        })
+        .collect()
 }
 
 /// Resolve a ParsedNodeRef to a ResolvedNodeKind by recursively following references
@@ -136,69 +209,7 @@ fn resolve_node(ast: &ParsedAst, node_ref: ParsedNodeRef) -> ResolvedNodeKind {
         ParsedNodeKind::SizeOfType(type_ref) => ResolvedNodeKind::SizeOfType(format!("type_{}", type_ref.base.get())),
         ParsedNodeKind::AlignOf(type_ref) => ResolvedNodeKind::AlignOf(format!("type_{}", type_ref.base.get())),
         ParsedNodeKind::Declaration(decl) => {
-            let specifiers = decl
-                .specifiers
-                .iter()
-                .map(|s| match s {
-                    ParsedDeclSpecifier::TypeSpecifier(ts) => match ts {
-                        ParsedTypeSpecifier::Void => "void".to_string(),
-                        ParsedTypeSpecifier::Bool => "_Bool".to_string(),
-                        ParsedTypeSpecifier::Char => "char".to_string(),
-                        ParsedTypeSpecifier::Short => "short".to_string(),
-                        ParsedTypeSpecifier::Int => "int".to_string(),
-                        ParsedTypeSpecifier::Long => "long".to_string(),
-                        ParsedTypeSpecifier::Float => "float".to_string(),
-                        ParsedTypeSpecifier::Double => "double".to_string(),
-                        ParsedTypeSpecifier::Signed => "signed".to_string(),
-                        ParsedTypeSpecifier::Unsigned => "unsigned".to_string(),
-                        ParsedTypeSpecifier::Complex => "_Complex".to_string(),
-                        ParsedTypeSpecifier::TypedefName(name) => format!("TypedefName({:?})", name.to_string()),
-                        ParsedTypeSpecifier::Enum(tag, enumerators) => {
-                            let tag_str = tag.as_ref().map(|s| s.as_str()).unwrap_or("");
-                            if let Some(enums) = enumerators {
-                                let enum_parts: Vec<String> = enums
-                                    .iter()
-                                    .map(|&node_ref| match &ast.get_node(node_ref).kind {
-                                        ParsedNodeKind::EnumConstant(name, Some(value_expr)) => {
-                                            let value = resolve_node(ast, *value_expr);
-                                            match value {
-                                                ResolvedNodeKind::LiteralInt(val) => format!("{} = {}", name, val),
-                                                _ => format!("{} = <expr>", name),
-                                            }
-                                        }
-                                        ParsedNodeKind::EnumConstant(name, None) => name.to_string(),
-                                        _ => "<invalid>".to_string(),
-                                    })
-                                    .collect();
-                                format!("enum {} {{ {} }}", tag_str, enum_parts.join(", "))
-                            } else {
-                                format!("enum {}", tag_str)
-                            }
-                        }
-                        ParsedTypeSpecifier::Record(is_union, tag, def) => {
-                            let record_kind = if *is_union { "union" } else { "struct" };
-                            let tag_str = tag.as_ref().map(|s| s.as_str()).unwrap_or("");
-                            let has_body = def.as_ref().is_some_and(|d| d.members.is_some());
-
-                            let mut s = record_kind.to_string();
-                            if !tag_str.is_empty() {
-                                s.push(' ');
-                                s.push_str(tag_str);
-                            }
-                            if has_body {
-                                s.push_str(" { ... }");
-                            }
-                            s
-                        }
-                        _ => format!("{:?}", ts),
-                    },
-                    ParsedDeclSpecifier::StorageClass(sc) => format!("{:?}", sc),
-                    ParsedDeclSpecifier::TypeQualifier(tq) => format!("TypeQualifier({:?})", tq),
-                    ParsedDeclSpecifier::FunctionSpecifiers(fs) => format!("{:?}", fs),
-                    ParsedDeclSpecifier::AlignmentSpecifier(aspec) => format!("{:?}", aspec),
-                    ParsedDeclSpecifier::Attribute => "__attribute__".to_string(),
-                })
-                .collect();
+            let specifiers = resolve_specifiers(ast, &decl.specifiers);
             let init_declarators = decl
                 .init_declarators
                 .iter()
@@ -293,6 +304,42 @@ fn resolve_node(ast: &ParsedAst, node_ref: ParsedNodeRef) -> ResolvedNodeKind {
             for_stmt.increment.map(|inc| Box::new(resolve_node(ast, inc))),
             Box::new(resolve_node(ast, for_stmt.body)),
         ),
+        ParsedNodeKind::StaticAssert(expr, msg) => {
+            ResolvedNodeKind::StaticAssert(Box::new(resolve_node(ast, *expr)), msg.to_string())
+        }
+        ParsedNodeKind::CompoundLiteral(type_ref, init) => {
+            // Check if init is an InitializerList, if so use resolve_initializer, otherwise resolve_node
+            let init_node = ast.get_node(*init);
+            let resolved_init = match init_node.kind {
+                ParsedNodeKind::InitializerList(_) => resolve_initializer(ast, *init),
+                _ => resolve_node(ast, *init),
+            };
+            ResolvedNodeKind::CompoundLiteral(
+                format!("parsed_type_{}", type_ref.base.get()), // Simplified type
+                Box::new(resolved_init),
+            )
+        }
+        ParsedNodeKind::TranslationUnit(nodes) => {
+            ResolvedNodeKind::TranslationUnit(nodes.iter().map(|&n| resolve_node(ast, n)).collect())
+        }
+        ParsedNodeKind::FunctionDef(def) => {
+            let specifiers = resolve_specifiers(ast, &def.specifiers);
+            let name = extract_declarator_name(&def.declarator).unwrap_or_else(|| "<unnamed>".to_string());
+            let kind_str = extract_declarator_kind(&def.declarator);
+            let kind = if kind_str == "identifier" { None } else { Some(kind_str) };
+
+            let resolved_declarator = ResolvedInitDeclarator {
+                name,
+                kind,
+                initializer: None,
+            };
+
+            ResolvedNodeKind::FunctionDef {
+                specifiers,
+                declarator: Box::new(resolved_declarator),
+                body: Box::new(resolve_node(ast, def.body)),
+            }
+        }
         ParsedNodeKind::EmptyStatement => ResolvedNodeKind::Empty,
         // Add more cases as needed for other ParsedNodeKind variants used in tests
         _ => panic!("Unsupported ParsedNodeKind for resolution: {:?}", node.kind),
@@ -496,6 +543,17 @@ fn setup_compound(source: &str) -> ResolvedNodeKind {
         Ok((node_ref, _)) => resolve_node(&ast, node_ref),
         _ => panic!("Expected multi statement block"),
     }
+}
+
+fn setup_translation_unit(source: &str) -> ResolvedNodeKind {
+    let phase = CompilePhase::Parse;
+    let (_, out) = test_utils::run_pipeline(source, phase);
+    let mut out = out.unwrap();
+    let first = out.units.first_mut().unwrap();
+    let artifact = first.1;
+    let ast = artifact.parsed_ast.clone().unwrap();
+    let root_ref = ast.get_root();
+    resolve_node(&ast, root_ref)
 }
 
 #[test]
@@ -1832,4 +1890,36 @@ fn test_void_pointer_param() {
         - name: memcpy
           kind: "pointer to function(void pointer, void pointer, unsigned long) -> int"
     "#);
+}
+
+// === NEW TESTS ===
+
+#[test]
+fn test_static_assert() {
+    let resolved = setup_declaration("_Static_assert(1, \"ok\");");
+    insta::assert_yaml_snapshot!(&resolved);
+}
+
+#[test]
+fn test_compound_literal() {
+    let resolved = setup_expr("(int){1}");
+    insta::assert_yaml_snapshot!(&resolved);
+}
+
+#[test]
+fn test_compound_literal_struct() {
+    let resolved = setup_expr("(struct Point){.x=1, .y=2}");
+    insta::assert_yaml_snapshot!(&resolved);
+}
+
+#[test]
+fn test_function_definition() {
+    let resolved = setup_translation_unit("int main() { return 0; }");
+    insta::assert_yaml_snapshot!(&resolved);
+}
+
+#[test]
+fn test_translation_unit() {
+    let resolved = setup_translation_unit("int x; int main() { return x; }");
+    insta::assert_yaml_snapshot!(&resolved);
 }

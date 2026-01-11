@@ -1,0 +1,9 @@
+---
+source: src/tests/parser.rs
+expression: "&resolved"
+---
+CompoundLiteral:
+  - parsed_type_1
+  - InitializerList:
+      - LiteralInt: 1
+      - LiteralInt: 2

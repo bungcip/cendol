@@ -1,0 +1,7 @@
+---
+source: src/tests/parser.rs
+expression: "&resolved"
+---
+StaticAssert:
+  - LiteralInt: 1
+  - ok

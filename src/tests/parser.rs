@@ -71,8 +71,8 @@ enum ResolvedNodeKind {
         body: Box<ResolvedNodeKind>,
     },
     TranslationUnit(Vec<ResolvedNodeKind>),
-    Empty,                                  // Empty statement
-                                            // Add more as needed for tests
+    Empty, // Empty statement
+           // Add more as needed for tests
 }
 
 /// Simplified resolved generic association for testing
@@ -305,7 +305,7 @@ fn resolve_node(ast: &ParsedAst, node_ref: ParsedNodeRef) -> ResolvedNodeKind {
             Box::new(resolve_node(ast, for_stmt.body)),
         ),
         ParsedNodeKind::StaticAssert(expr, msg) => {
-             ResolvedNodeKind::StaticAssert(Box::new(resolve_node(ast, *expr)), msg.to_string())
+            ResolvedNodeKind::StaticAssert(Box::new(resolve_node(ast, *expr)), msg.to_string())
         }
         ParsedNodeKind::CompoundLiteral(type_ref, init) => {
             // Check if init is an InitializerList, if so use resolve_initializer, otherwise resolve_node
@@ -323,22 +323,22 @@ fn resolve_node(ast: &ParsedAst, node_ref: ParsedNodeRef) -> ResolvedNodeKind {
             ResolvedNodeKind::TranslationUnit(nodes.iter().map(|&n| resolve_node(ast, n)).collect())
         }
         ParsedNodeKind::FunctionDef(def) => {
-             let specifiers = resolve_specifiers(ast, &def.specifiers);
-             let name = extract_declarator_name(&def.declarator).unwrap_or_else(|| "<unnamed>".to_string());
-             let kind_str = extract_declarator_kind(&def.declarator);
-             let kind = if kind_str == "identifier" { None } else { Some(kind_str) };
+            let specifiers = resolve_specifiers(ast, &def.specifiers);
+            let name = extract_declarator_name(&def.declarator).unwrap_or_else(|| "<unnamed>".to_string());
+            let kind_str = extract_declarator_kind(&def.declarator);
+            let kind = if kind_str == "identifier" { None } else { Some(kind_str) };
 
-             let resolved_declarator = ResolvedInitDeclarator {
-                 name,
-                 kind,
-                 initializer: None
-             };
+            let resolved_declarator = ResolvedInitDeclarator {
+                name,
+                kind,
+                initializer: None,
+            };
 
-             ResolvedNodeKind::FunctionDef {
-                 specifiers,
-                 declarator: Box::new(resolved_declarator),
-                 body: Box::new(resolve_node(ast, def.body)),
-             }
+            ResolvedNodeKind::FunctionDef {
+                specifiers,
+                declarator: Box::new(resolved_declarator),
+                body: Box::new(resolve_node(ast, def.body)),
+            }
         }
         ParsedNodeKind::EmptyStatement => ResolvedNodeKind::Empty,
         // Add more cases as needed for other ParsedNodeKind variants used in tests
@@ -546,14 +546,14 @@ fn setup_compound(source: &str) -> ResolvedNodeKind {
 }
 
 fn setup_translation_unit(source: &str) -> ResolvedNodeKind {
-     let phase = CompilePhase::Parse;
-     let (_, out) = test_utils::run_pipeline(source, phase);
-     let mut out = out.unwrap();
-     let first = out.units.first_mut().unwrap();
-     let artifact = first.1;
-     let ast = artifact.parsed_ast.clone().unwrap();
-     let root_ref = ast.get_root();
-     resolve_node(&ast, root_ref)
+    let phase = CompilePhase::Parse;
+    let (_, out) = test_utils::run_pipeline(source, phase);
+    let mut out = out.unwrap();
+    let first = out.units.first_mut().unwrap();
+    let artifact = first.1;
+    let ast = artifact.parsed_ast.clone().unwrap();
+    let root_ref = ast.get_root();
+    resolve_node(&ast, root_ref)
 }
 
 #[test]

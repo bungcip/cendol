@@ -829,3 +829,103 @@ fn test_unknown_pragma_throws_error() {
         diags
     );
 }
+
+#[test]
+fn test_counter_macro() {
+    let src = r#"
+int a = __COUNTER__;
+int b = __COUNTER__;
+int c = __COUNTER__;
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: a
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "0"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: b
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: c
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "2"
+    - kind: Semicolon
+      text: ;
+    "#);
+}
+
+#[test]
+fn test_counter_macro_in_expansion() {
+    let src = r#"
+#define X __COUNTER__
+int a = X;
+int b = X;
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: a
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "0"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: b
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    "#);
+}
+
+#[test]
+fn test_counter_macro_pasting() {
+    let src = r#"
+#define PASTE(a, b) a ## b
+#define XPASTE(a, b) PASTE(a, b)
+#define UNIQUE(name) XPASTE(name, __COUNTER__)
+int UNIQUE(var);
+int UNIQUE(var);
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: var0
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: var1
+    - kind: Semicolon
+      text: ;
+    "#);
+}

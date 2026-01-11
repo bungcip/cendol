@@ -2,6 +2,7 @@ use crate::ast::BinaryOp;
 use crate::ast::nodes;
 use crate::ast::*;
 use crate::mir::MirArrayLayout;
+use crate::mir::MirProgram;
 use crate::mir::MirRecordLayout;
 use crate::mir::{
     self, BinaryFloatOp, BinaryIntOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlockId, MirBuilder,
@@ -17,7 +18,6 @@ use crate::semantic::SymbolTable;
 use crate::semantic::TypeKind;
 use crate::semantic::ValueCategory;
 use crate::semantic::const_eval::{ConstEvalCtx, eval_const_expr};
-use crate::mir::MirProgram;
 use crate::semantic::{DefinitionState, TypeRef, TypeRegistry};
 use crate::semantic::{ImplicitConversion, Namespace, ScopeId};
 use crate::source_manager::SourceSpan;
@@ -383,7 +383,7 @@ impl<'a> AstToMirLowerer<'a> {
             }
             (NodeKind::LiteralString(val), TypeKind::Array { element_type, size }) => {
                 let element_ty_kind = &self.registry.get(element_type).kind;
-                if matches!(element_ty_kind, TypeKind::Char { .. }) {
+                if matches!(element_ty_kind, TypeKind::Builtin(BuiltinType::Char)) {
                     let fixed_size = if let ArraySizeType::Constant(s) = size {
                         Some(s)
                     } else {

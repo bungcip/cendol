@@ -777,6 +777,92 @@ impl TypeRegistry {
         }
         false
     }
+
+    pub(crate) fn display_qual_type(&self, qt: QualType) -> String {
+        let quals = qt.qualifiers();
+        let ty_str = self.display_type(qt.ty());
+        if quals.is_empty() {
+            ty_str
+        } else {
+            format!("{} {}", quals, ty_str)
+        }
+    }
+
+    pub(crate) fn display_type(&self, ty: TypeRef) -> String {
+        if ty.is_inline_pointer() {
+            let pointee = self.reconstruct_pointee(ty);
+            return format!("{}*", self.display_type(pointee));
+        }
+
+        if ty.is_inline_array() {
+            let elem = self.reconstruct_element(ty);
+            let len = ty.array_len().unwrap();
+            return format!("{}[{}]", self.display_type(elem), len);
+        }
+
+        let type_kind = &self.types[ty.index()].kind;
+        match type_kind {
+            TypeKind::Builtin(b) => match b {
+                BuiltinType::Void => "void".to_string(),
+                BuiltinType::Bool => "_Bool".to_string(),
+                BuiltinType::Char => "char".to_string(),
+                BuiltinType::SChar => "signed char".to_string(),
+                BuiltinType::UChar => "unsigned char".to_string(),
+                BuiltinType::Short => "short".to_string(),
+                BuiltinType::UShort => "unsigned short".to_string(),
+                BuiltinType::Int => "int".to_string(),
+                BuiltinType::UInt => "unsigned int".to_string(),
+                BuiltinType::Long => "long".to_string(),
+                BuiltinType::ULong => "unsigned long".to_string(),
+                BuiltinType::LongLong => "long long".to_string(),
+                BuiltinType::ULongLong => "unsigned long long".to_string(),
+                BuiltinType::Float => "float".to_string(),
+                BuiltinType::Double => "double".to_string(),
+                BuiltinType::LongDouble => "long double".to_string(),
+            },
+            TypeKind::Complex { base_type } => format!("_Complex {}", self.display_type(*base_type)),
+            TypeKind::Pointer { pointee } => format!("{}*", self.display_type(*pointee)),
+            TypeKind::Array { element_type, size } => {
+                let elem_str = self.display_type(*element_type);
+                match size {
+                    ArraySizeType::Constant(len) => format!("{}[{}]", elem_str, len),
+                    ArraySizeType::Variable(_) => format!("{}[*]", elem_str), // Using * for VLA for now or expr?
+                    ArraySizeType::Incomplete => format!("{}[]", elem_str),
+                    ArraySizeType::Star => format!("{}[*]", elem_str),
+                }
+            }
+            TypeKind::Function {
+                return_type,
+                parameters,
+                is_variadic,
+            } => {
+                let ret_str = self.display_type(*return_type);
+                let params_str = parameters
+                    .iter()
+                    .map(|p| self.display_qual_type(p.param_type))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let var_str = if *is_variadic { ", ..." } else { "" };
+                format!("{}({}{})", ret_str, params_str, var_str)
+            }
+            TypeKind::Record { tag, is_union, .. } => {
+                let kind_str = if *is_union { "union" } else { "struct" };
+                if let Some(tag_name) = tag {
+                    format!("{} {}", kind_str, tag_name)
+                } else {
+                    format!("{} (anonymous)", kind_str)
+                }
+            }
+            TypeKind::Enum { tag, .. } => {
+                if let Some(tag_name) = tag {
+                    format!("enum {}", tag_name)
+                } else {
+                    "enum (anonymous)".to_string()
+                }
+            }
+            TypeKind::Error => "<error>".to_string(),
+        }
+    }
 }
 
 // ================================================================

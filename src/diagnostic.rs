@@ -165,6 +165,12 @@ impl IntoDiagnostic for SemanticError {
                 ..Default::default()
             });
         }
+
+        // Handle warnings
+        if matches!(self, SemanticError::IncompatiblePointerComparison { .. }) {
+            diagnostics[0].level = DiagnosticLevel::Warning;
+        }
+
         diagnostics
     }
 }
@@ -241,6 +247,12 @@ pub enum SemanticError {
 
     #[error("cannot assign to read-only location")]
     AssignmentToReadOnly { span: SourceSpan },
+
+    #[error("incomplete type '{ty}'")]
+    IncompleteType { ty: String, span: SourceSpan },
+
+    #[error("comparison of incompatible pointer types '{lhs}' and '{rhs}'")]
+    IncompatiblePointerComparison { lhs: String, rhs: String, span: SourceSpan },
 }
 
 impl SemanticError {
@@ -274,6 +286,8 @@ impl SemanticError {
             SemanticError::InvalidAlignment { span, .. } => *span,
             SemanticError::NonConstantAlignment { span } => *span,
             SemanticError::AssignmentToReadOnly { span } => *span,
+            SemanticError::IncompleteType { span, .. } => *span,
+            SemanticError::IncompatiblePointerComparison { span, .. } => *span,
         }
     }
 }

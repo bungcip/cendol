@@ -51,51 +51,62 @@ enum ResolvedAstNode {
 
 fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, node_ref: NodeRef) -> ResolvedAstNode {
     let kind = ast.get_kind(node_ref);
-    
+
     match kind {
         NodeKind::TranslationUnit(data) => {
-             let nodes = data.decl_start.range(data.decl_len)
-                 .map(|child_ref| resolve_node(ast, registry, symbol_table, child_ref))
-                 .collect();
-             ResolvedAstNode::TranslationUnit(nodes)
+            let nodes = data
+                .decl_start
+                .range(data.decl_len)
+                .map(|child_ref| resolve_node(ast, registry, symbol_table, child_ref))
+                .collect();
+            ResolvedAstNode::TranslationUnit(nodes)
         }
-        NodeKind::VarDecl(data) => {
-            ResolvedAstNode::VarDecl {
-                name: data.name.as_str().to_string(),
-                ty: display_qual_type(registry, data.ty),
-                init: data.init.map(|r| Box::new(resolve_node(ast, registry, symbol_table, r))),
-            }
-        }
+        NodeKind::VarDecl(data) => ResolvedAstNode::VarDecl {
+            name: data.name.as_str().to_string(),
+            ty: display_qual_type(registry, data.ty),
+            init: data
+                .init
+                .map(|r| Box::new(resolve_node(ast, registry, symbol_table, r))),
+        },
         NodeKind::RecordDecl(data) => {
-            let members = data.member_start.range(data.member_len)
+            let members = data
+                .member_start
+                .range(data.member_len)
                 .map(|child_ref| resolve_node(ast, registry, symbol_table, child_ref))
                 .collect();
             ResolvedAstNode::RecordDecl {
-                name: data.name.map(|n| n.as_str().to_string()).unwrap_or_else(|| "<anon>".to_string()),
+                name: data
+                    .name
+                    .map(|n| n.as_str().to_string())
+                    .unwrap_or_else(|| "<anon>".to_string()),
                 members,
             }
         }
-        NodeKind::FieldDecl(data) => {
-            ResolvedAstNode::FieldDecl {
-                name: data.name.map(|n| n.as_str().to_string()).unwrap_or_else(|| "<anon>".to_string()),
-                ty: display_qual_type(registry, data.ty),
-            }
-        }
+        NodeKind::FieldDecl(data) => ResolvedAstNode::FieldDecl {
+            name: data
+                .name
+                .map(|n| n.as_str().to_string())
+                .unwrap_or_else(|| "<anon>".to_string()),
+            ty: display_qual_type(registry, data.ty),
+        },
         NodeKind::EnumDecl(data) => {
-            let members = data.member_start.range(data.member_len)
+            let members = data
+                .member_start
+                .range(data.member_len)
                 .map(|child_ref| resolve_node(ast, registry, symbol_table, child_ref))
                 .collect();
             ResolvedAstNode::EnumDecl {
-                name: data.name.map(|n| n.as_str().to_string()).unwrap_or_else(|| "<anon>".to_string()),
+                name: data
+                    .name
+                    .map(|n| n.as_str().to_string())
+                    .unwrap_or_else(|| "<anon>".to_string()),
                 members,
             }
         }
-        NodeKind::EnumMember(data) => {
-            ResolvedAstNode::EnumMember {
-                name: data.name.as_str().to_string(),
-                value: data.value,
-            }
-        }
+        NodeKind::EnumMember(data) => ResolvedAstNode::EnumMember {
+            name: data.name.as_str().to_string(),
+            value: data.value,
+        },
         NodeKind::Function(data) => {
             // Retrieve symbol from symbol table
             // Since data.symbol is SymbolRef (private/opaque alias), we need to access via SymbolTable
@@ -103,7 +114,7 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
             // But SymbolRef type inside src/ast.rs might be differentalias from src/semantic/symbol_table.rs?
             // "pub use crate::semantic::{..., SymbolRef, ...};" in ast.rs
             // So they are same.
-            
+
             // Wait, SymbolRef is NonZeroU32.
             let symbol = symbol_table.get_symbol(data.symbol);
             ResolvedAstNode::Function {
@@ -112,7 +123,9 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
             }
         }
         NodeKind::FunctionCall(call) => {
-            let args = call.arg_start.range(call.arg_len)
+            let args = call
+                .arg_start
+                .range(call.arg_len)
                 .map(|child_ref| resolve_node(ast, registry, symbol_table, child_ref))
                 .collect();
             ResolvedAstNode::FunctionCall {
@@ -120,15 +133,15 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
                 args,
             }
         }
-        NodeKind::BinaryOp(op, lhs, rhs) => {
-            ResolvedAstNode::BinaryOp {
-                op: format!("{:?}", op),
-                lhs: Box::new(resolve_node(ast, registry, symbol_table, *lhs)),
-                rhs: Box::new(resolve_node(ast, registry, symbol_table, *rhs)),
-            }
-        }
+        NodeKind::BinaryOp(op, lhs, rhs) => ResolvedAstNode::BinaryOp {
+            op: format!("{:?}", op),
+            lhs: Box::new(resolve_node(ast, registry, symbol_table, *lhs)),
+            rhs: Box::new(resolve_node(ast, registry, symbol_table, *rhs)),
+        },
         NodeKind::CompoundStatement(data) => {
-            let stmts = data.stmt_start.range(data.stmt_len)
+            let stmts = data
+                .stmt_start
+                .range(data.stmt_len)
                 .map(|child_ref| resolve_node(ast, registry, symbol_table, child_ref))
                 .collect();
             ResolvedAstNode::CompoundStatement(stmts)
@@ -144,16 +157,24 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
 
 fn display_qual_type(registry: &TypeRegistry, qt: QualType) -> String {
     let mut s = String::new();
-    if qt.is_const() { s.push_str("const "); }
-    if qt.qualifiers().contains(TypeQualifiers::VOLATILE) { s.push_str("volatile "); }
-    if qt.qualifiers().contains(TypeQualifiers::RESTRICT) { s.push_str("restrict "); }
-    if qt.qualifiers().contains(TypeQualifiers::ATOMIC) { s.push_str("_Atomic "); }
-    
+    if qt.is_const() {
+        s.push_str("const ");
+    }
+    if qt.qualifiers().contains(TypeQualifiers::VOLATILE) {
+        s.push_str("volatile ");
+    }
+    if qt.qualifiers().contains(TypeQualifiers::RESTRICT) {
+        s.push_str("restrict ");
+    }
+    if qt.qualifiers().contains(TypeQualifiers::ATOMIC) {
+        s.push_str("_Atomic ");
+    }
+
     let ty_ref = qt.ty();
     let type_cow = registry.get(ty_ref);
     use crate::semantic::TypeKind;
     let kind = &type_cow.kind;
-    
+
     match kind {
         TypeKind::Pointer { pointee } => {
             // Recursively display pointee type

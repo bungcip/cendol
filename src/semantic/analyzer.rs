@@ -312,7 +312,25 @@ impl<'a> SemanticAnalyzer<'a> {
             | BinaryOp::LessEqual
             | BinaryOp::Greater
             | BinaryOp::GreaterEqual => {
-                let common = if lhs_promoted.is_pointer() {
+                let common = if lhs_promoted.is_pointer() && rhs_promoted.is_pointer() {
+                    let lhs_base = self.registry.get_pointee(lhs_promoted.ty()).unwrap();
+                    let rhs_base = self.registry.get_pointee(rhs_promoted.ty()).unwrap();
+
+                    if lhs_base == self.registry.type_void || rhs_base == self.registry.type_void {
+                        QualType::unqualified(self.registry.type_void_ptr)
+                    } else if lhs_base == rhs_base {
+                        lhs_promoted
+                    } else {
+                        let lhs_str = self.registry.display_type(lhs_promoted.ty());
+                        let rhs_str = self.registry.display_type(rhs_promoted.ty());
+                        self.report_error(SemanticError::IncompatiblePointerComparison {
+                            lhs: lhs_str,
+                            rhs: rhs_str,
+                            span: full_span,
+                        });
+                        lhs_promoted
+                    }
+                } else if lhs_promoted.is_pointer() {
                     lhs_promoted
                 } else if rhs_promoted.is_pointer() {
                     rhs_promoted
@@ -633,6 +651,13 @@ impl<'a> SemanticAnalyzer<'a> {
         if !record_ty_ref.is_record() {
             let ty_str = self.registry.get(record_ty_ref).kind.to_string();
             self.report_error(SemanticError::MemberAccessOnNonRecord { ty: ty_str, span });
+            return None;
+        }
+
+        // Check if record is complete
+        if let TypeKind::Record { is_complete: false, .. } = &self.registry.get(record_ty_ref).kind {
+            let ty_str = self.registry.get(record_ty_ref).kind.to_string();
+            self.report_error(SemanticError::IncompleteType { ty: ty_str, span });
             return None;
         }
 

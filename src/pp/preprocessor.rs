@@ -1077,20 +1077,6 @@ impl<'src> Preprocessor<'src> {
                         Ok(())
                     }
                     Some(DirectiveKind::Elif) => {
-                        // Elif is tricky when skipping.
-                        // If we are skipping because a previous branch was taken (found_non_skipping=true), we continue skipping.
-                        // If we are skipping because the parent is skipping, we continue skipping.
-                        // If we are skipping because we haven't found a true branch yet, we might evaluate this.
-
-                        // However, my `is_currently_skipping` just checks `any`.
-                        // We need to know if the *current* conditional level allows us to evaluate.
-
-                        // BUT, if we are in a "deeply nested" skip (parent is skipping), we shouldn't even evaluate the expression.
-                        // `handle_elif_directive` will handle the logic if we pass it correctly.
-                        // But wait, if parent is skipping, `handle_elif` shouldn't do anything except maybe update internal state?
-                        // Actually, if parent is skipping, this whole block is dead.
-
-                        // Let's defer to `handle_elif_directive` but maybe we need to be careful about not evaluating expression if parent is skipped.
                         if self.should_evaluate_conditional() {
                             let expr_tokens = self.parse_conditional_expression().unwrap_or_default();
                             let condition = self.evaluate_conditional_expression(&expr_tokens).unwrap_or(false);

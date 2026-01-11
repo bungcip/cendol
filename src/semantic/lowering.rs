@@ -234,9 +234,6 @@ fn convert_parsed_base_type_to_qual_type(
                 for (i, parsed_member) in parsed_members.iter().enumerate() {
                     if let Some(name) = parsed_member.name {
                         if let Some(&first_def) = seen_names.get(&name) {
-                            // Note: parsed_member doesn't store reference to ctx to report error?
-                            // ctx is available.
-                            // But wait, parsed_member.span is available.
                             ctx.report_error(SemanticError::DuplicateMember {
                                 name,
                                 span: parsed_member.span,
@@ -362,15 +359,22 @@ fn resolve_record_tag(
 
             if in_current_scope {
                 let (entry_ref, _) = existing_entry.unwrap();
-                let entry = ctx.symbol_table.get_symbol(entry_ref);
+                let (is_completed, first_def, ty) = {
+                    let entry = ctx.symbol_table.get_symbol(entry_ref);
+                    (entry.is_completed, entry.def_span, entry.type_info.ty())
+                };
 
-                if entry.is_completed {
-                    // Redeclaration error - for now just return the type
-                    // The caller might want to check this, but consistent with existing logic we just return it
-                    Ok(entry.type_info.ty())
+                if is_completed {
+                    // Redeclaration error
+                    ctx.report_error(SemanticError::Redefinition {
+                        name: tag_name,
+                        first_def,
+                        span,
+                    });
+                    Ok(ty)
                 } else {
                     // Completing a forward declaration in current scope
-                    Ok(entry.type_info.ty())
+                    Ok(ty)
                 }
             } else {
                 // Not in current scope (either not found or shadowing outer)
@@ -521,7 +525,7 @@ fn resolve_type_specifier(
         ParsedTypeSpecifier::Double => Ok(QualType::unqualified(ctx.registry.type_double)),
         ParsedTypeSpecifier::LongDouble => Ok(QualType::unqualified(ctx.registry.type_long_double)),
         ParsedTypeSpecifier::Signed => {
-            // Signed modifier - for now, default to signed int
+            // Signed modifier
             Ok(QualType::unqualified(ctx.registry.type_int))
         }
         ParsedTypeSpecifier::Unsigned => {
@@ -1065,12 +1069,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
             }
             _ => {
-                // For other nodes (e.g. StaticAssert), we might need to handle them or just ignore if they don't produce nodes in this pass
-                // But wait, lower_node_recursive handles them.
-                // We should ideally repurpose lower_node_recursive or split it.
-                // For now, let's just duplicate the crucial dispatch logic for top-level nodes or
-                // make lower_node_recursive aware of targets but that's invasive.
-                // Let's implement specific handling for top-level valid nodes.
                 if let ParsedNodeKind::StaticAssert(expr, msg) = &parsed_node.kind
                     && let Some(target) = target_slots.first()
                 {
@@ -1254,8 +1252,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             let node = if let Some(slots) = target_slots {
                 slots[i]
-            } else if spec_info.is_typedef {
-                self.push_dummy(span)
             } else {
                 self.push_dummy(span)
             };

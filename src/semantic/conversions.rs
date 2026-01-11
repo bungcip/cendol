@@ -42,33 +42,13 @@ pub(crate) fn usual_arithmetic_conversions(ctx: &TypeRegistry, lhs: QualType, rh
         return Some(rhs_promoted);
     }
 
-    // If we reach here, we have mixed signedness where signed type has higher rank.
-    // "if the type of the operand with signed integer type can represent all of the values of the type of the operand with unsigned integer type, then the operand with unsigned integer type is converted to the type of the operand with signed integer type."
-    // Assuming 2's complement and typical sizes:
-    // If signed rank > unsigned rank, signed type usually can represent unsigned type (e.g. long > uint).
-    // Unless sizes are same.
-    // Since we used rank, we can approximate: if rank(signed) > rank(unsigned), result is signed.
     if lhs_signed {
-        // lhs is signed, rhs is unsigned. lhs_rank > rhs_rank?
         if lhs_rank > rhs_rank {
             return Some(lhs_promoted);
         }
-    } else {
-        // rhs is signed, lhs is unsigned. rhs_rank > lhs_rank?
-        if rhs_rank > lhs_rank {
-            return Some(rhs_promoted);
-        }
+    } else if rhs_rank > lhs_rank {
+        return Some(rhs_promoted);
     }
-
-    // "otherwise, both operands are converted to the unsigned integer type corresponding to the type of the operand with signed integer type."
-    // We need to find the unsigned version of the signed operand's type.
-    // This requires looking up the unsigned version. TypeRegistry has these.
-    // Or we can rely on standard fallback (None) if we can't determine.
-
-    // For now, let's just return None or fallback.
-    // The previous implementation returned None here?
-    // Let's check previous implementation:
-    // It didn't handle the last case properly either, just returned None.
 
     None
 }

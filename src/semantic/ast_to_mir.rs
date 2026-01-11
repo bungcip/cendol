@@ -44,7 +44,7 @@ pub(crate) struct AstToMirLowerer<'a> {
 
 impl<'a> AstToMirLowerer<'a> {
     pub(crate) fn new(ast: &'a Ast, symbol_table: &'a SymbolTable, registry: &'a TypeRegistry) -> Self {
-        let mir_builder = MirBuilder::new(mir::MirModuleId::new(1).unwrap());
+        let mir_builder = MirBuilder::new(mir::MirModuleId::new(1).unwrap(), 8);
         Self {
             ast,
             symbol_table,
@@ -71,7 +71,7 @@ impl<'a> AstToMirLowerer<'a> {
         // Take ownership of the builder to consume it, replacing it with a dummy.
         let builder = std::mem::replace(
             &mut self.mir_builder,
-            MirBuilder::new(mir::MirModuleId::new(1).unwrap()),
+            MirBuilder::new(mir::MirModuleId::new(1).unwrap(), 8),
         );
         let output = builder.consume();
 
@@ -84,6 +84,7 @@ impl<'a> AstToMirLowerer<'a> {
             types: output.types,
             constants: output.constants,
             statements: output.statements,
+            pointer_width: 8,
         }
     }
 
@@ -289,8 +290,6 @@ impl<'a> AstToMirLowerer<'a> {
             let NodeKind::InitializerItem(init) = self.ast.get_kind(item_ref) else {
                 continue;
             };
-            // For now, only sequential initialization is supported.
-            // Designators for arrays are ignored for now to keep it simple.
             let operand = self.lower_initializer(scope_id, init.initializer, element_ty);
             elements.push(operand);
         }
@@ -617,16 +616,13 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::AlignOf(ty) => self.lower_alignof_type(ty),
             NodeKind::GenericSelection(gs) => self.lower_generic_selection(scope_id, gs, need_value),
             NodeKind::GnuStatementExpression(_stmt, _) => {
-                // Very Simplified: lower statement, if it sets result, use it.
-                // But statement lowering doesn't return operand.
-                // Skip for now.
-                Operand::Constant(self.create_constant(ConstValue::Int(0)))
+                panic!("GnuStatementExpression not implemented");
             }
             NodeKind::Cast(_ty, operand_ref) => self.lower_cast(scope_id, *operand_ref, mir_ty),
             NodeKind::CompoundLiteral(ty, init_ref) => self.lower_compound_literal(scope_id, *ty, *init_ref),
             NodeKind::InitializerList(_) | NodeKind::InitializerItem(_) => {
                 // Should be lowered in context of assignment usually.
-                Operand::Constant(self.create_constant(ConstValue::Int(0)))
+                panic!("InitializerList or InitializerItem not implemented");
             }
             _ => unreachable!(),
         }
@@ -1615,7 +1611,7 @@ impl<'a> AstToMirLowerer<'a> {
                 BuiltinType::Long | BuiltinType::LongLong => MirType::I64,
                 BuiltinType::ULong | BuiltinType::ULongLong => MirType::U64,
                 BuiltinType::Float => MirType::F32,
-                BuiltinType::Double | BuiltinType::LongDouble => MirType::F64, // Treat long double as double for now
+                BuiltinType::Double | BuiltinType::LongDouble => MirType::F64, // Mapping long double to double (64-bit) is a valid implementation choice
             },
             TypeKind::Pointer { pointee } => MirType::Pointer {
                 pointee: self.lower_type(*pointee),

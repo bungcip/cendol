@@ -175,12 +175,6 @@ impl TypeRegistry {
     fn alloc_internal(&mut self, ty: Type) -> TypeRef {
         let idx = self.types.len() as u32;
         self.types.push(ty);
-        // Builtins have pointer_depth=0, array_len=0.
-        // Class is Builtin (0).
-        // But wait, alloc_internal is also used for Record/Enum?
-        // No, this is just helper.
-
-        // We need to determine TypeClass from kind to construct TypeRef correctly.
         let kind_ref = &self.types[idx as usize].kind;
         let class = kind_ref.to_class();
 
@@ -217,23 +211,12 @@ impl TypeRegistry {
             let element = self.reconstruct_element(r);
             let len = r.array_len().unwrap() as u64;
 
-            // We need layout of element to compute array layout?
-            // Since we return Cow<Type> which includes layout if possible.
-            // But we can't easily compute element layout here without recursion/mutability if it's missing.
-            // However, inline arrays usually have simple elements which might have layout.
-            // But 'get' shouldn't side-effect (compute layout).
-            // So we return None for layout, or look it up if available.
-
-            // For now, let's leave layout None for constructed types in 'get',
-            // relying on ensure_layout to compute it if needed.
-            // Wait, ensure_layout logic needs to handle this.
-
             Cow::Owned(Type {
                 kind: TypeKind::Array {
                     element_type: element,
                     size: ArraySizeType::Constant(len as usize),
                 },
-                layout: None, // Computed on demand
+                layout: None,
             })
         } else {
             // Registry type
@@ -438,10 +421,6 @@ impl TypeRegistry {
     // ============================================================
 
     pub(crate) fn get_layout(&self, ty: TypeRef) -> Cow<'_, TypeLayout> {
-        // If inline, compute on the fly (or if we had a cache, use it).
-        // For now, since ensure_layout might mutate, this is tricky.
-        // But get_layout assumes layout IS computed.
-
         if ty.is_inline_pointer() {
             return Cow::Owned(TypeLayout {
                 size: 8,
@@ -451,11 +430,6 @@ impl TypeRegistry {
         }
 
         if ty.is_inline_array() {
-            // We assume it's computed if called via get_layout.
-            // But we don't store it for inline arrays.
-            // We must recompute.
-            // Recomputing array layout requires element layout.
-            // This suggests get_layout might need to look up element.
             let elem = self.reconstruct_element(ty);
             let elem_layout = self.get_layout(elem);
             let len = ty.array_len().unwrap() as u64;
@@ -514,11 +488,6 @@ impl TypeRegistry {
 
         let idx = ty.index();
         if self.types[idx].layout.is_some() {
-            // Need to return Cow::Borrowed, but self is borrowed as mut.
-            // We can re-borrow immutable from types.
-            // However, the borrow checker might complain if we return borrow derived from self
-            // while we hold mut ref? No, standard borrow rules apply.
-            // We can return reference to self.types[idx].layout
             return Ok(Cow::Borrowed(self.types[idx].layout.as_ref().unwrap()));
         }
 
@@ -766,15 +735,14 @@ impl TypeRegistry {
         }
 
         let ty_ref = qt.ty();
-        if ty_ref.is_record() {
-            if let TypeKind::Record { members, .. } = &self.get(ty_ref).kind {
+        if ty_ref.is_record()
+            && let TypeKind::Record { members, .. } = &self.get(ty_ref).kind {
                 for member in members {
                     if self.is_const_recursive(member.member_type) {
                         return true;
                     }
                 }
             }
-        }
         false
     }
 

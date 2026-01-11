@@ -58,7 +58,7 @@ fn convert_type(mir_type: &MirType) -> Option<Type> {
 }
 
 /// Helper function to get the size of a MIR type in bytes
-pub(crate) fn mir_type_size(mir_type: &MirType, _mir: &MirProgram) -> Result<u32, String> {
+pub(crate) fn mir_type_size(mir_type: &MirType, mir: &MirProgram) -> Result<u32, String> {
     match mir_type {
         MirType::I8 | MirType::U8 => Ok(1),
         MirType::I16 | MirType::U16 => Ok(2),
@@ -67,7 +67,7 @@ pub(crate) fn mir_type_size(mir_type: &MirType, _mir: &MirProgram) -> Result<u32
         MirType::F32 => Ok(4),
         MirType::F64 => Ok(8),
 
-        MirType::Pointer { .. } => Ok(8), // Assuming 64-bit pointers for now
+        MirType::Pointer { .. } => Ok(mir.pointer_width as u32),
         MirType::Array { layout, .. } => Ok(layout.size as u32),
         MirType::Record { layout, .. } => Ok(layout.size as u32),
         MirType::Bool => Ok(1),
@@ -276,10 +276,7 @@ pub(crate) fn emit_const(
         }
         ConstValue::StructLiteral(fields) => emit_const_struct(fields, layout, output, mir),
         ConstValue::ArrayLiteral(elements) => emit_const_array(elements, layout, output, mir),
-        ConstValue::Cast(_type_id, inner_id) => {
-            // For now, just emit the inner constant. The layout already determines the size/format.
-            emit_const(*inner_id, layout, output, mir)
-        }
+        ConstValue::Cast(_type_id, inner_id) => emit_const(*inner_id, layout, output, mir),
     }
 }
 
@@ -858,13 +855,7 @@ fn get_operand_type_id(operand: &Operand, mir: &MirProgram) -> Result<TypeId, St
             let const_value = mir.constants.get(const_id).expect("constant id not found");
             match const_value {
                 ConstValue::Cast(type_id, _) => Ok(*type_id),
-                _ => {
-                    // This is tricky because raw constants in MIR don't always have an explicit TypeId
-                    // associated with them in the Operand enum if they aren't cast.
-                    // However, PtrAdd base should usually be a Copy(Place) or a Cast.
-                    // For now, let's try to infer or panic if we can't.
-                    Err("Cannot determine type of raw constant operand".to_string())
-                }
+                _ => Err("Cannot determine type of raw constant operand".to_string()),
             }
         }
         Operand::Copy(place) => get_place_type_id(place, mir),
@@ -1266,13 +1257,31 @@ fn lower_statement(
                         BinaryIntOp::Add => builder.ins().iadd(left_val, right_val),
                         BinaryIntOp::Sub => builder.ins().isub(left_val, right_val),
                         BinaryIntOp::Mul => builder.ins().imul(left_val, right_val),
-                        BinaryIntOp::Div => builder.ins().sdiv(left_val, right_val), // Assuming signed for now
-                        BinaryIntOp::Mod => builder.ins().srem(left_val, right_val),
+                        BinaryIntOp::Div => {
+                            if is_operand_signed(left_operand, mir) {
+                                builder.ins().sdiv(left_val, right_val)
+                            } else {
+                                builder.ins().udiv(left_val, right_val)
+                            }
+                        }
+                        BinaryIntOp::Mod => {
+                            if is_operand_signed(left_operand, mir) {
+                                builder.ins().srem(left_val, right_val)
+                            } else {
+                                builder.ins().urem(left_val, right_val)
+                            }
+                        }
                         BinaryIntOp::BitAnd => builder.ins().band(left_val, right_val),
                         BinaryIntOp::BitOr => builder.ins().bor(left_val, right_val),
                         BinaryIntOp::BitXor => builder.ins().bxor(left_val, right_val),
                         BinaryIntOp::LShift => builder.ins().ishl(left_val, right_val),
-                        BinaryIntOp::RShift => builder.ins().sshr(left_val, right_val),
+                        BinaryIntOp::RShift => {
+                            if is_operand_signed(left_operand, mir) {
+                                builder.ins().sshr(left_val, right_val)
+                            } else {
+                                builder.ins().ushr(left_val, right_val)
+                            }
+                        }
                         BinaryIntOp::Eq => {
                             let cmp_val = builder.ins().icmp(IntCC::Equal, left_val, right_val);
                             emit_bool_to_int(cmp_val, types::I32, builder)

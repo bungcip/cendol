@@ -460,7 +460,6 @@ impl<'a> SemanticAnalyzer<'a> {
                     return true;
                 }
 
-                // For now, require strict canonical type equality for pointees
                 return lhs_base == rhs_base;
             }
 

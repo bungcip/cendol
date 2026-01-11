@@ -2,22 +2,17 @@
 //!
 //! This module contains tests for the `MirToCraneliftLowerer` implementation.
 use crate::ast::NameId;
-use crate::mir::MirProgram;
+
 use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer, emit_const};
-use crate::mir::{
-    ConstValue, ConstValueId, Local, LocalId, MirBlock, MirBlockId, MirFunction, MirFunctionId, MirModule, MirModuleId,
-    MirRecordLayout, MirStmt, MirStmtId, MirType, Operand, Place, Terminator, TypeId,
-};
-use hashbrown::HashMap;
+use crate::mir::{ConstValue, MirModuleId, MirRecordLayout, MirStmt, MirType, Operand, Place, Terminator};
 
 #[test]
 fn test_emit_const_struct_literal() {
-    // 1. Setup Types
-    let mut types = HashMap::new();
-    let int_type_id = TypeId::new(1).unwrap();
-    types.insert(int_type_id, MirType::I32);
+    let mut builder = crate::mir::MirBuilder::new(MirModuleId::new(1).unwrap(), 8);
 
-    let struct_type_id = TypeId::new(2).unwrap();
+    // 1. Setup Types
+    let int_type_id = builder.add_type(MirType::I32);
+
     let struct_type = MirType::Record {
         name: NameId::new("ValidationTestStruct"),
         field_types: vec![int_type_id, int_type_id],
@@ -29,32 +24,17 @@ fn test_emit_const_struct_literal() {
             field_offsets: vec![0, 4],
         },
     };
-    types.insert(struct_type_id, struct_type.clone());
+    let _struct_type_id = builder.add_type(struct_type.clone());
 
     // 2. Setup Constants
-    let mut constants = HashMap::new();
-    let const_1_id = ConstValueId::new(1).unwrap();
-    constants.insert(const_1_id, ConstValue::Int(0x11111111));
-    let const_2_id = ConstValueId::new(2).unwrap();
-    constants.insert(const_2_id, ConstValue::Int(0x22222222));
+    let const_1_id = builder.create_constant(ConstValue::Int(0x11111111));
+    let const_2_id = builder.create_constant(ConstValue::Int(0x22222222));
 
-    let struct_const_id = ConstValueId::new(3).unwrap();
     let struct_const = ConstValue::StructLiteral(vec![(0, const_1_id), (1, const_2_id)]);
-    constants.insert(struct_const_id, struct_const);
+    let struct_const_id = builder.create_constant(struct_const);
 
-    // 3. Setup MirProgram context
-    let mir_module = MirModule::new(MirModuleId::new(1).unwrap());
-
-    let sema_output = MirProgram {
-        module: mir_module,
-        functions: HashMap::new(),
-        blocks: HashMap::new(),
-        locals: HashMap::new(),
-        globals: HashMap::new(),
-        types,
-        constants,
-        statements: HashMap::new(),
-    };
+    // 3. Get MirProgram
+    let sema_output = builder.consume();
 
     // 4. Emit Constant
     let mut output = Vec::new();
@@ -74,62 +54,38 @@ fn test_emit_const_struct_literal() {
 
 #[test]
 fn test_store_statement_lowering() {
-    // 1. Set up the MIR components
-    let mut types = HashMap::new();
-    let int_type_id = TypeId::new(1).unwrap();
-    let void_type_id = TypeId::new(2).unwrap();
-    types.insert(int_type_id, MirType::I32);
-    types.insert(void_type_id, MirType::Void);
+    let mut builder = crate::mir::MirBuilder::new(MirModuleId::new(1).unwrap(), 8);
 
-    let mut constants = HashMap::new();
-    let const_val_id = ConstValueId::new(1).unwrap();
-    constants.insert(const_val_id, ConstValue::Int(42));
+    // 1. Set up Types
+    let int_type_id = builder.add_type(MirType::I32);
+    let void_type_id = builder.add_type(MirType::Void);
 
-    let mut locals = HashMap::new();
-    let local_id = LocalId::new(1).unwrap();
-    let local_x = Local::new(local_id, Some(NameId::new("x")), int_type_id, false);
-    locals.insert(local_id, local_x);
+    // 2. Set up Function and Block
+    let func_id = builder.define_function(NameId::new("main"), vec![], void_type_id, false);
+    builder.set_current_function(func_id);
 
-    let mut statements = HashMap::new();
-    let store_stmt_id = MirStmtId::new(1).unwrap();
-    // This is the statement we want to test: store 42 into x
+    let entry_block_id = builder.create_block();
+    builder.set_current_block(entry_block_id);
+    builder.set_function_entry_block(func_id, entry_block_id);
+
+    // 3. Set up Local
+    let local_id = builder.create_local(Some(NameId::new("x")), int_type_id, false);
+
+    // 4. Set up Constant
+    let const_val_id = builder.create_constant(ConstValue::Int(42));
+
+    // 5. Create Statement: store 42 into x
     let store_stmt = MirStmt::Store(Operand::Constant(const_val_id), Place::Local(local_id));
-    statements.insert(store_stmt_id, store_stmt);
+    builder.add_statement(store_stmt);
 
-    let mut blocks = HashMap::new();
-    let entry_block_id = MirBlockId::new(1).unwrap();
-    let mut entry_block = MirBlock::new(entry_block_id);
-    entry_block.statements.push(store_stmt_id);
-    entry_block.terminator = Terminator::Return(None);
-    blocks.insert(entry_block_id, entry_block);
+    builder.set_terminator(Terminator::Return(None));
 
-    let mut functions = HashMap::new();
-    let func_id = MirFunctionId::new(1).unwrap();
-    let mut main_func = MirFunction::new_defined(func_id, NameId::new("main"), void_type_id);
-    main_func.locals.push(local_id);
-    main_func.entry_block = Some(entry_block_id);
-    main_func.blocks.push(entry_block_id);
-    functions.insert(func_id, main_func);
-
-    let mut mir_module = MirModule::new(MirModuleId::new(1).unwrap());
-    mir_module.functions.push(func_id);
-
-    let sema_output = MirProgram {
-        module: mir_module,
-        functions,
-        blocks,
-        locals,
-        globals: HashMap::new(),
-        types,
-        constants,
-        statements,
-    };
-
-    // 2. Compile the MIR to Cranelift IR
+    // 6. Compile
+    let sema_output = builder.consume();
     let lowerer = MirToCraneliftLowerer::new(sema_output);
     let result = lowerer.compile_module(EmitKind::Clif);
 
-    // 3. Assert the output is correct
+    // 7. Assert
     match result {
         Ok(ClifOutput::ClifDump(clif_ir)) => {
             println!("{}", clif_ir); // for debugging
@@ -145,96 +101,46 @@ fn test_store_statement_lowering() {
 
 #[test]
 fn test_store_deref_pointer() {
-    // 1. Set up MIR for:
-    // fn main() {
-    //   let x: i32 = 10;
-    //   let p: *mut i32 = &x;
-    //   *p = 42;
-    // }
-    let mut types = HashMap::new();
-    let int_type_id = TypeId::new(1).unwrap();
-    let ptr_type_id = TypeId::new(2).unwrap();
-    let void_type_id = TypeId::new(3).unwrap();
-    types.insert(int_type_id, MirType::I32);
-    types.insert(ptr_type_id, MirType::Pointer { pointee: int_type_id });
-    types.insert(void_type_id, MirType::Void);
+    let mut builder = crate::mir::MirBuilder::new(MirModuleId::new(1).unwrap(), 8);
 
-    let mut constants = HashMap::new();
-    let const_42_id = ConstValueId::new(1).unwrap();
-    constants.insert(const_42_id, ConstValue::Int(42));
-    let const_10_id = ConstValueId::new(2).unwrap();
-    constants.insert(const_10_id, ConstValue::Int(10));
+    let int_type_id = builder.add_type(MirType::I32);
+    let ptr_type_id = builder.add_type(MirType::Pointer { pointee: int_type_id });
+    let void_type_id = builder.add_type(MirType::Void);
 
-    let mut locals = HashMap::new();
-    let local_x_id = LocalId::new(1).unwrap();
-    let local_p_id = LocalId::new(2).unwrap();
-    locals.insert(
-        local_x_id,
-        Local::new(local_x_id, Some(NameId::new("x")), int_type_id, false),
-    );
-    locals.insert(
-        local_p_id,
-        Local::new(local_p_id, Some(NameId::new("p")), ptr_type_id, false),
-    );
+    let func_id = builder.define_function(NameId::new("main"), vec![], void_type_id, false);
+    builder.set_current_function(func_id);
 
-    let mut statements = HashMap::new();
-    let stmt1_id = MirStmtId::new(1).unwrap();
-    let stmt2_id = MirStmtId::new(2).unwrap();
-    let stmt3_id = MirStmtId::new(3).unwrap();
+    let entry_block_id = builder.create_block();
+    builder.set_current_block(entry_block_id);
+    builder.set_function_entry_block(func_id, entry_block_id);
+
+    let local_x_id = builder.create_local(Some(NameId::new("x")), int_type_id, false);
+    let local_p_id = builder.create_local(Some(NameId::new("p")), ptr_type_id, false);
+
+    let const_42_id = builder.create_constant(ConstValue::Int(42));
+    let const_10_id = builder.create_constant(ConstValue::Int(10));
+
     // x = 10
-    statements.insert(
-        stmt1_id,
-        MirStmt::Assign(
-            Place::Local(local_x_id),
-            crate::mir::Rvalue::Use(Operand::Constant(const_10_id)),
-        ),
-    );
+    builder.add_statement(MirStmt::Assign(
+        Place::Local(local_x_id),
+        crate::mir::Rvalue::Use(Operand::Constant(const_10_id)),
+    ));
+
     // p = &x
-    statements.insert(
-        stmt2_id,
-        MirStmt::Assign(
-            Place::Local(local_p_id),
-            crate::mir::Rvalue::Use(Operand::AddressOf(Box::new(Place::Local(local_x_id)))),
-        ),
-    );
+    builder.add_statement(MirStmt::Assign(
+        Place::Local(local_p_id),
+        crate::mir::Rvalue::Use(Operand::AddressOf(Box::new(Place::Local(local_x_id)))),
+    ));
+
     // *p = 42
-    statements.insert(
-        stmt3_id,
-        MirStmt::Store(
-            Operand::Constant(const_42_id),
-            Place::Deref(Box::new(Operand::Copy(Box::new(Place::Local(local_p_id))))),
-        ),
-    );
+    builder.add_statement(MirStmt::Store(
+        Operand::Constant(const_42_id),
+        Place::Deref(Box::new(Operand::Copy(Box::new(Place::Local(local_p_id))))),
+    ));
 
-    let mut blocks = HashMap::new();
-    let entry_block_id = MirBlockId::new(1).unwrap();
-    let mut entry_block = MirBlock::new(entry_block_id);
-    entry_block.statements.extend(vec![stmt1_id, stmt2_id, stmt3_id]);
-    entry_block.terminator = Terminator::Return(None);
-    blocks.insert(entry_block_id, entry_block);
+    builder.set_terminator(Terminator::Return(None));
 
-    let mut functions = HashMap::new();
-    let func_id = MirFunctionId::new(1).unwrap();
-    let mut main_func = MirFunction::new_defined(func_id, NameId::new("main"), void_type_id);
-    main_func.locals.extend(vec![local_x_id, local_p_id]);
-    main_func.entry_block = Some(entry_block_id);
-    main_func.blocks.push(entry_block_id);
-    functions.insert(func_id, main_func);
-
-    let mut mir_module = MirModule::new(MirModuleId::new(1).unwrap());
-    mir_module.functions.push(func_id);
-
-    let sema_output = MirProgram {
-        module: mir_module,
-        functions,
-        blocks,
-        locals,
-        globals: HashMap::new(),
-        types,
-        constants,
-        statements,
-    };
-
+    let sema_output = builder.consume();
     let lowerer = MirToCraneliftLowerer::new(sema_output);
     let result = lowerer.compile_module(EmitKind::Clif);
 
@@ -364,69 +270,30 @@ fn test_compile_union_field_access() {
 
 #[test]
 fn test_alloc_dealloc_codegen() {
-    // 1. Set up MIR for:
-    // fn main() {
-    //   let p: *mut i32;
-    //   p = alloc(i32);
-    //   dealloc(p);
-    // }
-    let mut types = HashMap::new();
-    let int_type_id = TypeId::new(1).unwrap();
-    let ptr_type_id = TypeId::new(2).unwrap();
-    let void_type_id = TypeId::new(3).unwrap();
-    types.insert(int_type_id, MirType::I32);
-    types.insert(ptr_type_id, MirType::Pointer { pointee: int_type_id });
-    types.insert(void_type_id, MirType::Void);
+    let mut builder = crate::mir::MirBuilder::new(MirModuleId::new(1).unwrap(), 8);
 
-    let mut locals = HashMap::new();
-    let local_p_id = LocalId::new(1).unwrap();
-    locals.insert(
-        local_p_id,
-        Local::new(local_p_id, Some(NameId::new("p")), ptr_type_id, false),
-    );
+    let int_type_id = builder.add_type(MirType::I32);
+    let ptr_type_id = builder.add_type(MirType::Pointer { pointee: int_type_id });
+    let void_type_id = builder.add_type(MirType::Void);
 
-    let mut statements = HashMap::new();
-    let alloc_stmt_id = MirStmtId::new(1).unwrap();
-    let dealloc_stmt_id = MirStmtId::new(2).unwrap();
+    let func_id = builder.define_function(NameId::new("main"), vec![], void_type_id, false);
+    builder.set_current_function(func_id);
+
+    let entry_block_id = builder.create_block();
+    builder.set_current_block(entry_block_id);
+    builder.set_function_entry_block(func_id, entry_block_id);
+
+    let local_p_id = builder.create_local(Some(NameId::new("p")), ptr_type_id, false);
 
     // p = alloc(...)
-    statements.insert(alloc_stmt_id, MirStmt::Alloc(Place::Local(local_p_id), int_type_id));
+    builder.add_statement(MirStmt::Alloc(Place::Local(local_p_id), int_type_id));
+
     // dealloc(p)
-    statements.insert(
-        dealloc_stmt_id,
-        MirStmt::Dealloc(Operand::Copy(Box::new(Place::Local(local_p_id)))),
-    );
+    builder.add_statement(MirStmt::Dealloc(Operand::Copy(Box::new(Place::Local(local_p_id)))));
 
-    let mut blocks = HashMap::new();
-    let entry_block_id = MirBlockId::new(1).unwrap();
-    let mut entry_block = MirBlock::new(entry_block_id);
-    entry_block.statements.push(alloc_stmt_id);
-    entry_block.statements.push(dealloc_stmt_id);
-    entry_block.terminator = Terminator::Return(None);
-    blocks.insert(entry_block_id, entry_block);
+    builder.set_terminator(Terminator::Return(None));
 
-    let mut functions = HashMap::new();
-    let func_id = MirFunctionId::new(1).unwrap();
-    let mut main_func = MirFunction::new_defined(func_id, NameId::new("main"), void_type_id);
-    main_func.locals.push(local_p_id);
-    main_func.entry_block = Some(entry_block_id);
-    main_func.blocks.push(entry_block_id);
-    functions.insert(func_id, main_func);
-
-    let mut mir_module = MirModule::new(MirModuleId::new(1).unwrap());
-    mir_module.functions.push(func_id);
-
-    let sema_output = MirProgram {
-        module: mir_module,
-        functions,
-        blocks,
-        locals,
-        globals: HashMap::new(),
-        types,
-        constants: HashMap::new(),
-        statements,
-    };
-
+    let sema_output = builder.consume();
     let lowerer = MirToCraneliftLowerer::new(sema_output);
     let result = lowerer.compile_module(EmitKind::Clif);
 
@@ -460,136 +327,87 @@ fn test_alloc_dealloc_codegen() {
 #[cfg(test)]
 mod tests {
     use crate::ast::NameId;
-    use crate::mir::MirProgram;
     use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer};
-    use crate::mir::{
-        CallTarget, ConstValue, ConstValueId, Local, LocalId, MirBlock, MirBlockId, MirFunction, MirFunctionId,
-        MirModule, MirModuleId, MirStmt, MirStmtId, MirType, Operand, Place, Terminator, TypeId,
-    };
-    use hashbrown::HashMap;
+    use crate::mir::{CallTarget, ConstValue, LocalId, MirModuleId, MirStmt, MirType, Operand, Place, Terminator};
 
     #[test]
     fn test_indirect_function_call() {
+        let mut builder = crate::mir::MirBuilder::new(MirModuleId::new(1).unwrap(), 8);
+
         // Setup Types
-        let mut types = HashMap::new();
-        let int_type_id = TypeId::new(1).unwrap();
-        types.insert(int_type_id, MirType::I32);
+        let int_type_id = builder.add_type(MirType::I32);
 
         // fn(i32) -> i32
-        let func_type_id = TypeId::new(2).unwrap();
-        types.insert(
-            func_type_id,
-            MirType::Function {
-                return_type: int_type_id,
-                params: vec![int_type_id],
-            },
-        );
+        let func_type_id = builder.add_type(MirType::Function {
+            return_type: int_type_id,
+            params: vec![int_type_id],
+        });
 
         // *fn(i32) -> i32
-        let func_ptr_type_id = TypeId::new(3).unwrap();
-        types.insert(func_ptr_type_id, MirType::Pointer { pointee: func_type_id });
+        let func_ptr_type_id = builder.add_type(MirType::Pointer { pointee: func_type_id });
 
         // Setup Function 1 (Target): fn target(x: i32) -> i32 { return x; }
-        let target_func_id = MirFunctionId::new(1).unwrap();
-        let mut target_func = MirFunction::new_defined(target_func_id, NameId::new("target"), int_type_id);
-        let param_id = LocalId::new(1).unwrap();
-        target_func.params.push(param_id);
+        // Use define_function which accepts Vec<TypeId> for params
+        let target_func_id = builder.define_function(
+            NameId::new("target"),
+            vec![int_type_id], // param types
+            int_type_id,       // return type
+            false,             // not variadic
+        );
 
-        let target_block_id = MirBlockId::new(1).unwrap();
-        let mut target_block = MirBlock::new(target_block_id);
-        // return param
-        target_block.terminator = Terminator::Return(Some(Operand::Copy(Box::new(Place::Local(param_id)))));
-        target_func.blocks.push(target_block_id);
-        target_func.entry_block = Some(target_block_id);
+        builder.set_current_function(target_func_id);
+        let target_block_id = builder.create_block();
+        builder.set_current_block(target_block_id);
+        builder.set_function_entry_block(target_func_id, target_block_id);
+
+        // Get the param local ID (created by define_function)
+        // Since we are defining it manually via `define_function` which adds one param,
+        // and it's the first function in this builder, we know the LocalId is 1.
+        // We do not need to consume and inspect because we are constructing it.
+        let param_id = LocalId::new(1).unwrap();
+
+        builder.set_terminator(Terminator::Return(Some(Operand::Copy(Box::new(Place::Local(
+            param_id,
+        ))))));
 
         // Setup Function 2 (Main): fn main() -> i32
-        let main_func_id = MirFunctionId::new(2).unwrap();
-        let mut main_func = MirFunction::new_defined(main_func_id, NameId::new("main"), int_type_id);
+        let main_func_id = builder.define_function(NameId::new("main"), vec![], int_type_id, false);
+
+        builder.set_current_function(main_func_id);
+        let main_block_id = builder.create_block();
+        builder.set_current_block(main_block_id);
+        builder.set_function_entry_block(main_func_id, main_block_id);
 
         // Local: ptr: *fn(i32) -> i32
-        let ptr_local_id = LocalId::new(2).unwrap();
-        let ptr_local = Local::new(ptr_local_id, Some(NameId::new("ptr")), func_ptr_type_id, false);
-        main_func.locals.push(ptr_local_id);
+        let ptr_local_id = builder.create_local(Some(NameId::new("ptr")), func_ptr_type_id, false);
 
         // Constants
-        let mut constants = HashMap::new();
-        let func_addr_const_id = ConstValueId::new(1).unwrap();
-        constants.insert(func_addr_const_id, ConstValue::FunctionAddress(target_func_id));
-        let arg_const_id = ConstValueId::new(2).unwrap();
-        constants.insert(arg_const_id, ConstValue::Int(42));
-
-        // Statements
-        let mut statements = HashMap::new();
+        let func_addr_const_id = builder.create_constant(ConstValue::FunctionAddress(target_func_id));
+        let arg_const_id = builder.create_constant(ConstValue::Int(42));
 
         // 1. ptr = &target
-        let stmt1_id = MirStmtId::new(1).unwrap();
-        statements.insert(
-            stmt1_id,
-            MirStmt::Assign(
-                Place::Local(ptr_local_id),
-                crate::mir::Rvalue::Use(Operand::Constant(func_addr_const_id)),
-            ),
-        );
+        builder.add_statement(MirStmt::Assign(
+            Place::Local(ptr_local_id),
+            crate::mir::Rvalue::Use(Operand::Constant(func_addr_const_id)),
+        ));
 
         // 2. call(*ptr)(42)
-        let temp_local_id = LocalId::new(3).unwrap();
-        let temp_local = Local::new(temp_local_id, Some(NameId::new("temp")), int_type_id, false);
-        main_func.locals.push(temp_local_id);
+        let temp_local_id = builder.create_local(Some(NameId::new("temp")), int_type_id, false);
 
-        let stmt2_id = MirStmtId::new(2).unwrap();
-        statements.insert(
-            stmt2_id,
-            MirStmt::Assign(
-                Place::Local(temp_local_id),
-                crate::mir::Rvalue::Call(
-                    CallTarget::Indirect(Operand::Copy(Box::new(Place::Local(ptr_local_id)))),
-                    vec![Operand::Constant(arg_const_id)],
-                ),
+        builder.add_statement(MirStmt::Assign(
+            Place::Local(temp_local_id),
+            crate::mir::Rvalue::Call(
+                CallTarget::Indirect(Operand::Copy(Box::new(Place::Local(ptr_local_id)))),
+                vec![Operand::Constant(arg_const_id)],
             ),
-        );
+        ));
 
-        let main_block_id = MirBlockId::new(2).unwrap();
-        let mut main_block = MirBlock::new(main_block_id);
-        main_block.statements.push(stmt1_id);
-        main_block.statements.push(stmt2_id);
-        main_block.terminator = Terminator::Return(Some(Operand::Copy(Box::new(Place::Local(temp_local_id)))));
-
-        main_func.blocks.push(main_block_id);
-        main_func.entry_block = Some(main_block_id);
-
-        // Module
-        let mut mir_module = MirModule::new(MirModuleId::new(1).unwrap());
-        mir_module.functions.push(target_func_id);
-        mir_module.functions.push(main_func_id);
-
-        let mut locals_map = HashMap::new();
-        locals_map.insert(
-            param_id,
-            Local::new(param_id, Some(NameId::new("p")), int_type_id, true),
-        );
-        locals_map.insert(ptr_local_id, ptr_local);
-        locals_map.insert(temp_local_id, temp_local);
-
-        let mut functions = HashMap::new();
-        functions.insert(target_func_id, target_func);
-        functions.insert(main_func_id, main_func);
-
-        let mut blocks = HashMap::new();
-        blocks.insert(target_block_id, target_block);
-        blocks.insert(main_block_id, main_block);
-
-        let sema_output = MirProgram {
-            module: mir_module,
-            functions,
-            blocks,
-            locals: locals_map,
-            globals: HashMap::new(),
-            types,
-            constants,
-            statements,
-        };
+        builder.set_terminator(Terminator::Return(Some(Operand::Copy(Box::new(Place::Local(
+            temp_local_id,
+        ))))));
 
         // Compile
+        let sema_output = builder.consume();
         let lowerer = MirToCraneliftLowerer::new(sema_output);
         let result = lowerer.compile_module(EmitKind::Clif);
 

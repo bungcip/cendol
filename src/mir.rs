@@ -57,6 +57,7 @@ pub struct MirModule {
     pub globals: Vec<GlobalId>,
     pub types: Vec<MirType>,
     pub constants: Vec<ConstValue>,
+    pub pointer_width: u8, // Width of a pointer in bytes (e.g., 4 or 8)
 }
 
 impl MirModule {
@@ -67,6 +68,7 @@ impl MirModule {
             globals: Vec::new(),
             types: Vec::new(),
             constants: Vec::new(),
+            pointer_width: 8, // Default to 64-bit pointers
         }
     }
 }
@@ -455,6 +457,7 @@ pub struct MirProgram {
     pub types: HashMap<TypeId, MirType>,
     pub constants: HashMap<ConstValueId, ConstValue>,
     pub statements: HashMap<MirStmtId, MirStmt>,
+    pub pointer_width: u8,
 }
 
 impl MirProgram {
@@ -486,9 +489,11 @@ impl MirProgram {
 }
 
 impl MirBuilder {
-    pub(crate) fn new(module_id: MirModuleId) -> Self {
+    pub(crate) fn new(module_id: MirModuleId, pointer_width: u8) -> Self {
+        let mut module = MirModule::new(module_id);
+        module.pointer_width = pointer_width;
         Self {
-            module: MirModule::new(module_id),
+            module,
             current_function: None,
             current_block: None,
             next_local_id: 1,
@@ -739,6 +744,7 @@ impl MirBuilder {
     /// Consumes the builder and returns all the generated MIR components.
     /// This is the preferred way to get the final MIR, as it avoids cloning.
     pub(crate) fn consume(self) -> MirProgram {
+        let pointer_width = self.module.pointer_width;
         MirProgram {
             module: self.module,
             functions: self.functions,
@@ -748,6 +754,7 @@ impl MirBuilder {
             types: self.types,
             constants: self.constants,
             statements: self.statements,
+            pointer_width,
         }
     }
 

@@ -108,14 +108,6 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
             value: data.value,
         },
         NodeKind::Function(data) => {
-            // Retrieve symbol from symbol table
-            // Since data.symbol is SymbolRef (private/opaque alias), we need to access via SymbolTable
-            // Wait, SymbolTable::get_symbol takes SymbolRef.
-            // But SymbolRef type inside src/ast.rs might be differentalias from src/semantic/symbol_table.rs?
-            // "pub use crate::semantic::{..., SymbolRef, ...};" in ast.rs
-            // So they are same.
-
-            // Wait, SymbolRef is NonZeroU32.
             let symbol = symbol_table.get_symbol(data.symbol);
             ResolvedAstNode::Function {
                 name: symbol.name.as_str().to_string(),
@@ -177,10 +169,6 @@ fn display_qual_type(registry: &TypeRegistry, qt: QualType) -> String {
 
     match kind {
         TypeKind::Pointer { pointee } => {
-            // Recursively display pointee type
-            // Note: We strip qualifiers from pointee as TypeRef doesn't store them?
-            // This is a known ambiguity/limitation investigation point.
-            // For now, assume pointee is unqualified.
             let pointee_qt = QualType::unqualified(*pointee);
             let inner = display_qual_type(registry, pointee_qt);
             s.push_str(&format!("{} *", inner));

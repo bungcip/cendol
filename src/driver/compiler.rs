@@ -357,7 +357,6 @@ impl CompilerDriver {
                         }
                     } else if let Some(_parsed_ast) = artifact.parsed_ast {
                         // TODO: Dump ParsedAst using a new method or adapt AstDumper
-                        // For now just partial support or placeholder
                         println!("ParsedAST dump not fully implemented yet");
                     } else if let Some(preprocessed) = artifact.preprocessed {
                         self.output_handler.dump_preprocessed_output(

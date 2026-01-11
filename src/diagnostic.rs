@@ -217,11 +217,7 @@ pub enum SemanticError {
     #[error("member reference base type '{ty}' is not a structure or union")]
     MemberAccessOnNonRecord { ty: String, span: SourceSpan },
     #[error("no member named '{name}' in '{ty}'")]
-    MemberNotFound {
-        name: NameId,
-        ty: String,
-        span: SourceSpan,
-    },
+    MemberNotFound { name: NameId, ty: String, span: SourceSpan },
     #[error("expected a typedef name, found {found}")]
     ExpectedTypedefName { found: String, span: SourceSpan },
     #[error("missing type specifier in declaration")]

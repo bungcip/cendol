@@ -148,7 +148,7 @@ fn emit_const_struct(
     match layout {
         MirType::Record {
             layout: record_layout,
-            fields: type_fields,
+            field_types,
             ..
         } => {
             // Initialize the entire struct with zeros
@@ -160,7 +160,7 @@ fn emit_const_struct(
                 if *field_index < record_layout.field_offsets.len() {
                     let field_offset = record_layout.field_offsets[*field_index] as usize;
 
-                    let (_field_name, field_type_id) = type_fields
+                    let field_type_id = field_types
                         .get(*field_index)
                         .ok_or_else(|| format!("Field index {} out of bounds", field_index))?;
 
@@ -898,16 +898,16 @@ fn get_place_type_id(place: &Place, mir: &SemaOutput) -> Result<TypeId, String> 
             let base_type_id = get_place_type_id(base_place, mir)?;
             let base_type = mir.get_type(base_type_id);
             match base_type {
-                MirType::Record { fields, .. } => fields
+                MirType::Record { field_types, .. } => field_types
                     .get(*field_index)
-                    .map(|(_, type_id)| *type_id)
+                    .copied()
                     .ok_or_else(|| "Field index out of bounds".to_string()),
                 MirType::Pointer { pointee } => {
                     let pointee_type = mir.get_type(*pointee);
-                    if let MirType::Record { fields, .. } = pointee_type {
-                        fields
+                    if let MirType::Record { field_types, .. } = pointee_type {
+                        field_types
                             .get(*field_index)
-                            .map(|(_, type_id)| *type_id)
+                            .copied()
                             .ok_or_else(|| "Field index out of bounds".to_string())
                     } else {
                         Err("Base of StructField is not a struct type".to_string())

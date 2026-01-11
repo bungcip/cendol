@@ -1553,7 +1553,8 @@ impl<'a> AstToMirLowerer<'a> {
         let placeholder_name = NameId::new(format!("__recursive_placeholder_{}", type_ref.get()));
         let placeholder_type = MirType::Record {
             name: placeholder_name,
-            fields: Vec::new(),
+            field_types: Vec::new(),
+            field_names: Vec::new(),
             is_union: false,
             layout: MirRecordLayout {
                 size: 0,
@@ -1643,23 +1644,27 @@ impl<'a> AstToMirLowerer<'a> {
             } => {
                 let name = tag.unwrap_or_else(|| NameId::new("anonymous"));
 
-                let (size, alignment, field_offsets, fields) = if *is_complete {
+                let (size, alignment, field_offsets, field_names, field_types) = if *is_complete {
                     let (size, alignment, field_layouts, _) = self.registry.get_record_layout(type_ref);
                     let field_offsets = field_layouts.iter().map(|f| f.offset).collect();
 
-                    let mut fields = Vec::new();
+                    let mut field_names = Vec::new();
+                    let mut field_types = Vec::new();
+
                     for (idx, m) in members.iter().enumerate() {
                         let name = m.name.unwrap_or_else(|| NameId::new(format!("__anon_{}", idx)));
-                        fields.push((name, self.lower_type_to_mir(m.member_type.ty())));
+                        field_names.push(name);
+                        field_types.push(self.lower_type_to_mir(m.member_type.ty()));
                     }
-                    (size, alignment, field_offsets, fields)
+                    (size, alignment, field_offsets, field_names, field_types)
                 } else {
-                    (0, 1, Vec::new(), Vec::new())
+                    (0, 1, Vec::new(), Vec::new(), Vec::new())
                 };
 
                 MirType::Record {
                     name,
-                    fields,
+                    field_types,
+                    field_names,
                     is_union: *is_union,
                     layout: MirRecordLayout {
                         size,
@@ -1771,7 +1776,7 @@ impl<'a> AstToMirLowerer<'a> {
             Place::StructField(base, field_idx) => {
                 let struct_ty = self.get_place_type(base);
                 match self.mir_builder.get_type(struct_ty) {
-                    MirType::Record { fields, .. } => fields[*field_idx].1,
+                    MirType::Record { field_types, .. } => field_types[*field_idx],
                     _ => panic!("StructField access on non-struct type"),
                 }
             }

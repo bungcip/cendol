@@ -18,16 +18,16 @@ fn test_emit_const_struct_literal() {
     types.insert(int_type_id, MirType::I32);
 
     let struct_type_id = TypeId::new(2).unwrap();
-    let record_layout = MirRecordLayout {
-        size: 8,
-        alignment: 4,
-        field_offsets: vec![0, 4],
-    };
     let struct_type = MirType::Record {
-        name: NameId::new("MyStruct"),
-        fields: vec![(NameId::new("a"), int_type_id), (NameId::new("b"), int_type_id)],
+        name: NameId::new("ValidationTestStruct"),
+        field_types: vec![int_type_id, int_type_id],
+        field_names: vec![NameId::new("a"), NameId::new("b")],
         is_union: false,
-        layout: record_layout,
+        layout: MirRecordLayout {
+            size: 8,
+            alignment: 4,
+            field_offsets: vec![0, 4],
+        },
     };
     types.insert(struct_type_id, struct_type.clone());
 

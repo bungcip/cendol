@@ -188,10 +188,15 @@ impl<'a> MirDumper<'a> {
                 format!("type {} = fn({}) -> %t{}", type_name, param_types.join(", "), ret_index)
             }
             MirType::Record {
-                name, fields, is_union, ..
+                name,
+                field_types,
+                field_names,
+                is_union,
+                ..
             } => {
-                let field_strs: Vec<String> = fields
+                let field_strs: Vec<String> = field_names
                     .iter()
+                    .zip(field_types.iter())
                     .map(|(fname, fid)| {
                         let field_index = self.get_type_index_from_type_id(*fid);
                         format!("{}: %t{}", fname, field_index)

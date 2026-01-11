@@ -295,8 +295,9 @@ pub enum MirType {
         params: Vec<TypeId>,
     },
     Record {
-        name: NameId,                  // unlike in C, in MIR we must have name
-        fields: Vec<(NameId, TypeId)>, // unlike in C, in MIR we must have name
+        name: NameId,
+        field_types: Vec<TypeId>,
+        field_names: Vec<NameId>,
         is_union: bool,
         layout: MirRecordLayout,
     },
@@ -947,10 +948,20 @@ impl fmt::Display for MirType {
             MirType::Array { element, size, .. } => write!(f, "[{}]{}", size, element.get()),
             MirType::Function { return_type, params } => write!(f, "fn({:?}) -> {}", params, return_type.get()),
             MirType::Record {
-                name, fields, is_union, ..
+                name,
+                field_types,
+                field_names,
+                is_union,
+                ..
             } => {
                 let kind = if *is_union { "union" } else { "struct" };
-                write!(f, "{} {} {{ {:?} }}", kind, name, fields)
+                let fields_str = field_names
+                    .iter()
+                    .zip(field_types.iter())
+                    .map(|(name, ty)| format!("{}: {}", name, ty.get()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "{} {} {{ {} }}", kind, name, fields_str)
             }
         }
     }

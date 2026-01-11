@@ -385,9 +385,9 @@ impl MirValidator {
             }
             Place::StructField(base, idx) => {
                 if let Some(base_ty) = self.validate_place(sema_output, base) {
-                    if let Some(MirType::Record { fields, .. }) = sema_output.types.get(&base_ty) {
-                        if *idx < fields.len() {
-                            Some(fields[*idx].1)
+                    if let Some(MirType::Record { field_types, .. }) = sema_output.types.get(&base_ty) {
+                        if *idx < field_types.len() {
+                            Some(field_types[*idx])
                         } else {
                             self.errors.push(ValidationError::IllegalOperation(format!(
                                 "Struct field index {} out of bounds",

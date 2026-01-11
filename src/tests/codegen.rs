@@ -623,4 +623,27 @@ mod tests {
             "Expected select instruction for boolean conversion"
         );
     }
+    #[test]
+    fn test_float_to_char_conversion() {
+        let source = r#"
+            int main() {
+                char c = 97.0;
+                short s = 98.0;
+                return 0;
+            }
+        "#;
+        // Verify it compiles without crashing
+        let clif_dump = super::setup_cranelift(source);
+        println!("{}", clif_dump);
+
+        // Check for 'ireduce' instructions which we used to fix the crash
+        assert!(
+            clif_dump.contains("ireduce.i8"),
+            "Expected ireduce.i8 instruction for float->char conversion"
+        );
+        assert!(
+            clif_dump.contains("ireduce.i16"),
+            "Expected ireduce.i16 instruction for float->short conversion"
+        );
+    }
 }

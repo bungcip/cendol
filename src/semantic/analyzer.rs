@@ -468,10 +468,11 @@ impl<'a> SemanticAnalyzer<'a> {
 
         if let TypeKind::Function {
             parameters,
-            is_variadic: _,
+            is_variadic,
             ..
         } = &func_kind
         {
+            let is_variadic = *is_variadic;
             for (i, arg_node_ref) in call_expr.arg_start.range(call_expr.arg_len).enumerate() {
                 // Visit the argument expression directly
                 let arg_ty = self.visit_node(arg_node_ref);
@@ -481,6 +482,19 @@ impl<'a> SemanticAnalyzer<'a> {
                     if let Some(actual_arg_ty) = arg_ty {
                         // Record implicit conversion on the argument node
                         self.record_implicit_conversions(param_ty, actual_arg_ty, arg_node_ref);
+                    }
+                } else if is_variadic {
+                    // C11 6.5.2.2: "If the expression that denotes the called function has a type that
+                    // includes a prototype, the arguments are implicitly converted, as if by assignment,
+                    // to the types of the corresponding parameters... The ellipsis notation in a function
+                    // prototype declarator causes argument type conversion to stop after the last declared
+                    // parameter. The default argument promotions are performed on trailing arguments."
+                    if let Some(actual_arg_ty) = arg_ty {
+                        let promoted_ty =
+                            crate::semantic::conversions::default_argument_promotions(self.registry, actual_arg_ty);
+                        if promoted_ty.ty() != actual_arg_ty.ty() {
+                            self.record_implicit_conversions(promoted_ty, actual_arg_ty, arg_node_ref);
+                        }
                     }
                 }
             }

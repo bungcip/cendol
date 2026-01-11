@@ -1217,7 +1217,7 @@ mod tests {
         type %t1 = ptr<%t2>
         type %t2 = struct I {  }
 
-        global @p: ptr<%t2> = const zero
+        global @p: ptr<%t2>
 
         fn main() -> i32
         {

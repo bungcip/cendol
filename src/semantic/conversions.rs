@@ -90,6 +90,18 @@ pub(crate) fn integer_promotion(ctx: &TypeRegistry, ty: QualType) -> QualType {
     }
 }
 
+/// Performs default argument promotions as specified in C11 6.5.2.2.
+pub(crate) fn default_argument_promotions(ctx: &TypeRegistry, ty: QualType) -> QualType {
+    if let Some(builtin) = ty.ty().builtin() {
+        match builtin {
+            BuiltinType::Float => QualType::unqualified(ctx.type_double),
+            _ => integer_promotion(ctx, ty),
+        }
+    } else {
+        ty
+    }
+}
+
 fn get_int_type_details(builtin: Option<BuiltinType>) -> (bool, u8) {
     // (is_signed, rank)
     // Rank: Bool=1, Char=2, Short=3, Int=4, Long=5, LongLong=6

@@ -565,6 +565,7 @@ impl<'a> AstToMirLowerer<'a> {
                 UnaryOp::PreIncrement | UnaryOp::PreDecrement => self.lower_pre_incdec(scope_id, op, *operand_ref),
                 UnaryOp::AddrOf => self.lower_unary_addrof(scope_id, *operand_ref),
                 UnaryOp::Deref => self.lower_unary_deref(scope_id, *operand_ref),
+                UnaryOp::Plus => self.lower_expression(scope_id, *operand_ref, true),
                 _ => {
                     let operand = self.lower_expression(scope_id, *operand_ref, true);
                     let mir_op = self.map_ast_unary_op_to_mir(op);

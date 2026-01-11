@@ -44,6 +44,7 @@ pub struct Symbol {
 pub enum SymbolKind {
     Variable {
         is_global: bool,
+        storage: Option<StorageClass>,
         // Initializer might be an AST node or a constant value
         initializer: Option<NodeRef>,
         alignment: Option<u32>, // Max alignment in bytes
@@ -277,6 +278,7 @@ impl SymbolTable {
         &mut self,
         name: NameId,
         ty: TypeRef,
+        storage: Option<StorageClass>,
         initializer: Option<NodeRef>,
         alignment: Option<u32>,
         span: SourceSpan,
@@ -285,6 +287,8 @@ impl SymbolTable {
 
         let def_state = if initializer.is_some() {
             DefinitionState::Defined
+        } else if storage == Some(StorageClass::Extern) {
+            DefinitionState::DeclaredOnly
         } else {
             DefinitionState::Tentative
         };
@@ -293,6 +297,7 @@ impl SymbolTable {
             name,
             kind: SymbolKind::Variable {
                 is_global,
+                storage,
                 initializer,
                 alignment,
             },
@@ -502,47 +507,8 @@ impl SymbolTable {
                 }
             }
 
-            // Apply C11 6.9.2 merging rules
+            // Apply C11 merging rules
             match (existing.def_state, new_entry.def_state) {
-                (DefinitionState::Tentative, DefinitionState::Tentative) => {
-                    // Multiple tentative definitions - OK
-                    debug!("Merging tentative definitions for '{}'", name);
-                }
-
-                (DefinitionState::Tentative, DefinitionState::Defined) => {
-                    // Tentative definition followed by actual definition
-                    debug!("Converting tentative definition to defined for '{}'", name);
-                    existing.def_state = DefinitionState::Defined;
-                    if let SymbolKind::Variable { initializer, .. } = &mut new_entry.kind
-                        && let SymbolKind::Variable {
-                            initializer: existing_init,
-                            ..
-                        } = &mut existing.kind
-                    {
-                        *existing_init = *initializer;
-                    }
-                }
-
-                (DefinitionState::DeclaredOnly, DefinitionState::Defined) => {
-                    // Extern declaration followed by actual definition
-                    debug!("Converting extern declaration to defined for '{}'", name);
-                    existing.def_state = DefinitionState::Defined;
-                    if let SymbolKind::Variable { initializer, .. } = &mut new_entry.kind
-                        && let SymbolKind::Variable {
-                            initializer: existing_init,
-                            ..
-                        } = &mut existing.kind
-                    {
-                        *existing_init = *initializer;
-                    }
-                }
-
-                (DefinitionState::Tentative, DefinitionState::DeclaredOnly) => {
-                    // Tentative definition followed by extern declaration - OK
-                    debug!("Merging tentative definition with extern declaration for '{}'", name);
-                    existing.def_state = DefinitionState::DeclaredOnly;
-                }
-
                 (DefinitionState::Defined, DefinitionState::Defined) => {
                     // Multiple actual definitions - error
                     debug!("Multiple definitions of '{}'", name);
@@ -553,13 +519,35 @@ impl SymbolTable {
                 }
 
                 (DefinitionState::Defined, _) => {
-                    // Already defined, ignore new declaration
+                    // Already defined, ignore new declaration/tentative definition
                     debug!("Ignoring redundant declaration for already-defined '{}'", name);
                 }
 
-                (DefinitionState::DeclaredOnly, _) => {
-                    // Already declared as extern, ignore new declaration
-                    debug!("Ignoring redundant extern declaration for '{}'", name);
+                (_, DefinitionState::Defined) => {
+                    // Upgrade to defined
+                    debug!("Upgrading to defined for '{}'", name);
+                    existing.def_state = DefinitionState::Defined;
+                    if let SymbolKind::Variable { initializer, .. } = &mut new_entry.kind
+                        && let SymbolKind::Variable {
+                            initializer: existing_init,
+                            ..
+                        } = &mut existing.kind
+                    {
+                        *existing_init = *initializer;
+                    }
+                }
+
+                (DefinitionState::Tentative, DefinitionState::Tentative)
+                | (DefinitionState::Tentative, DefinitionState::DeclaredOnly)
+                | (DefinitionState::DeclaredOnly, DefinitionState::DeclaredOnly) => {
+                    // No change to def_state
+                    debug!("Merging similar or weaker definition for '{}'", name);
+                }
+
+                (DefinitionState::DeclaredOnly, DefinitionState::Tentative) => {
+                    // Upgrade to tentative
+                    debug!("Upgrading extern declaration to tentative for '{}'", name);
+                    existing.def_state = DefinitionState::Tentative;
                 }
             }
 

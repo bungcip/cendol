@@ -784,12 +784,32 @@ fn lower_function_parameters(params: &[ParsedParamData], ctx: &mut LowerCtx) -> 
             // Apply array-to-pointer decay for function parameters (C11 6.7.6.3)
             let decayed_ty = ctx.registry.decay(final_ty);
 
+            let pname = param.declarator.as_ref().and_then(extract_name);
             FunctionParameter {
                 param_type: decayed_ty,
-                name: param.declarator.as_ref().and_then(extract_name),
+                name: pname,
             }
         })
         .collect()
+}
+
+/// Helper to get the actual parameters from the function declarator being defined.
+/// This is necessary because interned function types in TypeRegistry might not have
+/// the parameter names if the function was previously declared without them.
+fn get_definition_params(decl: &ParsedDeclarator, ctx: &mut LowerCtx) -> Option<Vec<FunctionParameter>> {
+    match decl {
+        ParsedDeclarator::Function { inner, params, .. } => {
+            if let Some(inner_params) = get_definition_params(inner, ctx) {
+                Some(inner_params)
+            } else {
+                Some(lower_function_parameters(params, ctx))
+            }
+        }
+        ParsedDeclarator::Pointer(_, inner) => inner.as_ref().and_then(|d| get_definition_params(d, ctx)),
+        ParsedDeclarator::Array(inner, _) => get_definition_params(inner, ctx),
+        ParsedDeclarator::BitField(inner, _) => get_definition_params(inner, ctx),
+        _ => None,
+    }
 }
 
 fn extract_name(decl: &ParsedDeclarator) -> Option<NameId> {
@@ -1091,11 +1111,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         // Pre-scan labels for forward goto support
         self.collect_labels(func_def.body);
 
-        let parameters = if let TypeKind::Function { parameters, .. } = &self.registry.get(final_ty.ty()).kind {
-            parameters.clone()
-        } else {
-            vec![]
-        };
+        let parameters = get_definition_params(&func_def.declarator, self).unwrap_or_default();
 
         let param_len = parameters.len() as u16;
         let mut param_dummies = Vec::new();
@@ -1107,7 +1123,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             if let Some(pname) = param.name
                 && let Ok(sym) = self
                     .symbol_table
-                    .define_variable(pname, param.param_type.ty(), None, None, span)
+                    .define_variable(pname, param.param_type.ty(), None, None, None, span)
             {
                 let param_ref = param_dummies[i];
                 self.ast.kinds[param_ref.index()] = NodeKind::Param(ParamData {
@@ -1306,10 +1322,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     init: init_expr,
                     alignment: spec_info.alignment.map(|a| a as u16),
                 };
-                if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
-                    self.symbol_table
-                        .define_variable(name, final_ty.ty(), init_expr, spec_info.alignment, span)
-                {
+                if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) = self.symbol_table.define_variable(
+                    name,
+                    final_ty.ty(),
+                    spec_info.storage,
+                    init_expr,
+                    spec_info.alignment,
+                    span,
+                ) {
                     let first_def = self.symbol_table.get_symbol(existing).def_span;
                     self.report_error(SemanticError::Redefinition { name, first_def, span });
                 }

@@ -381,6 +381,7 @@ impl CompilerDriver {
                     // Link the object file into an executable using clang
                     let status = std::process::Command::new("clang")
                         .args(&object_files_to_link)
+                        .arg("-lm")
                         .arg("-o")
                         .arg(&output_path)
                         .status()

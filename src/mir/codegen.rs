@@ -15,7 +15,8 @@ use crate::mir::{
 use crate::semantic::output::SemaOutput;
 use cranelift::codegen::ir::{StackSlot, StackSlotData, StackSlotKind};
 use cranelift::prelude::{
-    AbiParam, Block, FloatCC, FunctionBuilderContext, InstBuilder, IntCC, MemFlags, Signature, Type, Value, types,
+    AbiParam, Block, Configurable, FloatCC, FunctionBuilderContext, InstBuilder, IntCC, MemFlags, Signature, Type,
+    Value, types,
 };
 use cranelift_frontend::FunctionBuilder;
 use cranelift_module::{DataDescription, Linkage, Module};
@@ -1118,9 +1119,24 @@ fn lower_statement(
                     )?;
 
                     match op {
-                        UnaryOp::Neg => Ok(builder.ins().ineg(val)),
+                        UnaryOp::Neg => {
+                            if operand_cranelift_type.is_float() {
+                                Ok(builder.ins().fneg(val))
+                            } else {
+                                Ok(builder.ins().ineg(val))
+                            }
+                        }
                         UnaryOp::LogicalNot => {
-                            let is_zero = builder.ins().icmp_imm(IntCC::Equal, val, 0);
+                            let is_zero = if operand_cranelift_type.is_float() {
+                                let zero = if operand_cranelift_type == types::F64 {
+                                    builder.ins().f64const(0.0)
+                                } else {
+                                    builder.ins().f32const(0.0)
+                                };
+                                builder.ins().fcmp(FloatCC::Equal, val, zero)
+                            } else {
+                                builder.ins().icmp_imm(IntCC::Equal, val, 0)
+                            };
                             Ok(builder.ins().uextend(expected_type, is_zero))
                         }
                         UnaryOp::BitwiseNot => Ok(builder.ins().bnot(val)),
@@ -1263,10 +1279,34 @@ fn lower_statement(
                     )?;
 
                     let result_val = match op {
-                        BinaryOp::Add => builder.ins().iadd(left_val, right_val),
-                        BinaryOp::Sub => builder.ins().isub(left_val, right_val),
-                        BinaryOp::Mul => builder.ins().imul(left_val, right_val),
-                        BinaryOp::Div => builder.ins().sdiv(left_val, right_val),
+                        BinaryOp::Add => {
+                            if final_left_type.is_float() {
+                                builder.ins().fadd(left_val, right_val)
+                            } else {
+                                builder.ins().iadd(left_val, right_val)
+                            }
+                        }
+                        BinaryOp::Sub => {
+                            if final_left_type.is_float() {
+                                builder.ins().fsub(left_val, right_val)
+                            } else {
+                                builder.ins().isub(left_val, right_val)
+                            }
+                        }
+                        BinaryOp::Mul => {
+                            if final_left_type.is_float() {
+                                builder.ins().fmul(left_val, right_val)
+                            } else {
+                                builder.ins().imul(left_val, right_val)
+                            }
+                        }
+                        BinaryOp::Div => {
+                            if final_left_type.is_float() {
+                                builder.ins().fdiv(left_val, right_val)
+                            } else {
+                                builder.ins().sdiv(left_val, right_val)
+                            }
+                        }
                         BinaryOp::Mod => builder.ins().srem(left_val, right_val),
                         BinaryOp::BitAnd => builder.ins().band(left_val, right_val),
                         BinaryOp::BitOr => builder.ins().bor(left_val, right_val),
@@ -1668,12 +1708,12 @@ pub(crate) struct MirToCraneliftLowerer {
 impl MirToCraneliftLowerer {
     pub(crate) fn new(mir: SemaOutput) -> Self {
         let triple = Triple::host();
+        let mut flag_builder = cranelift::prelude::settings::builder();
+        flag_builder.set("is_pic", "true").unwrap();
         let builder = ObjectBuilder::new(
             cranelift::prelude::isa::lookup(triple)
                 .unwrap()
-                .finish(cranelift::prelude::settings::Flags::new(
-                    cranelift::prelude::settings::builder(),
-                ))
+                .finish(cranelift::prelude::settings::Flags::new(flag_builder))
                 .unwrap(),
             "main",
             cranelift_module::default_libcall_names(),
@@ -1698,14 +1738,19 @@ impl MirToCraneliftLowerer {
 
         // Define all global variables in the module
         for (_global_id, global) in &self.mir.globals {
+            let linkage = if global.initial_value.is_some() {
+                Linkage::Export
+            } else {
+                Linkage::Import
+            };
+
             let data_id = self
                 .module
-                .declare_data(global.name.as_str(), Linkage::Export, true, false)
+                .declare_data(global.name.as_str(), linkage, true, false)
                 .map_err(|e| format!("Failed to declare global data: {:?}", e))?;
 
-            let mut data_description = DataDescription::new();
-
             if let Some(const_id) = global.initial_value {
+                let mut data_description = DataDescription::new();
                 let global_type = self.mir.get_type(global.type_id);
                 let layout = get_type_layout(global_type, &self.mir)
                     .map_err(|e| format!("Failed to get layout for global {}: {}", global.name, e))?;
@@ -1714,15 +1759,11 @@ impl MirToCraneliftLowerer {
                 emit_const(const_id, &layout, &mut initial_value_bytes, &self.mir)
                     .map_err(|e| format!("Failed to emit constant for global {}: {}", global.name, e))?;
                 data_description.define(initial_value_bytes.into_boxed_slice());
-            } else {
-                let global_type = self.mir.get_type(global.type_id);
-                let size = mir_type_size(global_type, &self.mir)? as usize;
-                data_description.define_zeroinit(size);
-            }
 
-            self.module
-                .define_data(data_id, &data_description)
-                .map_err(|e| format!("Failed to define global data: {:?}", e))?;
+                self.module
+                    .define_data(data_id, &data_description)
+                    .map_err(|e| format!("Failed to define global data: {:?}", e))?;
+            }
         }
 
         // Lower all functions that have definitions (not just declarations)

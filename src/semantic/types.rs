@@ -580,30 +580,30 @@ impl Display for TypeQualifiers {
     }
 }
 
-impl TypeKind {
-    pub fn dump(&self) -> String {
+impl Display for TypeKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TypeKind::Void => "void".to_string(),
-            TypeKind::Bool => "_Bool".to_string(),
+            TypeKind::Void => write!(f, "void"),
+            TypeKind::Bool => write!(f, "_Bool"),
             TypeKind::Char { is_signed } => {
                 if *is_signed {
-                    "char".to_string()
+                    write!(f, "char")
                 } else {
-                    "unsigned char".to_string()
+                    write!(f, "unsigned char")
                 }
             }
             TypeKind::Short { is_signed } => {
                 if *is_signed {
-                    "short".to_string()
+                    write!(f, "short")
                 } else {
-                    "unsigned short".to_string()
+                    write!(f, "unsigned short")
                 }
             }
             TypeKind::Int { is_signed } => {
                 if *is_signed {
-                    "int".to_string()
+                    write!(f, "int")
                 } else {
-                    "unsigned int".to_string()
+                    write!(f, "unsigned int")
                 }
             }
             TypeKind::Long {
@@ -612,51 +612,45 @@ impl TypeKind {
             } => {
                 if *is_long_long {
                     if *is_signed {
-                        "long long".to_string()
+                        write!(f, "long long")
                     } else {
-                        "unsigned long long".to_string()
+                        write!(f, "unsigned long long")
                     }
                 } else if *is_signed {
-                    "long".to_string()
+                    write!(f, "long")
                 } else {
-                    "unsigned long".to_string()
+                    write!(f, "unsigned long")
                 }
             }
-            TypeKind::Float => "float".to_string(),
+            TypeKind::Float => write!(f, "float"),
             TypeKind::Double { is_long_double } => {
                 if *is_long_double {
-                    "long double".to_string()
+                    write!(f, "long double")
                 } else {
-                    "double".to_string()
+                    write!(f, "double")
                 }
             }
-            TypeKind::Complex { .. } => "_Complex".to_string(),
-            TypeKind::Pointer { .. } => "<pointer>".to_string(),
-            TypeKind::Array { .. } => "<array>".to_string(),
-            TypeKind::Function { .. } => "<function>".to_string(),
+            TypeKind::Complex { .. } => write!(f, "_Complex"),
+            TypeKind::Pointer { .. } => write!(f, "<pointer>"),
+            TypeKind::Array { .. } => write!(f, "<array>"),
+            TypeKind::Function { .. } => write!(f, "<function>"),
             TypeKind::Record { tag, is_union, .. } => {
                 let kind_str = if *is_union { "union" } else { "struct" };
                 if let Some(tag_name) = tag {
-                    format!("{} {}", kind_str, tag_name)
+                    write!(f, "{} {}", kind_str, tag_name)
                 } else {
-                    format!("{} (anonymous)", kind_str)
+                    write!(f, "{} (anonymous)", kind_str)
                 }
             }
             TypeKind::Enum { tag, .. } => {
                 if let Some(tag_name) = tag {
-                    format!("enum {}", tag_name)
+                    write!(f, "enum {}", tag_name)
                 } else {
-                    "enum (anonymous)".to_string()
+                    write!(f, "enum (anonymous)")
                 }
             }
-            TypeKind::Error => "<error>".to_string(),
+            TypeKind::Error => write!(f, "<error>"),
         }
-    }
-}
-
-impl Display for TypeKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.dump())
     }
 }
 

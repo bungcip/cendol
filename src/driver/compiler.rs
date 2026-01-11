@@ -51,7 +51,10 @@ impl CompilerDriver {
         }
     }
 
-    pub fn run_pipeline(&mut self, stop_after: CompilePhase) -> Result<PipelineOutputs, PipelineError> {
+    pub(crate) fn run_pipeline(
+        &mut self,
+        stop_after: CompilePhase,
+    ) -> Result<PipelineOutputs, PipelineError> {
         let mut outputs = PipelineOutputs { units: IndexMap::new() };
 
         // Process each input file

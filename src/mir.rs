@@ -378,7 +378,7 @@ impl Global {
 }
 
 /// MIR Builder - Builds MIR from AST
-pub struct MirBuilder {
+pub(crate) struct MirBuilder {
     module: MirModule,
     current_function: Option<MirFunctionId>,
     current_block: Option<MirBlockId>,
@@ -414,7 +414,7 @@ pub struct MirBuilderOutput {
 }
 
 impl MirBuilder {
-    pub fn new(module_id: MirModuleId) -> Self {
+    pub(crate) fn new(module_id: MirModuleId) -> Self {
         Self {
             module: MirModule::new(module_id),
             current_function: None,
@@ -437,7 +437,7 @@ impl MirBuilder {
     }
 
     /// Create a new local variable
-    pub fn create_local(&mut self, name: Option<NameId>, type_id: TypeId, is_param: bool) -> LocalId {
+    pub(crate) fn create_local(&mut self, name: Option<NameId>, type_id: TypeId, is_param: bool) -> LocalId {
         let local_id = LocalId::new(self.next_local_id).unwrap();
         self.next_local_id += 1;
 
@@ -457,14 +457,14 @@ impl MirBuilder {
         local_id
     }
 
-    pub fn set_local_alignment(&mut self, local_id: LocalId, alignment: u32) {
+    pub(crate) fn set_local_alignment(&mut self, local_id: LocalId, alignment: u32) {
         if let Some(local) = self.locals.get_mut(&local_id) {
             local.alignment = Some(alignment);
         }
     }
 
     /// Create a new basic block
-    pub fn create_block(&mut self) -> MirBlockId {
+    pub(crate) fn create_block(&mut self) -> MirBlockId {
         let func_id = self.current_function.expect("no current function");
         let func = self.functions.get(&func_id).unwrap();
 
@@ -487,7 +487,7 @@ impl MirBuilder {
     }
 
     /// Add a statement to the current block
-    pub fn add_statement(&mut self, stmt: MirStmt) -> MirStmtId {
+    pub(crate) fn add_statement(&mut self, stmt: MirStmt) -> MirStmtId {
         let stmt_id = MirStmtId::new(self.next_stmt_id).unwrap();
         self.next_stmt_id += 1;
 
@@ -504,7 +504,7 @@ impl MirBuilder {
     }
 
     /// Set the terminator for the current block
-    pub fn set_terminator(&mut self, terminator: Terminator) {
+    pub(crate) fn set_terminator(&mut self, terminator: Terminator) {
         if let Some(block_id) = self.current_block
             && let Some(block) = self.blocks.get_mut(&block_id)
         {
@@ -513,14 +513,14 @@ impl MirBuilder {
     }
 
     /// Set the current block
-    pub fn set_current_block(&mut self, block_id: MirBlockId) {
+    pub(crate) fn set_current_block(&mut self, block_id: MirBlockId) {
         self.current_block = Some(block_id);
     }
 
     /// Check if the current block has a non-unreachable terminator
     /// Since terminators always exist, this checks if the terminator is meaningful
     /// (i.e., not just the default Unreachable terminator)
-    pub fn current_block_has_terminator(&self) -> bool {
+    pub(crate) fn current_block_has_terminator(&self) -> bool {
         if let Some(block_id) = self.current_block
             && let Some(block) = self.blocks.get(&block_id)
         {
@@ -530,7 +530,7 @@ impl MirBuilder {
     }
 
     /// Declare a function (extern - no body)
-    pub fn declare_function(
+    pub(crate) fn declare_function(
         &mut self,
         name: NameId,
         param_types: Vec<TypeId>,
@@ -555,7 +555,7 @@ impl MirBuilder {
     }
 
     /// Define a function (has body)
-    pub fn define_function(
+    pub(crate) fn define_function(
         &mut self,
         name: NameId,
         param_types: Vec<TypeId>,
@@ -580,7 +580,7 @@ impl MirBuilder {
     }
 
     /// Set current function
-    pub fn set_current_function(&mut self, func_id: MirFunctionId) {
+    pub(crate) fn set_current_function(&mut self, func_id: MirFunctionId) {
         self.current_function = Some(func_id);
         if let Some(func) = self.functions.get(&func_id)
             && let Some(entry_block) = func.entry_block
@@ -589,20 +589,8 @@ impl MirBuilder {
         }
     }
 
-    /// Create a new global variable
-    pub fn create_global(&mut self, name: NameId, type_id: TypeId, is_constant: bool) -> GlobalId {
-        let global_id = GlobalId::new(self.next_global_id).unwrap();
-        self.next_global_id += 1;
-
-        let global = Global::new(global_id, name, type_id, is_constant);
-        self.globals.insert(global_id, global);
-        self.module.globals.push(global_id);
-
-        global_id
-    }
-
     /// Create a new global variable with initial value
-    pub fn create_global_with_init(
+    pub(crate) fn create_global_with_init(
         &mut self,
         name: NameId,
         type_id: TypeId,
@@ -620,20 +608,20 @@ impl MirBuilder {
         global_id
     }
 
-    pub fn set_global_initializer(&mut self, global_id: GlobalId, init_id: ConstValueId) {
+    pub(crate) fn set_global_initializer(&mut self, global_id: GlobalId, init_id: ConstValueId) {
         if let Some(global) = self.globals.get_mut(&global_id) {
             global.initial_value = Some(init_id);
         }
     }
 
-    pub fn set_global_alignment(&mut self, global_id: GlobalId, alignment: u32) {
+    pub(crate) fn set_global_alignment(&mut self, global_id: GlobalId, alignment: u32) {
         if let Some(global) = self.globals.get_mut(&global_id) {
             global.alignment = Some(alignment);
         }
     }
 
     /// Add a type to the module with interning
-    pub fn add_type(&mut self, mir_type: MirType) -> TypeId {
+    pub(crate) fn add_type(&mut self, mir_type: MirType) -> TypeId {
         // Check if type already exists (type interning)
         for (existing_id, existing_type) in &self.types {
             if existing_type == &mir_type {
@@ -653,7 +641,7 @@ impl MirBuilder {
 
     /// Update an existing type previously inserted with `add_type`.
     /// This replaces the type entry in both the internal map and the module vector.
-    pub fn update_type(&mut self, type_id: TypeId, mir_type: MirType) {
+    pub(crate) fn update_type(&mut self, type_id: TypeId, mir_type: MirType) {
         self.types.insert(type_id, mir_type.clone());
         let idx = (type_id.get() - 1) as usize;
         if idx < self.module.types.len() {
@@ -661,12 +649,12 @@ impl MirBuilder {
         }
     }
 
-    pub fn get_type(&self, type_id: TypeId) -> &MirType {
+    pub(crate) fn get_type(&self, type_id: TypeId) -> &MirType {
         self.types.get(&type_id).expect("Type ID not found in MirBuilder")
     }
 
     /// Create a constant value
-    pub fn create_constant(&mut self, value: ConstValue) -> ConstValueId {
+    pub(crate) fn create_constant(&mut self, value: ConstValue) -> ConstValueId {
         let const_id = ConstValueId::new(self.next_const_id).unwrap();
         self.next_const_id += 1;
 
@@ -678,7 +666,7 @@ impl MirBuilder {
 
     /// Consumes the builder and returns all the generated MIR components.
     /// This is the preferred way to get the final MIR, as it avoids cloning.
-    pub fn consume(self) -> MirBuilderOutput {
+    pub(crate) fn consume(self) -> MirBuilderOutput {
         MirBuilderOutput {
             module: self.module,
             functions: self.functions,
@@ -692,57 +680,35 @@ impl MirBuilder {
     }
 
     /// Get all functions for validation
-    pub fn get_functions(&self) -> &HashMap<MirFunctionId, MirFunction> {
+    pub(crate) fn get_functions(&self) -> &HashMap<MirFunctionId, MirFunction> {
         &self.functions
     }
 
     /// Get all constants for validation
-    pub fn get_constants(&self) -> &HashMap<ConstValueId, ConstValue> {
+    pub(crate) fn get_constants(&self) -> &HashMap<ConstValueId, ConstValue> {
         &self.constants
     }
 
-    pub fn get_globals(&self) -> &HashMap<GlobalId, Global> {
+    pub(crate) fn get_globals(&self) -> &HashMap<GlobalId, Global> {
         &self.globals
     }
 
-    pub fn get_locals(&self) -> &HashMap<LocalId, Local> {
+    pub(crate) fn get_locals(&self) -> &HashMap<LocalId, Local> {
         &self.locals
     }
 
-    pub fn get_types(&self) -> &HashMap<TypeId, MirType> {
-        &self.types
-    }
-
-    pub fn get_statements(&self) -> &HashMap<MirStmtId, MirStmt> {
-        &self.statements
-    }
-
     /// Set the entry block for a function
-    pub fn set_function_entry_block(&mut self, func_id: MirFunctionId, block_id: MirBlockId) {
+    pub(crate) fn set_function_entry_block(&mut self, func_id: MirFunctionId, block_id: MirBlockId) {
         if let Some(func) = self.functions.get_mut(&func_id) {
             assert!(matches!(func.kind, MirFunctionKind::Defined));
             func.entry_block = Some(block_id);
         }
     }
 
-    pub fn get_next_anonymous_global_name(&mut self) -> NameId {
+    pub(crate) fn get_next_anonymous_global_name(&mut self) -> NameId {
         let name = format!(".L.str{}", self.anonymous_global_counter);
         self.anonymous_global_counter += 1;
         NameId::new(name)
-    }
-
-    pub fn update_record_fields(&mut self, type_id: TypeId, fields: Vec<(NameId, TypeId)>) {
-        let type_index = (type_id.get() - 1) as usize;
-        if let Some(mir_type) = self.module.types.get_mut(type_index)
-            && let MirType::Record { fields: old_fields, .. } = mir_type
-        {
-            *old_fields = fields.clone();
-        }
-        if let Some(mir_type) = self.types.get_mut(&type_id)
-            && let MirType::Record { fields: old_fields, .. } = mir_type
-        {
-            *old_fields = fields;
-        }
     }
 }
 

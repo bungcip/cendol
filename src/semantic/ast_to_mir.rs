@@ -4,8 +4,8 @@ use crate::ast::*;
 use crate::mir::MirArrayLayout;
 use crate::mir::MirRecordLayout;
 use crate::mir::{
-    self, BinaryOp as MirBinaryOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlockId, MirBuilder,
-    MirFunctionId, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
+    self, BinaryFloatOp, BinaryIntOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlockId, MirBuilder,
+    MirFunctionId, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp, UnaryIntOp,
 };
 use crate::semantic::ArraySizeType;
 use crate::semantic::QualType;
@@ -568,8 +568,16 @@ impl<'a> AstToMirLowerer<'a> {
                 UnaryOp::Plus => self.lower_expression(scope_id, *operand_ref, true),
                 _ => {
                     let operand = self.lower_expression(scope_id, *operand_ref, true);
-                    let mir_op = self.map_ast_unary_op_to_mir(op);
-                    let rval = Rvalue::UnaryOp(mir_op, operand);
+                    let operand_ty = self.get_operand_type(&operand);
+                    let mir_type_info = self.mir_builder.get_type(operand_ty);
+
+                    let rval = if mir_type_info.is_float() {
+                        let mir_op = self.map_ast_unary_op_to_mir_float(op);
+                        Rvalue::UnaryFloatOp(mir_op, operand)
+                    } else {
+                        let mir_op = self.map_ast_unary_op_to_mir_int(op);
+                        Rvalue::UnaryIntOp(mir_op, operand)
+                    };
                     self.emit_rvalue_to_operand(rval, mir_ty)
                 }
             },
@@ -942,8 +950,21 @@ impl<'a> AstToMirLowerer<'a> {
         let lhs_final = self.ensure_explicit_cast(lhs_converted, left_ref);
         let rhs_final = self.ensure_explicit_cast(rhs_converted, right_ref);
 
-        let mir_op = self.map_ast_binary_op_to_mir(op);
-        let rval = Rvalue::BinaryOp(mir_op, lhs_final, rhs_final);
+        // Check types for correct MIR op
+        let lhs_mir = self.mir_builder.get_type(lhs_mir_ty);
+
+        if matches!(op, BinaryOp::Comma) {
+            // Comma operator: LHS evaluated (lhs_final), result discarded. Result is RHS.
+            return rhs_final;
+        }
+
+        let rval = if lhs_mir.is_float() {
+            let mir_op = self.map_ast_binary_op_to_mir_float(op);
+            Rvalue::BinaryFloatOp(mir_op, lhs_final, rhs_final)
+        } else {
+            let mir_op = self.map_ast_binary_op_to_mir_int(op);
+            Rvalue::BinaryIntOp(mir_op, lhs_final, rhs_final)
+        };
         self.emit_rvalue_to_operand(rval, mir_ty)
     }
 
@@ -951,19 +972,9 @@ impl<'a> AstToMirLowerer<'a> {
     fn ensure_explicit_cast(&mut self, operand: Operand, node_ref: NodeRef) -> Operand {
         match operand {
             Operand::Constant(_) => {
-                // Check the resolved type of the node.
-                // If conversions were applied, `operand` passed here is the INNER constant,
-                // but wait, apply_conversions returns Operand::Cast if converted.
-                // So if we are here seeing Operand::Constant, it means NO conversion was applied.
-                // Thus the constant has the type of `node_ref`.
                 if let Some(ty) = self.ast.get_resolved_type(node_ref) {
                     let mir_type_id = self.lower_type_to_mir(ty.ty());
-                    // If it's not a standard I32, wrap in Cast to be explicit.
-                    // Actually, adhering to user request "make it explicit", we should perhaps ALWAYS cast constants?
-                    // Or at least for potential ambiguity (u64, i64, pointers).
-                    // Checking against i32:
                     if let MirType::Int { width: 32, .. } = self.mir_builder.get_type(mir_type_id) {
-                        // Default is i32, so maybe optional. But user said "all const casted".
                         Operand::Cast(mir_type_id, Box::new(operand))
                     } else {
                         Operand::Cast(mir_type_id, Box::new(operand))
@@ -1125,7 +1136,7 @@ impl<'a> AstToMirLowerer<'a> {
                 BinaryOp::AssignBitXor => BinaryOp::BitXor,
                 BinaryOp::AssignLShift => BinaryOp::LShift,
                 BinaryOp::AssignRShift => BinaryOp::RShift,
-                _ => panic!("Unexpected compound assignment operator"),
+                _ => unreachable!("Unexpected compound assignment operator"),
             };
 
             if let Some(rval) =
@@ -1135,8 +1146,17 @@ impl<'a> AstToMirLowerer<'a> {
             } else {
                 let lhs_converted_for_op = self.apply_conversions(lhs_copy, left_ref, mir_ty);
                 let rhs_converted_for_op = self.apply_conversions(rhs_op, right_ref, mir_ty);
-                let mir_bin_op = self.map_ast_binary_op_to_mir(&compound_op);
-                let rval = Rvalue::BinaryOp(mir_bin_op, lhs_converted_for_op, rhs_converted_for_op);
+
+                let lhs_ty = self.get_operand_type(&lhs_converted_for_op);
+                let mir_type_info = self.mir_builder.get_type(lhs_ty);
+
+                let rval = if mir_type_info.is_float() {
+                    let mir_bin_op = self.map_ast_binary_op_to_mir_float(&compound_op);
+                    Rvalue::BinaryFloatOp(mir_bin_op, lhs_converted_for_op, rhs_converted_for_op)
+                } else {
+                    let mir_bin_op = self.map_ast_binary_op_to_mir_int(&compound_op);
+                    Rvalue::BinaryIntOp(mir_bin_op, lhs_converted_for_op, rhs_converted_for_op)
+                };
                 self.emit_rvalue_to_operand(rval, mir_ty)
             }
         } else {
@@ -1855,42 +1875,60 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn map_ast_binary_op_to_mir(&self, ast_op: &BinaryOp) -> MirBinaryOp {
+    fn map_ast_binary_op_to_mir_int(&self, ast_op: &BinaryOp) -> BinaryIntOp {
         match ast_op {
-            BinaryOp::Add => MirBinaryOp::Add,
-            BinaryOp::Sub => MirBinaryOp::Sub,
-            BinaryOp::Mul => MirBinaryOp::Mul,
-            BinaryOp::Div => MirBinaryOp::Div,
-            BinaryOp::Mod => MirBinaryOp::Mod,
-            BinaryOp::BitAnd => MirBinaryOp::BitAnd,
-            BinaryOp::BitOr => MirBinaryOp::BitOr,
-            BinaryOp::BitXor => MirBinaryOp::BitXor,
-            BinaryOp::LShift => MirBinaryOp::LShift,
-            BinaryOp::RShift => MirBinaryOp::RShift,
-            BinaryOp::Equal => MirBinaryOp::Equal,
-            BinaryOp::NotEqual => MirBinaryOp::NotEqual,
-            BinaryOp::Less => MirBinaryOp::Less,
-            BinaryOp::LessEqual => MirBinaryOp::LessEqual,
-            BinaryOp::Greater => MirBinaryOp::Greater,
-            BinaryOp::GreaterEqual => MirBinaryOp::GreaterEqual,
-            BinaryOp::LogicAnd => MirBinaryOp::LogicAnd,
-            BinaryOp::LogicOr => MirBinaryOp::LogicOr,
-            BinaryOp::Comma => MirBinaryOp::Comma,
-            other => panic!("Unsupported binary operator: {:?}", other),
+            BinaryOp::Add | BinaryOp::AssignAdd => BinaryIntOp::Add,
+            BinaryOp::Sub | BinaryOp::AssignSub => BinaryIntOp::Sub,
+            BinaryOp::Mul | BinaryOp::AssignMul => BinaryIntOp::Mul,
+            BinaryOp::Div | BinaryOp::AssignDiv => BinaryIntOp::Div,
+            BinaryOp::Mod | BinaryOp::AssignMod => BinaryIntOp::Mod,
+            BinaryOp::BitAnd | BinaryOp::AssignBitAnd => BinaryIntOp::BitAnd,
+            BinaryOp::BitOr | BinaryOp::AssignBitOr => BinaryIntOp::BitOr,
+            BinaryOp::BitXor | BinaryOp::AssignBitXor => BinaryIntOp::BitXor,
+            BinaryOp::LShift | BinaryOp::AssignLShift => BinaryIntOp::LShift,
+            BinaryOp::RShift | BinaryOp::AssignRShift => BinaryIntOp::RShift,
+            BinaryOp::Equal => BinaryIntOp::Eq,
+            BinaryOp::NotEqual => BinaryIntOp::Ne,
+            BinaryOp::Less => BinaryIntOp::Lt,
+            BinaryOp::LessEqual => BinaryIntOp::Le,
+            BinaryOp::Greater => BinaryIntOp::Gt,
+            BinaryOp::GreaterEqual => BinaryIntOp::Ge,
+            // Logic ops are handled separately (short-circuit)
+            BinaryOp::LogicAnd | BinaryOp::LogicOr => panic!("Logic ops should be handled separately"),
+            BinaryOp::Comma => panic!("Comma op should be handled separately"), // Comma usually handled in expression lowering
+            _ => panic!("Unsupported integer binary operator: {:?}", ast_op),
         }
     }
 
-    fn map_ast_unary_op_to_mir(&self, ast_op: &UnaryOp) -> mir::UnaryOp {
+    fn map_ast_binary_op_to_mir_float(&self, ast_op: &BinaryOp) -> BinaryFloatOp {
         match ast_op {
-            UnaryOp::AddrOf => mir::UnaryOp::AddrOf,
-            UnaryOp::Deref => mir::UnaryOp::Deref,
-            UnaryOp::Plus => panic!("Unary plus should be handled by type resolver"),
-            UnaryOp::Minus => mir::UnaryOp::Neg,
-            UnaryOp::BitNot => mir::UnaryOp::BitwiseNot,
-            UnaryOp::LogicNot => mir::UnaryOp::LogicalNot,
-            UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
-                panic!("Pre-increment/decrement should be desugared in lower_expression")
-            }
+            BinaryOp::Add | BinaryOp::AssignAdd => BinaryFloatOp::Add,
+            BinaryOp::Sub | BinaryOp::AssignSub => BinaryFloatOp::Sub,
+            BinaryOp::Mul | BinaryOp::AssignMul => BinaryFloatOp::Mul,
+            BinaryOp::Div | BinaryOp::AssignDiv => BinaryFloatOp::Div,
+            BinaryOp::Equal => BinaryFloatOp::Eq,
+            BinaryOp::NotEqual => BinaryFloatOp::Ne,
+            BinaryOp::Less => BinaryFloatOp::Lt,
+            BinaryOp::LessEqual => BinaryFloatOp::Le,
+            BinaryOp::Greater => BinaryFloatOp::Gt,
+            BinaryOp::GreaterEqual => BinaryFloatOp::Ge,
+            _ => panic!("Unsupported float binary operator: {:?}", ast_op),
+        }
+    }
+
+    fn map_ast_unary_op_to_mir_int(&self, ast_op: &UnaryOp) -> UnaryIntOp {
+        match ast_op {
+            UnaryOp::Minus => UnaryIntOp::Neg,
+            UnaryOp::BitNot => UnaryIntOp::BitwiseNot,
+            UnaryOp::LogicNot => UnaryIntOp::LogicalNot,
+            _ => panic!("Unsupported integer unary operator: {:?}", ast_op),
+        }
+    }
+
+    fn map_ast_unary_op_to_mir_float(&self, ast_op: &UnaryOp) -> UnaryFloatOp {
+        match ast_op {
+            UnaryOp::Minus => UnaryFloatOp::Neg,
+            _ => panic!("Unsupported float unary operator: {:?}", ast_op),
         }
     }
 
@@ -1946,7 +1984,7 @@ impl<'a> AstToMirLowerer<'a> {
                     // For Integers: Add(delta) (Note: we use Add with negative delta for decrement
                     // to support proper wrapping arithmetic and fix previous bugs)
                     let rhs = if is_inc { one_const } else { minus_one_const };
-                    Rvalue::BinaryOp(mir::BinaryOp::Add, operand.clone(), rhs)
+                    Rvalue::BinaryIntOp(BinaryIntOp::Add, operand.clone(), rhs)
                 }
             };
 

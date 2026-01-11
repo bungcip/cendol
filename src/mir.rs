@@ -184,8 +184,10 @@ pub enum Operand {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum Rvalue {
     Use(Operand),
-    BinaryOp(BinaryOp, Operand, Operand),
-    UnaryOp(UnaryOp, Operand),
+    BinaryIntOp(BinaryIntOp, Operand, Operand),
+    BinaryFloatOp(BinaryFloatOp, Operand, Operand),
+    UnaryIntOp(UnaryIntOp, Operand),
+    UnaryFloatOp(UnaryFloatOp, Operand),
     Cast(TypeId, Operand),
     PtrAdd(Operand, Operand),
     PtrSub(Operand, Operand),
@@ -206,12 +208,10 @@ pub enum CallTarget {
     Indirect(Operand),     // Indirect call via function pointer
 }
 
-/// Binary operations
-/// This is different from AST binary ops as some C semantics are made explicit here
-/// So thereis no assignment ops
+/// Integer binary operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[repr(u8)]
-pub enum BinaryOp {
+pub enum BinaryIntOp {
     Add,
     Sub,
     Mul,
@@ -222,28 +222,44 @@ pub enum BinaryOp {
     BitXor,
     LShift,
     RShift,
-    Equal,
-    NotEqual,
-    Less,
-    LessEqual,
-    Greater,
-    GreaterEqual,
-    LogicAnd,
-    LogicOr,
-    Comma,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
 }
 
-/// Unary operations
-/// This is different from AST unary ops as some C semantics are made explicit here
-/// So no increment/decrement ops because they are desugared into assignments
+/// Floating-point binary operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[repr(u8)]
-pub enum UnaryOp {
+pub enum BinaryFloatOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+/// Integer unary operations
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[repr(u8)]
+pub enum UnaryIntOp {
     Neg,
     BitwiseNot,
     LogicalNot,
-    AddrOf,
-    Deref,
+}
+
+/// Floating-point unary operations
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[repr(u8)]
+pub enum UnaryFloatOp {
+    Neg,
 }
 
 /// Type - MIR type system
@@ -296,6 +312,14 @@ impl MirType {
 
     pub fn is_pointer(&self) -> bool {
         matches!(self, MirType::Pointer { .. })
+    }
+
+    pub fn is_float(&self) -> bool {
+        matches!(self, MirType::Float { .. })
+    }
+
+    pub fn is_int(&self) -> bool {
+        matches!(self, MirType::Int { .. } | MirType::Bool)
     }
 }
 
@@ -807,8 +831,10 @@ impl fmt::Display for Rvalue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Rvalue::Use(operand) => write!(f, "Use({:?})", operand),
-            Rvalue::BinaryOp(op, left, right) => write!(f, "BinaryOp({:?}, {:?}, {:?})", op, left, right),
-            Rvalue::UnaryOp(op, operand) => write!(f, "UnaryOp({:?}, {:?})", op, operand),
+            Rvalue::BinaryIntOp(op, left, right) => write!(f, "BinaryIntOp({}, {:?}, {:?})", op, left, right),
+            Rvalue::BinaryFloatOp(op, left, right) => write!(f, "BinaryFloatOp({}, {:?}, {:?})", op, left, right),
+            Rvalue::UnaryIntOp(op, operand) => write!(f, "UnaryIntOp({}, {:?})", op, operand),
+            Rvalue::UnaryFloatOp(op, operand) => write!(f, "UnaryFloatOp({}, {:?})", op, operand),
             Rvalue::Cast(type_id, operand) => write!(f, "Cast({}, {:?})", type_id.get(), operand),
             Rvalue::PtrAdd(base, offset) => write!(f, "PtrAdd({:?}, {:?})", base, offset),
             Rvalue::PtrSub(base, offset) => write!(f, "PtrSub({:?}, {:?})", base, offset),
@@ -821,14 +847,60 @@ impl fmt::Display for Rvalue {
     }
 }
 
-impl fmt::Display for UnaryOp {
+impl fmt::Display for BinaryIntOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            UnaryOp::Neg => write!(f, "-"),
-            UnaryOp::BitwiseNot => write!(f, "~"),
-            UnaryOp::LogicalNot => write!(f, "!"),
-            UnaryOp::AddrOf => write!(f, "&"),
-            UnaryOp::Deref => write!(f, "*"),
+            BinaryIntOp::Add => write!(f, "+"),
+            BinaryIntOp::Sub => write!(f, "-"),
+            BinaryIntOp::Mul => write!(f, "*"),
+            BinaryIntOp::Div => write!(f, "/"),
+            BinaryIntOp::Mod => write!(f, "%"),
+            BinaryIntOp::BitAnd => write!(f, "&"),
+            BinaryIntOp::BitOr => write!(f, "|"),
+            BinaryIntOp::BitXor => write!(f, "^"),
+            BinaryIntOp::LShift => write!(f, "<<"),
+            BinaryIntOp::RShift => write!(f, ">>"),
+            BinaryIntOp::Eq => write!(f, "=="),
+            BinaryIntOp::Ne => write!(f, "!="),
+            BinaryIntOp::Lt => write!(f, "<"),
+            BinaryIntOp::Le => write!(f, "<="),
+            BinaryIntOp::Gt => write!(f, ">"),
+            BinaryIntOp::Ge => write!(f, ">="),
+        }
+    }
+}
+
+impl fmt::Display for BinaryFloatOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BinaryFloatOp::Add => write!(f, "+"),
+            BinaryFloatOp::Sub => write!(f, "-"),
+            BinaryFloatOp::Mul => write!(f, "*"),
+            BinaryFloatOp::Div => write!(f, "/"),
+            BinaryFloatOp::Eq => write!(f, "=="),
+            BinaryFloatOp::Ne => write!(f, "!="),
+            BinaryFloatOp::Lt => write!(f, "<"),
+            BinaryFloatOp::Le => write!(f, "<="),
+            BinaryFloatOp::Gt => write!(f, ">"),
+            BinaryFloatOp::Ge => write!(f, ">="),
+        }
+    }
+}
+
+impl fmt::Display for UnaryIntOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            UnaryIntOp::Neg => write!(f, "-"),
+            UnaryIntOp::BitwiseNot => write!(f, "~"),
+            UnaryIntOp::LogicalNot => write!(f, "!"),
+        }
+    }
+}
+
+impl fmt::Display for UnaryFloatOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            UnaryFloatOp::Neg => write!(f, "-"),
         }
     }
 }

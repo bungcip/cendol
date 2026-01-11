@@ -9,8 +9,9 @@
 
 use crate::ast::NameId;
 use crate::mir::{
-    BinaryOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlock, MirBlockId, MirFunction, MirFunctionId,
-    MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryOp,
+    BinaryFloatOp, BinaryIntOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlock, MirBlockId, MirFunction,
+    MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp,
+    UnaryIntOp,
 };
 use crate::semantic::output::SemaOutput;
 use cranelift::codegen::ir::{StackSlot, StackSlotData, StackSlotKind};
@@ -1107,7 +1108,7 @@ fn lower_statement(
                         builder,
                     ))
                 }
-                Rvalue::UnaryOp(op, operand) => {
+                Rvalue::UnaryIntOp(op, operand) => {
                     let operand_cranelift_type = get_operand_cranelift_type(operand, mir)?;
                     let val = resolve_operand_to_value(
                         operand,
@@ -1119,28 +1120,27 @@ fn lower_statement(
                     )?;
 
                     match op {
-                        UnaryOp::Neg => {
-                            if operand_cranelift_type.is_float() {
-                                Ok(builder.ins().fneg(val))
-                            } else {
-                                Ok(builder.ins().ineg(val))
-                            }
-                        }
-                        UnaryOp::LogicalNot => {
-                            let is_zero = if operand_cranelift_type.is_float() {
-                                let zero = if operand_cranelift_type == types::F64 {
-                                    builder.ins().f64const(0.0)
-                                } else {
-                                    builder.ins().f32const(0.0)
-                                };
-                                builder.ins().fcmp(FloatCC::Equal, val, zero)
-                            } else {
-                                builder.ins().icmp_imm(IntCC::Equal, val, 0)
-                            };
+                        UnaryIntOp::Neg => Ok(builder.ins().ineg(val)),
+                        UnaryIntOp::LogicalNot => {
+                            let is_zero = builder.ins().icmp_imm(IntCC::Equal, val, 0);
                             Ok(builder.ins().uextend(expected_type, is_zero))
                         }
-                        UnaryOp::BitwiseNot => Ok(builder.ins().bnot(val)),
-                        _ => Err(format!("Unsupported unary op in Assign: {:?}", op)),
+                        UnaryIntOp::BitwiseNot => Ok(builder.ins().bnot(val)),
+                    }
+                }
+                Rvalue::UnaryFloatOp(op, operand) => {
+                    let operand_cranelift_type = get_operand_cranelift_type(operand, mir)?;
+                    let val = resolve_operand_to_value(
+                        operand,
+                        builder,
+                        operand_cranelift_type,
+                        clif_stack_slots,
+                        mir,
+                        module,
+                    )?;
+
+                    match op {
+                        UnaryFloatOp::Neg => Ok(builder.ins().fneg(val)),
                     }
                 }
                 Rvalue::PtrAdd(base, offset) => {
@@ -1216,19 +1216,15 @@ fn lower_statement(
                 Rvalue::Call(call_target, args) => {
                     emit_function_call_impl(call_target, args, builder, mir, clif_stack_slots, module)
                 }
-                Rvalue::BinaryOp(op, left_operand, right_operand) => {
-                    // For binary operations, we need to determine the correct types
-                    // based on the operands themselves, not hardcode I32
+                Rvalue::BinaryIntOp(op, left_operand, right_operand) => {
                     let left_cranelift_type = get_operand_cranelift_type(left_operand, mir)
                         .map_err(|e| format!("Failed to get left operand type: {}", e))?;
                     let right_cranelift_type = get_operand_cranelift_type(right_operand, mir)
                         .map_err(|e| format!("Failed to get right operand type: {}", e))?;
 
-                    // For Add/Sub operations, check if we have pointer arithmetic
-                    // If one operand is a pointer and the other is an integer constant,
-                    // ensure the constant is pointer-sized (i64)
+                    // For Add/Sub operations on Pointers, we treat them as I64
                     let (final_left_type, final_right_type) = match op {
-                        BinaryOp::Add | BinaryOp::Sub => {
+                        BinaryIntOp::Add | BinaryIntOp::Sub => {
                             if left_cranelift_type == types::I64 && right_cranelift_type == types::I32 {
                                 // Pointer + int constant
                                 (types::I64, types::I64)
@@ -1239,25 +1235,7 @@ fn lower_statement(
                                 (left_cranelift_type, right_cranelift_type)
                             }
                         }
-                        _ => {
-                            // Fix for mixed types in comparison/bitwise ops involving constants.
-                            // If we have I32 constant vs I64, promote constant to I64.
-                            if left_cranelift_type == types::I32 && right_cranelift_type == types::I64 {
-                                if matches!(left_operand, Operand::Constant(_)) {
-                                    (types::I64, types::I64)
-                                } else {
-                                    (left_cranelift_type, right_cranelift_type)
-                                }
-                            } else if left_cranelift_type == types::I64 && right_cranelift_type == types::I32 {
-                                if matches!(right_operand, Operand::Constant(_)) {
-                                    (types::I64, types::I64)
-                                } else {
-                                    (left_cranelift_type, right_cranelift_type)
-                                }
-                            } else {
-                                (left_cranelift_type, right_cranelift_type)
-                            }
-                        }
+                        _ => (left_cranelift_type, right_cranelift_type),
                     };
 
                     let left_val = resolve_operand_to_value(
@@ -1279,99 +1257,123 @@ fn lower_statement(
                     )?;
 
                     let result_val = match op {
-                        BinaryOp::Add => {
-                            if final_left_type.is_float() {
-                                builder.ins().fadd(left_val, right_val)
-                            } else {
-                                builder.ins().iadd(left_val, right_val)
-                            }
-                        }
-                        BinaryOp::Sub => {
-                            if final_left_type.is_float() {
-                                builder.ins().fsub(left_val, right_val)
-                            } else {
-                                builder.ins().isub(left_val, right_val)
-                            }
-                        }
-                        BinaryOp::Mul => {
-                            if final_left_type.is_float() {
-                                builder.ins().fmul(left_val, right_val)
-                            } else {
-                                builder.ins().imul(left_val, right_val)
-                            }
-                        }
-                        BinaryOp::Div => {
-                            if final_left_type.is_float() {
-                                builder.ins().fdiv(left_val, right_val)
-                            } else {
-                                builder.ins().sdiv(left_val, right_val)
-                            }
-                        }
-                        BinaryOp::Mod => builder.ins().srem(left_val, right_val),
-                        BinaryOp::BitAnd => builder.ins().band(left_val, right_val),
-                        BinaryOp::BitOr => builder.ins().bor(left_val, right_val),
-                        BinaryOp::BitXor => builder.ins().bxor(left_val, right_val),
-                        BinaryOp::LShift => builder.ins().ishl(left_val, right_val),
-                        BinaryOp::RShift => builder.ins().sshr(left_val, right_val),
-                        BinaryOp::Equal => {
-                            let cmp_val = if final_left_type.is_float() {
-                                builder.ins().fcmp(FloatCC::Equal, left_val, right_val)
-                            } else {
-                                builder.ins().icmp(IntCC::Equal, left_val, right_val)
-                            };
+                        BinaryIntOp::Add => builder.ins().iadd(left_val, right_val),
+                        BinaryIntOp::Sub => builder.ins().isub(left_val, right_val),
+                        BinaryIntOp::Mul => builder.ins().imul(left_val, right_val),
+                        BinaryIntOp::Div => builder.ins().sdiv(left_val, right_val), // Assuming signed for now
+                        BinaryIntOp::Mod => builder.ins().srem(left_val, right_val),
+                        BinaryIntOp::BitAnd => builder.ins().band(left_val, right_val),
+                        BinaryIntOp::BitOr => builder.ins().bor(left_val, right_val),
+                        BinaryIntOp::BitXor => builder.ins().bxor(left_val, right_val),
+                        BinaryIntOp::LShift => builder.ins().ishl(left_val, right_val),
+                        BinaryIntOp::RShift => builder.ins().sshr(left_val, right_val),
+                        BinaryIntOp::Eq => {
+                            let cmp_val = builder.ins().icmp(IntCC::Equal, left_val, right_val);
                             builder.ins().uextend(types::I32, cmp_val)
                         }
-                        BinaryOp::NotEqual => {
-                            let cmp_val = if final_left_type.is_float() {
-                                builder.ins().fcmp(FloatCC::NotEqual, left_val, right_val)
-                            } else {
-                                builder.ins().icmp(IntCC::NotEqual, left_val, right_val)
-                            };
+                        BinaryIntOp::Ne => {
+                            let cmp_val = builder.ins().icmp(IntCC::NotEqual, left_val, right_val);
                             builder.ins().uextend(types::I32, cmp_val)
                         }
-                        BinaryOp::Less => {
-                            let cmp_val = if final_left_type.is_float() {
-                                builder.ins().fcmp(FloatCC::LessThan, left_val, right_val)
-                            } else {
-                                builder.ins().icmp(IntCC::SignedLessThan, left_val, right_val)
-                            };
+                        BinaryIntOp::Lt => {
+                            let cmp_val = builder.ins().icmp(IntCC::SignedLessThan, left_val, right_val);
                             builder.ins().uextend(types::I32, cmp_val)
                         }
-                        BinaryOp::LessEqual => {
-                            let cmp_val = if final_left_type.is_float() {
-                                builder.ins().fcmp(FloatCC::LessThanOrEqual, left_val, right_val)
-                            } else {
-                                builder.ins().icmp(IntCC::SignedLessThanOrEqual, left_val, right_val)
-                            };
+                        BinaryIntOp::Le => {
+                            let cmp_val = builder.ins().icmp(IntCC::SignedLessThanOrEqual, left_val, right_val);
                             builder.ins().uextend(types::I32, cmp_val)
                         }
-                        BinaryOp::Greater => {
-                            let cmp_val = if final_left_type.is_float() {
-                                builder.ins().fcmp(FloatCC::GreaterThan, left_val, right_val)
-                            } else {
-                                builder.ins().icmp(IntCC::SignedGreaterThan, left_val, right_val)
-                            };
+                        BinaryIntOp::Gt => {
+                            let cmp_val = builder.ins().icmp(IntCC::SignedGreaterThan, left_val, right_val);
                             builder.ins().uextend(types::I32, cmp_val)
                         }
-                        BinaryOp::GreaterEqual => {
-                            let cmp_val = if final_left_type.is_float() {
-                                builder.ins().fcmp(FloatCC::GreaterThanOrEqual, left_val, right_val)
-                            } else {
-                                builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, left_val, right_val)
-                            };
+                        BinaryIntOp::Ge => {
+                            let cmp_val = builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, left_val, right_val);
                             builder.ins().uextend(types::I32, cmp_val)
                         }
-                        BinaryOp::LogicAnd | BinaryOp::LogicOr => builder.ins().band(left_val, right_val),
-                        BinaryOp::Comma => right_val,
                     };
+
                     let from_type = match op {
-                        BinaryOp::Equal
-                        | BinaryOp::NotEqual
-                        | BinaryOp::Less
-                        | BinaryOp::LessEqual
-                        | BinaryOp::Greater
-                        | BinaryOp::GreaterEqual => types::I32,
+                        BinaryIntOp::Eq
+                        | BinaryIntOp::Ne
+                        | BinaryIntOp::Lt
+                        | BinaryIntOp::Le
+                        | BinaryIntOp::Gt
+                        | BinaryIntOp::Ge => types::I32,
                         _ => final_left_type,
+                    };
+
+                    Ok(emit_type_conversion(
+                        result_val,
+                        from_type,
+                        expected_type,
+                        true,
+                        builder,
+                    ))
+                }
+                Rvalue::BinaryFloatOp(op, left_operand, right_operand) => {
+                    let left_cranelift_type = get_operand_cranelift_type(left_operand, mir)
+                        .map_err(|e| format!("Failed to get left operand type: {}", e))?;
+                    let right_cranelift_type = get_operand_cranelift_type(right_operand, mir)
+                        .map_err(|e| format!("Failed to get right operand type: {}", e))?;
+
+                    let left_val = resolve_operand_to_value(
+                        left_operand,
+                        builder,
+                        left_cranelift_type,
+                        clif_stack_slots,
+                        mir,
+                        module,
+                    )?;
+
+                    let right_val = resolve_operand_to_value(
+                        right_operand,
+                        builder,
+                        right_cranelift_type,
+                        clif_stack_slots,
+                        mir,
+                        module,
+                    )?;
+
+                    let result_val = match op {
+                        BinaryFloatOp::Add => builder.ins().fadd(left_val, right_val),
+                        BinaryFloatOp::Sub => builder.ins().fsub(left_val, right_val),
+                        BinaryFloatOp::Mul => builder.ins().fmul(left_val, right_val),
+                        BinaryFloatOp::Div => builder.ins().fdiv(left_val, right_val),
+                        BinaryFloatOp::Eq => {
+                            let cmp_val = builder.ins().fcmp(FloatCC::Equal, left_val, right_val);
+                            builder.ins().uextend(types::I32, cmp_val)
+                        }
+                        BinaryFloatOp::Ne => {
+                            let cmp_val = builder.ins().fcmp(FloatCC::NotEqual, left_val, right_val);
+                            builder.ins().uextend(types::I32, cmp_val)
+                        }
+                        BinaryFloatOp::Lt => {
+                            let cmp_val = builder.ins().fcmp(FloatCC::LessThan, left_val, right_val);
+                            builder.ins().uextend(types::I32, cmp_val)
+                        }
+                        BinaryFloatOp::Le => {
+                            let cmp_val = builder.ins().fcmp(FloatCC::LessThanOrEqual, left_val, right_val);
+                            builder.ins().uextend(types::I32, cmp_val)
+                        }
+                        BinaryFloatOp::Gt => {
+                            let cmp_val = builder.ins().fcmp(FloatCC::GreaterThan, left_val, right_val);
+                            builder.ins().uextend(types::I32, cmp_val)
+                        }
+                        BinaryFloatOp::Ge => {
+                            let cmp_val = builder.ins().fcmp(FloatCC::GreaterThanOrEqual, left_val, right_val);
+                            builder.ins().uextend(types::I32, cmp_val)
+                        }
+                    };
+
+                    let from_type = match op {
+                        BinaryFloatOp::Eq
+                        | BinaryFloatOp::Ne
+                        | BinaryFloatOp::Lt
+                        | BinaryFloatOp::Le
+                        | BinaryFloatOp::Gt
+                        | BinaryFloatOp::Ge => types::I32,
+                        _ => left_cranelift_type,
                     };
 
                     Ok(emit_type_conversion(

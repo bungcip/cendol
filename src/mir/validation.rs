@@ -7,7 +7,14 @@
 //! - No illegal operations remain
 //! - MIR is Cranelift-safe
 
-use crate::{mir::*, semantic::output::SemaOutput};
+use crate::{
+    mir::{
+        BinaryFloatOp, BinaryIntOp, CallTarget, GlobalId, LocalId, MirBlockId, MirFunction, MirFunctionId,
+        MirFunctionKind, MirModule, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp,
+        UnaryIntOp,
+    },
+    semantic::output::SemaOutput,
+};
 
 /// MIR Validation Error
 #[derive(Debug, PartialEq, Clone)]
@@ -219,17 +226,24 @@ impl MirValidator {
                 {
                     // Special case for operations that can return multiple types (bool or int)
                     let is_flexible = match rvalue {
-                        Rvalue::UnaryOp(UnaryOp::LogicalNot, _) => true,
-                        Rvalue::BinaryOp(bin, _, _) => matches!(
+                        Rvalue::UnaryIntOp(UnaryIntOp::LogicalNot, _) => true,
+                        Rvalue::BinaryIntOp(bin, _, _) => matches!(
                             bin,
-                            BinaryOp::Equal
-                                | BinaryOp::NotEqual
-                                | BinaryOp::Less
-                                | BinaryOp::LessEqual
-                                | BinaryOp::Greater
-                                | BinaryOp::GreaterEqual
-                                | BinaryOp::LogicAnd
-                                | BinaryOp::LogicOr
+                            BinaryIntOp::Eq
+                                | BinaryIntOp::Ne
+                                | BinaryIntOp::Lt
+                                | BinaryIntOp::Le
+                                | BinaryIntOp::Gt
+                                | BinaryIntOp::Ge
+                        ),
+                        Rvalue::BinaryFloatOp(bin, _, _) => matches!(
+                            bin,
+                            BinaryFloatOp::Eq
+                                | BinaryFloatOp::Ne
+                                | BinaryFloatOp::Lt
+                                | BinaryFloatOp::Le
+                                | BinaryFloatOp::Gt
+                                | BinaryFloatOp::Ge
                         ),
                         _ => false,
                     };
@@ -440,23 +454,18 @@ impl MirValidator {
     fn validate_rvalue(&mut self, sema_output: &SemaOutput, r: &Rvalue) -> Option<TypeId> {
         match r {
             Rvalue::Use(op) => self.validate_operand(sema_output, op),
-            Rvalue::BinaryOp(bin, a, b) => {
+            Rvalue::BinaryIntOp(bin, a, b) => {
                 let ta = self.validate_operand(sema_output, a);
                 let tb = self.validate_operand(sema_output, b);
 
                 match bin {
-                    BinaryOp::Equal
-                    | BinaryOp::NotEqual
-                    | BinaryOp::Less
-                    | BinaryOp::LessEqual
-                    | BinaryOp::Greater
-                    | BinaryOp::GreaterEqual
-                    | BinaryOp::LogicAnd
-                    | BinaryOp::LogicOr => self.find_bool_type(sema_output),
-                    BinaryOp::Comma => tb,
+                    BinaryIntOp::Eq
+                    | BinaryIntOp::Ne
+                    | BinaryIntOp::Lt
+                    | BinaryIntOp::Le
+                    | BinaryIntOp::Gt
+                    | BinaryIntOp::Ge => self.find_bool_type(sema_output),
                     _ => {
-                        // For arithmetic/bitwise, both operands should ideally have same type
-                        // and result is that type.
                         if let (Some(ta), Some(tb)) = (ta, tb)
                             && ta != tb
                         {
@@ -467,13 +476,32 @@ impl MirValidator {
                     }
                 }
             }
-            Rvalue::UnaryOp(u, a) => {
+            Rvalue::BinaryFloatOp(bin, a, b) => {
+                let ta = self.validate_operand(sema_output, a);
+                let _tb = self.validate_operand(sema_output, b);
+
+                match bin {
+                    BinaryFloatOp::Eq
+                    | BinaryFloatOp::Ne
+                    | BinaryFloatOp::Lt
+                    | BinaryFloatOp::Le
+                    | BinaryFloatOp::Gt
+                    | BinaryFloatOp::Ge => self.find_bool_type(sema_output),
+                    _ => ta,
+                }
+            }
+            Rvalue::UnaryIntOp(u, a) => {
                 let ta = self.validate_operand(sema_output, a);
                 match u {
-                    UnaryOp::Neg => ta,
-                    UnaryOp::BitwiseNot => ta,
-                    UnaryOp::LogicalNot => self.find_bool_type(sema_output),
-                    _ => ta,
+                    UnaryIntOp::Neg => ta,
+                    UnaryIntOp::BitwiseNot => ta,
+                    UnaryIntOp::LogicalNot => self.find_bool_type(sema_output),
+                }
+            }
+            Rvalue::UnaryFloatOp(u, a) => {
+                let ta = self.validate_operand(sema_output, a);
+                match u {
+                    UnaryFloatOp::Neg => ta,
                 }
             }
             Rvalue::Cast(type_id, op) => {

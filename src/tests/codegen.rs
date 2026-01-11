@@ -602,4 +602,25 @@ mod tests {
             Err(e) => panic!("Error: {}", e),
         }
     }
+    #[test]
+    fn test_boolean_logic_lowering() {
+        let source = r#"
+            int main() {
+                int x;
+                x = 4;
+                if (!x != 0) return 1;
+                if (!!x != 1) return 1;
+                return 0;
+            }
+        "#;
+        // Verify it compiles without crashing
+        let clif_dump = super::setup_cranelift(source);
+        println!("{}", clif_dump);
+
+        // Check for 'select' instructions which we used to fix the uextend issue
+        assert!(
+            clif_dump.contains("select"),
+            "Expected select instruction for boolean conversion"
+        );
+    }
 }

@@ -511,6 +511,13 @@ fn emit_function_call_impl(
     }
 }
 
+/// Helper function to convert boolean to integer (0 or 1)
+fn emit_bool_to_int(val: Value, target_type: Type, builder: &mut FunctionBuilder) -> Value {
+    let one = builder.ins().iconst(target_type, 1);
+    let zero = builder.ins().iconst(target_type, 0);
+    builder.ins().select(val, one, zero)
+}
+
 /// Helper function to emit a type conversion in Cranelift
 fn emit_type_conversion(val: Value, from: Type, to: Type, is_signed: bool, builder: &mut FunctionBuilder) -> Value {
     if from == to {
@@ -1112,7 +1119,7 @@ fn lower_statement(
                         UnaryIntOp::Neg => Ok(builder.ins().ineg(val)),
                         UnaryIntOp::LogicalNot => {
                             let is_zero = builder.ins().icmp_imm(IntCC::Equal, val, 0);
-                            Ok(builder.ins().uextend(expected_type, is_zero))
+                            Ok(emit_bool_to_int(is_zero, expected_type, builder))
                         }
                         UnaryIntOp::BitwiseNot => Ok(builder.ins().bnot(val)),
                     }
@@ -1258,27 +1265,27 @@ fn lower_statement(
                         BinaryIntOp::RShift => builder.ins().sshr(left_val, right_val),
                         BinaryIntOp::Eq => {
                             let cmp_val = builder.ins().icmp(IntCC::Equal, left_val, right_val);
-                            builder.ins().uextend(types::I32, cmp_val)
+                            emit_bool_to_int(cmp_val, types::I32, builder)
                         }
                         BinaryIntOp::Ne => {
                             let cmp_val = builder.ins().icmp(IntCC::NotEqual, left_val, right_val);
-                            builder.ins().uextend(types::I32, cmp_val)
+                            emit_bool_to_int(cmp_val, types::I32, builder)
                         }
                         BinaryIntOp::Lt => {
                             let cmp_val = builder.ins().icmp(IntCC::SignedLessThan, left_val, right_val);
-                            builder.ins().uextend(types::I32, cmp_val)
+                            emit_bool_to_int(cmp_val, types::I32, builder)
                         }
                         BinaryIntOp::Le => {
                             let cmp_val = builder.ins().icmp(IntCC::SignedLessThanOrEqual, left_val, right_val);
-                            builder.ins().uextend(types::I32, cmp_val)
+                            emit_bool_to_int(cmp_val, types::I32, builder)
                         }
                         BinaryIntOp::Gt => {
                             let cmp_val = builder.ins().icmp(IntCC::SignedGreaterThan, left_val, right_val);
-                            builder.ins().uextend(types::I32, cmp_val)
+                            emit_bool_to_int(cmp_val, types::I32, builder)
                         }
                         BinaryIntOp::Ge => {
                             let cmp_val = builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, left_val, right_val);
-                            builder.ins().uextend(types::I32, cmp_val)
+                            emit_bool_to_int(cmp_val, types::I32, builder)
                         }
                     };
 
@@ -1331,27 +1338,27 @@ fn lower_statement(
                         BinaryFloatOp::Div => builder.ins().fdiv(left_val, right_val),
                         BinaryFloatOp::Eq => {
                             let cmp_val = builder.ins().fcmp(FloatCC::Equal, left_val, right_val);
-                            builder.ins().uextend(types::I32, cmp_val)
+                            emit_bool_to_int(cmp_val, types::I32, builder)
                         }
                         BinaryFloatOp::Ne => {
                             let cmp_val = builder.ins().fcmp(FloatCC::NotEqual, left_val, right_val);
-                            builder.ins().uextend(types::I32, cmp_val)
+                            emit_bool_to_int(cmp_val, types::I32, builder)
                         }
                         BinaryFloatOp::Lt => {
                             let cmp_val = builder.ins().fcmp(FloatCC::LessThan, left_val, right_val);
-                            builder.ins().uextend(types::I32, cmp_val)
+                            emit_bool_to_int(cmp_val, types::I32, builder)
                         }
                         BinaryFloatOp::Le => {
                             let cmp_val = builder.ins().fcmp(FloatCC::LessThanOrEqual, left_val, right_val);
-                            builder.ins().uextend(types::I32, cmp_val)
+                            emit_bool_to_int(cmp_val, types::I32, builder)
                         }
                         BinaryFloatOp::Gt => {
                             let cmp_val = builder.ins().fcmp(FloatCC::GreaterThan, left_val, right_val);
-                            builder.ins().uextend(types::I32, cmp_val)
+                            emit_bool_to_int(cmp_val, types::I32, builder)
                         }
                         BinaryFloatOp::Ge => {
                             let cmp_val = builder.ins().fcmp(FloatCC::GreaterThanOrEqual, left_val, right_val);
-                            builder.ins().uextend(types::I32, cmp_val)
+                            emit_bool_to_int(cmp_val, types::I32, builder)
                         }
                     };
 

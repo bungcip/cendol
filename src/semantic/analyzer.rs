@@ -381,9 +381,78 @@ impl<'a> SemanticAnalyzer<'a> {
             self.report_error(SemanticError::NotAnLvalue { span: full_span });
         }
 
+        // Check assignment constraints (C11 6.5.16.1)
+        if !self.check_assignment_constraints(lhs_ty, rhs_ty, rhs_ref) {
+            let lhs_kind = &self.registry.get(lhs_ty.ty()).kind;
+            let rhs_kind = &self.registry.get(rhs_ty.ty()).kind;
+
+            self.report_error(SemanticError::TypeMismatch {
+                expected: lhs_kind.to_string(),
+                found: rhs_kind.to_string(),
+                span: full_span,
+            });
+            return None;
+        }
+
         self.record_implicit_conversions(lhs_ty, rhs_ty, rhs_ref);
 
         Some(lhs_ty)
+    }
+
+    fn check_assignment_constraints(&self, lhs_ty: QualType, rhs_ty: QualType, rhs_ref: NodeRef) -> bool {
+        // 1. Arithmetic types
+        if lhs_ty.is_arithmetic() && rhs_ty.is_arithmetic() {
+            return true;
+        }
+
+        // 2. Structure or Union types
+        if lhs_ty.is_record() || rhs_ty.is_record() {
+            return lhs_ty.is_record() && rhs_ty.is_record() && lhs_ty.ty() == rhs_ty.ty();
+        }
+
+        // 3. Pointers
+        if lhs_ty.is_pointer() {
+            if self.is_null_pointer_constant(rhs_ref) {
+                return true;
+            }
+
+            // Resolve implicit decay for RHS to check compatibility
+            let rhs_pointer_base = if rhs_ty.is_array() {
+                match &self.registry.get(rhs_ty.ty()).kind {
+                    TypeKind::Array { element_type, .. } => Some(*element_type),
+                    _ => None,
+                }
+            } else if rhs_ty.is_function() {
+                Some(rhs_ty.ty()) // Function decays to pointer to function
+            } else if rhs_ty.is_pointer() {
+                self.registry.get_pointee(rhs_ty.ty())
+            } else {
+                None
+            };
+
+            if let Some(rhs_base) = rhs_pointer_base {
+                // Check compatibility
+                let lhs_base = self.registry.get_pointee(lhs_ty.ty()).unwrap();
+
+                // void* wildcard
+                if lhs_base == self.registry.type_void || rhs_base == self.registry.type_void {
+                    return true;
+                }
+
+                // For now, require strict canonical type equality for pointees
+                return lhs_base == rhs_base;
+            }
+
+            return false;
+        }
+
+        // 4. _Bool = Pointer
+        if lhs_ty.ty() == self.registry.type_bool && (rhs_ty.is_pointer() || rhs_ty.is_array() || rhs_ty.is_function())
+        {
+            return true;
+        }
+
+        false
     }
 
     fn record_implicit_conversions(&mut self, lhs_ty: QualType, rhs_ty: QualType, rhs_ref: NodeRef) {

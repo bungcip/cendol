@@ -808,8 +808,7 @@ impl<'a> AstToMirLowerer<'a> {
         if let Operand::Copy(place) = operand {
             Operand::AddressOf(place)
         } else if let Operand::Constant(const_id) = operand
-            && let Some(info) = &self.ast.semantic_info
-            && info.value_categories[operand_ref.index()] == ValueCategory::LValue
+            && self.ast.get_value_category(operand_ref) == Some(ValueCategory::LValue)
             && matches!(
                 self.mir_builder.get_constants().get(&const_id),
                 Some(ConstValue::FunctionAddress(_))
@@ -1142,10 +1141,14 @@ impl<'a> AstToMirLowerer<'a> {
         let lhs_op = self.lower_expression(scope_id, left_ref, true);
 
         // Ensure the LHS is a place. If not, this is a semantic error.
+        if self.ast.get_value_category(left_ref) != Some(ValueCategory::LValue) {
+            panic!("LHS of assignment must be an lvalue");
+        }
+
         let place = if let Operand::Copy(place) = lhs_op {
             *place
         } else {
-            panic!("LHS of assignment is not a place");
+            panic!("LHS of assignment lowered to non-place operand despite being LValue");
         };
 
         let rhs_op = self.lower_expression(scope_id, right_ref, true);
@@ -1972,6 +1975,10 @@ impl<'a> AstToMirLowerer<'a> {
         let operand = self.lower_expression(scope_id, operand_ref, true);
         let operand_ty = self.ast.get_resolved_type(operand_ref).unwrap();
         let mir_ty = self.lower_qual_type(operand_ty);
+
+        if self.ast.get_value_category(operand_ref) != Some(ValueCategory::LValue) {
+            panic!("Inc/Dec operand must be an lvalue");
+        }
 
         if let Operand::Copy(place) = operand.clone() {
             let one_const = Operand::Constant(self.create_constant(ConstValue::Int(1)));

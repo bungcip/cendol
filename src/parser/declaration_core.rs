@@ -164,10 +164,11 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                 let alignment = if parser.accept(TokenKind::LeftParen).is_some() {
                     let next_token = parser.current_token()?;
 
+                    let classification = super::utils::TokenClassification::classify(next_token.kind);
                     let is_type_start = if let TokenKind::Identifier(symbol) = next_token.kind {
                         parser.is_type_name(symbol)
                     } else {
-                        next_token.kind.is_declaration_specifier_start()
+                        classification.is_declaration_specifier_start
                     };
 
                     if is_type_start {

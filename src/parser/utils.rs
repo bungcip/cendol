@@ -6,6 +6,7 @@
 
 use crate::ast::*;
 use crate::diagnostic::ParseError;
+use crate::lexer::TokenKind;
 use log::debug;
 
 use super::expressions::BindingPower;
@@ -76,5 +77,75 @@ impl<'a, 'arena, 'src> Drop for ParserTransaction<'a, 'arena, 'src> {
         if !self.committed {
             self.parser.restore_state(self.state.clone());
         }
+    }
+}
+
+/// A struct to hold pre-computed classifications for a token.
+/// This avoids repeatedly calling classification methods on `TokenKind`.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct TokenClassification {
+    pub is_type_specifier: bool,
+    pub is_type_qualifier: bool,
+    pub is_storage_class_specifier: bool,
+    pub is_function_specifier: bool,
+    pub is_alignment_specifier: bool,
+    pub is_declaration_specifier_start: bool,
+}
+
+impl TokenClassification {
+    /// Classify a token kind and return the classification struct.
+    ///
+    /// ⚡ Bolt: Centralized Token Classification.
+    /// This function uses a single, comprehensive `match` statement to classify
+    /// a token kind. The results are stored in a struct, allowing parser logic
+    /// to query boolean properties directly instead of calling multiple `matches!`-based
+    /// functions. This is more efficient as the classification is performed only once
+    /// per token lookahead, and the consolidated logic is easier to maintain.
+    pub(crate) fn classify(kind: TokenKind) -> Self {
+        let mut s = Self {
+            is_type_specifier: false,
+            is_type_qualifier: false,
+            is_storage_class_specifier: false,
+            is_function_specifier: false,
+            is_alignment_specifier: false,
+            is_declaration_specifier_start: false,
+        };
+
+        match kind {
+            // Storage class specifiers
+            TokenKind::Typedef | TokenKind::Extern | TokenKind::Static | TokenKind::ThreadLocal | TokenKind::Auto | TokenKind::Register => {
+                s.is_storage_class_specifier = true;
+            }
+            // Type specifiers
+            TokenKind::Void | TokenKind::Char | TokenKind::Short | TokenKind::Int | TokenKind::Long | TokenKind::Float | TokenKind::Double | TokenKind::Signed | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Complex | TokenKind::Struct | TokenKind::Union | TokenKind::Enum => {
+                s.is_type_specifier = true;
+            }
+            // Type qualifiers
+            TokenKind::Const | TokenKind::Restrict | TokenKind::Volatile | TokenKind::Atomic => {
+                // Note: Atomic is both a specifier and a qualifier
+                s.is_type_qualifier = true;
+                if kind == TokenKind::Atomic {
+                    s.is_type_specifier = true;
+                }
+            }
+            // Function specifiers
+            TokenKind::Inline | TokenKind::Noreturn => {
+                s.is_function_specifier = true;
+            }
+            // Alignment specifiers
+            TokenKind::Alignas => {
+                s.is_alignment_specifier = true;
+            }
+            _ => {}
+        }
+
+        s.is_declaration_specifier_start = s.is_storage_class_specifier
+            || s.is_type_specifier
+            || s.is_type_qualifier
+            || s.is_function_specifier
+            || s.is_alignment_specifier
+            || matches!(kind, TokenKind::Attribute);
+
+        s
     }
 }

@@ -123,7 +123,7 @@ impl<'a> AstToMirLowerer<'a> {
                             continue;
                         }
 
-                        let func_type = self.registry.get(symbol_type_info).clone();
+                        let func_type = self.registry.get(symbol_type_info.ty()).clone();
                         if let TypeKind::Function {
                             return_type,
                             parameters,
@@ -1213,7 +1213,7 @@ impl<'a> AstToMirLowerer<'a> {
         let func_type = if let NodeKind::Ident(_, symbol_ref) = func_node_kind {
             let resolved_symbol = *symbol_ref;
             let func_entry = self.symbol_table.get_symbol(resolved_symbol);
-            Some(self.registry.get(func_entry.type_info))
+            Some(self.registry.get(func_entry.type_info.ty()))
         } else {
             None
         };

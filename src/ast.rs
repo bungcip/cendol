@@ -105,7 +105,6 @@ impl Ast {
 }
 
 /// Node reference type for referencing child nodes.
-/// Node reference type for referencing child nodes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct NodeRef(NonZeroU32);
 

@@ -759,6 +759,24 @@ impl TypeRegistry {
             _ => true, // Scalars are always complete
         }
     }
+
+    pub(crate) fn is_const_recursive(&self, qt: QualType) -> bool {
+        if qt.is_const() {
+            return true;
+        }
+
+        let ty_ref = qt.ty();
+        if ty_ref.is_record() {
+            if let TypeKind::Record { members, .. } = &self.get(ty_ref).kind {
+                for member in members {
+                    if self.is_const_recursive(member.member_type) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
 }
 
 // ================================================================

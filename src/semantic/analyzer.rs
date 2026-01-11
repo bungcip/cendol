@@ -379,6 +379,9 @@ impl<'a> SemanticAnalyzer<'a> {
 
         if !self.is_lvalue(lhs_ref) {
             self.report_error(SemanticError::NotAnLvalue { span: full_span });
+        } else if self.registry.is_const_recursive(lhs_ty) {
+            self.report_error(SemanticError::AssignmentToReadOnly { span: full_span });
+            return None;
         }
 
         // Check assignment constraints (C11 6.5.16.1)
@@ -823,7 +826,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 let symbol = self.symbol_table.get_symbol(*symbol_ref);
                 match &symbol.kind {
                     SymbolKind::EnumConstant { .. } => Some(QualType::unqualified(self.registry.type_int)),
-                    _ => Some(QualType::unqualified(symbol.type_info)),
+                    _ => Some(symbol.type_info),
                 }
             }
             NodeKind::UnaryOp(op, operand) => {

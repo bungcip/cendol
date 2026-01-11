@@ -12,7 +12,7 @@ use thiserror::Error;
 
 use crate::{
     ast::*,
-    semantic::{StructMember, TypeRef},
+    semantic::{QualType, StructMember, TypeRef},
 };
 
 pub type SymbolRef = NonZeroU32;
@@ -27,16 +27,30 @@ pub enum DefinitionState {
 
 /// Represents a resolved symbol entry from the symbol table.
 /// This structure is typically populated during the semantic analysis phase.
-/// Symbol entries are stored in a separate Vec<SymbolEntry> with SymbolEntryRef references.
+/// Symbol are stored in a separate Vec<Symbol> with SymbolRef references.
+/// invariant:
+/// - Variable / Typedef / Function: type_info is meaningful
+/// - EnumConstant: type_info = int (unqualified)
+/// - Label / RecordTag / EnumTag: type_info = TypeKind::Error
 #[derive(Debug, Clone)]
 pub struct Symbol {
     pub name: NameId,
     pub kind: SymbolKind, // e.g., Variable, Function, Typedef
-    pub type_info: TypeRef,
+    pub type_info: QualType,
     pub scope_id: ScopeId, // Reference to the scope where it's defined
     pub def_span: SourceSpan,
     pub def_state: DefinitionState,
     pub is_completed: bool,
+}
+
+impl Symbol {
+    pub fn is_const(&self) -> bool {
+        self.type_info.is_const()
+    }
+
+    pub fn ty(&self) -> TypeRef {
+        self.type_info.ty()
+    }
 }
 
 /// Defines the kind of symbol.
@@ -51,7 +65,7 @@ pub enum SymbolKind {
     },
     Function,
     Typedef {
-        aliased_type: TypeRef,
+        aliased_type: QualType,
     },
     EnumConstant {
         value: i64, // Resolved constant value
@@ -277,7 +291,7 @@ impl SymbolTable {
     pub(crate) fn define_variable(
         &mut self,
         name: NameId,
-        ty: TypeRef,
+        ty: QualType,
         storage: Option<StorageClass>,
         initializer: Option<NodeRef>,
         alignment: Option<u32>,
@@ -334,7 +348,7 @@ impl SymbolTable {
         let symbol_entry = Symbol {
             name,
             kind: SymbolKind::Function,
-            type_info: ty,
+            type_info: QualType::unqualified(ty),
             scope_id: self.current_scope_id,
             def_span: span,
             def_state,
@@ -352,7 +366,7 @@ impl SymbolTable {
     pub(crate) fn define_typedef(
         &mut self,
         name: NameId,
-        ty: TypeRef,
+        ty: QualType,
         span: SourceSpan,
     ) -> Result<SymbolRef, SymbolTableError> {
         let symbol_entry = Symbol {
@@ -387,7 +401,7 @@ impl SymbolTable {
         let symbol_entry = Symbol {
             name,
             kind: SymbolKind::EnumConstant { value },
-            type_info: ty,
+            type_info: QualType::unqualified(ty),
             scope_id: self.current_scope_id,
             def_span: span,
             def_state: DefinitionState::Defined,
@@ -411,7 +425,7 @@ impl SymbolTable {
                 is_complete,
                 members: Vec::new(),
             },
-            type_info: ty,
+            type_info: QualType::unqualified(ty),
             scope_id: self.current_scope_id,
             def_span: span,
             def_state: DefinitionState::Defined,
@@ -425,7 +439,7 @@ impl SymbolTable {
         let symbol_entry = Symbol {
             name,
             kind: SymbolKind::EnumTag { is_complete: false },
-            type_info: ty,
+            type_info: QualType::unqualified(ty),
             scope_id: self.current_scope_id,
             def_span: span,
             def_state: DefinitionState::Defined,
@@ -444,7 +458,7 @@ impl SymbolTable {
         let symbol_entry = Symbol {
             name,
             kind: SymbolKind::Label,
-            type_info: ty,
+            type_info: QualType::unqualified(ty),
             scope_id: self.current_scope_id,
             def_span: span,
             def_state: DefinitionState::Defined,

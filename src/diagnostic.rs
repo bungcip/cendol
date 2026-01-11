@@ -238,6 +238,9 @@ pub enum SemanticError {
 
     #[error("requested alignment is not a constant expression")]
     NonConstantAlignment { span: SourceSpan },
+
+    #[error("cannot assign to read-only location")]
+    AssignmentToReadOnly { span: SourceSpan },
 }
 
 impl SemanticError {
@@ -270,6 +273,7 @@ impl SemanticError {
             SemanticError::GenericNoMatch { span } => *span,
             SemanticError::InvalidAlignment { span, .. } => *span,
             SemanticError::NonConstantAlignment { span } => *span,
+            SemanticError::AssignmentToReadOnly { span } => *span,
         }
     }
 }

@@ -280,7 +280,7 @@ fn convert_parsed_base_type_to_qual_type(
             if let Some((entry_ref, _scope_id)) = ctx.symbol_table.lookup_symbol(*name) {
                 let entry = ctx.symbol_table.get_symbol(entry_ref);
                 if let SymbolKind::Typedef { aliased_type } = entry.kind {
-                    Ok(QualType::unqualified(aliased_type))
+                    Ok(aliased_type)
                 } else {
                     // Get the kind of the symbol as a string for the error message
                     let kind_string = format!("{:?}", entry.kind);
@@ -349,10 +349,10 @@ fn resolve_record_tag(
                 if entry.is_completed {
                     // Redeclaration error - for now just return the type
                     // The caller might want to check this, but consistent with existing logic we just return it
-                    Ok(entry.type_info)
+                    Ok(entry.type_info.ty())
                 } else {
                     // Completing a forward declaration in current scope
-                    Ok(entry.type_info)
+                    Ok(entry.type_info.ty())
                 }
             } else {
                 // Not in current scope (either not found or shadowing outer)
@@ -368,7 +368,7 @@ fn resolve_record_tag(
             if let Some((entry_ref, _)) = existing_entry {
                 // Found existing (either in current or outer scope)
                 let entry = ctx.symbol_table.get_symbol(entry_ref);
-                Ok(entry.type_info)
+                Ok(entry.type_info.ty())
             } else {
                 // Not found anywhere, create an implicit forward declaration in current scope
                 let forward_ref = ctx.registry.declare_record(Some(tag_name), is_union);
@@ -410,7 +410,7 @@ fn resolve_enum_tag(
                         span,
                     });
                 }
-                Ok(type_info)
+                Ok(type_info.ty())
             } else {
                 // Not found in current scope, create new entry
                 let new_type_ref = ctx.registry.declare_enum(Some(tag_name), ctx.registry.type_int);
@@ -421,7 +421,7 @@ fn resolve_enum_tag(
             // This is a USAGE or FORWARD DECL: enum T; or enum T e;
             if let Some((entry_ref, _)) = existing_entry {
                 let entry = ctx.symbol_table.get_symbol(entry_ref);
-                Ok(entry.type_info)
+                Ok(entry.type_info.ty())
             } else {
                 // Implicit forward declaration
                 let forward_ref = ctx.registry.declare_enum(Some(tag_name), ctx.registry.type_int);
@@ -595,7 +595,7 @@ fn resolve_type_specifier(
             if let Some((entry_ref, _scope_id)) = ctx.symbol_table.lookup_symbol(*name) {
                 let entry = ctx.symbol_table.get_symbol(entry_ref);
                 if let SymbolKind::Typedef { aliased_type } = entry.kind {
-                    Ok(QualType::unqualified(aliased_type))
+                    Ok(aliased_type)
                 } else {
                     let kind_string = format!("{:?}", entry.kind);
                     let found_kind_str = kind_string.split_whitespace().next().unwrap_or("symbol");
@@ -1105,7 +1105,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             if let Some(pname) = param.name
                 && let Ok(sym) = self
                     .symbol_table
-                    .define_variable(pname, param.param_type.ty(), None, None, None, span)
+                    .define_variable(pname, param.param_type, None, None, None, span)
             {
                 let param_ref = param_dummies[i];
                 self.ast.kinds[param_ref.index()] = NodeKind::Param(ParamData {
@@ -1237,10 +1237,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             let node = if let Some(slots) = target_slots {
                 slots[i]
             } else if spec_info.is_typedef {
-                // Typedefs are pushed directly, not reserved.
-                // Wait, if it's a typedef, we should still respect slots if any.
-                // But usually typedefs don't have multiple init_declarators in a way that needs reservation?
-                // Actually they do: typedef int A, B;
                 self.push_dummy(span)
             } else {
                 self.push_dummy(span)
@@ -1248,7 +1244,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.set_scope(node, self.symbol_table.current_scope());
 
             if spec_info.is_typedef {
-                if let Err(_e) = self.symbol_table.define_typedef(name, final_ty.ty(), span) {
+                if let Err(_e) = self.symbol_table.define_typedef(name, final_ty, span) {
                     self.report_error(SemanticError::Redefinition {
                         name,
                         first_def: span,
@@ -1306,7 +1302,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 };
                 if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) = self.symbol_table.define_variable(
                     name,
-                    final_ty.ty(),
+                    final_ty,
                     spec_info.storage,
                     init_expr,
                     spec_info.alignment,

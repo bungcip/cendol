@@ -74,6 +74,7 @@ pub(crate) fn run_semantic_analyzer(
         registry,
         semantic_info: &mut semantic_info,
         current_function_ret_type: None,
+        current_function_name: None,
         deferred_checks: Vec::new(),
     };
     let root = ast.get_root();
@@ -93,6 +94,7 @@ struct SemanticAnalyzer<'a> {
     registry: &'a mut TypeRegistry,
     semantic_info: &'a mut SemanticInfo,
     current_function_ret_type: Option<QualType>,
+    current_function_name: Option<String>,
     deferred_checks: Vec<DeferredCheck>,
 }
 
@@ -165,10 +167,15 @@ impl<'a> SemanticAnalyzer<'a> {
     fn visit_return_statement(&mut self, expr: &Option<NodeRef>, _span: SourceSpan) {
         let ret_ty = self.current_function_ret_type;
         let is_void_func = ret_ty.is_some_and(|ty| ty.is_void());
+        let func_name = self.current_function_name.clone().unwrap_or_else(|| "<unknown>".to_string());
 
         if let Some(expr_ref) = expr {
             if is_void_func {
-                // self.report_error(SemanticError::VoidReturnWithValue { span });
+                let err_span = self.ast.get_span(*expr_ref);
+                self.report_error(SemanticError::VoidReturnWithValue {
+                     name: func_name.clone(),
+                     span: err_span
+                });
             }
             if let Some(expr_ty) = self.visit_node(*expr_ref)
                 && let Some(target_ty) = ret_ty
@@ -176,7 +183,10 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.record_implicit_conversions(target_ty, expr_ty, *expr_ref);
             }
         } else if !is_void_func {
-            // self.report_error(SemanticError::NonVoidReturnWithoutValue { span });
+            self.report_error(SemanticError::NonVoidReturnWithoutValue {
+                name: func_name,
+                span: _span
+             });
         }
     }
 
@@ -708,12 +718,17 @@ impl<'a> SemanticAnalyzer<'a> {
                     self.current_function_ret_type = Some(QualType::unqualified(return_type));
                 };
 
+                let symbol = self.symbol_table.get_symbol(data.symbol);
+                let prev_func_name = self.current_function_name.take();
+                self.current_function_name = Some(symbol.name.to_string());
+
                 for param_ref in data.param_start.range(data.param_len) {
                     self.visit_node(param_ref);
                 }
 
                 self.visit_node(data.body);
                 self.current_function_ret_type = None;
+                self.current_function_name = prev_func_name;
                 None
             }
             NodeKind::Param(_) => None,

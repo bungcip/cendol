@@ -214,6 +214,10 @@ pub enum SemanticError {
     NonConstantInitializer { span: SourceSpan },
     #[error("Invalid use of void type in expression")]
     InvalidUseOfVoid { span: SourceSpan },
+    #[error("void function '{name}' should not return a value")]
+    VoidReturnWithValue { name: String, span: SourceSpan },
+    #[error("non-void function '{name}' should return a value")]
+    NonVoidReturnWithoutValue { name: String, span: SourceSpan },
     #[error("Unsupported feature: {feature}")]
     UnsupportedFeature { feature: String, span: SourceSpan },
 
@@ -281,6 +285,8 @@ impl SemanticError {
             SemanticError::InvalidUnaryOperand { span, .. } => *span,
             SemanticError::NonConstantInitializer { span } => *span,
             SemanticError::InvalidUseOfVoid { span } => *span,
+            SemanticError::VoidReturnWithValue { span, .. } => *span,
+            SemanticError::NonVoidReturnWithoutValue { span, .. } => *span,
             SemanticError::UnsupportedFeature { span, .. } => *span,
             SemanticError::InvalidArraySize { span } => *span,
             SemanticError::InvalidBitfieldWidth { span } => *span,

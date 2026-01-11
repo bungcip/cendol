@@ -48,7 +48,6 @@ fn test_increment_const() {
 
 // B. Function Semantics
 #[test]
-#[ignore = "still not implemented"]
 fn test_void_function_return_value() {
     run_fail_with_message(
         r#"

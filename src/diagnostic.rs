@@ -166,6 +166,15 @@ impl IntoDiagnostic for SemanticError {
             });
         }
 
+        if let SemanticError::DuplicateMember { first_def, .. } = &self {
+            diagnostics.push(Diagnostic {
+                level: DiagnosticLevel::Note,
+                message: "previous declaration is here".to_string(),
+                span: *first_def,
+                ..Default::default()
+            });
+        }
+
         // Handle warnings
         if matches!(self, SemanticError::IncompatiblePointerComparison { .. }) {
             diagnostics[0].level = DiagnosticLevel::Warning;
@@ -220,6 +229,12 @@ pub enum SemanticError {
     // Errors related to declaration specifiers
     #[error("conflicting storage class specifiers")]
     ConflictingStorageClasses { span: SourceSpan },
+    #[error("duplicate member '{name}'")]
+    DuplicateMember {
+        name: NameId,
+        span: SourceSpan,
+        first_def: SourceSpan,
+    },
     #[error("member reference base type '{ty}' is not a structure or union")]
     MemberAccessOnNonRecord { ty: String, span: SourceSpan },
     #[error("no member named '{name}' in '{ty}'")]
@@ -271,6 +286,7 @@ impl SemanticError {
             SemanticError::InvalidBitfieldWidth { span } => *span,
             SemanticError::NonConstantBitfieldWidth { span } => *span,
             SemanticError::ConflictingStorageClasses { span } => *span,
+            SemanticError::DuplicateMember { span, .. } => *span,
             SemanticError::MemberAccessOnNonRecord { span, .. } => *span,
             SemanticError::MemberNotFound { span, .. } => *span,
             SemanticError::ExpectedTypedefName { span, .. } => *span,
@@ -369,12 +385,6 @@ impl ErrorFormatter {
             Renderer::plain()
         };
 
-        let message_header = match diag.level {
-            DiagnosticLevel::Error => format!("error: {}", diag.message),
-            DiagnosticLevel::Warning => format!("warning: {}", diag.message),
-            DiagnosticLevel::Note => format!("note: {}", diag.message),
-        };
-
         // If it's a built-in source ID (e.g. command line define), simple print
         if diag.span.is_source_id_builtin() {
             return format!("{}: {}", self.format_location(diag, source_manager), diag.message);
@@ -383,7 +393,7 @@ impl ErrorFormatter {
         // Primary error snippet
         let snippet = self.create_snippet(diag.span, &diag.message, source_manager);
         // Use primary_title instead of title
-        let mut group = self.level(diag).primary_title(&message_header).element(snippet);
+        let mut group = self.level(diag).primary_title(&diag.message).element(snippet);
 
         for hint in &diag.hints {
             group = group.element(Level::HELP.message(hint));

@@ -138,7 +138,6 @@ fn test_pointer_comparison_incompatible() {
 
 // D. Struct / Union Rules
 #[test]
-#[ignore = "still not implemented"]
 fn test_duplicate_member() {
     run_fail_with_message(
         r#"

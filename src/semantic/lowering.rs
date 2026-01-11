@@ -11,6 +11,7 @@
 //! grammar-oriented parser AST and the type-resolved semantic AST (HIR). The lowering
 //! phase handles all C-style declaration forms
 
+use hashbrown::HashMap;
 use smallvec::{SmallVec, smallvec};
 use std::num::NonZeroU16;
 
@@ -228,7 +229,24 @@ fn convert_parsed_base_type_to_qual_type(
 
                 // Now create struct members with the processed types
                 let mut struct_members = Vec::new();
+                let mut seen_names = HashMap::new();
+
                 for (i, parsed_member) in parsed_members.iter().enumerate() {
+                    if let Some(name) = parsed_member.name {
+                        if let Some(&first_def) = seen_names.get(&name) {
+                            // Note: parsed_member doesn't store reference to ctx to report error?
+                            // ctx is available.
+                            // But wait, parsed_member.span is available.
+                            ctx.report_error(SemanticError::DuplicateMember {
+                                name,
+                                span: parsed_member.span,
+                                first_def,
+                            });
+                        } else {
+                            seen_names.insert(name, parsed_member.span);
+                        }
+                    }
+
                     struct_members.push(StructMember {
                         name: parsed_member.name,
                         member_type: member_types[i],
@@ -1971,6 +1989,8 @@ pub(crate) fn lower_struct_members(
     span: crate::ast::SourceSpan,
 ) -> Vec<StructMember> {
     let mut struct_members = Vec::new();
+    let mut seen_names = HashMap::new();
+
     for decl in members {
         // Handle anonymous struct/union members (C11 6.7.2.1p13)
         // "An unnamed member of structure or union type with no tag is called an anonymous structure or anonymous union"
@@ -2016,6 +2036,18 @@ pub(crate) fn lower_struct_members(
             let (bit_field_size, base_declarator) = extract_bit_field_width(&init_declarator.declarator, ctx);
 
             let member_name = extract_name(base_declarator);
+
+            if let Some(name) = member_name {
+                if let Some(&first_def) = seen_names.get(&name) {
+                    ctx.report_error(SemanticError::DuplicateMember {
+                        name,
+                        span: init_declarator.span,
+                        first_def,
+                    });
+                } else {
+                    seen_names.insert(name, init_declarator.span);
+                }
+            }
 
             let member_type = if let Some(base_type_ref) = spec_info.base_type {
                 // Manually re-apply qualifiers from the base type.

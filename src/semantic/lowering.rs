@@ -31,28 +31,30 @@ use crate::source_manager::SourceSpan;
 
 /// Recursively apply parsed declarator to base type
 fn apply_parsed_declarator_recursive(
-    current_type: TypeRef,
+    current_type: QualType,
     declarator_ref: ParsedDeclRef,
     ctx: &mut LowerCtx,
 ) -> QualType {
     let declarator_node = ctx.parsed_ast.parsed_types.get_decl(declarator_ref);
 
     match declarator_node {
-        ParsedDeclaratorNode::Identifier { .. } => QualType::unqualified(current_type),
+        ParsedDeclaratorNode::Identifier { .. } => current_type,
         ParsedDeclaratorNode::Pointer { qualifiers, inner } => {
             // Pointer
             // Apply Pointer modifier to the current type first (Top-Down)
             let pointer_type = ctx.registry.pointer_to(current_type);
-            let modified_current = pointer_type;
-            let result = apply_parsed_declarator_recursive(modified_current, inner, ctx);
-            ctx.registry.merge_qualifiers(result, qualifiers)
+            let modified_current = ctx
+                .registry
+                .merge_qualifiers(QualType::unqualified(pointer_type), qualifiers);
+            apply_parsed_declarator_recursive(modified_current, inner, ctx)
         }
         ParsedDeclaratorNode::Array { size, inner } => {
             // Array
+            // Apply Array modifier to the current type
+            // TODO: Ensure current_type is unqualified or handle array of qualified type if supported
             let array_size = convert_parsed_array_size(&size, ctx);
-            let array_type_ref = ctx.registry.array_of(current_type, array_size);
-
-            apply_parsed_declarator_recursive(array_type_ref, inner, ctx)
+            let array_type_ref = ctx.registry.array_of(current_type.ty(), array_size);
+            apply_parsed_declarator_recursive(QualType::unqualified(array_type_ref), inner, ctx)
         }
         ParsedDeclaratorNode::Function { params, flags, inner } => {
             // Function
@@ -74,11 +76,12 @@ fn apply_parsed_declarator_recursive(
                 });
             }
 
+            // Apply Function modifier to the current type
+            // TODO: Handle function returning qualified type
             let function_type_ref = ctx
                 .registry
-                .function_type(current_type, processed_params, flags.is_variadic);
-
-            apply_parsed_declarator_recursive(function_type_ref, inner, ctx)
+                .function_type(current_type.ty(), processed_params, flags.is_variadic);
+            apply_parsed_declarator_recursive(QualType::unqualified(function_type_ref), inner, ctx)
         }
     }
 }
@@ -336,7 +339,7 @@ fn convert_to_qual_type(
 
     let base_type_ref = convert_parsed_base_type_to_qual_type(ctx, &base_type_node, span)?;
 
-    let final_type = apply_parsed_declarator_recursive(base_type_ref.ty(), declarator_ref, ctx);
+    let final_type = apply_parsed_declarator_recursive(base_type_ref, declarator_ref, ctx);
     Ok(ctx.registry.merge_qualifiers(final_type, qualifiers))
 }
 
@@ -775,12 +778,13 @@ fn lower_function_parameters(params: &[ParsedParamData], ctx: &mut LowerCtx) -> 
             let spec_info = lower_decl_specifiers(&param.specifiers, ctx, span);
 
             // C standard: if type specifier is missing in a parameter, it defaults to int.
-            let base_ty = spec_info
+            let mut base_ty = spec_info
                 .base_type
                 .unwrap_or_else(|| QualType::unqualified(ctx.registry.type_int));
+            base_ty = ctx.registry.merge_qualifiers(base_ty, spec_info.qualifiers);
 
             let final_ty = if let Some(declarator) = &param.declarator {
-                apply_declarator(base_ty.ty(), declarator, ctx)
+                apply_declarator(base_ty, declarator, ctx)
             } else {
                 base_ty
             };
@@ -828,18 +832,18 @@ fn extract_name(decl: &ParsedDeclarator) -> Option<NameId> {
 }
 
 /// Apply declarator transformations to a base type
-pub(crate) fn apply_declarator(base_type: TypeRef, declarator: &ParsedDeclarator, ctx: &mut LowerCtx) -> QualType {
+pub(crate) fn apply_declarator(base_type: QualType, declarator: &ParsedDeclarator, ctx: &mut LowerCtx) -> QualType {
     match declarator {
         ParsedDeclarator::Pointer(qualifiers, next) => {
             let ty = ctx.registry.pointer_to(base_type);
+            let modified_ty = ctx.registry.merge_qualifiers(QualType::unqualified(ty), *qualifiers);
             if let Some(next_decl) = next {
-                let result = apply_declarator(ty, next_decl, ctx);
-                ctx.registry.merge_qualifiers(result, *qualifiers)
+                apply_declarator(modified_ty, next_decl, ctx)
             } else {
-                QualType::new(ty, *qualifiers)
+                modified_ty
             }
         }
-        ParsedDeclarator::Identifier(_, qualifiers) => QualType::new(base_type, *qualifiers),
+        ParsedDeclarator::Identifier(_, qualifiers) => ctx.registry.merge_qualifiers(base_type, *qualifiers),
         ParsedDeclarator::Array(base, size) => {
             let array_size = match size {
                 ParsedArraySize::Expression { expr, qualifiers: _ } => resolve_array_size(Some(*expr), ctx), // TODO: resolve_array_size needs ParsedNodeRef support
@@ -852,8 +856,9 @@ pub(crate) fn apply_declarator(base_type: TypeRef, declarator: &ParsedDeclarator
                 } => resolve_array_size(*size, ctx),
             };
 
-            let ty = ctx.registry.array_of(base_type, array_size);
-            apply_declarator(ty, base, ctx)
+            let ty = ctx.registry.array_of(base_type.ty(), array_size);
+            let array_qt = QualType::new(ty, base_type.qualifiers());
+            apply_declarator(array_qt, base, ctx)
         }
         ParsedDeclarator::Function {
             inner: base,
@@ -861,8 +866,8 @@ pub(crate) fn apply_declarator(base_type: TypeRef, declarator: &ParsedDeclarator
             is_variadic,
         } => {
             let parameters = lower_function_parameters(params, ctx);
-            let ty = ctx.registry.function_type(base_type, parameters, *is_variadic);
-            apply_declarator(ty, base, ctx)
+            let ty = ctx.registry.function_type(base_type.ty(), parameters, *is_variadic);
+            apply_declarator(QualType::unqualified(ty), base, ctx)
         }
         ParsedDeclarator::AnonymousRecord(is_union, members) => {
             // Use struct_lowering helper
@@ -876,7 +881,7 @@ pub(crate) fn apply_declarator(base_type: TypeRef, declarator: &ParsedDeclarator
             // Bitfield logic handled in struct lowering usually. Here just type application.
             apply_declarator(base_type, base, ctx)
         }
-        ParsedDeclarator::Abstract => QualType::unqualified(base_type),
+        ParsedDeclarator::Abstract => base_type,
     }
 }
 
@@ -1082,11 +1087,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn lower_function_definition(&mut self, func_def: &ParsedFunctionDefData, node: NodeRef, span: SourceSpan) {
         let spec_info = lower_decl_specifiers(&func_def.specifiers, self, span);
-        let base_ty = spec_info
+        let mut base_ty = spec_info
             .base_type
             .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
+        base_ty = self.registry.merge_qualifiers(base_ty, spec_info.qualifiers);
 
-        let final_ty = apply_declarator(base_ty.ty(), &func_def.declarator, self);
+        let final_ty = apply_declarator(base_ty, &func_def.declarator, self);
         let func_name = extract_name(&func_def.declarator).expect("Function definition must have a name");
 
         if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) =
@@ -1157,9 +1163,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         target_slots: Option<&[NodeRef]>,
     ) -> SmallVec<[NodeRef; 1]> {
         let spec_info = lower_decl_specifiers(&decl.specifiers, self, span);
-        let base_ty = spec_info
+        let mut base_ty = spec_info
             .base_type
             .unwrap_or(QualType::unqualified(self.registry.type_int));
+        base_ty = self.registry.merge_qualifiers(base_ty, spec_info.qualifiers);
 
         if decl.init_declarators.is_empty() {
             if let Some(ty) = spec_info.base_type {
@@ -1245,8 +1252,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let mut nodes = SmallVec::new();
 
         for (i, init) in decl.init_declarators.iter().enumerate() {
-            let final_ty = apply_declarator(base_ty.ty(), &init.declarator, self);
-            let final_ty = self.registry.merge_qualifiers(final_ty, spec_info.qualifiers);
+            let final_ty = apply_declarator(base_ty, &init.declarator, self);
 
             let name = extract_name(&init.declarator).expect("Declarator must have identifier");
 
@@ -1951,12 +1957,6 @@ fn extract_bit_field_width<'a>(
     ctx: &mut LowerCtx,
 ) -> (Option<NonZeroU16>, &'a ParsedDeclarator) {
     if let ParsedDeclarator::BitField(base, expr_ref) = declarator {
-        let _const_eval_ctx = ConstEvalCtx { ast: ctx.ast };
-        // expr_ref is ParsedNodeRef. ConstEval expects NodeRef.
-        // TODO: We cannot eval ParsedNodeRef directly with ConstEvalCtx unless we resolve it or have ParsedConstEval.
-        // For now, defer evaluation or assume 0/error.
-        // Or better, we assume the expression is simple literal maybe?
-        // Let's check ParsedAst for the node.
         let node = ctx.parsed_ast.get_node(*expr_ref);
         let width = if let ParsedNodeKind::LiteralInt(val) = node.kind {
             if val > 0 && val <= 64 {
@@ -2047,7 +2047,7 @@ pub(crate) fn lower_struct_members(
 
             let member_type = if let Some(base_type_ref) = spec_info.base_type {
                 // Manually re-apply qualifiers from the base type.
-                let ty = apply_declarator(base_type_ref.ty(), base_declarator, ctx);
+                let ty = apply_declarator(base_type_ref, base_declarator, ctx);
                 ctx.registry.merge_qualifiers(ty, spec_info.qualifiers)
             } else {
                 QualType::unqualified(ctx.registry.type_int)

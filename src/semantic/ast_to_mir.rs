@@ -1331,6 +1331,7 @@ impl<'a> AstToMirLowerer<'a> {
             self.registry
                 .get_pointee(obj_ty.ty())
                 .expect("Arrow access on non-pointer type")
+                .ty()
         } else {
             obj_ty.ty()
         };
@@ -1614,7 +1615,7 @@ impl<'a> AstToMirLowerer<'a> {
                 BuiltinType::Double | BuiltinType::LongDouble => MirType::F64, // Mapping long double to double (64-bit) is a valid implementation choice
             },
             TypeKind::Pointer { pointee } => MirType::Pointer {
-                pointee: self.lower_type(*pointee),
+                pointee: self.lower_type(pointee.ty()),
             },
             TypeKind::Array { element_type, size } => {
                 let element = self.lower_type(*element_type);

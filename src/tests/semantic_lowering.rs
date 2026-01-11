@@ -169,7 +169,7 @@ fn display_qual_type(registry: &TypeRegistry, qt: QualType) -> String {
 
     match kind {
         TypeKind::Pointer { pointee } => {
-            let pointee_qt = QualType::unqualified(*pointee);
+            let pointee_qt = *pointee;
             let inner = display_qual_type(registry, pointee_qt);
             s.push_str(&format!("{} *", inner));
         }
@@ -180,17 +180,16 @@ fn display_qual_type(registry: &TypeRegistry, qt: QualType) -> String {
 
 #[test]
 fn test_const_pointer_init() {
-    let (ast, registry, symbol_table) = setup_lowering("const int *p = 0;");
+    let (ast, registry, symbol_table) = setup_lowering("const int * const * volatile p;");
     let root = ast.get_root();
     let resolved = resolve_node(&ast, &registry, &symbol_table, root);
-    insta::assert_yaml_snapshot!(resolved, @r###"
+    insta::assert_yaml_snapshot!(resolved, @r"
     TranslationUnit:
       - VarDecl:
           name: p
-          ty: const int *
-          init:
-            LiteralInt: 0
-    "###);
+          ty: volatile const const int * *
+          init: ~
+    ");
 }
 
 #[test]

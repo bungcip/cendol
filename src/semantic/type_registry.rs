@@ -32,7 +32,7 @@ pub struct TypeRegistry {
     pub types: Vec<Type>,
 
     // --- Canonicalization caches ---
-    pointer_cache: HashMap<TypeRef, TypeRef>,
+    pointer_cache: HashMap<QualType, TypeRef>,
     array_cache: HashMap<(TypeRef, ArraySizeType), TypeRef>,
     function_cache: HashMap<FnSigKey, TypeRef>,
     complex_cache: HashMap<TypeRef, TypeRef>,
@@ -160,7 +160,7 @@ impl TypeRegistry {
         self.type_long_double = self.alloc_builtin(TypeKind::Builtin(BuiltinType::LongDouble));
 
         // Pre-calculate void*
-        self.type_void_ptr = self.pointer_to(self.type_void);
+        self.type_void_ptr = self.pointer_to(QualType::unqualified(self.type_void));
 
         // We can assert that the last allocated index was 16
         debug_assert_eq!(self.types.len() - 1, 16, "Builtin types allocation mismatch");
@@ -203,7 +203,9 @@ impl TypeRegistry {
             };
 
             Cow::Owned(Type {
-                kind: TypeKind::Pointer { pointee },
+                kind: TypeKind::Pointer {
+                    pointee: QualType::unqualified(pointee),
+                },
                 layout: Some(layout),
             })
         } else if r.is_inline_array() {
@@ -225,9 +227,9 @@ impl TypeRegistry {
     }
 
     /// Helper to get the pointee type if the given type is a pointer.
-    pub(crate) fn get_pointee(&self, ty: TypeRef) -> Option<TypeRef> {
+    pub(crate) fn get_pointee(&self, ty: TypeRef) -> Option<QualType> {
         if ty.is_inline_pointer() {
-            Some(self.reconstruct_pointee(ty))
+            Some(QualType::unqualified(self.reconstruct_pointee(ty)))
         } else {
             match &self.get(ty).kind {
                 TypeKind::Pointer { pointee } => Some(*pointee),
@@ -274,23 +276,22 @@ impl TypeRegistry {
     // ============================================================
     // Canonical type constructors
     // ============================================================
-    pub(crate) fn pointer_to(&mut self, base: TypeRef) -> TypeRef {
-        // Try inline
-        // 1. If base is Inline Pointer (depth 1..2), we can increment depth (max 3).
-        if base.is_inline_pointer() {
-            let depth = base.pointer_depth();
-            if depth < 3 {
-                return TypeRef::new(base.base(), TypeClass::Pointer, depth + 1, 0).unwrap();
+    pub(crate) fn pointer_to(&mut self, base: QualType) -> TypeRef {
+        // Try inline if unqualified
+        if base.qualifiers().is_empty() {
+            let base_ty = base.ty();
+            // 1. If base is Inline Pointer (depth 1..2), we can increment depth (max 3).
+            if base_ty.is_inline_pointer() {
+                let depth = base_ty.pointer_depth();
+                if depth < 3 {
+                    return TypeRef::new(base_ty.base(), TypeClass::Pointer, depth + 1, 0).unwrap();
+                }
             }
-        }
 
-        // 2. If base is Simple (Ptr=0, Arr=0), we can make Inline Pointer depth 1.
-        // Simple means it has a valid registry index and no inline modifiers.
-        // Checks: Ptr=0, Arr=0.
-        if base.pointer_depth() == 0 && base.array_len().is_none() {
-            // This covers Builtin, Record, Enum, RegistryPointer, RegistryArray.
-            // All these have valid BASE index and are "simple" references to registry.
-            return TypeRef::new(base.base(), TypeClass::Pointer, 1, 0).unwrap();
+            // 2. If base is Simple (Ptr=0, Arr=0), we can make Inline Pointer depth 1.
+            if base_ty.pointer_depth() == 0 && base_ty.array_len().is_none() {
+                return TypeRef::new(base_ty.base(), TypeClass::Pointer, 1, 0).unwrap();
+            }
         }
 
         // Fallback to Registry
@@ -684,12 +685,15 @@ impl TypeRegistry {
         let kind = self.get(qt.ty()).kind.clone();
         match kind {
             TypeKind::Array { element_type, .. } => {
-                let ptr = self.pointer_to(element_type);
-                QualType::new(ptr, qt.qualifiers())
+                // Correct logic: Array of T decays to Pointer to T.
+                // Qualifiers on Array apply to the element in the resulting pointer type.
+                let elem_qt = QualType::new(element_type, qt.qualifiers());
+                let ptr = self.pointer_to(elem_qt);
+                QualType::unqualified(ptr)
             }
             TypeKind::Function { .. } => {
-                let ptr = self.pointer_to(qt.ty());
-                QualType::new(ptr, qt.qualifiers())
+                let ptr = self.pointer_to(qt);
+                QualType::unqualified(ptr)
             }
             _ => qt,
         }
@@ -736,13 +740,14 @@ impl TypeRegistry {
 
         let ty_ref = qt.ty();
         if ty_ref.is_record()
-            && let TypeKind::Record { members, .. } = &self.get(ty_ref).kind {
-                for member in members {
-                    if self.is_const_recursive(member.member_type) {
-                        return true;
-                    }
+            && let TypeKind::Record { members, .. } = &self.get(ty_ref).kind
+        {
+            for member in members {
+                if self.is_const_recursive(member.member_type) {
+                    return true;
                 }
             }
+        }
         false
     }
 
@@ -789,7 +794,7 @@ impl TypeRegistry {
                 BuiltinType::LongDouble => "long double".to_string(),
             },
             TypeKind::Complex { base_type } => format!("_Complex {}", self.display_type(*base_type)),
-            TypeKind::Pointer { pointee } => format!("{}*", self.display_type(*pointee)),
+            TypeKind::Pointer { pointee } => format!("{}*", self.display_qual_type(*pointee)),
             TypeKind::Array { element_type, size } => {
                 let elem_str = self.display_type(*element_type);
                 match size {

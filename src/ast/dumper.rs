@@ -78,10 +78,10 @@ impl AstDumper {
 
             // Complex types - provide more detailed information
             TypeKind::Pointer { pointee } => {
-                let pointee_type = registry.get(*pointee);
+                let current_type = registry.get(pointee.ty());
                 format!(
                     "{}*",
-                    Self::format_type_kind_user_friendly(&pointee_type.kind, registry)
+                    Self::format_type_kind_user_friendly(&current_type.kind, registry)
                 )
             }
             TypeKind::Array { element_type, size } => {

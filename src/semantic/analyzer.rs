@@ -193,7 +193,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     self.semantic_info.conversions[operand_ref.index()].push(ImplicitConversion::PointerDecay);
                     return Some(self.registry.decay(operand_ty));
                 }
-                Some(QualType::unqualified(self.registry.pointer_to(operand_ty.ty())))
+                Some(QualType::unqualified(self.registry.pointer_to(operand_ty)))
             }
             UnaryOp::Deref => {
                 let actual_ty = if operand_ty.is_array() || operand_ty.is_function() {
@@ -204,7 +204,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 };
 
                 if actual_ty.is_pointer() {
-                    self.registry.get_pointee(actual_ty.ty()).map(QualType::unqualified)
+                    self.registry.get_pointee(actual_ty.ty())
                 } else {
                     None
                 }
@@ -316,7 +316,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     let lhs_base = self.registry.get_pointee(lhs_promoted.ty()).unwrap();
                     let rhs_base = self.registry.get_pointee(rhs_promoted.ty()).unwrap();
 
-                    if lhs_base == self.registry.type_void || rhs_base == self.registry.type_void {
+                    if lhs_base.ty() == self.registry.type_void || rhs_base.ty() == self.registry.type_void {
                         QualType::unqualified(self.registry.type_void_ptr)
                     } else if lhs_base == rhs_base {
                         lhs_promoted
@@ -444,9 +444,9 @@ impl<'a> SemanticAnalyzer<'a> {
                     _ => None,
                 }
             } else if rhs_ty.is_function() {
-                Some(rhs_ty.ty()) // Function decays to pointer to function
+                Some(rhs_ty.ty()) // Function decays to pointer
             } else if rhs_ty.is_pointer() {
-                self.registry.get_pointee(rhs_ty.ty())
+                self.registry.get_pointee(rhs_ty.ty()).map(|qt| qt.ty())
             } else {
                 None
             };
@@ -456,11 +456,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 let lhs_base = self.registry.get_pointee(lhs_ty.ty()).unwrap();
 
                 // void* wildcard
-                if lhs_base == self.registry.type_void || rhs_base == self.registry.type_void {
+                if lhs_base.ty() == self.registry.type_void || rhs_base == self.registry.type_void {
                     return true;
                 }
 
-                return lhs_base == rhs_base;
+                return lhs_base.ty() == rhs_base;
             }
 
             return false;
@@ -536,7 +536,10 @@ impl<'a> SemanticAnalyzer<'a> {
         // Resolve function type (might be pointer to function)
         let actual_func_ty_ref = if func_ty.is_pointer() {
             // Check if it's pointer to function
-            self.registry.get_pointee(func_ty_ref).unwrap_or(func_ty_ref)
+            self.registry
+                .get_pointee(func_ty_ref)
+                .map(|qt| qt.ty())
+                .unwrap_or(func_ty_ref)
         } else {
             func_ty_ref
         };
@@ -612,7 +615,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let obj_ty = self.visit_node(obj_ref)?;
 
         let record_ty_ref = if is_arrow {
-            self.registry.get_pointee(obj_ty.ty())?
+            self.registry.get_pointee(obj_ty.ty()).map(|qt| qt.ty())?
         } else {
             obj_ty.ty()
         };
@@ -685,7 +688,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 _ => unreachable!(),
             }
         } else {
-            self.registry.get_pointee(arr_ty.ty()).map(QualType::unqualified)
+            self.registry.get_pointee(arr_ty.ty()).map(|qt| qt)
         }
     }
 

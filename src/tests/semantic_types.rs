@@ -1,6 +1,6 @@
 use crate::semantic::ArraySizeType;
 use crate::semantic::type_registry::TypeRegistry;
-use crate::semantic::types::{TypeClass, TypeRef};
+use crate::semantic::types::{QualType, TypeClass, TypeRef};
 
 #[test]
 fn test_typeref_encoding_primitive() {
@@ -86,27 +86,27 @@ fn test_typeregistry_inline_logic() {
     assert!(int_ty.is_builtin());
 
     // int* (Inline)
-    let p1 = reg.pointer_to(int_ty);
+    let p1 = reg.pointer_to(QualType::unqualified(int_ty));
     assert_eq!(p1.class(), TypeClass::Pointer);
     assert_eq!(p1.pointer_depth(), 1);
     assert_eq!(p1.base(), int_ty.base()); // Base is int
     assert!(p1.is_inline_pointer());
 
     // int** (Inline)
-    let p2 = reg.pointer_to(p1);
+    let p2 = reg.pointer_to(QualType::unqualified(p1));
     assert_eq!(p2.class(), TypeClass::Pointer);
     assert_eq!(p2.pointer_depth(), 2);
     assert_eq!(p2.base(), int_ty.base());
     assert!(p2.is_inline_pointer());
 
     // int*** (Inline)
-    let p3 = reg.pointer_to(p2);
+    let p3 = reg.pointer_to(QualType::unqualified(p2));
     assert_eq!(p3.class(), TypeClass::Pointer);
     assert_eq!(p3.pointer_depth(), 3);
     assert_eq!(p3.base(), int_ty.base());
 
     // int**** (Registry)
-    let p4 = reg.pointer_to(p3);
+    let p4 = reg.pointer_to(QualType::unqualified(p3));
     assert_eq!(p4.class(), TypeClass::Pointer);
     assert_eq!(p4.pointer_depth(), 0); // Registry pointer
     assert!(p4.is_registry_pointer());
@@ -115,7 +115,7 @@ fn test_typeregistry_inline_logic() {
     assert_ne!(p4.base(), int_ty.base());
 
     // int***** (Inline, base = int****)
-    let p5 = reg.pointer_to(p4);
+    let p5 = reg.pointer_to(QualType::unqualified(p4));
     assert_eq!(p5.class(), TypeClass::Pointer);
     assert_eq!(p5.pointer_depth(), 1);
     assert_eq!(p5.base(), p4.base()); // Base is the registry pointer type
@@ -146,7 +146,7 @@ fn test_typeregistry_array_logic() {
     // array_of checks if elem is Simple (Ptr=0, Arr=0).
     // int* is NOT Simple.
     // So int*[5] must be Registry Array.
-    let p1 = reg.pointer_to(int_ty); // int*
+    let p1 = reg.pointer_to(QualType::unqualified(int_ty)); // int*
     let ap1 = reg.array_of(p1, ArraySizeType::Constant(5));
     assert_eq!(ap1.class(), TypeClass::Array);
     assert_eq!(ap1.array_len(), None); // Registry array
@@ -155,7 +155,7 @@ fn test_typeregistry_array_logic() {
     // int[10]* (Registry Pointer)
     // int[10] is Inline Array (Base=Int, Arr=10). Not Simple.
     // So pointer_to(int[10]) must be Registry Pointer.
-    let pa1 = reg.pointer_to(a1);
+    let pa1 = reg.pointer_to(QualType::unqualified(a1));
     assert_eq!(pa1.class(), TypeClass::Pointer);
     assert_eq!(pa1.pointer_depth(), 0); // Registry pointer
     assert!(pa1.is_registry_pointer());
@@ -167,19 +167,19 @@ fn test_reconstruct_type() {
     let int_ty = reg.type_int;
 
     // Reconstruct int*
-    let p1 = reg.pointer_to(int_ty);
+    let p1 = reg.pointer_to(QualType::unqualified(int_ty));
     let cow_p1 = reg.get(p1);
     if let crate::semantic::TypeKind::Pointer { pointee } = cow_p1.kind {
-        assert_eq!(pointee, int_ty);
+        assert_eq!(pointee.ty(), int_ty);
     } else {
         panic!("Expected Pointer kind");
     }
 
     // Reconstruct int**
-    let p2 = reg.pointer_to(p1);
+    let p2 = reg.pointer_to(QualType::unqualified(p1));
     let cow_p2 = reg.get(p2);
     if let crate::semantic::TypeKind::Pointer { pointee } = cow_p2.kind {
-        assert_eq!(pointee, p1);
+        assert_eq!(pointee.ty(), p1);
     } else {
         panic!("Expected Pointer kind");
     }

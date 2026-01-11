@@ -475,7 +475,7 @@ pub enum TypeKind {
         base_type: TypeRef,
     },
     Pointer {
-        pointee: TypeRef,
+        pointee: QualType,
     },
     Array {
         element_type: TypeRef,

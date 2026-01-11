@@ -18,7 +18,6 @@ fn test_assignment_to_const() {
 }
 
 #[test]
-#[ignore = "still not implemented"]
 fn test_assignment_to_deref_const_ptr() {
     run_fail_with_message(
         r#"

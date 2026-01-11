@@ -671,7 +671,20 @@ impl<'a> SemanticAnalyzer<'a> {
                 let _ = self.registry.ensure_layout(data.ty.ty());
                 if let Some(init_ref) = data.init {
                     if let Some(init_ty) = self.visit_node(init_ref) {
-                        self.record_implicit_conversions(data.ty, init_ty, init_ref);
+                        // Check assignment constraints for initialization
+                        if !self.check_assignment_constraints(data.ty, init_ty, init_ref) {
+                            let lhs_kind = &self.registry.get(data.ty.ty()).kind;
+                            let rhs_kind = &self.registry.get(init_ty.ty()).kind;
+                            let span = self.ast.get_span(init_ref);
+
+                            self.report_error(SemanticError::TypeMismatch {
+                                expected: lhs_kind.to_string(),
+                                found: rhs_kind.to_string(),
+                                span,
+                            });
+                        } else {
+                            self.record_implicit_conversions(data.ty, init_ty, init_ref);
+                        }
                     } else if let NodeKind::InitializerList(_) = self.ast.get_kind(init_ref) {
                         // For InitializerList, it doesn't have an inherent type, but in a VarDecl
                         // we can treat it as having the target type for MIR lowering.

@@ -1,4 +1,4 @@
-use super::semantic_common::{run_fail_with_message, run_pass};
+use super::semantic_common::{run_fail_with_diagnostic, run_fail_with_message, run_pass};
 use crate::driver::artifact::CompilePhase;
 
 #[test]
@@ -181,5 +181,38 @@ fn test_assign_valid_arithmetic() {
         }
     "#,
         CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_void_init_variable() {
+    run_fail_with_message(
+        r#"
+        void foo() {}
+
+        int main() {
+            int x = foo();
+            return 0;
+        }
+    "#,
+        CompilePhase::Mir,
+        "type mismatch", // or "initializing 'int' with an expression of incompatible type 'void'"
+    );
+}
+
+#[test]
+fn test_void_assign_variable() {
+    run_fail_with_message(
+        r#"
+        void foo() {}
+
+        int main() {
+            int x;
+            x = foo();
+            return 0;
+        }
+    "#,
+        CompilePhase::Mir,
+        "type mismatch",
     );
 }

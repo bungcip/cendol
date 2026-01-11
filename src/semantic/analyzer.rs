@@ -212,6 +212,8 @@ impl<'a> SemanticAnalyzer<'a> {
             UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
                 if !self.is_lvalue(operand_ref) {
                     self.report_error(SemanticError::NotAnLvalue { span: full_span });
+                } else if self.registry.is_const_recursive(operand_ty) {
+                    self.report_error(SemanticError::AssignmentToReadOnly { span: full_span });
                 }
                 if operand_ty.is_scalar() { Some(operand_ty) } else { None }
             }
@@ -917,6 +919,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 if !self.is_lvalue(*expr) {
                     let span = self.ast.get_span(node_ref);
                     self.report_error(SemanticError::NotAnLvalue { span });
+                } else if let Some(t) = ty {
+                    if self.registry.is_const_recursive(t) {
+                        let span = self.ast.get_span(node_ref);
+                        self.report_error(SemanticError::AssignmentToReadOnly { span });
+                    }
                 }
                 ty
             }

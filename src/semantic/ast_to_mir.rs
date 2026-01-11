@@ -130,11 +130,9 @@ impl<'a> AstToMirLowerer<'a> {
                             is_variadic,
                         } = &func_type.kind
                         {
-                            let return_mir_type = self.lower_type_to_mir(*return_type);
-                            let param_mir_types = parameters
-                                .iter()
-                                .map(|p| self.lower_type_to_mir(p.param_type.ty()))
-                                .collect();
+                            let return_mir_type = self.lower_type(*return_type);
+                            let param_mir_types =
+                                parameters.iter().map(|p| self.lower_qual_type(p.param_type)).collect();
 
                             self.define_or_declare_function(
                                 symbol_name,
@@ -316,7 +314,7 @@ impl<'a> AstToMirLowerer<'a> {
             Operand::Constant(self.create_constant(const_val))
         } else {
             let rval = create_rvalue(data);
-            let mir_ty = self.lower_type_to_mir(target_ty.ty());
+            let mir_ty = self.lower_qual_type(target_ty);
             self.emit_rvalue_to_operand(rval, mir_ty)
         }
     }
@@ -364,7 +362,7 @@ impl<'a> AstToMirLowerer<'a> {
         let cond_operand = self.lower_expression(scope_id, condition, true);
         // Apply conversions for condition (should be boolean)
         let cond_ty = self.ast.get_resolved_type(condition).unwrap();
-        let cond_mir_ty = self.lower_type_to_mir(cond_ty.ty());
+        let cond_mir_ty = self.lower_qual_type(cond_ty);
         self.apply_conversions(cond_operand, condition, cond_mir_ty)
     }
 
@@ -393,14 +391,14 @@ impl<'a> AstToMirLowerer<'a> {
                     Operand::Constant(array_const_id)
                 } else {
                     let operand = self.lower_expression(scope_id, init_ref, true);
-                    let mir_target_ty = self.lower_type_to_mir(target_ty.ty());
+                    let mir_target_ty = self.lower_qual_type(target_ty);
                     self.apply_conversions(operand, init_ref, mir_target_ty)
                 }
             }
             _ => {
                 // It's a simple expression initializer.
                 let operand = self.lower_expression(scope_id, init_ref, true);
-                let mir_target_ty = self.lower_type_to_mir(target_ty.ty());
+                let mir_target_ty = self.lower_qual_type(target_ty);
                 self.apply_conversions(operand, init_ref, mir_target_ty)
             }
         }
@@ -469,7 +467,7 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn lower_var_declaration(&mut self, scope_id: ScopeId, var_decl: &VarDeclData, _span: SourceSpan) {
-        let mir_type_id = self.lower_type_to_mir(var_decl.ty.ty());
+        let mir_type_id = self.lower_qual_type(var_decl.ty);
         let (entry_ref, _) = self
             .symbol_table
             .lookup(var_decl.name, scope_id, Namespace::Ordinary)
@@ -559,7 +557,7 @@ impl<'a> AstToMirLowerer<'a> {
         });
         let node_kind = self.ast.get_kind(expr_ref).clone();
 
-        let mir_ty = self.lower_type_to_mir(ty.ty());
+        let mir_ty = self.lower_qual_type(ty);
 
         // Attempt constant folding for arithmetic/logical operations that are not simple literals
         if matches!(
@@ -576,7 +574,7 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::LiteralInt(val) => Operand::Constant(self.create_constant(ConstValue::Int(*val))),
             NodeKind::LiteralFloat(val) => Operand::Constant(self.create_constant(ConstValue::Float(*val))),
             NodeKind::LiteralChar(val) => Operand::Constant(self.create_constant(ConstValue::Int(*val as i64))),
-            NodeKind::LiteralString(val) => self.lower_literal_string(val, &ty),
+            NodeKind::LiteralString(val) => self.lower_literal_string(val, ty),
             NodeKind::Ident(_, symbol_ref) => self.lower_ident(*symbol_ref),
             NodeKind::UnaryOp(op, operand_ref) => match *op {
                 UnaryOp::PreIncrement | UnaryOp::PreDecrement => self.lower_pre_incdec(scope_id, op, *operand_ref),
@@ -630,7 +628,7 @@ impl<'a> AstToMirLowerer<'a> {
                 // Should be lowered in context of assignment usually.
                 Operand::Constant(self.create_constant(ConstValue::Int(0)))
             }
-            _ => Operand::Constant(self.create_constant(ConstValue::Int(0))),
+            _ => unreachable!(),
         }
     }
 
@@ -734,7 +732,7 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn lower_compound_literal(&mut self, scope_id: ScopeId, ty: QualType, init_ref: NodeRef) -> Operand {
-        let mir_ty = self.lower_type_to_mir(ty.ty());
+        let mir_ty = self.lower_qual_type(ty);
 
         // Check if we are at global scope
         if self.current_function.is_none() {
@@ -791,8 +789,8 @@ impl<'a> AstToMirLowerer<'a> {
         self.create_constant(array_const)
     }
 
-    fn lower_literal_string(&mut self, val: &NameId, ty: &QualType) -> Operand {
-        let string_type = self.lower_type_to_mir(ty.ty());
+    fn lower_literal_string(&mut self, val: &NameId, ty: QualType) -> Operand {
+        let string_type = self.lower_qual_type(ty);
 
         let array_const_id = self.create_string_array_const(val, None);
 
@@ -835,17 +833,17 @@ impl<'a> AstToMirLowerer<'a> {
                 TypeKind::Array { element_type, .. } => *element_type,
                 _ => panic!("Expected array"),
             };
-            let element_mir_ty = self.lower_type_to_mir(element_ty);
+            let element_mir_ty = self.lower_type(element_ty);
             self.mir_builder.add_type(MirType::Pointer {
                 pointee: element_mir_ty,
             })
         } else if operand_ty.is_function() {
             // Function decays to pointer to function
-            let func_mir_ty = self.lower_type_to_mir(operand_ty.ty());
+            let func_mir_ty = self.lower_qual_type(operand_ty);
             self.mir_builder.add_type(MirType::Pointer { pointee: func_mir_ty })
         } else {
             // Already pointer (or should be)
-            self.lower_type_to_mir(operand_ty.ty())
+            self.lower_qual_type(operand_ty)
         };
 
         let operand_converted = self.apply_conversions(operand, operand_ref, target_type_id);
@@ -994,7 +992,7 @@ impl<'a> AstToMirLowerer<'a> {
         match operand {
             Operand::Constant(_) => {
                 if let Some(ty) = self.ast.get_resolved_type(node_ref) {
-                    let mir_type_id = self.lower_type_to_mir(ty.ty());
+                    let mir_type_id = self.lower_qual_type(ty);
                     if let MirType::I32 = self.mir_builder.get_type(mir_type_id) {
                         Operand::Cast(mir_type_id, Box::new(operand))
                     } else {
@@ -1098,11 +1096,11 @@ impl<'a> AstToMirLowerer<'a> {
         match op {
             BinaryOp::Add => {
                 if lhs_type.is_pointer() {
-                    let rhs_mir_ty = self.lower_type_to_mir(rhs_type.ty());
+                    let rhs_mir_ty = self.lower_qual_type(rhs_type);
                     let rhs_converted = self.apply_conversions(rhs, right_ref, rhs_mir_ty);
                     Some(Rvalue::PtrAdd(lhs, rhs_converted))
                 } else if rhs_type.is_pointer() {
-                    let lhs_mir_ty = self.lower_type_to_mir(lhs_type.ty());
+                    let lhs_mir_ty = self.lower_qual_type(lhs_type);
                     let lhs_converted = self.apply_conversions(lhs, left_ref, lhs_mir_ty);
                     Some(Rvalue::PtrAdd(rhs, lhs_converted))
                 } else {
@@ -1114,7 +1112,7 @@ impl<'a> AstToMirLowerer<'a> {
                     if rhs_type.is_pointer() {
                         Some(Rvalue::PtrDiff(lhs, rhs))
                     } else if rhs_type.is_integer() {
-                        let rhs_mir_ty = self.lower_type_to_mir(rhs_type.ty());
+                        let rhs_mir_ty = self.lower_qual_type(rhs_type);
                         let rhs_converted = self.apply_conversions(rhs, right_ref, rhs_mir_ty);
                         Some(Rvalue::PtrSub(lhs, rhs_converted))
                     } else {
@@ -1222,7 +1220,7 @@ impl<'a> AstToMirLowerer<'a> {
                 Some(
                     parameters
                         .iter()
-                        .map(|param| self.lower_type_to_mir(param.param_type.ty()))
+                        .map(|param| self.lower_qual_type(param.param_type))
                         .collect::<Vec<_>>(),
                 )
             } else {
@@ -1240,7 +1238,7 @@ impl<'a> AstToMirLowerer<'a> {
             // Apply conversions for function arguments if needed
             // The resolved type of CallArg is same as inner expr.
             let arg_ty = self.ast.get_resolved_type(arg_ref).unwrap();
-            let arg_mir_ty = self.lower_type_to_mir(arg_ty.ty());
+            let arg_mir_ty = self.lower_qual_type(arg_ty);
 
             // Use the parameter type as the target type for conversions, if available
             let target_mir_ty = if let Some(ref param_types_vec) = param_types {
@@ -1347,7 +1345,7 @@ impl<'a> AstToMirLowerer<'a> {
             // Apply the chain of field accesses
 
             // Resolve base place
-            let mir_type = self.lower_type_to_mir(obj_ty.ty());
+            let mir_type = self.lower_qual_type(obj_ty);
             let mut current_place = self.ensure_place(obj_operand, mir_type);
 
             if is_arrow {
@@ -1376,7 +1374,7 @@ impl<'a> AstToMirLowerer<'a> {
         if arr_ty.is_array() {
             // Array indexing - use ArrayIndex place
             // We can skip the explicit layout check as we trust the type system
-            let mir_type = self.lower_type_to_mir(arr_ty.ty());
+            let mir_type = self.lower_qual_type(arr_ty);
             let arr_place = self.ensure_place(arr_operand, mir_type);
 
             Operand::Copy(Box::new(Place::ArrayIndex(Box::new(arr_place), Box::new(idx_operand))))
@@ -1386,7 +1384,7 @@ impl<'a> AstToMirLowerer<'a> {
             // p[idx] is equivalent to *(p + idx) which is what ArrayIndex does
 
             // Create an ArrayIndex place with the pointer as base and index
-            let mir_type = self.lower_type_to_mir(arr_ty.ty());
+            let mir_type = self.lower_qual_type(arr_ty);
             let pointer_place = self.ensure_place(arr_operand, mir_type);
 
             Operand::Copy(Box::new(Place::ArrayIndex(
@@ -1564,7 +1562,11 @@ impl<'a> AstToMirLowerer<'a> {
         self.mir_builder.add_statement(stmt);
     }
 
-    fn lower_type_to_mir(&mut self, type_ref: TypeRef) -> TypeId {
+    fn lower_qual_type(&mut self, ty: QualType) -> TypeId {
+        self.lower_type(ty.ty())
+    }
+
+    fn lower_type(&mut self, type_ref: TypeRef) -> TypeId {
         if let Some(type_id) = self.type_cache.get(&type_ref) {
             return *type_id;
         }
@@ -1613,10 +1615,10 @@ impl<'a> AstToMirLowerer<'a> {
                 BuiltinType::Double | BuiltinType::LongDouble => MirType::F64, // Treat long double as double for now
             },
             TypeKind::Pointer { pointee } => MirType::Pointer {
-                pointee: self.lower_type_to_mir(*pointee),
+                pointee: self.lower_type(*pointee),
             },
             TypeKind::Array { element_type, size } => {
-                let element = self.lower_type_to_mir(*element_type);
+                let element = self.lower_type(*element_type);
                 let size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
 
                 let (layout_size, layout_align, element_ref, _) = self.registry.get_array_layout(type_ref);
@@ -1637,10 +1639,10 @@ impl<'a> AstToMirLowerer<'a> {
                 parameters,
                 ..
             } => {
-                let return_type = self.lower_type_to_mir(*return_type);
+                let return_type = self.lower_type(*return_type);
                 let mut params = Vec::new();
                 for p in parameters {
-                    params.push(self.lower_type_to_mir(p.param_type.ty()));
+                    params.push(self.lower_qual_type(p.param_type));
                 }
                 MirType::Function { return_type, params }
             }
@@ -1662,7 +1664,7 @@ impl<'a> AstToMirLowerer<'a> {
                     for (idx, m) in members.iter().enumerate() {
                         let name = m.name.unwrap_or_else(|| NameId::new(format!("__anon_{}", idx)));
                         field_names.push(name);
-                        field_types.push(self.lower_type_to_mir(m.member_type.ty()));
+                        field_types.push(self.lower_qual_type(m.member_type));
                     }
                     (size, alignment, field_offsets, field_names, field_types)
                 } else {
@@ -1701,11 +1703,11 @@ impl<'a> AstToMirLowerer<'a> {
         let to_mir_type = match conv {
             ImplicitConversion::IntegerCast { to, .. }
             | ImplicitConversion::IntegerPromotion { to, .. }
-            | ImplicitConversion::PointerCast { to, .. } => self.lower_type_to_mir(*to),
+            | ImplicitConversion::PointerCast { to, .. } => self.lower_type(*to),
             ImplicitConversion::NullPointerConstant => {
                 // Null pointer constant usually converts to void* first.
                 // However, we can use target_type_id if it's already a pointer.
-                let void_ptr_mir = self.lower_type_to_mir(self.registry.type_void_ptr);
+                let void_ptr_mir = self.lower_type(self.registry.type_void_ptr);
                 if self.mir_builder.get_type(target_type_id).is_pointer() {
                     target_type_id
                 } else {
@@ -1749,11 +1751,11 @@ impl<'a> AstToMirLowerer<'a> {
             Operand::Constant(const_id) => {
                 let const_val = self.mir_builder.get_constants().get(const_id).unwrap().clone();
                 match const_val {
-                    ConstValue::Int(_) => self.lower_type_to_mir(self.registry.type_int),
-                    ConstValue::Float(_) => self.lower_type_to_mir(self.registry.type_double),
-                    ConstValue::Bool(_) => self.lower_type_to_mir(self.registry.type_bool),
-                    ConstValue::Null => self.lower_type_to_mir(self.registry.type_void_ptr),
-                    ConstValue::Zero => self.lower_type_to_mir(self.registry.type_void),
+                    ConstValue::Int(_) => self.lower_type(self.registry.type_int),
+                    ConstValue::Float(_) => self.lower_type(self.registry.type_double),
+                    ConstValue::Bool(_) => self.lower_type(self.registry.type_bool),
+                    ConstValue::Null => self.lower_type(self.registry.type_void_ptr),
+                    ConstValue::Zero => self.lower_type(self.registry.type_void),
                     ConstValue::Cast(ty, _) => ty,
                     ConstValue::GlobalAddress(global_id) => self.get_global_type(global_id),
                     ConstValue::FunctionAddress(func_id) => self.get_function_type(func_id),
@@ -1969,7 +1971,7 @@ impl<'a> AstToMirLowerer<'a> {
     ) -> Operand {
         let operand = self.lower_expression(scope_id, operand_ref, true);
         let operand_ty = self.ast.get_resolved_type(operand_ref).unwrap();
-        let mir_ty = self.lower_type_to_mir(operand_ty.ty());
+        let mir_ty = self.lower_qual_type(operand_ty);
 
         if let Operand::Copy(place) = operand.clone() {
             let one_const = Operand::Constant(self.create_constant(ConstValue::Int(1)));

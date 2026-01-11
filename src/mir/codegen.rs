@@ -6,12 +6,12 @@
 //! - Assume MIR is valid
 
 use crate::ast::NameId;
+use crate::mir::MirProgram;
 use crate::mir::{
     BinaryFloatOp, BinaryIntOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlock, MirBlockId, MirFunction,
     MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp,
     UnaryIntOp,
 };
-use crate::mir::MirProgram;
 use cranelift::codegen::ir::{StackSlot, StackSlotData, StackSlotKind};
 use cranelift::prelude::{
     AbiParam, Block, Configurable, FloatCC, FunctionBuilderContext, InstBuilder, IntCC, MemFlags, Signature, Type,

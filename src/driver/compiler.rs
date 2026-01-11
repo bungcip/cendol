@@ -15,10 +15,10 @@ use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer};
 use crate::mir::validation::MirValidator;
 
 use super::artifact::{CompileArtifact, CompilePhase, PipelineOutputs};
+use crate::mir::MirProgram;
 use crate::mir::dumper::{MirDumpConfig, MirDumper};
 use crate::parser::Parser;
 use crate::pp::{PPToken, Preprocessor};
-use crate::mir::MirProgram;
 use crate::semantic::{AstToMirLowerer, SymbolTable, TypeRegistry};
 use crate::source_manager::SourceManager;
 

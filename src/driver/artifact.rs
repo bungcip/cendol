@@ -1,8 +1,8 @@
 use crate::ast::SourceId;
 use crate::ast::{Ast, ParsedAst};
 use crate::lexer::Token;
-use crate::pp::PPToken;
 use crate::mir::MirProgram;
+use crate::pp::PPToken;
 use crate::semantic::{SymbolTable, TypeRegistry};
 
 /// compilation outputs for all source files

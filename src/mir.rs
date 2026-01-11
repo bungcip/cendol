@@ -304,11 +304,7 @@ pub enum MirType {
 }
 impl MirType {
     pub fn is_signed(&self) -> bool {
-        match self {
-            MirType::I8 | MirType::I16 | MirType::I32 | MirType::I64 => true,
-
-            _ => false,
-        }
+        matches!(self, MirType::I8 | MirType::I16 | MirType::I32 | MirType::I64)
     }
 
     pub fn is_pointer(&self) -> bool {

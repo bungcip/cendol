@@ -22,8 +22,8 @@ use crate::diagnostic::{DiagnosticEngine, SemanticError};
 use crate::semantic::const_eval::{self, ConstEvalCtx};
 use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
 use crate::semantic::{
-    ArraySizeType, EnumConstant, ScopeId, StructMember, SymbolKind, SymbolRef, SymbolTable, TypeKind, TypeQualifiers,
-    TypeRef, TypeRegistry,
+    ArraySizeType, BuiltinType, EnumConstant, ScopeId, StructMember, SymbolKind, SymbolRef, SymbolTable, TypeKind,
+    TypeQualifiers, TypeRef, TypeRegistry,
 };
 use crate::semantic::{FunctionParameter, QualType};
 use crate::source_manager::SourceSpan;
@@ -619,75 +619,57 @@ fn merge_base_type(existing: Option<QualType>, new_type: QualType, ctx: &mut Low
             let existing_type = ctx.registry.get(existing_ref.ty());
             let new_type_info = ctx.registry.get(new_type.ty());
 
-            // Handle signed/unsigned merging
             match (&existing_type.kind, &new_type_info.kind) {
-                // Unsigned overrides signed for same base type
-                (TypeKind::Int { is_signed: true }, TypeKind::Int { is_signed: false }) => Some(new_type),
-                (TypeKind::Int { is_signed: false }, TypeKind::Int { is_signed: true }) => {
-                    Some(existing_ref) // Keep unsigned
-                }
+                (TypeKind::Builtin(existing_builtin), TypeKind::Builtin(new_builtin)) => {
+                    match (existing_builtin, new_builtin) {
+                        // Unsigned overrides signed (Int + UInt -> UInt)
+                        (BuiltinType::Int, BuiltinType::UInt) => Some(new_type),
+                        (BuiltinType::UInt, BuiltinType::Int) => Some(existing_ref),
 
-                // Handle char type merging
-                (TypeKind::Char { is_signed: true }, TypeKind::Int { is_signed: false }) => {
-                    // unsigned char = char + unsigned
-                    Some(QualType::unqualified(ctx.registry.type_char_unsigned))
-                }
-                (TypeKind::Char { is_signed: false }, TypeKind::Int { is_signed: true }) => {
-                    Some(existing_ref) // Keep unsigned char
-                }
+                        // Char + Unsigned -> UChar
+                        (BuiltinType::Char, BuiltinType::UInt) => {
+                            Some(QualType::unqualified(ctx.registry.type_char_unsigned))
+                        }
+                        (BuiltinType::UInt, BuiltinType::Char) => {
+                            Some(QualType::unqualified(ctx.registry.type_char_unsigned))
+                        }
 
-                // Handle short type merging
-                (TypeKind::Short { is_signed: true }, TypeKind::Int { is_signed: false }) => {
-                    // unsigned short = short + unsigned
-                    Some(QualType::unqualified(ctx.registry.type_short_unsigned))
-                }
-                (TypeKind::Short { is_signed: false }, TypeKind::Int { is_signed: true }) => {
-                    Some(existing_ref) // Keep unsigned short
-                }
+                        // Short + Unsigned -> UShort
+                        (BuiltinType::Short, BuiltinType::UInt) => {
+                            Some(QualType::unqualified(ctx.registry.type_short_unsigned))
+                        }
+                        (BuiltinType::UInt, BuiltinType::Short) => {
+                            Some(QualType::unqualified(ctx.registry.type_short_unsigned))
+                        }
 
-                // Handle unsigned + char/short order
-                (TypeKind::Int { is_signed: false }, TypeKind::Char { is_signed: true }) => {
-                    // unsigned char = unsigned + char
-                    Some(QualType::unqualified(ctx.registry.type_char_unsigned))
-                }
-                (TypeKind::Int { is_signed: false }, TypeKind::Short { is_signed: true }) => {
-                    // unsigned short = unsigned + short
-                    Some(QualType::unqualified(ctx.registry.type_short_unsigned))
-                }
+                        // Long + Unsigned -> ULong
+                        (BuiltinType::Long, BuiltinType::UInt) => {
+                            Some(QualType::unqualified(ctx.registry.type_long_unsigned))
+                        }
+                        (BuiltinType::UInt, BuiltinType::Long) => {
+                            Some(QualType::unqualified(ctx.registry.type_long_unsigned))
+                        }
 
-                // Handle unsigned + long/long long order
-                (
-                    TypeKind::Int { is_signed: false },
-                    TypeKind::Long {
-                        is_long_long: false, ..
-                    },
-                ) => {
-                    // unsigned long = unsigned + long
-                    Some(QualType::unqualified(ctx.registry.type_long_unsigned))
-                }
-                (TypeKind::Int { is_signed: false }, TypeKind::Long { is_long_long: true, .. }) => {
-                    // unsigned long long = unsigned + long long
-                    Some(QualType::unqualified(ctx.registry.type_long_long_unsigned))
-                }
+                        // LongLong + Unsigned -> ULongLong
+                        (BuiltinType::LongLong, BuiltinType::UInt) => {
+                            Some(QualType::unqualified(ctx.registry.type_long_long_unsigned))
+                        }
+                        (BuiltinType::UInt, BuiltinType::LongLong) => {
+                            Some(QualType::unqualified(ctx.registry.type_long_long_unsigned))
+                        }
 
-                // Long long overrides long
-                (
-                    TypeKind::Long {
-                        is_long_long: false, ..
-                    },
-                    TypeKind::Long { is_long_long: true, .. },
-                ) => Some(new_type),
-                (
-                    TypeKind::Long { is_long_long: true, .. },
-                    TypeKind::Long {
-                        is_long_long: false, ..
-                    },
-                ) => {
-                    Some(existing_ref) // Keep long long
-                }
+                        // Long + Long -> LongLong
+                        (BuiltinType::Long, BuiltinType::Long) => {
+                            Some(QualType::unqualified(ctx.registry.type_long_long))
+                        }
 
-                // For other combinations, keep the existing type
-                // In a full implementation, we'd handle more complex cases
+                        // Long + LongLong -> LongLong
+                        (BuiltinType::Long, BuiltinType::LongLong) => Some(new_type),
+                        (BuiltinType::LongLong, BuiltinType::Long) => Some(existing_ref),
+
+                        _ => Some(existing_ref),
+                    }
+                }
                 _ => Some(existing_ref),
             }
         }

@@ -205,10 +205,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
 
                 if actual_ty.is_pointer() {
-                    match &self.registry.get(actual_ty.ty()).kind {
-                        TypeKind::Pointer { pointee } => Some(QualType::unqualified(*pointee)),
-                        _ => unreachable!("is_pointer() is true but kind is not Pointer"),
-                    }
+                    self.registry.get_pointee(actual_ty.ty()).map(QualType::unqualified)
                 } else {
                     None
                 }
@@ -455,10 +452,7 @@ impl<'a> SemanticAnalyzer<'a> {
         // Resolve function type (might be pointer to function)
         let actual_func_ty_ref = if func_ty.is_pointer() {
             // Check if it's pointer to function
-            match &self.registry.get(func_ty_ref).kind {
-                TypeKind::Pointer { pointee } => *pointee,
-                _ => func_ty_ref,
-            }
+            self.registry.get_pointee(func_ty_ref).unwrap_or(func_ty_ref)
         } else {
             func_ty_ref
         };
@@ -528,14 +522,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let obj_ty = self.visit_node(obj_ref)?;
 
         let record_ty_ref = if is_arrow {
-            if obj_ty.is_pointer() {
-                match &self.registry.get(obj_ty.ty()).kind {
-                    TypeKind::Pointer { pointee } => *pointee,
-                    _ => return None,
-                }
-            } else {
-                return None; // Error: arrow access on non-pointer
-            }
+            self.registry.get_pointee(obj_ty.ty())?
         } else {
             obj_ty.ty()
         };
@@ -588,13 +575,8 @@ impl<'a> SemanticAnalyzer<'a> {
                 TypeKind::Array { element_type, .. } => Some(QualType::unqualified(*element_type)),
                 _ => unreachable!(),
             }
-        } else if arr_ty.is_pointer() {
-            match &self.registry.get(arr_ty.ty()).kind {
-                TypeKind::Pointer { pointee } => Some(QualType::unqualified(*pointee)),
-                _ => unreachable!(),
-            }
         } else {
-            None
+            self.registry.get_pointee(arr_ty.ty()).map(QualType::unqualified)
         }
     }
 

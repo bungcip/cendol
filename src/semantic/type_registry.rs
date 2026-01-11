@@ -13,7 +13,8 @@ use target_lexicon::{PointerWidth, Triple};
 use super::types::TypeClass;
 use super::types::{FieldLayout, LayoutKind};
 use super::{
-    ArraySizeType, EnumConstant, FunctionParameter, StructMember, Type, TypeKind, TypeLayout, TypeQualifiers, TypeRef,
+    ArraySizeType, BuiltinType, EnumConstant, FunctionParameter, StructMember, Type, TypeKind, TypeLayout,
+    TypeQualifiers, TypeRef,
 };
 
 /// Central arena & factory for semantic types.
@@ -111,68 +112,52 @@ impl TypeRegistry {
         // Must match BuiltinType enum values 1..16 sequentially
 
         // 1: Void
-        self.type_void = self.alloc_builtin(TypeKind::Void);
+        self.type_void = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Void));
 
         // 2: Bool
-        self.type_bool = self.alloc_builtin(TypeKind::Bool);
+        self.type_bool = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Bool));
 
         // 3: Char (signed)
-        self.type_char = self.alloc_builtin(TypeKind::Char { is_signed: true });
+        self.type_char = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Char));
 
-        // 4: SChar (explicit signed char) - reuse Char{signed} kind, but unique TypeRef index
-        // Note: we don't expose a separate public field for SChar as it maps to type_char logic often,
-        // but we must allocate it to keep indices correct.
-        // We can just discard the returned TypeRef if we don't store it specially,
-        // OR we can store it in a temp if needed. C11: char != signed char.
-        let _type_schar = self.alloc_builtin(TypeKind::Char { is_signed: true });
+        // 4: SChar (explicit signed char)
+        let _type_schar = self.alloc_builtin(TypeKind::Builtin(BuiltinType::SChar));
 
         // 5: UChar
-        self.type_char_unsigned = self.alloc_builtin(TypeKind::Char { is_signed: false });
+        self.type_char_unsigned = self.alloc_builtin(TypeKind::Builtin(BuiltinType::UChar));
 
         // 6: Short
-        self.type_short = self.alloc_builtin(TypeKind::Short { is_signed: true });
+        self.type_short = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Short));
 
         // 7: UShort
-        self.type_short_unsigned = self.alloc_builtin(TypeKind::Short { is_signed: false });
+        self.type_short_unsigned = self.alloc_builtin(TypeKind::Builtin(BuiltinType::UShort));
 
         // 8: Int
-        self.type_int = self.alloc_builtin(TypeKind::Int { is_signed: true });
+        self.type_int = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Int));
 
         // 9: UInt
-        self.type_int_unsigned = self.alloc_builtin(TypeKind::Int { is_signed: false });
+        self.type_int_unsigned = self.alloc_builtin(TypeKind::Builtin(BuiltinType::UInt));
 
         // 10: Long
-        self.type_long = self.alloc_builtin(TypeKind::Long {
-            is_signed: true,
-            is_long_long: false,
-        });
+        self.type_long = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Long));
 
         // 11: ULong
-        self.type_long_unsigned = self.alloc_builtin(TypeKind::Long {
-            is_signed: false,
-            is_long_long: false,
-        });
+        self.type_long_unsigned = self.alloc_builtin(TypeKind::Builtin(BuiltinType::ULong));
 
         // 12: LongLong
-        self.type_long_long = self.alloc_builtin(TypeKind::Long {
-            is_signed: true,
-            is_long_long: true,
-        });
+        self.type_long_long = self.alloc_builtin(TypeKind::Builtin(BuiltinType::LongLong));
 
         // 13: ULongLong
-        self.type_long_long_unsigned = self.alloc_builtin(TypeKind::Long {
-            is_signed: false,
-            is_long_long: true,
-        });
+        self.type_long_long_unsigned = self.alloc_builtin(TypeKind::Builtin(BuiltinType::ULongLong));
 
         // 14: Float
-        self.type_float = self.alloc_builtin(TypeKind::Float);
+        self.type_float = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Float));
 
         // 15: Double
-        self.type_double = self.alloc_builtin(TypeKind::Double { is_long_double: false });
+        self.type_double = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Double));
 
         // 16: LongDouble
-        self.type_long_double = self.alloc_builtin(TypeKind::Double { is_long_double: true });
+        self.type_long_double = self.alloc_builtin(TypeKind::Builtin(BuiltinType::LongDouble));
 
         // Pre-calculate void*
         self.type_void_ptr = self.pointer_to(self.type_void);
@@ -253,6 +238,18 @@ impl TypeRegistry {
         } else {
             // Registry type
             Cow::Borrowed(&self.types[r.index()])
+        }
+    }
+
+    /// Helper to get the pointee type if the given type is a pointer.
+    pub(crate) fn get_pointee(&self, ty: TypeRef) -> Option<TypeRef> {
+        if ty.is_inline_pointer() {
+            Some(self.reconstruct_pointee(ty))
+        } else {
+            match &self.get(ty).kind {
+                TypeKind::Pointer { pointee } => Some(*pointee),
+                _ => None,
+            }
         }
     }
 
@@ -542,43 +539,53 @@ impl TypeRegistry {
         self.layout_in_progress.insert(ty);
 
         let layout = match type_kind {
-            TypeKind::Void => TypeLayout {
-                size: 0,
-                alignment: 1,
-                kind: LayoutKind::Scalar,
-            },
-            TypeKind::Bool | TypeKind::Char { .. } => TypeLayout {
-                size: 1,
-                alignment: 1,
-                kind: LayoutKind::Scalar,
-            },
-            TypeKind::Short { .. } => TypeLayout {
-                size: 2,
-                alignment: 2,
-                kind: LayoutKind::Scalar,
-            },
-            TypeKind::Int { .. } | TypeKind::Float => TypeLayout {
-                size: 4,
-                alignment: 4,
-                kind: LayoutKind::Scalar,
-            },
-            TypeKind::Long { .. } | TypeKind::Double { is_long_double: false } => {
-                let size = if matches!(type_kind, TypeKind::Long { .. }) {
-                    match self.target_triple.pointer_width() {
+            TypeKind::Builtin(b) => match b {
+                BuiltinType::Void => TypeLayout {
+                    size: 0,
+                    alignment: 1,
+                    kind: LayoutKind::Scalar,
+                },
+                BuiltinType::Bool | BuiltinType::Char | BuiltinType::SChar | BuiltinType::UChar => TypeLayout {
+                    size: 1,
+                    alignment: 1,
+                    kind: LayoutKind::Scalar,
+                },
+                BuiltinType::Short | BuiltinType::UShort => TypeLayout {
+                    size: 2,
+                    alignment: 2,
+                    kind: LayoutKind::Scalar,
+                },
+                BuiltinType::Int | BuiltinType::UInt | BuiltinType::Float => TypeLayout {
+                    size: 4,
+                    alignment: 4,
+                    kind: LayoutKind::Scalar,
+                },
+                BuiltinType::Long | BuiltinType::ULong => {
+                    // long is usually pointer width
+                    let size = match self.target_triple.pointer_width() {
                         Ok(PointerWidth::U16) => 2,
                         Ok(PointerWidth::U32) => 4,
                         Ok(PointerWidth::U64) => 8,
                         Err(_) => 8, // Default to 64-bit if unknown
+                    };
+                    TypeLayout {
+                        size,
+                        alignment: size,
+                        kind: LayoutKind::Scalar,
                     }
-                } else {
-                    8 // Double is 64-bit
-                };
-                TypeLayout {
-                    size,
-                    alignment: size,
-                    kind: LayoutKind::Scalar,
                 }
-            }
+                BuiltinType::LongLong | BuiltinType::ULongLong | BuiltinType::Double => TypeLayout {
+                    size: 8,
+                    alignment: 8,
+                    kind: LayoutKind::Scalar,
+                },
+                BuiltinType::LongDouble => TypeLayout {
+                    size: 16,
+                    alignment: 16,
+                    kind: LayoutKind::Scalar,
+                },
+            },
+
             TypeKind::Pointer { .. } => {
                 let size = match self.target_triple.pointer_width() {
                     Ok(PointerWidth::U16) => 2,
@@ -592,11 +599,6 @@ impl TypeRegistry {
                     kind: LayoutKind::Scalar,
                 }
             }
-            TypeKind::Double { is_long_double: true } => TypeLayout {
-                size: 16,
-                alignment: 16,
-                kind: LayoutKind::Scalar,
-            },
 
             TypeKind::Complex { base_type } => {
                 let base_layout = self.ensure_layout(base_type)?;
@@ -753,7 +755,7 @@ impl TypeRegistry {
             TypeKind::Record { is_complete, .. } => *is_complete,
             TypeKind::Enum { is_complete, .. } => *is_complete,
             TypeKind::Array { element_type, .. } => self.is_complete(*element_type),
-            TypeKind::Void => false,
+            TypeKind::Builtin(BuiltinType::Void) => false,
             _ => true, // Scalars are always complete
         }
     }

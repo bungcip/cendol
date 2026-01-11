@@ -8,6 +8,7 @@ use crate::mir::{
     MirFunctionId, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp, UnaryIntOp,
 };
 use crate::semantic::ArraySizeType;
+use crate::semantic::BuiltinType;
 use crate::semantic::QualType;
 use crate::semantic::StructMember;
 use crate::semantic::SymbolKind;
@@ -1093,26 +1094,36 @@ impl<'a> AstToMirLowerer<'a> {
     ) -> Option<Rvalue> {
         let lhs_type = self.ast.get_resolved_type(left_ref).unwrap();
         let rhs_type = self.ast.get_resolved_type(right_ref).unwrap();
-        let lhs_kind = &self.registry.get(lhs_type.ty()).kind;
-        let rhs_kind = &self.registry.get(rhs_type.ty()).kind;
 
-        match (op, lhs_kind, rhs_kind) {
-            (BinaryOp::Add, TypeKind::Pointer { .. }, _) => {
-                let rhs_mir_ty = self.lower_type_to_mir(rhs_type.ty());
-                let rhs_converted = self.apply_conversions(rhs, right_ref, rhs_mir_ty);
-                Some(Rvalue::PtrAdd(lhs, rhs_converted))
+        match op {
+            BinaryOp::Add => {
+                if lhs_type.is_pointer() {
+                    let rhs_mir_ty = self.lower_type_to_mir(rhs_type.ty());
+                    let rhs_converted = self.apply_conversions(rhs, right_ref, rhs_mir_ty);
+                    Some(Rvalue::PtrAdd(lhs, rhs_converted))
+                } else if rhs_type.is_pointer() {
+                    let lhs_mir_ty = self.lower_type_to_mir(lhs_type.ty());
+                    let lhs_converted = self.apply_conversions(lhs, left_ref, lhs_mir_ty);
+                    Some(Rvalue::PtrAdd(rhs, lhs_converted))
+                } else {
+                    None
+                }
             }
-            (BinaryOp::Add, _, TypeKind::Pointer { .. }) => {
-                let lhs_mir_ty = self.lower_type_to_mir(lhs_type.ty());
-                let lhs_converted = self.apply_conversions(lhs, left_ref, lhs_mir_ty);
-                Some(Rvalue::PtrAdd(rhs, lhs_converted))
+            BinaryOp::Sub => {
+                if lhs_type.is_pointer() {
+                    if rhs_type.is_pointer() {
+                        Some(Rvalue::PtrDiff(lhs, rhs))
+                    } else if rhs_type.is_integer() {
+                        let rhs_mir_ty = self.lower_type_to_mir(rhs_type.ty());
+                        let rhs_converted = self.apply_conversions(rhs, right_ref, rhs_mir_ty);
+                        Some(Rvalue::PtrSub(lhs, rhs_converted))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
             }
-            (BinaryOp::Sub, TypeKind::Pointer { .. }, TypeKind::Int { .. }) => {
-                let rhs_mir_ty = self.lower_type_to_mir(rhs_type.ty());
-                let rhs_converted = self.apply_conversions(rhs, right_ref, rhs_mir_ty);
-                Some(Rvalue::PtrSub(lhs, rhs_converted))
-            }
-            (BinaryOp::Sub, TypeKind::Pointer { .. }, TypeKind::Pointer { .. }) => Some(Rvalue::PtrDiff(lhs, rhs)),
             _ => None,
         }
     }
@@ -1320,17 +1331,14 @@ impl<'a> AstToMirLowerer<'a> {
         let obj_operand = self.lower_expression(scope_id, obj_ref, true);
         let obj_ty = self.ast.get_resolved_type(obj_ref).unwrap();
         let record_ty = if is_arrow {
-            if let TypeKind::Pointer { pointee } = &self.registry.get(obj_ty.ty()).kind {
-                *pointee
-            } else {
-                panic!("Arrow access on non-pointer type");
-            }
+            self.registry
+                .get_pointee(obj_ty.ty())
+                .expect("Arrow access on non-pointer type")
         } else {
             obj_ty.ty()
         };
 
-        let record_ty_info = self.registry.get(record_ty);
-        if let TypeKind::Record { .. } = &record_ty_info.kind {
+        if record_ty.is_record() {
             // Validate that the field exists and get its layout information
             let path = self
                 .find_member_path(record_ty, *field_name)
@@ -1365,41 +1373,28 @@ impl<'a> AstToMirLowerer<'a> {
 
         // Handle both array and pointer types for index access
         // In C, arr[idx] is equivalent to *(arr + idx)
-        let arr_ty_kind = self.registry.get(arr_ty.ty()).kind.clone();
+        if arr_ty.is_array() {
+            // Array indexing - use ArrayIndex place
+            // We can skip the explicit layout check as we trust the type system
+            let mir_type = self.lower_type_to_mir(arr_ty.ty());
+            let arr_place = self.ensure_place(arr_operand, mir_type);
 
-        match &arr_ty_kind {
-            TypeKind::Array { element_type: _, .. } => {
-                // Array indexing - use ArrayIndex place
-                let layout = self.registry.get_layout(arr_ty.ty());
+            Operand::Copy(Box::new(Place::ArrayIndex(Box::new(arr_place), Box::new(idx_operand))))
+        } else if arr_ty.is_pointer() {
+            // For pointer indexing, we can use the ArrayIndex place directly
+            // since pointer indexing follows the same rules as array indexing
+            // p[idx] is equivalent to *(p + idx) which is what ArrayIndex does
 
-                match &layout.kind {
-                    crate::semantic::types::LayoutKind::Array { element: _, len: _ } => {
-                        // Note: In a full implementation, we could add bounds checking here
-                        // for static arrays if the index is a constant
+            // Create an ArrayIndex place with the pointer as base and index
+            let mir_type = self.lower_type_to_mir(arr_ty.ty());
+            let pointer_place = self.ensure_place(arr_operand, mir_type);
 
-                        let mir_type = self.lower_type_to_mir(arr_ty.ty());
-                        let arr_place = self.ensure_place(arr_operand, mir_type);
-
-                        Operand::Copy(Box::new(Place::ArrayIndex(Box::new(arr_place), Box::new(idx_operand))))
-                    }
-                    _ => panic!("Array type layout is not an Array layout kind"),
-                }
-            }
-            TypeKind::Pointer { pointee: _ } => {
-                // For pointer indexing, we can use the ArrayIndex place directly
-                // since pointer indexing follows the same rules as array indexing
-                // p[idx] is equivalent to *(p + idx) which is what ArrayIndex does
-
-                // Create an ArrayIndex place with the pointer as base and index
-                let mir_type = self.lower_type_to_mir(arr_ty.ty());
-                let pointer_place = self.ensure_place(arr_operand, mir_type);
-
-                Operand::Copy(Box::new(Place::ArrayIndex(
-                    Box::new(pointer_place),
-                    Box::new(idx_operand),
-                )))
-            }
-            _ => panic!("Index access on non-array, non-pointer type"),
+            Operand::Copy(Box::new(Place::ArrayIndex(
+                Box::new(pointer_place),
+                Box::new(idx_operand),
+            )))
+        } else {
+            panic!("Index access on non-array, non-pointer type");
         }
     }
 
@@ -1603,41 +1598,20 @@ impl<'a> AstToMirLowerer<'a> {
         let ast_type_kind = ast_type.kind.clone();
 
         let mir_type = match &ast_type_kind {
-            TypeKind::Void => MirType::Void,
-            TypeKind::Bool => MirType::Bool,
-            TypeKind::Char { is_signed } => {
-                if *is_signed {
-                    MirType::I8
-                } else {
-                    MirType::U8
-                }
-            }
-            TypeKind::Short { is_signed } => {
-                if *is_signed {
-                    MirType::I16
-                } else {
-                    MirType::U16
-                }
-            }
-            TypeKind::Int { is_signed } => {
-                if *is_signed {
-                    MirType::I32
-                } else {
-                    MirType::U32
-                }
-            }
-            TypeKind::Long {
-                is_signed,
-                is_long_long: _,
-            } => {
-                if *is_signed {
-                    MirType::I64
-                } else {
-                    MirType::U64
-                }
-            }
-            TypeKind::Float => MirType::F32,
-            TypeKind::Double { .. } => MirType::F64,
+            TypeKind::Builtin(b) => match b {
+                BuiltinType::Void => MirType::Void,
+                BuiltinType::Bool => MirType::Bool,
+                BuiltinType::Char | BuiltinType::SChar => MirType::I8,
+                BuiltinType::UChar => MirType::U8,
+                BuiltinType::Short => MirType::I16,
+                BuiltinType::UShort => MirType::U16,
+                BuiltinType::Int => MirType::I32,
+                BuiltinType::UInt => MirType::U32,
+                BuiltinType::Long | BuiltinType::LongLong => MirType::I64,
+                BuiltinType::ULong | BuiltinType::ULongLong => MirType::U64,
+                BuiltinType::Float => MirType::F32,
+                BuiltinType::Double | BuiltinType::LongDouble => MirType::F64, // Treat long double as double for now
+            },
             TypeKind::Pointer { pointee } => MirType::Pointer {
                 pointee: self.lower_type_to_mir(*pointee),
             },
@@ -1998,7 +1972,6 @@ impl<'a> AstToMirLowerer<'a> {
         let mir_ty = self.lower_type_to_mir(operand_ty.ty());
 
         if let Operand::Copy(place) = operand.clone() {
-            let type_info = self.registry.get(operand_ty.ty());
             let one_const = Operand::Constant(self.create_constant(ConstValue::Int(1)));
             let minus_one_const = Operand::Constant(self.create_constant(ConstValue::Int(-1)));
 
@@ -2012,20 +1985,17 @@ impl<'a> AstToMirLowerer<'a> {
             };
 
             // Determine MIR operation and Rvalue
-            let rval = match &type_info.kind {
-                TypeKind::Pointer { .. } => {
-                    if is_inc {
-                        Rvalue::PtrAdd(operand.clone(), one_const)
-                    } else {
-                        Rvalue::PtrSub(operand.clone(), one_const)
-                    }
+            let rval = if operand_ty.is_pointer() {
+                if is_inc {
+                    Rvalue::PtrAdd(operand.clone(), one_const)
+                } else {
+                    Rvalue::PtrSub(operand.clone(), one_const)
                 }
-                _ => {
-                    // For Integers: Add(delta) (Note: we use Add with negative delta for decrement
-                    // to support proper wrapping arithmetic and fix previous bugs)
-                    let rhs = if is_inc { one_const } else { minus_one_const };
-                    Rvalue::BinaryIntOp(BinaryIntOp::Add, operand.clone(), rhs)
-                }
+            } else {
+                // For Integers: Add(delta) (Note: we use Add with negative delta for decrement
+                // to support proper wrapping arithmetic and fix previous bugs)
+                let rhs = if is_inc { one_const } else { minus_one_const };
+                Rvalue::BinaryIntOp(BinaryIntOp::Add, operand.clone(), rhs)
             };
 
             // Perform the assignment

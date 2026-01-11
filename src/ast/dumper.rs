@@ -5,7 +5,7 @@
 use hashbrown::HashSet;
 
 use crate::ast::{Ast, DesignatedInitializer, Designator, NodeKind};
-use crate::semantic::{ArraySizeType, SymbolRef, SymbolTable, TypeKind, TypeRef, TypeRegistry};
+use crate::semantic::{ArraySizeType, BuiltinType, SymbolRef, SymbolTable, TypeKind, TypeRef, TypeRegistry};
 
 /// Dumper for AST
 pub struct AstDumper;
@@ -55,53 +55,24 @@ impl AstDumper {
     fn format_type_kind_user_friendly(kind: &TypeKind, registry: &TypeRegistry) -> String {
         match kind {
             // Basic types - use the existing dump format
-            TypeKind::Void => "void".to_string(),
-            TypeKind::Bool => "_Bool".to_string(),
-            TypeKind::Char { is_signed } => {
-                if *is_signed {
-                    "char".to_string()
-                } else {
-                    "unsigned char".to_string()
-                }
-            }
-            TypeKind::Short { is_signed } => {
-                if *is_signed {
-                    "short".to_string()
-                } else {
-                    "unsigned short".to_string()
-                }
-            }
-            TypeKind::Int { is_signed } => {
-                if *is_signed {
-                    "int".to_string()
-                } else {
-                    "unsigned int".to_string()
-                }
-            }
-            TypeKind::Long {
-                is_signed,
-                is_long_long,
-            } => {
-                if *is_long_long {
-                    if *is_signed {
-                        "long long".to_string()
-                    } else {
-                        "unsigned long long".to_string()
-                    }
-                } else if *is_signed {
-                    "long".to_string()
-                } else {
-                    "unsigned long".to_string()
-                }
-            }
-            TypeKind::Float => "float".to_string(),
-            TypeKind::Double { is_long_double } => {
-                if *is_long_double {
-                    "long double".to_string()
-                } else {
-                    "double".to_string()
-                }
-            }
+            TypeKind::Builtin(b) => match b {
+                BuiltinType::Void => "void".to_string(),
+                BuiltinType::Bool => "_Bool".to_string(),
+                BuiltinType::Char => "char".to_string(),
+                BuiltinType::SChar => "signed char".to_string(),
+                BuiltinType::UChar => "unsigned char".to_string(),
+                BuiltinType::Short => "short".to_string(),
+                BuiltinType::UShort => "unsigned short".to_string(),
+                BuiltinType::Int => "int".to_string(),
+                BuiltinType::UInt => "unsigned int".to_string(),
+                BuiltinType::Long => "long".to_string(),
+                BuiltinType::ULong => "unsigned long".to_string(),
+                BuiltinType::LongLong => "long long".to_string(),
+                BuiltinType::ULongLong => "unsigned long long".to_string(),
+                BuiltinType::Float => "float".to_string(),
+                BuiltinType::Double => "double".to_string(),
+                BuiltinType::LongDouble => "long double".to_string(),
+            },
             TypeKind::Complex { .. } => "_Complex".to_string(),
             TypeKind::Error => "<error>".to_string(),
 

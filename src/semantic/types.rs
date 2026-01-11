@@ -470,25 +470,7 @@ const _: () = assert!(std::mem::size_of::<QualType>() == 4);
 /// The kind of type
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum TypeKind {
-    Void,
-    Bool,
-    Char {
-        is_signed: bool,
-    },
-    Short {
-        is_signed: bool,
-    },
-    Int {
-        is_signed: bool,
-    },
-    Long {
-        is_signed: bool,
-        is_long_long: bool,
-    },
-    Float,
-    Double {
-        is_long_double: bool,
-    },
+    Builtin(BuiltinType),
     Complex {
         base_type: TypeRef,
     },
@@ -523,21 +505,58 @@ pub enum TypeKind {
 impl TypeKind {
     pub fn to_class(&self) -> TypeClass {
         match self {
-            TypeKind::Void
-            | TypeKind::Bool
-            | TypeKind::Char { .. }
-            | TypeKind::Short { .. }
-            | TypeKind::Int { .. }
-            | TypeKind::Long { .. }
-            | TypeKind::Float
-            | TypeKind::Double { .. }
-            | TypeKind::Error => TypeClass::Builtin,
+            TypeKind::Builtin(_) | TypeKind::Error => TypeClass::Builtin,
             TypeKind::Complex { .. } => TypeClass::Record, // Treat complex as Record for now in terms of class, or fallthrough
             TypeKind::Pointer { .. } => TypeClass::Pointer,
             TypeKind::Array { .. } => TypeClass::Array,
             TypeKind::Function { .. } => TypeClass::Function,
             TypeKind::Record { .. } => TypeClass::Record,
             TypeKind::Enum { .. } => TypeClass::Enum,
+        }
+    }
+}
+
+impl Display for TypeKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TypeKind::Builtin(b) => match b {
+                BuiltinType::Void => write!(f, "void"),
+                BuiltinType::Bool => write!(f, "_Bool"),
+                BuiltinType::Char => write!(f, "char"),
+                BuiltinType::SChar => write!(f, "signed char"),
+                BuiltinType::UChar => write!(f, "unsigned char"),
+                BuiltinType::Short => write!(f, "short"),
+                BuiltinType::UShort => write!(f, "unsigned short"),
+                BuiltinType::Int => write!(f, "int"),
+                BuiltinType::UInt => write!(f, "unsigned int"),
+                BuiltinType::Long => write!(f, "long"),
+                BuiltinType::ULong => write!(f, "unsigned long"),
+                BuiltinType::LongLong => write!(f, "long long"),
+                BuiltinType::ULongLong => write!(f, "unsigned long long"),
+                BuiltinType::Float => write!(f, "float"),
+                BuiltinType::Double => write!(f, "double"),
+                BuiltinType::LongDouble => write!(f, "long double"),
+            },
+            TypeKind::Complex { .. } => write!(f, "_Complex"),
+            TypeKind::Pointer { .. } => write!(f, "<pointer>"),
+            TypeKind::Array { .. } => write!(f, "<array>"),
+            TypeKind::Function { .. } => write!(f, "<function>"),
+            TypeKind::Record { tag, is_union, .. } => {
+                let kind_str = if *is_union { "union" } else { "struct" };
+                if let Some(tag_name) = tag {
+                    write!(f, "{} {}", kind_str, tag_name)
+                } else {
+                    write!(f, "{} (anonymous)", kind_str)
+                }
+            }
+            TypeKind::Enum { tag, .. } => {
+                if let Some(tag_name) = tag {
+                    write!(f, "enum {}", tag_name)
+                } else {
+                    write!(f, "enum (anonymous)")
+                }
+            }
+            TypeKind::Error => write!(f, "<error>"),
         }
     }
 }
@@ -577,80 +596,6 @@ impl Display for TypeQualifiers {
         }
 
         Ok(())
-    }
-}
-
-impl Display for TypeKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TypeKind::Void => write!(f, "void"),
-            TypeKind::Bool => write!(f, "_Bool"),
-            TypeKind::Char { is_signed } => {
-                if *is_signed {
-                    write!(f, "char")
-                } else {
-                    write!(f, "unsigned char")
-                }
-            }
-            TypeKind::Short { is_signed } => {
-                if *is_signed {
-                    write!(f, "short")
-                } else {
-                    write!(f, "unsigned short")
-                }
-            }
-            TypeKind::Int { is_signed } => {
-                if *is_signed {
-                    write!(f, "int")
-                } else {
-                    write!(f, "unsigned int")
-                }
-            }
-            TypeKind::Long {
-                is_signed,
-                is_long_long,
-            } => {
-                if *is_long_long {
-                    if *is_signed {
-                        write!(f, "long long")
-                    } else {
-                        write!(f, "unsigned long long")
-                    }
-                } else if *is_signed {
-                    write!(f, "long")
-                } else {
-                    write!(f, "unsigned long")
-                }
-            }
-            TypeKind::Float => write!(f, "float"),
-            TypeKind::Double { is_long_double } => {
-                if *is_long_double {
-                    write!(f, "long double")
-                } else {
-                    write!(f, "double")
-                }
-            }
-            TypeKind::Complex { .. } => write!(f, "_Complex"),
-            TypeKind::Pointer { .. } => write!(f, "<pointer>"),
-            TypeKind::Array { .. } => write!(f, "<array>"),
-            TypeKind::Function { .. } => write!(f, "<function>"),
-            TypeKind::Record { tag, is_union, .. } => {
-                let kind_str = if *is_union { "union" } else { "struct" };
-                if let Some(tag_name) = tag {
-                    write!(f, "{} {}", kind_str, tag_name)
-                } else {
-                    write!(f, "{} (anonymous)", kind_str)
-                }
-            }
-            TypeKind::Enum { tag, .. } => {
-                if let Some(tag_name) = tag {
-                    write!(f, "enum {}", tag_name)
-                } else {
-                    write!(f, "enum (anonymous)")
-                }
-            }
-            TypeKind::Error => write!(f, "<error>"),
-        }
     }
 }
 

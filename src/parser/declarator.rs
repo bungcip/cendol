@@ -266,7 +266,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParsedParam
     let mut is_variadic = false;
 
     if !parser.is_token(TokenKind::RightParen) {
-        if parser.is_token(TokenKind::Void) && parser.peek_token(0).map_or(false, |t| t.kind == TokenKind::RightParen) {
+        if parser.is_token(TokenKind::Void) && parser.peek_token(0).is_some_and(|t| t.kind == TokenKind::RightParen) {
             // void parameter list (only if followed effectively by ')')
             parser.expect(TokenKind::Void)?;
         } else {

@@ -20,7 +20,6 @@ pub struct SemanticInfo {
 
 impl SemanticInfo {
     pub(crate) fn with_capacity(n: usize) -> Self {
-        use smallvec::SmallVec;
         Self {
             types: vec![None; n],
             conversions: vec![SmallVec::new(); n],
@@ -183,7 +182,6 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn visit_unary_op(&mut self, op: UnaryOp, operand_ref: NodeRef, full_span: SourceSpan) -> Option<QualType> {
         let operand_ty = self.visit_node(operand_ref)?;
-        // let operand_kind = &self.registry.get(operand_ty.ty()).kind;
 
         match op {
             UnaryOp::AddrOf => {
@@ -198,11 +196,12 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(QualType::unqualified(self.registry.pointer_to(operand_ty.ty())))
             }
             UnaryOp::Deref => {
-                let mut actual_ty = operand_ty;
-                if operand_ty.is_array() || operand_ty.is_function() {
+                let actual_ty = if operand_ty.is_array() || operand_ty.is_function() {
                     self.semantic_info.conversions[operand_ref.index()].push(ImplicitConversion::PointerDecay);
-                    actual_ty = self.registry.decay(operand_ty);
-                }
+                    self.registry.decay(operand_ty)
+                } else {
+                    operand_ty
+                };
 
                 if actual_ty.is_pointer() {
                     self.registry.get_pointee(actual_ty.ty()).map(QualType::unqualified)
@@ -293,10 +292,6 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         // Handle pointer arithmetic
-        // Re-borrow kinds after mutable borrows above
-        // let lhs_kind = &self.registry.get(lhs_promoted.ty()).kind;
-        // let rhs_kind = &self.registry.get(rhs_promoted.ty()).kind;
-
         let (result_ty, common_ty) = match op {
             // Pointer + integer = pointer
             BinaryOp::Add if lhs_promoted.is_pointer() && rhs_promoted.is_integer() => (lhs_promoted, lhs_promoted),
@@ -713,7 +708,6 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn visit_expression_node(&mut self, node_ref: NodeRef, kind: &NodeKind) -> Option<QualType> {
-        // let node = self.ast.get_node(node_ref);
         match kind {
             NodeKind::LiteralInt(_) => Some(QualType::unqualified(self.registry.type_int)),
             NodeKind::LiteralFloat(_) => Some(QualType::unqualified(self.registry.type_double)),

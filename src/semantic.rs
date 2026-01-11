@@ -16,7 +16,7 @@ pub mod const_eval;
 pub mod conversions;
 
 pub mod lowering;
-pub mod output;
+
 pub mod symbol_table;
 pub mod type_registry;
 pub mod types;

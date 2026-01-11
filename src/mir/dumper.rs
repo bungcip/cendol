@@ -15,7 +15,7 @@ use super::{
     MirFunction, MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
     UnaryFloatOp, UnaryIntOp,
 };
-use crate::semantic::output::SemaOutput;
+use crate::mir::MirProgram;
 
 /// Configuration for MIR dump output
 #[derive(Debug, Clone)]
@@ -31,13 +31,13 @@ impl Default for MirDumpConfig {
 
 /// Main MIR dumper that generates human-readable MIR output
 pub struct MirDumper<'a> {
-    sema_output: &'a SemaOutput,
+    sema_output: &'a MirProgram,
     config: &'a MirDumpConfig,
 }
 
 impl<'a> MirDumper<'a> {
     /// Create a new MIR dumper
-    pub fn new(sema_output: &'a SemaOutput, config: &'a MirDumpConfig) -> Self {
+    pub fn new(sema_output: &'a MirProgram, config: &'a MirDumpConfig) -> Self {
         Self { sema_output, config }
     }
 

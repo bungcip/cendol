@@ -443,9 +443,10 @@ pub(crate) struct MirBuilder {
     statements: HashMap<MirStmtId, MirStmt>,
 }
 
-/// Struct to hold the output of consuming a `MirBuilder`.
-/// This avoids cloning the internal collections.
-pub struct MirBuilderOutput {
+/// Complete semantic analysis output containing the full MIR program representation
+/// Includes all functions, blocks, instructions, and type definitions.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct MirProgram {
     pub module: MirModule,
     pub functions: HashMap<MirFunctionId, MirFunction>,
     pub blocks: HashMap<MirBlockId, MirBlock>,
@@ -454,6 +455,34 @@ pub struct MirBuilderOutput {
     pub types: HashMap<TypeId, MirType>,
     pub constants: HashMap<ConstValueId, ConstValue>,
     pub statements: HashMap<MirStmtId, MirStmt>,
+}
+
+impl MirProgram {
+    /// get type or panic if not found
+    pub(crate) fn get_type(&self, id: TypeId) -> &MirType {
+        match self.types.get(&id) {
+            Some(id) => id,
+            None => panic!("ICE: Type ID {id} not found"),
+        }
+    }
+    pub(crate) fn get_local(&self, id: LocalId) -> &Local {
+        match self.locals.get(&id) {
+            Some(id) => id,
+            None => panic!("ICE: Local ID {id} not found"),
+        }
+    }
+    pub(crate) fn get_function(&self, id: MirFunctionId) -> &MirFunction {
+        match self.functions.get(&id) {
+            Some(id) => id,
+            None => panic!("ICE: Function ID {id} not found"),
+        }
+    }
+    pub(crate) fn get_global(&self, id: GlobalId) -> &Global {
+        match self.globals.get(&id) {
+            Some(id) => id,
+            None => panic!("ICE: Global ID {id} not found"),
+        }
+    }
 }
 
 impl MirBuilder {
@@ -709,8 +738,8 @@ impl MirBuilder {
 
     /// Consumes the builder and returns all the generated MIR components.
     /// This is the preferred way to get the final MIR, as it avoids cloning.
-    pub(crate) fn consume(self) -> MirBuilderOutput {
-        MirBuilderOutput {
+    pub(crate) fn consume(self) -> MirProgram {
+        MirProgram {
             module: self.module,
             functions: self.functions,
             blocks: self.blocks,

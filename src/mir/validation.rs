@@ -8,12 +8,12 @@
 //! - MIR is Cranelift-safe
 
 use crate::{
+    mir::MirProgram,
     mir::{
         BinaryFloatOp, BinaryIntOp, CallTarget, GlobalId, LocalId, MirBlockId, MirFunction, MirFunctionId,
         MirFunctionKind, MirModule, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp,
         UnaryIntOp,
     },
-    semantic::output::SemaOutput,
 };
 
 /// MIR Validation Error
@@ -97,7 +97,7 @@ impl MirValidator {
     /// Validate a MIR module
     ///
     /// Returns Ok(()) if validation passes, or Err(Vec<ValidationError>) if errors are found
-    pub(crate) fn validate(&mut self, sema_output: &SemaOutput) -> Result<(), Vec<ValidationError>> {
+    pub(crate) fn validate(&mut self, sema_output: &MirProgram) -> Result<(), Vec<ValidationError>> {
         self.errors.clear();
 
         // Validate the module structure
@@ -145,7 +145,7 @@ impl MirValidator {
     }
 
     /// Validate a function
-    fn validate_function(&mut self, sema_output: &SemaOutput, func: &MirFunction) {
+    fn validate_function(&mut self, sema_output: &MirProgram, func: &MirFunction) {
         // Function must have a valid ID
         if func.id.get() == 0 {
             self.errors
@@ -216,7 +216,7 @@ impl MirValidator {
         }
     }
 
-    fn validate_statement(&mut self, sema_output: &SemaOutput, stmt: &MirStmt) {
+    fn validate_statement(&mut self, sema_output: &MirProgram, stmt: &MirStmt) {
         match stmt {
             MirStmt::Assign(place, rvalue) => {
                 let place_ty = self.validate_place(sema_output, place);
@@ -348,7 +348,7 @@ impl MirValidator {
         }
     }
 
-    fn validate_place(&mut self, sema_output: &SemaOutput, place: &Place) -> Option<TypeId> {
+    fn validate_place(&mut self, sema_output: &MirProgram, place: &Place) -> Option<TypeId> {
         match place {
             Place::Local(local_id) => {
                 if let Some(local) = sema_output.locals.get(local_id) {
@@ -414,7 +414,7 @@ impl MirValidator {
         }
     }
 
-    fn validate_operand(&mut self, sema_output: &SemaOutput, op: &Operand) -> Option<TypeId> {
+    fn validate_operand(&mut self, sema_output: &MirProgram, op: &Operand) -> Option<TypeId> {
         match op {
             Operand::Copy(place) => self.validate_place(sema_output, place),
             Operand::Constant(cid) => {
@@ -451,7 +451,7 @@ impl MirValidator {
         }
     }
 
-    fn validate_rvalue(&mut self, sema_output: &SemaOutput, r: &Rvalue) -> Option<TypeId> {
+    fn validate_rvalue(&mut self, sema_output: &MirProgram, r: &Rvalue) -> Option<TypeId> {
         match r {
             Rvalue::Use(op) => self.validate_operand(sema_output, op),
             Rvalue::BinaryIntOp(bin, a, b) => {
@@ -561,7 +561,7 @@ impl MirValidator {
         }
     }
 
-    fn validate_call_target(&mut self, sema_output: &SemaOutput, target: &CallTarget) {
+    fn validate_call_target(&mut self, sema_output: &MirProgram, target: &CallTarget) {
         match target {
             CallTarget::Direct(fid) => {
                 if sema_output.functions.get(fid).is_none() {
@@ -574,10 +574,10 @@ impl MirValidator {
         }
     }
 
-    fn operand_type(&mut self, sema_output: &SemaOutput, op: &Operand) -> Option<TypeId> {
+    fn operand_type(&mut self, sema_output: &MirProgram, op: &Operand) -> Option<TypeId> {
         self.validate_operand(sema_output, op)
     }
-    fn validate_terminator(&mut self, sema_output: &SemaOutput, term: &Terminator) {
+    fn validate_terminator(&mut self, sema_output: &MirProgram, term: &Terminator) {
         match term {
             Terminator::Goto(bid) => {
                 if !sema_output.blocks.contains_key(bid) {
@@ -602,7 +602,7 @@ impl MirValidator {
         }
     }
 
-    fn find_bool_type(&self, sema_output: &SemaOutput) -> Option<TypeId> {
+    fn find_bool_type(&self, sema_output: &MirProgram) -> Option<TypeId> {
         for (id, ty) in &sema_output.types {
             if matches!(ty, MirType::Bool) {
                 return Some(*id);

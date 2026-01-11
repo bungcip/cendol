@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 bumpalo = "3.16"
-hashbrown = "0.16"
+hashbrown = { version = "0.16", features = ["serde"] }
 thiserror = "2.0"
 anyhow = "1.0"
 log = "0.4"

@@ -17,7 +17,7 @@ use crate::semantic::SymbolTable;
 use crate::semantic::TypeKind;
 use crate::semantic::ValueCategory;
 use crate::semantic::const_eval::{ConstEvalCtx, eval_const_expr};
-use crate::semantic::output::SemaOutput;
+use crate::mir::MirProgram;
 use crate::semantic::{DefinitionState, TypeRef, TypeRegistry};
 use crate::semantic::{ImplicitConversion, Namespace, ScopeId};
 use crate::source_manager::SourceSpan;
@@ -62,7 +62,7 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    pub(crate) fn lower_module_complete(&mut self) -> SemaOutput {
+    pub(crate) fn lower_module_complete(&mut self) -> MirProgram {
         debug!("Starting semantic analysis and MIR construction (complete)");
         let root = self.ast.get_root();
         self.lower_node_ref(root, ScopeId::GLOBAL);
@@ -75,7 +75,7 @@ impl<'a> AstToMirLowerer<'a> {
         );
         let output = builder.consume();
 
-        SemaOutput {
+        MirProgram {
             module: output.module,
             functions: output.functions,
             blocks: output.blocks,

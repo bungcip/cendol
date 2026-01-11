@@ -11,7 +11,7 @@ use crate::mir::{
     MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp,
     UnaryIntOp,
 };
-use crate::semantic::output::SemaOutput;
+use crate::mir::MirProgram;
 use cranelift::codegen::ir::{StackSlot, StackSlotData, StackSlotKind};
 use cranelift::prelude::{
     AbiParam, Block, Configurable, FloatCC, FunctionBuilderContext, InstBuilder, IntCC, MemFlags, Signature, Type,
@@ -58,7 +58,7 @@ fn convert_type(mir_type: &MirType) -> Option<Type> {
 }
 
 /// Helper function to get the size of a MIR type in bytes
-pub(crate) fn mir_type_size(mir_type: &MirType, _mir: &SemaOutput) -> Result<u32, String> {
+pub(crate) fn mir_type_size(mir_type: &MirType, _mir: &MirProgram) -> Result<u32, String> {
     match mir_type {
         MirType::I8 | MirType::U8 => Ok(1),
         MirType::I16 | MirType::U16 => Ok(2),
@@ -78,7 +78,7 @@ pub(crate) fn mir_type_size(mir_type: &MirType, _mir: &SemaOutput) -> Result<u32
 }
 
 /// Helper function to get type layout information for emit_const
-pub(crate) fn get_type_layout(mir_type: &MirType, _mir: &SemaOutput) -> Result<MirType, String> {
+pub(crate) fn get_type_layout(mir_type: &MirType, _mir: &MirProgram) -> Result<MirType, String> {
     Ok(mir_type.clone())
 }
 
@@ -141,7 +141,7 @@ fn emit_const_struct(
     fields: &[(usize, ConstValueId)],
     layout: &MirType,
     output: &mut Vec<u8>,
-    mir: &SemaOutput,
+    mir: &MirProgram,
 ) -> Result<(), String> {
     match layout {
         MirType::Record {
@@ -193,7 +193,7 @@ fn emit_const_array(
     elements: &[ConstValueId],
     layout: &MirType,
     output: &mut Vec<u8>,
-    mir: &SemaOutput,
+    mir: &MirProgram,
 ) -> Result<(), String> {
     match layout {
         MirType::Array {
@@ -235,7 +235,7 @@ pub(crate) fn emit_const(
     const_id: ConstValueId,
     layout: &MirType,
     output: &mut Vec<u8>,
-    mir: &SemaOutput,
+    mir: &MirProgram,
 ) -> Result<(), String> {
     let const_value = mir
         .constants
@@ -289,7 +289,7 @@ fn prepare_call_signature(
     return_type_id: TypeId,
     param_types: &[TypeId],
     args: &[Operand],
-    mir: &SemaOutput,
+    mir: &MirProgram,
 ) -> Signature {
     let mut sig = Signature::new(call_conv);
 
@@ -319,7 +319,7 @@ fn resolve_call_arguments(
     sig: &Signature,
     builder: &mut FunctionBuilder,
     cranelift_stack_slots: &HashMap<LocalId, StackSlot>,
-    mir: &SemaOutput,
+    mir: &MirProgram,
     module: &mut ObjectModule,
 ) -> Result<Vec<Value>, String> {
     let mut arg_values = Vec::new();
@@ -346,7 +346,7 @@ fn emit_function_call_impl(
     call_target: &CallTarget,
     args: &[Operand],
     builder: &mut FunctionBuilder,
-    mir: &SemaOutput,
+    mir: &MirProgram,
     cranelift_stack_slots: &HashMap<LocalId, StackSlot>,
     module: &mut ObjectModule,
 ) -> Result<Value, String> {
@@ -593,7 +593,7 @@ fn resolve_operand_to_value(
     builder: &mut FunctionBuilder,
     expected_type: Type,
     cranelift_stack_slots: &HashMap<LocalId, StackSlot>,
-    mir: &SemaOutput,
+    mir: &MirProgram,
     module: &mut ObjectModule,
 ) -> Result<Value, String> {
     match operand {
@@ -730,7 +730,7 @@ fn resolve_place_to_value(
     builder: &mut FunctionBuilder,
     expected_type: Type,
     cranelift_stack_slots: &HashMap<LocalId, StackSlot>,
-    mir: &SemaOutput,
+    mir: &MirProgram,
     module: &mut ObjectModule,
 ) -> Result<Value, String> {
     match place {
@@ -793,7 +793,7 @@ fn resolve_place_to_value(
 }
 
 /// Helper function to get the Cranelift Type of an operand
-fn get_operand_cranelift_type(operand: &Operand, mir: &SemaOutput) -> Result<Type, String> {
+fn get_operand_cranelift_type(operand: &Operand, mir: &MirProgram) -> Result<Type, String> {
     match operand {
         Operand::Constant(const_id) => {
             let const_value = mir.constants.get(const_id).expect("constant id not found");
@@ -829,7 +829,7 @@ fn get_operand_cranelift_type(operand: &Operand, mir: &SemaOutput) -> Result<Typ
 }
 
 /// Helper function to check if a MIR type is signed
-fn is_operand_signed(operand: &Operand, mir: &SemaOutput) -> bool {
+fn is_operand_signed(operand: &Operand, mir: &MirProgram) -> bool {
     match operand {
         Operand::Copy(place) => {
             if let Ok(type_id) = get_place_type_id(place, mir) {
@@ -852,7 +852,7 @@ fn is_operand_signed(operand: &Operand, mir: &SemaOutput) -> bool {
 }
 
 /// Helper function to get the TypeId of an operand
-fn get_operand_type_id(operand: &Operand, mir: &SemaOutput) -> Result<TypeId, String> {
+fn get_operand_type_id(operand: &Operand, mir: &MirProgram) -> Result<TypeId, String> {
     match operand {
         Operand::Constant(const_id) => {
             let const_value = mir.constants.get(const_id).expect("constant id not found");
@@ -889,7 +889,7 @@ fn get_operand_type_id(operand: &Operand, mir: &SemaOutput) -> Result<TypeId, St
 }
 
 /// Helper function to get the TypeId of a place
-fn get_place_type_id(place: &Place, mir: &SemaOutput) -> Result<TypeId, String> {
+fn get_place_type_id(place: &Place, mir: &MirProgram) -> Result<TypeId, String> {
     match place {
         Place::Local(local_id) => {
             let tid = mir.get_local(*local_id).type_id;
@@ -950,7 +950,7 @@ fn resolve_place_to_addr(
     place: &Place,
     builder: &mut FunctionBuilder,
     cranelift_stack_slots: &HashMap<LocalId, StackSlot>,
-    mir: &SemaOutput,
+    mir: &MirProgram,
     module: &mut ObjectModule,
 ) -> Result<Value, String> {
     match place {
@@ -1068,7 +1068,7 @@ fn resolve_place_to_addr(
 fn lower_statement(
     stmt: &MirStmt,
     builder: &mut FunctionBuilder,
-    mir: &SemaOutput,
+    mir: &MirProgram,
     clif_stack_slots: &HashMap<LocalId, StackSlot>,
     module: &mut ObjectModule,
 ) -> Result<(), String> {
@@ -1531,7 +1531,7 @@ fn lower_terminator(
     clif_blocks: &HashMap<MirBlockId, Block>,
     worklist: &mut Vec<MirBlockId>,
     return_type_opt: Option<Type>,
-    mir: &SemaOutput,
+    mir: &MirProgram,
     clif_stack_slots: &HashMap<LocalId, StackSlot>,
     module: &mut ObjectModule,
 ) -> Result<(), String> {
@@ -1590,7 +1590,7 @@ fn lower_terminator(
 
 fn setup_signature(
     func: &MirFunction,
-    mir: &SemaOutput,
+    mir: &MirProgram,
     func_ctx: &mut Signature,
 ) -> Result<(Option<Type>, Vec<Type>), String> {
     // Set up function signature using the actual return type from MIR
@@ -1619,7 +1619,7 @@ fn setup_signature(
 
 fn allocate_stack_slots(
     func: &MirFunction,
-    mir: &SemaOutput,
+    mir: &MirProgram,
     builder: &mut FunctionBuilder,
     clif_stack_slots: &mut HashMap<LocalId, StackSlot>,
 ) -> Result<(), String> {
@@ -1704,7 +1704,7 @@ fn finalize_function_processing(
 pub(crate) struct MirToCraneliftLowerer {
     builder_context: FunctionBuilderContext,
     module: ObjectModule,
-    mir: SemaOutput, // NOTE: need better nama
+    mir: MirProgram, // NOTE: need better nama
     clif_stack_slots: HashMap<LocalId, StackSlot>,
     // Store compiled functions for dumping
     compiled_functions: HashMap<String, String>,
@@ -1714,7 +1714,7 @@ pub(crate) struct MirToCraneliftLowerer {
 
 /// NOTE: we use panic!() to ICE because codegen rely on correct MIR, so if we give invalid MIR, then problem is in previous phase
 impl MirToCraneliftLowerer {
-    pub(crate) fn new(mir: SemaOutput) -> Self {
+    pub(crate) fn new(mir: MirProgram) -> Self {
         let triple = Triple::host();
         let mut flag_builder = cranelift::prelude::settings::builder();
         flag_builder.set("is_pic", "true").unwrap();

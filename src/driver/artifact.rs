@@ -2,7 +2,7 @@ use crate::ast::SourceId;
 use crate::ast::{Ast, ParsedAst};
 use crate::lexer::Token;
 use crate::pp::PPToken;
-use crate::semantic::output::SemaOutput;
+use crate::mir::MirProgram;
 use crate::semantic::{SymbolTable, TypeRegistry};
 
 /// compilation outputs for all source files
@@ -29,7 +29,7 @@ pub struct CompileArtifact {
     pub lexed: Option<Vec<Token>>,
     pub parsed_ast: Option<ParsedAst>,
     pub ast: Option<Ast>,
-    pub sema_output: Option<SemaOutput>,
+    pub sema_output: Option<MirProgram>,
     pub clif_dump: Option<String>,
     pub object_file: Option<Vec<u8>>,
     pub type_registry: Option<TypeRegistry>,

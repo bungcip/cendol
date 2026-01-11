@@ -7,7 +7,7 @@ use crate::mir::{
     ConstValue, ConstValueId, Local, LocalId, MirBlock, MirBlockId, MirFunction, MirFunctionId, MirModule, MirModuleId,
     MirRecordLayout, MirStmt, MirStmtId, MirType, Operand, Place, Terminator, TypeId,
 };
-use crate::semantic::output::SemaOutput;
+use crate::mir::MirProgram;
 use hashbrown::HashMap;
 
 #[test]
@@ -42,10 +42,10 @@ fn test_emit_const_struct_literal() {
     let struct_const = ConstValue::StructLiteral(vec![(0, const_1_id), (1, const_2_id)]);
     constants.insert(struct_const_id, struct_const);
 
-    // 3. Setup SemaOutput context
+    // 3. Setup MirProgram context
     let mir_module = MirModule::new(MirModuleId::new(1).unwrap());
 
-    let sema_output = SemaOutput {
+    let sema_output = MirProgram {
         module: mir_module,
         functions: HashMap::new(),
         blocks: HashMap::new(),
@@ -114,7 +114,7 @@ fn test_store_statement_lowering() {
     let mut mir_module = MirModule::new(MirModuleId::new(1).unwrap());
     mir_module.functions.push(func_id);
 
-    let sema_output = SemaOutput {
+    let sema_output = MirProgram {
         module: mir_module,
         functions,
         blocks,
@@ -224,7 +224,7 @@ fn test_store_deref_pointer() {
     let mut mir_module = MirModule::new(MirModuleId::new(1).unwrap());
     mir_module.functions.push(func_id);
 
-    let sema_output = SemaOutput {
+    let sema_output = MirProgram {
         module: mir_module,
         functions,
         blocks,
@@ -416,7 +416,7 @@ fn test_alloc_dealloc_codegen() {
     let mut mir_module = MirModule::new(MirModuleId::new(1).unwrap());
     mir_module.functions.push(func_id);
 
-    let sema_output = SemaOutput {
+    let sema_output = MirProgram {
         module: mir_module,
         functions,
         blocks,
@@ -465,7 +465,7 @@ mod tests {
         CallTarget, ConstValue, ConstValueId, Local, LocalId, MirBlock, MirBlockId, MirFunction, MirFunctionId,
         MirModule, MirModuleId, MirStmt, MirStmtId, MirType, Operand, Place, Terminator, TypeId,
     };
-    use crate::semantic::output::SemaOutput;
+    use crate::mir::MirProgram;
     use hashbrown::HashMap;
 
     #[test]
@@ -578,7 +578,7 @@ mod tests {
         blocks.insert(target_block_id, target_block);
         blocks.insert(main_block_id, main_block);
 
-        let sema_output = SemaOutput {
+        let sema_output = MirProgram {
             module: mir_module,
             functions,
             blocks,

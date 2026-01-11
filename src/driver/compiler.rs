@@ -18,7 +18,7 @@ use super::artifact::{CompileArtifact, CompilePhase, PipelineOutputs};
 use crate::mir::dumper::{MirDumpConfig, MirDumper};
 use crate::parser::Parser;
 use crate::pp::{PPToken, Preprocessor};
-use crate::semantic::output::SemaOutput;
+use crate::mir::MirProgram;
 use crate::semantic::{AstToMirLowerer, SymbolTable, TypeRegistry};
 use crate::source_manager::SourceManager;
 
@@ -241,7 +241,7 @@ impl CompilerDriver {
         mut ast: Ast,
         symbol_table: SymbolTable,
         mut registry: TypeRegistry,
-    ) -> Result<SemaOutput, PipelineError> {
+    ) -> Result<MirProgram, PipelineError> {
         use crate::semantic::analyzer::run_semantic_analyzer;
         let semantic_info = run_semantic_analyzer(&ast, &mut self.diagnostics, &symbol_table, &mut registry);
         self.check_diagnostics_and_return_if_error()?;
@@ -273,7 +273,7 @@ impl CompilerDriver {
         Ok(sema_output)
     }
 
-    fn run_codegen(&mut self, sema_output: SemaOutput, emit_kind: EmitKind) -> Result<ClifOutput, PipelineError> {
+    fn run_codegen(&mut self, sema_output: MirProgram, emit_kind: EmitKind) -> Result<ClifOutput, PipelineError> {
         // Validate MIR before code generation
         log::debug!("Running MIR validation");
         let mut validator = MirValidator::new();

@@ -62,7 +62,6 @@ fn test_void_function_return_value() {
 
 // B3. Conflicting function declarations
 #[test]
-#[ignore = "still not implemented"]
 fn test_conflicting_function_decl() {
     run_fail_with_message(
         r#"

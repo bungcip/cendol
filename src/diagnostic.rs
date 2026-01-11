@@ -175,6 +175,15 @@ impl IntoDiagnostic for SemanticError {
             });
         }
 
+        if let SemanticError::ConflictingTypes { first_def, .. } = &self {
+            diagnostics.push(Diagnostic {
+                level: DiagnosticLevel::Note,
+                message: "previous declaration is here".to_string(),
+                span: *first_def,
+                ..Default::default()
+            });
+        }
+
         // Handle warnings
         if matches!(self, SemanticError::IncompatiblePointerComparison { .. }) {
             diagnostics[0].level = DiagnosticLevel::Warning;
@@ -214,6 +223,8 @@ pub enum SemanticError {
     NonConstantInitializer { span: SourceSpan },
     #[error("Invalid use of void type in expression")]
     InvalidUseOfVoid { span: SourceSpan },
+    #[error("conflicting types for '{name}'")]
+    ConflictingTypes { name: String, span: SourceSpan, first_def: SourceSpan },
     #[error("void function '{name}' should not return a value")]
     VoidReturnWithValue { name: String, span: SourceSpan },
     #[error("non-void function '{name}' should return a value")]
@@ -285,6 +296,7 @@ impl SemanticError {
             SemanticError::InvalidUnaryOperand { span, .. } => *span,
             SemanticError::NonConstantInitializer { span } => *span,
             SemanticError::InvalidUseOfVoid { span } => *span,
+            SemanticError::ConflictingTypes { span, .. } => *span,
             SemanticError::VoidReturnWithValue { span, .. } => *span,
             SemanticError::NonVoidReturnWithoutValue { span, .. } => *span,
             SemanticError::UnsupportedFeature { span, .. } => *span,

@@ -1085,6 +1085,20 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
+    fn check_redeclaration_compatibility(&mut self, name: NameId, new_ty: QualType, span: SourceSpan) {
+        if let Some((existing_ref, _)) = self.symbol_table.lookup_symbol(name) {
+            let existing = self.symbol_table.get_symbol(existing_ref);
+            if !self.registry.is_compatible(existing.type_info, new_ty) {
+                let first_def = existing.def_span;
+                self.report_error(SemanticError::ConflictingTypes {
+                    name: name.to_string(),
+                    span,
+                    first_def,
+                });
+            }
+        }
+    }
+
     fn lower_function_definition(&mut self, func_def: &ParsedFunctionDefData, node: NodeRef, span: SourceSpan) {
         let spec_info = lower_decl_specifiers(&func_def.specifiers, self, span);
         let mut base_ty = spec_info
@@ -1094,6 +1108,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         let final_ty = apply_declarator(base_ty, &func_def.declarator, self);
         let func_name = extract_name(&func_def.declarator).expect("Function definition must have a name");
+
+        self.check_redeclaration_compatibility(func_name, final_ty, span);
 
         if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) =
             self.symbol_table.define_function(func_name, final_ty.ty(), true, span)
@@ -1288,6 +1304,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     body: None,
                     scope_id: self.symbol_table.current_scope(),
                 };
+                self.check_redeclaration_compatibility(name, final_ty, span);
+
                 if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) =
                     self.symbol_table.define_function(name, final_ty.ty(), false, span)
                 {
@@ -1320,6 +1338,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     init: init_expr,
                     alignment: spec_info.alignment.map(|a| a as u16),
                 };
+                self.check_redeclaration_compatibility(name, final_ty, span);
+
                 if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) = self.symbol_table.define_variable(
                     name,
                     final_ty,

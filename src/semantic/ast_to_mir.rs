@@ -841,46 +841,7 @@ impl<'a> AstToMirLowerer<'a> {
 
     fn lower_unary_deref(&mut self, scope_id: ScopeId, operand_ref: NodeRef) -> Operand {
         let operand = self.lower_expression(scope_id, operand_ref, true);
-
-        // Dereference expects a pointer.
-        // Implicit conversions (including pointer decay of array/function operands)
-        // are handled by apply_conversions before the Deref operation if needed.
-        // Here we just determine the type of the result (pointee).
-
         let operand_ty = self.ast.get_resolved_type(operand_ref).unwrap();
-        // If operand is a pointer (after conversion), we get its pointee.
-        // If it's an array/function, it should decay to pointer via conversions.
-        // However, we need to know the *mir type* of the operand to dereference.
-        // The `operand` we got is already lowered.
-
-        // We check the *converted* type logic here implicitly by looking at what `lower_unary_deref` usually does.
-        // But wait, `lower_expression` applies conversions for the *result* of this expression, not the operand inside.
-        // Actually, `lower_unary_deref` calls `lower_expression(operand_ref)`, which lowers the operand.
-        // We need to apply conversions *on the operand* to match expected "pointer" type.
-
-        // Actually, `lower_unary_deref` logic is: Deref(Operand).
-        // The operand must be a pointer.
-        // If the AST node for operand has conversions (like ArrayToPointer), we must apply them.
-
-        // Let's rely on semantic analysis: if it's a valid Deref, the operand (after conversions) IS a pointer.
-        // We just need to apply those conversions.
-
-        // However, the target type for conversions needs to be known.
-        // For Deref, the target type is "pointer to X".
-        // But `PointerDecay` now carries the target type, so we don't strictly *need* to know it upfront if we used `emit_conversion`.
-        // BUT `apply_conversions` still takes `target_type_id`.
-        // Let's see: `emit_conversion` with `PointerDecay` uses the `to` field.
-        // So `target_type_id` passed to `apply_conversions` only matters for other conversion types if any?
-        // Actually `PointerDecay` is usually the one changing the type structure significantly here.
-
-        // Wait, `apply_conversions` signature is `apply_conversions(operand, node_ref, target_type_id)`.
-        // We can pass a dummy target type if we know `PointerDecay` handles it?
-        // or better, we can calculate the expected pointer type.
-
-        // We pass the operand's original type (lowered) as target if we don't have conversions.
-        // If we DO have conversions (PointerDecay), emit_conversion will use the 'to' type.
-        // If we don't, then operand_ty should already be a pointer.
-
         let target_mir_ty = self.lower_qual_type(operand_ty);
         let operand_converted = self.apply_conversions(operand, operand_ref, target_mir_ty);
 
